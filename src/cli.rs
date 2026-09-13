@@ -139,7 +139,11 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
     ) {
         return Err(format!("unknown command '{command}'"));
     }
-    let loaded = config::load(a.options.get("config").map(String::as_str))?;
+    let loaded = match config::load(a.options.get("config").map(String::as_str)) {
+        Ok(loaded) => loaded,
+        Err(error) if command == "verify" => return Err(machine_error(error)),
+        Err(error) => return Err(error),
+    };
     match command {
         "check" => crate::project_commands::check(&loaded, a),
         "brief" => brief_command(&loaded, a),
@@ -377,19 +381,15 @@ fn verify_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         Ok(_) => receipt::verify(path, l)?,
         Err(error) if crate::producer::exitbind_surface() => match receipt::verify(path, l) {
             Ok(value) => value,
-            Err(_) => return Err(exit_path_failure("receipt_malformed", error)),
+            Err(_) => return Err(machine_error(error)),
         },
         Err(_) => receipt::verify(path, l)?,
     };
     let exit_path = value["format"] == "exit-path-v1";
     if !value["valid"].as_bool().unwrap_or(false) {
         if exit_path {
-            return Err(exit_path_failure(
-                value["reason"]["code"]
-                    .as_str()
-                    .unwrap_or("receipt_mismatch"),
-                value["reason"]["detail"].to_string(),
-            ));
+            let machine = serde_json::to_string(&value).map_err(|error| error.to_string())?;
+            return Err(format!("EXITBIND_JSON:{machine}"));
         }
         print_json(&value)?;
         return Err("receipt verification failed".into());
@@ -402,19 +402,9 @@ fn exit_receipt_command(l: &config::Loaded, a: &Arguments) -> Result<(), String>
     args::assert_options("receipt", a, &["config", "json", "output"])?;
     args::assert_positionals("receipt", a, 1)?;
     let ledger = positional(a, 0, "receipt requires a checked run ledger path")?;
-    let value = receipt::exit_path(l, ledger).map_err(|error| {
-        let code = if error.contains("check evidence") {
-            "check_evidence_blocked"
-        } else if error.contains("configured check policy") {
-            "check_policy_missing"
-        } else if error.contains("reviewer") {
-            "review_missing"
-        } else if error.contains("lead acceptance") {
-            "acceptance_missing"
-        } else {
-            "run_not_ready"
-        };
-        exit_path_failure(code, error)
+    let value = receipt::exit_path(l, ledger).map_err(|error| match error {
+        receipt::ExitPathError::Decision(decision) => exit_path_failure(decision, None),
+        receipt::ExitPathError::Failure(detail) => detail,
     })?;
     if let Some(path) = a.options.get("output") {
         let target = receipt::exit_receipt_path(l, path)?;
@@ -435,12 +425,8 @@ fn exit_receipt_command(l: &config::Loaded, a: &Arguments) -> Result<(), String>
     print_json(&value)
 }
 
-fn exit_path_failure(code: &str, detail: String) -> String {
-    let outcome = if code == "check_evidence_blocked" {
-        "BLOCKED"
-    } else {
-        "REFUSED"
-    };
+fn exit_path_failure(decision: crate::run_exit::ExitDecision, detail: Option<String>) -> String {
+    let (outcome, code, wire_detail) = decision.wire();
     format!(
         "EXITBIND_JSON:{}",
         serde_json::json!({
@@ -448,9 +434,18 @@ fn exit_path_failure(code: &str, detail: String) -> String {
             "format": "exit-path-v1",
             "valid": false,
             "outcome": outcome,
-            "reason": {"code": code, "detail": detail},
+            "reason": {"code": code, "detail": detail.unwrap_or_else(|| wire_detail.to_owned())},
         })
     )
+}
+
+fn machine_error(error: String) -> String {
+    let prefix = if crate::producer::exitbind_surface() {
+        "EXITBIND_JSON:"
+    } else {
+        "SOULMATE_JSON:"
+    };
+    format!("{prefix}{}", serde_json::json!({"error": error}))
 }
 
 fn profile_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {

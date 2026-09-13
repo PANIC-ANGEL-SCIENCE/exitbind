@@ -134,6 +134,37 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
 }
 
 #[test]
+fn skill_keeps_readiness_lead_owned_and_holytail_preservation_narrow() {
+    let text = std::str::from_utf8(include_bytes!("../skills/exitbind/SKILL.md"))
+        .unwrap()
+        .to_lowercase();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for contract in [
+        "complex but has no material semantic-preservation risk",
+        "keeps holytail off",
+        "tool and agent selection remains the lead's responsibility",
+        "clarify the accepted behavior, invariants, allowed changes",
+        "freeze that accepted meaning",
+        "preserve the frozen meaning",
+        "read back the same accepted meaning",
+        "current implementation subject",
+        "trivial work has no holytail ceremony",
+        "minimizer may reduce mechanism",
+        "does not choose the goal, tools, or agents",
+        "does not own final acceptance",
+        "does not create a second ledger",
+        "standalone holytail install",
+    ] {
+        assert!(
+            text.contains(contract),
+            "missing Exitbind skill contract: {contract}"
+        );
+    }
+    assert!(!text.contains("coffee"));
+    assert!(!text.contains("holytail chooses tools"));
+}
+
+#[test]
 fn work_facade_surfaces_stale_worker_and_recovers_to_ready() {
     let fixture = Fixture::new();
     let check = "test -f marker";

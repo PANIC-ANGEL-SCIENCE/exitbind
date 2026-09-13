@@ -385,7 +385,7 @@ fn apply_check(state: &mut Value, event: &Value) -> Result<(), String> {
     }
     crate::run_value::validate_check_against_state(state, event, 0)
         .map_err(|error| error.replacen("line 0", "state", 1))?;
-    if state["version"] == 5 && event["subjectSha256"] != state["subject"]["sha256"] {
+    if !crate::run_exit::reduce(state)?.subject_is_current(&event["subjectSha256"]) {
         return Err("check is bound to a stale subject".into());
     }
     state["checks"]
@@ -398,7 +398,7 @@ fn apply_check(state: &mut Value, event: &Value) -> Result<(), String> {
 fn apply_protection(state: &mut Value, event: &Value) -> Result<(), String> {
     crate::run_value::validate_protection_against_state(state, event, 0)
         .map_err(|error| error.replacen("line 0", "state", 1))?;
-    if state["version"] == 5 && event["subjectSha256"] != state["subject"]["sha256"] {
+    if !crate::run_exit::reduce(state)?.subject_is_current(&event["subjectSha256"]) {
         return Err("protection is bound to a stale subject".into());
     }
     state["protections"]
@@ -463,28 +463,7 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         ));
     }
     if role == "lead" && outcome == "accepted" {
-        if state["version"] == 5
-            && state.get("checkPolicy").is_some()
-            && !state["submissions"].as_array().is_some_and(|submissions| {
-                submissions.iter().any(|submission| {
-                    submission["attempt"] == state["attempt"]
-                        && submission["role"] == "reviewer"
-                        && submission["outcome"] == "approved"
-                })
-            })
-        {
-            return Err("canonical acceptance requires reviewer approval".into());
-        }
-        let assessment = crate::run_value::check_guard(state)?;
-        if assessment.is_blocked() {
-            let detail = assessment.reason().map_or(
-                "worker completion or check result is not observed",
-                |reason| reason,
-            );
-            return Err(format!(
-                "canonical acceptance requires passing checks ({detail})"
-            ));
-        }
+        crate::run_exit::reduce(state)?.acceptance_gate()?;
     }
     state["submissions"]
         .as_array_mut()

@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+      - name: Assert exact GitHub SHA checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Preserve published Git ancestry
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -27,7 +29,7 @@ jobs:
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           # A new branch or tag has no previous ref; compare its first parent.
-          if [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
+          if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
             VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
             export VALUE_PROOF_BASE
           elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
@@ -76,6 +78,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+      - name: Assert exact GitHub SHA checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Preserve published Git ancestry
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -93,7 +97,7 @@ jobs:
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           # A new branch or tag has no previous ref; compare its first parent.
-          if [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
+          if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
             VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
             export VALUE_PROOF_BASE
           elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
@@ -117,6 +121,10 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Assert exact GitHub SHA checkout
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'checkout does not match GITHUB_SHA' }
       - name: Download Linux stable release
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -145,6 +153,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Assert exact GitHub SHA checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Cache cargo-audit
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:

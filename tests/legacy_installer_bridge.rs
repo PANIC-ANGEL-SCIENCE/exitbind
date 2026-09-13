@@ -1,6 +1,7 @@
 #![cfg(unix)]
 
 use std::{
+    collections::BTreeSet,
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -8,9 +9,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const TARGET: &str = "x86_64-unknown-linux-gnu";
-const VERSION: &str = "v0.17.0";
+mod matrix {
+    include!("compatibility_matrix.rs");
+}
 
+const TARGET: &str = "x86_64-unknown-linux-gnu";
 struct Fixture {
     root: PathBuf,
     archive: PathBuf,
@@ -20,14 +23,6 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(label: &str) -> Self {
-        Self::new_with_asset(
-            label,
-            "exitbind",
-            b"#!/bin/sh\nif [ \"$1\" = version ]; then printf '%s\\n' 0.17.0; fi\n",
-        )
-    }
-
     fn new_with_asset(label: &str, asset_surface: &str, payload: &[u8]) -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -102,45 +97,22 @@ esac
         format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
     }
 
-    fn run(&self, prefix: &Path, legacy: bool) -> std::process::Output {
-        self.run_version(prefix, legacy, VERSION, "exitbind")
-    }
-
-    fn run_version(
-        &self,
-        prefix: &Path,
-        legacy: bool,
-        version: &str,
-        asset_surface: &str,
-    ) -> std::process::Output {
-        self.run_version_with_repo(
-            prefix,
-            legacy,
-            version,
-            asset_surface,
-            "envy404/exitbind",
-        )
-    }
-
-    fn run_version_with_repo(
-        &self,
-        prefix: &Path,
-        legacy: bool,
-        version: &str,
-        asset_surface: &str,
-        repository: &str,
-    ) -> std::process::Output {
+    fn run_matrix_case(&self, prefix: &Path, case_id: &str) -> std::process::Output {
+        let case = matrix::case(case_id);
+        let route = matrix::route(case["routeId"].as_str().unwrap());
+        let repository = matrix::row("repositories", route["repositoryId"].as_str().unwrap());
+        let fetch_repository =
+            matrix::row("repositories", route["fetchRepositoryId"].as_str().unwrap());
+        let version = case["version"].as_str().unwrap();
+        let asset = route["assetPrefix"].as_str().unwrap();
+        let fetch_value = fetch_repository["value"].as_str().unwrap();
         let archive_url = format!(
-            "https://github.com/{repository}/releases/download/{version}/{asset_surface}-{TARGET}.tar.gz"
+            "https://github.com/{fetch_value}/releases/download/{version}/{asset}-{TARGET}.tar.gz"
         );
         let checksum_url = format!(
-            "https://github.com/{repository}/releases/download/{version}/{asset_surface}-{TARGET}.tar.gz.sha256"
+            "https://github.com/{fetch_value}/releases/download/{version}/{asset}-{TARGET}.tar.gz.sha256"
         );
-        let legacy_repository = if repository == "envy404/exitbind" {
-            "envy404/soulmate"
-        } else {
-            repository
-        };
+        let source_value = repository["value"].as_str().unwrap();
         let mut command = Command::new("sh");
         command
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
@@ -150,23 +122,42 @@ esac
             .env("BRIDGE_ARCHIVE_URL", &archive_url)
             .env("BRIDGE_CHECKSUM_URL", &checksum_url)
             .env("BRIDGE_ARCHIVE_SOURCE", &self.archive)
-            .env("BRIDGE_CHECKSUM_SOURCE", &self.checksum);
-        if legacy {
-            command
-                .env_remove("EXITBIND_REPOSITORY")
-                .env_remove("EXITBIND_VERSION")
-                .env_remove("EXITBIND_INSTALL_PREFIX")
-                .env("SOULMATE_REPOSITORY", legacy_repository)
-                .env("SOULMATE_VERSION", version)
-                .env("SOULMATE_INSTALL_PREFIX", prefix);
-        } else {
-            command
-                .env("EXITBIND_REPOSITORY", "envy404/exitbind")
-                .env("EXITBIND_VERSION", VERSION)
-                .env("EXITBIND_INSTALL_PREFIX", prefix)
-                .env("SOULMATE_REPOSITORY", "envy404/soulmate")
-                .env("SOULMATE_VERSION", "v0.16.0")
-                .env("SOULMATE_INSTALL_PREFIX", self.root.join("legacy-prefix"));
+            .env("BRIDGE_CHECKSUM_SOURCE", &self.checksum)
+            .env_remove("EXITBIND_REPOSITORY")
+            .env_remove("EXITBIND_VERSION")
+            .env_remove("EXITBIND_INSTALL_PREFIX")
+            .env_remove("SOULMATE_REPOSITORY")
+            .env_remove("SOULMATE_VERSION")
+            .env_remove("SOULMATE_INSTALL_PREFIX");
+        match case_id {
+            "installer-partial-exitbind-custom-legacy" => {
+                command
+                    .env("EXITBIND_VERSION", version)
+                    .env("SOULMATE_REPOSITORY", source_value)
+                    .env("SOULMATE_VERSION", "v0.16.0")
+                    .env("SOULMATE_INSTALL_PREFIX", prefix);
+            }
+            "installer-conflicting-namespaces" => {
+                command
+                    .env("EXITBIND_REPOSITORY", source_value)
+                    .env("EXITBIND_VERSION", version)
+                    .env("EXITBIND_INSTALL_PREFIX", prefix)
+                    .env("SOULMATE_REPOSITORY", "envy404/soulmate")
+                    .env("SOULMATE_VERSION", "v0.16.0")
+                    .env("SOULMATE_INSTALL_PREFIX", self.root.join("legacy-prefix"));
+            }
+            _ if route["callerSurfaceId"] == "legacy-soulmate" => {
+                command
+                    .env("SOULMATE_REPOSITORY", source_value)
+                    .env("SOULMATE_VERSION", version)
+                    .env("SOULMATE_INSTALL_PREFIX", prefix);
+            }
+            _ => {
+                command
+                    .env("EXITBIND_REPOSITORY", source_value)
+                    .env("EXITBIND_VERSION", version)
+                    .env("EXITBIND_INSTALL_PREFIX", prefix);
+            }
         }
         command.output().unwrap()
     }
@@ -184,173 +175,53 @@ fn executable(path: &Path, contents: impl AsRef<[u8]>) {
 }
 
 #[test]
-fn legacy_soulmate_inputs_fetch_exitbind_assets_and_leave_both_names() {
-    let fixture = Fixture::new("legacy");
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run(&prefix, true);
-    assert!(output.status.success(), "{output:?}");
-    for name in ["soulmate", "exitbind"] {
-        let installed = prefix.join(name);
-        assert!(installed.is_file());
-        assert_eq!(fs::read(&installed).unwrap(), fixture.payload);
-        assert_ne!(
-            fs::metadata(installed).unwrap().permissions().mode() & 0o111,
-            0
+fn installer_matrix_cases_drive_the_existing_selector() {
+    let matrix_value = matrix::matrix();
+    let cases = matrix_value["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["kind"] == "installer")
+        .map(|case| case["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 15);
+    let mut executed = BTreeSet::new();
+    for case_id in &cases {
+        executed.insert(case_id.clone());
+        let case = matrix::case(case_id);
+        let route = matrix::route(case["routeId"].as_str().unwrap());
+        let fixture = Fixture::new_with_asset(
+            case_id,
+            route["assetPrefix"].as_str().unwrap(),
+            format!("#!/bin/sh\nprintf '%s\\n' {case_id}\n").as_bytes(),
         );
+        let prefix = fixture.root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        let output = fixture.run_matrix_case(&prefix, case_id);
+        assert!(output.status.success(), "{case_id}: {output:?}");
+        let expected = route["installedCommands"].as_array().unwrap();
+        for command in ["exitbind", "soulmate"] {
+            let path = prefix.join(command);
+            if expected.iter().any(|name| name.as_str() == Some(command)) {
+                assert!(path.is_file(), "{case_id}: missing {command}");
+                assert_eq!(fs::read(&path).unwrap(), fixture.payload);
+                assert_ne!(fs::metadata(&path).unwrap().permissions().mode() & 0o111, 0);
+            } else {
+                assert!(!path.exists(), "{case_id}: unexpected {command}");
+            }
+        }
+        let fetch_repository =
+            matrix::row("repositories", route["fetchRepositoryId"].as_str().unwrap());
+        let fetch_value = fetch_repository["value"].as_str().unwrap();
+        let version = case["version"].as_str().unwrap();
+        let asset = route["assetPrefix"].as_str().unwrap();
         assert_eq!(
-            String::from_utf8(
-                Command::new(prefix.join(name))
-                    .arg("version")
-                    .output()
-                    .unwrap()
-                    .stdout
-            )
-            .unwrap()
-            .trim(),
-            "0.17.0"
+            fs::read_to_string(&fixture.calls).unwrap(),
+            format!(
+                "https://github.com/{fetch_value}/releases/download/{version}/{asset}-{TARGET}.tar.gz\nhttps://github.com/{fetch_value}/releases/download/{version}/{asset}-{TARGET}.tar.gz.sha256\n"
+            ),
+            "{case_id}: fetch routing"
         );
     }
-    assert_eq!(fs::read_to_string(&fixture.calls).unwrap(), format!(
-        "https://github.com/envy404/exitbind/releases/download/{VERSION}/exitbind-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{VERSION}/exitbind-{TARGET}.tar.gz.sha256\n"
-    ));
-}
-
-#[test]
-fn historical_soulmate_version_fetches_historical_asset_and_name_only() {
-    const HISTORICAL_VERSION: &str = "v0.16.0";
-    let fixture = Fixture::new_with_asset(
-        "historical",
-        "soulmate",
-        b"#!/bin/sh\nprintf '%s\\n' historical-soulmate\n",
-    );
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run_version(&prefix, true, HISTORICAL_VERSION, "soulmate");
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(fs::read(prefix.join("soulmate")).unwrap(), fixture.payload);
-    assert!(!prefix.join("exitbind").exists());
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn historical_stable_version_fetches_historical_asset_and_name_only() {
-    const HISTORICAL_VERSION: &str = "v0.12.0";
-    let fixture = Fixture::new_with_asset(
-        "historical-stable",
-        "soulmate",
-        b"#!/bin/sh\nprintf '%s\\n' historical-soulmate-stable\n",
-    );
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run_version(&prefix, true, HISTORICAL_VERSION, "soulmate");
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(fs::read(prefix.join("soulmate")).unwrap(), fixture.payload);
-    assert!(!prefix.join("exitbind").exists());
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn historical_version_with_build_metadata_fetches_historical_asset_and_name_only() {
-    const HISTORICAL_VERSION: &str = "v0.16.999-rc.2+build.7";
-    let fixture = Fixture::new_with_asset(
-        "historical-build",
-        "soulmate",
-        b"#!/bin/sh\nprintf '%s\\n' historical-soulmate-build\n",
-    );
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run_version(&prefix, true, HISTORICAL_VERSION, "soulmate");
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(fs::read(prefix.join("soulmate")).unwrap(), fixture.payload);
-    assert!(!prefix.join("exitbind").exists());
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn malformed_version_keeps_current_bridge_asset_path() {
-    const MALFORMED_VERSION: &str = "v0.16";
-    let fixture = Fixture::new("malformed");
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run_version(&prefix, true, MALFORMED_VERSION, "exitbind");
-    assert!(output.status.success(), "{output:?}");
-    for name in ["soulmate", "exitbind"] {
-        assert_eq!(fs::read(prefix.join(name)).unwrap(), fixture.payload);
-    }
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/envy404/exitbind/releases/download/{MALFORMED_VERSION}/exitbind-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{MALFORMED_VERSION}/exitbind-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn leading_zero_patch_keeps_current_bridge_asset_path() {
-    const MALFORMED_VERSION: &str = "v0.16.00";
-    let fixture = Fixture::new("leading-zero-patch");
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run_version(&prefix, true, MALFORMED_VERSION, "exitbind");
-    assert!(output.status.success(), "{output:?}");
-    for name in ["soulmate", "exitbind"] {
-        assert_eq!(fs::read(prefix.join(name)).unwrap(), fixture.payload);
-    }
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/envy404/exitbind/releases/download/{MALFORMED_VERSION}/exitbind-{TARGET}.tar.gz\nhttps://github.com/envy404/exitbind/releases/download/{MALFORMED_VERSION}/exitbind-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn custom_legacy_repository_keeps_soulmate_asset_and_name() {
-    const HISTORICAL_VERSION: &str = "v0.12.0";
-    const REPOSITORY: &str = "example/project";
-    let fixture = Fixture::new_with_asset(
-        "custom-repository",
-        "soulmate",
-        b"#!/bin/sh\nprintf '%s\\n' custom-soulmate\n",
-    );
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output =
-        fixture.run_version_with_repo(&prefix, true, HISTORICAL_VERSION, "soulmate", REPOSITORY);
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(fs::read(prefix.join("soulmate")).unwrap(), fixture.payload);
-    assert!(!prefix.join("exitbind").exists());
-    assert_eq!(
-        fs::read_to_string(&fixture.calls).unwrap(),
-        format!(
-            "https://github.com/{REPOSITORY}/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz\nhttps://github.com/{REPOSITORY}/releases/download/{HISTORICAL_VERSION}/soulmate-{TARGET}.tar.gz.sha256\n"
-        )
-    );
-}
-
-#[test]
-fn exitbind_inputs_keep_normal_install_single_named_target() {
-    let fixture = Fixture::new("current");
-    let prefix = fixture.root.join("prefix");
-    fs::create_dir_all(&prefix).unwrap();
-    let output = fixture.run(&prefix, false);
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(fs::read(prefix.join("exitbind")).unwrap(), fixture.payload);
-    assert!(!prefix.join("soulmate").exists());
+    assert_eq!(executed.len(), cases.len());
 }

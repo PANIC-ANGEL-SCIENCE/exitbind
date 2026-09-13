@@ -15,6 +15,13 @@ fn project(label: &str) -> PathBuf {
     root
 }
 
+fn exitbind_project(label: &str) -> PathBuf {
+    let root = support::temp(label);
+    let output = invoke_exitbind(&root, &["init", "--root", "."]);
+    assert!(output.status.success(), "{}", text(&output));
+    root
+}
+
 fn invoke_soulmate(root: &Path, arguments: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(root)
@@ -42,6 +49,14 @@ fn text(output: &Output) -> String {
 fn json_output(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|error| panic!("invalid JSON: {error}; output: {}", text(output)))
+}
+
+fn assert_operational_receipt_error(output: &Output) {
+    assert_eq!(output.status.code(), Some(1), "{}", text(output));
+    let value = json_output(output);
+    assert!(value["error"].as_str().is_some(), "{value}");
+    assert!(value["outcome"].is_null(), "{value}");
+    assert!(value["reason"].is_null(), "{value}");
 }
 
 fn state_artifact(root: &Path, name: &str, content: &str) -> String {
@@ -260,6 +275,8 @@ fn v5_receipt_binds_all_current_worker_artifacts_and_legacy_receipts_keep_shape(
     let root = project("value-receipt-artifacts");
     let receipt = accepted_v5(&root, ".soulmate/runs/multi.jsonl", &["worker", "worker2"]);
     let value: Value = serde_json::from_slice(&fs::read(root.join(receipt)).unwrap()).unwrap();
+    assert_eq!(value["outcome"], "READY");
+    assert_eq!(value["reason"]["code"], "accepted");
     let artifacts = value["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 4);
     for expected in [
@@ -300,4 +317,69 @@ fn v5_receipt_binds_all_current_worker_artifacts_and_legacy_receipts_keep_shape(
     assert!(legacy_value.get("format").is_none());
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(legacy).unwrap();
+}
+
+#[test]
+fn operational_receipt_failures_do_not_emit_lifecycle_labels() {
+    let root = project("value-receipt-operational-errors");
+    for ledger in [
+        ".soulmate/runs/absent.jsonl",
+        ".soulmate/runs/malformed.jsonl",
+        ".soulmate/runs/unloadable.jsonl",
+    ] {
+        let path = root.join(ledger);
+        if ledger.contains("malformed") {
+            fs::write(&path, b"not-json\n").unwrap();
+        } else if ledger.contains("unloadable") {
+            fs::create_dir(&path).unwrap();
+        }
+        let output = invoke_exitbind(
+            &root,
+            &["receipt", ledger, "--json", "--config", "soulmate.json"],
+        );
+        assert_operational_receipt_error(&output);
+        if path.is_dir() {
+            fs::remove_dir(path).unwrap();
+        } else if path.exists() {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn exitbind_verify_operational_receipt_failures_do_not_emit_lifecycle_labels() {
+    let root = exitbind_project("value-receipt-exitbind-operational-errors");
+    for receipt in [
+        ".exitbind/receipts/absent.json",
+        ".exitbind/receipts/malformed.json",
+        ".exitbind/receipts/unloadable.json",
+    ] {
+        let path = root.join(receipt);
+        if receipt.contains("malformed") {
+            fs::write(&path, b"not-json\n").unwrap();
+        } else if receipt.contains("unloadable") {
+            fs::create_dir(&path).unwrap();
+        }
+        let output = invoke_exitbind(&root, &["verify", receipt, "--config", "exitbind.json"]);
+        assert_operational_receipt_error(&output);
+        if path.is_dir() {
+            fs::remove_dir(path).unwrap();
+        } else if path.exists() {
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    fs::remove_file(root.join("exitbind.json")).unwrap();
+    let output = invoke_exitbind(
+        &root,
+        &[
+            "verify",
+            ".exitbind/receipts/absent.json",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert_operational_receipt_error(&output);
+    fs::remove_dir_all(root).unwrap();
 }

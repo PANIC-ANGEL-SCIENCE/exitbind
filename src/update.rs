@@ -11,47 +11,27 @@ const MAX_CACHE_BYTES: u64 = 8 * 1024;
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 fn exitbind_surface() -> bool {
-    crate::producer::exitbind_surface()
+    crate::compatibility::is_exitbind()
 }
 
 fn api_url() -> &'static str {
-    if exitbind_surface() {
-        "https://api.github.com/repos/envy404/exitbind/releases?per_page=20"
-    } else {
-        "https://api.github.com/repos/envy404/soulmate/releases?per_page=20"
-    }
+    crate::compatibility::profile().api
 }
 
 fn raw_origin() -> &'static str {
-    if exitbind_surface() {
-        "https://raw.githubusercontent.com/envy404/exitbind/"
-    } else {
-        "https://raw.githubusercontent.com/envy404/soulmate/"
-    }
+    crate::compatibility::profile().raw_installer
 }
 
 fn cache_name() -> &'static str {
-    if exitbind_surface() {
-        "exitbind/update.json"
-    } else {
-        "soulmate/update.json"
-    }
+    crate::compatibility::profile().cache
 }
 
 fn marker_name() -> &'static str {
-    if exitbind_surface() {
-        "exitbind/update.lock"
-    } else {
-        "soulmate/update.lock"
-    }
+    crate::compatibility::profile().marker
 }
 
 fn product_name() -> &'static str {
-    if exitbind_surface() {
-        "exitbind"
-    } else {
-        "soulmate"
-    }
+    crate::compatibility::profile().product
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,8 +346,11 @@ fn cache_temp(path: &Path) -> io::Result<(PathBuf, File)> {
 
 fn temp_file(label: &str) -> io::Result<PathBuf> {
     for attempt in 0..8 {
-        let path =
-            std::env::temp_dir().join(format!("soulmate-{label}-{}-{attempt}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "{}-{label}-{}-{attempt}",
+            product_name(),
+            std::process::id()
+        ));
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => {
                 #[cfg(unix)]
@@ -542,8 +525,14 @@ fn refresh_cache() -> Result<(), String> {
 }
 
 fn safe_prefix() -> Result<PathBuf, String> {
-    if let Some(prefix) = std::env::var_os("EXITBIND_INSTALL_PREFIX")
-        .or_else(|| std::env::var_os("SOULMATE_INSTALL_PREFIX"))
+    let profile = crate::compatibility::profile();
+    let compatibility_prefix = if profile.surface == crate::compatibility::Surface::Exitbind {
+        "SOULMATE_INSTALL_PREFIX"
+    } else {
+        "EXITBIND_INSTALL_PREFIX"
+    };
+    if let Some(prefix) = std::env::var_os(profile.install_prefix_env)
+        .or_else(|| std::env::var_os(compatibility_prefix))
         .filter(|v| !v.is_empty())
     {
         let path = PathBuf::from(prefix);
@@ -623,11 +612,7 @@ pub fn explicit_update() -> Result<(), String> {
             return Err(error);
         }
     };
-    let product = if exitbind_surface() {
-        "exitbind"
-    } else {
-        "soulmate"
-    };
+    let product = crate::compatibility::profile().product;
     let target = prefix.join(product);
     if !regular(&target) {
         let _ = fs::remove_file(&installer);
@@ -752,6 +737,18 @@ mod tests {
         let base = format!("v{}.{}.{}", 1, 2, 3);
         assert!(Version::parse(&format!("{base}:")).is_none());
         assert!(Version::parse(&format!("{base}-rc.1:tail")).is_none());
+    }
+
+    #[test]
+    fn exact_malformed_core_and_build_metadata_are_rejected_with_valid_neighbors() {
+        let core = |patch: &str| format!("v{}.{}.{}", 0, 16, patch);
+        assert!(Version::parse(&core("00")).is_none());
+        assert!(Version::parse(&core("0")).is_some());
+        assert!(Version::parse(&format!("v{}.{}.{}", 0, 17, 0)).is_some());
+        let build = format!("v{}.{}.{}+{}.{}", 0, 19, 0, "build", 7);
+        assert!(Version::parse(&build).is_none());
+        assert!(Version::parse(&format!("v{}.{}.{}", 0, 18, 0)).is_some());
+        assert!(Version::parse(&format!("v{}.{}.{}", 0, 19, 0)).is_some());
     }
 
     #[test]

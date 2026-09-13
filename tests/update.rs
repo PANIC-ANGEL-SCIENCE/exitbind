@@ -1,5 +1,9 @@
 mod support;
 
+mod matrix {
+    include!("compatibility_matrix.rs");
+}
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -12,9 +16,10 @@ fn fake_curl(root: &Path) {
         r##"#!/bin/sh
 out=""
 for arg in "$@"; do out="$arg"; done
+if test -n "$FAKE_CALLS"; then printf '%s\n' "$*" >> "$FAKE_CALLS"; fi
 version=0.18.0
 case "$*" in
-  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; else printf '%s' "[{\"tag_name\":\"v$version\",\"draft\":false,\"prerelease\":false}]" > "$out"; fi ;;
+  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.18.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
   *) printf '%s' '#!/bin/sh
 target="$EXITBIND_INSTALL_PREFIX/exitbind"
 if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
@@ -33,6 +38,76 @@ esac
 fn binary(path: &Path, version: &str) {
     fs::write(path, format!("#!/bin/sh\necho {version}\n")).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+fn valid_release_tag() -> String {
+    format!("v{}.{}.{}", 0, 18, 0)
+}
+
+fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
+    let route = matrix::route(route_id);
+    let surface = matrix::row("surfaces", route["callerSurfaceId"].as_str().unwrap());
+    let target_name = surface["callerBasename"].as_str().unwrap();
+    let origin = matrix::row("origins", route["originId"].as_str().unwrap());
+    let env_prefix = origin["installPrefixEnv"].as_str().unwrap();
+    let root = support::temp(&format!("update-origin-{target_name}"));
+    let bin = root.join("bin");
+    let prefix = root.join("prefix");
+    let calls = root.join("calls");
+    fs::create_dir(&bin).unwrap();
+    fs::create_dir(&prefix).unwrap();
+    fake_curl(&bin);
+    binary(&prefix.join(target_name), "0.17.0");
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let output = Command::new(binary_path)
+        .arg("update")
+        .env("PATH", path)
+        .env("HOME", &root)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env(env_prefix, &prefix)
+        .env("FAKE_RELEASE_TAG", valid_release_tag())
+        .env("FAKE_CALLS", &calls)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let calls_text = fs::read_to_string(&calls).unwrap();
+    assert!(
+        calls_text.contains(origin["api"].as_str().unwrap()),
+        "{calls_text}"
+    );
+    assert!(
+        calls_text.contains(&format!(
+            "{}{}/install.sh",
+            origin["rawInstaller"].as_str().unwrap(),
+            valid_release_tag()
+        )),
+        "{calls_text}"
+    );
+    let other_origin = if origin["id"] == "current-updater" {
+        matrix::row("origins", "legacy-updater")
+    } else {
+        matrix::row("origins", "current-updater")
+    };
+    assert!(
+        !calls_text.contains(other_origin["api"].as_str().unwrap()),
+        "{calls_text}"
+    );
+    assert!(
+        !calls_text.contains(other_origin["rawInstaller"].as_str().unwrap()),
+        "{calls_text}"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(
+            &Command::new(prefix.join(target_name))
+                .arg("version")
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .trim(),
+        valid_release_tag().trim_start_matches('v')
+    );
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -105,6 +180,15 @@ fn update_is_discoverable_in_advanced_help() {
         .unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("soulmate update"));
+}
+
+#[test]
+fn updater_matrix_drives_exact_api_and_raw_installer_origins_for_both_callers() {
+    exercise_matrix_origin(env!("CARGO_BIN_EXE_exitbind"), "current-canonical");
+    exercise_matrix_origin(
+        env!("CARGO_BIN_EXE_soulmate"),
+        "canonical-legacy-historical",
+    );
 }
 
 #[test]
@@ -188,4 +272,161 @@ fn malformed_release_response_and_missing_curl_are_errors() {
         .unwrap();
     assert!(!missing.status.success());
     assert!(String::from_utf8_lossy(&missing.stderr).contains("curl unavailable"));
+}
+
+#[test]
+fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
+    let invalid_cases = ["updater-v01600-reject", "updater-build-reject"];
+    for case_id in invalid_cases {
+        let case = matrix::case(case_id);
+        let root = support::temp(case_id);
+        let bin = root.join("bin");
+        let prefix = root.join("prefix");
+        let calls = root.join("calls");
+        fs::create_dir(&bin).unwrap();
+        fs::create_dir(&prefix).unwrap();
+        fake_curl(&bin);
+        let target = prefix.join("exitbind");
+        binary(&target, "0.17.0");
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let malformed = case["version"].as_str().unwrap();
+        let discriminating_malformed = if case_id == "updater-v01600-reject" {
+            format!("v{}.{}.{}", 0, 19, "00")
+        } else {
+            format!("v{}.{}.{}+{}.{}", 0, 19, 0, "build", 7)
+        };
+        let valid = valid_release_tag();
+        let body = format!(
+            "[{{\"tag_name\":\"{malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{discriminating_malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{valid}\",\"draft\":false,\"prerelease\":false}}]"
+        );
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .arg("update")
+            .env("PATH", path)
+            .env("HOME", &root)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env("EXITBIND_INSTALL_PREFIX", &prefix)
+            .env("FAKE_RELEASE_BODY", body)
+            .env("FAKE_CALLS", &calls)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{case_id}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(&format!(
+                "Updated exitbind to {}",
+                valid.trim_start_matches('v')
+            )),
+            "{case_id}: {:?}",
+            output
+        );
+        assert_eq!(
+            String::from_utf8_lossy(
+                &Command::new(&target)
+                    .arg("version")
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+            .trim(),
+            valid.trim_start_matches('v')
+        );
+        assert!(
+            fs::read_to_string(&calls)
+                .unwrap()
+                .contains("repos/envy404/exitbind/releases"),
+            "{case_id}: updater repository route"
+        );
+        let calls_text = fs::read_to_string(&calls).unwrap();
+        let installer_call = calls_text
+            .lines()
+            .find(|line| line.contains("install.sh"))
+            .unwrap_or_else(|| panic!("{case_id}: missing raw installer call: {calls_text}"));
+        let route = matrix::route(case["routeId"].as_str().unwrap());
+        let origin = matrix::row("origins", route["originId"].as_str().unwrap());
+        let expected_installer = format!(
+            "{}{}/install.sh",
+            origin["rawInstaller"].as_str().unwrap(),
+            valid
+        );
+        assert!(
+            installer_call.contains(&expected_installer),
+            "{installer_call}"
+        );
+        assert!(!installer_call.contains(malformed), "{installer_call}");
+        assert!(
+            !installer_call.contains(&discriminating_malformed),
+            "{installer_call}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    let stable_case = matrix::case("updater-stable-ignore-prerelease");
+    let stable_root = support::temp("updater-stable-prerelease");
+    let stable_bin = stable_root.join("bin");
+    let stable_prefix = stable_root.join("prefix");
+    fs::create_dir(&stable_bin).unwrap();
+    fs::create_dir(&stable_prefix).unwrap();
+    fake_curl(&stable_bin);
+    let stable_target = stable_prefix.join("exitbind");
+    binary(&stable_target, "0.17.0");
+    let stable_path = format!(
+        "{}:{}",
+        stable_bin.display(),
+        std::env::var("PATH").unwrap()
+    );
+    let ignored = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .arg("update")
+        .env("PATH", stable_path)
+        .env("HOME", &stable_root)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &stable_prefix)
+        .env("FAKE_RELEASE_TAG", stable_case["version"].as_str().unwrap())
+        .env("FAKE_RELEASE_PRERELEASE", "true")
+        .output()
+        .unwrap();
+    assert!(ignored.status.success(), "{ignored:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&Command::new(&stable_target).output().unwrap().stdout).trim(),
+        "0.17.0"
+    );
+    fs::remove_dir_all(stable_root).unwrap();
+
+    let upgrade_case = matrix::case("updater-prerelease-order");
+    let upgrade_root = support::temp("updater-valid-control");
+    let upgrade_bin = upgrade_root.join("bin");
+    let upgrade_prefix = upgrade_root.join("prefix");
+    fs::create_dir(&upgrade_bin).unwrap();
+    fs::create_dir(&upgrade_prefix).unwrap();
+    fake_curl(&upgrade_bin);
+    let upgrade_target = upgrade_prefix.join("exitbind");
+    binary(&upgrade_target, "0.17.0");
+    let upgrade_path = format!(
+        "{}:{}",
+        upgrade_bin.display(),
+        std::env::var("PATH").unwrap()
+    );
+    let upgraded = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .arg("update")
+        .env("PATH", upgrade_path)
+        .env("HOME", &upgrade_root)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &upgrade_prefix)
+        .env(
+            "FAKE_RELEASE_TAG",
+            upgrade_case["version"].as_str().unwrap(),
+        )
+        .output()
+        .unwrap();
+    assert!(upgraded.status.success(), "{upgraded:?}");
+    assert_eq!(
+        String::from_utf8_lossy(
+            &Command::new(&upgrade_target)
+                .arg("version")
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .trim(),
+        "0.18.0"
+    );
+    fs::remove_dir_all(upgrade_root).unwrap();
 }

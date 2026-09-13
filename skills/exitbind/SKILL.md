@@ -16,11 +16,15 @@ host owns models, tools, process execution, permissions, and merge authority.
 Never overwrite the host agent's native identity or claim that projected
 guidance proves discovery, activation, compliance, or isolation.
 
-For a material task, the lead first classifies the goal, dependencies, tools,
-role boundary, and actual check command. Keep tiny reversible work direct. When
-the governed path is selected, inspect the bridge end to end: source, projected
-skill/config, fresh-session discovery, invocation, observed behavior, and
-outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as
+For a material task, the lead first classifies the goal, dependencies, useful
+context, tools, roles, role boundary, and actual check command. Keep tiny,
+clear, reversible work direct. If the task is complex but has no material
+semantic-preservation risk, the lead performs only that readiness and keeps
+Holytail off. Tool and agent selection remains the lead's responsibility; this
+skill does not require a preparation artifact or a standalone Holytail install.
+When the governed path is selected, inspect the bridge end to end: source,
+projected skill/config, fresh-session discovery, invocation, observed behavior,
+and outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as
 authority; process survival or an agent's report is not acceptance.
 
 For material work, the routine progress narration is exactly:
@@ -37,9 +41,22 @@ reported-versus-observed check provenance. Bind every check, review, and lead
 decision to the current subject; stale or partial evidence must remain refused
 or blocked. Curiosity is non-blocking and cannot expand scope or become proof.
 
-For preservation-risk work, activate Holytail selectively and read back the
-same accepted invariants after implementation. Holytail preserves meaning but
-does not own final acceptance and does not create a second ledger.
+For preservation-risk work, activate Holytail selectively. Its narrow path is:
+
+1. Clarify the accepted behavior, invariants, allowed changes, ambiguity,
+   preservation risks, and evidence needed to demonstrate continuity.
+2. Freeze that accepted meaning and bind the obligations to the current
+   implementation subject before implementation.
+3. Preserve the frozen meaning during implementation; a minimizer may reduce
+   mechanism, but it cannot decide whether Holytail is needed or replace the
+   preservation check.
+4. Read back the same accepted meaning against the exact current subject after
+   implementation and observed checks.
+
+Trivial work has no Holytail ceremony. Holytail contributes preservation
+evidence only: it does not choose the goal, tools, or agents; it does not own
+final acceptance; it does not create a second ledger. A failed or missing
+invariant feeds the Exitbind lifecycle as refused or blocked.
 
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`

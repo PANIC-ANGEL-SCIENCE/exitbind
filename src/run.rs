@@ -149,7 +149,7 @@ pub fn next(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
         "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
         "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
         "assignments": crate::run_assignment::pending(&state)
-        ,"progress": crate::run_value::exit_progress(&state)
+        ,"progress": crate::run_progress::project(&state)
     }))
 }
 
@@ -285,7 +285,7 @@ where
             .as_u64()
             .ok_or("run state is missing version")?;
         if assignment["role"] == "lead" && outcome == "accepted" {
-            let assessment = crate::run_value::check_guard(&state)?;
+            let assessment = crate::run_exit::reduce(&state)?.assessment;
             if assessment.is_blocked() {
                 if assessment.has_refusal_evidence() {
                     let timestamp = nondecreasing(&last["timestamp"])?;
@@ -913,13 +913,13 @@ pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<
 pub(crate) fn human_status(
     loaded: &Loaded,
     ledger: &str,
-) -> Result<crate::run_value::HumanStatus, String> {
+) -> Result<crate::run_human::HumanStatus, String> {
     let (_, events, _) = load(loaded, ledger)?;
     let state = run_state::reduce(&events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
-    crate::run_value::human_status(&state, artifact_current)
+    crate::run_human::human_status(&state, artifact_current)
 }
 
 /// Build the typed read-only projection used by the default human explanation view.
@@ -927,13 +927,13 @@ pub(crate) fn human_explain(
     loaded: &Loaded,
     ledger: &str,
     event_id: Option<&str>,
-) -> Result<crate::run_value::HumanExplanation, String> {
+) -> Result<crate::run_human::HumanExplanation, String> {
     let (_, events, _) = load(loaded, ledger)?;
     let state = run_state::reduce(&events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
-    crate::run_value::human_explain(&state, event_id, artifact_current)
+    crate::run_human::human_explain(&state, event_id, artifact_current)
 }
 
 /// Generate a local redacted report from explicitly selected ledgers.  The
@@ -1156,7 +1156,7 @@ fn result(events: &[Value]) -> Result<Value, String> {
         "currentStage": state["currentStage"],
         "attempt": state["attempt"],
         "assignments": crate::run_assignment::pending(&state)
-        ,"progress": crate::run_value::exit_progress(&state)
+        ,"progress": crate::run_progress::project(&state)
     }))
 }
 

@@ -3,154 +3,18 @@
 //! The checked-run value boundary validates both caller-reported and locally
 //! observed results.  Observation execution itself lives in `run.rs`.
 
+use crate::run_exit::{CheckAssessment, CheckTarget};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 pub(crate) const CHECK_POLICY_VERSION: u64 = 1;
 pub(crate) const VALUE_REPORT_VERSION: u64 = 1;
 
-const SCOPE_WEIGHT: u64 = 15;
-const WORKER_WEIGHT: u64 = 25;
-const CHECK_WEIGHT: u64 = 15;
-const REVIEW_WEIGHT: u64 = 20;
-const LEAD_WEIGHT: u64 = 25;
-
-pub(crate) fn exit_progress(state: &Value) -> Value {
-    let applicable = state["version"] == 5 && state.get("checkPolicy").is_some();
-    if !applicable {
-        let (code, detail) = if state["version"] == 5 {
-            (
-                "unchecked_run",
-                "the v5 checked Exit Contract is not configured for this run",
-            )
-        } else {
-            (
-                "historical_run",
-                "historical run acceptance remains readable without current Exit Contract progress",
-            )
-        };
-        return json!({
-            "applicable": false,
-            "percent": Value::Null,
-            "state": "NOT_APPLICABLE",
-            "reason": {"code": code, "detail": detail},
-            "runStatus": state["status"]
-        });
-    }
-    let submissions = state["submissions"].as_array().cloned().unwrap_or_default();
-    let attempt = state["attempt"].as_u64().unwrap_or_default();
-    let current = submissions
-        .iter()
-        .filter(|event| event["attempt"] == attempt)
-        .collect::<Vec<_>>();
-    let worker_total = planned_count(state, "worker");
-    let worker_completed = current
-        .iter()
-        .filter(|event| event["role"] == "worker" && event["outcome"] == "completed")
-        .count();
-    let reviewer_total = planned_count(state, "reviewer");
-    let reviewer_completed = current
-        .iter()
-        .filter(|event| event["role"] == "reviewer" && event["outcome"] == "approved")
-        .count();
-    let scope_completed = submissions
-        .iter()
-        .any(|event| event["role"] == "lead" && event["outcome"] == "scoped");
-    let assessment = check_guard(state).ok();
-    let check_total = worker_total;
-    let check_completed = assessment.as_ref().map_or(0, |assessment| {
-        assessment
-            .targets
-            .iter()
-            .filter(|target| target.status == CheckTargetStatus::Passed)
-            .count()
-    });
-    let lead_completed = u64::from(state["status"] == "accepted");
-    let scope_earned = u64::from(scope_completed) * SCOPE_WEIGHT;
-    let worker_earned = proportional(WORKER_WEIGHT, worker_completed, worker_total);
-    let check_earned = proportional(CHECK_WEIGHT, check_completed, check_total);
-    let review_earned = proportional(REVIEW_WEIGHT, reviewer_completed, reviewer_total);
-    let lead_earned = lead_completed * LEAD_WEIGHT;
-    let percent = scope_earned + worker_earned + check_earned + review_earned + lead_earned;
-    let current_reason = assessment.as_ref().and_then(CheckAssessment::reason);
-    let (state_name, reason, detail) = if state["status"] == "accepted" {
-        (
-            "READY",
-            "accepted",
-            "current checked evidence, review, and lead acceptance are bound",
-        )
-    } else if current_reason == Some("check_failed") {
-        (
-            "REFUSED",
-            "check_failed",
-            "the frozen check reported failure",
-        )
-    } else if state["status"] == "rejected" {
-        (
-            "REFUSED",
-            "lead_rejected",
-            "the lead rejected the current transition",
-        )
-    } else if current_reason == Some("check_missing") || state["status"] == "blocked" {
-        (
-            "BLOCKED",
-            "check_missing",
-            "a required check or transition is missing or unresolved",
-        )
-    } else {
-        (
-            "IN_PROGRESS",
-            "prerequisites_incomplete",
-            "current Exit Path prerequisites are incomplete",
-        )
-    };
-    json!({
-        "applicable": true,
-        "percent": percent,
-        "state": state_name,
-        "reason": {"code": reason, "detail": detail},
-        "weights": {
-            "scope": SCOPE_WEIGHT,
-            "worker": WORKER_WEIGHT,
-            "check": CHECK_WEIGHT,
-            "review": REVIEW_WEIGHT,
-            "lead": LEAD_WEIGHT
-        },
-        "components": {
-            "scope": {"completed": u64::from(scope_completed), "total": 1, "earned": scope_earned},
-            "worker": {"completed": worker_completed, "total": worker_total, "earned": worker_earned},
-            "check": {"completed": check_completed, "total": check_total, "earned": check_earned},
-            "review": {"completed": reviewer_completed, "total": reviewer_total, "earned": review_earned},
-            "lead": {"completed": lead_completed, "total": 1, "earned": lead_earned}
-        }
-    })
-}
-
-fn planned_count(state: &Value, role: &str) -> usize {
-    state["plan"]["stages"].as_array().map_or(0, |stages| {
-        stages
-            .iter()
-            .flat_map(|stage| stage["agents"].as_array().into_iter().flatten())
-            .filter(|agent| agent["role"] == role)
-            .count()
-    })
-}
-
-fn proportional(weight: u64, completed: usize, total: usize) -> u64 {
-    if total == 0 {
-        0
-    } else if completed >= total {
-        weight
-    } else {
-        weight * completed as u64 / total as u64
-    }
-}
-
 const SHA_LEN: usize = 64;
 
 #[cfg(test)]
 mod progress_tests {
-    use super::{check_guard, exit_progress};
+    use crate::{run_exit, run_progress};
     use serde_json::json;
 
     #[test]
@@ -171,7 +35,7 @@ mod progress_tests {
             "checks":[],
             "protections":[]
         });
-        assert_eq!(exit_progress(&base)["state"], "IN_PROGRESS");
+        assert_eq!(run_progress::project(&base)["state"], "IN_PROGRESS");
         let mut failed = base.clone();
         failed["submissions"] = json!([{
             "attempt":2,
@@ -184,14 +48,17 @@ mod progress_tests {
             "subjectSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "exitCode":1
         }]);
-        assert_eq!(exit_progress(&failed)["state"], "REFUSED");
-        assert_eq!(exit_progress(&failed)["reason"]["code"], "check_failed");
+        assert_eq!(run_progress::project(&failed)["state"], "REFUSED");
+        assert_eq!(
+            run_progress::project(&failed)["reason"]["code"],
+            "check_failed"
+        );
         let mut missing = base;
         missing["submissions"] = failed["submissions"].clone();
-        assert_eq!(exit_progress(&missing)["state"], "BLOCKED");
+        assert_eq!(run_progress::project(&missing)["state"], "BLOCKED");
         let mut reworked = missing;
         reworked["attempt"] = json!(3);
-        assert_eq!(exit_progress(&reworked)["state"], "IN_PROGRESS");
+        assert_eq!(run_progress::project(&reworked)["state"], "IN_PROGRESS");
     }
 
     #[test]
@@ -211,7 +78,7 @@ mod progress_tests {
             (&historical, "historical_run"),
             (&unchecked, "unchecked_run"),
         ] {
-            let progress = exit_progress(state);
+            let progress = run_progress::project(state);
             assert_eq!(progress["applicable"], false);
             assert!(progress["percent"].is_null());
             assert_eq!(progress["state"], "NOT_APPLICABLE");
@@ -250,19 +117,19 @@ mod progress_tests {
             ],
             "protections": [{"attempt": 1, "reason": "check_failed"}]
         });
-        let assessment = check_guard(&state).unwrap();
+        let assessment = run_exit::assess(&state).unwrap();
         assert_eq!(assessment.reason(), Some("check_missing"));
-        assert_eq!(exit_progress(&state)["state"], "BLOCKED");
-        assert_eq!(exit_progress(&state)["percent"], 32);
+        assert_eq!(run_progress::project(&state)["state"], "BLOCKED");
+        assert_eq!(run_progress::project(&state)["percent"], 32);
 
         state["checks"] = json!([
             {"targetEventSha256": worker_a, "subjectSha256": current_subject, "exitCode": 0},
             {"targetEventSha256": worker_b, "subjectSha256": current_subject, "exitCode": 0}
         ]);
-        let assessment = check_guard(&state).unwrap();
+        let assessment = run_exit::assess(&state).unwrap();
         assert_eq!(assessment.reason(), None);
-        assert_eq!(exit_progress(&state)["state"], "IN_PROGRESS");
-        assert_eq!(exit_progress(&state)["percent"], 40);
+        assert_eq!(run_progress::project(&state)["state"], "IN_PROGRESS");
+        assert_eq!(run_progress::project(&state)["percent"], 40);
     }
 
     #[test]
@@ -295,7 +162,7 @@ mod progress_tests {
             ],
             "protections": []
         });
-        let progress = exit_progress(&state);
+        let progress = run_progress::project(&state);
         assert_eq!(progress["applicable"], true);
         assert_eq!(progress["percent"], 57);
         assert_eq!(progress["weights"]["worker"], 25);
@@ -350,88 +217,11 @@ enum EvidenceStatus {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CheckTargetStatus {
-    Missing,
-    Passed,
-    Failed,
-}
-
-impl CheckTargetStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Missing => "missing",
-            Self::Passed => "passed",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct CheckTarget {
-    target_event_sha256: String,
-    status: CheckTargetStatus,
-    check_event_sha256: Option<String>,
-    exit_code: Option<u64>,
-    result: Option<Value>,
-    acquisition: Option<String>,
-}
-
-impl CheckTarget {
-    fn value(&self) -> Value {
-        let mut value = json!({
-            "targetEventSha256": self.target_event_sha256,
-            "status": self.status.as_str(),
-        });
-        if let Some(check_event_sha256) = &self.check_event_sha256 {
-            value["checkEventSha256"] = json!(check_event_sha256);
-        }
-        if let Some(exit_code) = self.exit_code {
-            value["exitCode"] = json!(exit_code);
-        }
-        if let Some(result) = &self.result {
-            value["result"] = result.clone();
-        }
-        if let Some(acquisition) = &self.acquisition {
-            value["acquisition"] = json!(acquisition);
-        }
-        value
-    }
-
-    fn protection_value(&self) -> Value {
-        let mut value = json!({
-            "targetEventSha256": self.target_event_sha256,
-            "status": self.status.as_str(),
-        });
-        if let Some(check_event_sha256) = &self.check_event_sha256 {
-            value["checkEventSha256"] = json!(check_event_sha256);
-        }
-        if let Some(result) = &self.result {
-            value["result"] = result.clone();
-        } else if let Some(exit_code) = self.exit_code {
-            value["exitCode"] = json!(exit_code);
-        }
-        value
-    }
-
-    fn is_missing(&self) -> bool {
-        self.status == CheckTargetStatus::Missing
-    }
-
-    fn is_failed(&self) -> bool {
-        self.status == CheckTargetStatus::Failed
-    }
-
-    fn is_observed(&self) -> bool {
-        self.check_event_sha256.is_some()
-    }
-}
-
-fn check_result(event: &Value) -> Option<Value> {
+pub(crate) fn check_result(event: &Value) -> Option<Value> {
     event.get("result").cloned()
 }
 
-fn check_acquisition(event: &Value) -> Option<String> {
+pub(crate) fn check_acquisition(event: &Value) -> Option<String> {
     Some(
         event["acquisition"]
             .as_str()
@@ -440,7 +230,7 @@ fn check_acquisition(event: &Value) -> Option<String> {
     )
 }
 
-fn check_exit_code(event: &Value) -> Option<u64> {
+pub(crate) fn check_exit_code(event: &Value) -> Option<u64> {
     event["exitCode"].as_u64().or_else(|| {
         (event["result"]["kind"] == "exit")
             .then(|| event["result"]["code"].as_u64())
@@ -448,7 +238,7 @@ fn check_exit_code(event: &Value) -> Option<u64> {
     })
 }
 
-fn check_passed(event: &Value) -> bool {
+pub(crate) fn check_passed(event: &Value) -> bool {
     check_exit_code(event) == Some(0)
 }
 
@@ -1050,133 +840,6 @@ fn validate_check_evidence(value: &Value, line: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// A checked run can only accept after every current-attempt worker completion
-/// has a latest matching zero exit-code result.  This function is pure over
-/// reduced state so replay and live mutation share exactly the same guard.
-pub(crate) fn check_guard(state: &Value) -> Result<CheckAssessment, String> {
-    let Some(policy_value) = state.get("checkPolicy") else {
-        return Ok(CheckAssessment::unconfigured());
-    };
-    let policy =
-        policy_from_value(policy_value, 0).map_err(|error| error.replacen("line 0", "state", 1))?;
-    let expected_workers = state["plan"]["stages"]
-        .as_array()
-        .ok_or("run state plan stages are invalid")?
-        .iter()
-        .map(|stage| {
-            stage["agents"].as_array().map_or(0, |agents| {
-                agents
-                    .iter()
-                    .filter(|agent| agent["role"] == "worker")
-                    .count()
-            })
-        })
-        .sum::<usize>();
-    let attempt = state["attempt"]
-        .as_u64()
-        .ok_or("run state attempt is invalid")?;
-    let submissions = state["submissions"]
-        .as_array()
-        .ok_or("run state submissions are invalid")?;
-    let empty_checks = Vec::new();
-    let checks = state["checks"].as_array().unwrap_or(&empty_checks);
-    let current_subject = state["subject"]["sha256"].as_str();
-    let targets: Vec<CheckTarget> = submissions
-        .iter()
-        .filter(|submission| {
-            submission["attempt"] == attempt
-                && submission["role"] == "worker"
-                && submission["outcome"] == "completed"
-        })
-        .map(|submission| {
-            let target = submission["eventSha256"].clone();
-            let latest = checks.iter().rfind(|check| {
-                check["targetEventSha256"] == target
-                    && (state["version"] != 5 || check["subjectSha256"].as_str() == current_subject)
-            });
-            let target_event_sha256 = target
-                .as_str()
-                .map(str::to_owned)
-                .ok_or("worker submission event hash is invalid")?;
-            Ok::<CheckTarget, String>(match latest {
-                None => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Missing,
-                    check_event_sha256: None,
-                    exit_code: None,
-                    result: None,
-                    acquisition: None,
-                },
-                Some(check) if check_passed(check) => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Passed,
-                    check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
-                    exit_code: check_exit_code(check),
-                    result: check_result(check),
-                    acquisition: check_acquisition(check),
-                },
-                Some(check) => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Failed,
-                    check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
-                    exit_code: check_exit_code(check),
-                    result: check_result(check),
-                    acquisition: check_acquisition(check),
-                },
-            })
-        })
-        .collect::<Result<_, _>>()?;
-    let incomplete = expected_workers == 0 || targets.len() < expected_workers;
-    Ok(CheckAssessment::configured(policy, targets, incomplete))
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CheckAssessment {
-    pub(crate) policy: Option<CheckPolicy>,
-    targets: Vec<CheckTarget>,
-    pub(crate) incomplete: bool,
-}
-
-impl CheckAssessment {
-    fn unconfigured() -> Self {
-        Self {
-            policy: None,
-            targets: Vec::new(),
-            incomplete: false,
-        }
-    }
-
-    fn configured(policy: CheckPolicy, targets: Vec<CheckTarget>, incomplete: bool) -> Self {
-        Self {
-            policy: Some(policy),
-            targets,
-            incomplete,
-        }
-    }
-
-    pub(crate) fn reason(&self) -> Option<&'static str> {
-        if self.targets.iter().any(CheckTarget::is_missing) {
-            Some("check_missing")
-        } else if self.targets.iter().any(CheckTarget::is_failed) {
-            Some("check_failed")
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn is_blocked(&self) -> bool {
-        self.incomplete || self.reason().is_some()
-    }
-
-    pub(crate) fn has_refusal_evidence(&self) -> bool {
-        !self.incomplete && self.reason().is_some()
-    }
-
-    pub(crate) fn targets_for_receipt(&self) -> Vec<Value> {
-        self.targets.iter().map(CheckTarget::value).collect()
-    }
-}
-
 pub(crate) fn validate_check_target(state: &Value, target: &str) -> Result<Value, String> {
     if !is_sha(Some(target)) {
         return Err("--target must be a lowercase SHA-256 event hash".into());
@@ -1253,8 +916,8 @@ pub(crate) fn validate_protection_against_state(
             "invalid run ledger line {line}: protection target is out of order"
         ));
     }
-    let assessment =
-        check_guard(state).map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+    let assessment = crate::run_exit::assess(state)
+        .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
     if !assessment.has_refusal_evidence() {
         return Err(format!(
             "invalid run ledger line {line}: protection has no current complete check refusal"
@@ -1296,7 +959,7 @@ pub(crate) fn protection_event(
     previous_event: &Value,
     timestamp: &str,
 ) -> Result<Value, String> {
-    let assessment = check_guard(state)?;
+    let assessment = crate::run_exit::assess(state)?;
     let reason = assessment
         .reason()
         .ok_or("acceptance is not blocked by a configured check")?;
@@ -1733,8 +1396,12 @@ fn protection_from_value(
     })
 }
 
-pub(crate) fn human_status(state: &Value, artifact_current: bool) -> Result<HumanStatus, String> {
-    let current_attempt = required_u64(state, "attempt", "run state")?;
+pub(crate) fn human_status_from_kernel(
+    state: &Value,
+    artifact_current: bool,
+    kernel: &crate::run_exit::ExitState,
+) -> Result<HumanStatus, String> {
+    let current_attempt = kernel.attempt;
     let submissions = state["submissions"]
         .as_array()
         .ok_or("validated run state submissions are invalid")?;
@@ -1804,7 +1471,7 @@ pub(crate) fn human_status(state: &Value, artifact_current: bool) -> Result<Huma
         })
         .map(|submission| record_from_submission(state, submission))
         .collect::<Result<Vec<_>, String>>()?;
-    let assessment = check_guard(state)?;
+    let assessment = kernel.assessment.clone();
     let checks = human_checks(
         &workers,
         &assessment,
@@ -1856,45 +1523,11 @@ pub(crate) fn human_status(state: &Value, artifact_current: bool) -> Result<Huma
     })
 }
 
-pub(crate) fn human_explain(
-    state: &Value,
-    event_id: Option<&str>,
-    artifact_current: bool,
-) -> Result<HumanExplanation, String> {
-    let status = human_status(state, artifact_current)?;
-    let protection = event_id
-        .map(|wanted| {
-            status
-                .protections
-                .iter()
-                .find(|event| event.event_sha256 == wanted)
-                .cloned()
-                .ok_or_else(|| {
-                    "explanation target is not a protection event in this run".to_owned()
-                })
-        })
-        .transpose()?;
-    let guidance = if protection.is_some() {
-        if matches!(state["version"].as_u64(), Some(4 | 5)) {
-            "observe the frozen check locally or report its host result for every current worker completion; repair or rework if needed, then request review and acceptance again; a passing result still requires authority"
-        } else {
-            "rerun the configured check in its host and report the actual result for every current worker completion; repair or rework if needed, then request review and acceptance again; a passing report still requires authority"
-        }
-    } else {
-        "inspect the exact evidence references before choosing repair, rework, or acceptance"
-    };
-    Ok(HumanExplanation {
-        status,
-        protection,
-        guidance,
-    })
-}
-
 /// A status view intentionally reports only ledger-derived facts.  Disk
 /// revalidation is performed by `run`; callers that have not revalidated bytes
 /// must not label an artifact "current".
 pub(crate) fn status(state: &Value, artifact_current: Option<bool>) -> Result<Value, String> {
-    let assessment = check_guard(state)?;
+    let assessment = crate::run_exit::reduce(state)?.assessment;
     let submissions = state["submissions"]
         .as_array()
         .ok_or("run state submissions are invalid")?;
@@ -2140,7 +1773,7 @@ pub(crate) fn aggregate(states: &[Value]) -> Result<Value, String> {
         let protections = state["protections"]
             .as_array()
             .unwrap_or(&empty_protections);
-        let assessment = check_guard(state)?;
+        let assessment = crate::run_exit::assess(state)?;
         let group = report
             .groups
             .get_mut(origin)

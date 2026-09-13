@@ -2,10 +2,37 @@ use crate::config::{self, Loaded};
 use crate::{hash, project_path, run_error};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
+
+pub(crate) enum ExitPathError {
+    Failure(String),
+    Decision(crate::run_exit::ExitDecision),
+}
+
+impl From<String> for ExitPathError {
+    fn from(error: String) -> Self {
+        Self::Failure(error)
+    }
+}
+
+impl From<&str> for ExitPathError {
+    fn from(error: &str) -> Self {
+        Self::Failure(error.to_owned())
+    }
+}
+
+impl fmt::Display for ExitPathError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Failure(error) => formatter.write_str(error),
+            Self::Decision(decision) => formatter.write_str(decision.wire().2),
+        }
+    }
+}
 
 pub fn write(
     path: &str,
@@ -105,30 +132,18 @@ pub fn verify(path: &str, loaded: &Loaded) -> Result<Value, String> {
 }
 
 /// Emit the Exit Path receipt for a fully accepted v5 checked run.
-pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
+pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPathError> {
     let (path, events, source) = crate::run_ledger::load(loaded, ledger)?;
     let state = crate::run_state::reduce(&events)?;
     crate::run::assert_current_for_receipt(loaded, &state)?;
-    if state["version"] != 5 || state["status"] != "accepted" {
-        return Err("Exit Path receipt requires an accepted v5 checked run".into());
+    let kernel = crate::run_exit::reduce(&state)?;
+    let decision = kernel.decision();
+    if !matches!(decision, crate::run_exit::ExitDecision::Ready) {
+        return Err(ExitPathError::Decision(decision));
     }
-    if state.get("checkPolicy").is_none() {
-        return Err("Exit Path receipt requires a configured check policy".into());
-    }
-    let assessment = crate::run_value::check_guard(&state)?;
-    if assessment.is_blocked() {
-        return Err(
-            "Exit Path receipt refused: current check evidence is incomplete or failed".into(),
-        );
-    }
-    let submissions = state["submissions"]
-        .as_array()
-        .ok_or("run submissions are invalid")?;
-    let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
-    let current = submissions
-        .iter()
-        .filter(|event| event["attempt"] == attempt)
-        .collect::<Vec<_>>();
+    let (outcome, reason, detail) = decision.wire();
+    let assessment = kernel.assessment.clone();
+    let current = kernel.current_submissions.iter().collect::<Vec<_>>();
     let reviewer = current
         .iter()
         .rev()
@@ -158,8 +173,8 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, String> 
         "version": 1,
         "format": "exit-path-v1",
         "product": "exitbind",
-        "outcome": "READY",
-        "reason": {"code": "accepted", "detail": "current checked evidence, review, and lead acceptance are bound"},
+        "outcome": outcome,
+        "reason": {"code": reason, "detail": detail},
         "producer": crate::producer::evidence(),
         "run": {
             "path": config::rel(&loaded.state_root, &path.expected)?,
@@ -196,10 +211,16 @@ pub(crate) fn verify_exit_path(path: &str, loaded: &Loaded) -> Result<Value, Str
     match crate::run_ledger::load(loaded, ledger) {
         Ok((_, events, ledger_source)) => match crate::run_state::reduce(&events) {
             Ok(state) => {
-                if state["version"] != 5 || state["status"] != "accepted" {
+                let kernel = crate::run_exit::reduce(&state);
+                if !kernel.as_ref().is_ok_and(|kernel| {
+                    matches!(kernel.decision(), crate::run_exit::ExitDecision::Ready)
+                }) {
                     mismatches.push("run is not an accepted v5 checked run".into());
                 }
-                if state.get("checkPolicy").is_none() {
+                if kernel
+                    .as_ref()
+                    .is_ok_and(|kernel| kernel.assessment.policy.is_none())
+                {
                     mismatches.push("run has no configured check policy".into());
                 }
                 if receipt["run"]["runId"] != state["runId"] {
@@ -244,7 +265,8 @@ pub(crate) fn verify_exit_path(path: &str, loaded: &Loaded) -> Result<Value, Str
                         mismatches.push(format!("canonical receipt reconstruction failed: {error}"))
                     }
                 }
-                if let Ok(assessment) = crate::run_value::check_guard(&state) {
+                if let Ok(kernel) = kernel {
+                    let assessment = kernel.assessment;
                     if assessment.is_blocked() {
                         mismatches.push("check evidence is incomplete or failed".into());
                     }
@@ -255,9 +277,10 @@ pub(crate) fn verify_exit_path(path: &str, loaded: &Loaded) -> Result<Value, Str
         Err(error) => mismatches.push(format!("ledger unavailable: {error}")),
     }
     let valid = mismatches.is_empty();
+    let outcome = crate::run_exit::receipt_decision(valid).wire().0;
     Ok(json!({
         "valid": valid,
-        "outcome": if valid { "READY" } else { "REFUSED" },
+        "outcome": outcome,
         "reason": if valid {
             json!({"code":"verified", "detail":"receipt matches the exact current ledger state"})
         } else {

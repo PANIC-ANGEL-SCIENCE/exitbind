@@ -51,13 +51,7 @@ const RETENTION_VALUES: &[&str] = &["task", "until-reviewed", "until-revoked", "
 const CROSS_CONTEXT_VALUES: &[&str] = &["none", "same-scope", "protocol-only", "synthetic-only"];
 
 pub fn load(path: Option<&str>) -> Result<Loaded, String> {
-    let requested = path.unwrap_or_else(|| {
-        if crate::producer::exitbind_surface() {
-            "exitbind.json"
-        } else {
-            "soulmate.json"
-        }
-    });
+    let requested = path.unwrap_or_else(|| crate::compatibility::profile().config);
     if requested.trim().is_empty() {
         return Err("configuration path must be a non-empty string".into());
     }
@@ -66,11 +60,7 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
         if error.kind() == std::io::ErrorKind::NotFound {
             format!(
                 "configuration not found: {requested}; run '{}' init first",
-                if crate::producer::exitbind_surface() {
-                    "exitbind"
-                } else {
-                    "soulmate"
-                }
+                crate::compatibility::profile().caller
             )
         } else {
             error.to_string()

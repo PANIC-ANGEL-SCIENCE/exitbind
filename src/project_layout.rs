@@ -26,7 +26,7 @@ pub(crate) const CANONICAL_STATE_DIRS: [&str; 6] = [
 /// tests. New Exitbind invocations select their own namespace at this small
 /// boundary so an old `soulmate` invocation never rewrites its layout.
 pub(crate) fn exitbind_surface() -> bool {
-    crate::producer::exitbind_surface()
+    crate::compatibility::is_exitbind()
 }
 
 pub(crate) fn agents_dir() -> &'static str {
@@ -66,11 +66,7 @@ pub(crate) fn state_dirs() -> [&'static str; 6] {
 }
 
 pub(crate) fn state_namespace() -> &'static str {
-    if exitbind_surface() {
-        ".exitbind"
-    } else {
-        ".soulmate"
-    }
+    crate::compatibility::profile().state
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

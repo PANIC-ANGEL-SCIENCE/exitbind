@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "exitbind-rename-compatibility-v2",
+  "contractDigest": "8197bf54e22c5aeffeb97c883e20177b0a4b89613038e0a2f52c35e856320eb1",
+  "amendmentDigest": "6b8538f9f5fbf7b0f477d40462b8be76329f12170e050daa888899d88ad56d60",
+  "baselineCommit": "773d11658ca6cc632001d3308c7171fef7cbc752",
+  "baselineTree": "cac6e68955be1b0bed9f08463f35585de65c635e",
+  "requiredBoundaryIds": [
+    "installer-identity-routing",
+    "updater-semver-boundaries",
+    "runtime-path-preservation",
+    "persisted-producer-format",
+    "proof-binary-routing",
+    "release-asset-routing"
+  ],
+  "surfaces": [
+    {
+      "id": "current-exitbind",
+      "callerBasename": "exitbind",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "pathId": "current-defaults",
+      "installedCommands": ["exitbind"]
+    },
+    {
+      "id": "legacy-soulmate",
+      "callerBasename": "soulmate",
+      "product": "soulmate",
+      "producerId": "soulmate-v1-write",
+      "pathId": "legacy-defaults",
+      "installedCommands": ["soulmate"]
+    }
+  ],
+  "repositories": [
+    {"id": "canonical-current", "kind": "canonical-current", "value": "envy404/exitbind"},
+    {"id": "canonical-legacy", "kind": "canonical-legacy", "value": "envy404/soulmate"},
+    {"id": "custom-example", "kind": "custom", "value": "example/project"}
+  ],
+  "origins": [
+    {
+      "id": "current-updater",
+      "callerSurfaceId": "current-exitbind",
+      "installPrefixEnv": "EXITBIND_INSTALL_PREFIX",
+      "api": "https://api.github.com/repos/envy404/exitbind/releases?per_page=20",
+      "rawInstaller": "https://raw.githubusercontent.com/envy404/exitbind/"
+    },
+    {
+      "id": "legacy-updater",
+      "callerSurfaceId": "legacy-soulmate",
+      "installPrefixEnv": "SOULMATE_INSTALL_PREFIX",
+      "api": "https://api.github.com/repos/envy404/soulmate/releases?per_page=20",
+      "rawInstaller": "https://raw.githubusercontent.com/envy404/soulmate/"
+    }
+  ],
+  "paths": [
+    {
+      "id": "current-defaults",
+      "defaultConfig": "exitbind.json",
+      "defaultControl": "exitbind",
+      "defaultState": ".exitbind",
+      "legacyConfig": "soulmate.json",
+      "legacyControl": "soulmate",
+      "legacyState": ".soulmate"
+    },
+    {
+      "id": "legacy-defaults",
+      "defaultConfig": "soulmate.json",
+      "defaultControl": "soulmate",
+      "defaultState": ".soulmate",
+      "legacyConfig": "soulmate.json",
+      "legacyControl": "soulmate",
+      "legacyState": ".soulmate"
+    }
+  ],
+  "producers": [
+    {
+      "id": "exitbind-v5",
+      "name": "exitbind",
+      "eventFormat": "v5",
+      "historical": false,
+      "writable": true
+    },
+    {
+      "id": "soulmate-v1-write",
+      "name": "soulmate",
+      "eventFormat": "v1",
+      "historical": false,
+      "writable": true
+    },
+    {
+      "id": "historical-soulmate-v1-v4",
+      "name": "soulmate",
+      "eventFormat": "v1-v4",
+      "historical": true,
+      "writable": false
+    }
+  ],
+  "producerControls": [
+    {
+      "id": "producer-current-v5-write",
+      "producerId": "exitbind-v5",
+      "callerSurfaceId": "current-exitbind",
+      "operation": "write",
+      "versions": [5]
+    },
+    {
+      "id": "producer-legacy-v1-write",
+      "producerId": "soulmate-v1-write",
+      "callerSurfaceId": "legacy-soulmate",
+      "operation": "write",
+      "versions": [1]
+    },
+    {
+      "id": "producer-historical-v1-v4-read",
+      "producerId": "historical-soulmate-v1-v4",
+      "callerSurfaceId": "legacy-soulmate",
+      "operation": "read",
+      "versions": [1, 2, 3, 4]
+    }
+  ],
+  "releaseLines": [
+    {
+      "id": "historical-pre-017",
+      "selectionRule": "canonical legacy releases before v0.17 retain soulmate assets and name",
+      "versions": ["v0.12.0", "v0.16.0", "v0.16.999-rc.2+build.7"],
+      "assetPrefix": "soulmate"
+    },
+    {
+      "id": "current-bridge-017-plus",
+      "selectionRule": "canonical legacy bridge releases at or after v0.17 use exitbind assets and retain both installed names",
+      "versions": ["v0.17.0-rc.1", "v0.17.0", "v0.17.0+build.7", "v0.18.0"],
+      "assetPrefix": "exitbind"
+    },
+    {
+      "id": "malformed-current-fallback",
+      "selectionRule": "installer malformed v0.16 tags use the current bridge asset and both installed names",
+      "versions": ["v0.16.00", "v0.16"],
+      "assetPrefix": "exitbind"
+    },
+    {
+      "id": "custom-legacy",
+      "selectionRule": "custom repositories bypass the canonical bridge and preserve legacy assets and name",
+      "versions": ["v0.12.0", "v0.17.0"],
+      "assetPrefix": "soulmate"
+    }
+  ],
+  "routes": [
+    {
+      "id": "current-canonical",
+      "callerSurfaceId": "current-exitbind",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "originId": "current-updater",
+      "repositoryId": "canonical-current",
+      "fetchRepositoryId": "canonical-current",
+      "releaseLineId": "current-bridge-017-plus",
+      "assetPrefix": "exitbind",
+      "installedCommands": ["exitbind"],
+      "resultSurfaceId": "current-exitbind"
+    },
+    {
+      "id": "canonical-legacy-historical",
+      "callerSurfaceId": "legacy-soulmate",
+      "product": "soulmate",
+      "producerId": "soulmate-v1-write",
+      "originId": "legacy-updater",
+      "repositoryId": "canonical-legacy",
+      "fetchRepositoryId": "canonical-current",
+      "releaseLineId": "historical-pre-017",
+      "assetPrefix": "soulmate",
+      "installedCommands": ["soulmate"],
+      "resultSurfaceId": "legacy-soulmate"
+    },
+    {
+      "id": "canonical-legacy-current",
+      "callerSurfaceId": "legacy-soulmate",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "originId": "legacy-updater",
+      "repositoryId": "canonical-legacy",
+      "fetchRepositoryId": "canonical-current",
+      "releaseLineId": "current-bridge-017-plus",
+      "assetPrefix": "exitbind",
+      "installedCommands": ["soulmate", "exitbind"],
+      "resultSurfaceId": "current-exitbind"
+    },
+    {
+      "id": "canonical-legacy-malformed",
+      "callerSurfaceId": "legacy-soulmate",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "originId": "legacy-updater",
+      "repositoryId": "canonical-legacy",
+      "fetchRepositoryId": "canonical-current",
+      "releaseLineId": "malformed-current-fallback",
+      "assetPrefix": "exitbind",
+      "installedCommands": ["soulmate", "exitbind"],
+      "resultSurfaceId": "current-exitbind"
+    },
+    {
+      "id": "custom-legacy",
+      "callerSurfaceId": "legacy-soulmate",
+      "product": "soulmate",
+      "producerId": "soulmate-v1-write",
+      "originId": "legacy-updater",
+      "repositoryId": "custom-example",
+      "fetchRepositoryId": "custom-example",
+      "releaseLineId": "custom-legacy",
+      "assetPrefix": "soulmate",
+      "installedCommands": ["soulmate"],
+      "resultSurfaceId": "legacy-soulmate"
+    },
+    {
+      "id": "custom-current",
+      "callerSurfaceId": "current-exitbind",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "originId": "current-updater",
+      "repositoryId": "custom-example",
+      "fetchRepositoryId": "custom-example",
+      "releaseLineId": "current-bridge-017-plus",
+      "assetPrefix": "exitbind",
+      "installedCommands": ["exitbind"],
+      "resultSurfaceId": "current-exitbind"
+    },
+    {
+      "id": "partial-exitbind-custom-legacy",
+      "callerSurfaceId": "current-exitbind",
+      "product": "exitbind",
+      "producerId": "exitbind-v5",
+      "originId": "current-updater",
+      "repositoryId": "custom-example",
+      "fetchRepositoryId": "custom-example",
+      "releaseLineId": "current-bridge-017-plus",
+      "assetPrefix": "exitbind",
+      "installedCommands": ["exitbind"],
+      "resultSurfaceId": "current-exitbind"
+    }
+  ],
+  "cases": [
+    {"id": "installer-only-exitbind-v017", "kind": "installer", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-conflicting-namespaces", "kind": "installer", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-partial-exitbind-custom-legacy", "kind": "installer", "routeId": "partial-exitbind-custom-legacy", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v012", "kind": "installer", "routeId": "canonical-legacy-historical", "version": "v0.12.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v016", "kind": "installer", "routeId": "canonical-legacy-historical", "version": "v0.16.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v016-build", "kind": "installer", "routeId": "canonical-legacy-historical", "version": "v0.16.999-rc.2+build.7", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v01600", "kind": "installer", "routeId": "canonical-legacy-malformed", "version": "v0.16.00", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v016-short", "kind": "installer", "routeId": "canonical-legacy-malformed", "version": "v0.16", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v017-rc1", "kind": "installer", "routeId": "canonical-legacy-current", "version": "v0.17.0-rc.1", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v017", "kind": "installer", "routeId": "canonical-legacy-current", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v017-build", "kind": "installer", "routeId": "canonical-legacy-current", "version": "v0.17.0+build.7", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-legacy-v018", "kind": "installer", "routeId": "canonical-legacy-current", "version": "v0.18.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-custom-legacy-pre017", "kind": "installer", "routeId": "custom-legacy", "version": "v0.12.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-custom-legacy-v017", "kind": "installer", "routeId": "custom-legacy", "version": "v0.17.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "installer-identity-routing"},
+    {"id": "installer-custom-current", "kind": "installer", "routeId": "custom-current", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "installer-identity-routing"},
+    {"id": "updater-v01600-reject", "kind": "updater", "routeId": "current-canonical", "version": "v0.16.00", "expectedSurfaceId": "current-exitbind", "boundaryId": "updater-semver-boundaries"},
+    {"id": "updater-build-reject", "kind": "updater", "routeId": "current-canonical", "version": "v0.18.0-rc.1+build.7", "expectedSurfaceId": "current-exitbind", "boundaryId": "updater-semver-boundaries"},
+    {"id": "updater-stable-ignore-prerelease", "kind": "updater", "routeId": "current-canonical", "version": "v0.18.0-rc.1", "expectedSurfaceId": "current-exitbind", "boundaryId": "updater-semver-boundaries"},
+    {"id": "updater-prerelease-order", "kind": "updater", "routeId": "current-canonical", "version": "v0.18.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "updater-semver-boundaries"},
+    {"id": "runtime-current-defaults", "kind": "runtime", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "runtime-path-preservation"},
+    {"id": "runtime-legacy-defaults", "kind": "runtime", "routeId": "canonical-legacy-historical", "version": "v0.16.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "runtime-path-preservation"},
+    {"id": "runtime-explicit-legacy-paths", "kind": "runtime", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "runtime-path-preservation"},
+    {"id": "producer-historical-v1-v4", "kind": "producer", "routeId": "canonical-legacy-historical", "version": "v0.16.0", "expectedSurfaceId": "legacy-soulmate", "boundaryId": "persisted-producer-format"},
+    {"id": "producer-current-v5", "kind": "producer", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "persisted-producer-format"},
+    {"id": "proof-claims", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-ci", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-release", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-ci-refusal", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-release-refusal", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-wsl", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "release-assets-current", "kind": "release", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "release-asset-routing"}
+  ],
+  "caseOwners": [
+    {"id": "installer-only-exitbind-v017", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-conflicting-namespaces", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-partial-exitbind-custom-legacy", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v012", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v016", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v016-build", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v01600", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v016-short", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v017-rc1", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v017", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v017-build", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-legacy-v018", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-custom-legacy-pre017", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-custom-legacy-v017", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "installer-custom-current", "field": "routes", "test": "tests/legacy_installer_bridge.rs"},
+    {"id": "updater-v01600-reject", "field": "origins", "test": "tests/update.rs + src/update.rs#[cfg(test)]"},
+    {"id": "updater-build-reject", "field": "origins", "test": "tests/update.rs + src/update.rs#[cfg(test)]"},
+    {"id": "updater-stable-ignore-prerelease", "field": "origins", "test": "tests/update.rs + src/update.rs#[cfg(test)]"},
+    {"id": "updater-prerelease-order", "field": "origins", "test": "tests/update.rs + src/update.rs#[cfg(test)]"},
+    {"id": "runtime-current-defaults", "field": "paths", "test": "tests/compatibility_matrix.rs"},
+    {"id": "runtime-legacy-defaults", "field": "paths", "test": "tests/compatibility_matrix.rs"},
+    {"id": "runtime-explicit-legacy-paths", "field": "paths", "test": "tests/compatibility_matrix.rs"},
+    {"id": "producer-historical-v1-v4", "field": "producerControls", "test": "tests/compatibility_matrix.rs"},
+    {"id": "producer-current-v5", "field": "producerControls", "test": "tests/compatibility_matrix.rs"},
+    {"id": "proof-claims", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-ci", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-release", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-ci-refusal", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-release-refusal", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-wsl", "field": "proof.invocations", "test": "tests/compatibility_matrix.rs"},
+    {"id": "release-assets-current", "field": "releaseLines", "test": "tests/compatibility_matrix.rs"}
+  ],
+  "boundaries": [
+    {"id": "installer-identity-routing", "kind": "installer", "caseIds": ["installer-only-exitbind-v017", "installer-conflicting-namespaces", "installer-partial-exitbind-custom-legacy", "installer-legacy-v012", "installer-legacy-v016", "installer-legacy-v016-build", "installer-legacy-v01600", "installer-legacy-v016-short", "installer-legacy-v017-rc1", "installer-legacy-v017", "installer-legacy-v017-build", "installer-legacy-v018", "installer-custom-legacy-pre017", "installer-custom-legacy-v017", "installer-custom-current"]},
+    {"id": "updater-semver-boundaries", "kind": "updater", "caseIds": ["updater-v01600-reject", "updater-build-reject", "updater-stable-ignore-prerelease", "updater-prerelease-order"]},
+    {"id": "runtime-path-preservation", "kind": "runtime", "caseIds": ["runtime-current-defaults", "runtime-legacy-defaults", "runtime-explicit-legacy-paths"]},
+    {"id": "persisted-producer-format", "kind": "producer", "caseIds": ["producer-historical-v1-v4", "producer-current-v5"]},
+    {"id": "proof-binary-routing", "kind": "proof", "caseIds": ["proof-claims", "proof-ci", "proof-release", "proof-ci-refusal", "proof-release-refusal", "proof-wsl"]},
+    {"id": "release-asset-routing", "kind": "release", "caseIds": ["release-assets-current"]}
+  ],
+  "proof": {
+    "binary": "target/debug/exitbind",
+    "releaseAssetPrefix": "exitbind",
+    "invocations": [
+      {"id": "claims", "path": "proof/claims.json", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh", "occurrences": 1},
+      {"id": "ci", "path": ".github/workflows/ci.yml", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh", "occurrences": 2},
+      {"id": "ci-refusal", "path": ".github/workflows/ci.yml", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh", "occurrences": 1},
+      {"id": "release", "path": ".github/workflows/release.yml", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh", "occurrences": 1},
+      {"id": "release-refusal", "path": ".github/workflows/release.yml", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh", "occurrences": 1},
+      {"id": "wsl", "path": "scripts/ci-wsl.sh", "command": "EXITBIND_BIN=\"$install_root/bin/exitbind\" \"$checkout/scripts/run-value-proof-suite.sh\"", "occurrences": 1}
+    ]
+  }
+}
