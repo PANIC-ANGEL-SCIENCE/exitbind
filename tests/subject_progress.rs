@@ -1,0 +1,403 @@
+#![cfg(unix)]
+
+mod support;
+
+use serde_json::Value;
+use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
+    process::{Command, Output, Stdio},
+};
+
+struct Fixture {
+    root: PathBuf,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Self::new_with_workers(true)
+    }
+
+    fn new_single() -> Self {
+        Self::new_with_workers(false)
+    }
+
+    fn new_with_workers(two_workers: bool) -> Self {
+        let root = support::temp("subject-progress");
+        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .args(["init", "--mode", "portable", "--root"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        assert!(init.status.success(), "{init:?}");
+        let config_path = root.join("exitbind.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        if two_workers {
+            let base = config["agents"]["worker"].clone();
+            let mut second = base;
+            second["profile"] = serde_json::json!("exitbind/agents/worker_two.md");
+            second["purpose"] = serde_json::json!("Complete bounded work for worker_two.");
+            config["agents"]["worker_two"] = second;
+            fs::write(
+                root.join("exitbind/agents/worker_two.md"),
+                b"# worker_two\n\nComplete bounded work.\n",
+            )
+            .unwrap();
+            config["workflows"]["change"]["workers"] = serde_json::json!(["worker", "worker_two"]);
+        }
+        fs::write(config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        Self { root }
+    }
+
+    fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .current_dir(&self.root)
+            .args(args)
+            .arg("--config")
+            .arg(self.root.join("exitbind.json"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(input) = input {
+            command.stdin(Stdio::piped());
+            let mut child = command.spawn().unwrap();
+            child.stdin.take().unwrap().write_all(input).unwrap();
+            return child.wait_with_output().unwrap();
+        }
+        command.output().unwrap()
+    }
+
+    fn value(&self, args: &[&str], input: Option<&[u8]>) -> Value {
+        let output = self.call(args, input);
+        assert!(
+            output.status.success(),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    fn ledger(&self, work: &str) -> String {
+        format!(
+            ".exitbind/runs/work-{}.jsonl",
+            work.strip_prefix("smw_").unwrap()
+        )
+    }
+
+    fn submit_low_level(&self, agent: &str, ledger: &str, outcome: &str, artifact: &str) -> Output {
+        self.call(
+            &[
+                "run",
+                "submit",
+                agent,
+                ledger,
+                "--outcome",
+                outcome,
+                "--artifact",
+                artifact,
+                "--artifact-root",
+                "state",
+                "--json",
+            ],
+            None,
+        )
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.root).unwrap();
+    }
+}
+
+fn assert_progress(action: &Value) {
+    assert_eq!(action["progress"]["applicable"], true);
+    assert!(
+        action["progress"]["percent"].is_number(),
+        "missing progress: {action}"
+    );
+    assert!(action["progress"]["weights"]["worker"].is_number());
+}
+
+#[test]
+fn skill_presentation_is_exact_and_packaged_copy_matches() {
+    const ROUTINE: &str = "Neuro\nExitbind progress: N%.";
+    let canonical = include_bytes!("../skills/exitbind/SKILL.md");
+    let packaged = include_bytes!("../plugins/exitbind/skills/exitbind/SKILL.md");
+    assert_eq!(canonical, packaged);
+    let text = std::str::from_utf8(canonical).unwrap();
+    assert!(text.contains(ROUTINE));
+    assert!(text.contains("Exitbind computes that progress and owns the terminal state."));
+    assert!(!text.contains("Holytail\nExitbind progress"));
+}
+
+#[test]
+fn work_facade_surfaces_stale_worker_and_recovers_to_ready() {
+    let fixture = Fixture::new();
+    let check = "test -f marker";
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "subject recovery",
+            "--check-command",
+            check,
+        ],
+        None,
+    );
+    assert_progress(&begin["next"]);
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let ledger = fixture.ledger(&work);
+
+    let scope = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    assert_progress(&scope["next"]);
+    let worker_a = fixture.value(&["work", "next", &work], None);
+    assert_progress(&worker_a["next"]);
+    let worker_a_return = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker_a["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"worker A"),
+    );
+    assert_progress(&worker_a_return["next"]);
+    assert_eq!(worker_a_return["next"]["action"], "check");
+
+    fs::write(fixture.root.join("marker"), b"ok").unwrap();
+    let checked_a = fixture.value(&["work", "check", &work], None);
+    assert_progress(&checked_a["next"]);
+    assert_eq!(checked_a["next"]["action"], "spawn");
+    let worker_b = fixture.value(&["work", "next", &work], None);
+    let worker_b_return = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker_b["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"worker B"),
+    );
+    assert_progress(&worker_b_return["next"]);
+    assert_eq!(worker_b_return["next"]["action"], "check");
+
+    let events: Vec<Value> = fs::read_to_string(fixture.root.join(&ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let worker_b_event = events
+        .iter()
+        .find(|event| event["action"] == "submit" && event["agent"] == "worker_two")
+        .unwrap()["eventSha256"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let checked_b = fixture.call(
+        &[
+            "run",
+            "record-check",
+            &ledger,
+            "--target",
+            &worker_b_event,
+            "--check-command",
+            check,
+            "--exit-code",
+            "0",
+            "--json",
+        ],
+        None,
+    );
+    assert!(checked_b.status.success(), "{checked_b:?}");
+
+    let stale = fixture.value(&["work", "next", &work], None);
+    assert_progress(&stale["next"]);
+    assert_eq!(stale["next"]["action"], "check");
+
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/reviewer.md"),
+        b"review\n",
+    )
+    .unwrap();
+    let reviewer = fixture.submit_low_level(
+        "reviewer",
+        &ledger,
+        "approved",
+        ".exitbind/artifacts/reviewer.md",
+    );
+    assert!(reviewer.status.success(), "{reviewer:?}");
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/lead.md"),
+        b"accept\n",
+    )
+    .unwrap();
+    let premature =
+        fixture.submit_low_level("lead", &ledger, "accepted", ".exitbind/artifacts/lead.md");
+    assert!(
+        !premature.status.success(),
+        "stale A check was accepted: {premature:?}"
+    );
+
+    let recovered_check = fixture.value(&["work", "check", &work], None);
+    assert_progress(&recovered_check["next"]);
+    assert_eq!(recovered_check["next"]["action"], "lead_decision");
+    let done = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            recovered_check["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert_eq!(done["next"]["action"], "done");
+    assert_eq!(done["next"]["progress"]["percent"], 100);
+    assert_eq!(done["next"]["progress"]["state"], "READY");
+}
+
+#[test]
+fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
+    let fixture = Fixture::new_single();
+    let check = "test -f pass-marker";
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "failed check rework",
+            "--check-command",
+            check,
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let ledger = fixture.ledger(&work);
+    let scoped = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let worker = fixture.value(&["work", "next", &work], None);
+    let completed = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"first attempt"),
+    );
+    assert_progress(&scoped["next"]);
+    assert_eq!(completed["next"]["action"], "check");
+
+    let failed = fixture.value(&["work", "check", &work], None);
+    assert_eq!(failed["next"]["action"], "spawn");
+    assert_eq!(failed["next"]["role"], "reviewer");
+    assert_eq!(
+        failed["next"]["packet"]["checkEvidence"][0]["status"],
+        "failed"
+    );
+    assert_eq!(
+        failed["next"]["packet"]["checkEvidence"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let failed_ledger = fs::read(fixture.root.join(&ledger)).unwrap();
+
+    let reworked = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            failed["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        Some(b"repair requested"),
+    );
+    assert_eq!(reworked["next"]["action"], "spawn");
+    assert_eq!(reworked["next"]["role"], "worker");
+    assert_eq!(reworked["next"]["packet"]["attempt"], 2);
+    let after_rework = fs::read(fixture.root.join(&ledger)).unwrap();
+    assert!(after_rework.starts_with(&failed_ledger));
+
+    fs::write(fixture.root.join("pass-marker"), b"ok").unwrap();
+    let fresh_completed = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            reworked["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"fresh worker result"),
+    );
+    assert_eq!(fresh_completed["next"]["action"], "check");
+    let fresh_check = fixture.value(&["work", "check", &work], None);
+    assert_eq!(fresh_check["next"]["action"], "spawn");
+    assert_eq!(fresh_check["next"]["role"], "reviewer");
+    assert_eq!(
+        fresh_check["next"]["packet"]["checkEvidence"][0]["status"],
+        "passed"
+    );
+
+    let approved = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            fresh_check["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "approved",
+        ],
+        Some(b"fresh review"),
+    );
+    assert_eq!(approved["next"]["action"], "lead_decision");
+    let done = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            approved["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"fresh acceptance"),
+    );
+    assert_eq!(done["next"]["action"], "done");
+    assert_eq!(done["next"]["progress"]["percent"], 100);
+    assert_eq!(done["next"]["progress"]["state"], "READY");
+}

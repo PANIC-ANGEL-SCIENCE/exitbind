@@ -1,0 +1,20 @@
+{
+  "name": "exitbind-plugins",
+  "interface": {
+    "displayName": "envy404"
+  },
+  "plugins": [
+    {
+      "name": "exitbind",
+      "source": {
+        "source": "local",
+        "path": "./plugins/exitbind"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

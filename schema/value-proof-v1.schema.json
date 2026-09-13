@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:soulmate:value-proof:1",
+  "title": "Soulmate synthetic value-proof result",
+  "x-soulmate-format-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "scenarioId",
+    "origin",
+    "claim",
+    "limitations",
+    "assertions",
+    "expectedResult",
+    "observedResult",
+    "cliInvocations",
+    "manualJsonEdits",
+    "automatedElapsedMs",
+    "humanInteractionMs",
+    "report"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "scenarioId": { "const": "false-completion-v1" },
+    "origin": { "const": "synthetic" },
+    "claim": { "type": "string", "minLength": 1 },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/assertion" }
+    },
+    "expectedResult": { "$ref": "#/$defs/outcome" },
+    "observedResult": { "$ref": "#/$defs/outcome" },
+    "cliInvocations": { "$ref": "#/$defs/invocations" },
+    "manualJsonEdits": { "const": 0 },
+    "automatedElapsedMs": { "type": "integer", "minimum": 0 },
+    "humanInteractionMs": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "report": { "$ref": "#/$defs/report" }
+  },
+  "$defs": {
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expected", "passed"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "expected": { "const": true },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "protectedFailedCheck", "protectedRecovery"],
+      "properties": {
+        "baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checkExitCode", "distinctArtifactCount", "finalStatus"],
+          "properties": {
+            "checkExitCode": { "const": 1 },
+            "distinctArtifactCount": { "const": 4 },
+            "finalStatus": { "const": "accepted" }
+          }
+        },
+        "protectedFailedCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "checkExitCode",
+            "acceptanceExitCodeNonzero",
+            "canonicalAcceptedEvent",
+            "protectionRecordCount",
+            "status"
+          ],
+          "properties": {
+            "checkExitCode": { "const": 1 },
+            "acceptanceExitCodeNonzero": { "const": true },
+            "canonicalAcceptedEvent": { "const": false },
+            "protectionRecordCount": { "const": 1 },
+            "status": { "const": "running" }
+          }
+        },
+        "protectedRecovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repairCheckExitCode",
+            "passingCheckAloneAccepted",
+            "reviewerApprovalAloneAccepted",
+            "finalStatus",
+            "workerAttemptCount",
+            "priorAttemptPreserved"
+          ],
+          "properties": {
+            "repairCheckExitCode": { "const": 0 },
+            "passingCheckAloneAccepted": { "const": false },
+            "reviewerApprovalAloneAccepted": { "const": false },
+            "finalStatus": { "const": "accepted" },
+            "workerAttemptCount": { "const": 2 },
+            "priorAttemptPreserved": { "const": true }
+          }
+        }
+      }
+    },
+    "invocations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "successful", "failed", "byAction"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 1 },
+        "successful": { "type": "integer", "minimum": 1 },
+        "failed": { "type": "integer", "minimum": 1 },
+        "byAction": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "metricGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runs",
+        "checks",
+        "protections",
+        "failedChecks",
+        "missingChecks",
+        "durationMsReported",
+        "durationMsReportedCount"
+      ],
+      "properties": {
+        "runs": { "type": "integer", "minimum": 0 },
+        "checks": { "type": "integer", "minimum": 0 },
+        "protections": { "type": "integer", "minimum": 0 },
+        "failedChecks": { "type": "integer", "minimum": 0 },
+        "missingChecks": { "type": "integer", "minimum": 0 },
+        "durationMsReported": { "type": "integer", "minimum": 0 },
+        "durationMsReportedCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "runs", "groups", "metrics", "redaction"],
+      "properties": {
+        "version": { "const": 1 },
+        "runs": { "type": "integer", "minimum": 1 },
+        "groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["local_report", "synthetic", "unclassified"],
+          "properties": {
+            "local_report": { "$ref": "#/$defs/metricGroup" },
+            "synthetic": { "$ref": "#/$defs/metricGroup" },
+            "unclassified": { "$ref": "#/$defs/metricGroup" }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "syntheticIncidentCount",
+            "userConfirmedAvoidedLossCount",
+            "humanTimeMs"
+          ],
+          "properties": {
+            "syntheticIncidentCount": { "const": "unknown" },
+            "userConfirmedAvoidedLossCount": { "const": "unknown" },
+            "humanTimeMs": { "const": "unknown" }
+          }
+        },
+        "redaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "goals",
+            "commands",
+            "prompts",
+            "profiles",
+            "paths",
+            "artifactContent",
+            "hashesAreNotAnonymization"
+          ],
+          "properties": {
+            "goals": { "const": "omitted" },
+            "commands": { "const": "omitted" },
+            "prompts": { "const": "omitted" },
+            "profiles": { "const": "omitted" },
+            "paths": { "const": "omitted" },
+            "artifactContent": { "const": "omitted" },
+            "hashesAreNotAnonymization": { "const": true }
+          }
+        }
+      }
+    }
+  }
+}

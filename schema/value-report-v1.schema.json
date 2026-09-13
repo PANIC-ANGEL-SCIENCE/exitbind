@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:soulmate:value-report:1",
+  "title": "Soulmate redacted local value-proof report version 1",
+  "type": "object",
+  "x-soulmate-format-version": 1,
+  "required": ["version", "runs", "groups", "metrics", "redaction"],
+  "properties": {
+    "version": { "const": 1 },
+    "runs": { "type": "integer", "minimum": 0 },
+    "groups": {
+      "type": "object",
+      "required": ["local_report", "synthetic", "unclassified"],
+      "properties": {
+        "local_report": { "$ref": "#/$defs/group" },
+        "synthetic": { "$ref": "#/$defs/group" },
+        "unclassified": { "$ref": "#/$defs/group" }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["syntheticIncidentCount", "userConfirmedAvoidedLossCount", "humanTimeMs"],
+      "properties": {
+        "syntheticIncidentCount": { "const": "unknown" },
+        "userConfirmedAvoidedLossCount": { "const": "unknown" },
+        "humanTimeMs": { "const": "unknown" }
+      },
+      "additionalProperties": false
+    },
+    "redaction": {
+      "type": "object",
+      "required": [
+        "goals", "commands", "prompts", "profiles", "paths", "artifactContent",
+        "hashesAreNotAnonymization"
+      ],
+      "properties": {
+        "goals": { "const": "omitted" },
+        "commands": { "const": "omitted" },
+        "prompts": { "const": "omitted" },
+        "profiles": { "const": "omitted" },
+        "paths": { "const": "omitted" },
+        "artifactContent": { "const": "omitted" },
+        "hashesAreNotAnonymization": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "group": {
+      "type": "object",
+      "required": [
+        "runs", "checks", "protections", "failedChecks", "missingChecks",
+        "durationMsReported", "durationMsReportedCount"
+      ],
+      "properties": {
+        "runs": { "type": "integer", "minimum": 0 },
+        "checks": { "type": "integer", "minimum": 0 },
+        "protections": { "type": "integer", "minimum": 0 },
+        "failedChecks": { "type": "integer", "minimum": 0 },
+        "missingChecks": { "type": "integer", "minimum": 0 },
+        "durationMsReported": { "type": "integer", "minimum": 0 },
+        "durationMsReportedCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

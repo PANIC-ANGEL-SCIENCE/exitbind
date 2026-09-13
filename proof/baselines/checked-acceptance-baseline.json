@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "baseline_measurement",
+  "origin": "synthetic",
+  "sourceCommit": "2773dfc98e07d59d2a1763cdc02c646d296325f9",
+  "packageVersion": "0.11.0",
+  "binaryKind": "local_debug_build",
+  "binarySha256": "ee9702c757959310cf8261555381cb26c0e449d2d472c6b0a996800f8c1f717e",
+  "seededHazards": 1,
+  "externalCommandExitStatus": 1,
+  "exitStatusAvailableToCaller": true,
+  "canonicalStatus": "accepted",
+  "cliInvocations": 12,
+  "manualJsonEdits": 1,
+  "automatedElapsedMs": 702,
+  "humanInteractionMs": null,
+  "priorArtifactHashesUnchanged": true,
+  "existingDriftDemoPassed": true,
+  "limitations": [
+    "One controlled run, not a minimum command count or performance distribution.",
+    "A local debug binary, not a claim about identical published release bytes.",
+    "No host-model behavior, recurring incident, avoided harm or human attention measurement."
+  ]
+}

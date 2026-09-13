@@ -1,0 +1,158 @@
+name: Exitbind / Exit
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve published Git ancestry
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/check-public-history.sh "$CANDIDATE_SHA"
+      - run: cargo fmt --check
+      - name: Enforce path-rendering rule
+        run: ./scripts/check-path-rendering.sh
+      - name: Keep experimental observations out of the product
+        run: ./scripts/check-product-surface.sh
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test behavior and immutable proof contracts
+        env:
+          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A new branch or tag has no previous ref; compare its first parent.
+          if [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
+            VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
+            export VALUE_PROOF_BASE
+          elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
+            git fetch --no-tags origin "$VALUE_PROOF_BASE"
+          fi
+          git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
+          cargo test --locked
+      - name: Reproduce the Exitbind checked-acceptance claim
+        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
+      - name: Keep the Exitbind refusal demo truthful
+        run: EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh
+      - name: Exercise native tmux handoff
+        run: |
+          command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
+          cargo test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
+      - name: Check release references
+        run: ./scripts/check-release-refs.sh
+      - run: EXITBIND_BUILD_COMMIT="$GITHUB_SHA" cargo build --release --locked
+      - name: Single-binary smoke without language toolchains
+        run: ./scripts/onboarding-smoke.sh "$GITHUB_WORKSPACE/target/release/exitbind" "$GITHUB_WORKSPACE/skills/exitbind/SKILL.md"
+      - name: Package Linux stable release
+        run: ./scripts/package-release.sh x86_64-unknown-linux-gnu target/release/exitbind dist
+      - name: Exercise packaged Linux installer
+        run: ./scripts/installer-smoke.sh dist x86_64-unknown-linux-gnu
+      - name: Upload Linux stable release for WSL
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exitbind-linux-x86_64-${{ github.sha }}
+          path: target/release/exitbind
+          if-no-files-found: error
+          retention-days: 1
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            host_arch: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            host_arch: x86_64
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve published Git ancestry
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/check-public-history.sh "$CANDIDATE_SHA"
+      - name: Verify native macOS host and target
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = "${{ matrix.host_arch }}"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
+          printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
+            "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
+            "${{ matrix.target }}" "$GITHUB_SHA"
+      - name: Test behavior and immutable proof contracts
+        env:
+          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A new branch or tag has no previous ref; compare its first parent.
+          if [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
+            VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
+            export VALUE_PROOF_BASE
+          elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
+            git fetch --no-tags origin "$VALUE_PROOF_BASE"
+          fi
+          git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
+          cargo test --locked
+      - name: Reproduce the Exitbind checked-acceptance claim
+        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
+      - name: Build native macOS stable release
+        env:
+          EXITBIND_BUILD_COMMIT: ${{ github.sha }}
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: Package native macOS stable release
+        run: ./scripts/package-release.sh "${{ matrix.target }}" "target/${{ matrix.target }}/release/exitbind" dist
+      - name: Exercise packaged macOS installer
+        run: ./scripts/installer-smoke.sh dist "${{ matrix.target }}"
+  windows-wsl:
+    needs: exit
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download Linux stable release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: exitbind-linux-x86_64-${{ github.sha }}
+          path: wsl-release
+      - name: Install Ubuntu under WSL 2
+        shell: pwsh
+        run: |
+          wsl.exe --install --distribution Ubuntu --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $distributions = (wsl.exe --list --verbose | Out-String) -replace "`0", ""
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $distributions
+          if ($distributions -notmatch 'Ubuntu\s+\w+\s+2') {
+            throw 'Ubuntu was not installed as WSL 2'
+          }
+      - name: Exercise the installed Linux release inside WSL 2
+        shell: pwsh
+        run: |
+          $windowsWorkspace = $env:GITHUB_WORKSPACE -replace '\\', '/'
+          $workspace = (& wsl.exe --distribution Ubuntu --user root -- wslpath -a $windowsWorkspace).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/scripts/ci-wsl.sh" "$workspace"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Cache cargo-audit
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}-${{ runner.arch }}
+      - name: Install pinned cargo-audit when uncached
+        run: |
+          if ! command -v cargo-audit >/dev/null; then
+            cargo +stable install cargo-audit --locked --version 0.22.2
+          fi
+      - run: cargo audit

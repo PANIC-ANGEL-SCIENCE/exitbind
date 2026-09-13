@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.17.0/schema/exitbind.schema.json",
+  "title": "Exitbind project configuration",
+  "type": "object",
+  "required": ["version", "project", "orchestration", "agents", "workflows"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "required": ["root"],
+      "properties": {
+        "root": { "type": "string" },
+        "mode": { "enum": ["local", "portable"] },
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "local" } }, "required": ["mode"] },
+          "then": { "required": ["id"], "properties": { "root": { "const": "." } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "portable" } }, "required": ["mode"] },
+          "then": { "not": { "required": ["id"] } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "orchestration": {
+      "type": "object",
+      "required": ["lead", "maxParallel"],
+      "properties": {
+        "lead": { "$ref": "#/$defs/name" },
+        "maxParallel": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "memory": { "$ref": "#/$defs/memory" },
+    "agents": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/agent" }
+    },
+    "workflows": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/workflow" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "agent": {
+      "type": "object",
+      "required": ["profile", "purpose", "retention", "crossContext"],
+      "properties": {
+        "profile": { "type": "string" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nativeName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]{0,63}$" },
+        "observe": { "$ref": "#/$defs/strings" },
+        "write": { "$ref": "#/$defs/strings" },
+        "commands": { "$ref": "#/$defs/strings" },
+        "skills": { "$ref": "#/$defs/strings" },
+        "memoryRead": { "$ref": "#/$defs/scopes" },
+        "memoryWrite": { "$ref": "#/$defs/scopes" },
+        "memoryReview": { "$ref": "#/$defs/scopes" },
+        "memoryPromote": { "$ref": "#/$defs/scopes" },
+        "memoryReject": { "$ref": "#/$defs/scopes" },
+        "memoryRevoke": { "$ref": "#/$defs/scopes" },
+        "memoryExpire": { "$ref": "#/$defs/scopes" },
+        "memoryForget": { "$ref": "#/$defs/scopes" },
+        "retention": { "enum": ["task", "until-reviewed", "until-revoked", "explicit-expiry"] },
+        "crossContext": { "enum": ["none", "same-scope", "protocol-only", "synthetic-only"] },
+        "runtime": { "$ref": "#/$defs/runtime" }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "reasoningEffort": { "type": "string", "minLength": 1 },
+        "fallback": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "memory": {
+      "type": "object",
+      "required": ["root", "maxItems", "maxBytes", "protocolScopes", "syntheticScopes"],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!\\.?/?$)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "maxItems": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 4194304 },
+        "protocolScopes": { "$ref": "#/$defs/scopes" },
+        "syntheticScopes": { "$ref": "#/$defs/scopes" }
+      },
+      "additionalProperties": false
+    },
+    "scopes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "pattern": "^(?!\\*$)\\S(?:.*\\S)?$" }
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "advisers": { "$ref": "#/$defs/strings" },
+        "workers": { "$ref": "#/$defs/strings" },
+        "reviewers": { "$ref": "#/$defs/strings" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

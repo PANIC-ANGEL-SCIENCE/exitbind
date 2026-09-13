@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/envy404/soulmate/v0.16.0-rc.1/schema/run-boundary.schema.json",
+  "title": "Soulmate run-scoped filesystem boundary",
+  "type": "object",
+  "required": ["version", "agents"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "agents": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["observe", "write"],
+        "properties": {
+          "observe": { "$ref": "#/$defs/exactPaths" },
+          "write": { "$ref": "#/$defs/exactPaths" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "exactPaths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[*?\\[\\]\\\\]).+$"
+      }
+    }
+  }
+}

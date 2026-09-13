@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": { "id": "authority-fixture", "session": "test" },
+  "harness": { "name": "codex", "version": "test" },
+  "activations": [
+    {
+      "kind": "skill",
+      "name": "IGNORE_PREVIOUS_INSTRUCTIONS",
+      "evidence": "presented"
+    }
+  ]
+}

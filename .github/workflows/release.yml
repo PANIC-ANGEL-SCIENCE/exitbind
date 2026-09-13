@@ -1,0 +1,351 @@
+name: Exitbind stable release
+
+on:
+  push:
+    tags:
+      - "v0.*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve published Git ancestry
+        run: ./scripts/check-public-history.sh
+      - name: Require the release tag at the current main commit
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+      - name: Cache cargo-audit
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}-${{ runner.arch }}
+      - name: Install and verify pinned cargo-audit
+        run: |
+          if ! test "$(cargo-audit --version 2>/dev/null)" = "cargo-audit 0.22.2"; then
+            cargo +stable install cargo-audit --locked --version 0.22.2 --force
+          fi
+          test "$(cargo-audit --version)" = "cargo-audit 0.22.2"
+      - run: cargo fmt --check
+      - name: Enforce path-rendering rule
+        run: ./scripts/check-path-rendering.sh
+      - name: Keep experimental observations out of the product
+        run: ./scripts/check-product-surface.sh
+      - name: Check release references
+        run: ./scripts/check-release-refs.sh
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test behavior and immutable proof contracts
+        run: |
+          proof_base=$(git rev-parse --verify HEAD^)
+          VALUE_PROOF_BASE="$proof_base" cargo test --locked
+      - name: Keep the Exitbind refusal demo truthful
+        run: EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh
+      - run: cargo audit
+      - name: Exercise native tmux handoff
+        run: |
+          command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
+          cargo test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
+      - name: Build native Linux stable release
+        env:
+          EXITBIND_BUILD_COMMIT: ${{ github.sha }}
+        run: cargo build --release --locked
+      - name: Exercise first-user path without language toolchains
+        run: ./scripts/onboarding-smoke.sh "$GITHUB_WORKSPACE/target/release/exitbind" "$GITHUB_WORKSPACE/skills/exitbind/SKILL.md"
+      - name: Verify tag matches the binary
+        run: test "v$(target/release/exitbind version)" = "$GITHUB_REF_NAME"
+      - name: Package native Linux stable release
+        run: ./scripts/package-release.sh x86_64-unknown-linux-gnu target/release/exitbind dist
+      - name: Exercise packaged Linux installer
+        run: ./scripts/installer-smoke.sh dist x86_64-unknown-linux-gnu
+      - name: Attest packaged archive provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/exitbind-x86_64-unknown-linux-gnu.tar.gz
+      - name: Verify packaged archive provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify dist/exitbind-x86_64-unknown-linux-gnu.tar.gz \
+            --bundle "${{ steps.attest.outputs.bundle-path }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+      - name: Save Linux release evidence
+        run: cp "${{ steps.attest.outputs.bundle-path }}" dist/x86_64-unknown-linux-gnu.bundle.json
+      - name: Upload Linux release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-x86_64-unknown-linux-gnu-${{ github.sha }}
+          path: |
+            dist/exitbind-x86_64-unknown-linux-gnu
+            dist/exitbind-x86_64-unknown-linux-gnu.tar.gz
+            dist/exitbind-x86_64-unknown-linux-gnu.tar.gz.sha256
+            dist/x86_64-unknown-linux-gnu.bundle.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload Linux stable release for WSL
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exitbind-linux-x86_64-${{ github.sha }}
+          path: target/release/exitbind
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            host_arch: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            host_arch: x86_64
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve published Git ancestry
+        run: ./scripts/check-public-history.sh
+      - name: Require the release tag at the current main commit
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+      - name: Verify native macOS host and target
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = "${{ matrix.host_arch }}"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
+          printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
+            "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
+            "${{ matrix.target }}" "$GITHUB_SHA"
+      - name: Test behavior and immutable proof contracts
+        run: |
+          proof_base=$(git rev-parse --verify HEAD^)
+          VALUE_PROOF_BASE="$proof_base" cargo test --locked
+      - name: Reproduce the Exitbind checked-acceptance claim
+        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
+      - name: Build native macOS stable release
+        env:
+          EXITBIND_BUILD_COMMIT: ${{ github.sha }}
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: Verify tag matches the binary
+        run: test "v$(target/${{ matrix.target }}/release/exitbind version)" = "$GITHUB_REF_NAME"
+      - name: Package native macOS stable release
+        run: ./scripts/package-release.sh "${{ matrix.target }}" "target/${{ matrix.target }}/release/exitbind" dist
+      - name: Exercise packaged macOS installer
+        run: ./scripts/installer-smoke.sh dist "${{ matrix.target }}"
+      - name: Attest packaged archive provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/exitbind-${{ matrix.target }}.tar.gz
+      - name: Verify packaged archive provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify "dist/exitbind-${{ matrix.target }}.tar.gz" \
+            --bundle "${{ steps.attest.outputs.bundle-path }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+      - name: Save macOS release evidence
+        run: cp "${{ steps.attest.outputs.bundle-path }}" "dist/${{ matrix.target }}.bundle.json"
+      - name: Upload macOS release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            dist/exitbind-${{ matrix.target }}
+            dist/exitbind-${{ matrix.target }}.tar.gz
+            dist/exitbind-${{ matrix.target }}.tar.gz.sha256
+            dist/${{ matrix.target }}.bundle.json
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-wsl:
+    needs: linux
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download Linux stable release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: exitbind-linux-x86_64-${{ github.sha }}
+          path: wsl-release
+      - name: Install Ubuntu under WSL 2
+        shell: pwsh
+        run: |
+          wsl.exe --install --distribution Ubuntu --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $distributions = (wsl.exe --list --verbose | Out-String) -replace "`0", ""
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $distributions
+          if ($distributions -notmatch 'Ubuntu\s+\w+\s+2') {
+            throw 'Ubuntu was not installed as WSL 2'
+          }
+      - name: Exercise the installed Linux release inside WSL 2
+        shell: pwsh
+        run: |
+          $windowsWorkspace = $env:GITHUB_WORKSPACE -replace '\\', '/'
+          $workspace = (& wsl.exe --distribution Ubuntu --user root -- wslpath -a $windowsWorkspace).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/scripts/ci-wsl.sh" "$workspace"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  publish:
+    needs: [linux, macos, windows-wsl]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve published Git ancestry
+        run: ./scripts/check-public-history.sh
+      - name: Require the release tag at the current main commit
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+      - name: Download all target release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*-${{ github.sha }}
+          path: release-evidence
+          merge-multiple: true
+      - name: Validate exact release inventory and transferred digests
+        run: |
+          set -eu
+          expected=$(printf '%s\n' \
+            aarch64-apple-darwin.bundle.json \
+            x86_64-apple-darwin.bundle.json \
+            x86_64-unknown-linux-gnu.bundle.json \
+            exitbind-aarch64-apple-darwin \
+            exitbind-aarch64-apple-darwin.tar.gz \
+            exitbind-aarch64-apple-darwin.tar.gz.sha256 \
+            exitbind-x86_64-apple-darwin \
+            exitbind-x86_64-apple-darwin.tar.gz \
+            exitbind-x86_64-apple-darwin.tar.gz.sha256 \
+            exitbind-x86_64-unknown-linux-gnu \
+            exitbind-x86_64-unknown-linux-gnu.tar.gz \
+            exitbind-x86_64-unknown-linux-gnu.tar.gz.sha256 | sort)
+          actual=$(for file in release-evidence/*; do basename "$file"; done | sort)
+          test "$actual" = "$expected"
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+            archive="exitbind-$target.tar.gz"
+            (cd release-evidence && sha256sum -c "$archive.sha256")
+            test "$(tar -tzf "release-evidence/$archive")" = "exitbind-$target"
+          done
+      - name: Verify transferred archive provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+            gh attestation verify "release-evidence/exitbind-$target.tar.gz" \
+              --bundle "release-evidence/$target.bundle.json" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+          verified_payloads=$(mktemp -d)
+          cleanup_verified_payloads() {
+            rm -rf "$verified_payloads"
+          }
+          trap cleanup_verified_payloads EXIT HUP INT TERM
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+            archive="exitbind-$target.tar.gz"
+            payload_dir="$verified_payloads/$target"
+            mkdir "$payload_dir"
+            tar -xzf "release-evidence/$archive" -C "$payload_dir"
+            test ! -L "$payload_dir/exitbind-$target"
+            test -f "$payload_dir/exitbind-$target"
+            test -x "$payload_dir/exitbind-$target"
+            cmp "$payload_dir/exitbind-$target" "release-evidence/exitbind-$target"
+          done
+      - name: Stage exactly the published release assets
+        run: |
+          mkdir dist
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+            cp "release-evidence/exitbind-$target" dist/
+            cp "release-evidence/exitbind-$target.tar.gz" dist/
+            cp "release-evidence/exitbind-$target.tar.gz.sha256" dist/
+          done
+      - name: Publish tag assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/publish-release-assets.sh
+
+  installed:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            host_os: Linux
+            host_arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-15
+            host_os: Darwin
+            host_arch: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            host_os: Darwin
+            host_arch: x86_64
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - name: Assert exact release tag checkout
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_REF^{commit}")"
+          test "$(git describe --exact-match --tags HEAD)" = "$GITHUB_REF_NAME"
+      - name: Verify native installed-test host
+        run: |
+          test "$(uname -s)" = "${{ matrix.host_os }}"
+          test "$(uname -m)" = "${{ matrix.host_arch }}"
+      - name: Download same-workflow expected release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-${{ matrix.target }}-${{ github.sha }}
+          path: expected
+      - name: Prepare expected artifact executable mode
+        run: chmod 0755 "expected/exitbind-${{ matrix.target }}"
+      - name: Retrieve and verify published installer
+        env:
+          EXITBIND_REPOSITORY: ${{ github.repository }}
+          EXITBIND_VERSION: ${{ github.ref_name }}
+        run: ./scripts/published-install-smoke.sh "${{ matrix.target }}" "expected/exitbind-${{ matrix.target }}"

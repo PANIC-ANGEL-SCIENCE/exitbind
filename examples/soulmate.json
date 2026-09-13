@@ -1,0 +1,85 @@
+{
+  "$schema": "../schema/soulmate.schema.json",
+  "version": 1,
+  "project": { "root": ".." },
+  "orchestration": { "lead": "lead", "maxParallel": 2 },
+  "agents": {
+    "lead": {
+      "profile": "examples/profiles/lead.md",
+      "purpose": "Own the accepted goal, scope changes, verification, and final result.",
+      "observe": ["README.md", "src/**", "tests/**"],
+      "write": [],
+      "commands": [],
+      "skills": [],
+      "memoryRead": ["invariants"],
+      "memoryWrite": [],
+      "memoryPromote": ["invariants"],
+      "memoryReject": ["invariants"],
+      "memoryRevoke": ["invariants"],
+      "memoryExpire": ["invariants"],
+      "memoryForget": ["invariants"],
+      "retention": "task",
+      "crossContext": "protocol-only"
+    },
+    "implementation_worker": {
+      "profile": "examples/profiles/implementation-worker.md",
+      "purpose": "Implement one accepted task without changing architecture.",
+      "displayName": "Implementation Worker",
+      "nativeName": "implementation_worker",
+      "observe": ["src/**", "tests/**", "Cargo.toml", "Cargo.lock"],
+      "write": ["src/**", "tests/**"],
+      "commands": ["cargo test --locked"],
+      "skills": [],
+      "memoryRead": [],
+      "memoryWrite": [],
+      "memoryForget": [],
+      "retention": "task",
+      "crossContext": "none",
+      "runtime": {
+        "host": "codex",
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "high",
+        "fallback": "none"
+      }
+    },
+    "invariant_keeper": {
+      "profile": "examples/profiles/invariant-keeper.md",
+      "purpose": "Review a proposal against accepted invariants and decisions.",
+      "observe": ["README.md", "docs/**", "src/**"],
+      "write": [],
+      "commands": [],
+      "skills": [],
+      "memoryRead": ["invariants"],
+      "memoryWrite": ["invariants"],
+      "memoryReview": ["invariants"],
+      "memoryForget": [],
+      "retention": "until-reviewed",
+      "crossContext": "protocol-only"
+    },
+    "synthetic_adversary": {
+      "profile": "examples/profiles/synthetic-adversary.md",
+      "purpose": "Accumulate attack hypotheses only inside synthetic test worlds.",
+      "observe": ["examples/synthetic/**"],
+      "write": [],
+      "commands": [],
+      "skills": [],
+      "memoryRead": [],
+      "memoryWrite": [],
+      "memoryForget": [],
+      "retention": "task",
+      "crossContext": "synthetic-only"
+    }
+  },
+  "workflows": {
+    "change": {
+      "advisers": [],
+      "workers": ["implementation_worker"],
+      "reviewers": ["invariant_keeper"]
+    },
+    "synthetic_attack": {
+      "advisers": ["synthetic_adversary"],
+      "workers": [],
+      "reviewers": []
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "schema/claim-registry-v1.schema.json",
+      "formatVersion": 1,
+      "sha256": "2f2abfacf27764b159c2533e50c169c81f7472de745ec58fe327b419ea5a7fe2"
+    },
+    {
+      "path": "schema/run-event-v3.schema.json",
+      "formatVersion": 3,
+      "sha256": "d5858bd9c0e4a89abf8d3f390f35611689eb3934212b3309675a4e55edec0dc8"
+    },
+    {
+      "path": "schema/run-event-v4.schema.json",
+      "formatVersion": 4,
+      "sha256": "18131e54572c847c09b68eefc6ef86cdab2d20634b7c008f1c32ca27e2b35825"
+    },
+    {
+      "path": "schema/value-proof-v1.schema.json",
+      "formatVersion": 1,
+      "sha256": "198a13312814e13eeb98e2d1020874c4142b46da68b085b49d581cf03ddcef51"
+    },
+    {
+      "path": "schema/value-report-v1.schema.json",
+      "formatVersion": 1,
+      "sha256": "2e6715158023cb653ce0302bedc87a208ddfaa889ded60d165ce87d9a424ab51"
+    }
+  ]
+}

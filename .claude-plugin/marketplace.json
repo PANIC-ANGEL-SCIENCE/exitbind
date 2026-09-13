@@ -1,0 +1,13 @@
+{
+  "name": "exitbind-plugins",
+  "owner": {
+    "name": "envy404",
+    "url": "https://github.com/envy404"
+  },
+  "plugins": [
+    {
+      "name": "exitbind",
+      "source": "./plugins/exitbind"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:soulmate:run-event:4",
+  "title": "Soulmate run ledger event version 4",
+  "type": "object",
+  "x-soulmate-format-version": 4,
+  "oneOf": [
+    { "$ref": "#/$defs/start" },
+    { "$ref": "#/$defs/submit" },
+    { "$ref": "#/$defs/check" },
+    { "$ref": "#/$defs/protect" }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "object", "required": ["name", "version", "commit"],
+      "properties": {
+        "name": { "const": "soulmate" },
+        "version": { "type": "string", "minLength": 1 },
+        "commit": { "type": ["string", "null"] }
+      }, "additionalProperties": false
+    },
+    "policy": {
+      "type": "object", "x-soulmate-format-version": 1,
+      "required": ["version", "command", "commandSha256", "origin"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "commandSha256": { "$ref": "#/$defs/sha256" },
+        "origin": { "enum": ["local_report", "synthetic"] }
+      }, "additionalProperties": false
+    },
+    "common": {
+      "type": "object", "required": ["version", "kind", "producer", "action", "runId", "previousEventSha256", "timestamp", "eventSha256"],
+      "properties": {
+        "version": { "const": 4 }, "kind": { "const": "run" },
+        "producer": { "$ref": "#/$defs/producer" }, "action": { "type": "string" },
+        "runId": { "$ref": "#/$defs/sha256" },
+        "previousEventSha256": { "type": ["string", "null"] },
+        "timestamp": { "$ref": "#/$defs/timestamp" }, "eventSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "start": {
+      "allOf": [
+        { "$ref": "#/$defs/common" },
+        { "type": "object", "required": ["action", "workflow", "goal", "configSha256", "plan", "checkPolicy"],
+          "properties": {
+            "action": { "const": "start" }, "workflow": { "type": "string", "minLength": 1 },
+            "goal": { "type": "string", "minLength": 1 }, "configSha256": { "$ref": "#/$defs/sha256" },
+            "plan": { "type": "object" }, "checkPolicy": { "$ref": "#/$defs/policy" },
+            "harnessReceipt": { "type": "object" }, "supersedes": { "type": "object" }
+          }
+        }
+      ], "unevaluatedProperties": false
+    },
+    "artifact": {
+      "type": "object", "required": ["path", "sha256"],
+      "properties": { "root": { "enum": ["product", "state"] }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" } },
+      "additionalProperties": false
+    },
+    "submit": {
+      "allOf": [
+        { "$ref": "#/$defs/common" },
+        { "type": "object", "required": ["action", "stage", "attempt", "agent", "role", "outcome", "artifact"],
+          "properties": {
+            "action": { "const": "submit" }, "stage": { "type": "integer", "minimum": 1 }, "attempt": { "type": "integer", "minimum": 1 },
+            "agent": { "type": "string", "minLength": 1 }, "role": { "enum": ["lead", "adviser", "worker", "reviewer"] },
+            "outcome": { "type": "string", "minLength": 1 }, "artifact": { "$ref": "#/$defs/artifact" }
+          }
+        }
+      ], "unevaluatedProperties": false
+    },
+    "result": {
+      "oneOf": [
+        { "type": "object", "required": ["kind", "code"], "properties": { "kind": { "const": "exit" }, "code": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+        { "type": "object", "required": ["kind", "signal"], "properties": { "kind": { "const": "signal" }, "signal": { "type": "integer", "minimum": 1 } }, "additionalProperties": false }
+      ]
+    },
+    "check": {
+      "allOf": [
+        { "$ref": "#/$defs/common" },
+        { "type": "object", "required": ["action", "targetEventSha256", "checkCommand", "checkCommandSha256", "origin", "acquisition", "result"],
+          "properties": {
+            "action": { "const": "check" }, "targetEventSha256": { "$ref": "#/$defs/sha256" },
+            "checkCommand": { "type": "string", "minLength": 1 }, "checkCommandSha256": { "$ref": "#/$defs/sha256" },
+            "origin": { "enum": ["local_report", "synthetic"] }, "acquisition": { "enum": ["reported", "observed"] },
+            "result": { "$ref": "#/$defs/result" }, "durationMs": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
+      ], "unevaluatedProperties": false
+    },
+    "checkEvidence": {
+      "oneOf": [
+        { "type": "object", "required": ["targetEventSha256", "status"], "properties": { "targetEventSha256": { "$ref": "#/$defs/sha256" }, "status": { "const": "missing" } }, "additionalProperties": false },
+        { "type": "object", "required": ["targetEventSha256", "status", "checkEventSha256", "result"], "properties": { "targetEventSha256": { "$ref": "#/$defs/sha256" }, "status": { "const": "failed" }, "checkEventSha256": { "$ref": "#/$defs/sha256" }, "result": { "$ref": "#/$defs/result" } }, "additionalProperties": false }
+      ]
+    },
+    "protect": {
+      "allOf": [
+        { "$ref": "#/$defs/common" },
+        { "type": "object", "required": ["action", "stage", "attempt", "actor", "role", "attemptedOutcome", "reason", "checkEvidence", "origin"],
+          "properties": {
+            "action": { "const": "protect" }, "stage": { "type": "integer", "minimum": 1 }, "attempt": { "type": "integer", "minimum": 1 },
+            "actor": { "type": "string", "minLength": 1 }, "role": { "const": "lead" }, "attemptedOutcome": { "const": "accepted" },
+            "reason": { "enum": ["check_missing", "check_failed"] }, "checkEvidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/checkEvidence" } },
+            "origin": { "enum": ["local_report", "synthetic"] }
+          }
+        }
+      ], "unevaluatedProperties": false
+    }
+  }
+}

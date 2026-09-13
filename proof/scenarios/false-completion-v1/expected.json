@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "scenarioId": "false-completion-v1",
+  "origin": "synthetic",
+  "claim": "In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.",
+  "expectedResult": {
+    "baseline": {
+      "checkExitCode": 1,
+      "distinctArtifactCount": 4,
+      "finalStatus": "accepted"
+    },
+    "protectedFailedCheck": {
+      "checkExitCode": 1,
+      "acceptanceExitCodeNonzero": true,
+      "canonicalAcceptedEvent": false,
+      "protectionRecordCount": 1,
+      "status": "running"
+    },
+    "protectedRecovery": {
+      "repairCheckExitCode": 0,
+      "passingCheckAloneAccepted": false,
+      "reviewerApprovalAloneAccepted": false,
+      "finalStatus": "accepted",
+      "workerAttemptCount": 2,
+      "priorAttemptPreserved": true
+    }
+  },
+  "assertionIds": [
+    "baseline_nonzero_check_observed",
+    "baseline_completed_with_four_distinct_artifacts",
+    "protected_failed_check_observed",
+    "failed_acceptance_refused",
+    "no_canonical_acceptance_on_failed_check",
+    "one_factual_protection_record",
+    "blocked_ledger_snapshot_saved",
+    "repair_check_observed_zero",
+    "passing_check_does_not_accept_alone",
+    "reviewer_approval_does_not_accept_alone",
+    "lead_acceptance_after_repair",
+    "prior_attempt_bytes_preserved",
+    "report_redacted_and_origin_separated",
+    "invocation_counts_observed"
+  ],
+  "limitations": [
+    "This fixture is synthetic and token-free; it establishes the exercised local behavior only.",
+    "The harness observes its own child-process exit codes; an arbitrary caller-reported check remains untrusted execution evidence.",
+    "The result does not establish recurring user losses, avoided harm, novice success, market frequency, model compliance, or human time saved.",
+    "Hashes identify equality and are not anonymization."
+  ]
+}

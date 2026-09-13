@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.17.0/schema/exitbind-harness-manifest.schema.json",
+  "title": "Exitbind harness evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project", "harness", "activations"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "session"],
+      "properties": {
+        "id": { "$ref": "#/$defs/token" },
+        "session": { "$ref": "#/$defs/token" }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "$ref": "#/$defs/token" },
+        "version": { "$ref": "#/$defs/token" }
+      }
+    },
+    "activations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name", "evidence"],
+        "properties": {
+          "kind": { "enum": ["skill", "perspective", "ponytail"] },
+          "name": { "$ref": "#/$defs/token" },
+          "evidence": {
+            "enum": ["configured", "presented", "agent_declared", "hook_observed", "independently_verified"]
+          },
+          "verification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["verifier", "artifactSha256"],
+            "properties": {
+              "verifier": { "$ref": "#/$defs/token" },
+              "artifactSha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "evidence": { "const": "independently_verified" } }, "required": ["evidence"] },
+            "then": { "required": ["verification"] },
+            "else": { "not": { "required": ["verification"] } }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:/@+-]+$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

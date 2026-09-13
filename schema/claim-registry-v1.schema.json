@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:soulmate:claim-registry:1",
+  "title": "Soulmate value-proof claim registry version 1",
+  "type": "object",
+  "x-soulmate-format-version": 1,
+  "required": ["schemaVersion", "claims", "scenarios"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/claim" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scenario" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "claim": {
+      "type": "object",
+      "required": [
+        "id",
+        "statement",
+        "scope",
+        "evidenceLevel",
+        "limitations",
+        "scenarioIds",
+        "implementationRefs",
+        "publicDocsRefs"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/token" },
+        "statement": { "$ref": "#/$defs/token" },
+        "scope": { "$ref": "#/$defs/token" },
+        "evidenceLevel": { "$ref": "#/$defs/token" },
+        "limitations": { "$ref": "#/$defs/limitations" },
+        "scenarioIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "implementationRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/relativePath" }
+        },
+        "publicDocsRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/relativePath" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "object",
+      "required": [
+        "caller_reported_checks",
+        "synthetic_not_frequency",
+        "local_authority",
+        "artifact_scope"
+      ],
+      "properties": {
+        "caller_reported_checks": { "$ref": "#/$defs/token" },
+        "synthetic_not_frequency": { "$ref": "#/$defs/token" },
+        "local_authority": { "$ref": "#/$defs/token" },
+        "artifact_scope": { "$ref": "#/$defs/token" }
+      },
+      "additionalProperties": false
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["id", "origin", "command", "executable", "expected"],
+      "properties": {
+        "id": { "$ref": "#/$defs/token" },
+        "origin": { "const": "synthetic" },
+        "command": { "$ref": "#/$defs/token" },
+        "executable": { "$ref": "#/$defs/relativePath" },
+        "expected": { "$ref": "#/$defs/relativePath" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
