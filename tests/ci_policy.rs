@@ -20,6 +20,20 @@ fn source(path: &str) -> String {
     fs::read_to_string(format!("{}/{}", env!("CARGO_MANIFEST_DIR"), path)).unwrap()
 }
 
+#[test]
+fn canonical_skills_keep_lf_checkout_rules() {
+    let attributes = source(".gitattributes");
+    for path in ["skills/exitbind/SKILL.md", "skills/soulmate/SKILL.md"] {
+        assert!(
+            attributes.lines().any(|line| {
+                let mut fields = line.split_whitespace();
+                fields.next() == Some(path) && fields.any(|field| field == "eol=lf")
+            }),
+            "{path} must have an explicit LF checkout rule"
+        );
+    }
+}
+
 fn brace_delta(line: &str) -> i32 {
     let mut delta = 0;
     let mut chars = line.chars().peekable();
