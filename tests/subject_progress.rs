@@ -410,6 +410,55 @@ fn work_resume_projects_residual_packet_without_repeating_valid_work() {
 }
 
 #[test]
+fn residual_packet_does_not_invent_review_before_initial_scope() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "initial lead resume",
+            "--check-command",
+            "test -f pass-marker",
+        ],
+        None,
+    );
+    assert_eq!(begin["next"]["action"], "lead_decision");
+
+    let resumed = fixture.value(&["work", "resume"], None);
+    assert_eq!(resumed["status"], "resumed");
+    assert_eq!(resumed["work"], begin["work"]);
+    assert_eq!(resumed["next"]["action"], "lead_decision");
+    assert!(resumed["next"]["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "scoped"));
+
+    assert!(!resumed["residual"]["stillValid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["evidence"] == "current_review" && item["status"] == "approved"));
+    assert!(!resumed["residual"]["doNotRepeat"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "review"));
+    assert!(!resumed["residual"]["remaining"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["obligation"] == "lead_acceptance"));
+    assert!(resumed["residual"]["remaining"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["obligation"] == "scope"));
+}
+
+#[test]
 fn residual_packet_keeps_stale_subject_evidence_out_of_reuse() {
     let fixture = Fixture::new();
     let check = "test -f marker";

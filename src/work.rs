@@ -279,9 +279,13 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
         }
     }
 
-    if next["action"] == "lead_decision" {
-        still_valid.push(json!({"evidence": "current_review", "status": "approved"}));
-        do_not_repeat.push(json!("review"));
+    if next["action"] == "lead_decision" && next_outcome_is(&next, "scoped") {
+        remaining.push(json!({"obligation": "scope"}));
+    } else if next["action"] == "lead_decision" {
+        if status["review"]["status"] == "approved" {
+            still_valid.push(json!({"evidence": "current_review", "status": "approved"}));
+            do_not_repeat.push(json!("review"));
+        }
         remaining.push(json!({"obligation": "lead_acceptance"}));
     } else if next["role"] == "reviewer" {
         remaining.push(json!({"obligation": "review"}));
@@ -307,6 +311,12 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
             "subjectChangeInvalidates": true
         }
     }))
+}
+
+fn next_outcome_is(next: &Value, expected: &str) -> bool {
+    next["outcomes"]
+        .as_array()
+        .is_some_and(|outcomes| outcomes.iter().any(|outcome| outcome == expected))
 }
 
 fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<String>, String> {
