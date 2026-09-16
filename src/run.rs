@@ -41,6 +41,9 @@ pub fn start(
         harness_receipt,
         None,
         None,
+        None,
+        None,
+        None,
     )
 }
 
@@ -56,6 +59,9 @@ pub fn start_with_policy(
     harness_receipt: Option<&str>,
     check_command: Option<&str>,
     proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -69,8 +75,19 @@ pub fn start_with_policy(
         boundary,
     )?;
     let check_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+    let preservation = crate::run_value::preservation_from_cli(
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+    )?;
     if check_policy.is_some() && !has_worker_stage(&plan) {
         return Err("checked run requires a workflow with at least one worker stage".into());
+    }
+    if preservation.is_some() && !has_worker_stage(&plan) {
+        return Err("preservation requires a workflow with at least one worker stage".into());
+    }
+    if preservation.is_some() && !crate::producer::exitbind_surface() {
+        return Err("preservation requirements require Exitbind v5 runs".into());
     }
     if let Some(receipt) = harness_receipt {
         crate::receipt::for_run(loaded, receipt, &plan)?;
@@ -124,6 +141,9 @@ pub fn start_with_policy(
         }
         if let Some(policy) = &check_policy {
             value["checkPolicy"] = policy.value();
+        }
+        if let Some(preservation) = &preservation {
+            value["preservation"] = preservation.value();
         }
         if version == 5 {
             value["subject"] = subject(goal, &value["plan"], &config_sha, &run_id);
@@ -364,6 +384,28 @@ pub fn record_check(
     exit_code: &str,
     duration_ms: Option<&str>,
 ) -> Result<Value, String> {
+    record_check_for_requirement(
+        loaded,
+        ledger,
+        target,
+        None,
+        check_command,
+        exit_code,
+        duration_ms,
+    )
+}
+
+/// Record a caller-supplied result for either the normal deterministic check or
+/// a named preservation requirement on the exact current worker completion.
+pub fn record_check_for_requirement(
+    loaded: &Loaded,
+    ledger: &str,
+    target: &str,
+    requirement_id: Option<&str>,
+    check_command: &str,
+    exit_code: &str,
+    duration_ms: Option<&str>,
+) -> Result<Value, String> {
     if check_command.trim().is_empty() {
         return Err("--check-command requires a non-empty value".into());
     }
@@ -389,11 +431,7 @@ pub fn record_check(
         }
         assert_no_drift(loaded, &state)?;
         crate::run_artifact::assert_current(loaded, &state)?;
-        let policy = state
-            .get("checkPolicy")
-            .ok_or("run has no configured check policy")?;
-        let policy = crate::run_value::policy_from_value(policy, 0)
-            .map_err(|error| error.replacen("line 0", "state", 1))?;
+        let policy = active_check_policy(&state, requirement_id)?;
         if policy.command != check_command
             || policy.command_sha256 != crate::hash::text(check_command)
         {
@@ -436,6 +474,9 @@ pub fn record_check(
         };
         if version == 5 {
             value["subjectSha256"] = state["subject"]["sha256"].clone();
+            if let Some(id) = requirement_id {
+                value["requirementId"] = json!(id);
+            }
         }
         value["durationMs"] = duration_ms.map_or(Value::Null, |duration| json!(duration));
         let event = run_state::make_event(value);
@@ -462,6 +503,16 @@ pub fn observe_check(
     target: &str,
     timeout_ms: Option<&str>,
 ) -> Result<Value, String> {
+    observe_check_for_requirement(loaded, ledger, target, None, timeout_ms)
+}
+
+pub fn observe_check_for_requirement(
+    loaded: &Loaded,
+    ledger: &str,
+    target: &str,
+    requirement_id: Option<&str>,
+    timeout_ms: Option<&str>,
+) -> Result<Value, String> {
     let timeout_ms = timeout_ms
         .map(|value| parse_positive("--timeout-ms", value))
         .transpose()?
@@ -485,11 +536,7 @@ pub fn observe_check(
         assert_no_drift(loaded, &state)?;
         crate::run_artifact::assert_current(loaded, &state)?;
         predecessor(loaded, &events[0])?;
-        let policy_value = state
-            .get("checkPolicy")
-            .ok_or("run has no configured check policy")?;
-        let policy = crate::run_value::policy_from_value(policy_value, 0)
-            .map_err(|error| error.replacen("line 0", "state", 1))?;
+        let policy = active_check_policy(&state, requirement_id)?;
         crate::run_value::validate_check_target(&state, target)?;
         Ok((source, policy))
     })?;
@@ -515,13 +562,7 @@ pub fn observe_check(
         assert_no_drift(loaded, &current_state)?;
         crate::run_artifact::assert_current(loaded, &current_state)?;
         predecessor(loaded, &current_events[0])?;
-        let current_policy = crate::run_value::policy_from_value(
-            current_state
-                .get("checkPolicy")
-                .ok_or("run has no configured check policy")?,
-            0,
-        )
-        .map_err(|error| error.replacen("line 0", "state", 1))?;
+        let current_policy = active_check_policy(&current_state, requirement_id)?;
         if current_policy != policy {
             return Err("check policy changed while observing; no mutation was made".into());
         }
@@ -547,6 +588,9 @@ pub fn observe_check(
         });
         if current_state["version"] == 5 {
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
+            if let Some(id) = requirement_id {
+                event_value["requirementId"] = json!(id);
+            }
         }
         let event = run_state::make_event(event_value);
         let mut all = current_events;
@@ -561,6 +605,48 @@ pub fn observe_check(
             "checks": crate::run_value::status(&next_state, Some(true))?["checks"]
         }))
     })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ActiveCheckPolicy {
+    command: String,
+    command_sha256: String,
+    origin: crate::run_value::ProofOrigin,
+}
+
+fn active_check_policy(
+    state: &Value,
+    requirement_id: Option<&str>,
+) -> Result<ActiveCheckPolicy, String> {
+    if let Some(id) = requirement_id {
+        if state["version"].as_u64() != Some(5) {
+            return Err("preservation checks require an Exitbind v5 run".into());
+        }
+        let preservation = state
+            .get("preservation")
+            .ok_or("run has no configured preservation policy")?;
+        let preservation = crate::run_value::preservation_from_value(preservation, 0)
+            .map_err(|error| error.replacen("line 0", "state", 1))?;
+        let requirement = preservation
+            .requirement(id)
+            .ok_or("preservation requirement is not configured")?;
+        Ok(ActiveCheckPolicy {
+            command: requirement.command.clone(),
+            command_sha256: requirement.command_sha256.clone(),
+            origin: requirement.origin,
+        })
+    } else {
+        let policy = state
+            .get("checkPolicy")
+            .ok_or("run has no configured check policy")?;
+        let policy = crate::run_value::policy_from_value(policy, 0)
+            .map_err(|error| error.replacen("line 0", "state", 1))?;
+        Ok(ActiveCheckPolicy {
+            command: policy.command,
+            command_sha256: policy.command_sha256,
+            origin: policy.origin,
+        })
+    }
 }
 
 fn run_observed_command(
@@ -975,6 +1061,9 @@ pub fn supersede(
         harness_receipt,
         None,
         None,
+        None,
+        None,
+        None,
     )
 }
 
@@ -992,6 +1081,9 @@ pub fn supersede_with_policy(
     harness_receipt: Option<&str>,
     check_command: Option<&str>,
     proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -1032,6 +1124,16 @@ pub fn supersede_with_policy(
             .transpose()
             .map_err(|error| error.replacen("line 0", "state", 1))?;
         let requested_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+        let old_preservation = old_state
+            .get("preservation")
+            .map(|value| crate::run_value::preservation_from_value(value, 0))
+            .transpose()
+            .map_err(|error| error.replacen("line 0", "state", 1))?;
+        let requested_preservation = crate::run_value::preservation_from_cli(
+            preserve_requirement,
+            preservation_check_command,
+            preservation_proof_origin,
+        )?;
         let check_policy: Option<crate::run_value::CheckPolicy> = match (
             old_policy,
             requested_policy,
@@ -1048,10 +1150,31 @@ pub fn supersede_with_policy(
                 Some(old)
             }
         };
+        let preservation = match (old_preservation, requested_preservation) {
+            (Some(old), None) => Some(old),
+            (None, requested) => requested,
+            (Some(old), Some(requested)) => {
+                if old != requested {
+                    return Err(
+                        "successor preservation policy differs from predecessor; choose an explicit new checked run"
+                            .into(),
+                    );
+                }
+                Some(old)
+            }
+        };
         if check_policy.is_some() && !has_worker_stage(&plan) {
             return Err(
                 "checked successor requires a workflow with at least one worker stage".into(),
             );
+        }
+        if preservation.is_some() && !has_worker_stage(&plan) {
+            return Err(
+                "preservation successor requires a workflow with at least one worker stage".into(),
+            );
+        }
+        if preservation.is_some() && !crate::producer::exitbind_surface() {
+            return Err("preservation requirements require Exitbind v5 runs".into());
         }
         let old_rel = config::rel(&loaded.state_root, &old.expected)?;
         let old_sha = hash::text(&old_source);
@@ -1125,6 +1248,9 @@ pub fn supersede_with_policy(
         }
         if let Some(policy) = &check_policy {
             event_value["checkPolicy"] = policy.value();
+        }
+        if let Some(preservation) = &preservation {
+            event_value["preservation"] = preservation.value();
         }
         if version == 5 {
             event_value["subject"] = subject(goal, &event_value["plan"], &config_sha, &run_id);

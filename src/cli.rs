@@ -174,21 +174,35 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "boundary",
                     "harness-receipt",
                     "proof-origin",
+                    "preserve-requirement",
+                    "preservation-check-command",
+                    "preservation-proof-origin",
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
             print_json(&crate::work::begin(
                 l,
-                positional(a, 1, "work begin requires WORKFLOW")?,
-                option(a, "goal", "work begin requires --goal GOAL")?,
-                option(
-                    a,
-                    "check-command",
-                    "work begin requires --check-command COMMAND",
-                )?,
-                a.options.get("boundary").map(String::as_str),
-                a.options.get("harness-receipt").map(String::as_str),
-                a.options.get("proof-origin").map(String::as_str),
+                crate::work::BeginOptions {
+                    workflow: positional(a, 1, "work begin requires WORKFLOW")?,
+                    goal: option(a, "goal", "work begin requires --goal GOAL")?,
+                    check_command: option(
+                        a,
+                        "check-command",
+                        "work begin requires --check-command COMMAND",
+                    )?,
+                    boundary: a.options.get("boundary").map(String::as_str),
+                    harness_receipt: a.options.get("harness-receipt").map(String::as_str),
+                    proof_origin: a.options.get("proof-origin").map(String::as_str),
+                    preserve_requirement: a.options.get("preserve-requirement").map(String::as_str),
+                    preservation_check_command: a
+                        .options
+                        .get("preservation-check-command")
+                        .map(String::as_str),
+                    preservation_proof_origin: a
+                        .options
+                        .get("preservation-proof-origin")
+                        .map(String::as_str),
+                },
             )?)
         }
         "next" => {
@@ -603,6 +617,9 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "harness-receipt",
             "check-command",
             "proof-origin",
+            "preserve-requirement",
+            "preservation-check-command",
+            "preservation-proof-origin",
         ][..],
         "next" => &["config", "json", "text"][..],
         "inspect" => &["config", "json"][..],
@@ -613,9 +630,10 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "check-command",
             "exit-code",
             "duration-ms",
+            "requirement",
             "json",
         ][..],
-        "observe-check" => &["config", "target", "timeout-ms", "json"][..],
+        "observe-check" => &["config", "target", "requirement", "timeout-ms", "json"][..],
         "status" => &["config", "json"][..],
         "explain" => &["config", "event", "json"][..],
         "report" => &["config", "json"][..],
@@ -628,6 +646,9 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "harness-receipt",
             "check-command",
             "proof-origin",
+            "preserve-requirement",
+            "preservation-check-command",
+            "preservation-proof-origin",
             "json",
         ][..],
         _ => {
@@ -650,7 +671,21 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let receipt = a.options.get("harness-receipt").map(String::as_str);
             let check_command = a.options.get("check-command").map(String::as_str);
             let proof_origin = a.options.get("proof-origin").map(String::as_str);
-            if check_command.is_none() && proof_origin.is_none() {
+            let preserve_requirement = a.options.get("preserve-requirement").map(String::as_str);
+            let preservation_check_command = a
+                .options
+                .get("preservation-check-command")
+                .map(String::as_str);
+            let preservation_proof_origin = a
+                .options
+                .get("preservation-proof-origin")
+                .map(String::as_str);
+            if check_command.is_none()
+                && proof_origin.is_none()
+                && preserve_requirement.is_none()
+                && preservation_check_command.is_none()
+                && preservation_proof_origin.is_none()
+            {
                 run::start(l, workflow, goal, ledger, boundary, receipt)
             } else {
                 run::start_with_policy(
@@ -662,6 +697,9 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     receipt,
                     check_command,
                     proof_origin,
+                    preserve_requirement,
+                    preservation_check_command,
+                    preservation_proof_origin,
                 )
             }
         }
@@ -686,27 +724,39 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         }
         "record-check" => {
             args::assert_positionals("run record-check", a, 2)?;
-            run::record_check(
-                l,
-                positional(a, 1, "run record-check requires LEDGER")?,
-                option(a, "target", "run record-check requires --target")?,
-                option(
-                    a,
-                    "check-command",
-                    "run record-check requires --check-command",
-                )?,
-                option(a, "exit-code", "run record-check requires --exit-code")?,
-                a.options.get("duration-ms").map(String::as_str),
-            )
+            let ledger = positional(a, 1, "run record-check requires LEDGER")?;
+            let target = option(a, "target", "run record-check requires --target")?;
+            let check_command = option(
+                a,
+                "check-command",
+                "run record-check requires --check-command",
+            )?;
+            let exit_code = option(a, "exit-code", "run record-check requires --exit-code")?;
+            let duration_ms = a.options.get("duration-ms").map(String::as_str);
+            if let Some(requirement) = a.options.get("requirement").map(String::as_str) {
+                run::record_check_for_requirement(
+                    l,
+                    ledger,
+                    target,
+                    Some(requirement),
+                    check_command,
+                    exit_code,
+                    duration_ms,
+                )
+            } else {
+                run::record_check(l, ledger, target, check_command, exit_code, duration_ms)
+            }
         }
         "observe-check" => {
             args::assert_positionals("run observe-check", a, 2)?;
-            run::observe_check(
-                l,
-                positional(a, 1, "run observe-check requires LEDGER")?,
-                option(a, "target", "run observe-check requires --target")?,
-                a.options.get("timeout-ms").map(String::as_str),
-            )
+            let ledger = positional(a, 1, "run observe-check requires LEDGER")?;
+            let target = option(a, "target", "run observe-check requires --target")?;
+            let timeout_ms = a.options.get("timeout-ms").map(String::as_str);
+            if let Some(requirement) = a.options.get("requirement").map(String::as_str) {
+                run::observe_check_for_requirement(l, ledger, target, Some(requirement), timeout_ms)
+            } else {
+                run::observe_check(l, ledger, target, timeout_ms)
+            }
         }
         "status" => {
             args::assert_positionals("run status", a, 2)?;
@@ -797,7 +847,21 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let receipt = a.options.get("harness-receipt").map(String::as_str);
             let check_command = a.options.get("check-command").map(String::as_str);
             let proof_origin = a.options.get("proof-origin").map(String::as_str);
-            if check_command.is_none() && proof_origin.is_none() {
+            let preserve_requirement = a.options.get("preserve-requirement").map(String::as_str);
+            let preservation_check_command = a
+                .options
+                .get("preservation-check-command")
+                .map(String::as_str);
+            let preservation_proof_origin = a
+                .options
+                .get("preservation-proof-origin")
+                .map(String::as_str);
+            if check_command.is_none()
+                && proof_origin.is_none()
+                && preserve_requirement.is_none()
+                && preservation_check_command.is_none()
+                && preservation_proof_origin.is_none()
+            {
                 run::supersede(l, old_ledger, workflow, goal, ledger, boundary, receipt)
             } else {
                 run::supersede_with_policy(
@@ -810,6 +874,9 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     receipt,
                     check_command,
                     proof_origin,
+                    preserve_requirement,
+                    preservation_check_command,
+                    preservation_proof_origin,
                 )
             }
         }

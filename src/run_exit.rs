@@ -4,7 +4,7 @@
 //! freshness, acceptance gating, and the canonical wire outcome.  Consumers
 //! may project these facts, but must not classify the exit independently.
 
-use crate::run_value::{self, CheckPolicy};
+use crate::run_value::{self, CheckPolicy, PreservationRequirement};
 use serde_json::{json, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +27,8 @@ impl CheckTargetStatus {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckTarget {
     pub(crate) target_event_sha256: String,
+    pub(crate) requirement_id: Option<String>,
+    pub(crate) requirement_text: Option<String>,
     pub(crate) status: CheckTargetStatus,
     pub(crate) check_event_sha256: Option<String>,
     pub(crate) exit_code: Option<u64>,
@@ -40,6 +42,15 @@ impl CheckTarget {
             "targetEventSha256": self.target_event_sha256,
             "status": self.status.as_str(),
         });
+        if let Some(id) = &self.requirement_id {
+            value["kind"] = json!("preservation");
+            value["requirementId"] = json!(id);
+        } else {
+            value["kind"] = json!("check");
+        }
+        if let Some(text) = &self.requirement_text {
+            value["requirementText"] = json!(text);
+        }
         if let Some(check_event_sha256) = &self.check_event_sha256 {
             value["checkEventSha256"] = json!(check_event_sha256);
         }
@@ -60,6 +71,9 @@ impl CheckTarget {
             "targetEventSha256": self.target_event_sha256,
             "status": self.status.as_str(),
         });
+        if let Some(id) = &self.requirement_id {
+            value["requirementId"] = json!(id);
+        }
         if let Some(check_event_sha256) = &self.check_event_sha256 {
             value["checkEventSha256"] = json!(check_event_sha256);
         }
@@ -77,6 +91,10 @@ impl CheckTarget {
 
     pub(crate) fn is_failed(&self) -> bool {
         self.status == CheckTargetStatus::Failed
+    }
+
+    pub(crate) fn is_preservation(&self) -> bool {
+        self.requirement_id.is_some()
     }
 
     pub(crate) fn is_observed(&self) -> bool {
@@ -109,7 +127,19 @@ impl CheckAssessment {
     }
 
     pub(crate) fn reason(&self) -> Option<&'static str> {
-        if self.targets.iter().any(CheckTarget::is_missing) {
+        if self
+            .targets
+            .iter()
+            .any(|target| target.is_preservation() && target.is_missing())
+        {
+            Some("preservation_missing")
+        } else if self
+            .targets
+            .iter()
+            .any(|target| target.is_preservation() && target.is_failed())
+        {
+            Some("preservation_failed")
+        } else if self.targets.iter().any(CheckTarget::is_missing) {
             Some("check_missing")
         } else if self.targets.iter().any(CheckTarget::is_failed) {
             Some("check_failed")
@@ -161,6 +191,11 @@ impl ExitDecision {
                 "check_failed",
                 "the frozen check reported failure",
             ),
+            Self::Refused("preservation_failed") => (
+                "REFUSED",
+                "preservation_failed",
+                "a preservation check reported failure",
+            ),
             Self::Refused("lead_rejected") => (
                 "REFUSED",
                 "lead_rejected",
@@ -171,6 +206,11 @@ impl ExitDecision {
                 "BLOCKED",
                 "check_missing",
                 "a required check or transition is missing or unresolved",
+            ),
+            Self::Blocked("preservation_missing") => (
+                "BLOCKED",
+                "preservation_missing",
+                "a required preservation check is missing or unresolved",
             ),
             Self::Blocked(code) => ("BLOCKED", code, "a required transition is unresolved"),
             Self::InProgress => (
@@ -281,12 +321,19 @@ impl ExitState {
         }
         if self.status == "accepted" {
             ExitDecision::Ready
-        } else if self.assessment.reason() == Some("check_failed") {
-            ExitDecision::Refused("check_failed")
+        } else if matches!(
+            self.assessment.reason(),
+            Some("check_failed" | "preservation_failed")
+        ) {
+            ExitDecision::Refused(self.assessment.reason().unwrap_or("check_failed"))
         } else if self.status == "rejected" {
             ExitDecision::Refused("lead_rejected")
-        } else if self.assessment.reason() == Some("check_missing") || self.status == "blocked" {
-            ExitDecision::Blocked("check_missing")
+        } else if matches!(
+            self.assessment.reason(),
+            Some("check_missing" | "preservation_missing")
+        ) || self.status == "blocked"
+        {
+            ExitDecision::Blocked(self.assessment.reason().unwrap_or("check_missing"))
         } else {
             ExitDecision::InProgress
         }
@@ -335,6 +382,11 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
     };
     let policy = run_value::policy_from_value(policy_value, 0)
         .map_err(|error| error.replacen("line 0", "state", 1))?;
+    let preservation = state
+        .get("preservation")
+        .map(|value| run_value::preservation_from_value(value, 0))
+        .transpose()
+        .map_err(|error| error.replacen("line 0", "state", 1))?;
     let expected_workers = state["plan"]["stages"]
         .as_array()
         .ok_or("run state plan stages are invalid")?
@@ -357,53 +409,94 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
     let empty_checks = Vec::new();
     let checks = state["checks"].as_array().unwrap_or(&empty_checks);
     let current_subject = state["subject"]["sha256"].as_str();
-    let targets = submissions
+    let workers = submissions
         .iter()
         .filter(|submission| {
             submission["attempt"] == attempt
                 && submission["role"] == "worker"
                 && submission["outcome"] == "completed"
         })
-        .map(|submission| {
-            let target = submission["eventSha256"].clone();
-            let latest = checks.iter().rfind(|check| {
-                check["targetEventSha256"] == target
-                    && (state["version"] != 5 || check["subjectSha256"].as_str() == current_subject)
-            });
-            let target_event_sha256 = target
-                .as_str()
-                .map(str::to_owned)
-                .ok_or("worker submission event hash is invalid")?;
-            Ok::<CheckTarget, String>(match latest {
-                None => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Missing,
-                    check_event_sha256: None,
-                    exit_code: None,
-                    result: None,
-                    acquisition: None,
-                },
-                Some(check) if run_value::check_passed(check) => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Passed,
-                    check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
-                    exit_code: run_value::check_exit_code(check),
-                    result: run_value::check_result(check),
-                    acquisition: run_value::check_acquisition(check),
-                },
-                Some(check) => CheckTarget {
-                    target_event_sha256,
-                    status: CheckTargetStatus::Failed,
-                    check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
-                    exit_code: run_value::check_exit_code(check),
-                    result: run_value::check_result(check),
-                    acquisition: run_value::check_acquisition(check),
-                },
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let incomplete = expected_workers == 0 || targets.len() < expected_workers;
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut targets = Vec::new();
+    for submission in &workers {
+        targets.push(target_for(
+            submission,
+            checks,
+            current_subject,
+            state["version"].as_u64().unwrap_or_default(),
+            None,
+        )?);
+        if let Some(preservation) = &preservation {
+            for requirement in &preservation.requirements {
+                targets.push(target_for(
+                    submission,
+                    checks,
+                    current_subject,
+                    state["version"].as_u64().unwrap_or_default(),
+                    Some(requirement),
+                )?);
+            }
+        }
+    }
+    let incomplete = expected_workers == 0 || workers.len() < expected_workers;
     Ok(CheckAssessment::configured(policy, targets, incomplete))
+}
+
+fn target_for(
+    submission: &Value,
+    checks: &[Value],
+    current_subject: Option<&str>,
+    version: u64,
+    requirement: Option<&PreservationRequirement>,
+) -> Result<CheckTarget, String> {
+    let target = submission["eventSha256"].clone();
+    let latest = checks.iter().rfind(|check| {
+        check["targetEventSha256"] == target
+            && (version != 5 || check["subjectSha256"].as_str() == current_subject)
+            && match requirement {
+                Some(requirement) => check["requirementId"].as_str() == Some(&requirement.id),
+                None => check.get("requirementId").is_none(),
+            }
+    });
+    let target_event_sha256 = target
+        .as_str()
+        .map(str::to_owned)
+        .ok_or("worker submission event hash is invalid")?;
+    let requirement_id = requirement.map(|item| item.id.clone());
+    let requirement_text = requirement.map(|item| item.text.clone());
+    Ok(match latest {
+        None => CheckTarget {
+            target_event_sha256,
+            requirement_id,
+            requirement_text,
+            status: CheckTargetStatus::Missing,
+            check_event_sha256: None,
+            exit_code: None,
+            result: None,
+            acquisition: None,
+        },
+        Some(check) if run_value::check_passed(check) => CheckTarget {
+            target_event_sha256,
+            requirement_id,
+            requirement_text,
+            status: CheckTargetStatus::Passed,
+            check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
+            exit_code: run_value::check_exit_code(check),
+            result: run_value::check_result(check),
+            acquisition: run_value::check_acquisition(check),
+        },
+        Some(check) => CheckTarget {
+            target_event_sha256,
+            requirement_id,
+            requirement_text,
+            status: CheckTargetStatus::Failed,
+            check_event_sha256: check["eventSha256"].as_str().map(str::to_owned),
+            exit_code: run_value::check_exit_code(check),
+            result: run_value::check_result(check),
+            acquisition: run_value::check_acquisition(check),
+        },
+    })
 }
 
 fn planned_counts(state: &Value) -> Result<(usize, usize), String> {

@@ -28,6 +28,9 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     if let Some(policy) = first.get("checkPolicy") {
         state["checkPolicy"] = policy.clone();
     }
+    if let Some(preservation) = first.get("preservation") {
+        state["preservation"] = preservation.clone();
+    }
     if let Some(subject) = first.get("subject") {
         state["subject"] = subject.clone();
     }
@@ -268,9 +271,26 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         if let Some(policy) = event.get("checkPolicy") {
             crate::run_value::policy_from_value(policy, line)?;
         }
+        if let Some(preservation) = event.get("preservation") {
+            crate::run_value::preservation_from_value(preservation, line)?;
+            let has_worker = stages.iter().any(|stage| {
+                stage["agents"]
+                    .as_array()
+                    .is_some_and(|agents| agents.iter().any(|agent| agent["role"] == "worker"))
+            });
+            if !has_worker {
+                return Err(format!(
+                    "invalid run ledger line {line}: preservation requires a worker stage"
+                ));
+            }
+        }
     } else if event.get("checkPolicy").is_some() {
         return Err(format!(
             "invalid run ledger line {line}: checkPolicy requires checked event version"
+        ));
+    } else if event.get("preservation").is_some() {
+        return Err(format!(
+            "invalid run ledger line {line}: preservation requires v5"
         ));
     }
     Ok(())
@@ -546,6 +566,7 @@ fn reject_unknown(
         }
         if version == 5 {
             allowed.push("subject");
+            allowed.push("preservation");
         }
         return object
             .keys()
@@ -588,6 +609,7 @@ fn reject_unknown(
                     "runId",
                     "subjectSha256",
                     "targetEventSha256",
+                    "requirementId",
                     "checkCommand",
                     "checkCommandSha256",
                     "origin",

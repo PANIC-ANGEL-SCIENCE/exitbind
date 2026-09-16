@@ -410,6 +410,231 @@ fn work_resume_projects_residual_packet_without_repeating_valid_work() {
 }
 
 #[test]
+fn preservation_requirement_is_separate_from_functional_check_and_resume_reuses_it() {
+    let fixture = Fixture::new_single();
+    let functional = "n=$(cat functional.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > functional.count";
+    let preservation = "n=$(cat preservation.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > preservation.count";
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "preserve accepted precedence",
+            "--check-command",
+            functional,
+            "--preserve-requirement",
+            "precedence:accepted precedence remains binding",
+            "--preservation-check-command",
+            preservation,
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let ledger = fixture.ledger(&work);
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let worker = fixture.value(&["work", "next", &work], None);
+    let completed = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"implementation"),
+    );
+    assert_eq!(completed["next"]["action"], "check");
+    assert_eq!(completed["next"]["check"]["kind"], "check");
+
+    let functional_checked = fixture.value(&["work", "check", &work], None);
+    assert_eq!(functional_checked["next"]["action"], "check");
+    assert_eq!(functional_checked["next"]["check"]["kind"], "preservation");
+    assert_eq!(
+        functional_checked["next"]["check"]["requirementId"],
+        "precedence"
+    );
+
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/reviewer.md"),
+        b"review\n",
+    )
+    .unwrap();
+    assert!(fixture
+        .submit_low_level(
+            "reviewer",
+            &ledger,
+            "approved",
+            ".exitbind/artifacts/reviewer.md",
+        )
+        .status
+        .success());
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/lead.md"),
+        b"accept\n",
+    )
+    .unwrap();
+    let premature =
+        fixture.submit_low_level("lead", &ledger, "accepted", ".exitbind/artifacts/lead.md");
+    assert!(
+        !premature.status.success(),
+        "accepted without preservation check: {premature:?}"
+    );
+    let premature_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&premature.stdout),
+        String::from_utf8_lossy(&premature.stderr)
+    );
+    assert!(
+        premature_text.contains("preservation_missing"),
+        "{premature:?}"
+    );
+
+    let preserved = fixture.value(&["work", "check", &work], None);
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
+        "1\n"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
+        "1\n"
+    );
+    let resumed = fixture.value(&["work", "resume"], None);
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
+        "1\n"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
+        "1\n"
+    );
+    assert!(resumed["residual"]["stillValid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["evidence"] == "preservation" && item["requirementId"] == "precedence"));
+    assert!(resumed["residual"]["doNotRepeat"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "preservation:precedence"));
+    assert_eq!(preserved["next"]["action"], "lead_decision");
+    let done = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            preserved["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert_eq!(done["next"]["progress"]["state"], "READY");
+}
+
+#[test]
+fn failed_preservation_blocks_acceptance_without_claiming_functional_failure() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "detect weakened requirement",
+            "--check-command",
+            "true",
+            "--preserve-requirement",
+            "precedence:accepted precedence remains binding",
+            "--preservation-check-command",
+            "test ! -f preservation-fail",
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let ledger = fixture.ledger(&work);
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let worker = fixture.value(&["work", "next", &work], None);
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"implementation"),
+    );
+    fixture.value(&["work", "check", &work], None);
+    fs::write(fixture.root.join("preservation-fail"), b"weakened").unwrap();
+    let failed = fixture.value(&["work", "check", &work], None);
+    assert_eq!(
+        failed["next"]["packet"]["checkEvidence"][0]["status"],
+        "passed"
+    );
+    assert_eq!(
+        failed["next"]["packet"]["checkEvidence"][1]["status"],
+        "failed"
+    );
+    assert_eq!(
+        failed["next"]["packet"]["checkEvidence"][1]["requirementId"],
+        "precedence"
+    );
+
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/reviewer.md"),
+        b"review\n",
+    )
+    .unwrap();
+    assert!(fixture
+        .submit_low_level(
+            "reviewer",
+            &ledger,
+            "approved",
+            ".exitbind/artifacts/reviewer.md",
+        )
+        .status
+        .success());
+    fs::write(
+        fixture.root.join(".exitbind/artifacts/lead.md"),
+        b"accept\n",
+    )
+    .unwrap();
+    let refused =
+        fixture.submit_low_level("lead", &ledger, "accepted", ".exitbind/artifacts/lead.md");
+    assert!(!refused.status.success(), "{refused:?}");
+    let refused_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(refused_text.contains("preservation_failed"), "{refused:?}");
+}
+
+#[test]
 fn residual_packet_does_not_invent_review_before_initial_scope() {
     let fixture = Fixture::new_single();
     let begin = fixture.value(

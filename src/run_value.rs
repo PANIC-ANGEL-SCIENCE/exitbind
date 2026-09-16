@@ -181,6 +181,20 @@ pub(crate) struct CheckPolicy {
     pub(crate) origin: ProofOrigin,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PreservationRequirement {
+    pub(crate) id: String,
+    pub(crate) text: String,
+    pub(crate) command: String,
+    pub(crate) command_sha256: String,
+    pub(crate) origin: ProofOrigin,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PreservationPolicy {
+    pub(crate) requirements: Vec<PreservationRequirement>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ProofOrigin {
@@ -199,6 +213,8 @@ enum CheckAction {
 enum ProtectionReason {
     CheckMissing,
     CheckFailed,
+    PreservationMissing,
+    PreservationFailed,
 }
 
 impl ProtectionReason {
@@ -206,6 +222,8 @@ impl ProtectionReason {
         match self {
             Self::CheckMissing => "check_missing",
             Self::CheckFailed => "check_failed",
+            Self::PreservationMissing => "preservation_missing",
+            Self::PreservationFailed => "preservation_failed",
         }
     }
 }
@@ -289,6 +307,8 @@ struct CheckObservationV4 {
     run_id: String,
     #[serde(rename = "targetEventSha256")]
     target_event_sha256: String,
+    #[serde(rename = "requirementId")]
+    requirement_id: Option<String>,
     #[serde(rename = "checkCommand")]
     check_command: String,
     #[serde(rename = "checkCommandSha256")]
@@ -310,6 +330,8 @@ struct CheckObservationV4 {
 struct CheckEvidence {
     #[serde(rename = "targetEventSha256")]
     target_event_sha256: String,
+    #[serde(rename = "requirementId")]
+    requirement_id: Option<String>,
     status: EvidenceStatus,
     #[serde(rename = "checkEventSha256")]
     check_event_sha256: Option<String>,
@@ -378,10 +400,57 @@ impl CheckPolicy {
     }
 }
 
+impl PreservationRequirement {
+    pub(crate) fn value(&self) -> Value {
+        json!({
+            "id": self.id,
+            "text": self.text,
+            "command": self.command,
+            "commandSha256": self.command_sha256,
+            "origin": self.origin.as_str(),
+        })
+    }
+}
+
+impl PreservationPolicy {
+    pub(crate) fn value(&self) -> Value {
+        json!({
+            "version": CHECK_POLICY_VERSION,
+            "requirements": self
+                .requirements
+                .iter()
+                .map(PreservationRequirement::value)
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    pub(crate) fn requirement(&self, id: &str) -> Option<&PreservationRequirement> {
+        self.requirements.iter().find(|item| item.id == id)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CheckPolicyRecord {
     version: u64,
+    command: String,
+    #[serde(rename = "commandSha256")]
+    command_sha256: String,
+    origin: ProofOrigin,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreservationPolicyRecord {
+    version: u64,
+    requirements: Vec<PreservationRequirementRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreservationRequirementRecord {
+    id: String,
+    text: String,
     command: String,
     #[serde(rename = "commandSha256")]
     command_sha256: String,
@@ -446,6 +515,111 @@ pub(crate) fn policy_from_value(value: &Value, line: usize) -> Result<CheckPolic
         command_sha256: record.command_sha256,
         origin: record.origin,
     })
+}
+
+pub(crate) fn preservation_from_cli(
+    requirement: Option<&str>,
+    command: Option<&str>,
+    origin: Option<&str>,
+) -> Result<Option<PreservationPolicy>, String> {
+    let Some(requirement) = requirement else {
+        if command.is_some() {
+            return Err("--preservation-check-command requires --preserve-requirement".into());
+        }
+        if origin.is_some() {
+            return Err("--preservation-proof-origin requires --preserve-requirement".into());
+        }
+        return Ok(None);
+    };
+    let Some(command) = command else {
+        return Err("--preserve-requirement requires --preservation-check-command".into());
+    };
+    let (id, text) = requirement
+        .split_once(':')
+        .ok_or("--preserve-requirement must be ID:TEXT")?;
+    validate_requirement_id(id).map_err(|error| format!("--preserve-requirement {error}"))?;
+    validate_requirement_text(text).map_err(|error| format!("--preserve-requirement {error}"))?;
+    if command.trim().is_empty() {
+        return Err("--preservation-check-command requires a non-empty value".into());
+    }
+    if command.contains('\0') {
+        return Err("--preservation-check-command must not contain NUL bytes".into());
+    }
+    let origin = origin
+        .map(ProofOrigin::parse)
+        .transpose()?
+        .unwrap_or(ProofOrigin::LocalReport);
+    Ok(Some(PreservationPolicy {
+        requirements: vec![PreservationRequirement {
+            id: id.to_owned(),
+            text: text.to_owned(),
+            command: command.to_owned(),
+            command_sha256: crate::hash::text(command),
+            origin,
+        }],
+    }))
+}
+
+pub(crate) fn preservation_from_value(
+    value: &Value,
+    line: usize,
+) -> Result<PreservationPolicy, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("invalid run ledger line {line}: preservation must be an object"))?;
+    reject_unknown(object, &["version", "requirements"], line, "preservation")?;
+    let record: PreservationPolicyRecord = serde_json::from_value(value.clone())
+        .map_err(|_| format!("invalid run ledger line {line}: malformed preservation"))?;
+    if record.version != CHECK_POLICY_VERSION || record.requirements.is_empty() {
+        return Err(format!(
+            "invalid run ledger line {line}: malformed preservation"
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut requirements = Vec::with_capacity(record.requirements.len());
+    for item in record.requirements {
+        validate_requirement_id(&item.id)
+            .map_err(|_| format!("invalid run ledger line {line}: malformed preservation"))?;
+        validate_requirement_text(&item.text)
+            .map_err(|_| format!("invalid run ledger line {line}: malformed preservation"))?;
+        if item.command.trim().is_empty()
+            || item.command.contains('\0')
+            || !is_sha(Some(&item.command_sha256))
+            || crate::hash::text(&item.command) != item.command_sha256
+            || !seen.insert(item.id.clone())
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: malformed preservation"
+            ));
+        }
+        requirements.push(PreservationRequirement {
+            id: item.id,
+            text: item.text,
+            command: item.command,
+            command_sha256: item.command_sha256,
+            origin: item.origin,
+        });
+    }
+    Ok(PreservationPolicy { requirements })
+}
+
+fn validate_requirement_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty()
+        || id.len() > 64
+        || !id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
+    {
+        return Err("id must be 1-64 lowercase letters, digits, '-' or '_'");
+    }
+    Ok(())
+}
+
+fn validate_requirement_text(text: &str) -> Result<(), &'static str> {
+    if text.trim().is_empty() || text.len() > 512 || text.contains('\0') {
+        return Err("text must be non-empty, <=512 bytes, and contain no NUL bytes");
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_check_event(event: &Value, line: usize) -> Result<(), String> {
@@ -547,6 +721,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "runId",
         "subjectSha256",
         "targetEventSha256",
+        "requirementId",
         "checkCommand",
         "checkCommandSha256",
         "origin",
@@ -562,6 +737,11 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         return Err(format!(
             "invalid run ledger line {line}: malformed subject binding"
         ));
+    }
+    if let Some(id) = record.requirement_id.as_deref() {
+        validate_requirement_id(id).map_err(|_| {
+            format!("invalid run ledger line {line}: malformed preservation requirement binding")
+        })?;
     }
     let required = [
         "version",
@@ -693,7 +873,9 @@ pub(crate) fn validate_protection_event(event: &Value, line: usize) -> Result<()
         .iter()
         .any(|item| item.status == EvidenceStatus::Failed);
     let reason = record.reason.as_str();
-    if (!has_missing && reason == "check_missing") || (!has_failed && reason == "check_failed") {
+    if (!has_missing && matches!(reason, "check_missing" | "preservation_missing"))
+        || (!has_failed && matches!(reason, "check_failed" | "preservation_failed"))
+    {
         return Err(format!(
             "invalid run ledger line {line}: protection reason does not match evidence"
         ));
@@ -748,7 +930,7 @@ fn validate_protection_event_v4(event: &Value, line: usize) -> Result<(), String
         || evidence.is_empty()
         || !matches!(
             event["reason"].as_str(),
-            Some("check_missing" | "check_failed")
+            Some("check_missing" | "check_failed" | "preservation_missing" | "preservation_failed")
         )
         || !matches!(event["origin"].as_str(), Some("local_report" | "synthetic"))
         || !event["timestamp"].as_str().is_some_and(valid_timestamp)
@@ -763,8 +945,16 @@ fn validate_protection_event_v4(event: &Value, line: usize) -> Result<(), String
     }
     let has_missing = evidence.iter().any(|item| item["status"] == "missing");
     let has_failed = evidence.iter().any(|item| item["status"] == "failed");
-    if (!has_missing && event["reason"] == "check_missing")
-        || (!has_failed && event["reason"] == "check_failed")
+    if (!has_missing
+        && matches!(
+            event["reason"].as_str(),
+            Some("check_missing" | "preservation_missing")
+        ))
+        || (!has_failed
+            && matches!(
+                event["reason"].as_str(),
+                Some("check_failed" | "preservation_failed")
+            ))
     {
         return Err(format!(
             "invalid run ledger line {line}: protection reason does not match evidence"
@@ -783,13 +973,37 @@ fn validate_check_evidence_v4(value: &Value, line: usize) -> Result<(), String> 
         ));
     }
     match value["status"].as_str() {
-        Some("missing") if object.len() == 2 && object.contains_key("targetEventSha256") => Ok(()),
+        Some("missing")
+            if matches!(object.len(), 2 | 3) && object.contains_key("targetEventSha256") =>
+        {
+            if object.len() == 3 {
+                value["requirementId"]
+                    .as_str()
+                    .filter(|id| validate_requirement_id(id).is_ok())
+                    .map(|_| ())
+                    .ok_or_else(|| {
+                        format!("invalid run ledger line {line}: malformed protection evidence")
+                    })
+            } else {
+                Ok(())
+            }
+        }
         Some("failed")
-            if object.len() == 4
+            if matches!(object.len(), 4 | 5)
                 && object.contains_key("checkEventSha256")
                 && is_sha(value["checkEventSha256"].as_str())
                 && object.contains_key("result") =>
         {
+            if object.len() == 5
+                && value["requirementId"]
+                    .as_str()
+                    .filter(|id| validate_requirement_id(id).is_ok())
+                    .is_none()
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: malformed protection evidence"
+                ));
+            }
             let result = &value["result"];
             let valid = result.as_object().is_some_and(|result| {
                 result.len() == 2
@@ -824,18 +1038,31 @@ fn validate_check_evidence(value: &Value, line: usize) -> Result<(), String> {
         ));
     }
     if record.status == EvidenceStatus::Missing {
-        if object.len() != 2 {
+        if !(object.len() == 2
+            || (object.len() == 3
+                && record
+                    .requirement_id
+                    .as_deref()
+                    .is_some_and(|id| validate_requirement_id(id).is_ok())))
+        {
             return Err(format!(
                 "invalid run ledger line {line}: missing check evidence has extra fields"
             ));
         }
-    } else if object.len() != 4
-        || !is_sha(record.check_event_sha256.as_deref())
-        || record.exit_code.is_none()
-    {
-        return Err(format!(
-            "invalid run ledger line {line}: failed check evidence is malformed"
-        ));
+    } else {
+        let has_valid_requirement = record
+            .requirement_id
+            .as_deref()
+            .is_some_and(|id| validate_requirement_id(id).is_ok());
+        if !((object.len() == 4 && record.requirement_id.is_none())
+            || (object.len() == 5 && has_valid_requirement))
+            || !is_sha(record.check_event_sha256.as_deref())
+            || record.exit_code.is_none()
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: failed check evidence is malformed"
+            ));
+        }
     }
     Ok(())
 }
@@ -864,19 +1091,41 @@ pub(crate) fn validate_check_against_state(
     event: &Value,
     line: usize,
 ) -> Result<(), String> {
-    let policy_value = state
-        .get("checkPolicy")
-        .ok_or_else(|| format!("invalid run ledger line {line}: check policy is not configured"))?;
-    let policy = policy_from_value(policy_value, line)?;
     let target = event["targetEventSha256"]
         .as_str()
         .ok_or_else(|| format!("invalid run ledger line {line}: check target is malformed"))?;
     validate_check_target(state, target)
         .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
     let version = state["version"].as_u64().unwrap_or(0);
-    let policy_matches = event["checkCommand"] == policy.command
-        && event["checkCommandSha256"] == policy.command_sha256
-        && event["origin"] == policy.origin.as_str();
+    let requirement_id = event["requirementId"].as_str();
+    let (command, command_sha256, origin) = if let Some(id) = requirement_id {
+        if version != 5 {
+            return Err(format!(
+                "invalid run ledger line {line}: preservation checks require v5"
+            ));
+        }
+        let preservation = state.get("preservation").ok_or_else(|| {
+            format!("invalid run ledger line {line}: preservation is not configured")
+        })?;
+        let preservation = preservation_from_value(preservation, line)?;
+        let requirement = preservation.requirement(id).ok_or_else(|| {
+            format!("invalid run ledger line {line}: preservation requirement is not configured")
+        })?;
+        (
+            requirement.command.clone(),
+            requirement.command_sha256.clone(),
+            requirement.origin,
+        )
+    } else {
+        let policy_value = state.get("checkPolicy").ok_or_else(|| {
+            format!("invalid run ledger line {line}: check policy is not configured")
+        })?;
+        let policy = policy_from_value(policy_value, line)?;
+        (policy.command, policy.command_sha256, policy.origin)
+    };
+    let policy_matches = event["checkCommand"] == command
+        && event["checkCommandSha256"] == command_sha256
+        && event["origin"] == origin.as_str();
     let shape_matches = if matches!(version, 4 | 5) {
         event["version"] == version
             && matches!(event["acquisition"].as_str(), Some("reported" | "observed"))

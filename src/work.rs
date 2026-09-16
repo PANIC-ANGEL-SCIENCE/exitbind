@@ -16,20 +16,24 @@ fn artifacts_dir() -> String {
     format!("{}/artifacts", crate::project_layout::state_namespace())
 }
 
-pub(crate) fn begin(
-    loaded: &Loaded,
-    workflow: &str,
-    goal: &str,
-    check_command: &str,
-    boundary: Option<&str>,
-    harness_receipt: Option<&str>,
-    proof_origin: Option<&str>,
-) -> Result<Value, String> {
+pub(crate) struct BeginOptions<'a> {
+    pub(crate) workflow: &'a str,
+    pub(crate) goal: &'a str,
+    pub(crate) check_command: &'a str,
+    pub(crate) boundary: Option<&'a str>,
+    pub(crate) harness_receipt: Option<&'a str>,
+    pub(crate) proof_origin: Option<&'a str>,
+    pub(crate) preserve_requirement: Option<&'a str>,
+    pub(crate) preservation_check_command: Option<&'a str>,
+    pub(crate) preservation_proof_origin: Option<&'a str>,
+}
+
+pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value, String> {
     let token = hash::text(&format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
-        workflow,
-        goal,
-        check_command,
+        options.workflow,
+        options.goal,
+        options.check_command,
         loaded.source,
         std::process::id(),
         timestamp_nanos()
@@ -37,13 +41,16 @@ pub(crate) fn begin(
     let ledger = format!("{}/work-{token}.jsonl", runs_dir());
     let _started = run::start_with_policy(
         loaded,
-        workflow,
-        goal,
+        options.workflow,
+        options.goal,
         &ledger,
-        boundary,
-        harness_receipt,
-        Some(check_command),
-        proof_origin,
+        options.boundary,
+        options.harness_receipt,
+        Some(options.check_command),
+        options.proof_origin,
+        options.preserve_requirement,
+        options.preservation_check_command,
+        options.preservation_proof_origin,
     )?;
     let work = format!("{WORK_PREFIX}{token}");
     let next = next_for(loaded, &work, &ledger)?;
@@ -101,9 +108,15 @@ pub(crate) fn return_result(
 
 pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
-    let target =
+    let pending =
         current_check_target(loaded, &ledger)?.ok_or("no current worker check is pending")?;
-    let _observed = run::observe_check(loaded, &ledger, &target, None)?;
+    let _observed = run::observe_check_for_requirement(
+        loaded,
+        &ledger,
+        &pending.target_event_sha256,
+        pending.requirement_id.as_deref(),
+        None,
+    )?;
     Ok(json!({"work": work, "next": next_for(loaded, work, &ledger)?}))
 }
 
@@ -178,8 +191,8 @@ fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> 
     if value["status"] != "running" {
         return Ok(json!({"action": "done", "status": value["status"], "progress": progress}));
     }
-    if current_check_target(loaded, ledger)?.is_some() {
-        return Ok(json!({"action": "check", "progress": progress}));
+    if let Some(pending) = current_check_target(loaded, ledger)? {
+        return Ok(json!({"action": "check", "check": pending.value(), "progress": progress}));
     }
     let assignment = value["assignments"]
         .as_array()
@@ -237,22 +250,40 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
     if view["goal"].as_str().is_some_and(|goal| !goal.is_empty()) {
         established.push(json!({"fact": "work_identity_recorded", "status": "completed"}));
     }
-    if next["progress"]["weights"]["lead"]
-        .as_u64()
-        .is_some_and(|value| value > 0)
-        || next["progress"]["percent"]
-            .as_u64()
-            .is_some_and(|value| value > 0)
-    {
+    if scope_recorded(&view) {
         established.push(json!({"fact": "scope_recorded", "status": "completed"}));
         do_not_repeat.push(json!("scope"));
     }
 
     if let Some(targets) = status["checks"]["targets"].as_array() {
-        let passed = targets
-            .iter()
-            .filter(|target| target["status"] == "passed")
-            .count();
+        let passed = targets.iter().filter(|target| target["status"] == "passed");
+        let mut passed_count = 0;
+        for target in passed {
+            passed_count += 1;
+            let evidence = if target["kind"] == "preservation" {
+                "preservation"
+            } else {
+                "current_check"
+            };
+            still_valid.push(json!({
+                "evidence": evidence,
+                "status": "passed",
+                "checkEventSha256": target["checkEventSha256"],
+                "requirementId": target["requirementId"],
+                "subject": "current",
+            }));
+            do_not_repeat.push(json!(if target["kind"] == "preservation" {
+                format!(
+                    "preservation:{}",
+                    target["requirementId"].as_str().unwrap_or("unknown")
+                )
+            } else {
+                "passed_check".to_owned()
+            }));
+        }
+        if passed_count > 0 {
+            still_valid.push(json!({"evidence": "current_passed_checks", "status": "passed", "count": passed_count}));
+        }
         let missing = targets
             .iter()
             .filter(|target| target["status"] == "missing")
@@ -261,22 +292,27 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
             .iter()
             .filter(|target| target["status"] == "failed")
             .count();
-        if passed > 0 {
-            still_valid.push(json!({
-                "evidence": "current_check",
-                "status": "passed",
-                "count": passed,
-                "subject": "current"
+        for target in targets
+            .iter()
+            .filter(|target| target["status"] == "missing")
+        {
+            remaining.push(json!({
+                "obligation": target["kind"],
+                "requirementId": target["requirementId"],
             }));
-            do_not_repeat.push(json!("passed_check"));
-        }
-        if missing > 0 {
-            remaining.push(json!({"obligation": "check", "count": missing}));
             check_obligation_recorded = true;
         }
-        if failed > 0 {
-            remaining.push(json!({"obligation": "rework_after_failed_check", "count": failed}));
+        for target in targets.iter().filter(|target| target["status"] == "failed") {
+            remaining.push(json!({
+                "obligation": if target["kind"] == "preservation" {
+                    "rework_after_failed_preservation"
+                } else {
+                    "rework_after_failed_check"
+                },
+                "requirementId": target["requirementId"],
+            }));
         }
+        let _ = (missing, failed);
     }
 
     if next["action"] == "lead_decision" && next_outcome_is(&next, "scoped") {
@@ -296,14 +332,25 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
     }
 
     Ok(json!({
+        "version": 1,
         "work": work,
         "workflow": view["workflow"],
         "goal": view["goal"],
+        "snapshot": {
+            "eventCount": view["events"].as_array().map_or(0, Vec::len),
+            "headEventSha256": view["events"].as_array().and_then(|events| events.last()).and_then(|event| event["eventSha256"].as_str())
+        },
         "currentSubject": view["subject"],
         "alreadyEstablished": established,
         "stillValid": still_valid,
         "remaining": remaining,
         "next": next["action"],
+        "humanHelp": {
+            "whatHappened": "current work state was reconstructed from the run ledger",
+            "whatRemains": remaining,
+            "nextAction": next["action"],
+            "decisionRequired": next["action"] == "lead_decision"
+        },
         "doNotRepeat": do_not_repeat,
         "invalidation": {
             "rule": "reuse only when exact subject and governing evidence identity remain current",
@@ -313,13 +360,40 @@ fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, S
     }))
 }
 
+fn scope_recorded(view: &Value) -> bool {
+    view["submissions"].as_array().is_some_and(|submissions| {
+        submissions
+            .iter()
+            .any(|event| event["role"] == "lead" && event["outcome"] == "scoped")
+    })
+}
+
 fn next_outcome_is(next: &Value, expected: &str) -> bool {
     next["outcomes"]
         .as_array()
         .is_some_and(|outcomes| outcomes.iter().any(|outcome| outcome == expected))
 }
 
-fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<String>, String> {
+#[derive(Clone, Debug)]
+struct PendingCheck {
+    target_event_sha256: String,
+    requirement_id: Option<String>,
+}
+
+impl PendingCheck {
+    fn value(&self) -> Value {
+        let mut value = json!({});
+        if let Some(id) = &self.requirement_id {
+            value["kind"] = json!("preservation");
+            value["requirementId"] = json!(id);
+        } else {
+            value["kind"] = json!("check");
+        }
+        value
+    }
+}
+
+fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<PendingCheck>, String> {
     let state = run::inspect(loaded, ledger)?;
     if state["status"] != "running" {
         return Ok(None);
@@ -327,9 +401,10 @@ fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<String>,
     let status = run::status(loaded, ledger)?;
     Ok(status["checks"]["targets"].as_array().and_then(|targets| {
         targets.iter().find_map(|item| {
-            (item["status"] == "missing")
-                .then(|| item["targetEventSha256"].as_str().map(str::to_owned))
-                .flatten()
+            (item["status"] == "missing").then(|| PendingCheck {
+                target_event_sha256: item["targetEventSha256"].as_str().unwrap_or("").to_owned(),
+                requirement_id: item["requirementId"].as_str().map(str::to_owned),
+            })
         })
     }))
 }
@@ -347,6 +422,15 @@ fn check_summary(loaded: &Loaded, ledger: &str) -> Result<Option<Value>, String>
             .iter()
             .map(|item| {
                 let mut summary = json!({"status": item["status"]});
+                if let Some(value) = item.get("kind") {
+                    summary["kind"] = value.clone();
+                }
+                if let Some(value) = item.get("requirementId") {
+                    summary["requirementId"] = value.clone();
+                }
+                if let Some(value) = item.get("requirementText") {
+                    summary["requirementText"] = value.clone();
+                }
                 if let Some(value) = item.get("acquisition") {
                     summary["acquisition"] = value.clone();
                 }
