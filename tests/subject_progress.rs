@@ -154,6 +154,9 @@ fn skill_keeps_readiness_lead_owned_and_holytail_preservation_narrow() {
         "does not own final acceptance",
         "does not create a second ledger",
         "standalone holytail install",
+        "preservation_missing",
+        "preservation_failed",
+        "do not install standalone holytail for this path",
     ] {
         assert!(
             text.contains(contract),
@@ -750,6 +753,109 @@ fn residual_packet_keeps_stale_subject_evidence_out_of_reuse() {
         .unwrap()
         .iter()
         .any(|item| item["obligation"] == "check"));
+}
+
+#[test]
+fn preservation_checks_rerun_after_rework_changes_subject() {
+    let fixture = Fixture::new_single();
+    let functional = "n=$(cat functional.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > functional.count";
+    let preservation = "n=$(cat preservation.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > preservation.count";
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "preservation recheck after rework",
+            "--check-command",
+            functional,
+            "--preserve-requirement",
+            "precedence:accepted precedence remains binding",
+            "--preservation-check-command",
+            preservation,
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let worker = fixture.value(&["work", "next", &work], None);
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"first implementation"),
+    );
+    fixture.value(&["work", "check", &work], None);
+    let checked = fixture.value(&["work", "check", &work], None);
+    assert_eq!(checked["next"]["role"], "reviewer");
+    let reworked = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            checked["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        Some(b"needs another implementation"),
+    );
+    assert_eq!(reworked["next"]["role"], "worker");
+    let worker = fixture.value(&["work", "next", &work], None);
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"second implementation"),
+    );
+
+    let resumed = fixture.value(&["work", "resume"], None);
+    assert_eq!(resumed["next"]["action"], "check");
+    assert!(!resumed["residual"]["doNotRepeat"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "passed_check" || item == "preservation:precedence"));
+    assert!(resumed["residual"]["remaining"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["obligation"] == "check"));
+    assert!(resumed["residual"]["remaining"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["obligation"] == "preservation" && item["requirementId"] == "precedence"));
+
+    fixture.value(&["work", "check", &work], None);
+    fixture.value(&["work", "check", &work], None);
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
+        "2\n"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
+        "2\n"
+    );
 }
 
 #[test]

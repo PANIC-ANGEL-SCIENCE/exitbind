@@ -58,6 +58,13 @@ evidence only: it does not choose the goal, tools, or agents; it does not own
 final acceptance; it does not create a second ledger. A failed or missing
 invariant feeds the Exitbind lifecycle as refused or blocked.
 
+When accepted behavior must survive implementation, keep it in Exitbind's
+checked run: start the work with `--preserve-requirement ID:TEXT` and a
+`--preservation-check-command COMMAND`. Treat `preservation_missing` and
+`preservation_failed` as blocked or refused evidence, not model judgment.
+`work resume` reports which preservation evidence is still reusable and which
+requirement check remains; do not install standalone Holytail for this path.
+
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`
 and follow the returned handle through `work next`, `work return`, `work check`,
