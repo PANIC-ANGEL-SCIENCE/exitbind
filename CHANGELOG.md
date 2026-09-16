@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.18.0
+
+- Add deterministic residual packets to `work next` and `work resume`, reporting
+  current work identity, subject identity, established facts, still-valid
+  evidence, remaining obligations, the next action, and actions the next agent
+  should not repeat.
+- Let resumed work carry forward a current passed check or approved review when
+  the exact subject remains valid, while refusing to reuse stale evidence after
+  the subject changes.
+- Document the bounded cost-evaluation fixture set for duplicate check/review
+  avoidance and stale-subject refusal. No token, model-call, human-time,
+  host-startup, or frontier-agent correctness savings are claimed.
+- Preserve persisted run-event format 5, historical v1-v4 readers, and the
+  existing local-only architecture; no daemon, cloud, database, telemetry, model
+  runtime, provider integration, or dependency is introduced.
+
 ## 0.17.0
 
 - Rebrand the current public product as Exitbind with the lines “Exitbind — No
@@ -117,7 +133,8 @@ re-executed during this review.
 | 0.12.1-rc.2 | [v0.12.1-rc.2](https://github.com/envy404/soulmate/tree/v0.12.1-rc.2), `243d781` | None | Same persisted readers as 0.12.0. |
 | 0.15.0-rc.1 | [v0.15.0-rc.1](https://github.com/envy404/soulmate/tree/v0.15.0-rc.1), `8b3a509` | Adds checked run events 4 with locally observed or caller-reported check acquisition | Receipts 1–2; run events 1–4; memory, configuration and harness manifest 1. |
 | 0.15.0-rc.3 | [v0.15.0-rc.3](https://github.com/envy404/soulmate/tree/v0.15.0-rc.3), `4faf2a7` | None | Same persisted readers as 0.15.0-rc.1. |
-| 0.17.0 | Current stable Exitbind release | Adds new checked run-event format 5 with Accepted Subject bindings; retains historical readers for v1–v4. | Exitbind v5 plus historical v1–v4 readers. |
+| 0.17.0 | [v0.17.0](https://github.com/envy404/exitbind/tree/v0.17.0), `55d2c97` | Adds new checked run-event format 5 with Accepted Subject bindings; retains historical readers for v1–v4. | Exitbind v5 plus historical v1–v4 readers. |
+| 0.18.0 | Current stable Exitbind release | None | Same persisted readers as 0.17.0. |
 
 The parentless public root `a0b8be3` contains package 0.10.0 without a
 corresponding public release tag in this observed map. Earlier changelog

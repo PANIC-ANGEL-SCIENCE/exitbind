@@ -52,7 +52,11 @@ pub(crate) fn begin(
 
 pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
-    Ok(json!({"work": work, "next": next_for(loaded, work, &ledger)?}))
+    Ok(json!({
+        "work": work,
+        "next": next_for(loaded, work, &ledger)?,
+        "residual": residual_packet(loaded, work, &ledger)?
+    }))
 }
 
 pub(crate) fn return_result(
@@ -145,9 +149,12 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         0 => none_result(),
         1 => {
             let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
-            Ok(
-                json!({"status": "resumed", "work": work.clone(), "next": next_for(loaded, &work, &ledger)?}),
-            )
+            Ok(json!({
+                "status": "resumed",
+                "work": work.clone(),
+                "next": next_for(loaded, &work, &ledger)?,
+                "residual": residual_packet(loaded, &work, &ledger)?
+            }))
         }
         _ => Ok(json!({
             "status": "ambiguous",
@@ -215,6 +222,91 @@ fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> 
         };
     }
     Ok(result)
+}
+
+fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
+    let view = run::inspect(loaded, ledger)?;
+    let status = run::status(loaded, ledger)?;
+    let next = next_for(loaded, work, ledger)?;
+    let mut established = Vec::new();
+    let mut still_valid = Vec::new();
+    let mut remaining = Vec::new();
+    let mut do_not_repeat = Vec::new();
+    let mut check_obligation_recorded = false;
+
+    if view["goal"].as_str().is_some_and(|goal| !goal.is_empty()) {
+        established.push(json!({"fact": "work_identity_recorded", "status": "completed"}));
+    }
+    if next["progress"]["weights"]["lead"]
+        .as_u64()
+        .is_some_and(|value| value > 0)
+        || next["progress"]["percent"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    {
+        established.push(json!({"fact": "scope_recorded", "status": "completed"}));
+        do_not_repeat.push(json!("scope"));
+    }
+
+    if let Some(targets) = status["checks"]["targets"].as_array() {
+        let passed = targets
+            .iter()
+            .filter(|target| target["status"] == "passed")
+            .count();
+        let missing = targets
+            .iter()
+            .filter(|target| target["status"] == "missing")
+            .count();
+        let failed = targets
+            .iter()
+            .filter(|target| target["status"] == "failed")
+            .count();
+        if passed > 0 {
+            still_valid.push(json!({
+                "evidence": "current_check",
+                "status": "passed",
+                "count": passed,
+                "subject": "current"
+            }));
+            do_not_repeat.push(json!("passed_check"));
+        }
+        if missing > 0 {
+            remaining.push(json!({"obligation": "check", "count": missing}));
+            check_obligation_recorded = true;
+        }
+        if failed > 0 {
+            remaining.push(json!({"obligation": "rework_after_failed_check", "count": failed}));
+        }
+    }
+
+    if next["action"] == "lead_decision" {
+        still_valid.push(json!({"evidence": "current_review", "status": "approved"}));
+        do_not_repeat.push(json!("review"));
+        remaining.push(json!({"obligation": "lead_acceptance"}));
+    } else if next["role"] == "reviewer" {
+        remaining.push(json!({"obligation": "review"}));
+    } else if next["role"] == "worker" {
+        remaining.push(json!({"obligation": "implementation"}));
+    } else if next["action"] == "check" && !check_obligation_recorded {
+        remaining.push(json!({"obligation": "check"}));
+    }
+
+    Ok(json!({
+        "work": work,
+        "workflow": view["workflow"],
+        "goal": view["goal"],
+        "currentSubject": view["subject"],
+        "alreadyEstablished": established,
+        "stillValid": still_valid,
+        "remaining": remaining,
+        "next": next["action"],
+        "doNotRepeat": do_not_repeat,
+        "invalidation": {
+            "rule": "reuse only when exact subject and governing evidence identity remain current",
+            "sessionRestartInvalidates": false,
+            "subjectChangeInvalidates": true
+        }
+    }))
 }
 
 fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<String>, String> {

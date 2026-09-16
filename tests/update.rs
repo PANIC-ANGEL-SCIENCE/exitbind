@@ -17,14 +17,13 @@ fn fake_curl(root: &Path) {
 out=""
 for arg in "$@"; do out="$arg"; done
 if test -n "$FAKE_CALLS"; then printf '%s\n' "$*" >> "$FAKE_CALLS"; fi
-version=0.18.0
 case "$*" in
-  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.18.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
+  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.19.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
   *) printf '%s' '#!/bin/sh
 target="$EXITBIND_INSTALL_PREFIX/exitbind"
 if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
 if [ "$FAKE_INSTALL_DIRECTORY" = "1" ]; then rm -f "$SOULMATE_INSTALL_PREFIX/soulmate"; mkdir "$SOULMATE_INSTALL_PREFIX/soulmate"; exit 0; fi
-version=0.18.0
+version=${EXITBIND_VERSION#v}
 if [ "$FAKE_INSTALL_WRONG" = "1" ]; then version=0.14.0-rc.9; fi
 printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$target"
 chmod 755 "$target"' > "$out" ;;
@@ -40,8 +39,8 @@ fn binary(path: &Path, version: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
 }
 
-fn valid_release_tag() -> String {
-    format!("v{}.{}.{}", 0, 18, 0)
+fn available_update_tag() -> String {
+    format!("v{}.{}.{}", 0, 19, 0)
 }
 
 fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
@@ -65,7 +64,7 @@ fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
         .env("HOME", &root)
         .env("EXITBIND_NO_UPDATE_CHECK", "1")
         .env(env_prefix, &prefix)
-        .env("FAKE_RELEASE_TAG", valid_release_tag())
+        .env("FAKE_RELEASE_TAG", available_update_tag())
         .env("FAKE_CALLS", &calls)
         .output()
         .unwrap();
@@ -79,7 +78,7 @@ fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
         calls_text.contains(&format!(
             "{}{}/install.sh",
             origin["rawInstaller"].as_str().unwrap(),
-            valid_release_tag()
+            available_update_tag()
         )),
         "{calls_text}"
     );
@@ -105,7 +104,7 @@ fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
                 .stdout
         )
         .trim(),
-        valid_release_tag().trim_start_matches('v')
+        available_update_tag().trim_start_matches('v')
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -136,7 +135,10 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
         String::from_utf8_lossy(&output.stderr)
     );
     let installed = Command::new(&target).arg("version").output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&installed.stdout).trim(), "0.18.0");
+    assert_eq!(
+        String::from_utf8_lossy(&installed.stdout).trim(),
+        available_update_tag().trim_start_matches('v')
+    );
 
     binary(&target, "0.14.0-rc.1");
     let failed = Command::new(env!("CARGO_BIN_EXE_soulmate"))
@@ -295,7 +297,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         } else {
             format!("v{}.{}.{}+{}.{}", 0, 19, 0, "build", 7)
         };
-        let valid = valid_release_tag();
+        let valid = available_update_tag();
         let body = format!(
             "[{{\"tag_name\":\"{malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{discriminating_malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{valid}\",\"draft\":false,\"prerelease\":false}}]"
         );
@@ -426,7 +428,10 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
                 .stdout
         )
         .trim(),
-        "0.18.0"
+        upgrade_case["version"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches('v')
     );
     fs::remove_dir_all(upgrade_root).unwrap();
 }
