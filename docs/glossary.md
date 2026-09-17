@@ -14,6 +14,7 @@ they are not extra steps to memorize.
 | Artifact | A referenced result document | Its recorded bytes must remain unchanged. Product files can change in later attempts. |
 | Ledger / run | The task's inspectable sequence of records | It is not a recovered host conversation. |
 | Rework | Another attempt within the frozen task | Use fresh result documents, checks, and review. |
+| Wrong door | Test or review evidence from an earlier version of the change | Product name only: the CLI reports it as `EXIT BLOCKED` or `EXIT REFUSED` with a reason code, and never reuses that evidence for the current result. |
 | Observed check | v4/v5 source evidence from executing the frozen command in ProductRoot | It records an exit or signal locally; it still needs review and acceptance. |
 | Reported check | Caller-supplied result bound to the frozen command | It is the only check route in v3 and one permitted route in v4/v5; it records what was reported, not proof that the caller ran the command. |
 | Supersede | An explicit successor after governing inputs change | The predecessor remains inspectable; final runs stay final. |

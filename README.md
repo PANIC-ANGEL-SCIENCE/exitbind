@@ -2,70 +2,35 @@
 
 **A reported “done” is not an accepted result.**
 
+You already merge changes from Codex or Claude. The agent says the work is
+finished and the tests pass—and the pass may be real but belong to the agent's
+previous result, or the review may have approved a result that was replaced.
+That evidence opens a different door.
+
+Exitbind is a local CLI for the agent you already use. A check, a review, and
+lead acceptance count only for the exact result they were taken on. **No result
+exits unbound.**
+
 ```text
 Without Exitbind
   Agent: "Done. Tests pass."
   You merge.
-  Later: the tests ran before the last edit.
+  Later: the tests ran on the agent's previous result.
 
 With Exitbind
   Agent: "Done. Tests pass."
-  Exitbind refuses: that check does not belong to the current result.
-  The agent reruns on the current files.
-  Check, review, and lead acceptance can then exit.
+  Exitbind: EXIT BLOCKED (check_missing): no passing check belongs to the current result.
+  Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-A test can pass before the final edit. A review can approve a stale file. An
-agent can move on. The work exists, but that door is a **false exit**: it looks
-finished, and the evidence belongs to something else.
-
-Exitbind gives the coding agent you already use a local way to catch that
-false done. Small reversible work stays direct. Material work can earn a
-verifiable exit only when required evidence belongs to the exact current result:
-
-```text
-one link -> classify -> exact-result check -> independent review -> lead acceptance -> verified receipt
-```
-
-## Give your lead one link
-
-Paste this into the Codex or Claude conversation you already use, then describe
-the work in ordinary language:
-
-```text
-https://github.com/envy404/exitbind
-```
-
-After you approve installation, this URL-only path uses a local CLI plus project-local guidance:
-- **Small and reversible work**: stays direct.
-- **Material work**: binds the evidence to the exact result before it can exit as accepted.
-- **Resumed work**: reuses evidence that still belongs to the same accepted subject. If the subject changes, Exitbind asks for fresh evidence instead of recycling the old win.
-
-Your lead should inspect and explain the effect first, then ask before
-installation, project writes, or permission changes. A pasted URL is guidance,
-not proof that a host followed it. [See the complete onboarding
-path.](docs/onboarding.md)
-
-Current stable release: `v0.18.0`.
+Current stable release: `v0.18.0`. One local binary; it calls no model and runs
+no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
 [![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## See a false done refused
-
-The first thing to see is a refusal: a failed exact check cannot be accepted,
-while a fresh checked result can proceed after review and lead acceptance. If
-a new worker result replaces the checked one, that older evidence is a **wrong
-door**—it cannot unlock the new result.
-
-For resumed work, `work resume` projects what is still valid from recorded
-state instead of asking the next agent to trust a chat summary.
-
-Once the CLI is installed, a local,
-model-free demonstration is available: of refusal and recovery, `exitbind benchmark` creates a
-disposable Git project, preserves the failed attempt, and shows the fresh
-checked result reaching acceptance.
+## See a wrong door refused
 
 This page describes `v0.18.0` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
@@ -83,17 +48,57 @@ Then run the local demonstration:
 exitbind benchmark
 ```
 
-The benchmark is an explicitly local synthetic demonstration of refusal and
-recovery. It is not a claim about every agent, project, or quality outcome. Use
-`exitbind benchmark --output NEW_DIRECTORY` and the
-[proof methodology](docs/value-proof-methodology.md) when you need inspectable
-records.
+It creates a disposable Git project, shows a failed exact check refused, keeps
+that failed attempt on record, and lets only a fresh checked result reach
+acceptance. No model runs and your project is untouched. It is a synthetic
+demonstration of the mechanism, not a claim about every agent, project, or
+quality outcome; use `exitbind benchmark --output NEW_DIRECTORY` and the
+[proof methodology](docs/value-proof-methodology.md) for inspectable records.
 
-## How the exit path works
+## The wrong door
 
-For material work, Exitbind binds the current result, exact check, independent
-review, lead acceptance, and (for a checked v5 run) verifiable receipt to one
-exact subject:
+Material agent work passes through doors before it can leave—implemented,
+checked, reviewed, accepted—and each door opens only for the result standing in
+front of it. Verify the passage, not just the endpoints: "code exists" and "tests
+passed" can both be true while the pass belongs to another version.
+
+A **wrong door** is evidence taken on a different result: a check from before the
+last worker result, or a review of a result that was replaced. Evidence is not a
+master key, so Exitbind will not reuse it. The CLI does not print the words
+"wrong door"; it reports one of three exit states with a precise reason code:
+
+- `EXIT READY`: the current result earned every required step.
+- `EXIT REFUSED`: evidence shows it did not, for example `check_failed`.
+- `EXIT BLOCKED`: required evidence is missing or unresolved, for example
+  `check_missing`, so Exitbind will not guess.
+
+## Give your lead one link
+
+You do not have to operate the protocol. Paste this into the Codex or Claude
+conversation you already use, then describe the work in ordinary language:
+
+```text
+https://github.com/envy404/exitbind
+```
+
+On this URL-only path your lead inspects the project, explains the effect, and
+asks before installation, project writes, or permission changes. After you
+approve, it uses the local CLI plus project-local guidance:
+
+- **Small and reversible work** stays direct; Exitbind is used selectively.
+- **Material work** binds its evidence to the exact result before it can exit.
+- **Resumed work** keeps evidence that still belongs to the same result, so a
+  new session does not redo a valid check or review. A changed result needs fresh
+  evidence.
+
+A pasted URL is guidance, not proof that a host followed it.
+[See the complete onboarding path.](docs/onboarding.md)
+
+## How material work exits
+
+```text
+one link -> classify -> exact-result check -> independent review -> lead acceptance -> verified receipt
+```
 
 ```text
 normal request
@@ -106,31 +111,34 @@ normal request
        -> EXIT READY, EXIT REFUSED, or EXIT BLOCKED
 ```
 
-These states stay strictly separate:
+These doors stay separate:
+
 - Worker completion is not a passing check.
 - A passing check is not reviewer approval.
 - Reviewer approval is not lead acceptance.
 
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. If a new worker result replaces an approved one, the previous evidence is rejected as a wrong door. In `v0.18.0`, an edit to project files made without a new worker submission is not detected by this binding.
+In checked runs, Exitbind refuses acceptance when the configured check is
+missing or failed for the current worker result, and rejects older evidence when
+a new worker result replaces it. For an accepted checked run it can emit a
+verifiable receipt.
 
-Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states.
+Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states. It covers recorded artifacts such as worker results, not every project file; see the `v0.18.0` limit under trust below.
 
-`work next` and `work resume` include a residual packet for the current work:
-what is already established, which evidence is still valid, what remains, the
-next action, and which valid checks or reviews should not be repeated. A session
-restart alone does not erase current evidence; a changed subject requires fresh
-evidence.
+**Resume without restarting.** `work next` and `work resume` project a residual
+packet from recorded state, not from a chat summary: what is established, which
+evidence still opens its door, what remains, the next action, and which checks or
+reviews not to repeat. A session restart alone does not erase valid evidence.
 
-For material work, the optional default narration stays small:
+For material work, the optional narration stays small:
 
 ```text
 Neuro
 Exitbind progress: N%.
 ```
 
-Exitbind—not the character—computes weighted progress. Neuro never replaces the
-host agent's native identity or authority, and the presentation is removable
-without changing system semantics.
+Exitbind—not the character—computes weighted progress, and 100% means only
+`EXIT READY`. Neuro never replaces the host agent's native identity or
+authority, and removing it changes no semantics.
 
 ## Set up a project when needed
 
@@ -153,8 +161,6 @@ Codex and Claude are exercised setup paths. OpenCode uses the compatible
 until tested directly. Other hosts retain their own discovery, consent, and
 permission contracts.
 
-## Optional repository plugin
-
 An explicit host plugin is optional and separate from CLI installation and
 project writes:
 
@@ -176,26 +182,28 @@ hook, MCP server, app, or model.
 
 Your existing host owns model execution, native subagents, tools, processes,
 permissions, and remote mutation. Exitbind owns its local lifecycle and
-exact-subject exit rules. GitHub or another repository host remains merge
+exact-result exit rules. GitHub or another repository host remains merge
 authority. Exitbind is not a model, agent runtime, daemon, cloud service, or OS
 sandbox.
 
 Exitbind records requested configuration, selected profile bytes, artifacts,
-transitions, and declared or observed check evidence. It does not authenticate
-a model's self-report, inspect hidden reasoning, provide an OS sandbox, or
-withstand an attacker who can rewrite every local file. Raw ledgers and
-artifacts can contain goals, commands, paths, and task results; keep them
-private and read [SECURITY.md](SECURITY.md) before real work.
+transitions, and declared or observed check evidence. It does not authenticate a
+model's self-report, inspect hidden reasoning, or withstand an attacker who can
+rewrite every local file. In `v0.18.0`, the result is identified by worker
+submissions, so an edit to project files made without a new worker submission is
+not detected. Raw ledgers and artifacts can contain goals, commands, paths, and
+task results; keep them private and read [SECURITY.md](SECURITY.md) before real
+work.
 
-`v0.18.0` continues the existing version and repository history; the rename does
-not reset the project to `0.0.1`. It reads historical Soulmate v1–v4 run records
-under their original producer and schema meaning. The `soulmate` command is the
-same binary under the previous name. Existing `soulmate.json`, `.soulmate/`
-state, project skill paths, and environment controls remain bounded
-compatibility surfaces. New records use the Exitbind identity and current
-format; compatibility never relabels old evidence as new evidence. See the
-[public format map](CHANGELOG.md#public-tags-and-format-readers)
-before choosing a rollback or release channel.
+Exitbind is the renamed continuation of Soulmate: `v0.18.0` keeps the existing
+version and repository history rather than resetting to `0.0.1`. It reads
+historical Soulmate v1–v4 run records under their original producer and schema
+meaning. The `soulmate` command is the same binary under the previous name, and
+existing `soulmate.json`, `.soulmate/` state, project skill paths, and
+environment controls remain bounded compatibility surfaces. New records use the
+Exitbind identity; compatibility never relabels old evidence as new evidence. See
+the [public format map](CHANGELOG.md#public-tags-and-format-readers) before
+choosing a rollback or release channel.
 
 ## Update, recover, or leave
 
