@@ -35,7 +35,7 @@ pub(crate) fn human_explain(
         })
         .transpose()?;
     let guidance = if protection.is_some() {
-        if matches!(state["version"].as_u64(), Some(4 | 5)) {
+        if matches!(state["version"].as_u64(), Some(4..=6)) {
             "observe the frozen check locally or report its host result for every current worker completion; repair or rework if needed, then request review and acceptance again; a passing result still requires authority"
         } else {
             "rerun the configured check in its host and report the actual result for every current worker completion; repair or rework if needed, then request review and acceptance again; a passing report still requires authority"

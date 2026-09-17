@@ -64,6 +64,8 @@ checked run: start the work with `--preserve-requirement ID:TEXT` and a
 `preservation_failed` as blocked or refused evidence, not model judgment.
 `work resume` reports which preservation evidence is still reusable and which
 requirement check remains; do not install standalone Holytail for this path.
+Before skipping work listed in a saved packet, run
+`exitbind work validate WORK --packet FILE`; skip only when it returns `usable`.
 
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`

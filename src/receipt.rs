@@ -134,7 +134,7 @@ pub fn verify(path: &str, loaded: &Loaded) -> Result<Value, String> {
 /// Emit the Exit Path receipt for a fully accepted v5 checked run.
 pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPathError> {
     let (path, events, source) = crate::run_ledger::load(loaded, ledger)?;
-    let state = crate::run_state::reduce(&events)?;
+    let state = crate::run::reduce_live(loaded, &events)?;
     crate::run::assert_current_for_receipt(loaded, &state)?;
     let kernel = crate::run_exit::reduce(&state)?;
     let decision = kernel.decision();
@@ -209,7 +209,7 @@ pub(crate) fn verify_exit_path(path: &str, loaded: &Loaded) -> Result<Value, Str
     }
     let ledger = receipt["run"]["path"].as_str().unwrap_or("");
     match crate::run_ledger::load(loaded, ledger) {
-        Ok((_, events, ledger_source)) => match crate::run_state::reduce(&events) {
+        Ok((_, events, ledger_source)) => match crate::run::reduce_live(loaded, &events) {
             Ok(state) => {
                 let kernel = crate::run_exit::reduce(&state);
                 if !kernel.as_ref().is_ok_and(|kernel| {

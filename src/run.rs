@@ -86,8 +86,11 @@ pub fn start_with_policy(
     if preservation.is_some() && !has_worker_stage(&plan) {
         return Err("preservation requires a workflow with at least one worker stage".into());
     }
+    if preservation.is_some() && check_policy.is_none() {
+        return Err("preservation requirements require a checked run with --check-command".into());
+    }
     if preservation.is_some() && !crate::producer::exitbind_surface() {
-        return Err("preservation requirements require Exitbind v5 runs".into());
+        return Err("preservation requirements require Exitbind v6 runs".into());
     }
     if let Some(receipt) = harness_receipt {
         crate::receipt::for_run(loaded, receipt, &plan)?;
@@ -115,7 +118,7 @@ pub fn start_with_policy(
             None
         };
         let version = if crate::producer::exitbind_surface() {
-            5
+            6
         } else if check_policy.is_some() {
             4
         } else if reference.is_some() {
@@ -145,7 +148,7 @@ pub fn start_with_policy(
         if let Some(preservation) = &preservation {
             value["preservation"] = preservation.value();
         }
-        if version == 5 {
+        if version >= 5 {
             value["subject"] = subject(goal, &value["plan"], &config_sha, &run_id);
         }
         let event = run_state::make_event(value);
@@ -157,7 +160,7 @@ pub fn start_with_policy(
 
 pub fn next(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     assert_no_drift(loaded, &state)?;
     crate::run_artifact::assert_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
@@ -281,7 +284,7 @@ where
             return Err("run has been superseded; no mutation was made".into());
         }
         let (_, events, source) = load_at(loaded, path)?;
-        let state = run_state::reduce(&events)?;
+        let state = reduce_live(loaded, &events)?;
         assert_no_drift(loaded, &state)?;
         crate::run_artifact::assert_current(loaded, &state)?;
         let assignment = crate::run_assignment::pending(&state)
@@ -348,7 +351,15 @@ where
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?
         });
-        if version == 5 {
+        if version >= 6
+            && matches!(
+                (assignment["role"].as_str(), outcome),
+                (Some("reviewer"), "approved") | (Some("lead"), "accepted")
+            )
+        {
+            event_value["inputsSha256"] = live_inputs(&state)?;
+        }
+        if version >= 5 {
             event_value["subjectSha256"] =
                 if assignment["role"] == "worker" && outcome == "completed" {
                     crate::run_state::subject_for_submission(&state, &assignment, &artifact_value)
@@ -425,7 +436,7 @@ pub fn record_check_for_requirement(
             return Err("run has been superseded; no mutation was made".into());
         }
         let (_, events, source) = load_at(loaded, &path)?;
-        let state = run_state::reduce(&events)?;
+        let state = reduce_live(loaded, &events)?;
         if state["status"] != "running" {
             return Err("run has already reached a terminal state; no mutation was made".into());
         }
@@ -472,8 +483,11 @@ pub fn record_check_for_requirement(
                 "timestamp": nondecreasing(&last["timestamp"])?
             })
         };
-        if version == 5 {
+        if version >= 5 {
             value["subjectSha256"] = state["subject"]["sha256"].clone();
+        }
+        if version >= 6 {
+            value["inputsSha256"] = live_inputs(&state)?;
             if let Some(id) = requirement_id {
                 value["requirementId"] = json!(id);
             }
@@ -520,13 +534,13 @@ pub fn observe_check_for_requirement(
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-    let (source, policy) = with_lock(&path, || {
+    let (source, policy, inputs) = with_lock(&path, || {
         crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         if claim_path(&path).exists() {
             return Err("run has been superseded; no mutation was made".into());
         }
         let (_, events, source) = load_at(loaded, &path)?;
-        let state = run_state::reduce(&events)?;
+        let state = reduce_live(loaded, &events)?;
         if state["version"].as_u64().unwrap_or(0) < 4 {
             return Err("observe-check requires a newly created checked run".into());
         }
@@ -538,7 +552,12 @@ pub fn observe_check_for_requirement(
         predecessor(loaded, &events[0])?;
         let policy = active_check_policy(&state, requirement_id)?;
         crate::run_value::validate_check_target(&state, target)?;
-        Ok((source, policy))
+        let inputs = if state["version"].as_u64() >= Some(6) {
+            Some(live_inputs(&state)?)
+        } else {
+            None
+        };
+        Ok((source, policy, inputs))
     })?;
 
     let (status, duration_ms) = run_observed_command(loaded, &policy.command, timeout_ms)?;
@@ -547,7 +566,7 @@ pub fn observe_check_for_requirement(
     with_lock(&path, || {
         crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, current_events, current_source) = load_at(loaded, &path)?;
-        let current_state = run_state::reduce(&current_events)?;
+        let current_state = reduce_live(loaded, &current_events)?;
         if claim_path(&path).exists() {
             return Err("run has been superseded; no mutation was made".into());
         }
@@ -586,8 +605,16 @@ pub fn observe_check_for_requirement(
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?
         });
-        if current_state["version"] == 5 {
+        if current_state["version"].as_u64() >= Some(5) {
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
+        }
+        if let Some(inputs) = &inputs {
+            if current_state.get("inputsSha256") != Some(inputs) {
+                return Err(
+                    "tested inputs changed while the check ran; no evidence was recorded".into(),
+                );
+            }
+            event_value["inputsSha256"] = inputs.clone();
             if let Some(id) = requirement_id {
                 event_value["requirementId"] = json!(id);
             }
@@ -619,8 +646,8 @@ fn active_check_policy(
     requirement_id: Option<&str>,
 ) -> Result<ActiveCheckPolicy, String> {
     if let Some(id) = requirement_id {
-        if state["version"].as_u64() != Some(5) {
-            return Err("preservation checks require an Exitbind v5 run".into());
+        if state["version"].as_u64() < Some(6) {
+            return Err("preservation checks require an Exitbind v6 run".into());
         }
         let preservation = state
             .get("preservation")
@@ -957,7 +984,7 @@ fn parse_positive(option: &str, value: &str) -> Result<u64, String> {
 
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     predecessor(loaded, &events[0])?;
     let mut result = json!({
         "valid": true,
@@ -972,13 +999,17 @@ pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     if state.get("checkPolicy").is_some() {
         result["assignments"] = state["assignments"].clone();
     }
+    if state["version"].as_u64() >= Some(6) {
+        result["subject"] = state["subject"].clone();
+        result["inputsSha256"] = state.get("inputsSha256").cloned().unwrap_or(Value::Null);
+    }
     Ok(result)
 }
 
 /// Read-only current-state view with artifact/config revalidation.
 pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
@@ -988,7 +1019,7 @@ pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
 /// Read-only explanation for a run or one of its factual protection events.
 pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<Value, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
@@ -1001,7 +1032,7 @@ pub(crate) fn human_status(
     ledger: &str,
 ) -> Result<crate::run_human::HumanStatus, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
@@ -1015,7 +1046,7 @@ pub(crate) fn human_explain(
     event_id: Option<&str>,
 ) -> Result<crate::run_human::HumanExplanation, String> {
     let (_, events, _) = load(loaded, ledger)?;
-    let state = run_state::reduce(&events)?;
+    let state = reduce_live(loaded, &events)?;
     assert_no_drift(loaded, &state)?;
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
@@ -1030,7 +1061,7 @@ pub fn report(loaded: &Loaded, ledgers: &[&str]) -> Result<Value, String> {
     let mut states = Vec::with_capacity(ledgers.len());
     for ledger in ledgers {
         let (_, events, _) = load(loaded, ledger)?;
-        let state = run_state::reduce(&events)?;
+        let state = reduce_live(loaded, &events)?;
         predecessor(loaded, &events[0])?;
         states.push(state);
     }
@@ -1168,13 +1199,18 @@ pub fn supersede_with_policy(
                 "checked successor requires a workflow with at least one worker stage".into(),
             );
         }
+        if preservation.is_some() && check_policy.is_none() {
+            return Err(
+                "preservation successor requires a checked run with --check-command".into(),
+            );
+        }
         if preservation.is_some() && !has_worker_stage(&plan) {
             return Err(
                 "preservation successor requires a workflow with at least one worker stage".into(),
             );
         }
         if preservation.is_some() && !crate::producer::exitbind_surface() {
-            return Err("preservation requirements require Exitbind v5 runs".into());
+            return Err("preservation requirements require Exitbind v6 runs".into());
         }
         let old_rel = config::rel(&loaded.state_root, &old.expected)?;
         let old_sha = hash::text(&old_source);
@@ -1221,7 +1257,7 @@ pub fn supersede_with_policy(
             "configSha256": claim.value["oldConfigSha256"]
         });
         let version = if crate::producer::exitbind_surface() {
-            5
+            6
         } else if check_policy.is_some() {
             4
         } else if harness_reference.is_some() {
@@ -1252,7 +1288,7 @@ pub fn supersede_with_policy(
         if let Some(preservation) = &preservation {
             event_value["preservation"] = preservation.value();
         }
-        if version == 5 {
+        if version >= 5 {
             event_value["subject"] = subject(goal, &event_value["plan"], &config_sha, &run_id);
         }
         let event = run_state::make_event(event_value);
@@ -1271,6 +1307,26 @@ pub fn supersede_with_policy(
         }
         result(&[event])
     })
+}
+
+/// Reduce a ledger and, for v6 runs, attach the live tested-input identity so
+/// evidence is only current when it was taken on the files present now.
+pub(crate) fn reduce_live(loaded: &Loaded, events: &[Value]) -> Result<Value, String> {
+    let mut state = run_state::reduce(events)?;
+    if state["version"].as_u64() >= Some(6) && state["status"] == "running" {
+        if let Ok(inputs) = crate::run_inputs::fingerprint(loaded) {
+            state["inputsSha256"] = json!(inputs);
+        }
+    }
+    Ok(state)
+}
+
+fn live_inputs(state: &Value) -> Result<Value, String> {
+    state
+        .get("inputsSha256")
+        .filter(|value| value.is_string())
+        .cloned()
+        .ok_or_else(|| "tested inputs cannot be established; no evidence was recorded".into())
 }
 
 fn result(events: &[Value]) -> Result<Value, String> {

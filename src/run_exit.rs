@@ -242,6 +242,7 @@ pub(crate) struct ExitState {
     pub(crate) attempt: u64,
     #[allow(dead_code)]
     pub(crate) subject_sha256: Option<String>,
+    pub(crate) inputs_sha256: Option<String>,
     pub(crate) assessment: CheckAssessment,
     pub(crate) current_submissions: Vec<Value>,
     pub(crate) worker_total: usize,
@@ -265,6 +266,7 @@ impl ExitState {
                 status: status.to_owned(),
                 attempt: state["attempt"].as_u64().unwrap_or_default(),
                 subject_sha256: state["subject"]["sha256"].as_str().map(str::to_owned),
+                inputs_sha256: state["inputsSha256"].as_str().map(str::to_owned),
                 assessment: CheckAssessment::unconfigured(),
                 current_submissions: Vec::new(),
                 worker_completed: 0,
@@ -293,6 +295,7 @@ impl ExitState {
             status: status.to_owned(),
             attempt,
             subject_sha256: state["subject"]["sha256"].as_str().map(str::to_owned),
+            inputs_sha256: state["inputsSha256"].as_str().map(str::to_owned),
             worker_completed: current_submissions
                 .iter()
                 .filter(|event| event["role"] == "worker" && event["outcome"] == "completed")
@@ -312,8 +315,8 @@ impl ExitState {
     }
 
     pub(crate) fn decision(&self) -> ExitDecision {
-        if self.version != 5 || self.assessment.policy.is_none() {
-            return ExitDecision::NotApplicable(if self.version == 5 {
+        if self.version < 5 || self.assessment.policy.is_none() {
+            return ExitDecision::NotApplicable(if self.version >= 5 {
                 "unchecked_run"
             } else {
                 "historical_run"
@@ -340,9 +343,12 @@ impl ExitState {
     }
 
     pub(crate) fn reviewer_approved(&self) -> bool {
-        self.current_submissions
-            .iter()
-            .any(|event| event["role"] == "reviewer" && event["outcome"] == "approved")
+        self.current_submissions.iter().any(|event| {
+            event["role"] == "reviewer"
+                && event["outcome"] == "approved"
+                && (self.version < 6
+                    || event["inputsSha256"].as_str() == self.inputs_sha256.as_deref())
+        })
     }
 
     pub(crate) fn lead_accepted(&self) -> bool {
@@ -352,11 +358,11 @@ impl ExitState {
     }
 
     pub(crate) fn subject_is_current(&self, subject: &Value) -> bool {
-        self.version != 5 || subject.as_str() == self.subject_sha256.as_deref()
+        self.version < 5 || subject.as_str() == self.subject_sha256.as_deref()
     }
 
     pub(crate) fn acceptance_gate(&self) -> Result<(), String> {
-        if self.version == 5 && self.assessment.policy.is_some() && !self.reviewer_approved() {
+        if self.version >= 5 && self.assessment.policy.is_some() && !self.reviewer_approved() {
             return Err("canonical acceptance requires reviewer approval".into());
         }
         if self.assessment.is_blocked() {
@@ -409,6 +415,7 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
     let empty_checks = Vec::new();
     let checks = state["checks"].as_array().unwrap_or(&empty_checks);
     let current_subject = state["subject"]["sha256"].as_str();
+    let current_inputs = state["inputsSha256"].as_str();
     let workers = submissions
         .iter()
         .filter(|submission| {
@@ -424,6 +431,7 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
             submission,
             checks,
             current_subject,
+            current_inputs,
             state["version"].as_u64().unwrap_or_default(),
             None,
         )?);
@@ -433,6 +441,7 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
                     submission,
                     checks,
                     current_subject,
+                    current_inputs,
                     state["version"].as_u64().unwrap_or_default(),
                     Some(requirement),
                 )?);
@@ -447,13 +456,15 @@ fn target_for(
     submission: &Value,
     checks: &[Value],
     current_subject: Option<&str>,
+    current_inputs: Option<&str>,
     version: u64,
     requirement: Option<&PreservationRequirement>,
 ) -> Result<CheckTarget, String> {
     let target = submission["eventSha256"].clone();
     let latest = checks.iter().rfind(|check| {
         check["targetEventSha256"] == target
-            && (version != 5 || check["subjectSha256"].as_str() == current_subject)
+            && (version < 5 || check["subjectSha256"].as_str() == current_subject)
+            && (version < 6 || check["inputsSha256"].as_str() == current_inputs)
             && match requirement {
                 Some(requirement) => check["requirementId"].as_str() == Some(&requirement.id),
                 None => check.get("requirementId").is_none(),

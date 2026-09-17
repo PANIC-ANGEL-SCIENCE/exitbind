@@ -53,7 +53,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         .as_object()
         .ok_or_else(|| format!("invalid run ledger line {line}: event must be an object"))?;
     let version = event["version"].as_u64();
-    if !matches!(version, Some(1..=5)) || event["kind"] != "run" {
+    if !matches!(version, Some(1..=6)) || event["kind"] != "run" {
         return Err(format!(
             "invalid run ledger line {line}: invalid event header"
         ));
@@ -71,7 +71,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
                 .get("producer")
                 .is_some_and(|producer| producer["name"] != "soulmate"))
         || (matches!(version, Some(2..=4)) && event["producer"]["name"] != "soulmate")
-        || (version == Some(5) && event["producer"]["name"] != "exitbind")
+        || (matches!(version, Some(5 | 6)) && event["producer"]["name"] != "exitbind")
     {
         return Err(format!("invalid run ledger line {line}: invalid producer"));
     }
@@ -89,7 +89,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             "invalid run ledger line {line}: ledger must begin with start"
         ));
     }
-    if !matches!(version, Some(3..=5)) && matches!(action, "check" | "protect") {
+    if !matches!(version, Some(3..=6)) && matches!(action, "check" | "protect") {
         return Err(format!(
             "invalid run ledger line {line}: value-proof actions require version 3"
         ));
@@ -145,7 +145,7 @@ pub fn validate_start(event: &Value, line: usize) -> Result<(), String> {
 }
 
 fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<(), String> {
-    if !matches!(version, 1..=5) {
+    if !matches!(version, 1..=6) {
         return Err(format!(
             "invalid run ledger line {line}: invalid event version"
         ));
@@ -171,7 +171,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             "invalid run ledger line {line}: invalid config hash"
         ));
     }
-    if version == 5 && !valid_subject(event.get("subject")) {
+    if version >= 5 && !valid_subject(event.get("subject")) {
         return Err(format!(
             "invalid run ledger line {line}: checked start requires a valid subject"
         ));
@@ -267,11 +267,21 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
                 "invalid run ledger line {line}: checked run requires a worker stage"
             ));
         }
-    } else if version == 5 {
+    } else if version >= 5 {
         if let Some(policy) = event.get("checkPolicy") {
             crate::run_value::policy_from_value(policy, line)?;
         }
         if let Some(preservation) = event.get("preservation") {
+            if version < 6 {
+                return Err(format!(
+                    "invalid run ledger line {line}: preservation requires v6"
+                ));
+            }
+            if event.get("checkPolicy").is_none() {
+                return Err(format!(
+                    "invalid run ledger line {line}: preservation requires checkPolicy"
+                ));
+            }
             crate::run_value::preservation_from_value(preservation, line)?;
             let has_worker = stages.iter().any(|stage| {
                 stage["agents"]
@@ -290,7 +300,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         ));
     } else if event.get("preservation").is_some() {
         return Err(format!(
-            "invalid run ledger line {line}: preservation requires v5"
+            "invalid run ledger line {line}: preservation requires v6"
         ));
     }
     Ok(())
@@ -387,6 +397,21 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
             "invalid run ledger line {line}: invalid artifact evidence"
         ));
     }
+    let binds_inputs = matches!(
+        (event["role"].as_str(), event["outcome"].as_str()),
+        (Some("reviewer"), Some("approved")) | (Some("lead"), Some("accepted"))
+    );
+    if event["version"].as_u64() >= Some(6) && binds_inputs {
+        if !is_sha(event["inputsSha256"].as_str()) {
+            return Err(format!(
+                "invalid run ledger line {line}: approval requires tested input identity"
+            ));
+        }
+    } else if event.get("inputsSha256").is_some() {
+        return Err(format!(
+            "invalid run ledger line {line}: unexpected tested input identity"
+        ));
+    }
     Ok(())
 }
 
@@ -416,8 +441,22 @@ fn apply_check(state: &mut Value, event: &Value) -> Result<(), String> {
 }
 
 fn apply_protection(state: &mut Value, event: &Value) -> Result<(), String> {
-    crate::run_value::validate_protection_against_state(state, event, 0)
-        .map_err(|error| error.replacen("line 0", "state", 1))?;
+    // A v6 protection is judged on the tested inputs it declares; that judgment
+    // does not leak into later state.
+    let live = state.get("inputsSha256").cloned();
+    if let Some(inputs) = event.get("inputsSha256") {
+        state["inputsSha256"] = inputs.clone();
+    }
+    let validated = crate::run_value::validate_protection_against_state(state, event, 0);
+    match live {
+        Some(live) => state["inputsSha256"] = live,
+        None => {
+            if let Some(object) = state.as_object_mut() {
+                object.remove("inputsSha256");
+            }
+        }
+    }
+    validated.map_err(|error| error.replacen("line 0", "state", 1))?;
     if !crate::run_exit::reduce(state)?.subject_is_current(&event["subjectSha256"]) {
         return Err("protection is bound to a stale subject".into());
     }
@@ -447,7 +486,7 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     {
         return Err("submission is out of order".into());
     }
-    if state["version"] == 5 {
+    if state["version"].as_u64() >= Some(5) {
         let expected = if event["role"] == "worker" && event["outcome"] == "completed" {
             subject_for_submission(state, &assignment, &event["artifact"])["sha256"].clone()
         } else {
@@ -483,12 +522,21 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         ));
     }
     if role == "lead" && outcome == "accepted" {
+        if let Some(inputs) = event.get("inputsSha256") {
+            // Acceptance is judged against the tested inputs it declares, so
+            // replay and the live gate apply one rule.
+            state["inputsSha256"] = inputs.clone();
+        }
         crate::run_exit::reduce(state)?.acceptance_gate()?;
+    }
+    let mut submission = json!({"stage":event["stage"],"attempt":event["attempt"],"agent":event["agent"],"role":event["role"],"outcome":event["outcome"],"artifact":event["artifact"],"eventSha256":event["eventSha256"]});
+    if let Some(inputs) = event.get("inputsSha256") {
+        submission["inputsSha256"] = inputs.clone();
     }
     state["submissions"]
         .as_array_mut()
         .ok_or("run state submissions are invalid")?
-        .push(json!({"stage":event["stage"],"attempt":event["attempt"],"agent":event["agent"],"role":event["role"],"outcome":event["outcome"],"artifact":event["artifact"],"eventSha256":event["eventSha256"]}));
+        .push(submission);
     if ["accepted", "rejected", "blocked"].contains(&outcome) {
         state["status"] = json!(outcome);
         return Ok(());
@@ -560,12 +608,14 @@ fn reject_unknown(
         if version == 2 {
             allowed.push("harnessReceipt");
         }
-        if matches!(version, 3..=5) {
+        if matches!(version, 3..=6) {
             allowed.push("harnessReceipt");
             allowed.push("checkPolicy");
         }
-        if version == 5 {
+        if version >= 5 {
             allowed.push("subject");
+        }
+        if version >= 6 {
             allowed.push("preservation");
         }
         return object
@@ -593,11 +643,40 @@ fn reject_unknown(
             "timestamp",
             "eventSha256",
         ];
-        if version == 5 {
+        if version >= 5 {
             allowed.push("subjectSha256");
+        }
+        if version >= 6 {
+            allowed.push("inputsSha256");
         }
         return reject_unknown_fields(object, &allowed, line);
     } else if action == "check" {
+        if version >= 6 {
+            return reject_unknown_fields(
+                object,
+                &[
+                    "version",
+                    "kind",
+                    "producer",
+                    "action",
+                    "runId",
+                    "subjectSha256",
+                    "inputsSha256",
+                    "targetEventSha256",
+                    "requirementId",
+                    "checkCommand",
+                    "checkCommandSha256",
+                    "origin",
+                    "acquisition",
+                    "result",
+                    "durationMs",
+                    "previousEventSha256",
+                    "timestamp",
+                    "eventSha256",
+                ],
+                line,
+            );
+        }
         if version == 5 {
             return reject_unknown_fields(
                 object,
@@ -609,7 +688,6 @@ fn reject_unknown(
                     "runId",
                     "subjectSha256",
                     "targetEventSha256",
-                    "requirementId",
                     "checkCommand",
                     "checkCommandSha256",
                     "origin",
@@ -663,7 +741,7 @@ fn reject_unknown(
             "eventSha256",
         ]
     } else {
-        if version == 5 {
+        if version >= 5 {
             return reject_unknown_fields(
                 object,
                 &[
@@ -673,6 +751,7 @@ fn reject_unknown(
                     "action",
                     "runId",
                     "subjectSha256",
+                    "inputsSha256",
                     "stage",
                     "attempt",
                     "actor",

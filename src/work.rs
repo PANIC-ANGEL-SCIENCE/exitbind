@@ -62,7 +62,7 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     Ok(json!({
         "work": work,
         "next": next_for(loaded, work, &ledger)?,
-        "residual": residual_packet(loaded, work, &ledger)?
+        "residual": crate::work_packet::project(loaded, work, &ledger, &next_for(loaded, work, &ledger)?)?
     }))
 }
 
@@ -104,6 +104,15 @@ pub(crate) fn return_result(
         write_artifact(loaded, work, assignment, &bytes)
     })?;
     Ok(json!({"work": work, "next": next_for(loaded, work, &ledger)?}))
+}
+
+/// Decide whether a previously issued residual packet still applies to the
+/// current ledger and tested inputs. Never executes anything from the packet.
+pub(crate) fn validate(loaded: &Loaded, work: &str, packet_path: &str) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let packet = crate::work_packet::read_bounded(packet_path)?;
+    let next = next_for(loaded, work, &ledger)?;
+    crate::work_packet::validate(loaded, work, &ledger, &next, &packet)
 }
 
 pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
@@ -166,7 +175,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
                 "status": "resumed",
                 "work": work.clone(),
                 "next": next_for(loaded, &work, &ledger)?,
-                "residual": residual_packet(loaded, &work, &ledger)?
+                "residual": crate::work_packet::project(loaded, &work, &ledger, &next_for(loaded, &work, &ledger)?)?
             }))
         }
         _ => Ok(json!({
@@ -235,143 +244,6 @@ fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> 
         };
     }
     Ok(result)
-}
-
-fn residual_packet(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    let view = run::inspect(loaded, ledger)?;
-    let status = run::status(loaded, ledger)?;
-    let next = next_for(loaded, work, ledger)?;
-    let mut established = Vec::new();
-    let mut still_valid = Vec::new();
-    let mut remaining = Vec::new();
-    let mut do_not_repeat = Vec::new();
-    let mut check_obligation_recorded = false;
-
-    if view["goal"].as_str().is_some_and(|goal| !goal.is_empty()) {
-        established.push(json!({"fact": "work_identity_recorded", "status": "completed"}));
-    }
-    if scope_recorded(&view) {
-        established.push(json!({"fact": "scope_recorded", "status": "completed"}));
-        do_not_repeat.push(json!("scope"));
-    }
-
-    if let Some(targets) = status["checks"]["targets"].as_array() {
-        let passed = targets.iter().filter(|target| target["status"] == "passed");
-        let mut passed_count = 0;
-        for target in passed {
-            passed_count += 1;
-            let evidence = if target["kind"] == "preservation" {
-                "preservation"
-            } else {
-                "current_check"
-            };
-            still_valid.push(json!({
-                "evidence": evidence,
-                "status": "passed",
-                "checkEventSha256": target["checkEventSha256"],
-                "requirementId": target["requirementId"],
-                "subject": "current",
-            }));
-            do_not_repeat.push(json!(if target["kind"] == "preservation" {
-                format!(
-                    "preservation:{}",
-                    target["requirementId"].as_str().unwrap_or("unknown")
-                )
-            } else {
-                "passed_check".to_owned()
-            }));
-        }
-        if passed_count > 0 {
-            still_valid.push(json!({"evidence": "current_passed_checks", "status": "passed", "count": passed_count}));
-        }
-        let missing = targets
-            .iter()
-            .filter(|target| target["status"] == "missing")
-            .count();
-        let failed = targets
-            .iter()
-            .filter(|target| target["status"] == "failed")
-            .count();
-        for target in targets
-            .iter()
-            .filter(|target| target["status"] == "missing")
-        {
-            remaining.push(json!({
-                "obligation": target["kind"],
-                "requirementId": target["requirementId"],
-            }));
-            check_obligation_recorded = true;
-        }
-        for target in targets.iter().filter(|target| target["status"] == "failed") {
-            remaining.push(json!({
-                "obligation": if target["kind"] == "preservation" {
-                    "rework_after_failed_preservation"
-                } else {
-                    "rework_after_failed_check"
-                },
-                "requirementId": target["requirementId"],
-            }));
-        }
-        let _ = (missing, failed);
-    }
-
-    if next["action"] == "lead_decision" && next_outcome_is(&next, "scoped") {
-        remaining.push(json!({"obligation": "scope"}));
-    } else if next["action"] == "lead_decision" {
-        if status["review"]["status"] == "approved" {
-            still_valid.push(json!({"evidence": "current_review", "status": "approved"}));
-            do_not_repeat.push(json!("review"));
-        }
-        remaining.push(json!({"obligation": "lead_acceptance"}));
-    } else if next["role"] == "reviewer" {
-        remaining.push(json!({"obligation": "review"}));
-    } else if next["role"] == "worker" {
-        remaining.push(json!({"obligation": "implementation"}));
-    } else if next["action"] == "check" && !check_obligation_recorded {
-        remaining.push(json!({"obligation": "check"}));
-    }
-
-    Ok(json!({
-        "version": 1,
-        "work": work,
-        "workflow": view["workflow"],
-        "goal": view["goal"],
-        "snapshot": {
-            "eventCount": view["events"].as_array().map_or(0, Vec::len),
-            "headEventSha256": view["events"].as_array().and_then(|events| events.last()).and_then(|event| event["eventSha256"].as_str())
-        },
-        "currentSubject": view["subject"],
-        "alreadyEstablished": established,
-        "stillValid": still_valid,
-        "remaining": remaining,
-        "next": next["action"],
-        "humanHelp": {
-            "whatHappened": "current work state was reconstructed from the run ledger",
-            "whatRemains": remaining,
-            "nextAction": next["action"],
-            "decisionRequired": next["action"] == "lead_decision"
-        },
-        "doNotRepeat": do_not_repeat,
-        "invalidation": {
-            "rule": "reuse only when exact subject and governing evidence identity remain current",
-            "sessionRestartInvalidates": false,
-            "subjectChangeInvalidates": true
-        }
-    }))
-}
-
-fn scope_recorded(view: &Value) -> bool {
-    view["submissions"].as_array().is_some_and(|submissions| {
-        submissions
-            .iter()
-            .any(|event| event["role"] == "lead" && event["outcome"] == "scoped")
-    })
-}
-
-fn next_outcome_is(next: &Value, expected: &str) -> bool {
-    next["outcomes"]
-        .as_array()
-        .is_some_and(|outcomes| outcomes.iter().any(|outcome| outcome == expected))
 }
 
 #[derive(Clone, Debug)]

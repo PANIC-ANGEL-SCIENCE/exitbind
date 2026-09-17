@@ -36,7 +36,7 @@ the work in ordinary language:
 https://github.com/envy404/exitbind
 ```
 
-This URL-only path uses a local CLI plus project-local guidance:
+After you approve installation, this URL-only path uses a local CLI plus project-local guidance:
 - **Small and reversible work**: stays direct.
 - **Material work**: binds the evidence to the exact result before it can exit as accepted.
 - **Resumed work**: reuses evidence that still belongs to the same accepted subject. If the subject changes, Exitbind asks for fresh evidence instead of recycling the old win.
@@ -56,14 +56,14 @@ Current stable release: `v0.18.0`.
 
 The first thing to see is a refusal: a failed exact check cannot be accepted,
 while a fresh checked result can proceed after review and lead acceptance. If
-the files change after a check, that older evidence is a **wrong door**—it
-cannot unlock the modified result.
+a new worker result replaces the checked one, that older evidence is a **wrong
+door**—it cannot unlock the new result.
 
 For resumed work, `work resume` projects what is still valid from recorded
 state instead of asking the next agent to trust a chat summary.
 
-The URL-only path above does not require installing the CLI. For a local,
-model-free demonstration of refusal and recovery, `exitbind benchmark` creates a
+Once the CLI is installed, a local,
+model-free demonstration is available: of refusal and recovery, `exitbind benchmark` creates a
 disposable Git project, preserves the failed attempt, and shows the fresh
 checked result reaching acceptance.
 
@@ -111,7 +111,7 @@ These states stay strictly separate:
 - A passing check is not reviewer approval.
 - Reviewer approval is not lead acceptance.
 
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. If code changes after an approval, the previous evidence is rejected as a wrong door.
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. If a new worker result replaces an approved one, the previous evidence is rejected as a wrong door. In `v0.18.0`, an edit to project files made without a new worker submission is not detected by this binding.
 
 Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states.
 

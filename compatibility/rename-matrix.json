@@ -18,7 +18,7 @@
       "id": "current-exitbind",
       "callerBasename": "exitbind",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "pathId": "current-defaults",
       "installedCommands": ["exitbind"]
     },
@@ -74,9 +74,9 @@
   ],
   "producers": [
     {
-      "id": "exitbind-v5",
+      "id": "exitbind-v6",
       "name": "exitbind",
-      "eventFormat": "v5",
+      "eventFormat": "v6",
       "historical": false,
       "writable": true
     },
@@ -97,11 +97,11 @@
   ],
   "producerControls": [
     {
-      "id": "producer-current-v5-write",
-      "producerId": "exitbind-v5",
+      "id": "producer-current-v6-write",
+      "producerId": "exitbind-v6",
       "callerSurfaceId": "current-exitbind",
       "operation": "write",
-      "versions": [5]
+      "versions": [6]
     },
     {
       "id": "producer-legacy-v1-write",
@@ -149,7 +149,7 @@
       "id": "current-canonical",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "originId": "current-updater",
       "repositoryId": "canonical-current",
       "fetchRepositoryId": "canonical-current",
@@ -175,7 +175,7 @@
       "id": "canonical-legacy-current",
       "callerSurfaceId": "legacy-soulmate",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "originId": "legacy-updater",
       "repositoryId": "canonical-legacy",
       "fetchRepositoryId": "canonical-current",
@@ -188,7 +188,7 @@
       "id": "canonical-legacy-malformed",
       "callerSurfaceId": "legacy-soulmate",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "originId": "legacy-updater",
       "repositoryId": "canonical-legacy",
       "fetchRepositoryId": "canonical-current",
@@ -214,7 +214,7 @@
       "id": "custom-current",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "originId": "current-updater",
       "repositoryId": "custom-example",
       "fetchRepositoryId": "custom-example",
@@ -227,7 +227,7 @@
       "id": "partial-exitbind-custom-legacy",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
-      "producerId": "exitbind-v5",
+      "producerId": "exitbind-v6",
       "originId": "current-updater",
       "repositoryId": "custom-example",
       "fetchRepositoryId": "custom-example",

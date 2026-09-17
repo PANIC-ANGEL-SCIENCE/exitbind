@@ -12,7 +12,7 @@ pub(crate) fn evidence() -> Value {
 }
 
 pub(crate) fn evidence_for_version(version: u64) -> Value {
-    if version < crate::compatibility::profile().format_version {
+    if version < 5 || crate::compatibility::profile().format_version < 5 {
         json!({"name":"soulmate","version":env!("CARGO_PKG_VERSION"),"commit":option_env!("SOULMATE_BUILD_COMMIT")})
     } else {
         evidence()

@@ -160,7 +160,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             "current-exitbind" => (
                 "exitbind",
                 "exitbind",
-                "exitbind-v5",
+                "exitbind-v6",
                 "current-defaults",
                 vec!["exitbind"],
             ),
@@ -321,7 +321,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
     let producer_ids = id_set(producers, "producers")?;
     if producer_ids
         != BTreeSet::from([
-            "exitbind-v5".into(),
+            "exitbind-v6".into(),
             "soulmate-v1-write".into(),
             "historical-soulmate-v1-v4".into(),
         ])
@@ -343,7 +343,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             object["writable"].as_bool(),
         );
         let expected = match id {
-            "exitbind-v5" => ("exitbind", "v5", Some(false), Some(true)),
+            "exitbind-v6" => ("exitbind", "v6", Some(false), Some(true)),
             "soulmate-v1-write" => ("soulmate", "v1", Some(false), Some(true)),
             "historical-soulmate-v1-v4" => ("soulmate", "v1-v4", Some(true), Some(false)),
             _ => return Err(format!("unknown producer {id}")),
@@ -357,7 +357,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
     let producer_control_ids = id_set(producer_controls, "producerControls")?;
     if producer_control_ids
         != BTreeSet::from([
-            "producer-current-v5-write".into(),
+            "producer-current-v6-write".into(),
             "producer-legacy-v1-write".into(),
             "producer-historical-v1-v4-read".into(),
         ])
@@ -393,7 +393,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             return Err(format!("invalid producer control at {at}"));
         }
         let expected = match id {
-            "producer-current-v5-write" => ("exitbind-v5", "current-exitbind", "write", vec![5]),
+            "producer-current-v6-write" => ("exitbind-v6", "current-exitbind", "write", vec![6]),
             "producer-legacy-v1-write" => {
                 ("soulmate-v1-write", "legacy-soulmate", "write", vec![1])
             }
@@ -508,13 +508,13 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         }
         let commands = string_array(object, "installedCommands", &at)?;
         let valid = match (caller, product, producer, result) {
-            ("current-exitbind", "exitbind", "exitbind-v5", "current-exitbind") => {
+            ("current-exitbind", "exitbind", "exitbind-v6", "current-exitbind") => {
                 commands == vec!["exitbind"]
             }
             ("legacy-soulmate", "soulmate", "soulmate-v1-write", "legacy-soulmate") => {
                 commands == vec!["soulmate"]
             }
-            ("legacy-soulmate", "exitbind", "exitbind-v5", "current-exitbind") => {
+            ("legacy-soulmate", "exitbind", "exitbind-v6", "current-exitbind") => {
                 commands == vec!["soulmate", "exitbind"]
             }
             _ => false,
@@ -853,7 +853,7 @@ fn valid_matrix_rejects_closed_mutations_without_reject_all_behavior() {
     mutations.push(unknown_route);
 
     let mut invalid_combination = valid.clone();
-    invalid_combination["routes"][1]["producerId"] = Value::String("exitbind-v5".into());
+    invalid_combination["routes"][1]["producerId"] = Value::String("exitbind-v6".into());
     mutations.push(invalid_combination);
 
     let mut invalid_producer_format = valid.clone();
@@ -1076,12 +1076,12 @@ fn producer_cases_execute_persisted_identity_and_format_projections() {
     .unwrap();
     let current_producer = row(
         "producers",
-        row("producerControls", "producer-current-v5-write")["producerId"]
+        row("producerControls", "producer-current-v6-write")["producerId"]
             .as_str()
             .unwrap(),
     );
     assert_eq!(current_event["producer"]["name"], current_producer["name"]);
-    assert_eq!(current_event["version"], 5);
+    assert_eq!(current_event["version"], 6);
 
     let legacy_config = legacy_root.join(legacy_paths["defaultConfig"].as_str().unwrap());
     let legacy_ledger = format!(

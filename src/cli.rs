@@ -161,7 +161,11 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
 }
 
 fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    let action = positional(a, 0, "work requires begin, next, return, check, or resume")?;
+    let action = positional(
+        a,
+        0,
+        "work requires begin, next, return, check, validate, or resume",
+    )?;
     match action {
         "begin" => {
             args::assert_options(
@@ -231,12 +235,25 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 positional(a, 1, "work check requires WORK")?,
             )?)
         }
+        "validate" => {
+            args::assert_options("work validate", a, &["config", "packet"])?;
+            args::assert_positionals("work validate", a, 2)?;
+            let packet = a
+                .options
+                .get("packet")
+                .ok_or("work validate requires --packet FILE")?;
+            print_json(&crate::work::validate(
+                l,
+                positional(a, 1, "work validate requires WORK")?,
+                packet,
+            )?)
+        }
         "resume" => {
             args::assert_options("work resume", a, &["config"])?;
             args::assert_positionals("work resume", a, 1)?;
             print_json(&crate::work::resume(l)?)
         }
-        _ => Err("work requires begin, next, return, check, or resume".into()),
+        _ => Err("work requires begin, next, return, check, validate, or resume".into()),
     }
 }
 

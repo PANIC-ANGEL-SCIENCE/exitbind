@@ -79,6 +79,26 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    /// Check-execution counters live outside the product root so recording a
+    /// count never changes the tested inputs being counted.
+    fn counter(&self, name: &str) -> std::path::PathBuf {
+        let directory = self.root.with_extension("counters");
+        fs::create_dir_all(&directory).unwrap();
+        directory.join(name)
+    }
+
+    fn counting_command(&self, name: &str) -> String {
+        let path = self.counter(name);
+        let path = path.to_str().unwrap();
+        format!(
+            "n=$(cat '{path}' 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > '{path}'"
+        )
+    }
+
+    fn count(&self, name: &str) -> String {
+        fs::read_to_string(self.counter(name)).unwrap()
+    }
+
     fn ledger(&self, work: &str) -> String {
         format!(
             ".exitbind/runs/work-{}.jsonl",
@@ -109,6 +129,7 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.root).unwrap();
+        let _ = fs::remove_dir_all(self.root.with_extension("counters"));
     }
 }
 
@@ -415,8 +436,9 @@ fn work_resume_projects_residual_packet_without_repeating_valid_work() {
 #[test]
 fn preservation_requirement_is_separate_from_functional_check_and_resume_reuses_it() {
     let fixture = Fixture::new_single();
-    let functional = "n=$(cat functional.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > functional.count";
-    let preservation = "n=$(cat preservation.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > preservation.count";
+    let functional = fixture.counting_command("functional.count");
+    let preservation = fixture.counting_command("preservation.count");
+    let (functional, preservation) = (functional.as_str(), preservation.as_str());
     let begin = fixture.value(
         &[
             "work",
@@ -505,23 +527,11 @@ fn preservation_requirement_is_separate_from_functional_check_and_resume_reuses_
     );
 
     let preserved = fixture.value(&["work", "check", &work], None);
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
-        "1\n"
-    );
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
-        "1\n"
-    );
+    assert_eq!(fixture.count("functional.count"), "1\n");
+    assert_eq!(fixture.count("preservation.count"), "1\n");
     let resumed = fixture.value(&["work", "resume"], None);
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
-        "1\n"
-    );
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
-        "1\n"
-    );
+    assert_eq!(fixture.count("functional.count"), "1\n");
+    assert_eq!(fixture.count("preservation.count"), "1\n");
     assert!(resumed["residual"]["stillValid"]
         .as_array()
         .unwrap()
@@ -591,8 +601,8 @@ fn failed_preservation_blocks_acceptance_without_claiming_functional_failure() {
         ],
         Some(b"implementation"),
     );
-    fixture.value(&["work", "check", &work], None);
     fs::write(fixture.root.join("preservation-fail"), b"weakened").unwrap();
+    fixture.value(&["work", "check", &work], None);
     let failed = fixture.value(&["work", "check", &work], None);
     assert_eq!(
         failed["next"]["packet"]["checkEvidence"][0]["status"],
@@ -758,8 +768,9 @@ fn residual_packet_keeps_stale_subject_evidence_out_of_reuse() {
 #[test]
 fn preservation_checks_rerun_after_rework_changes_subject() {
     let fixture = Fixture::new_single();
-    let functional = "n=$(cat functional.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > functional.count";
-    let preservation = "n=$(cat preservation.count 2>/dev/null || echo 0); n=$((n+1)); printf '%s\\n' \"$n\" > preservation.count";
+    let functional = fixture.counting_command("functional.count");
+    let preservation = fixture.counting_command("preservation.count");
+    let (functional, preservation) = (functional.as_str(), preservation.as_str());
     let begin = fixture.value(
         &[
             "work",
@@ -848,14 +859,8 @@ fn preservation_checks_rerun_after_rework_changes_subject() {
 
     fixture.value(&["work", "check", &work], None);
     fixture.value(&["work", "check", &work], None);
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("functional.count")).unwrap(),
-        "2\n"
-    );
-    assert_eq!(
-        fs::read_to_string(fixture.root.join("preservation.count")).unwrap(),
-        "2\n"
-    );
+    assert_eq!(fixture.count("functional.count"), "2\n");
+    assert_eq!(fixture.count("preservation.count"), "2\n");
 }
 
 #[test]
@@ -982,4 +987,600 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
     assert_eq!(done["next"]["action"], "done");
     assert_eq!(done["next"]["progress"]["percent"], 100);
     assert_eq!(done["next"]["progress"]["state"], "READY");
+}
+
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort();
+            let fields = keys
+                .into_iter()
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap(),
+                        canonical(&map[key])
+                    )
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", fields.join(","))
+        }
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        other => serde_json::to_string(other).unwrap(),
+    }
+}
+
+fn rehash(mut event: Value) -> Value {
+    use sha2::{Digest, Sha256};
+    event.as_object_mut().unwrap().remove("eventSha256");
+    let digest = Sha256::digest(canonical(&event).as_bytes());
+    event["eventSha256"] = Value::String(format!("{digest:x}"));
+    event
+}
+
+#[test]
+fn preservation_without_functional_policy_is_refused_at_creation_and_replay() {
+    let fixture = Fixture::new_single();
+    let refused = fixture.call(
+        &[
+            "run",
+            "start",
+            "change",
+            "--goal",
+            "preserve without a functional check",
+            "--ledger",
+            ".exitbind/runs/unchecked.jsonl",
+            "--preserve-requirement",
+            "precedence:accepted precedence remains binding",
+            "--preservation-check-command",
+            "true",
+        ],
+        None,
+    );
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("checked run"),
+        "{refused:?}"
+    );
+    assert!(!fixture.root.join(".exitbind/runs/unchecked.jsonl").exists());
+
+    // Replay: a start event that claims preservation but no checkPolicy is
+    // rejected even when its hash chain is internally valid.
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "preserve",
+            "--check-command",
+            "true",
+            "--preserve-requirement",
+            "precedence:accepted precedence remains binding",
+            "--preservation-check-command",
+            "true",
+        ],
+        None,
+    );
+    let ledger = fixture.ledger(begin["work"].as_str().unwrap());
+    let text = fs::read_to_string(fixture.root.join(ledger)).unwrap();
+    let mut start: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(start["version"], 6);
+    start.as_object_mut().unwrap().remove("checkPolicy");
+    let forged = ".exitbind/runs/forged.jsonl";
+    fs::write(
+        fixture.root.join(forged),
+        format!("{}\n", serde_json::to_string(&rehash(start)).unwrap()),
+    )
+    .unwrap();
+    let replay = fixture.call(&["run", "inspect", forged, "--json"], None);
+    assert!(!replay.status.success(), "{replay:?}");
+    assert!(
+        String::from_utf8_lossy(&replay.stdout).contains("preservation requires checkPolicy"),
+        "{replay:?}"
+    );
+}
+
+/// Build governed work up to the final lead decision with a passing functional
+/// check, a passing preservation check (whose checker lives in the product
+/// root), and a current review.
+fn prepared_for_acceptance(fixture: &Fixture) -> String {
+    fs::create_dir_all(fixture.root.join("checks")).unwrap();
+    fs::create_dir_all(fixture.root.join("src")).unwrap();
+    fs::write(
+        fixture.root.join("checks/preserve.sh"),
+        b"grep -q env-first src/config.txt\n",
+    )
+    .unwrap();
+    fs::write(fixture.root.join("src/config.txt"), b"env-first\n").unwrap();
+    let functional = fixture.counting_command("functional.count");
+    let preservation = format!(
+        "sh checks/preserve.sh && {}",
+        fixture.counting_command("preservation.count")
+    );
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "simplify configuration",
+            "--check-command",
+            &functional,
+            "--preserve-requirement",
+            "precedence:environment wins over file",
+            "--preservation-check-command",
+            &preservation,
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    drive_to_lead_decision(fixture, &work);
+    work
+}
+
+/// Follow the façade until a lead decision is pending: return scripted
+/// worker/reviewer results and run pending checks. Scripted review requests are
+/// counted separately; they are not model reviews.
+fn drive_to_lead_decision(fixture: &Fixture, work: &str) -> usize {
+    let mut review_requests = 0;
+    loop {
+        let next = fixture.value(&["work", "next", work], None)["next"].clone();
+        match next["action"].as_str().unwrap() {
+            "check" => {
+                fixture.value(&["work", "check", work], None);
+            }
+            "spawn" => {
+                let role = next["role"].as_str().unwrap();
+                let outcome = if role == "reviewer" {
+                    "approved"
+                } else {
+                    "completed"
+                };
+                if role == "reviewer" {
+                    review_requests += 1;
+                }
+                fixture.value(
+                    &[
+                        "work",
+                        "return",
+                        work,
+                        next["assignment"].as_str().unwrap(),
+                        "--outcome",
+                        outcome,
+                    ],
+                    Some(b"scripted result"),
+                );
+            }
+            "lead_decision" if next["outcomes"][0] == "scoped" => {
+                fixture.value(
+                    &[
+                        "work",
+                        "return",
+                        work,
+                        next["assignment"].as_str().unwrap(),
+                        "--outcome",
+                        "scoped",
+                    ],
+                    Some(b"scope"),
+                );
+            }
+            "lead_decision" => return review_requests,
+            other => panic!("unexpected action {other}"),
+        }
+    }
+}
+
+struct Consumed {
+    result: String,
+    reason: String,
+    executed: Vec<Vec<String>>,
+}
+
+/// A tiny deterministic consumer: it reads the saved packet, asks the public
+/// validator, and follows only the validator's bounded Exitbind action. It
+/// knows nothing about the scenario being tested.
+fn consume(fixture: &Fixture, work: &str, packet: &std::path::Path) -> Consumed {
+    let verdict = fixture.value(
+        &[
+            "work",
+            "validate",
+            work,
+            "--packet",
+            packet.to_str().unwrap(),
+        ],
+        None,
+    );
+    let mut executed = Vec::new();
+    let mut help = verdict["humanHelp"].clone();
+    while help["nextAction"]["actor"] == "exitbind" {
+        let args: Vec<String> = help["nextAction"]["command"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|arg| arg.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(help["nextAction"]["command"]["program"], "exitbind");
+        let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+        fixture.value(&borrowed, None);
+        executed.push(args);
+        let fresh = fixture.value(&["work", "next", work], None);
+        help = fresh["residual"]["humanHelp"].clone();
+    }
+    Consumed {
+        result: verdict["result"].as_str().unwrap().to_owned(),
+        reason: verdict["reason"].as_str().unwrap().to_owned(),
+        executed,
+    }
+}
+
+fn save_packet(fixture: &Fixture, work: &str, name: &str) -> std::path::PathBuf {
+    let packet = fixture.value(&["work", "next", work], None)["residual"].clone();
+    let path = fixture.counter(name);
+    fs::write(&path, serde_json::to_vec(&packet).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn validated_packet_reuses_unchanged_evidence_without_rerunning_checks() {
+    let fixture = Fixture::new_single();
+    let work = prepared_for_acceptance(&fixture);
+    let packet = save_packet(&fixture, &work, "packet.json");
+    let saved: Value = serde_json::from_slice(&fs::read(&packet).unwrap()).unwrap();
+    assert_eq!(saved["version"], 2);
+    assert!(saved["snapshot"]["inputsSha256"].is_string());
+    assert_eq!(saved["humanHelp"]["nextAction"]["actor"], "lead");
+    assert_eq!(saved["humanHelp"]["ownerDecision"], "not_required");
+
+    let consumed = consume(&fixture, &work, &packet);
+    assert_eq!(
+        (consumed.result.as_str(), consumed.reason.as_str()),
+        ("usable", "current")
+    );
+    assert!(consumed.executed.is_empty());
+    assert_eq!(fixture.count("functional.count"), "1\n");
+    assert_eq!(fixture.count("preservation.count"), "1\n");
+
+    // Unsupported, contradictory, and oversized packets never permit skipping.
+    let mut contradictory = saved.clone();
+    contradictory["doNotRepeat"]
+        .as_array_mut()
+        .unwrap()
+        .push(Value::from("implementation"));
+    let mut unsupported = saved.clone();
+    unsupported["version"] = Value::from(1);
+    for (mutated, expected) in [
+        (contradictory, "claims_disagree_with_state"),
+        (unsupported, "unsupported_packet_version"),
+    ] {
+        let path = fixture.counter("mutated.json");
+        fs::write(&path, serde_json::to_vec(&mutated).unwrap()).unwrap();
+        let verdict = fixture.value(
+            &[
+                "work",
+                "validate",
+                &work,
+                "--packet",
+                path.to_str().unwrap(),
+            ],
+            None,
+        );
+        assert_ne!(verdict["result"], "usable");
+        assert_eq!(verdict["reason"], expected);
+        assert_eq!(verdict["reuse"], serde_json::json!([]));
+        assert_eq!(verdict["packet"]["version"], 2);
+    }
+    let huge = fixture.counter("huge.json");
+    fs::write(&huge, vec![b' '; 300 * 1024]).unwrap();
+    let refused = fixture.call(
+        &[
+            "work",
+            "validate",
+            &work,
+            "--packet",
+            huge.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+
+    let done = fixture.value(&["work", "next", &work], None);
+    let accepted = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            done["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert_eq!(accepted["next"]["progress"]["state"], "READY");
+    assert_eq!(fixture.count("functional.count"), "1\n");
+}
+
+#[test]
+fn source_or_checker_edit_without_new_submission_invalidates_reuse_and_acceptance() {
+    for edited in ["src/config.txt", "checks/preserve.sh"] {
+        let fixture = Fixture::new_single();
+        let work = prepared_for_acceptance(&fixture);
+        let packet = save_packet(&fixture, &work, "packet.json");
+        let validated = consume(&fixture, &work, &packet);
+        assert_eq!(validated.result, "usable", "{edited}");
+
+        // Change after validation, before acceptance: the earlier validation
+        // does not authorize acceptance.
+        let mut bytes = fs::read(fixture.root.join(edited)).unwrap();
+        bytes.extend_from_slice(b"# edited\n");
+        fs::write(fixture.root.join(edited), &bytes).unwrap();
+        fs::write(
+            fixture.root.join(".exitbind/artifacts/lead.md"),
+            b"accept\n",
+        )
+        .unwrap();
+        let ledger = fixture.ledger(&work);
+        let premature =
+            fixture.submit_low_level("lead", &ledger, "accepted", ".exitbind/artifacts/lead.md");
+        assert!(!premature.status.success(), "{edited}: {premature:?}");
+        let next = fixture.value(&["work", "next", &work], None);
+        assert_eq!(next["next"]["action"], "check", "{edited}");
+        assert!(next["residual"]["humanHelp"]["whatHappened"]
+            .as_str()
+            .unwrap()
+            .contains("no longer applies"));
+
+        // A fresh consumer with the old packet is told to refresh and obtains
+        // real new executions before any acceptance.
+        let consumed = consume(&fixture, &work, &packet);
+        assert_eq!(
+            (consumed.result.as_str(), consumed.reason.as_str()),
+            ("refresh_required", "tested_inputs_changed"),
+            "{edited}"
+        );
+        assert_eq!(consumed.executed.len(), 2, "{edited}");
+        assert_eq!(fixture.count("functional.count"), "2\n", "{edited}");
+        assert_eq!(fixture.count("preservation.count"), "2\n", "{edited}");
+
+        // The review approved other tested files, so it is not reused.
+        let stale_review = fixture.value(&["work", "next", &work], None);
+        assert_eq!(stale_review["next"]["action"], "lead_decision");
+        assert!(!stale_review["residual"]["doNotRepeat"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item == "review"));
+        let refused =
+            fixture.submit_low_level("lead", &ledger, "accepted", ".exitbind/artifacts/lead.md");
+        assert!(!refused.status.success(), "{edited}: stale review accepted");
+        let old_packet = consume(&fixture, &work, &packet);
+        assert_eq!(old_packet.result, "refresh_required");
+        assert!(old_packet.executed.is_empty());
+
+        fixture.value(
+            &[
+                "work",
+                "return",
+                &work,
+                stale_review["next"]["assignment"].as_str().unwrap(),
+                "--outcome",
+                "rework",
+            ],
+            Some(b"review is stale"),
+        );
+        let review_requests = drive_to_lead_decision(&fixture, &work);
+        assert_eq!(review_requests, 1, "{edited}");
+        let decision = fixture.value(&["work", "next", &work], None);
+        let accepted = fixture.value(
+            &[
+                "work",
+                "return",
+                &work,
+                decision["next"]["assignment"].as_str().unwrap(),
+                "--outcome",
+                "accepted",
+            ],
+            Some(b"accept"),
+        );
+        assert_eq!(accepted["next"]["progress"]["state"], "READY", "{edited}");
+    }
+}
+
+#[test]
+fn changed_preservation_policy_cannot_inherit_predecessor_evidence() {
+    let fixture = Fixture::new_single();
+    let work = prepared_for_acceptance(&fixture);
+    let ledger = fixture.ledger(&work);
+    let changed = fixture.call(
+        &[
+            "run",
+            "supersede",
+            &ledger,
+            "--workflow",
+            "change",
+            "--goal",
+            "simplify configuration",
+            "--ledger",
+            ".exitbind/runs/successor.jsonl",
+            "--check-command",
+            "true",
+            "--preserve-requirement",
+            "precedence:file wins over environment",
+            "--preservation-check-command",
+            "true",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!changed.status.success(), "{changed:?}");
+    assert!(
+        String::from_utf8_lossy(&changed.stdout).contains("differs"),
+        "{changed:?}"
+    );
+}
+
+/// Cross-version read compatibility against a pinned `v0.18.0` binary. The
+/// binary is supplied by path so the user's installation is never touched; the
+/// test is skipped (and says so) when it is not provided.
+#[test]
+fn pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees() {
+    let Some(old) = std::env::var_os("EXITBIND_V018_BIN") else {
+        eprintln!("skipped: set EXITBIND_V018_BIN to a v0.18.0 exitbind binary");
+        return;
+    };
+    let old = PathBuf::from(old);
+    let run_with =
+        |binary: &std::path::Path, root: &std::path::Path, args: &[&str], input: Option<&[u8]>| {
+            let mut command = Command::new(binary);
+            command
+                .current_dir(root)
+                .args(args)
+                .arg("--config")
+                .arg(root.join("exitbind.json"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            let mut child = command.spawn().unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(input.unwrap_or_default())
+                .unwrap();
+            child.wait_with_output().unwrap()
+        };
+    let json = |output: Output| -> Value {
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+
+    // Old reader, new ledger: explicit refusal, never partial acceptance.
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "v6",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let ledger = fixture.ledger(begin["work"].as_str().unwrap());
+    let refused = run_with(
+        &old,
+        &fixture.root,
+        &["run", "inspect", &ledger, "--json"],
+        None,
+    );
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stdout).contains("invalid event header"),
+        "{refused:?}"
+    );
+
+    // Old writer, current reader: a v5 run at its final lead decision stays
+    // readable, projects no tested-input claim, and cannot be validated as
+    // input-applicable.
+    let legacy = Fixture::new_single();
+    let work = json(run_with(
+        &old,
+        &legacy.root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "v5",
+            "--check-command",
+            "true",
+        ],
+        None,
+    ))["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    loop {
+        let next =
+            json(run_with(&old, &legacy.root, &["work", "next", &work], None))["next"].clone();
+        match next["action"].as_str().unwrap() {
+            "check" => {
+                json(run_with(
+                    &old,
+                    &legacy.root,
+                    &["work", "check", &work],
+                    None,
+                ));
+            }
+            "spawn" | "lead_decision" if next["outcomes"][0] != "accepted" => {
+                let outcome = match next["role"].as_str().unwrap() {
+                    "lead" => "scoped",
+                    "reviewer" => "approved",
+                    _ => "completed",
+                };
+                json(run_with(
+                    &old,
+                    &legacy.root,
+                    &[
+                        "work",
+                        "return",
+                        &work,
+                        next["assignment"].as_str().unwrap(),
+                        "--outcome",
+                        outcome,
+                    ],
+                    Some(b"legacy"),
+                ));
+            }
+            _ => break,
+        }
+    }
+    let legacy_ledger = legacy.ledger(&work);
+    let events = fs::read_to_string(legacy.root.join(&legacy_ledger)).unwrap();
+    assert!(events
+        .lines()
+        .all(|line| serde_json::from_str::<Value>(line).unwrap()["version"] == 5));
+    let current = legacy.value(&["work", "next", &work], None);
+    assert_eq!(current["next"]["action"], "lead_decision");
+    assert!(current["residual"]["snapshot"]["inputsSha256"].is_null());
+    assert_eq!(
+        current["residual"]["invalidation"]["testedInputChangeInvalidates"],
+        false
+    );
+    let packet = legacy.counter("legacy-packet.json");
+    fs::write(&packet, serde_json::to_vec(&current["residual"]).unwrap()).unwrap();
+    let verdict = legacy.value(
+        &[
+            "work",
+            "validate",
+            &work,
+            "--packet",
+            packet.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(verdict["result"], "cannot_establish_applicability");
+    assert_eq!(verdict["reason"], "tested_inputs_not_bound");
+    let accepted = legacy.value(
+        &[
+            "work",
+            "return",
+            &work,
+            current["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert_eq!(accepted["next"]["progress"]["state"], "READY");
+    assert!(fs::read_to_string(legacy.root.join(&legacy_ledger))
+        .unwrap()
+        .lines()
+        .all(|line| serde_json::from_str::<Value>(line).unwrap()["version"] == 5));
 }

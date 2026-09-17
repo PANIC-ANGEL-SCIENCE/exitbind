@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- Write run-event format 6 for new Exitbind starts. v6 checks, reviewer
+  approvals, protections, and lead acceptance record the tested-input identity
+  of the product root (`product-root-files-v1`: tracked plus untracked,
+  non-ignored files in a Git worktree, or every file otherwise; `.git` and state
+  directories excluded). Evidence taken on different inputs is not current, a
+  check whose inputs change while it runs records nothing, and acceptance
+  recomputes the identity. Ignored files, files outside the product root, the
+  environment, and remote or time-dependent conditions are not covered.
+- `v0.18.0` refuses v6 ledgers; v1-v5 ledgers remain readable under their
+  original guarantees and gain no input binding.
+- Preservation requirements are v6-only and require a functional check policy;
+  the combination without `checkPolicy` is refused at start, successor, and
+  replay.
+- Residual packets are version 2: the snapshot carries tested-input identity,
+  and `humanHelp` is derived from state with `ownerDecision` separate from lead
+  actions. Add `work validate WORK --packet FILE`, returning `usable`,
+  `refresh_required`, or `cannot_establish_applicability`; only `usable`
+  permits skipping work, and nothing in a packet is executed.
+- No token, model-call, or human-time savings are claimed.
+
 ## 0.18.0
 
 - Add deterministic residual packets to `work next` and `work resume`, reporting

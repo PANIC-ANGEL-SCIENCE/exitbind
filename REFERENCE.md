@@ -196,6 +196,14 @@ reader retains historical v1–v4 ledgers, including their original producer
 values; v5 binds an Accepted Subject to each result and evidence record.
 The stable release supports v3 caller-reported and v4 observed-check histories while
 new v5 writes use the Exitbind subject binding.
+
+Unreleased (not in `v0.18.0`): new starts write run-event format 6. A v6 check,
+reviewer approval, protection, and lead acceptance also record the tested-input
+identity of the product root (tracked and untracked non-ignored files, or every
+file outside a Git worktree; state directories excluded), and evidence taken on
+other inputs is not current. `v0.18.0` refuses v6 ledgers as an invalid header
+instead of reading them partially. v5 ledgers keep their original subject-only
+guarantee.
 After the worker submission, the
 frozen command can instead be run and recorded by Exitbind without accepting a
 caller command or result override:

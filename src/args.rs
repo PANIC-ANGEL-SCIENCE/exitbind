@@ -28,6 +28,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "name",
     "outcome",
     "output",
+    "packet",
     "preservation-check-command",
     "preservation-proof-origin",
     "preserve-requirement",

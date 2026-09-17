@@ -8,7 +8,7 @@ fresh attempt. The [authority boundary](../REFERENCE.md#authority-boundary)
 defines who owns each action; [SECURITY.md](../SECURITY.md) defines what the
 local evidence can establish.
 
-New checked runs use run-event format 5. Exitbind binds each submission, check,
+In `v0.18.0`, new checked runs use run-event format 5. Exitbind binds each submission, check,
 review, and acceptance result to the run's exact Accepted Subject; a stale
 subject is refused. Historical v1–v4 ledgers remain readable under their
 original semantics.
