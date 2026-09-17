@@ -2,9 +2,17 @@
 
 **A reported “done” is not an accepted result.**
 
+In agent-assisted coding, finishing work is easy to claim and dangerous to trust.
+A test passes before the final edit lands; a review approves a stale file; an agent moves on.
+In that liminal space, work exists, but the door is a **false exit**.
+
 Exitbind gives the coding agent you already use a bounded, resumable acceptance
 path. Small reversible work stays direct. Material work can earn a verifiable
-exit only when the required evidence belongs to the exact current result.
+exit only when required evidence belongs to the exact current result:
+
+```text
+one link -> classify -> exact-result check -> independent review -> lead acceptance -> verified receipt
+```
 
 ## Give your lead one link
 
@@ -15,12 +23,10 @@ the work in ordinary language:
 https://github.com/envy404/exitbind
 ```
 
-This URL-only path uses a local CLI plus project-local guidance. Keep small,
-reversible work direct; for material work, bind the evidence to the exact result
-before it can exit as accepted. When governed work resumes, Exitbind carries
-forward evidence that still belongs to the same accepted subject, so a passed
-check or approved review may be reused instead of re-run. If the subject
-changes, Exitbind asks for fresh evidence instead of recycling the old win.
+This URL-only path uses a local CLI plus project-local guidance:
+- **Small and reversible work**: stays direct with zero wrapper overhead or ceremony.
+- **Material work**: binds the evidence to the exact result before it can exit as accepted.
+- **Resumed work**: carries forward evidence that still belongs to the same accepted subject, so a passed check or approved review is reused instead of re-run. If the subject changes, Exitbind asks for fresh evidence instead of recycling the old win.
 
 Your lead should inspect and explain the effect first, then ask before
 installation, project writes, or permission changes. A pasted URL is guidance,
@@ -33,17 +39,20 @@ Current stable release: `v0.18.0`.
 [![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## No false done, no duplicate earned work
+## See a false done refused
 
 The first observable success is the crossing: a failed exact check cannot be
 accepted, while a fresh checked result can proceed after review and lead
-acceptance. For resumed work, `work resume` projects a deterministic residual
-packet from recorded state instead of asking the next agent to trust a chat
-summary.
+acceptance. When changes occur after a check, Exitbind detects a **wrong door**—stale
+evidence cannot unlock a modified result.
 
-The URL path above does not require installing the CLI. For a local, model-free
-demonstration, `exitbind benchmark` creates a disposable Git project, preserves
-the failed attempt, and shows the fresh checked result reaching acceptance.
+For resumed work, `work resume` projects a deterministic residual packet from
+recorded state instead of asking the next agent to trust a chat summary.
+
+The URL-only path above does not require installing the CLI. For a local,
+model-free demonstration of refusal and recovery, `exitbind benchmark` creates a
+disposable Git project, preserves the failed attempt, and shows the fresh
+checked result reaching acceptance.
 
 This page describes `v0.18.0` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
@@ -84,13 +93,14 @@ normal request
        -> EXIT READY, EXIT REFUSED, or EXIT BLOCKED
 ```
 
-These states stay separate. Worker completion is not a passing check; a passing
-check is not reviewer approval; reviewer approval is not lead acceptance.
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
+These states stay strictly separate:
+- Worker completion is not a passing check.
+- A passing check is not reviewer approval.
+- Reviewer approval is not lead acceptance.
 
-Stale or wrong-result evidence also keeps the current result from reaching
-`EXIT READY`. A receipt detects covered drift; it does not prove that the work is
-correct or replace the exit states.
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. If code changes after an approval, the previous evidence is rejected as a wrong door.
+
+Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states.
 
 `work next` and `work resume` include a residual packet for the current work:
 what is already established, which evidence is still valid, what remains, the
