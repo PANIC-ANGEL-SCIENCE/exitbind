@@ -2,7 +2,7 @@
 
 This checklist describes the bounded Exitbind-owned path for preservation-risk
 checked work. It does not authorize removing Holytail, publishing a release, or
-claiming host-level enforcement. It describes the `v0.19.0` behavior.
+claiming host-level enforcement. It describes the `v0.19.1` behavior.
 
 Current conclusion:
 

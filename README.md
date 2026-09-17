@@ -24,7 +24,7 @@ With Exitbind
   Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current stable release: `v0.19.0`. One local binary; it calls no model and runs
+Current stable release: `v0.19.1`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -33,13 +33,13 @@ no daemon or cloud service.
 
 ## See a wrong door refused
 
-This page describes `v0.19.0` for Linux x86_64 and macOS on Apple Silicon or
+This page describes `v0.19.1` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
 verifies the archive checksum. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.19.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.19.1/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -169,7 +169,7 @@ project writes:
 
 ```sh
 # Codex
-codex plugin marketplace add envy404/exitbind --ref v0.19.0
+codex plugin marketplace add envy404/exitbind --ref v0.19.1
 codex plugin add exitbind@exitbind-plugins
 
 # Claude Code
@@ -177,7 +177,7 @@ claude plugin marketplace add envy404/exitbind
 claude plugin install exitbind@exitbind-plugins
 ```
 
-The Codex command pins `v0.19.0`; Claude Code follows the repository's current
+The Codex command pins `v0.19.1`; Claude Code follows the repository's current
 default branch. The plugin contains the Exitbind skill only: it installs no CLI,
 hook, MCP server, app, or model.
 
@@ -200,7 +200,7 @@ not covered. Raw ledgers and artifacts can contain goals, commands, paths, and
 task results; keep them private and read [SECURITY.md](SECURITY.md) before real
 work.
 
-Exitbind is the renamed continuation of Soulmate: `v0.19.0` keeps the existing
+Exitbind is the renamed continuation of Soulmate: `v0.19.1` keeps the existing
 version and repository history rather than resetting to `0.0.1`. It reads
 historical Soulmate v1–v4 run records under their original producer and schema
 meaning. The `soulmate` command is the same binary under the previous name, and

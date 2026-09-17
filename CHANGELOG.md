@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.19.1
+
+- Fix `exitbind update` on Linux leaving a zero-byte binary after reporting
+  success. After the installer replaced the running binary, the updater
+  re-derived its caller surface from an executable name that read as deleted,
+  switched to the legacy profile, and copied the new binary onto itself. The
+  surface is now decided once per process, and an install path is never copied
+  onto itself.
+- The installer moves a replaced binary aside into one hidden
+  `.exitbind-previous-PID/` directory that keeps its file name, so released
+  0.18.0 and 0.19.0 updaters no longer truncate the binary this installer
+  places. The next install removes earlier aside copies.
+- If an earlier update left a zero-byte `exitbind`, reinstall once with the
+  pinned installer command in the README.
+- No persisted format or public command changes.
+
 ## 0.19.0
 
 - Write run-event format 6 for new Exitbind starts. v6 checks, reviewer
@@ -167,7 +183,8 @@ re-executed during this review.
 | 0.15.0-rc.3 | [v0.15.0-rc.3](https://github.com/envy404/soulmate/tree/v0.15.0-rc.3), `4faf2a7` | None | Same persisted readers as 0.15.0-rc.1. |
 | 0.17.0 | [v0.17.0](https://github.com/envy404/exitbind/tree/v0.17.0), `55d2c97` | Adds new checked run-event format 5 with Accepted Subject bindings; retains historical readers for v1–v4. | Exitbind v5 plus historical v1–v4 readers. |
 | 0.18.0 | [v0.18.0](https://github.com/envy404/exitbind/tree/v0.18.0), `fc0ef16` | None | Same persisted readers as 0.17.0. |
-| 0.19.0 | Current stable Exitbind release | Adds run-event format 6 with tested-input identity bindings; retains historical readers for v1–v5. | Exitbind v6 plus historical v1–v5 readers. |
+| 0.19.0 | [v0.19.0](https://github.com/envy404/exitbind/tree/v0.19.0), `02df86f` | Adds run-event format 6 with tested-input identity bindings; retains historical readers for v1–v5. | Exitbind v6 plus historical v1–v5 readers. |
+| 0.19.1 | Current stable Exitbind release | None | Same persisted readers as 0.19.0. |
 
 The parentless public root `a0b8be3` contains package 0.10.0 without a
 corresponding public release tag in this observed map. Earlier changelog
