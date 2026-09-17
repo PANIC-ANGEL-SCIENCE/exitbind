@@ -2,13 +2,26 @@
 
 **A reported “done” is not an accepted result.**
 
-In agent-assisted coding, finishing work is easy to claim and dangerous to trust.
-A test passes before the final edit lands; a review approves a stale file; an agent moves on.
-In that liminal space, work exists, but the door is a **false exit**.
+```text
+Without Exitbind
+  Agent: "Done. Tests pass."
+  You merge.
+  Later: the tests ran before the last edit.
 
-Exitbind gives the coding agent you already use a bounded, resumable acceptance
-path. Small reversible work stays direct. Material work can earn a verifiable
-exit only when required evidence belongs to the exact current result:
+With Exitbind
+  Agent: "Done. Tests pass."
+  Exitbind refuses: that check does not belong to the current result.
+  The agent reruns on the current files.
+  Check, review, and lead acceptance can then exit.
+```
+
+A test can pass before the final edit. A review can approve a stale file. An
+agent can move on. The work exists, but that door is a **false exit**: it looks
+finished, and the evidence belongs to something else.
+
+Exitbind gives the coding agent you already use a local way to catch that
+false done. Small reversible work stays direct. Material work can earn a
+verifiable exit only when required evidence belongs to the exact current result:
 
 ```text
 one link -> classify -> exact-result check -> independent review -> lead acceptance -> verified receipt
@@ -24,9 +37,9 @@ https://github.com/envy404/exitbind
 ```
 
 This URL-only path uses a local CLI plus project-local guidance:
-- **Small and reversible work**: stays direct with zero wrapper overhead or ceremony.
+- **Small and reversible work**: stays direct.
 - **Material work**: binds the evidence to the exact result before it can exit as accepted.
-- **Resumed work**: carries forward evidence that still belongs to the same accepted subject, so a passed check or approved review is reused instead of re-run. If the subject changes, Exitbind asks for fresh evidence instead of recycling the old win.
+- **Resumed work**: reuses evidence that still belongs to the same accepted subject. If the subject changes, Exitbind asks for fresh evidence instead of recycling the old win.
 
 Your lead should inspect and explain the effect first, then ask before
 installation, project writes, or permission changes. A pasted URL is guidance,
@@ -41,13 +54,13 @@ Current stable release: `v0.18.0`.
 
 ## See a false done refused
 
-The first observable success is the crossing: a failed exact check cannot be
-accepted, while a fresh checked result can proceed after review and lead
-acceptance. When changes occur after a check, Exitbind detects a **wrong door**—stale
-evidence cannot unlock a modified result.
+The first thing to see is a refusal: a failed exact check cannot be accepted,
+while a fresh checked result can proceed after review and lead acceptance. If
+the files change after a check, that older evidence is a **wrong door**—it
+cannot unlock the modified result.
 
-For resumed work, `work resume` projects a deterministic residual packet from
-recorded state instead of asking the next agent to trust a chat summary.
+For resumed work, `work resume` projects what is still valid from recorded
+state instead of asking the next agent to trust a chat summary.
 
 The URL-only path above does not require installing the CLI. For a local,
 model-free demonstration of refusal and recovery, `exitbind benchmark` creates a
@@ -78,9 +91,9 @@ records.
 
 ## How the exit path works
 
-For material work, Exitbind binds the current result, deterministic check,
-independent review, lead acceptance, and (for a checked v5 run) verifiable
-receipt to one exact subject:
+For material work, Exitbind binds the current result, exact check, independent
+review, lead acceptance, and (for a checked v5 run) verifiable receipt to one
+exact subject:
 
 ```text
 normal request
@@ -176,11 +189,12 @@ private and read [SECURITY.md](SECURITY.md) before real work.
 
 `v0.18.0` continues the existing version and repository history; the rename does
 not reset the project to `0.0.1`. It reads historical Soulmate v1–v4 run records
-under their original producer and schema meaning. Existing `soulmate.json`,
-`.soulmate/` state, project skill paths, environment controls, and the
-`soulmate` command remain bounded compatibility surfaces. New records use the
-Exitbind identity and current format; compatibility never relabels old evidence
-as new evidence. See the [public format map](CHANGELOG.md#public-tags-and-format-readers)
+under their original producer and schema meaning. The `soulmate` command is the
+same binary under the previous name. Existing `soulmate.json`, `.soulmate/`
+state, project skill paths, and environment controls remain bounded
+compatibility surfaces. New records use the Exitbind identity and current
+format; compatibility never relabels old evidence as new evidence. See the
+[public format map](CHANGELOG.md#public-tags-and-format-readers)
 before choosing a rollback or release channel.
 
 ## Update, recover, or leave
