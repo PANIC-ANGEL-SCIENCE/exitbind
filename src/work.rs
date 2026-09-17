@@ -59,11 +59,8 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
 
 pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
-    Ok(json!({
-        "work": work,
-        "next": next_for(loaded, work, &ledger)?,
-        "residual": crate::work_packet::project(loaded, work, &ledger, &next_for(loaded, work, &ledger)?)?
-    }))
+    let (next, residual) = next_and_residual(loaded, work, &ledger)?;
+    Ok(json!({"work": work, "next": next, "residual": residual}))
 }
 
 pub(crate) fn return_result(
@@ -111,14 +108,15 @@ pub(crate) fn return_result(
 pub(crate) fn validate(loaded: &Loaded, work: &str, packet_path: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
     let packet = crate::work_packet::read_bounded(packet_path)?;
-    let next = next_for(loaded, work, &ledger)?;
-    crate::work_packet::validate(loaded, work, &ledger, &next, &packet)
+    let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+    let next = next_from(loaded, work, &snapshot)?;
+    crate::work_packet::validate(work, &snapshot, &next, &packet)
 }
 
 pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
-    let pending =
-        current_check_target(loaded, &ledger)?.ok_or("no current worker check is pending")?;
+    let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+    let pending = current_check_target(&snapshot)?.ok_or("no current worker check is pending")?;
     let _observed = run::observe_check_for_requirement(
         loaded,
         &ledger,
@@ -155,13 +153,14 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             continue;
         }
         let ledger = format!("{}/{}", runs_dir(), name);
-        let view = run::inspect(loaded, &ledger)?;
+        let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+        let view = snapshot.inspect_view();
         if view["status"] == "running" {
-            let progress = run::next(loaded, &ledger)?["progress"].clone();
+            let progress = snapshot.next_view(loaded)?["progress"].clone();
             candidates.push((
                 format!("{WORK_PREFIX}{token}"),
                 view["workflow"].clone(),
-                view["goal"].clone(),
+                view["events"][0]["goal"].clone(),
                 ledger,
                 progress,
             ));
@@ -171,12 +170,8 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         0 => none_result(),
         1 => {
             let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
-            Ok(json!({
-                "status": "resumed",
-                "work": work.clone(),
-                "next": next_for(loaded, &work, &ledger)?,
-                "residual": crate::work_packet::project(loaded, &work, &ledger, &next_for(loaded, &work, &ledger)?)?
-            }))
+            let (next, residual) = next_and_residual(loaded, &work, &ledger)?;
+            Ok(json!({"status": "resumed", "work": work, "next": next, "residual": residual}))
         }
         _ => Ok(json!({
             "status": "ambiguous",
@@ -194,13 +189,25 @@ fn none_result() -> Result<Value, String> {
     Ok(json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}}))
 }
 
+/// Next action and residual packet derived from one captured revision.
+fn next_and_residual(loaded: &Loaded, work: &str, ledger: &str) -> Result<(Value, Value), String> {
+    let snapshot = run::RunSnapshot::capture(loaded, ledger)?;
+    let next = next_from(loaded, work, &snapshot)?;
+    let residual = crate::work_packet::project(work, &snapshot, &next)?;
+    Ok((next, residual))
+}
+
 fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    let value = run::next(loaded, ledger)?;
+    next_from(loaded, work, &run::RunSnapshot::capture(loaded, ledger)?)
+}
+
+fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
+    let value = snapshot.next_view(loaded)?;
     let progress = value["progress"].clone();
     if value["status"] != "running" {
         return Ok(json!({"action": "done", "status": value["status"], "progress": progress}));
     }
-    if let Some(pending) = current_check_target(loaded, ledger)? {
+    if let Some(pending) = current_check_target(snapshot)? {
         return Ok(json!({"action": "check", "check": pending.value(), "progress": progress}));
     }
     let assignment = value["assignments"]
@@ -224,7 +231,7 @@ fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> 
         ] {
             object.remove(field);
         }
-        if let Some(summary) = check_summary(loaded, ledger)? {
+        if let Some(summary) = check_summary(snapshot)? {
             object.insert("checkEvidence".into(), summary);
         }
     }
@@ -265,12 +272,11 @@ impl PendingCheck {
     }
 }
 
-fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<PendingCheck>, String> {
-    let state = run::inspect(loaded, ledger)?;
-    if state["status"] != "running" {
+fn current_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
+    if snapshot.status() != "running" {
         return Ok(None);
     }
-    let status = run::status(loaded, ledger)?;
+    let status = snapshot.status_view()?;
     Ok(status["checks"]["targets"].as_array().and_then(|targets| {
         targets.iter().find_map(|item| {
             (item["status"] == "missing").then(|| PendingCheck {
@@ -281,8 +287,8 @@ fn current_check_target(loaded: &Loaded, ledger: &str) -> Result<Option<PendingC
     }))
 }
 
-fn check_summary(loaded: &Loaded, ledger: &str) -> Result<Option<Value>, String> {
-    let status = run::status(loaded, ledger)?;
+fn check_summary(snapshot: &run::RunSnapshot) -> Result<Option<Value>, String> {
+    let status = snapshot.status_view()?;
     let Some(targets) = status["checks"]["targets"].as_array() else {
         return Ok(None);
     };

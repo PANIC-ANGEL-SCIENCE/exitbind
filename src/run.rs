@@ -159,21 +159,7 @@ pub fn start_with_policy(
 }
 
 pub fn next(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    assert_no_drift(loaded, &state)?;
-    crate::run_artifact::assert_current(loaded, &state)?;
-    predecessor(loaded, &events[0])?;
-    Ok(json!({
-        "valid": true,
-        "runId": state["runId"],
-        "status": state["status"],
-        "workflow": state["workflow"],
-        "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
-        "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
-        "assignments": crate::run_assignment::pending(&state)
-        ,"progress": crate::run_progress::project(&state)
-    }))
+    RunSnapshot::capture(loaded, ledger)?.next_view(loaded)
 }
 
 pub fn submit(
@@ -983,37 +969,12 @@ fn parse_positive(option: &str, value: &str) -> Result<u64, String> {
 }
 
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    predecessor(loaded, &events[0])?;
-    let mut result = json!({
-        "valid": true,
-        "runId": state["runId"],
-        "workflow": state["workflow"],
-        "status": state["status"],
-        "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
-        "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
-        "events": events,
-        "submissions": state["submissions"]
-    });
-    if state.get("checkPolicy").is_some() {
-        result["assignments"] = state["assignments"].clone();
-    }
-    if state["version"].as_u64() >= Some(6) {
-        result["subject"] = state["subject"].clone();
-        result["inputsSha256"] = state.get("inputsSha256").cloned().unwrap_or(Value::Null);
-    }
-    Ok(result)
+    Ok(RunSnapshot::capture(loaded, ledger)?.inspect_view())
 }
 
 /// Read-only current-state view with artifact/config revalidation.
 pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    assert_no_drift(loaded, &state)?;
-    let artifact_current = artifact_current(loaded, &state)?;
-    predecessor(loaded, &events[0])?;
-    crate::run_value::status(&state, Some(artifact_current))
+    RunSnapshot::capture(loaded, ledger)?.status_view()
 }
 
 /// Read-only explanation for a run or one of its factual protection events.
@@ -1312,13 +1273,132 @@ pub fn supersede_with_policy(
 /// Reduce a ledger and, for v6 runs, attach the live tested-input identity so
 /// evidence is only current when it was taken on the files present now.
 pub(crate) fn reduce_live(loaded: &Loaded, events: &[Value]) -> Result<Value, String> {
+    Ok(reduce_with_inputs(loaded, events)?.0)
+}
+
+/// Which tested-input identity the facts of a reduced state describe.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum InputContext {
+    /// Pre-v6 run: evidence was never bound to tested inputs.
+    NotBound,
+    /// Running v6 run: the inputs present now.
+    Current(String),
+    /// Running v6 run whose current inputs could not be established; nothing
+    /// that depends on them is current, and no stored digest substitutes.
+    Unavailable(String),
+    /// Terminal v6 run: identities are the recorded historical ones and say
+    /// nothing about the files present now.
+    Historical,
+}
+
+fn reduce_with_inputs(loaded: &Loaded, events: &[Value]) -> Result<(Value, InputContext), String> {
     let mut state = run_state::reduce(events)?;
-    if state["version"].as_u64() >= Some(6) && state["status"] == "running" {
-        if let Ok(inputs) = crate::run_inputs::fingerprint(loaded) {
-            state["inputsSha256"] = json!(inputs);
-        }
+    if state["version"].as_u64() < Some(6) {
+        return Ok((state, InputContext::NotBound));
     }
-    Ok(state)
+    if state["status"] != "running" {
+        return Ok((state, InputContext::Historical));
+    }
+    let context = match crate::run_inputs::fingerprint(loaded) {
+        Ok(inputs) => {
+            state["inputsSha256"] = json!(inputs);
+            InputContext::Current(inputs)
+        }
+        Err(error) => {
+            if let Some(object) = state.as_object_mut() {
+                object.remove("inputsSha256");
+            }
+            InputContext::Unavailable(error)
+        }
+    };
+    Ok((state, context))
+}
+
+/// One validated ledger revision reduced once, with the input context
+/// established once for it. Every view of a single request derives from the
+/// same snapshot, so next actions, evidence, and explanations cannot mix
+/// revisions. It is not a permit: mutations revalidate under the ledger lock.
+pub(crate) struct RunSnapshot {
+    events: Vec<Value>,
+    state: Value,
+    inputs: InputContext,
+    drift: Result<(), String>,
+    artifact_current: Result<bool, String>,
+}
+
+impl RunSnapshot {
+    pub(crate) fn capture(loaded: &Loaded, ledger: &str) -> Result<Self, String> {
+        let (_, events, _) = load(loaded, ledger)?;
+        let (state, inputs) = reduce_with_inputs(loaded, &events)?;
+        predecessor(loaded, &events[0])?;
+        let drift = assert_no_drift(loaded, &state);
+        let artifact_current = if drift.is_ok() {
+            artifact_current(loaded, &state)
+        } else {
+            Ok(false)
+        };
+        Ok(Self {
+            events,
+            state,
+            inputs,
+            drift,
+            artifact_current,
+        })
+    }
+
+    pub(crate) fn status(&self) -> &Value {
+        &self.state["status"]
+    }
+
+    pub(crate) fn inputs(&self) -> &InputContext {
+        &self.inputs
+    }
+
+    pub(crate) fn inspect_view(&self) -> Value {
+        let state = &self.state;
+        let mut result = json!({
+            "valid": true,
+            "runId": state["runId"],
+            "workflow": state["workflow"],
+            "status": state["status"],
+            "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
+            "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
+            "events": self.events,
+            "submissions": state["submissions"]
+        });
+        if state.get("checkPolicy").is_some() {
+            result["assignments"] = state["assignments"].clone();
+        }
+        if state["version"].as_u64() >= Some(6) {
+            result["subject"] = state["subject"].clone();
+            result["inputsSha256"] = match &self.inputs {
+                InputContext::Current(inputs) => json!(inputs),
+                _ => Value::Null,
+            };
+        }
+        result
+    }
+
+    pub(crate) fn status_view(&self) -> Result<Value, String> {
+        self.drift.clone()?;
+        crate::run_value::status(&self.state, Some(self.artifact_current.clone()?))
+    }
+
+    pub(crate) fn next_view(&self, loaded: &Loaded) -> Result<Value, String> {
+        self.drift.clone()?;
+        crate::run_artifact::assert_current(loaded, &self.state)?;
+        let state = &self.state;
+        Ok(json!({
+            "valid": true,
+            "runId": state["runId"],
+            "status": state["status"],
+            "workflow": state["workflow"],
+            "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
+            "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
+            "assignments": crate::run_assignment::pending(state),
+            "progress": crate::run_progress::project(state)
+        }))
+    }
 }
 
 fn live_inputs(state: &Value) -> Result<Value, String> {

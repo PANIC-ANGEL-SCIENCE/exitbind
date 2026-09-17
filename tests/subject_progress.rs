@@ -1129,7 +1129,9 @@ fn prepared_for_acceptance(fixture: &Fixture) -> String {
 fn drive_to_lead_decision(fixture: &Fixture, work: &str) -> usize {
     let mut review_requests = 0;
     loop {
-        let next = fixture.value(&["work", "next", work], None)["next"].clone();
+        let response = fixture.value(&["work", "next", work], None);
+        assert_one_state_basis(fixture, work, &response);
+        let next = response["next"].clone();
         match next["action"].as_str().unwrap() {
             "check" => {
                 fixture.value(&["work", "check", work], None);
@@ -1244,6 +1246,20 @@ fn validated_packet_reuses_unchanged_evidence_without_rerunning_checks() {
     assert!(consumed.executed.is_empty());
     assert_eq!(fixture.count("functional.count"), "1\n");
     assert_eq!(fixture.count("preservation.count"), "1\n");
+    let usable = fixture.value(
+        &[
+            "work",
+            "validate",
+            &work,
+            "--packet",
+            packet.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(
+        usable["packet"], saved,
+        "usable still returns the canonical packet"
+    );
 
     // Unsupported, contradictory, and oversized packets never permit skipping.
     let mut contradictory = saved.clone();
@@ -1253,9 +1269,24 @@ fn validated_packet_reuses_unchanged_evidence_without_rerunning_checks() {
         .push(Value::from("implementation"));
     let mut unsupported = saved.clone();
     unsupported["version"] = Value::from(1);
+    let mut goal = saved.clone();
+    goal["goal"] = Value::from("drop the precedence requirement");
+    let mut subject = saved.clone();
+    subject["currentSubject"] = serde_json::json!({"sha256": "0".repeat(64)});
+    let mut remaining = saved.clone();
+    remaining["remaining"] = serde_json::json!([]);
+    let mut next_action = saved.clone();
+    next_action["next"] = Value::from("done");
+    let mut missing = saved.clone();
+    missing.as_object_mut().unwrap().remove("stillValid");
     for (mutated, expected) in [
         (contradictory, "claims_disagree_with_state"),
         (unsupported, "unsupported_packet_version"),
+        (goal, "claims_disagree_with_state"),
+        (subject, "claims_disagree_with_state"),
+        (remaining, "claims_disagree_with_state"),
+        (next_action, "claims_disagree_with_state"),
+        (missing, "malformed_packet"),
     ] {
         let path = fixture.counter("mutated.json");
         fs::write(&path, serde_json::to_vec(&mutated).unwrap()).unwrap();
@@ -1583,4 +1614,107 @@ fn pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees() {
         .unwrap()
         .lines()
         .all(|line| serde_json::from_str::<Value>(line).unwrap()["version"] == 5));
+}
+
+/// Every `work next` response must describe one revision: its next action and
+/// its residual packet agree, and the packet names the ledger head on disk.
+fn assert_one_state_basis(fixture: &Fixture, work: &str, response: &Value) {
+    assert_eq!(response["next"]["action"], response["residual"]["next"]);
+    let ledger = fs::read_to_string(fixture.root.join(fixture.ledger(work))).unwrap();
+    let head: Value = serde_json::from_str(ledger.lines().last().unwrap()).unwrap();
+    assert_eq!(
+        response["residual"]["snapshot"]["headEventSha256"],
+        head["eventSha256"]
+    );
+    assert_eq!(
+        response["residual"]["snapshot"]["eventCount"],
+        ledger.lines().count()
+    );
+}
+
+#[test]
+fn terminal_history_never_authorizes_current_continuation() {
+    let fixture = Fixture::new_single();
+    let work = prepared_for_acceptance(&fixture);
+    let running_packet = save_packet(&fixture, &work, "running.json");
+    let decision = fixture.value(&["work", "next", &work], None);
+    let accepted = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert_eq!(accepted["next"]["progress"]["state"], "READY");
+    let accepted_packet = save_packet(&fixture, &work, "accepted.json");
+
+    // Covered source edit after acceptance: ledger and delivery are unchanged.
+    fs::write(fixture.root.join("src/config.txt"), b"file-first\n").unwrap();
+    let history = fixture.call(&["run", "inspect", &fixture.ledger(&work), "--json"], None);
+    assert!(history.status.success(), "{history:?}");
+    let now = fixture.value(&["work", "next", &work], None);
+    let residual = &now["residual"];
+    assert_eq!(residual["historical"], true);
+    assert!(residual["snapshot"]["inputsSha256"].is_null());
+    assert_eq!(residual["doNotRepeat"], serde_json::json!([]));
+    assert_eq!(residual["stillValid"], serde_json::json!([]));
+    assert!(residual["humanHelp"]["whatHappened"]
+        .as_str()
+        .unwrap()
+        .contains("history"));
+    for packet in [&running_packet, &accepted_packet] {
+        let verdict = fixture.value(
+            &[
+                "work",
+                "validate",
+                &work,
+                "--packet",
+                packet.to_str().unwrap(),
+            ],
+            None,
+        );
+        assert_eq!(verdict["result"], "not_continuable");
+        assert_eq!(verdict["reuse"], serde_json::json!([]));
+        assert_eq!(verdict["packet"]["historical"], true);
+    }
+    assert_eq!(fixture.count("functional.count"), "1\n");
+
+    // A blocked terminal run is not presented as a completed outcome.
+    let blocked = Fixture::new_single();
+    let begin = blocked.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "g",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let blocked_work = begin["work"].as_str().unwrap().to_owned();
+    blocked.value(
+        &[
+            "work",
+            "return",
+            &blocked_work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        Some(b"cannot proceed"),
+    );
+    let ended = blocked.value(&["work", "next", &blocked_work], None);
+    let help = &ended["residual"]["humanHelp"];
+    assert_eq!(ended["residual"]["historical"], true);
+    assert_eq!(help["ownerDecision"], "required");
+    assert!(help["whatHappened"]
+        .as_str()
+        .unwrap()
+        .contains("not accepted"));
 }
