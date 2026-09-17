@@ -20,7 +20,7 @@ fi
 if test "$legacy_bridge" = 1; then
   repo=envy404/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.19.0}"
+version="${EXITBIND_VERSION:-v0.19.1}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
 fi
@@ -67,13 +67,41 @@ fi
 case "$prefix" in ""|/) echo "exitbind: unsafe install prefix" >&2; exit 1 ;; esac
 mkdir -p "$prefix"
 tar -xzf "$tmp/$archive" -C "$tmp"
+# Exitbind 0.18.0 and 0.19.0 updaters re-read their own executable name after
+# this script returns; on Linux a binary replaced in place reads as
+# "NAME (deleted)" and those updaters then truncate the new install. Move a
+# replaced regular binary aside under a directory that keeps its file name, so
+# a running updater still sees its own name. Earlier aside copies are removed.
+for previous in "$prefix"/.exitbind-previous-* "$prefix"/.soulmate-previous-*; do
+  if test -d "$previous" && ! test -L "$previous"; then
+    rm -rf "$previous"
+  fi
+done
+replace_binary() {
+  staged=$1
+  destination=$2
+  name=${destination##*/}
+  aside=
+  if test -f "$destination" && ! test -L "$destination"; then
+    aside="$prefix/.$name-previous-$$"
+    mkdir -m 0700 "$aside"
+    mv -f "$destination" "$aside/$name"
+  fi
+  if ! mv -f "$staged" "$destination"; then
+    if test -n "$aside"; then
+      mv -f "$aside/$name" "$destination"
+      rmdir "$aside"
+    fi
+    return 1
+  fi
+}
 stage="$prefix/.$surface-install-$$"
 install -m 0755 "$tmp/$asset_surface-${target}" "$stage"
-mv -f "$stage" "$prefix/$surface"
+replace_binary "$stage" "$prefix/$surface"
 if test "$legacy_bridge" = 1; then
   compatibility_stage="$prefix/.soulmate-compat-install-$$"
   install -m 0755 "$tmp/exitbind-${target}" "$compatibility_stage"
-  mv -f "$compatibility_stage" "$prefix/exitbind"
+  replace_binary "$compatibility_stage" "$prefix/exitbind"
 fi
 echo "Installed $surface $version to $prefix/$surface"
 case ":${PATH:-}:" in

@@ -486,3 +486,201 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
         .starts_with(".exitbind-old-")));
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A local stand-in for a GitHub release: the real repository `install.sh`, a
+/// tarball holding a stub binary that reports `version`, and its checksum.
+/// `curl` is replaced so an updater under test reaches only these files.
+struct FakeRelease {
+    root: std::path::PathBuf,
+    path: String,
+    version: &'static str,
+}
+
+impl FakeRelease {
+    fn new(label: &str) -> Self {
+        let root = support::temp(label);
+        let bin = root.join("bin");
+        let release = root.join("release");
+        fs::create_dir(&bin).unwrap();
+        fs::create_dir(&release).unwrap();
+        let version = "0.20.0";
+        let os = Command::new("uname").arg("-s").output().unwrap();
+        let arch = Command::new("uname").arg("-m").output().unwrap();
+        let target = match (
+            String::from_utf8_lossy(&os.stdout)
+                .trim()
+                .to_lowercase()
+                .as_str(),
+            String::from_utf8_lossy(&arch.stdout).trim(),
+        ) {
+            ("linux", "x86_64" | "amd64") => "x86_64-unknown-linux-gnu",
+            ("darwin", "arm64") => "aarch64-apple-darwin",
+            ("darwin", "x86_64") => "x86_64-apple-darwin",
+            other => panic!("unsupported platform {other:?}"),
+        };
+        let stub = release.join(format!("exitbind-{target}"));
+        fs::write(
+            &stub,
+            format!("#!/bin/sh\nif [ \"$1\" = version ]; then echo {version}; fi\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        let archive = format!("exitbind-{target}.tar.gz");
+        let packed = Command::new("tar")
+            .current_dir(&release)
+            .args(["-czf", &archive, &format!("exitbind-{target}")])
+            .status()
+            .unwrap();
+        assert!(packed.success());
+        let checksum = Command::new("sh")
+            .current_dir(&release)
+            .args([
+                "-c",
+                "if command -v sha256sum >/dev/null; then sha256sum \"$1\"; else shasum -a 256 \"$1\"; fi > \"$1.sha256\"",
+                "sh",
+                &archive,
+            ])
+            .status()
+            .unwrap();
+        assert!(checksum.success());
+        let installer = Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh");
+        let curl = bin.join("curl");
+        fs::write(
+            &curl,
+            format!(
+                r##"#!/bin/sh
+out=""
+url=""
+for arg in "$@"; do
+  case "$arg" in https://*) url="$arg" ;; esac
+  out="$arg"
+done
+case "$url" in
+  *releases\?per_page*) printf '%s' '[{{"tag_name":"v{version}","draft":false,"prerelease":false}}]' > "$out" ;;
+  */install.sh) cp '{installer}' "$out" ;;
+  *.tar.gz.sha256) cp '{release}/{archive}.sha256' "$out" ;;
+  *.tar.gz) cp '{release}/{archive}' "$out" ;;
+  *) exit 22 ;;
+esac
+"##,
+                installer = installer.display(),
+                release = release.display(),
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&curl, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        Self {
+            root,
+            path,
+            version,
+        }
+    }
+
+    /// Run `UPDATER update` from its own install directory, as users do.
+    fn self_update(
+        &self,
+        updater: &Path,
+        name: &str,
+    ) -> (std::process::Output, std::path::PathBuf) {
+        let prefix = self.root.join(format!("prefix-{name}"));
+        fs::create_dir(&prefix).unwrap();
+        let target = prefix.join("exitbind");
+        fs::copy(updater, &target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        let output = Command::new(&target)
+            .arg("update")
+            .env("PATH", &self.path)
+            .env("HOME", self.root.join("home"))
+            .env("XDG_CACHE_HOME", self.root.join("cache"))
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env("SOULMATE_NO_UPDATE_CHECK", "1")
+            .env_remove("EXITBIND_INSTALL_PREFIX")
+            .env_remove("SOULMATE_INSTALL_PREFIX")
+            .env_remove("EXITBIND_REPOSITORY")
+            .env_remove("EXITBIND_VERSION")
+            .output()
+            .unwrap();
+        (output, target)
+    }
+
+    fn assert_installed(&self, output: &std::process::Output, target: &Path) {
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            fs::metadata(target).unwrap().len() > 0,
+            "installed binary was truncated"
+        );
+        let installed = Command::new(target).arg("version").output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&installed.stdout).trim(),
+            self.version
+        );
+    }
+}
+
+#[test]
+fn real_installer_self_update_keeps_the_new_binary_and_one_aside_copy() {
+    let release = FakeRelease::new("update-real-installer");
+    let (output, target) =
+        release.self_update(Path::new(env!("CARGO_BIN_EXE_exitbind")), "current");
+    release.assert_installed(&output, &target);
+    let prefix = target.parent().unwrap();
+    let asides: Vec<_> = fs::read_dir(prefix)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".exitbind-previous-"))
+        .collect();
+    assert_eq!(asides.len(), 1, "{asides:?}");
+    assert!(prefix.join(&asides[0]).join("exitbind").is_file());
+    // A later install removes the earlier aside copy before creating its own.
+    let again = Command::new("sh")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
+        .env("PATH", &release.path)
+        .env("HOME", release.root.join("home"))
+        .env("EXITBIND_INSTALL_PREFIX", prefix)
+        .env("EXITBIND_VERSION", "v0.20.0")
+        .output()
+        .unwrap();
+    assert!(again.status.success(), "{again:?}");
+    let remaining = fs::read_dir(prefix)
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".exitbind-previous-")
+        })
+        .count();
+    assert_eq!(remaining, 1);
+    assert!(!prefix.join(&asides[0]).exists());
+    fs::remove_dir_all(&release.root).unwrap();
+}
+
+/// Released updaters cannot be changed; the new installer must keep them from
+/// truncating what it installs. Set `EXITBIND_RELEASED_UPDATERS` to a
+/// colon-separated list of pinned released `exitbind` binaries to run this.
+#[test]
+fn released_updaters_do_not_truncate_the_binary_the_new_installer_places() {
+    let Some(updaters) = std::env::var_os("EXITBIND_RELEASED_UPDATERS") else {
+        eprintln!("skipped: set EXITBIND_RELEASED_UPDATERS to released exitbind binaries");
+        return;
+    };
+    let release = FakeRelease::new("update-released-updaters");
+    for (index, updater) in std::env::split_paths(&updaters).enumerate() {
+        let (output, target) = release.self_update(&updater, &format!("released-{index}"));
+        eprintln!(
+            "released updater {}: {}",
+            updater.display(),
+            String::from_utf8_lossy(&output.stdout).trim()
+        );
+        release.assert_installed(&output, &target);
+    }
+    fs::remove_dir_all(&release.root).unwrap();
+}
