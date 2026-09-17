@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.0
 
 - Write run-event format 6 for new Exitbind starts. v6 checks, reviewer
   approvals, protections, and lead acceptance record the tested-input identity
@@ -10,7 +10,7 @@
   check whose inputs change while it runs records nothing, and acceptance
   recomputes the identity. Ignored files, files outside the product root, the
   environment, and remote or time-dependent conditions are not covered.
-- `v0.18.0` refuses v6 ledgers; v1-v5 ledgers remain readable under their
+- 0.18.0 binaries refuse v6 ledgers; v1-v5 ledgers remain readable under their
   original guarantees and gain no input binding.
 - Preservation requirements are v6-only and require a functional check policy;
   the combination without `checkPolicy` is refused at start, successor, and
@@ -18,8 +18,18 @@
 - Residual packets are version 2: the snapshot carries tested-input identity,
   and `humanHelp` is derived from state with `ownerDecision` separate from lead
   actions. Add `work validate WORK --packet FILE`, returning `usable`,
-  `refresh_required`, or `cannot_establish_applicability`; only `usable`
-  permits skipping work, and nothing in a packet is executed.
+  `refresh_required`, `cannot_establish_applicability`, or `not_continuable`.
+  Validation compares every behavior-relevant packet field and always returns
+  the canonical packet to act on; only `usable` permits skipping work, and
+  nothing in a submitted packet is executed.
+- Derive `work next`, `work resume`, `work check`, and `work validate` from one
+  run snapshot per request, so the next action, evidence assessment, packet, and
+  help describe one ledger revision and one established input context. A failed
+  input listing makes dependent evidence unavailable instead of falling back to a
+  stored digest.
+- Treat terminal runs as history: an accepted, rejected, or blocked run keeps
+  its replayable record, but its packet carries no reuse and cannot authorize
+  skipping new work after files change.
 - No token, model-call, or human-time savings are claimed.
 
 ## 0.18.0
@@ -156,7 +166,8 @@ re-executed during this review.
 | 0.15.0-rc.1 | [v0.15.0-rc.1](https://github.com/envy404/soulmate/tree/v0.15.0-rc.1), `8b3a509` | Adds checked run events 4 with locally observed or caller-reported check acquisition | Receipts 1–2; run events 1–4; memory, configuration and harness manifest 1. |
 | 0.15.0-rc.3 | [v0.15.0-rc.3](https://github.com/envy404/soulmate/tree/v0.15.0-rc.3), `4faf2a7` | None | Same persisted readers as 0.15.0-rc.1. |
 | 0.17.0 | [v0.17.0](https://github.com/envy404/exitbind/tree/v0.17.0), `55d2c97` | Adds new checked run-event format 5 with Accepted Subject bindings; retains historical readers for v1–v4. | Exitbind v5 plus historical v1–v4 readers. |
-| 0.18.0 | Current stable Exitbind release | None | Same persisted readers as 0.17.0. |
+| 0.18.0 | [v0.18.0](https://github.com/envy404/exitbind/tree/v0.18.0), `fc0ef16` | None | Same persisted readers as 0.17.0. |
+| 0.19.0 | Current stable Exitbind release | Adds run-event format 6 with tested-input identity bindings; retains historical readers for v1–v5. | Exitbind v6 plus historical v1–v5 readers. |
 
 The parentless public root `a0b8be3` contains package 0.10.0 without a
 corresponding public release tag in this observed map. Earlier changelog

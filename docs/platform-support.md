@@ -1,6 +1,6 @@
 # Install the binary for your platform
 
-The stable release `v0.18.0` targets Linux x86_64 and macOS on
+The stable release `v0.19.0` targets Linux x86_64 and macOS on
 Apple Silicon and Intel. The public release workflow is the authoritative path
 for validating native builds, packaged installation, and public asset
 installation; this source snapshot does not claim those checks have passed for

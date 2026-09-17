@@ -4,7 +4,8 @@
 
 You already merge changes from Codex or Claude. The agent says the work is
 finished and the tests pass—and the pass may be real but belong to the agent's
-previous result, or the review may have approved a result that was replaced.
+previous result or to files that changed since, or the review may have approved
+a result that was replaced.
 That evidence opens a different door.
 
 Exitbind is a local CLI for the agent you already use. A check, a review, and
@@ -23,7 +24,7 @@ With Exitbind
   Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current stable release: `v0.18.0`. One local binary; it calls no model and runs
+Current stable release: `v0.19.0`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -32,13 +33,13 @@ no daemon or cloud service.
 
 ## See a wrong door refused
 
-This page describes `v0.18.0` for Linux x86_64 and macOS on Apple Silicon or
+This page describes `v0.19.0` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
 verifies the archive checksum. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.18.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.19.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -63,7 +64,8 @@ front of it. Verify the passage, not just the endpoints: "code exists" and "test
 passed" can both be true while the pass belongs to another version.
 
 A **wrong door** is evidence taken on a different result: a check from before the
-last worker result, or a review of a result that was replaced. Evidence is not a
+last worker result or before a covered project file changed, or a review of a
+result that was replaced. Evidence is not a
 master key, so Exitbind will not reuse it. The CLI does not print the words
 "wrong door"; it reports one of three exit states with a precise reason code:
 
@@ -117,15 +119,18 @@ These doors stay separate:
 - A passing check is not reviewer approval.
 - Reviewer approval is not lead acceptance.
 
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it. For an accepted checked run it can emit a
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change. For an accepted checked run it can emit a
 verifiable receipt.
 
-Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states. It covers recorded artifacts such as worker results, not every project file; see the `v0.18.0` limit under trust below.
+Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states. It covers recorded artifacts such as worker results, not every project file; see tested-input coverage under trust below.
 
 **Resume without restarting.** `work next` and `work resume` project a residual
 packet from recorded state, not from a chat summary: what is established, which
 evidence still opens its door, what remains, the next action, and which checks or
 reviews not to repeat. A session restart alone does not erase valid evidence.
+Before skipping work listed in a saved packet, `work validate WORK --packet FILE`
+rechecks it against current state and returns the canonical packet to act on. A
+finished run is history: its packet never authorizes skipping new work.
 
 For material work, the optional narration stays small:
 
@@ -164,7 +169,7 @@ project writes:
 
 ```sh
 # Codex
-codex plugin marketplace add envy404/exitbind --ref v0.18.0
+codex plugin marketplace add envy404/exitbind --ref v0.19.0
 codex plugin add exitbind@exitbind-plugins
 
 # Claude Code
@@ -172,7 +177,7 @@ claude plugin marketplace add envy404/exitbind
 claude plugin install exitbind@exitbind-plugins
 ```
 
-The Codex command pins `v0.18.0`; Claude Code follows the repository's current
+The Codex command pins `v0.19.0`; Claude Code follows the repository's current
 default branch. The plugin contains the Exitbind skill only: it installs no CLI,
 hook, MCP server, app, or model.
 
@@ -187,13 +192,15 @@ sandbox.
 Exitbind records requested configuration, selected profile bytes, artifacts,
 transitions, and declared or observed check evidence. It does not authenticate a
 model's self-report, inspect hidden reasoning, or withstand an attacker who can
-rewrite every local file. In `v0.18.0`, the result is identified by worker
-submissions, so an edit to project files made without a new worker submission is
-not detected. Raw ledgers and artifacts can contain goals, commands, paths, and
+rewrite every local file. Checks, approvals, and acceptance are bound to the
+tested inputs of the project root: tracked and untracked, non-ignored files (or
+every file outside Git), excluding `.git` and Exitbind state. Ignored files, files
+outside the project, the environment, and remote or time-dependent conditions are
+not covered. Raw ledgers and artifacts can contain goals, commands, paths, and
 task results; keep them private and read [SECURITY.md](SECURITY.md) before real
 work.
 
-Exitbind is the renamed continuation of Soulmate: `v0.18.0` keeps the existing
+Exitbind is the renamed continuation of Soulmate: `v0.19.0` keeps the existing
 version and repository history rather than resetting to `0.0.1`. It reads
 historical Soulmate v1–v4 run records under their original producer and schema
 meaning. The `soulmate` command is the same binary under the previous name, and

@@ -193,16 +193,16 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     let glossary = read("docs/glossary.md");
     let cli = read("src/cli.rs");
     for document in [&readme, &reference, &security] {
-        assert!(document.contains("v0.18.0"));
+        assert!(document.contains("v0.19.0"));
         assert!(!document.contains("unreleased v5"));
     }
     assert!(readme.contains("historical Soulmate v1–v4"));
     assert!(reference.contains("Historical checked Soulmate runs use run-event version 3"));
-    assert!(reference.contains("new Exitbind\nstarts use v5"));
-    assert!(glossary.contains("Observed check | v4/v5 source evidence"));
-    assert!(glossary.contains("one permitted route in v4/v5"));
+    assert!(reference.contains("new Exitbind\nstarts use v6"));
+    assert!(glossary.contains("Observed check | v4–v6 source evidence"));
+    assert!(glossary.contains("one permitted route in v4–v6"));
     assert!(security.contains("v3 supports caller-reported `run record-check` only"));
-    assert!(security.contains("stable `v0.18.0`"));
+    assert!(security.contains("stable `v0.19.0`"));
     assert!(reference.contains("1,800,000 ms (30 minute)\ndefault deadline"));
     assert!(reference.contains("positive `--timeout-ms MS` override"));
     assert!(
@@ -217,7 +217,7 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     );
     assert!(first.contains("historical v3 procedure"));
     assert!(methodology.contains("v3 `run record-check` is caller-reported-only"));
-    assert!(methodology.contains("stable `v0.18.0` release writes v5 records"));
+    assert!(methodology.contains("stable `v0.19.0` release writes v6 records"));
     assert!(glossary.contains("Exitbind progress"));
     assert!(cli.contains("historical v3-v4 runs remain readable"));
     assert!(cli.contains("new v5 runs may observe"));

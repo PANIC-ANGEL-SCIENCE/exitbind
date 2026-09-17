@@ -2,8 +2,7 @@
 
 This checklist describes the bounded Exitbind-owned path for preservation-risk
 checked work. It does not authorize removing Holytail, publishing a release, or
-claiming host-level enforcement. It describes unreleased branch behavior, not
-`v0.18.0`.
+claiming host-level enforcement. It describes the `v0.19.0` behavior.
 
 Current conclusion:
 
@@ -25,8 +24,9 @@ replacement is claimed.
 | Evidence applies only to the tested inputs present at acceptance. | `src/run_inputs.rs` (`product-root-files-v1`); v6 checks, approvals, protections, and acceptance record `inputsSha256`; `source_or_checker_edit_without_new_submission_invalidates_reuse_and_acceptance`. |
 | A saved packet permits skipping work only after validation against current state and inputs. | `src/work_packet.rs` `work validate`; `validated_packet_reuses_unchanged_evidence_without_rerunning_checks` (independent execution counters unchanged). |
 | Help distinguishes lead actions from owner decisions. | `humanHelp.ownerDecision` in residual packet v2. |
+| Terminal runs are history, not continuation permits. | `InputContext::Historical` in `src/run.rs`; `terminal_history_never_authorizes_current_continuation`. |
 | Changed requirements cannot inherit predecessor evidence. | `changed_preservation_policy_cannot_inherit_predecessor_evidence`. |
-| Format change is explicit. | Run-event format 6; `pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees` (runs when `EXITBIND_V018_BIN` names a pinned v0.18.0 binary). |
+| Format change is explicit. | Run-event format 6; `pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees` (runs when `EXITBIND_V018_BIN` names a pinned 0.18.0 binary). |
 
 ## Deliberately Retired Presentation
 

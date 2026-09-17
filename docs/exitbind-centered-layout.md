@@ -27,9 +27,10 @@ PROJECT/
 reviewable profiles and boundaries. `.exitbind/` contains private runtime
 evidence. Host skill directories are projections, not Exitbind identity.
 
-New checked writes use run-event format 5 and bind the exact Accepted Subject
-to each result and evidence record. Readers retain support for historical
-run-event formats v1–v4 and historical `soulmate` producer values.
+New checked writes use run-event format 6 and bind the exact Accepted Subject
+and tested-input identity to each result and evidence record. Readers retain
+support for historical run-event formats v1–v5 and historical `soulmate`
+producer values.
 
 Local mode keeps these control and state roots outside the product checkout.
 Exitbind does not own host models, tools, permissions, process execution, or

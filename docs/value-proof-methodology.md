@@ -124,9 +124,9 @@ participants provide those observations.
 ## Compatibility and broader claims
 
 Historical checked runs use run-event versions 1–4 and retain their original
-producer identity and semantics. The stable `v0.18.0` release writes v5 records
-that bind an Accepted Subject to each result and evidence record, while readers
-retain v1–v4 support. A package-number change does not rewrite old ledgers;
+producer identity and semantics. The stable `v0.19.0` release writes v6 records
+that bind an Accepted Subject and tested-input identity to each result and
+evidence record, while readers retain v1–v5 support. A package-number change does not rewrite old ledgers;
 retain a compatible reader for historical evidence and do not relabel it as a
 new Exitbind write. Public schema snapshots and frozen fixtures pin that
 boundary.

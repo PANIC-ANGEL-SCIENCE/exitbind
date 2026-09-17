@@ -18,7 +18,7 @@ out=""
 for arg in "$@"; do out="$arg"; done
 if test -n "$FAKE_CALLS"; then printf '%s\n' "$*" >> "$FAKE_CALLS"; fi
 case "$*" in
-  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.19.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
+  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.20.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
   *) printf '%s' '#!/bin/sh
 target="$EXITBIND_INSTALL_PREFIX/exitbind"
 if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
@@ -40,7 +40,7 @@ fn binary(path: &Path, version: &str) {
 }
 
 fn available_update_tag() -> String {
-    format!("v{}.{}.{}", 0, 19, 0)
+    format!("v{}.{}.{}", 0, 20, 0)
 }
 
 fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
@@ -293,9 +293,9 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
         let malformed = case["version"].as_str().unwrap();
         let discriminating_malformed = if case_id == "updater-v01600-reject" {
-            format!("v{}.{}.{}", 0, 19, "00")
+            format!("v{}.{}.{}", 0, 20, "00")
         } else {
-            format!("v{}.{}.{}+{}.{}", 0, 19, 0, "build", 7)
+            format!("v{}.{}.{}+{}.{}", 0, 20, 0, "build", 7)
         };
         let valid = available_update_tag();
         let body = format!(
