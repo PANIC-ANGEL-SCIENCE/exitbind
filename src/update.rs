@@ -672,7 +672,8 @@ pub fn explicit_update() -> Result<(), String> {
         {
             return Err("installed binary reported an unexpected version".into());
         }
-        if !exitbind_surface() {
+        // Copying a path onto itself truncates it; never do that.
+        if !exitbind_surface() && installed != target {
             fs::copy(&installed, &target)
                 .map_err(|error| format!("compatibility binary replacement failed: {error}"))?;
             #[cfg(unix)]

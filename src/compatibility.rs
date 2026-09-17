@@ -61,7 +61,16 @@ const SOULMATE: Profile = Profile {
     installed_commands: SOULMATE_COMMANDS,
 };
 
+/// The caller surface is decided once per process. On Linux an installer that
+/// replaces the running binary makes `current_exe()` report `NAME (deleted)`;
+/// re-deriving the surface afterwards would silently switch an Exitbind process
+/// to the legacy profile in the middle of an update.
 pub(crate) fn profile() -> Profile {
+    static PROFILE: std::sync::OnceLock<Profile> = std::sync::OnceLock::new();
+    *PROFILE.get_or_init(detect_profile)
+}
+
+fn detect_profile() -> Profile {
     let is_exitbind = std::env::current_exe()
         .ok()
         .map(|path| {

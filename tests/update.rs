@@ -25,6 +25,7 @@ if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
 if [ "$FAKE_INSTALL_DIRECTORY" = "1" ]; then rm -f "$SOULMATE_INSTALL_PREFIX/soulmate"; mkdir "$SOULMATE_INSTALL_PREFIX/soulmate"; exit 0; fi
 version=${EXITBIND_VERSION#v}
 if [ "$FAKE_INSTALL_WRONG" = "1" ]; then version=0.14.0-rc.9; fi
+if [ "$FAKE_INSTALL_RENAME" = "1" ]; then stage="$EXITBIND_INSTALL_PREFIX/.exitbind-install-$$"; printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$stage"; chmod 755 "$stage"; mv -f "$stage" "$target"; exit 0; fi
 printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$target"
 chmod 755 "$target"' > "$out" ;;
 esac
@@ -434,4 +435,54 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
             .trim_start_matches('v')
     );
     fs::remove_dir_all(upgrade_root).unwrap();
+}
+
+/// The real installer replaces the running binary with `mv`. On Linux the
+/// running process then sees its executable as deleted; the updater must not
+/// change surface mid-update and truncate the freshly installed binary.
+#[test]
+fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
+    let root = support::temp("update-self-rename");
+    let bin = root.join("bin");
+    let prefix = root.join("prefix");
+    fs::create_dir(&bin).unwrap();
+    fs::create_dir(&prefix).unwrap();
+    fake_curl(&bin);
+    let target = prefix.join("exitbind");
+    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let output = Command::new(&target)
+        .arg("update")
+        .env("PATH", &path)
+        .env("HOME", &root)
+        .env("XDG_CACHE_HOME", root.join("cache"))
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("SOULMATE_NO_UPDATE_CHECK", "1")
+        .env_remove("EXITBIND_INSTALL_PREFIX")
+        .env_remove("SOULMATE_INSTALL_PREFIX")
+        .env("FAKE_INSTALL_RENAME", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fs::metadata(&target).unwrap().len() > 0,
+        "installed binary was truncated"
+    );
+    let installed = Command::new(&target).arg("version").output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&installed.stdout).trim(),
+        available_update_tag().trim_start_matches('v')
+    );
+    assert!(fs::read_dir(&prefix).unwrap().all(|entry| !entry
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with(".exitbind-old-")));
+    fs::remove_dir_all(root).unwrap();
 }
