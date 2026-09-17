@@ -117,9 +117,7 @@ These doors stay separate:
 - A passing check is not reviewer approval.
 - Reviewer approval is not lead acceptance.
 
-In checked runs, Exitbind refuses acceptance when the configured check is
-missing or failed for the current worker result, and rejects older evidence when
-a new worker result replaces it. For an accepted checked run it can emit a
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it. For an accepted checked run it can emit a
 verifiable receipt.
 
 Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states. It covers recorded artifacts such as worker results, not every project file; see the `v0.18.0` limit under trust below.
