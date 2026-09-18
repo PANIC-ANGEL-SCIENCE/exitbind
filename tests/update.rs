@@ -498,12 +498,15 @@ struct FakeRelease {
 
 impl FakeRelease {
     fn new(label: &str) -> Self {
+        Self::at_version(label, "0.21.0")
+    }
+
+    fn at_version(label: &str, version: &'static str) -> Self {
         let root = support::temp(label);
         let bin = root.join("bin");
         let release = root.join("release");
         fs::create_dir(&bin).unwrap();
         fs::create_dir(&release).unwrap();
-        let version = "0.21.0";
         let os = Command::new("uname").arg("-s").output().unwrap();
         let arch = Command::new("uname").arg("-m").output().unwrap();
         let target = match (
@@ -685,30 +688,62 @@ fn released_updaters_do_not_truncate_the_binary_the_new_installer_places() {
     fs::remove_dir_all(&release.root).unwrap();
 }
 
-/// A current binary must not leave an older managed host bridge behind: the
-/// update path refreshes what Exitbind manages and says so.
+/// Binary current is not host integration current: an up-to-date binary
+/// refreshes a stale bootstrap it manages and reports a missing one instead of
+/// reinstalling guidance the operator may have removed.
 #[test]
-fn update_refreshes_a_stale_managed_host_bridge() {
-    let release = FakeRelease::new("update-host-bridge");
+fn an_up_to_date_binary_reports_and_repairs_only_what_it_manages() {
+    let release = FakeRelease::at_version("update-bridge-health", env!("CARGO_PKG_VERSION"));
     let home = release.root.join("home");
-    let bridge = home.join(".codex/skills/exitbind/SKILL.md");
+    let codex = home.join(".codex/skills/exitbind/SKILL.md");
     fs::create_dir_all(home.join(".codex")).unwrap();
-    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::create_dir_all(codex.parent().unwrap()).unwrap();
     fs::write(
-        &bridge,
+        &codex,
         "---\nname: exitbind\n---\n\n<!-- exitbind-managed-bootstrap:v1 -->\n<!-- exitbind-bootstrap-version: 0.14.0 -->\n",
     )
     .unwrap();
 
-    let (output, target) = release.self_update(Path::new(env!("CARGO_BIN_EXE_exitbind")), "bridge");
+    let (output, _) = release.self_update(Path::new(env!("CARGO_BIN_EXE_exitbind")), "health");
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(text.contains("Already up to date"), "{text}");
+    assert!(text.contains("codex: stale bootstrap refreshed"), "{text}");
+    // Claude's bootstrap is absent, not managed: report it, never reinstall it
+    // silently.
+    assert!(text.contains("claude: bootstrap missing"), "{text}");
+    assert!(!home.join(".claude/skills/exitbind/SKILL.md").exists());
+    assert!(fs::read_to_string(&codex)
+        .unwrap()
+        .contains("Automatically use Exitbind for material coding work"));
+    fs::remove_dir_all(&release.root).unwrap();
+}
+
+/// The installed binary owns its own host bridge. An updating process must not
+/// synchronize the bridge from its own embedded bootstrap: after the installer
+/// places a newer one, writing the updater's bytes back would silently
+/// downgrade host guidance.
+#[test]
+fn updating_never_downgrades_a_newer_managed_host_bridge() {
+    let release = FakeRelease::new("update-bridge-ownership");
+    let home = release.root.join("home");
+    let bridge = home.join(".codex/skills/exitbind/SKILL.md");
+    fs::create_dir_all(home.join(".codex")).unwrap();
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    // A bootstrap from a newer Exitbind, exactly as a newer installer would
+    // leave it behind before control returns to the older updater process.
+    let newer = "---\nname: exitbind\n---\n\n<!-- exitbind-managed-bootstrap:v1 -->\nnewer guidance\n<!-- exitbind-bootstrap-version: 99.0.0 -->\n";
+    fs::write(&bridge, newer).unwrap();
+
+    let (output, target) = release.self_update(Path::new(env!("CARGO_BIN_EXE_exitbind")), "owner");
     release.assert_installed(&output, &target);
+    assert_eq!(
+        fs::read_to_string(&bridge).unwrap(),
+        newer,
+        "the updating process overwrote a newer managed bootstrap"
+    );
     let text = String::from_utf8_lossy(&output.stdout);
-    assert!(text.contains("Refreshed codex host bridge"), "{text}");
-    let refreshed = fs::read_to_string(&bridge).unwrap();
-    assert!(refreshed.contains("Automatically use Exitbind for material coding work"));
-    assert!(refreshed.contains(&format!(
-        "<!-- exitbind-bootstrap-version: {} -->",
-        env!("CARGO_PKG_VERSION")
-    )));
+    assert!(text.contains("Host bridge"), "{text}");
     fs::remove_dir_all(&release.root).unwrap();
 }

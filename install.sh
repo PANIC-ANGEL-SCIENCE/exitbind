@@ -110,6 +110,12 @@ bridge=$("$prefix/$surface" host install 2>&1) && bridge_status=0 || bridge_stat
 echo "Installed $surface $version to $prefix/$surface"
 if test "${bridge_status:-1}" = 0; then
   printf '%s\n' "$bridge" | sed 's/^/host bridge: /'
+  # The session hook resolves the CLI through PATH. Say so plainly when this
+  # prefix is not on PATH yet, instead of implying the bridge is complete.
+  case ":${PATH:-}:" in
+    *":$prefix:"*) ;;
+    *) printf '%s\n' "host bridge: the session hook needs $prefix on PATH; add it, then run \"$prefix/$surface\" host install" >&2 ;;
+  esac
 else
   printf '%s\n' "host bridge: not installed ($bridge)" >&2
   printf '%s\n' "host bridge: run \"$prefix/$surface\" host install to retry" >&2

@@ -330,20 +330,30 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
     fs::remove_dir_all(home).unwrap();
 }
 
-/// A Soulmate-era hook record is Exitbind's own superseded wiring: installing
-/// retires it. Any other tool's hook is preserved untouched.
+/// Only the exact record Exitbind itself published for the superseded caller is
+/// retired. A wrapper, a variant, a duplicate, or a foreign hook that merely
+/// mentions the old command stays untouched and is reported as a conflict.
 #[test]
-fn installation_retires_a_superseded_hook_record_and_preserves_foreign_hooks() {
-    let home = host_home("host-bridge-hook-migration");
+fn only_exact_published_legacy_hook_records_are_retired() {
+    const PUBLISHED: &str = "command -v soulmate >/dev/null 2>&1 && soulmate hook-run || true";
+    let wrapper = "if [ -f /opt/tool/pre.sh ]; then sh /opt/tool/pre.sh; fi; soulmate hook-run";
+    let foreign = "/opt/other-tool/hook.sh --mentions soulmate hook-run";
+    let variant = "/opt/legacy/bin/soulmate hook-run || true";
+
+    let home = host_home("host-bridge-hook-exact");
     let hooks = home.join(".codex/hooks.json");
-    let foreign = "/opt/other-tool/hook.sh";
     fs::write(
         &hooks,
         serde_json::json!({
             "hooks": {
                 "SessionStart": [
-                    {"hooks": [{"type": "command", "command": "/old/path/soulmate hook-run || true", "timeout": 5}]},
-                    {"hooks": [{"type": "command", "command": foreign, "timeout": 10}]}
+                    {"hooks": [
+                        {"type": "command", "command": PUBLISHED, "timeout": 5, "additionalContextLimit": 4096},
+                        {"type": "command", "command": PUBLISHED, "timeout": 5, "additionalContextLimit": 4096},
+                        {"type": "command", "command": wrapper, "timeout": 5},
+                        {"type": "command", "command": foreign, "timeout": 10},
+                        {"type": "command", "command": variant, "timeout": 5}
+                    ]}
                 ]
             }
         })
@@ -370,20 +380,152 @@ fn installation_retires_a_superseded_hook_record_and_preserves_foreign_hooks() {
         .map(|handler| handler["command"].as_str().unwrap().to_owned())
         .collect();
     assert!(
-        commands
-            .iter()
-            .any(|command| command.contains("exitbind hook-run")),
+        commands.iter().any(|c| c.contains("exitbind hook-run")),
         "{commands:?}"
     );
-    assert!(
-        !commands
-            .iter()
-            .any(|command| command.contains("soulmate hook-run")),
-        "{commands:?}"
+    // Every published duplicate is retired; nothing else is.
+    assert!(!commands.iter().any(|c| c == PUBLISHED), "{commands:?}");
+    for preserved in [wrapper, foreign, variant] {
+        assert!(
+            commands.iter().any(|c| c == preserved),
+            "removed a hook it does not own: {preserved}"
+        );
+    }
+    fs::remove_dir_all(home).unwrap();
+}
+
+/// A malformed hook document is never rewritten destructively.
+#[test]
+fn malformed_hook_documents_are_refused_without_rewriting() {
+    let home = host_home("host-bridge-hook-malformed");
+    let hooks = home.join(".codex/hooks.json");
+    let malformed = serde_json::json!({"hooks": {"SessionStart": "not-an-array"}}).to_string();
+    fs::write(&hooks, &malformed).unwrap();
+
+    let installed = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_ne!(
+        installed["hosts"][0]["activationHook"]["state"],
+        "installed"
     );
-    assert!(
-        commands.iter().any(|command| command == foreign),
-        "{commands:?}"
-    );
+    assert_eq!(fs::read_to_string(&hooks).unwrap(), malformed);
+    // The bootstrap skill is independent of the hook and still installs.
+    assert_eq!(installed["hosts"][0]["action"], "installed");
+    fs::remove_dir_all(home).unwrap();
+}
+
+/// Bridge writes go through the hardened managed-settings writer: a symlinked
+/// parent, a non-regular target, and a target replaced mid-update all fail
+/// closed instead of clobbering, and file permissions survive a refresh.
+#[test]
+fn bridge_writes_fail_closed_on_unsafe_or_concurrently_changed_targets() {
+    let home = host_home("host-bridge-write-hardening");
+
+    // A parent path that escapes the host home is refused, so a redirected
+    // skills directory cannot be used to write outside it.
+    let outside = support::temp("host-bridge-outside");
+    std::os::unix::fs::symlink(&outside, home.join(".claude/skills")).unwrap();
+    let claude = exitbind(&home, &["host", "install", "--hosts", "claude", "--json"]);
+    assert!(!claude.status.success(), "{claude:?}");
+    assert!(!outside.join("exitbind/SKILL.md").exists());
+    fs::remove_file(home.join(".claude/skills")).unwrap();
+    fs::remove_dir_all(&outside).unwrap();
+
+    // A directory where the bootstrap belongs is reported, never replaced.
+    fs::create_dir_all(home.join(".codex/skills/exitbind/SKILL.md")).unwrap();
+    let codex = json(exitbind(
+        &home,
+        &["host", "status", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(codex["hosts"][0]["bootstrapSkill"], "unsafe");
+    let refused = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(refused["hosts"][0]["action"], "refused");
+    assert!(home.join(".codex/skills/exitbind/SKILL.md").is_dir());
+
+    fs::remove_dir_all(home).unwrap();
+}
+
+/// Refreshing a managed bootstrap keeps the permissions the file already had.
+#[test]
+fn refreshing_a_managed_bootstrap_preserves_its_permissions() {
+    let home = host_home("host-bridge-write-permissions");
+    exitbind(&home, &["host", "install", "--hosts", "codex", "--json"]);
+    let path = bootstrap(&home, "codex");
+    fs::write(
+        &path,
+        "---\nname: exitbind\n---\n\n<!-- exitbind-managed-bootstrap:v1 -->\n<!-- exitbind-bootstrap-version: 0.14.0 -->\n",
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let refreshed = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(refreshed["hosts"][0]["action"], "refreshed");
+    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "refresh changed the file mode");
+    fs::remove_dir_all(home).unwrap();
+}
+
+/// The real first install has no `exitbind` on PATH yet. The bootstrap still
+/// installs, the PATH-dependent session hook is reported as unavailable rather
+/// than silently skipped, and installing again once the CLI resolves completes
+/// the bridge.
+#[test]
+fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
+    let home = host_home("host-bridge-clean-path");
+    let prefix = home.join("bin");
+    fs::create_dir_all(&prefix).unwrap();
+    let installed = prefix.join("exitbind");
+    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &installed).unwrap();
+    fs::set_permissions(&installed, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let without_path = Command::new(&installed)
+        .args(["host", "install", "--json"])
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&without_path.stdout).unwrap();
+    for host in value["hosts"].as_array().unwrap() {
+        assert_eq!(host["action"], "installed");
+        assert_eq!(host["activationHook"]["state"], "unavailable");
+        assert!(host["activationHook"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("PATH"));
+    }
+    let status = Command::new(&installed)
+        .args(["host", "status", "--json"])
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    for host in status["hosts"].as_array().unwrap() {
+        assert_eq!(host["bootstrapSkill"], "current");
+        assert_ne!(host["activationHook"], "installed");
+    }
+
+    // Once the CLI resolves on PATH, the same command completes the bridge.
+    let with_path = Command::new(&installed)
+        .args(["host", "install", "--json"])
+        .env("HOME", &home)
+        .env("PATH", format!("{}:/usr/bin:/bin", prefix.display()))
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&with_path.stdout).unwrap();
+    for host in value["hosts"].as_array().unwrap() {
+        assert_eq!(host["activationHook"]["state"], "installed");
+    }
     fs::remove_dir_all(home).unwrap();
 }

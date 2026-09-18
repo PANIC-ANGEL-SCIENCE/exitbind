@@ -47,7 +47,7 @@ pub fn manage(action: &str, hosts: &str, root: &str) -> Result<Vec<Value>, Strin
         // so a current binary cannot keep an old host bridge; everything else
         // stays a conflict and is never rewritten.
         if action == "apply" && crate::producer::exitbind_surface() && !state.conflicts.is_empty() {
-            let retired = retire_superseded(&mut state.document);
+            let retired = retire_superseded(&mut state.document, host);
             if retired > 0 {
                 let (exact, conflicts) = inspect(&state.document, host, &state.target)?;
                 state.exact = exact;
@@ -197,10 +197,12 @@ fn inspect(
                 } else if handler_object
                     .get("command")
                     .and_then(Value::as_str)
-                    .is_some_and(|command| {
-                        command.contains(MARKER) || command.contains(hook_marker())
-                    })
+                    .is_some_and(|command| command.contains(hook_marker()))
+                    || is_superseded_record(handler, host)
                 {
+                    // Ours, but not the record we would write: an ownership
+                    // conflict. A superseded published record is counted here
+                    // too so a plan reports it before retirement rewrites it.
                     conflicts.push(format!("{event}[{group_index}].hooks[{handler_index}]"));
                 }
             }
@@ -211,8 +213,7 @@ fn inspect(
 
 /// Remove handler records that invoke the superseded caller, keeping every
 /// other hook and preserving surrounding structure.
-fn retire_superseded(document: &mut Value) -> usize {
-    let current = hook_marker();
+fn retire_superseded(document: &mut Value, host: &str) -> usize {
     let Some(hooks) = document.get_mut("hooks").and_then(Value::as_object_mut) else {
         return 0;
     };
@@ -226,10 +227,7 @@ fn retire_superseded(document: &mut Value) -> usize {
                 continue;
             };
             handlers.retain(|handler| {
-                let superseded = handler
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .is_some_and(|command| command.contains(MARKER) && !command.contains(current));
+                let superseded = is_superseded_record(handler, host);
                 if superseded {
                     retired += 1;
                 }
@@ -333,6 +331,18 @@ fn unsupported(action: &str, host: &str, root: &str) -> Result<Value, String> {
     Ok(
         json!({"action":action,"host":host,"supported":false,"targetPath":target.display().to_string(),"settingsFileExists":false,"state":"unsupported","exactHandlers":{"SessionStart":0,"SubagentStart":0},"conflicts":[],"changed":false,"actions":["unsupported on windows; no file changed"],"reason":"project-local hook mutation is unsupported on win32"}),
     )
+}
+
+/// The exact record shapes Exitbind published for the superseded caller. Only
+/// these are retired on upgrade; a wrapper, a variant, or any other hook that
+/// merely mentions the old command stays untouched and is reported instead.
+fn is_superseded_record(handler: &Value, host: &str) -> bool {
+    let known = [
+        json!({"type":"command","command":HOOK_COMMAND,"timeout":HOOK_TIMEOUT_SECONDS}),
+        json!({"type":"command","command":HOOK_COMMAND,"timeout":HOOK_TIMEOUT_SECONDS,"additionalContextLimit":CODEX_CONTEXT_LIMIT}),
+    ];
+    let _ = host;
+    known.iter().any(|record| record == handler)
 }
 
 fn expected(host: &str) -> Value {

@@ -219,10 +219,12 @@ pub(crate) fn install(hosts: Option<&str>, all: bool) -> Result<Vec<Value>, Stri
         } else if !state.writable() {
             "refused"
         } else {
-            let directory = path.parent().ok_or("host bridge path has no parent")?;
-            fs::create_dir_all(directory)
-                .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
-            write_atomically(&path, expected.as_bytes())?;
+            let previous = if state == BridgeState::Missing {
+                None
+            } else {
+                Some(fs::read_to_string(&path).map_err(|error| error.to_string())?)
+            };
+            write_managed(&home, &path, &expected, previous.as_deref())?;
             if state == BridgeState::Missing {
                 "installed"
             } else {
@@ -246,35 +248,22 @@ pub(crate) fn install(hosts: Option<&str>, all: bool) -> Result<Vec<Value>, Stri
     Ok(results)
 }
 
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let directory = path.parent().ok_or("host bridge path has no parent")?;
-    let staged = directory.join(format!(".exitbind-bootstrap-{}.tmp", std::process::id()));
-    fs::write(&staged, bytes).map_err(|error| format!("cannot write host bridge: {error}"))?;
-    fs::rename(&staged, path).map_err(|error| {
-        let _ = fs::remove_file(&staged);
-        format!("cannot install host bridge: {error}")
-    })
-}
-
-/// Refresh only what Exitbind already manages. Used after a binary update so a
-/// current binary cannot silently keep an old host bridge.
-pub(crate) fn refresh_managed() -> Vec<Value> {
-    let Ok(home) = home() else {
-        return Vec::new();
-    };
-    let expected = content();
-    HOSTS
-        .iter()
-        .filter(|host| {
-            let path = home.join(host.relative);
-            matches!(observe(&path, &expected), BridgeState::Stale)
-        })
-        .filter_map(|host| {
-            install(Some(host.name), false)
-                .ok()
-                .and_then(|mut items| items.pop())
-        })
-        .collect()
+/// Write through the hardened managed-settings writer: it validates every
+/// existing parent component, refuses symlinked parents, creates the temporary
+/// file exclusively, and re-checks the target immediately before replacing it,
+/// so a concurrent change fails closed instead of clobbering.
+fn write_managed(
+    home: &Path,
+    path: &Path,
+    bytes: &str,
+    previous: Option<&str>,
+) -> Result<(), String> {
+    let mode = fs::symlink_metadata(path)
+        .ok()
+        .map(|info| std::os::unix::fs::PermissionsExt::mode(&info.permissions()) & 0o777);
+    let root = fs::canonicalize(home).map_err(|error| error.to_string())?;
+    crate::hook_settings::atomic_write(path, bytes, mode, previous, &root)
+        .map_err(|error| format!("cannot install host bridge: {error}"))
 }
 
 #[cfg(test)]

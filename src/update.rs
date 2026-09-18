@@ -576,6 +576,78 @@ fn remove_target(path: &Path) -> Result<(), String> {
     }
 }
 
+/// Ask the installed binary to install or refresh its own host bridge, and
+/// report what it said. A failure here never fails an otherwise successful
+/// binary update; it is reported so a stale or missing bridge stays visible.
+/// Report the managed bootstrap state without installing anything the operator
+/// may have removed on purpose. Only bytes Exitbind already manages are
+/// refreshed.
+fn bridge_health() -> Vec<String> {
+    let Ok(hosts) = crate::host_bridge::status(None) else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    for host in hosts {
+        let name = host["host"].as_str().unwrap_or("unknown").to_owned();
+        match host["bootstrapSkill"].as_str().unwrap_or_default() {
+            "current" => {}
+            "stale" => {
+                let refreshed = crate::host_bridge::install(Some(&name), false)
+                    .ok()
+                    .and_then(|mut items| items.pop())
+                    .map(|item| item["action"].as_str().unwrap_or("unknown").to_owned())
+                    .unwrap_or_else(|| "unavailable".to_owned());
+                lines.push(format!("Host bridge {name}: stale bootstrap {refreshed}"));
+            }
+            other => {
+                if host["hostPresent"] == Value::Bool(true) {
+                    lines.push(format!(
+                        "Host bridge {name}: bootstrap {other}; run 'exitbind host install' to restore it"
+                    ));
+                }
+            }
+        }
+    }
+    lines
+}
+
+fn delegate_bridge_sync(installed: &Path) -> Vec<String> {
+    if !regular(installed) {
+        return vec!["Host bridge not synchronized: installed binary is unavailable".to_owned()];
+    }
+    let output = Command::new(installed)
+        .args(["host", "install", "--json"])
+        .output();
+    let Ok(output) = output else {
+        return vec![
+            "Host bridge not synchronized: the installed binary could not be run".to_owned(),
+        ];
+    };
+    if !output.status.success() {
+        return vec![
+            "Host bridge not synchronized; run 'exitbind host status' to inspect it".to_owned(),
+        ];
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&output.stdout) else {
+        return vec!["Host bridge synchronization returned unreadable output".to_owned()];
+    };
+    value["hosts"]
+        .as_array()
+        .map(|hosts| {
+            hosts
+                .iter()
+                .map(|host| {
+                    format!(
+                        "Host bridge {}: {}",
+                        host["host"].as_str().unwrap_or("unknown"),
+                        host["action"].as_str().unwrap_or("unknown")
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn restore_backup(backup: &Path, target: &Path) -> Result<(), String> {
     if !regular(backup) {
         return Err("rollback backup is missing or not a regular file".into());
@@ -596,6 +668,10 @@ pub fn explicit_update() -> Result<(), String> {
     let current = Version::parse(&format!("v{CURRENT}")).ok_or("invalid current version")?;
     let Some(version) = discover(&current)? else {
         println!("Already up to date ({CURRENT}).");
+        // Binary current is not host integration current.
+        for line in bridge_health() {
+            println!("{line}");
+        }
         return Ok(());
     };
     let installer = temp_file("installer").map_err(|e| e.to_string())?;
@@ -693,14 +769,12 @@ pub fn explicit_update() -> Result<(), String> {
                 "Updated {product} to {}.",
                 version.tag.trim_start_matches('v')
             );
-            // A current binary must not leave an older managed host bridge in
-            // place: refresh what Exitbind manages and report it.
-            for refreshed in crate::host_bridge::refresh_managed() {
-                println!(
-                    "Refreshed {} host bridge: {}",
-                    refreshed["host"].as_str().unwrap_or_default(),
-                    refreshed["path"].as_str().unwrap_or_default()
-                );
+            // The newly installed binary owns its own host bridge. This
+            // process is the older version: if it synchronized the bridge from
+            // its own embedded bootstrap it could write old bytes over the new
+            // ones the installer just placed.
+            for line in delegate_bridge_sync(&prefix.join("exitbind")) {
+                println!("{line}");
             }
             Ok(())
         }

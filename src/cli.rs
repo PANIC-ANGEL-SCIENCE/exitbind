@@ -164,11 +164,23 @@ fn host_command(a: &Arguments) -> Result<(), String> {
             } else {
                 for item in items {
                     println!(
-                        "{}: {} ({})",
+                        "{}: bootstrap {} ({})",
                         item["host"].as_str().unwrap_or_default(),
                         item["action"].as_str().unwrap_or_default(),
                         item["path"].as_str().unwrap_or_default()
                     );
+                    let hook = &item["activationHook"];
+                    let state = hook["state"].as_str().unwrap_or("unknown");
+                    match hook["reason"].as_str() {
+                        Some(reason) => println!(
+                            "{}: activation hook {state}: {reason}",
+                            item["host"].as_str().unwrap_or_default()
+                        ),
+                        None => println!(
+                            "{}: activation hook {state}",
+                            item["host"].as_str().unwrap_or_default()
+                        ),
+                    }
                 }
                 Ok(())
             }
