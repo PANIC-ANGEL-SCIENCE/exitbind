@@ -693,6 +693,15 @@ pub fn explicit_update() -> Result<(), String> {
                 "Updated {product} to {}.",
                 version.tag.trim_start_matches('v')
             );
+            // A current binary must not leave an older managed host bridge in
+            // place: refresh what Exitbind manages and report it.
+            for refreshed in crate::host_bridge::refresh_managed() {
+                println!(
+                    "Refreshed {} host bridge: {}",
+                    refreshed["host"].as_str().unwrap_or_default(),
+                    refreshed["path"].as_str().unwrap_or_default()
+                );
+            }
             Ok(())
         }
         Err(error) => match restore_backup(&backup, &target) {

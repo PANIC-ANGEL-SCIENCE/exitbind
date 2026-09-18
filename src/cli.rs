@@ -81,6 +81,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         "bind" => crate::project_commands::bind(&parsed),
         "doctor" => crate::project_commands::doctor(&parsed),
         "hooks" => hooks_command(&parsed),
+        "host" => host_command(&parsed),
         "profile" if parsed.positional.first().map(String::as_str) == Some("audit") => {
             profile_audit_command(&parsed)
         }
@@ -117,6 +118,63 @@ fn hooks_command(a: &Arguments) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// User-level host bridge: one install makes Exitbind discoverable in every
+/// repository, separately from project configuration and hooks.
+fn host_command(a: &Arguments) -> Result<(), String> {
+    args::assert_options("host", a, &["hosts", "all", "json"])?;
+    args::assert_positionals("host", a, 1)?;
+    let action = positional(a, 0, "host requires one action: status or install")?;
+    let hosts = a.options.get("hosts").map(String::as_str);
+    match action {
+        "status" => {
+            let items = crate::host_bridge::status(hosts)?;
+            if a.flags.contains_key("json") {
+                print_json(&json!({
+                    "binaryVersion": crate::project_skills::package_version(),
+                    "hosts": items,
+                }))
+            } else {
+                println!("Exitbind {}", crate::project_skills::package_version());
+                for item in items {
+                    println!(
+                        "\n{}\n  host present: {}\n  bootstrap skill: {}{}\n  activation hook: {}\n  path: {}",
+                        item["host"].as_str().unwrap_or_default(),
+                        item["hostPresent"],
+                        item["bootstrapSkill"].as_str().unwrap_or_default(),
+                        item["installedVersion"]
+                            .as_str()
+                            .map(|version| format!(" (installed {version})"))
+                            .unwrap_or_default(),
+                        item["activationHook"].as_str().unwrap_or("unknown"),
+                        item["path"].as_str().unwrap_or_default()
+                    );
+                }
+                println!(
+                    "\nDiscovery is not activation: a session is governed only once an Exitbind work lifecycle action exists."
+                );
+                Ok(())
+            }
+        }
+        "install" => {
+            let items = crate::host_bridge::install(hosts, a.flags.contains_key("all"))?;
+            if a.flags.contains_key("json") {
+                print_json(&json!({ "action": "install", "hosts": items }))
+            } else {
+                for item in items {
+                    println!(
+                        "{}: {} ({})",
+                        item["host"].as_str().unwrap_or_default(),
+                        item["action"].as_str().unwrap_or_default(),
+                        item["path"].as_str().unwrap_or_default()
+                    );
+                }
+                Ok(())
+            }
+        }
+        _ => Err("host requires one action: status or install".into()),
+    }
 }
 
 fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
@@ -1002,7 +1060,7 @@ fn print_advanced_help() {
         "soulmate"
     };
     let help = format!(
-        "{product} {VERSION}\n\nDo the next change\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, hooks, hook-protocol, hook-run, version.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' after configuration, profile, memory, boundary, or harness-receipt drift."
+        "{product} {VERSION}\n\nDo the next change\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' after configuration, profile, memory, boundary, or harness-receipt drift."
     );
     let value_help = if crate::producer::exitbind_surface() {
         "Run value proof: new v5 runs may observe the frozen check locally with 'run observe-check' or record a host report with 'run record-check'; historical v3-v4 runs remain readable. Use 'run status', 'run explain', and 'run report' for bounded evidence views."

@@ -20,7 +20,7 @@ fi
 if test "$legacy_bridge" = 1; then
   repo=envy404/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.19.1}"
+version="${EXITBIND_VERSION:-v0.20.0}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
 fi
@@ -103,7 +103,17 @@ if test "$legacy_bridge" = 1; then
   install -m 0755 "$tmp/exitbind-${target}" "$compatibility_stage"
   replace_binary "$compatibility_stage" "$prefix/exitbind"
 fi
+# One installation should make Exitbind discoverable by the coding-agent lead
+# the user already runs. Bridge installation is reported, never silent, and a
+# failure here does not fail the binary installation.
+bridge=$("$prefix/$surface" host install 2>&1) && bridge_status=0 || bridge_status=$?
 echo "Installed $surface $version to $prefix/$surface"
+if test "${bridge_status:-1}" = 0; then
+  printf '%s\n' "$bridge" | sed 's/^/host bridge: /'
+else
+  printf '%s\n' "host bridge: not installed ($bridge)" >&2
+  printf '%s\n' "host bridge: run \"$prefix/$surface\" host install to retry" >&2
+fi
 case ":${PATH:-}:" in
   *":$prefix:"*) ;;
   *) echo "Add $prefix to PATH to invoke $surface by name." ;;

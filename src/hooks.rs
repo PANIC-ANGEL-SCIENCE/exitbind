@@ -41,7 +41,20 @@ pub fn manage(action: &str, hosts: &str, root: &str) -> Result<Vec<Value>, Strin
     }
     let mut states = Vec::new();
     for host in &selected {
-        states.push(preflight(host, root)?);
+        let mut state = preflight(host, root)?;
+        // A record that still invokes the previous product generation is
+        // Exitbind's own superseded wiring, not a third party's hook. Retire it
+        // so a current binary cannot keep an old host bridge; everything else
+        // stays a conflict and is never rewritten.
+        if action == "apply" && crate::producer::exitbind_surface() && !state.conflicts.is_empty() {
+            let retired = retire_superseded(&mut state.document);
+            if retired > 0 {
+                let (exact, conflicts) = inspect(&state.document, host, &state.target)?;
+                state.exact = exact;
+                state.conflicts = conflicts;
+            }
+        }
+        states.push(state);
     }
     if matches!(action, "plan" | "status") {
         return Ok(states.iter().map(|state| result(action, state)).collect());
@@ -194,6 +207,46 @@ fn inspect(
         }
     }
     Ok((exact, conflicts))
+}
+
+/// Remove handler records that invoke the superseded caller, keeping every
+/// other hook and preserving surrounding structure.
+fn retire_superseded(document: &mut Value) -> usize {
+    let current = hook_marker();
+    let Some(hooks) = document.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return 0;
+    };
+    let mut retired = 0;
+    for event in EVENTS {
+        let Some(groups) = hooks.get_mut(event).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for group in groups.iter_mut() {
+            let Some(handlers) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            handlers.retain(|handler| {
+                let superseded = handler
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| command.contains(MARKER) && !command.contains(current));
+                if superseded {
+                    retired += 1;
+                }
+                !superseded
+            });
+        }
+        groups.retain(|group| {
+            group
+                .get("hooks")
+                .and_then(Value::as_array)
+                .map_or(true, |handlers| !handlers.is_empty())
+        });
+        if groups.is_empty() {
+            hooks.remove(event);
+        }
+    }
+    retired
 }
 
 fn stage(action: &str, state: &State) -> Result<Staged, String> {

@@ -13,6 +13,7 @@ mod hash;
 mod hook_runtime;
 mod hook_settings;
 mod hooks;
+mod host_bridge;
 mod layout_migration;
 mod managed_files;
 mod memory;

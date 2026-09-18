@@ -44,8 +44,8 @@ pub fn run() -> Result<(), String> {
         .and_then(Value::as_str)
         .unwrap_or("");
     let Some(project) = absolute_directory(cwd) else {
-        if let Some(text) = update_context.as_deref() {
-            emit(event, text)?;
+        if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+            emit(event, &text)?;
         }
         return Ok(());
     };
@@ -63,8 +63,8 @@ pub fn run() -> Result<(), String> {
         match crate::project_layout::config_for_product(&project) {
             Ok(Some(path)) => path,
             _ => {
-                if let Some(text) = update_context.as_deref() {
-                    emit(event, text)?;
+                if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+                    emit(event, &text)?;
                 }
                 return Ok(());
             }
@@ -73,8 +73,8 @@ pub fn run() -> Result<(), String> {
     let loaded = match crate::config::load(config_path.to_str()) {
         Ok(value) => value,
         Err(_) => {
-            if let Some(text) = update_context.as_deref() {
-                emit(event, text)?;
+            if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+                emit(event, &text)?;
             }
             return Ok(());
         }
@@ -83,8 +83,8 @@ pub fn run() -> Result<(), String> {
         || (loaded.mode == crate::project_layout::Mode::Portable
             && !contained_existing(&project, &loaded.control_root))
     {
-        if let Some(text) = update_context.as_deref() {
-            emit(event, text)?;
+        if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+            emit(event, &text)?;
         }
         return Ok(());
     }
@@ -130,6 +130,25 @@ pub fn run() -> Result<(), String> {
         bounded(context)
     };
     emit(event, &text)
+}
+
+/// A session in a repository Exitbind does not govern yet still needs to know
+/// Exitbind exists and when to reach for it. This stays small: the detailed
+/// protocol arrives only after the project is configured.
+const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor material repository work - multi-file changes, refactors, migrations, compatibility-sensitive edits, resumed work, or changes that need a check or review - select Exitbind before consequential edits.\nStart or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nKeep read-only questions and tiny obvious reversible edits direct.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
+
+fn unconfigured_text(event: &str, update: Option<&str>) -> Option<String> {
+    // The legacy Soulmate surface keeps its original silent contract; only the
+    // Exitbind surface offers the bootstrap.
+    if event != "SessionStart" || !crate::producer::exitbind_surface() {
+        return update.map(str::to_owned);
+    }
+    let mut text = String::from(UNCONFIGURED);
+    if let Some(update) = update {
+        text.push('\n');
+        text.push_str(update);
+    }
+    Some(bounded(text))
 }
 
 fn emit(event: &str, text: &str) -> Result<(), String> {
