@@ -203,7 +203,7 @@ fn ordinary_turns_and_invalid_or_unconfigured_inputs_remain_silent() {
 fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     let fixture = Fixture::new("portable");
     let cache = fixture.base.join("cache/soulmate");
-    let next = "v0.20.0";
+    let next = "v0.21.0";
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),
@@ -306,7 +306,7 @@ fn failed_session_lookup_backs_off_and_opt_out_stays_silent() {
 fn stale_session_cache_refreshes_with_local_fake_curl() {
     let fixture = Fixture::new("portable");
     let cache = fixture.base.join("cache/soulmate");
-    let next = "v0.20.0";
+    let next = "v0.21.0";
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),

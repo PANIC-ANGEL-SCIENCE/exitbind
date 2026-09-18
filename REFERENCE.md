@@ -41,7 +41,7 @@ Install the supported release as a single Rust binary. Node.js, npm, Python,
 and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.19.1/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.20.0/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
 exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -55,7 +55,7 @@ The stable release includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The v0.19.1 stable release targets Linux x86_64 and native macOS on Apple
+The v0.20.0 stable release targets Linux x86_64 and native macOS on Apple
 Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -191,7 +191,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in the `v0.19.1` stable release use run-event format 6. The
+New checked runs in the `v0.20.0` stable release use run-event format 6. The
 reader retains historical v1–v5 ledgers, including their original producer
 values and guarantees; v5 binds an Accepted Subject to each result and evidence
 record. The stable release supports v3 caller-reported and v4 observed-check
@@ -306,7 +306,7 @@ files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.19.1/install.sh | EXITBIND_VERSION=v0.19.1 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.20.0/install.sh | EXITBIND_VERSION=v0.20.0 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -335,7 +335,7 @@ never installs software, and SubagentStart does not receive it; model surfacing
 is advisory and not proven by the hook. Stable builds consider stable releases;
 prerelease builds may consider stable and prerelease releases. Run
 `exitbind update` explicitly to install a validated release. Versions released
-before this feature cannot self-notify, so install `0.19.1` once to enable
+before this feature cannot self-notify, so install `0.20.0` once to enable
 future notices when the integration is active. A first SessionStart may then
 perform the bounded lookup; later starts use the cache.
 
@@ -664,14 +664,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.19.1
+dotagents --project add envy404/exitbind --ref v0.20.0
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.19.1
+dotagents --project add envy404/exitbind --ref v0.20.0
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -713,6 +713,34 @@ remain readable for normal configured commands. Repeat the original
 `exitbind bind --config CONFIG --root PRODUCT --state-root STATE` command to
 add ControlRoot after all three existing roots match exactly.
 
+## Host bridge
+
+One installation covers the binary and the host guidance. `exitbind host
+status` reports three separate observations per supported host: whether the
+host is present, the managed bootstrap skill (`current`, `stale`, `missing`,
+`unmanaged`, `unsafe`, or `unreadable`), and the managed session hook.
+
+```sh
+exitbind host status
+exitbind host install [--hosts codex,claude] [--all]
+```
+
+`host install` writes only missing paths and files Exitbind manages. A foreign
+file at the same path, a symlink, or another tool's hook record is reported and
+left alone. Installing on the Exitbind surface retires a superseded
+`soulmate hook-run` session-hook record and keeps every other hook. `exitbind
+update` refreshes a stale managed bootstrap so a current binary cannot keep an
+older host bridge.
+
+Managed locations are the installed hosts' own user-level directories:
+`~/.codex/skills/exitbind/SKILL.md` with `~/.codex/hooks.json`, and
+`~/.claude/skills/exitbind/SKILL.md` with `~/.claude/settings.json`. `--hosts`
+targets one host; `--all` also writes for a host whose directory is absent.
+
+None of this proves activation. A present bootstrap means the lead can discover
+Exitbind; selection remains its judgement, and governed work is established only
+by a work handle, a recorded check, a review, or an acceptance.
+
 ## Removal
 
 Standalone users remove the installed binary explicitly:
@@ -727,7 +755,12 @@ files and are intentionally not removed with the binary. Delete
 project should no longer discover the Exitbind skill. Removing the binary does
 not remove project files, ledgers, receipts, hooks, or skills.
 
-An install or update since `v0.19.1` keeps the replaced binary in one hidden
+Removing the binary leaves the managed host bridge in place. Delete
+`~/.codex/skills/exitbind/`, `~/.claude/skills/exitbind/`, and the Exitbind hook
+records in `~/.codex/hooks.json` and `~/.claude/settings.json` if the hosts
+should no longer discover Exitbind.
+
+An install or update since `v0.20.0` keeps the replaced binary in one hidden
 `.exitbind-previous-PID/` directory beside the installed binary, so a running
 older updater is not disrupted; the next install removes it, or delete it
 explicitly with the binary.
@@ -803,7 +836,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.19.1/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.20.0/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

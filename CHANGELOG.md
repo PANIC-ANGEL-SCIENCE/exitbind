@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.20.0
+
+- Installing Exitbind now installs the host bridge the coding-agent lead needs
+  to find it. `install.sh` installs or refreshes a managed bootstrap skill for
+  each detected host (`~/.codex/skills/exitbind/SKILL.md`,
+  `~/.claude/skills/exitbind/SKILL.md`) and the managed session hook, then
+  reports what it installed or could not install. A binary installed without a
+  usable host bridge is no longer a silent state.
+- Add `exitbind host status` and `exitbind host install`. Status reports the
+  binary, the bootstrap skill, and the activation hook per host as separate
+  observations, and states that discovery is not activation.
+- `exitbind update` refreshes a stale managed bootstrap so a current binary
+  cannot keep an older host bridge, and reports each refresh.
+- Installation retires a superseded `soulmate hook-run` session-hook record on
+  the Exitbind surface and keeps every other hook. Files Exitbind does not
+  manage - a foreign skill at the same path, a symlink, another tool's hook -
+  are reported and never overwritten.
+- A session in a repository that is not configured yet now receives a small
+  bootstrap context on the Exitbind surface: select Exitbind before
+  consequential mutation for material work, keep tiny and read-only work
+  direct, request the single initialization write, and do not claim activation
+  without a lifecycle action. The legacy Soulmate surface stays silent.
+- The unconfigured-project error names the single owner-approved write and its
+  exact command instead of a bare instruction.
+- Selection remains a host/model judgement. Discovery, selection, activation,
+  and governed work are separate observations, and no prompt text forces
+  compliance. No persisted format changed.
+
 ## 0.19.1
 
 - Fix `exitbind update` on Linux leaving a zero-byte binary after reporting

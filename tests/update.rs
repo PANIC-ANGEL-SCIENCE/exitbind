@@ -18,7 +18,7 @@ out=""
 for arg in "$@"; do out="$arg"; done
 if test -n "$FAKE_CALLS"; then printf '%s\n' "$*" >> "$FAKE_CALLS"; fi
 case "$*" in
-  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.20.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
+  *releases*) if [ "$FAKE_BAD" = "1" ]; then printf '%s' '{}' > "$out"; elif test -n "$FAKE_RELEASE_BODY"; then printf '%s' "$FAKE_RELEASE_BODY" > "$out"; else tag="$FAKE_RELEASE_TAG"; test -n "$tag" || tag=v0.21.$(printf '0'); pre="$FAKE_RELEASE_PRERELEASE"; test -n "$pre" || pre=false; printf '%s' "[{\"tag_name\":\"$tag\",\"draft\":false,\"prerelease\":$pre}]" > "$out"; fi ;;
   *) printf '%s' '#!/bin/sh
 target="$EXITBIND_INSTALL_PREFIX/exitbind"
 if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
@@ -41,7 +41,7 @@ fn binary(path: &Path, version: &str) {
 }
 
 fn available_update_tag() -> String {
-    format!("v{}.{}.{}", 0, 20, 0)
+    format!("v{}.{}.{}", 0, 21, 0)
 }
 
 fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
@@ -294,9 +294,9 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
         let malformed = case["version"].as_str().unwrap();
         let discriminating_malformed = if case_id == "updater-v01600-reject" {
-            format!("v{}.{}.{}", 0, 20, "00")
+            format!("v{}.{}.{}", 0, 21, "00")
         } else {
-            format!("v{}.{}.{}+{}.{}", 0, 20, 0, "build", 7)
+            format!("v{}.{}.{}+{}.{}", 0, 21, 0, "build", 7)
         };
         let valid = available_update_tag();
         let body = format!(
@@ -503,7 +503,7 @@ impl FakeRelease {
         let release = root.join("release");
         fs::create_dir(&bin).unwrap();
         fs::create_dir(&release).unwrap();
-        let version = "0.20.0";
+        let version = "0.21.0";
         let os = Command::new("uname").arg("-s").output().unwrap();
         let arch = Command::new("uname").arg("-m").output().unwrap();
         let target = match (
@@ -643,7 +643,7 @@ fn real_installer_self_update_keeps_the_new_binary_and_one_aside_copy() {
         .env("PATH", &release.path)
         .env("HOME", release.root.join("home"))
         .env("EXITBIND_INSTALL_PREFIX", prefix)
-        .env("EXITBIND_VERSION", "v0.20.0")
+        .env("EXITBIND_VERSION", "v0.21.0")
         .output()
         .unwrap();
     assert!(again.status.success(), "{again:?}");
@@ -682,5 +682,33 @@ fn released_updaters_do_not_truncate_the_binary_the_new_installer_places() {
         );
         release.assert_installed(&output, &target);
     }
+    fs::remove_dir_all(&release.root).unwrap();
+}
+
+/// A current binary must not leave an older managed host bridge behind: the
+/// update path refreshes what Exitbind manages and says so.
+#[test]
+fn update_refreshes_a_stale_managed_host_bridge() {
+    let release = FakeRelease::new("update-host-bridge");
+    let home = release.root.join("home");
+    let bridge = home.join(".codex/skills/exitbind/SKILL.md");
+    fs::create_dir_all(home.join(".codex")).unwrap();
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        "---\nname: exitbind\n---\n\n<!-- exitbind-managed-bootstrap:v1 -->\n<!-- exitbind-bootstrap-version: 0.14.0 -->\n",
+    )
+    .unwrap();
+
+    let (output, target) = release.self_update(Path::new(env!("CARGO_BIN_EXE_exitbind")), "bridge");
+    release.assert_installed(&output, &target);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("Refreshed codex host bridge"), "{text}");
+    let refreshed = fs::read_to_string(&bridge).unwrap();
+    assert!(refreshed.contains("Automatically use Exitbind for material coding work"));
+    assert!(refreshed.contains(&format!(
+        "<!-- exitbind-bootstrap-version: {} -->",
+        env!("CARGO_PKG_VERSION")
+    )));
     fs::remove_dir_all(&release.root).unwrap();
 }
