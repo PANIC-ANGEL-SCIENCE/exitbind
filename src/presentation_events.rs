@@ -169,7 +169,7 @@ fn classify(packet: &Value, progress: &Value) -> Classification {
 /// `EXIT READY` speaks for itself and takes no flavor line.
 fn transition(previous: Option<&Classification>, current: &Classification) -> Option<&'static str> {
     let previous = previous?;
-    if current.exit_state == "READY" {
+    if crate::run_exit::is_ready(&current.exit_state) {
         return None;
     }
     // Entering a state speaks once; staying in it stays quiet.
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn terminal_readiness_takes_no_flavor_line() {
         let mut ready = classification("current", "approved");
-        ready.exit_state = "READY".to_owned();
+        ready.exit_state = crate::run_exit::ExitDecision::Ready.wire().0.to_owned();
         assert_eq!(
             transition(Some(&classification("stale", "approved")), &ready),
             None

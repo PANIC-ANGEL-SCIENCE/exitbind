@@ -180,6 +180,12 @@ pub(crate) enum ExitDecision {
     NotApplicable(&'static str),
 }
 
+/// True for the one terminal exit state, so no other module has to spell the
+/// wire label. `ExitDecision::wire` remains its single owner.
+pub(crate) fn is_ready(state: &str) -> bool {
+    state == ExitDecision::Ready.wire().0
+}
+
 pub(crate) fn receipt_decision(valid: bool) -> ExitDecision {
     if valid {
         ExitDecision::Ready
