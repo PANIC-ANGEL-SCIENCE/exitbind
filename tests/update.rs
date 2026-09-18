@@ -449,7 +449,7 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
     fs::create_dir(&prefix).unwrap();
     fake_curl(&bin);
     let target = prefix.join("exitbind");
-    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &target).unwrap();
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &target);
     fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     let output = Command::new(&target)
@@ -589,8 +589,7 @@ esac
         let prefix = self.root.join(format!("prefix-{name}"));
         fs::create_dir(&prefix).unwrap();
         let target = prefix.join("exitbind");
-        fs::copy(updater, &target).unwrap();
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        support::place_executable(updater, &target);
         let output = Command::new(&target)
             .arg("update")
             .env("PATH", &self.path)

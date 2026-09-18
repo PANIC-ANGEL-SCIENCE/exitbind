@@ -22,8 +22,7 @@ fn path_with_binary(home: &Path) -> String {
     fs::create_dir_all(&bin).unwrap();
     let linked = bin.join("exitbind");
     if !linked.exists() {
-        fs::copy(env!("CARGO_BIN_EXE_exitbind"), &linked).unwrap();
-        fs::set_permissions(&linked, fs::Permissions::from_mode(0o755)).unwrap();
+        support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &linked);
     }
     format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
 }

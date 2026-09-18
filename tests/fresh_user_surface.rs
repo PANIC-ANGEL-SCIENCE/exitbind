@@ -9,7 +9,6 @@
 mod support;
 
 use serde_json::Value;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{fs, io};
@@ -32,9 +31,10 @@ impl Fresh {
         for path in [&home, &project, &bin] {
             fs::create_dir(path).unwrap();
         }
-        let binary = bin.join("exitbind");
-        fs::copy(env!("CARGO_BIN_EXE_exitbind"), &binary).unwrap();
-        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+        support::place_executable(
+            Path::new(env!("CARGO_BIN_EXE_exitbind")),
+            &bin.join("exitbind"),
+        );
         assert!(Command::new("git")
             .args(["init", "-q"])
             .arg(&project)
