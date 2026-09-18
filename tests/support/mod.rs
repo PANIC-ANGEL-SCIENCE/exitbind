@@ -39,3 +39,24 @@ pub fn place_executable(source: &Path, target: &Path) {
         .expect("mark test binary executable");
     std::fs::rename(&staging, target).expect("place test binary");
 }
+
+/// Run a command that may have just been written to disk.
+///
+/// A concurrently forked child can still hold the write descriptor for the
+/// binary's inode for the moment before it execs, and Linux answers `exec` on
+/// such a file with `ETXTBSY`. That is a property of the harness, not of the
+/// product, so wait briefly for the descriptor to go away instead.
+#[allow(dead_code)]
+pub fn run(command: &mut std::process::Command) -> std::process::Output {
+    const TEXT_FILE_BUSY: i32 = 26;
+    for _ in 0..200 {
+        match command.output() {
+            Ok(output) => return output,
+            Err(error) if error.raw_os_error() == Some(TEXT_FILE_BUSY) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => panic!("run test command: {error}"),
+        }
+    }
+    panic!("test binary stayed busy for two seconds")
+}

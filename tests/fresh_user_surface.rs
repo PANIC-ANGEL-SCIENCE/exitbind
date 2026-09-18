@@ -57,15 +57,15 @@ impl Fresh {
             self.bin.display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        let output = Command::new(self.bin.join("exitbind"))
-            .args(arguments)
-            .current_dir(&self.project)
-            .env("HOME", &self.home)
-            .env("PATH", path)
-            .env("TMPDIR", self.home.join("tmp-unused"))
-            .env("EXITBIND_NO_UPDATE_CHECK", "1")
-            .output()
-            .unwrap();
+        let output = support::run(
+            Command::new(self.bin.join("exitbind"))
+                .args(arguments)
+                .current_dir(&self.project)
+                .env("HOME", &self.home)
+                .env("PATH", path)
+                .env("TMPDIR", self.home.join("tmp-unused"))
+                .env("EXITBIND_NO_UPDATE_CHECK", "1"),
+        );
         let seen = format!(
             "$ exitbind {}\n{}{}",
             arguments.join(" "),

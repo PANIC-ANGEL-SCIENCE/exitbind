@@ -590,19 +590,19 @@ esac
         fs::create_dir(&prefix).unwrap();
         let target = prefix.join("exitbind");
         support::place_executable(updater, &target);
-        let output = Command::new(&target)
-            .arg("update")
-            .env("PATH", &self.path)
-            .env("HOME", self.root.join("home"))
-            .env("XDG_CACHE_HOME", self.root.join("cache"))
-            .env("EXITBIND_NO_UPDATE_CHECK", "1")
-            .env("SOULMATE_NO_UPDATE_CHECK", "1")
-            .env_remove("EXITBIND_INSTALL_PREFIX")
-            .env_remove("SOULMATE_INSTALL_PREFIX")
-            .env_remove("EXITBIND_REPOSITORY")
-            .env_remove("EXITBIND_VERSION")
-            .output()
-            .unwrap();
+        let output = support::run(
+            Command::new(&target)
+                .arg("update")
+                .env("PATH", &self.path)
+                .env("HOME", self.root.join("home"))
+                .env("XDG_CACHE_HOME", self.root.join("cache"))
+                .env("EXITBIND_NO_UPDATE_CHECK", "1")
+                .env("SOULMATE_NO_UPDATE_CHECK", "1")
+                .env_remove("EXITBIND_INSTALL_PREFIX")
+                .env_remove("SOULMATE_INSTALL_PREFIX")
+                .env_remove("EXITBIND_REPOSITORY")
+                .env_remove("EXITBIND_VERSION"),
+        );
         (output, target)
     }
 
@@ -617,7 +617,7 @@ esac
             fs::metadata(target).unwrap().len() > 0,
             "installed binary was truncated"
         );
-        let installed = Command::new(target).arg("version").output().unwrap();
+        let installed = support::run(Command::new(target).arg("version"));
         assert_eq!(
             String::from_utf8_lossy(&installed.stdout).trim(),
             self.version
