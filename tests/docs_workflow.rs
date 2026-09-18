@@ -196,7 +196,11 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
         assert!(document.contains("v0.20.0"));
         assert!(!document.contains("unreleased v5"));
     }
-    assert!(readme.contains("historical Soulmate v1–v4"));
+    let legacy = read("docs/legacy-compatibility.md");
+    // The rename history belongs to the legacy document, not the main path.
+    assert!(legacy.contains("renamed continuation of Soulmate"));
+    assert!(legacy.contains("run-event\nversions 1 through 4"));
+    assert!(readme.contains("docs/legacy-compatibility.md"));
     assert!(reference.contains("Historical checked Soulmate runs use run-event version 3"));
     assert!(reference.contains("new Exitbind\nstarts use v6"));
     assert!(glossary.contains("Observed check | v4–v6 source evidence"));

@@ -323,12 +323,28 @@ fn plugin_manifests_keep_portable_openai_and_compatibility_presentation() {
         Some(legacy_presentation.as_str())
     );
     assert_eq!(codex["skills"].as_str(), Some("./skills/"));
+    // The historical extension key stays for consumers published before the
+    // rename, but it must read as legacy rather than as a current capability.
     assert_eq!(
         root["extensions"]["systems.soulmate"]["purpose"].as_str(),
         Some(
-            "Historical host-hook compatibility resources; host-specific activation is not implied."
+            "Legacy host-hook compatibility resources for plugin consumers published before the rename; not a current Exitbind capability, and host-specific activation is not implied."
         )
     );
+    // Everything a current plugin consumer is shown is Exitbind only.
+    for presented in [
+        root["name"].clone(),
+        root["description"].clone(),
+        root["repository"].clone(),
+        root["keywords"].clone(),
+        root["extensions"]["com.openai"].clone(),
+        root["extensions"]["systems.exitbind"].clone(),
+    ] {
+        assert!(
+            !presented.to_string().to_lowercase().contains("soulmate"),
+            "current plugin presentation carries the previous product: {presented}"
+        );
+    }
 }
 
 #[cfg(unix)]

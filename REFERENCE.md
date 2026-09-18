@@ -29,11 +29,11 @@ permissions, execution, and subagents. Exitbind is not an operating system or
 process sandbox; only the optional `exitbind away` convenience launches one
 pending Codex assignment.
 
-New setup uses `exitbind`, `exitbind.json`, `.exitbind/`, and `exitbind/`.
-Existing `soulmate` executable entries, `soulmate.json`, `.soulmate/` state,
-legacy `soulmate/` control trees, and host skill paths remain compatibility
-paths for existing projects. Historical v1–v4 ledgers and their `soulmate`
-producer values remain historical and are never relabeled as Exitbind evidence.
+New setup uses `exitbind`, `exitbind.json`, `.exitbind/`, and `exitbind/`. A
+project written by an earlier release keeps working under its own paths and
+producer values; those surfaces are listed in
+[legacy compatibility](docs/legacy-compatibility.md) and are never created by a
+new install.
 
 ## Quick start
 

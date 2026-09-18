@@ -6,7 +6,7 @@ pub fn temp(label: &str) -> PathBuf {
     loop {
         let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "soulmate-{label}-{}-{sequence}",
+            "exitbind-{label}-{}-{sequence}",
             std::process::id()
         ));
         match std::fs::create_dir(&path) {

@@ -16,6 +16,14 @@
 - Progress now divides the check weight by the number of required checks per
   worker, and a review that no longer fits the tested inputs earns no review
   progress.
+- `exitbind host install --all` is accepted again; the flag was documented but
+  rejected by the argument parser.
+- Temporary files written during normal use are Exitbind-named. The rename
+  history moved out of the README into
+  [docs/legacy-compatibility.md](docs/legacy-compatibility.md), and a
+  regression test proves a fresh install and project show no previous-product
+  identity while a historical ledger stays readable under its own.
+
 ## 0.20.0
 
 - Installing Exitbind now installs the host bridge the coding-agent lead needs

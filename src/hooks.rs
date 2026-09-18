@@ -2,6 +2,14 @@ use crate::hook_settings;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
+/// The hook handshake token written by every published release to date.
+///
+/// It is a wire identifier, not user-facing text: a binary that manages hooks
+/// asks the CLI on PATH for its token and refuses to write records it could not
+/// have produced. Renaming it now would make every already-published binary
+/// reject a newer CLI on PATH, so the current surface keeps emitting the
+/// historical spelling and only widens what it accepts. See
+/// `compatibility::ACCEPTED_HOOK_PROTOCOLS` for the retirement criterion.
 pub const PROTOCOL: &str = "soulmate-hook-v1";
 pub const HOOK_COMMAND: &str = "command -v soulmate >/dev/null 2>&1 && soulmate hook-run || true";
 const MARKER: &str = "soulmate hook-run";

@@ -143,7 +143,7 @@ mod tests {
             .expect("test clock")
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "soulmate-git-preflight-{label}-{}-{nonce}",
+            "exitbind-git-preflight-{label}-{}-{nonce}",
             std::process::id()
         ));
         std::fs::create_dir(&root).expect("create test root");

@@ -24,6 +24,16 @@ pub(crate) struct Profile {
     pub(crate) installed_commands: &'static [&'static str],
 }
 
+/// Hook handshake tokens a current binary accepts from the CLI on PATH.
+///
+/// `crate::hooks::PROTOCOL` is still the historical spelling because every
+/// published release compares it exactly; accepting the Exitbind spelling now
+/// is what makes a later switch of the emitted token safe. Retirement criterion:
+/// once no supported release older than the first one carrying this list can be
+/// the binary that manages hooks, `hooks::PROTOCOL` may become
+/// `exitbind-hook-v1` and the legacy token moves to read-only acceptance.
+pub(crate) const ACCEPTED_HOOK_PROTOCOLS: [&str; 2] = ["soulmate-hook-v1", "exitbind-hook-v1"];
+
 const EXITBIND_COMMANDS: &[&str] = &["exitbind"];
 const SOULMATE_COMMANDS: &[&str] = &["soulmate"];
 

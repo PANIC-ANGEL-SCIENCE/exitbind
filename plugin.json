@@ -20,7 +20,7 @@
       }
     },
     "systems.soulmate": {
-      "purpose": "Historical host-hook compatibility resources; host-specific activation is not implied."
+      "purpose": "Legacy host-hook compatibility resources for plugin consumers published before the rename; not a current Exitbind capability, and host-specific activation is not implied."
     },
     "systems.exitbind": {
       "purpose": "Exitbind host-hook compatibility resources; host-specific activation is not implied."

@@ -66,14 +66,14 @@ pub fn import(
         return Err("source changed during import".into());
     }
 
-    let profile_temp = profiles_dir.join(format!(".{name}.md.soulmate-{}.tmp", std::process::id()));
+    let profile_temp = profiles_dir.join(format!(".{name}.md.exitbind-{}.tmp", std::process::id()));
     let config_name = l
         .path
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or("configuration path must name a UTF-8 file")?;
     let config_temp = l.path.with_file_name(format!(
-        ".{config_name}.soulmate-{}.tmp",
+        ".{config_name}.exitbind-{}.tmp",
         std::process::id()
     ));
     let mut profile_written = false;

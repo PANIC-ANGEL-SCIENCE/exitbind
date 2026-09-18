@@ -356,7 +356,7 @@ fn refresh_owned(path: &Path, content: &str) -> Result<(), String> {
         .and_then(|name| name.to_str())
         .ok_or("managed skill path must name a UTF-8 file")?;
     let temp = path.with_file_name(format!(
-        ".{}.soulmate-refresh-{}.tmp",
+        ".{}.exitbind-refresh-{}.tmp",
         name,
         std::process::id()
     ));

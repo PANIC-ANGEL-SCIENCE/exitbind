@@ -279,7 +279,7 @@ pub(crate) fn run(loaded: &Loaded, apply: bool) -> Result<Value, String> {
             .and_then(|value| value.to_str())
             .ok_or("configuration path must name a UTF-8 file")?;
         let temporary = loaded.path.with_file_name(format!(
-            ".{name}.soulmate-layout-{}.tmp",
+            ".{name}.exitbind-layout-{}.tmp",
             std::process::id()
         ));
         managed_files::write_exclusive(&temporary, next_source.as_bytes())?;

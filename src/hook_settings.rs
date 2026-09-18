@@ -219,7 +219,10 @@ pub(crate) fn require_compatible_command(protocol: &str) -> Result<(), String> {
             if let Some(mut pipe) = child.stdout.take() {
                 pipe.read_to_string(&mut stdout).ok();
             }
-            if status.success() && stdout.trim() == protocol {
+            let accepted = crate::compatibility::ACCEPTED_HOOK_PROTOCOLS
+                .contains(&stdout.trim())
+                || stdout.trim() == protocol;
+            if status.success() && accepted {
                 return Ok(());
             }
             return Err(format!("PATH-installed {command} does not support the required hook protocol; update the CLI before applying hooks"));
@@ -244,7 +247,7 @@ pub(crate) fn atomic_write(
     ensure_directory(directory, real_root, target)?;
     assert_unchanged(target, expected_source)?;
     let temporary = directory.join(format!(
-        ".soulmate-{}-{}.tmp",
+        ".exitbind-{}-{}.tmp",
         std::process::id(),
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
     ));

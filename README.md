@@ -214,15 +214,13 @@ not covered. Raw ledgers and artifacts can contain goals, commands, paths, and
 task results; keep them private and read [SECURITY.md](SECURITY.md) before real
 work.
 
-Exitbind is the renamed continuation of Soulmate: `v0.20.0` keeps the existing
-version and repository history rather than resetting to `0.0.1`. It reads
-historical Soulmate v1–v4 run records under their original producer and schema
-meaning. The `soulmate` command is the same binary under the previous name, and
-existing `soulmate.json`, `.soulmate/` state, project skill paths, and
-environment controls remain bounded compatibility surfaces. New records use the
-Exitbind identity; compatibility never relabels old evidence as new evidence. See
-the [public format map](CHANGELOG.md#public-tags-and-format-readers) before
-choosing a rollback or release channel.
+A project written by an earlier release keeps working: Exitbind reads historical
+run records under their original producer and schema meaning, and compatibility
+never relabels old evidence as new evidence. New installs create only Exitbind
+paths. See the [public format map](CHANGELOG.md#public-tags-and-format-readers)
+before choosing a rollback or release channel, and
+[legacy compatibility](docs/legacy-compatibility.md) if you are opening an old
+project.
 
 ## Update, recover, or leave
 
@@ -249,4 +247,5 @@ hooks first and review the exact project paths you want to retain; see
 - [Command reference](REFERENCE.md)
 - [Terminology](docs/glossary.md)
 - [Optional memory, hooks, and receipts](docs/optional-surfaces.md)
+- [Legacy compatibility](docs/legacy-compatibility.md)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)

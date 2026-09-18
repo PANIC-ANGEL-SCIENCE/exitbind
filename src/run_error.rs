@@ -128,8 +128,14 @@ impl std::fmt::Display for DriftError {
     }
 }
 
+/// Internal channel between the run layer and the CLI presenter. The legacy
+/// spelling stays readable so an in-flight error text from either side is
+/// understood, but the current surface never emits it.
+pub(crate) const DRIFT_PREFIX: &str = "EXITBIND_DRIFT:";
+pub(crate) const LEGACY_DRIFT_PREFIX: &str = "SOULMATE_DRIFT:";
+
 pub(crate) fn machine_drift(error: DriftError) -> String {
     let machine = serde_json::to_string(&error.machine())
         .unwrap_or_else(|_| "{\"error\":\"drift diagnostic serialization failed\"}".to_owned());
-    format!("SOULMATE_DRIFT:{}", machine)
+    format!("{DRIFT_PREFIX}{machine}")
 }

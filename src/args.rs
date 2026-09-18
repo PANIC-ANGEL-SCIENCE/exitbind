@@ -47,6 +47,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "workflow",
 ];
 const BOOLEAN_OPTIONS: &[&str] = &[
+    "all",
     "apply",
     "json",
     "event-id",

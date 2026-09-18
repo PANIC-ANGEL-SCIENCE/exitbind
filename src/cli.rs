@@ -540,6 +540,16 @@ fn exit_path_failure(decision: crate::run_exit::ExitDecision, detail: Option<Str
     )
 }
 
+/// The prefix `main` strips before printing a machine payload.
+fn machine_json(machine: &str) -> String {
+    let prefix = if crate::producer::exitbind_surface() {
+        "EXITBIND_JSON:"
+    } else {
+        "SOULMATE_JSON:"
+    };
+    format!("{prefix}{machine}")
+}
+
 fn machine_error(error: String) -> String {
     let prefix = if crate::producer::exitbind_surface() {
         "EXITBIND_JSON:"
@@ -993,7 +1003,10 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
 }
 
 fn map_run_error(error: String, json_output: bool) -> String {
-    let Some(machine) = error.strip_prefix("SOULMATE_DRIFT:") else {
+    let Some(machine) = error
+        .strip_prefix(crate::run_error::DRIFT_PREFIX)
+        .or_else(|| error.strip_prefix(crate::run_error::LEGACY_DRIFT_PREFIX))
+    else {
         return error;
     };
     let command = if crate::producer::exitbind_surface() {
@@ -1002,7 +1015,7 @@ fn map_run_error(error: String, json_output: bool) -> String {
         "soulmate"
     };
     if json_output {
-        return format!("SOULMATE_JSON:{machine}");
+        return machine_json(machine);
     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(machine) {
         if value["classification"] == "config_drift" {
             eprintln!(

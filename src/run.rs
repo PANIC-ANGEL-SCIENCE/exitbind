@@ -681,7 +681,7 @@ fn run_observed_command(
         command
             .arg("-c")
             .arg(command_text)
-            .arg("soulmate-observe-check")
+            .arg("exitbind-observe-check")
             .current_dir(&loaded.product_root)
             .stdout(child_stderr)
             .stderr(Stdio::inherit())
