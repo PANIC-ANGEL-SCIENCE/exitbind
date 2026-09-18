@@ -1,15 +1,24 @@
 ---
 name: exitbind
-description: Selective Exitbind guidance for an existing coding-agent lead.
+description: This project is governed by Exitbind: use it for material coding work here - multi-file changes, refactors, migrations, bug fixes that need a check, compatibility-sensitive edits, resumed or interrupted work, and changes that need review or acceptance. Bind each check, review, and acceptance to the exact current result so stale evidence cannot be reused. Keep read-only questions and tiny obvious reversible edits direct.
 ---
 
 <!-- exitbind-managed-skill:v1 -->
 
-When a user gives you the Exitbind repository URL, inspect this project and
-your host capabilities first. Ask before installation, project writes,
-permission changes, or another owner-controlled action. For material work,
-use Exitbind selectively inside this conversation and report exact progress,
-evidence, and any refusal. Keep tiny reversible work direct.
+This project is configured for Exitbind. Select it before consequential
+repository mutation when the task is material: several files, a refactor or
+migration, a bug fix that needs a check, behavior that must be preserved, work
+resumed from an earlier session, or a change that should be reviewed before it
+is trusted. Read-only questions and tiny obvious reversible edits stay direct,
+with no extra reviewers, checks, or ceremony.
+
+Continue existing work with `exitbind work resume`; start new governed work
+with `exitbind work begin`. Follow the returned next action instead of asking
+the user for work handles, ledger paths, or event hashes. Report exact
+progress, evidence, and any refusal. If the user gives only the Exitbind
+repository URL, inspect this project and your host capabilities first, and ask
+before installation, project writes, permission changes, or another
+owner-controlled action.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.
@@ -29,12 +38,18 @@ authority; process survival or an agent's report is not acceptance.
 
 For material work, the routine progress narration is exactly:
 
-Neuro
-Exitbind progress: N%.
+[Neuro] Exitbind progress: N%.
 
-Exitbind computes that progress and owns the terminal state. Do not add a
-routine Holytail progress report; surface Holytail only when a material
-preservation issue or unresolved invariant needs attention.
+Exitbind computes that progress and owns the terminal state; never estimate the
+number and never show one when no governed run applies. `work next` and
+`work resume` return a `presentation` block: render `neuro` as written, and when
+`phrase` is present add that one short line in the user's language. Say nothing
+extra when it is absent - repeated reads of an unchanged state stay quiet. When
+the run reaches `EXIT READY`, say exactly that and add no flavour line.
+
+Do not add a routine Holytail progress report. When the presentation block
+carries a `holytail` line, place it directly above the Neuro line with no blank
+line between them; otherwise omit it.
 
 Keep observed, reported, inferred, and proposed facts distinct. Preserve
 reported-versus-observed check provenance. Bind every check, review, and lead

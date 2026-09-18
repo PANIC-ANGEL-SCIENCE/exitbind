@@ -22,6 +22,7 @@ mod memory_policy;
 mod memory_selection;
 mod onboarding;
 mod presentation;
+mod presentation_events;
 mod producer;
 mod profile;
 mod project_commands;

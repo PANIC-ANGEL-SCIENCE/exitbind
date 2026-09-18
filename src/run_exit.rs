@@ -107,6 +107,9 @@ pub(crate) struct CheckAssessment {
     pub(crate) policy: Option<CheckPolicy>,
     pub(crate) targets: Vec<CheckTarget>,
     pub(crate) incomplete: bool,
+    /// Required check targets per completed worker: the functional check plus
+    /// one per accepted preservation requirement.
+    pub(crate) targets_per_worker: usize,
 }
 
 impl CheckAssessment {
@@ -115,14 +118,21 @@ impl CheckAssessment {
             policy: None,
             targets: Vec::new(),
             incomplete: false,
+            targets_per_worker: 0,
         }
     }
 
-    fn configured(policy: CheckPolicy, targets: Vec<CheckTarget>, incomplete: bool) -> Self {
+    fn configured(
+        policy: CheckPolicy,
+        targets: Vec<CheckTarget>,
+        incomplete: bool,
+        targets_per_worker: usize,
+    ) -> Self {
         Self {
             policy: Some(policy),
             targets,
             incomplete,
+            targets_per_worker,
         }
     }
 
@@ -302,7 +312,7 @@ impl ExitState {
                 .count(),
             reviewer_completed: current_submissions
                 .iter()
-                .filter(|event| event["role"] == "reviewer" && event["outcome"] == "approved")
+                .filter(|event| approval_is_current(event, version, state["inputsSha256"].as_str()))
                 .count(),
             scope_completed: all_submissions
                 .iter()
@@ -343,12 +353,9 @@ impl ExitState {
     }
 
     pub(crate) fn reviewer_approved(&self) -> bool {
-        self.current_submissions.iter().any(|event| {
-            event["role"] == "reviewer"
-                && event["outcome"] == "approved"
-                && (self.version < 6
-                    || event["inputsSha256"].as_str() == self.inputs_sha256.as_deref())
-        })
+        self.current_submissions
+            .iter()
+            .any(|event| approval_is_current(event, self.version, self.inputs_sha256.as_deref()))
     }
 
     pub(crate) fn lead_accepted(&self) -> bool {
@@ -376,6 +383,14 @@ impl ExitState {
         }
         Ok(())
     }
+}
+
+/// A reviewer approval counts only while it belongs to the result and, for v6
+/// runs, to the tested inputs in force now.
+fn approval_is_current(event: &Value, version: u64, inputs: Option<&str>) -> bool {
+    event["role"] == "reviewer"
+        && event["outcome"] == "approved"
+        && (version < 6 || event["inputsSha256"].as_str() == inputs)
 }
 
 pub(crate) fn reduce(state: &Value) -> Result<ExitState, String> {
@@ -449,7 +464,13 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
         }
     }
     let incomplete = expected_workers == 0 || workers.len() < expected_workers;
-    Ok(CheckAssessment::configured(policy, targets, incomplete))
+    let targets_per_worker = 1 + preservation.map_or(0, |items| items.requirements.len());
+    Ok(CheckAssessment::configured(
+        policy,
+        targets,
+        incomplete,
+        targets_per_worker,
+    ))
 }
 
 fn target_for(

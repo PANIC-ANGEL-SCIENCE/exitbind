@@ -59,8 +59,8 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
 
 pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
-    let (next, residual) = next_and_residual(loaded, work, &ledger)?;
-    Ok(json!({"work": work, "next": next, "residual": residual}))
+    let (next, residual, presentation) = next_and_residual(loaded, work, &ledger, false)?;
+    Ok(json!({"work": work, "next": next, "residual": residual, "presentation": presentation}))
 }
 
 pub(crate) fn return_result(
@@ -170,8 +170,14 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         0 => none_result(),
         1 => {
             let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
-            let (next, residual) = next_and_residual(loaded, &work, &ledger)?;
-            Ok(json!({"status": "resumed", "work": work, "next": next, "residual": residual}))
+            let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)?;
+            Ok(json!({
+                "status": "resumed",
+                "work": work,
+                "next": next,
+                "residual": residual,
+                "presentation": presentation
+            }))
         }
         _ => Ok(json!({
             "status": "ambiguous",
@@ -189,12 +195,25 @@ fn none_result() -> Result<Value, String> {
     Ok(json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}}))
 }
 
-/// Next action and residual packet derived from one captured revision.
-fn next_and_residual(loaded: &Loaded, work: &str, ledger: &str) -> Result<(Value, Value), String> {
+/// Next action and residual packet derived from one captured revision, plus the
+/// conversational presentation that speaks only when the state moved.
+fn next_and_residual(
+    loaded: &Loaded,
+    work: &str,
+    ledger: &str,
+    resumed: bool,
+) -> Result<(Value, Value, Value), String> {
     let snapshot = run::RunSnapshot::capture(loaded, ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
     let residual = crate::work_packet::project(work, &snapshot, &next)?;
-    Ok((next, residual))
+    let presentation = crate::presentation_events::project(
+        &loaded.state_root,
+        work,
+        &residual,
+        &next["progress"],
+        resumed,
+    );
+    Ok((next, residual, presentation))
 }
 
 fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {

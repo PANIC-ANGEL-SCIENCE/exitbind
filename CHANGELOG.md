@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- The host bridge can no longer be downgraded by an older process. `exitbind
+  update` hands post-update bridge synchronization to the newly installed
+  binary, and an up-to-date binary reports what is missing instead of
+  reinstalling it. Bridge writes go through the hardened settings writer:
+  a path escaping the home root, a directory at the target, or a changed file
+  is refused, and file permissions are preserved.
+- Legacy hook retirement matches only the two exact published record shapes, so
+  a foreign hook that merely mentions the old command is never removed.
+- `exitbind work next` and `exitbind work resume` return a `presentation`
+  block: percent progress, the exit state, a classified state summary, and at
+  most one transition phrase. Reading the same state again says nothing new.
+- Progress now divides the check weight by the number of required checks per
+  worker, and a review that no longer fits the tested inputs earns no review
+  progress.
 ## 0.20.0
 
 - Installing Exitbind now installs the host bridge the coding-agent lead needs

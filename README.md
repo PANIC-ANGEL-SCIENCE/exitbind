@@ -147,13 +147,15 @@ finished run is history: its packet never authorizes skipping new work.
 For material work, the optional narration stays small:
 
 ```text
-Neuro
-Exitbind progress: N%.
+[Neuro] Exitbind progress: N%.
 ```
 
 Exitbind—not the character—computes weighted progress, and 100% means only
-`EXIT READY`. Neuro never replaces the host agent's native identity or
-authority, and removing it changes no semantics.
+`EXIT READY`. Alongside it, `work next` and `work resume` return a short line
+only when the state actually moved—a check that went stale, evidence that fits
+again, a decision that is yours—so the run is legible without a status report
+every turn. Neuro never replaces the host agent's native identity or authority,
+and removing it changes no semantics.
 
 ## Set up a project when needed
 

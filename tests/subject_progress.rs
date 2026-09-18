@@ -144,14 +144,23 @@ fn assert_progress(action: &Value) {
 
 #[test]
 fn skill_presentation_is_exact_and_packaged_copy_matches() {
-    const ROUTINE: &str = "Neuro\nExitbind progress: N%.";
+    const ROUTINE: &str = "[Neuro] Exitbind progress: N%.";
     let canonical = include_bytes!("../skills/exitbind/SKILL.md");
     let packaged = include_bytes!("../plugins/exitbind/skills/exitbind/SKILL.md");
     assert_eq!(canonical, packaged);
     let text = std::str::from_utf8(canonical).unwrap();
     assert!(text.contains(ROUTINE));
-    assert!(text.contains("Exitbind computes that progress and owns the terminal state."));
-    assert!(!text.contains("Holytail\nExitbind progress"));
+    // One line, never a two-line header, and never an invented percentage.
+    assert!(!text.contains("Neuro\nExitbind progress"));
+    assert!(
+        text.contains("never estimate the\nnumber and never show one when no governed run applies")
+    );
+    // The terminal transition speaks for itself.
+    assert!(text.contains("`EXIT READY`, say exactly that and add no flavour line"));
+    // Holytail sits directly above the Neuro line only when it applies.
+    assert!(text.contains(
+        "directly above the Neuro line with no blank\nline between them; otherwise omit it"
+    ));
 }
 
 #[test]
