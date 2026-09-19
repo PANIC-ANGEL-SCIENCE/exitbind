@@ -22,6 +22,7 @@ const LEGACY: &str = "holytail";
 struct Fixture {
     home: PathBuf,
     root: PathBuf,
+    path: String,
 }
 
 impl Fixture {
@@ -31,10 +32,26 @@ impl Fixture {
         let base = support::temp(label);
         let home = base.join("home");
         let root = base.join("project");
-        for path in [&home, &root] {
+        let bin = base.join("bin");
+        for path in [&home, &root, &bin] {
             fs::create_dir(path).unwrap();
         }
-        let fixture = Self { home, root };
+        // Installing the session hook asks the CLI on PATH for its protocol
+        // token, so the fixture must supply the binary under test rather than
+        // depending on whatever the machine has installed.
+        support::place_executable(
+            Path::new(env!("CARGO_BIN_EXE_exitbind")),
+            &bin.join("exitbind"),
+        );
+        let fixture = Self {
+            home,
+            root,
+            path: format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        };
         let init = fixture.call(&["init", "--root", "."], None);
         assert!(init.status.success(), "{init:?}");
         fixture
@@ -46,6 +63,7 @@ impl Fixture {
             .current_dir(&self.root)
             .args(args)
             .env("HOME", &self.home)
+            .env("PATH", &self.path)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -193,7 +211,8 @@ fn paths(root: &Path) -> Vec<String> {
 #[test]
 fn preservation_guidance_ships_with_exitbind_and_needs_no_second_installation() {
     let fixture = Fixture::new("preservation-packaging");
-    fixture.call(&["host", "install", "--all"], None);
+    let installed = fixture.call(&["host", "install", "--all"], None);
+    assert!(installed.status.success(), "{installed:?}");
 
     // The delayed reference resolves beside the skill that links to it, in
     // both host locations, as the exact bytes the binary carries.
