@@ -4,13 +4,16 @@ mod matrix {
     include!("compatibility_matrix.rs");
 }
 
+use serde_json::Value;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn fake_curl(root: &Path) {
     let curl = root.join("curl");
+    // The default release this fake serves is always one ahead of the build,
+    // so bumping the package version cannot turn these updates into no-ops.
     fs::write(
         &curl,
         r##"#!/bin/sh
@@ -29,7 +32,8 @@ if [ "$FAKE_INSTALL_RENAME" = "1" ]; then stage="$EXITBIND_INSTALL_PREFIX/.exitb
 printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$target"
 chmod 755 "$target"' > "$out" ;;
 esac
-"##,
+"##
+        .replace("v0.21.$(printf '0')", &available_update_tag()),
     )
     .unwrap();
     fs::set_permissions(&curl, fs::Permissions::from_mode(0o700)).unwrap();
@@ -40,8 +44,15 @@ fn binary(path: &Path, version: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
 }
 
+/// One release ahead of this build. Deriving it means a version bump cannot
+/// quietly turn these updates into no-ops that still pass.
 fn available_update_tag() -> String {
-    format!("v{}.{}.{}", 0, 21, 0)
+    let mut parts = env!("CARGO_PKG_VERSION")
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or_default());
+    let major = parts.next().unwrap_or_default();
+    let minor = parts.next().unwrap_or_default();
+    format!("v{major}.{}.0", minor + 1)
 }
 
 fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
@@ -498,10 +509,33 @@ struct FakeRelease {
 
 impl FakeRelease {
     fn new(label: &str) -> Self {
-        Self::at_version(label, "0.21.0")
+        Self::build(
+            label,
+            Box::leak(
+                available_update_tag()
+                    .trim_start_matches('v')
+                    .to_owned()
+                    .into_boxed_str(),
+            ),
+            None,
+        )
+    }
+
+    /// A release whose artifact is the real candidate binary rather than a
+    /// version-printing stub, so what the old updater installs is the product.
+    fn with_candidate(label: &str, version: &'static str) -> Self {
+        Self::build(
+            label,
+            version,
+            Some(Path::new(env!("CARGO_BIN_EXE_exitbind"))),
+        )
     }
 
     fn at_version(label: &str, version: &'static str) -> Self {
+        Self::build(label, version, None)
+    }
+
+    fn build(label: &str, version: &'static str, candidate: Option<&Path>) -> Self {
         let root = support::temp(label);
         let bin = root.join("bin");
         let release = root.join("release");
@@ -522,12 +556,17 @@ impl FakeRelease {
             other => panic!("unsupported platform {other:?}"),
         };
         let stub = release.join(format!("exitbind-{target}"));
-        fs::write(
-            &stub,
-            format!("#!/bin/sh\nif [ \"$1\" = version ]; then echo {version}; fi\n"),
-        )
-        .unwrap();
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        match candidate {
+            Some(binary) => support::place_executable(binary, &stub),
+            None => {
+                fs::write(
+                    &stub,
+                    format!("#!/bin/sh\nif [ \"$1\" = version ]; then echo {version}; fi\n"),
+                )
+                .unwrap();
+                fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
         let archive = format!("exitbind-{target}.tar.gz");
         let packed = Command::new("tar")
             .current_dir(&release)
@@ -645,7 +684,7 @@ fn real_installer_self_update_keeps_the_new_binary_and_one_aside_copy() {
         .env("PATH", &release.path)
         .env("HOME", release.root.join("home"))
         .env("EXITBIND_INSTALL_PREFIX", prefix)
-        .env("EXITBIND_VERSION", "v0.21.0")
+        .env("EXITBIND_VERSION", available_update_tag())
         .output()
         .unwrap();
     assert!(again.status.success(), "{again:?}");
@@ -685,6 +724,118 @@ fn released_updaters_do_not_truncate_the_binary_the_new_installer_places() {
         release.assert_installed(&output, &target);
     }
     fs::remove_dir_all(&release.root).unwrap();
+}
+
+/// The one upgrade path that cannot be fixed by future source: a genuinely
+/// published updater installing this candidate. Point
+/// `EXITBIND_RELEASED_UPDATER` at a pinned released binary to run it.
+///
+/// What matters after the old process exits is not only that the binary is
+/// whole, but whose guidance is on disk. A released updater re-synchronises the
+/// host bridge from its own embedded copy after the installer finishes, so it
+/// leaves the older guidance behind. This pins that boundary down and tests the
+/// one-time repair the release notes give for it.
+#[test]
+fn a_released_updater_installs_this_candidate_and_its_guidance_needs_one_repair() {
+    let Some(updater) = std::env::var_os("EXITBIND_RELEASED_UPDATER") else {
+        eprintln!("skipped: set EXITBIND_RELEASED_UPDATER to a pinned released exitbind binary");
+        return;
+    };
+    let updater = PathBuf::from(updater);
+    let candidate = Path::new(env!("CARGO_BIN_EXE_exitbind"));
+    let release =
+        FakeRelease::with_candidate("update-released-candidate", env!("CARGO_PKG_VERSION"));
+    let home = release.root.join("home");
+    for host in [".codex", ".claude"] {
+        fs::create_dir_all(home.join(host)).unwrap();
+    }
+
+    let (output, target) = release.self_update(&updater, "released-candidate");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{said}");
+
+    // The installed executable is this candidate, whole and runnable.
+    assert_eq!(
+        digest(&target),
+        digest(candidate),
+        "the installed binary is not the candidate: {said}"
+    );
+    assert!(fs::metadata(&target).unwrap().len() > 0);
+    let installed = support::run(Command::new(&target).arg("version"));
+    assert!(installed.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&installed.stdout).trim(),
+        env!("CARGO_PKG_VERSION")
+    );
+
+    // The guidance on disk is this candidate's, including the delayed
+    // reference that only this version ships.
+    let bootstrap = home.join(".codex/skills/exitbind/SKILL.md");
+    let status = support::run(
+        Command::new(&target)
+            .args(["host", "status", "--json"])
+            .env("HOME", &home)
+            .env("PATH", &release.path)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1"),
+    );
+    assert!(status.status.success(), "{status:?}");
+    let seen: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(seen["binaryVersion"], env!("CARGO_PKG_VERSION"));
+    let codex = |seen: &Value| {
+        seen["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|host| host["host"] == "codex")
+            .unwrap()
+            .clone()
+    };
+
+    // The boundary this test exists to pin down: code already running inside a
+    // released updater re-synchronises the bridge from its own embedded copy
+    // after the installer finishes, so the guidance on disk is the old one.
+    // Future source cannot change that; it can only be recovered from.
+    assert_eq!(
+        codex(&seen)["bootstrapSkill"],
+        "stale",
+        "the released updater's behaviour changed: {}",
+        fs::read_to_string(&bootstrap).unwrap_or_default()
+    );
+
+    // The documented one-time repair, run with the binary that was installed.
+    let repaired = support::run(
+        Command::new(&target)
+            .args(["host", "install", "--hosts", "codex"])
+            .env("HOME", &home)
+            .env("PATH", &release.path)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1"),
+    );
+    assert!(repaired.status.success(), "{repaired:?}");
+    let after = support::run(
+        Command::new(&target)
+            .args(["host", "status", "--json"])
+            .env("HOME", &home)
+            .env("PATH", &release.path)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1"),
+    );
+    let after: Value = serde_json::from_slice(&after.stdout).unwrap();
+    assert_eq!(codex(&after)["bootstrapSkill"], "current");
+    assert_eq!(codex(&after)["installedVersion"], env!("CARGO_PKG_VERSION"));
+    assert!(fs::read_to_string(&bootstrap)
+        .unwrap()
+        .contains(env!("CARGO_PKG_VERSION")));
+    fs::remove_dir_all(&release.root).unwrap();
+}
+
+fn digest(path: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(fs::read(path).unwrap());
+    format!("{:x}", hasher.finalize())
 }
 
 /// Binary current is not host integration current: an up-to-date binary

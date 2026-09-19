@@ -4,7 +4,7 @@ agents = ["claude", "codex", "grok"]
 [[plugins]]
 name = "exitbind"
 source = "envy404/exitbind"
-ref = "v0.20.0"
+ref = "v0.21.0"
 path = "."
 targets = ["claude", "codex", "grok"]
 

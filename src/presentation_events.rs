@@ -12,13 +12,45 @@
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+/// A cache holds at most one small document; anything larger is not ours.
+const CACHE_LIMIT: u64 = 64 * 1024;
+
 /// Derived, replaceable memory of what was last presented for one work item.
-/// This is a cache beside the run state, never a second ledger.
+/// This is a cache beside the run state, never a second ledger: losing it can
+/// only repeat an optional line, and nothing read from it becomes evidence or
+/// instruction.
+fn cache_relative(work: &str) -> String {
+    format!(
+        "{}/presentation/{work}.json",
+        crate::project_layout::state_namespace()
+    )
+}
+
 fn cache_path(state_root: &Path, work: &str) -> PathBuf {
-    state_root
-        .join(crate::project_layout::state_namespace())
-        .join("presentation")
-        .join(format!("{work}.json"))
+    state_root.join(cache_relative(work))
+}
+
+/// Read the remembered presentation as raw text plus its parsed document.
+///
+/// The read follows no symlink at any component, refuses anything that is not
+/// a regular file, and rejects a file that changes underneath it. An oversized,
+/// unsafe, corrupt, or absent cache simply reads as nothing.
+fn remembered(state_root: &Path, work: &str) -> Option<(String, Value)> {
+    let path = cache_path(state_root, work);
+    if std::fs::symlink_metadata(path.as_path()).ok()?.len() > CACHE_LIMIT {
+        return None;
+    }
+    let bytes = match crate::project_path::secure_bytes_observation(
+        state_root,
+        &cache_relative(work),
+        "presentation cache",
+    ) {
+        crate::project_path::SecureBytesResult::Bytes(bytes) => bytes,
+        _ => return None,
+    };
+    let text = String::from_utf8(bytes).ok()?;
+    let document = serde_json::from_str::<Value>(&text).ok()?;
+    Some((text, document))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,68 +120,17 @@ fn known(value: &str) -> Option<&'static str> {
     .find(|candidate| *candidate == value)
 }
 
-fn classify(packet: &Value, progress: &Value) -> Classification {
-    let targets = packet["stillValid"].as_array().cloned().unwrap_or_default();
-    let remaining = packet["remaining"].as_array().cloned().unwrap_or_default();
-    let obligation = |name: &str| {
-        remaining
-            .iter()
-            .any(|item| item["obligation"].as_str() == Some(name))
-    };
-    let valid = |evidence: &str| {
-        targets
-            .iter()
-            .any(|item| item["evidence"].as_str() == Some(evidence))
-    };
-    let check = if obligation("rework_after_failed_check") {
-        "failed"
-    } else if valid("current_check") {
-        "current"
-    } else if obligation("check") {
-        // An earlier check that no longer applies reads as missing work with a
-        // recorded past: the packet's help distinguishes the two.
-        if packet["humanHelp"]["whatHappened"]
-            .as_str()
-            .is_some_and(|text| text.contains("no longer applies"))
-        {
-            "stale"
-        } else {
-            "missing"
-        }
-    } else {
-        "none"
-    };
-    let review = if obligation("review") {
-        "missing"
-    } else if valid("current_review") {
-        "approved"
-    } else if packet["next"].as_str() == Some("lead_decision")
-        && packet["humanHelp"]["whatHappened"]
-            .as_str()
-            .is_some_and(|text| text.contains("given on different tested files"))
-    {
-        "stale"
-    } else {
-        "none"
-    };
-    let preservation = if obligation("rework_after_failed_preservation") {
-        "failed"
-    } else if valid("preservation") {
-        "satisfied"
-    } else if remaining
-        .iter()
-        .any(|item| item["obligation"].as_str() == Some("preservation"))
-    {
-        "active"
-    } else {
-        "none"
-    };
+/// Classify from the canonical facts the work layer already derived. The
+/// packet supplies only structured display metadata - the owner decision and
+/// the preservation provenance - never prose.
+fn classify(packet: &Value, progress: &Value, facts: &Value) -> Classification {
+    let state = |name: &str| known(facts[name].as_str().unwrap_or("none")).unwrap_or("none");
     Classification {
         exit_state: progress["state"].as_str().unwrap_or("UNKNOWN").to_owned(),
         next: packet["next"].as_str().unwrap_or("none").to_owned(),
-        check,
-        review,
-        preservation,
+        check: state("check"),
+        review: state("review"),
+        preservation: state("preservation"),
         owner_decision: packet["humanHelp"]["ownerDecision"]
             .as_str()
             .unwrap_or("unknown")
@@ -246,19 +227,16 @@ pub(crate) fn project(
     work: &str,
     packet: &Value,
     progress: &Value,
+    facts: &Value,
     resumed: bool,
 ) -> Value {
-    let current = classify(packet, progress);
-    let path = cache_path(state_root, work);
-    let stored = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let current = classify(packet, progress, facts);
+    let remembered = remembered(state_root, work);
+    let stored = remembered.as_ref().map(|(_, document)| document);
     let unchanged = stored
-        .as_ref()
         .and_then(|value| value["signature"].as_str())
         .is_some_and(|signature| signature == current.signature());
     let previous = stored
-        .as_ref()
         .map(|value| &value["classification"])
         .and_then(Classification::from_value);
 
@@ -270,7 +248,12 @@ pub(crate) fn project(
         transition(previous.as_ref(), &current)
     };
 
-    remember(&path, &current, state_root);
+    remember(
+        state_root,
+        work,
+        &current,
+        remembered.as_ref().map(|(text, _)| text.as_str()),
+    );
 
     let applicable = progress["applicable"] == Value::Bool(true);
     let neuro = progress["percent"]
@@ -290,7 +273,12 @@ pub(crate) fn project(
     })
 }
 
-fn remember(path: &Path, current: &Classification, state_root: &Path) {
+/// Replace the cache through the hardened writer, and only when it still holds
+/// exactly what this read started from. A refusal - an unsafe path, a file
+/// something else replaced, an unwritable state root - is dropped: the run
+/// state is authoritative and unaffected either way.
+fn remember(state_root: &Path, work: &str, current: &Classification, previous: Option<&str>) {
+    let path = cache_path(state_root, work);
     let Some(directory) = path.parent() else {
         return;
     };
@@ -301,7 +289,13 @@ fn remember(path: &Path, current: &Classification, state_root: &Path) {
         "signature": current.signature(),
         "classification": current.value(),
     });
-    let _ = std::fs::write(path, format!("{document}\n"));
+    let _ = crate::hook_settings::atomic_write(
+        &path,
+        &format!("{document}\n"),
+        Some(0o600),
+        previous,
+        state_root,
+    );
 }
 
 #[cfg(test)]
@@ -319,6 +313,35 @@ mod tests {
             head: "head".to_owned(),
             inputs: "inputs".to_owned(),
         }
+    }
+
+    #[test]
+    fn wording_changes_cannot_move_a_classification() {
+        let facts = json!({"check": "stale", "review": "approved", "preservation": "active"});
+        let packet = |what: &str| {
+            json!({
+                "next": "check",
+                "humanHelp": {"whatHappened": what, "ownerDecision": "not_required"},
+                "snapshot": {"headEventSha256": "head", "inputsSha256": "inputs"},
+            })
+        };
+        let progress = json!({"state": "BLOCKED", "percent": 40, "applicable": true});
+        let english = classify(
+            &packet("Earlier evidence no longer applies."),
+            &progress,
+            &facts,
+        );
+        let reworded = classify(
+            &packet("이전 증거는 더 이상 적용되지 않습니다."),
+            &progress,
+            &facts,
+        );
+        let silent = classify(&packet(""), &progress, &facts);
+        assert_eq!(english, reworded);
+        assert_eq!(english, silent);
+        assert_eq!(english.check, "stale");
+        assert_eq!(english.preservation, "active");
+        assert_eq!(english.signature(), reworded.signature());
     }
 
     #[test]

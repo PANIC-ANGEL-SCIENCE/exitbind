@@ -24,7 +24,7 @@ With Exitbind
   Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current stable release: `v0.20.0`. One local binary; it calls no model and runs
+Current stable release: `v0.21.0`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -33,13 +33,13 @@ no daemon or cloud service.
 
 ## See a wrong door refused
 
-This page describes `v0.20.0` for Linux x86_64 and macOS on Apple Silicon or
+This page describes `v0.21.0` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
 verifies the archive checksum. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.20.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.21.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -183,7 +183,7 @@ project writes:
 
 ```sh
 # Codex
-codex plugin marketplace add envy404/exitbind --ref v0.20.0
+codex plugin marketplace add envy404/exitbind --ref v0.21.0
 codex plugin add exitbind@exitbind-plugins
 
 # Claude Code
@@ -191,7 +191,7 @@ claude plugin marketplace add envy404/exitbind
 claude plugin install exitbind@exitbind-plugins
 ```
 
-The Codex command pins `v0.20.0`; Claude Code follows the repository's current
+The Codex command pins `v0.21.0`; Claude Code follows the repository's current
 default branch. The plugin contains the Exitbind skill only: it installs no CLI,
 hook, MCP server, app, or model.
 
@@ -232,6 +232,12 @@ can use:
 exitbind update
 exitbind work resume
 ```
+
+Updating *from* an earlier release leaves that release's host guidance in place:
+its updater re-synchronises the bridge from its own copy after the new binary is
+installed. Run `exitbind host install` once afterwards, or install with the
+command above instead of updating. From this release on, the newly installed
+binary owns that step and `exitbind update` keeps the guidance current.
 
 Removing the default binary with `rm "$HOME/.local/bin/exitbind"` does not delete
 project ledgers, receipts, configuration, or projected skills. Remove optional

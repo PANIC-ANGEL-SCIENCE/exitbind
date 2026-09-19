@@ -199,11 +199,23 @@ fn ordinary_turns_and_invalid_or_unconfigured_inputs_remain_silent() {
     assert_eq!(snapshot(&fixture.base), malformed_before);
 }
 
+/// One release ahead of whatever this build is, so a version bump cannot
+/// silently turn the update notice off and pass the test anyway.
+fn newer_version() -> String {
+    let mut parts = env!("CARGO_PKG_VERSION")
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or_default());
+    let major = parts.next().unwrap_or_default();
+    let minor = parts.next().unwrap_or_default();
+    format!("v{major}.{}.0", minor + 1)
+}
+
 #[test]
 fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     let fixture = Fixture::new("portable");
     let cache = fixture.base.join("cache/soulmate");
-    let next = "v0.21.0";
+    let next = newer_version();
+    let next = next.as_str();
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),
@@ -306,7 +318,8 @@ fn failed_session_lookup_backs_off_and_opt_out_stays_silent() {
 fn stale_session_cache_refreshes_with_local_fake_curl() {
     let fixture = Fixture::new("portable");
     let cache = fixture.base.join("cache/soulmate");
-    let next = "v0.21.0";
+    let next = newer_version();
+    let next = next.as_str();
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),

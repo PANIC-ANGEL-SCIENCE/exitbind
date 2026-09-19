@@ -353,7 +353,9 @@ fn inspect_skill(path: &Path, content: &str) -> Result<SkillRefreshState, String
             if existing == content {
                 return Ok(SkillRefreshState::Unchanged);
             }
-            if !existing.lines().any(|line| line == SKILL_MARKER) {
+            // Either managed marker makes this file ours to refresh; anything
+            // else is the operator's and is never overwritten.
+            if !has_managed_marker(existing.as_bytes()) {
                 return Err(format!(
                     "refusing to overwrite existing project skill: {}",
                     path.display()

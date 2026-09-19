@@ -9,9 +9,9 @@ relabels its evidence as new evidence.
 
 ## Rename history
 
-`v0.20.0` keeps the existing version and repository history rather than resetting
-to `0.0.1`. The published tag line, the release assets, and the run-event format
-numbers continue across the rename. See the
+The rename kept the existing version and repository history rather than
+resetting to `0.0.1`. The published tag line, the release assets, and the
+run-event format numbers continue across it. See the
 [public format map](../CHANGELOG.md#public-tags-and-format-readers) before
 choosing a rollback or release channel.
 

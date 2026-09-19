@@ -45,7 +45,9 @@ number and never show one when no governed run applies. `work next` and
 `work resume` return a `presentation` block: render `neuro` as written, and when
 `phrase` is present add that one short line in the user's language. Say nothing
 extra when it is absent - repeated reads of an unchanged state stay quiet. When
-the run reaches `EXIT READY`, say exactly that and add no flavour line.
+the run reaches `EXIT READY`, write exactly `EXIT READY` on its own line: no
+suffix, no trailing clause, no celebratory sentence. Facts worth reporting go in
+their own sentences before it.
 
 Do not add a routine Holytail progress report. When the presentation block
 carries a `holytail` line, place it directly above the Neuro line with no blank

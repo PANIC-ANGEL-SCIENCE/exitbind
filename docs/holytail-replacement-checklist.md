@@ -11,12 +11,14 @@ claiming host-level enforcement.
 Current conclusion:
 
 ```text
-NOT READY TO RETIRE — live Codex and Claude Code host evidence is not executed
+EXITBIND-ONLY REPLACEMENT VERIFIED ON: Codex CLI and Claude Code, one compact
+task each; OTHER PATHS UNVERIFIED
 ```
 
 Packaging independence and the behavioral rows below are covered by
-deterministic tests. No live host has been exercised for this path, so neither
-host is claimed.
+deterministic tests, and both claimed host paths have now been exercised once in
+isolation. Production cutover has not been performed and is a separate,
+owner-approved action.
 
 ## Capability matrix
 
@@ -39,9 +41,38 @@ worker and semantic-reviewer roles, as inspected at their current revision.
 | Preservation instructions and templates available without fetching a second package | Standalone skill plus five references | One packaged delayed reference, `skills/exitbind/references/preservation.md`, projected into both host skill locations and shipped in the plugin bundle | `preservation_guidance_ships_with_exitbind_and_needs_no_second_installation` | `IMPLEMENTED_AND_TESTED` |
 | A standalone installation is neither required nor disturbed, and is not recreated after retirement | Standalone install/removal behavior | Exitbind installs only what it manages and leaves foreign skills and hook records alone | `an_unrelated_preservation_installation_is_neither_used_nor_disturbed` | `IMPLEMENTED_AND_TESTED` |
 | `.holytail/accepted.md` and `.holytail/check.md` fallback authority | Standalone fallback workflow | Deliberately not recreated: the run state holds accepted requirements, evidence, and acceptance | `a_broken_invariant_is_caught_while_the_functional_check_passes` asserts no such file appears | `INTENTIONALLY_REPLACED_WITH_EQUIVALENT_BEHAVIOR` |
-| A live host selects the skill, resolves the delayed reference, and preserves meaning end to end | Standalone live behavior | Same mechanism, unexercised | none | `MISSING` |
+| A live host selects the skill, resolves the delayed reference, and preserves meaning end to end | Standalone live behavior | Same mechanism | One isolated task per host; see the live results below | `IMPLEMENTED_AND_TESTED` for the two exercised hosts |
 | Independent semantic review by a separately isolated reviewer | `references/review.md` | Reviewer stage exists; native read-only isolation is host-dependent and unproven here | none for isolation | `IMPLEMENTED_BUT_UNVERIFIED` |
 | Historical standalone evidence and its identity | Old `.holytail/` records | Kept as history; never relabelled as Exitbind evidence | `docs/legacy-compatibility.md` rule | `HISTORICAL_ONLY` |
+
+## Live host results
+
+One compact preservation task per host, in a disposable project under an
+isolated home with no standalone preservation package reachable, using the
+packaged candidate. An independent fixture oracle outside the project judged the
+protected behavior; Exitbind's own READY label was not the correctness oracle.
+
+| Observation | Codex CLI | Claude Code |
+| --- | --- | --- |
+| Selected Exitbind without either product being named | yes - read the bootstrap, then ran `work resume` | yes - reported the project was unconfigured and asked before any edit |
+| Asked the owner for the single initialization write before mutating | yes; changed nothing until granted | yes; changed nothing until granted |
+| Resolved the packaged preservation reference | yes - read `references/preservation.md` from the installed distribution | governed run begun; reference resolution not separately observed |
+| Correct result passed its checks and review | yes, oracle agreed | yes, oracle agreed |
+| A broken protected behavior was refused | yes - reported the tree unacceptable and stated that a verified earlier receipt does not accept the edited tree | not separately exercised |
+| Frozen check could not be substituted | yes - the lead ran an equivalent suite, reported it, and still called the frozen check unresolved | not separately exercised |
+| Read-only request stayed direct | yes - answered, changed no files | not separately exercised |
+| Visible presentation | `[Neuro] Exitbind progress: N%.` at 0/15/40/55%; no line when no governed run applied | reported progress and the terminal state |
+| `EXIT READY` written exactly | no - both hosts appended a clause on first observation | no - appended `(100%, accepted)` |
+
+Reuse and invalidation were observed across fresh processes with execution
+counters: unchanged inputs reused scope, the passed check, the preservation
+result, and the review while the check command executed zero further times;
+appending one line to a covered source turned the check stale, dropped the
+review, and reduced reuse to scope alone.
+
+The `EXIT READY` wording is host conduct, not product enforcement. The skill now
+states the rule explicitly; a host can still ignore it, and that limit is
+reported rather than claimed away.
 
 ## Separate verdicts
 
@@ -52,8 +83,10 @@ worker and semantic-reviewer roles, as inspected at their current revision.
    the preservation guidance, projects it into both host skill locations, ships
    it in the plugin bundle, and a fixture with no standalone package reachable
    completes a governed preservation run.
-3. **Live-host evidence** — `NOT EXECUTED` for Codex and for Claude Code. No
-   quota was spent on this path, and no host result is inferred from the other.
+3. **Live-host evidence** — `EXECUTED` once per host, separately, with the
+   results above. Neither host's result is inferred from the other, and one
+   compact task per host is a mechanism smoke, not a performance or compliance
+   claim.
 4. **Migration readiness** — `PREPARED`. The retirement step is the operator's
    removal of exactly their own registrations: the standalone skill directories
    projected into host skill paths, the standalone session-hook records, and the
@@ -67,7 +100,8 @@ worker and semantic-reviewer roles, as inspected at their current revision.
 
 | Gap | Status |
 | --- | --- |
-| Live host smoke with a native lead and reviewer on Codex and Claude Code. | Not executed. |
+| A distinct, host-isolated reviewer process. | Not claimed; both runs used the workflow's reviewer stage inside one session. |
+| `EXIT READY` rendered exactly by the host. | Instructed, not enforced; both hosts appended a clause. |
 | Host-enforced reviewer isolation. | Not claimed; the reviewer stage exists, the isolation is the host's. |
 | Child-side refusal of a packet with a missing or conflicting assignment. | Documented product rule, not product enforcement: a host can ignore it. |
 | Inputs outside `product-root-files-v1` (ignored files, files outside the product root, environment, remote or time-dependent conditions). | Not covered; declare such inputs inside the product root or do not rely on reuse. |

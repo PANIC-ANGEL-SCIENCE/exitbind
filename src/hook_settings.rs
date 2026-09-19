@@ -236,6 +236,16 @@ pub(crate) fn require_compatible_command(protocol: &str) -> Result<(), String> {
     }
 }
 
+/// Replace one managed file atomically, refusing anything that is not the
+/// ordinary file this process expects.
+///
+/// The parent chain is validated, the target must be a regular file with the
+/// exact expected contents (`None` means it must not exist yet), the temporary
+/// is created exclusively, and the rename replaces the name rather than
+/// writing through it - so a symlink planted at the target overwrites nothing.
+/// Both checks run again immediately before the rename. That narrows the race
+/// window; it is not a guarantee against a determined same-account attacker
+/// who can win it.
 pub(crate) fn atomic_write(
     target: &Path,
     serialized: &str,
@@ -243,7 +253,7 @@ pub(crate) fn atomic_write(
     expected_source: Option<&str>,
     real_root: &Path,
 ) -> Result<(), String> {
-    let directory = target.parent().ok_or("hook settings has no parent")?;
+    let directory = target.parent().ok_or("managed file has no parent")?;
     ensure_directory(directory, real_root, target)?;
     assert_unchanged(target, expected_source)?;
     let temporary = directory.join(format!(
@@ -280,7 +290,7 @@ fn assert_unchanged(target: &Path, expected: Option<&str>) -> Result<(), String>
                 Ok(())
             } else {
                 Err(format!(
-                    "hook settings changed during update: {}",
+                    "managed file changed during update: {}",
                     target.display()
                 ))
             };
@@ -289,7 +299,7 @@ fn assert_unchanged(target: &Path, expected: Option<&str>) -> Result<(), String>
     };
     if info.file_type().is_symlink() || !info.is_file() {
         return Err(format!(
-            "hook settings file must be an ordinary file: {}",
+            "managed file must be an ordinary file: {}",
             target.display()
         ));
     }
@@ -298,7 +308,7 @@ fn assert_unchanged(target: &Path, expected: Option<&str>) -> Result<(), String>
             let current = read_utf8(target)?;
             if current != expected {
                 Err(format!(
-                    "hook settings changed during update: {}",
+                    "managed file changed during update: {}",
                     target.display()
                 ))
             } else {
@@ -306,7 +316,7 @@ fn assert_unchanged(target: &Path, expected: Option<&str>) -> Result<(), String>
             }
         }
         None => Err(format!(
-            "hook settings changed during update: {}",
+            "managed file changed during update: {}",
             target.display()
         )),
     }
@@ -445,5 +455,43 @@ fn set_mode(file: &File, mode: u32) -> Result<(), String> {
     {
         let _ = (file, mode);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::atomic_write;
+    use std::fs;
+
+    #[test]
+    fn a_target_that_changed_since_it_was_read_is_not_replaced() {
+        let root = std::env::temp_dir().join(format!("exitbind-cas-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("managed.json");
+        fs::write(&target, b"what someone else wrote\n").unwrap();
+
+        // The writer is handed the contents of an earlier read; the file no
+        // longer holds them, so it keeps what is actually there.
+        let refused = atomic_write(
+            &target,
+            "replacement\n",
+            Some(0o600),
+            Some("what this process read\n"),
+            &root,
+        );
+        assert!(refused.is_err(), "{refused:?}");
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "what someone else wrote\n"
+        );
+
+        // Expecting no file at all is equally refused once one exists.
+        assert!(atomic_write(&target, "replacement\n", None, None, &root).is_err());
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "what someone else wrote\n"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 }

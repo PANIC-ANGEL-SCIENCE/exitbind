@@ -206,11 +206,13 @@ fn next_and_residual(
     let snapshot = run::RunSnapshot::capture(loaded, ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
     let residual = crate::work_packet::project(work, &snapshot, &next)?;
+    let facts = crate::work_packet::facts(&snapshot, &next)?;
     let presentation = crate::presentation_events::project(
         &loaded.state_root,
         work,
         &residual,
         &next["progress"],
+        &facts,
         resumed,
     );
     Ok((next, residual, presentation))

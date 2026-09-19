@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.21.0
 
 - The host bridge can no longer be downgraded by an older process. `exitbind
   update` hands post-update bridge synchronization to the newly installed
@@ -18,6 +18,25 @@
   progress.
 - `exitbind host install --all` is accepted again; the flag was documented but
   rejected by the argument parser.
+- Updating from `v0.20.0` or earlier needs one repair afterwards. That released
+  updater re-synchronises the host bridge from its own embedded copy once the
+  installer has finished, so the older guidance is left in place; run
+  `exitbind host install` once with the new binary, or install directly with the
+  installer command. Code already inside a published release cannot be changed,
+  so this is a recovery step, not a fix. From this release on, the newly
+  installed binary owns that step.
+- The presentation cache is written through the hardened managed-file writer and
+  read without following symlinks: a file planted at the cache path is refused
+  rather than overwritten, and a cache that cannot be read is left untouched and
+  treated as absent. Losing the cache can only repeat an optional line; it never
+  changes evidence, acceptance, or reuse.
+- `exitbind init --refresh-skills` refreshes an Exitbind-managed project skill
+  again. It recognised only the previous product's marker, so the command the
+  CLI tells operators to run refused its own files.
+- Presentation classification is derived from the same canonical run facts the
+  work decisions use, so rewording or translating human help can no longer move
+  a state or a transition. A partial set of passing checks is no longer reported
+  as current.
 - Preservation no longer depends on a second installation. The distribution
   carries `skills/exitbind/references/preservation.md`, projects it beside the
   project skill for both hosts, and ships it in the plugin bundle. A governed

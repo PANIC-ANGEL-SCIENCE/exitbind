@@ -8,7 +8,7 @@ fresh attempt. The [authority boundary](../REFERENCE.md#authority-boundary)
 defines who owns each action; [SECURITY.md](../SECURITY.md) defines what the
 local evidence can establish.
 
-In `v0.20.0`, new checked runs use run-event format 6. Exitbind binds each submission, check,
+In `v0.21.0`, new checked runs use run-event format 6. Exitbind binds each submission, check,
 review, and acceptance result to the run's exact Accepted Subject and records
 the tested-input identity of the product root; a stale subject or changed
 tested inputs are refused. Historical v1–v5 ledgers remain readable under their
@@ -265,7 +265,7 @@ recorded bytes. Intentional governing-input changes need explicit
 [supersession](../REFERENCE.md#run-and-recovery) where permitted; accepted and
 rejected predecessors remain final.
 
-For the stable `v0.20.0` release, `run observe-check` can execute only the frozen
+For the stable `v0.21.0` release, `run observe-check` can execute only the frozen
 command locally while v3 ledgers remain report-only. After updating the binary, refresh owned project skills with `exitbind init
 --refresh-skills --root .` and reload the host. Keep a binary compatible with
 run-event format 3 for checked-ledger rollback. Remove optional hooks before

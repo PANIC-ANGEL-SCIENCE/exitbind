@@ -42,6 +42,76 @@ pub(crate) fn project(work: &str, snapshot: &RunSnapshot, next: &Value) -> Resul
     Ok(project_from(work, &view, &status, next, snapshot.inputs()))
 }
 
+/// The canonical state facts the conversational layer classifies from.
+///
+/// They come from the same reduced snapshot, check targets, and review
+/// assessment that drive work decisions, so rewording or translating human
+/// help can never move a classification. Presentation reads these; it never
+/// reads display text.
+pub(crate) fn facts(snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
+    let view = snapshot.inspect_view();
+    let status = if view["status"] == "running" {
+        snapshot.status_view()?
+    } else {
+        Value::Null
+    };
+    Ok(facts_from(&view, &status, next))
+}
+
+fn facts_from(view: &Value, status: &Value, next: &Value) -> Value {
+    if view["status"] != "running" {
+        // A terminal run is history; it carries no current obligation.
+        return json!({"check": "none", "review": "none", "preservation": "none"});
+    }
+    let targets = status["checks"]["targets"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let of_kind = |preservation: bool| {
+        targets
+            .iter()
+            .filter(|target| (target["kind"] == "preservation") == preservation)
+            .cloned()
+            .collect::<Vec<Value>>()
+    };
+    let any = |group: &[Value], status_name: &str| {
+        group.iter().any(|target| target["status"] == status_name)
+    };
+    let checks = of_kind(false);
+    let preservations = of_kind(true);
+    // Precedence is deliberate: a failure outranks a gap, and a gap outranks
+    // the evidence that did pass, so a partial set is never reported current.
+    let check = if any(&checks, "failed") {
+        "failed"
+    } else if let Some(missing) = checks.iter().find(|target| target["status"] == "missing") {
+        if stale_check(view, missing) {
+            "stale"
+        } else {
+            "missing"
+        }
+    } else if any(&checks, "passed") {
+        "current"
+    } else {
+        "none"
+    };
+    let preservation = if any(&preservations, "failed") {
+        "failed"
+    } else if any(&preservations, "missing") {
+        "active"
+    } else if any(&preservations, "passed") {
+        "satisfied"
+    } else {
+        "none"
+    };
+    let review = match review_state(view) {
+        _ if next["role"] == "reviewer" => "missing",
+        ReviewState::Current if next["action"] == "lead_decision" => "approved",
+        ReviewState::Stale if next["action"] == "lead_decision" => "stale",
+        _ => "none",
+    };
+    json!({"check": check, "review": review, "preservation": preservation})
+}
+
 fn head(view: &Value) -> Value {
     view["events"]
         .as_array()

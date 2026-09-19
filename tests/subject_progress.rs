@@ -155,8 +155,9 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
     assert!(
         text.contains("never estimate the\nnumber and never show one when no governed run applies")
     );
-    // The terminal transition speaks for itself.
-    assert!(text.contains("`EXIT READY`, say exactly that and add no flavour line"));
+    // The terminal transition speaks for itself: exactly the two words, with
+    // no suffix or clause attached to them.
+    assert!(text.contains("write exactly `EXIT READY` on its own line: no\nsuffix, no trailing clause, no celebratory sentence"));
     // Holytail sits directly above the Neuro line only when it applies.
     assert!(text.contains(
         "directly above the Neuro line with no blank\nline between them; otherwise omit it"

@@ -393,3 +393,44 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
     }
     fs::remove_dir_all(base).unwrap();
 }
+
+/// An Exitbind-managed project skill is refreshable by the command the CLI
+/// tells operators to run. The legacy marker is not the only one that counts.
+#[test]
+fn refresh_accepts_the_current_managed_marker() {
+    let root = support::temp("refresh-current-marker");
+    let initialized = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(initialized.status.success(), "{initialized:?}");
+    let skill = root.join(".agents/skills/exitbind/SKILL.md");
+    let managed = std::fs::read_to_string(&skill).unwrap();
+    assert!(managed.contains("<!-- exitbind-managed-skill:v1 -->"));
+    std::fs::write(&skill, format!("{managed}\nan older managed body\n")).unwrap();
+
+    let refreshed = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--refresh-skills", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(
+        refreshed.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&refreshed.stdout),
+        String::from_utf8_lossy(&refreshed.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(&skill).unwrap(), managed);
+
+    // A file Exitbind does not manage is still refused.
+    std::fs::write(&skill, "# the operator's own skill\n").unwrap();
+    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--refresh-skills", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("refusing to overwrite"));
+    std::fs::remove_dir_all(&root).unwrap();
+}
