@@ -288,13 +288,14 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "return" => {
-            args::assert_options("work return", a, &["config", "outcome"])?;
+            args::assert_options("work return", a, &["config", "outcome", "reason"])?;
             args::assert_positionals("work return", a, 3)?;
             print_json(&crate::work::return_result(
                 l,
                 positional(a, 1, "work return requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work return requires WORK ASSIGNMENT")?,
                 option(a, "outcome", "work return requires --outcome OUTCOME")?,
+                a.options.get("reason").map(String::as_str),
             )?)
         }
         "check" => {
@@ -720,7 +721,7 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         ][..],
         "next" => &["config", "json", "text"][..],
         "inspect" => &["config", "json"][..],
-        "submit" => &["config", "outcome", "artifact", "artifact-root", "json", "event-id"][..],
+        "submit" => &["config", "outcome", "artifact", "artifact-root", "reason", "json", "event-id"][..],
         "record-check" => &[
             "config",
             "target",
@@ -813,6 +814,7 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "outcome", "run submit requires --outcome")?,
                 option(a, "artifact", "run submit requires --artifact")?,
                 a.options.get("artifact-root").map(String::as_str),
+                a.options.get("reason").map(String::as_str),
             )
         }
         "inspect" => {

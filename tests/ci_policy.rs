@@ -290,3 +290,85 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         assert!(block.find("actions/checkout@").unwrap() < block.find(assertion).unwrap());
     }
 }
+
+/// The context-surface inventory is a measurement, not a gate. It must report
+/// the same numbers from any working directory — otherwise a later context
+/// audit would compare against an environment, not against the repository —
+/// and it must not print where the repository happens to be checked out.
+#[cfg(unix)]
+#[test]
+fn context_surface_inventory_is_reproducible_and_path_free() {
+    use std::process::Command;
+
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/context-surface-inventory.sh");
+    let run = |cwd: &Path| {
+        let output = Command::new("sh")
+            .arg(&script)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let here = run(root);
+    let elsewhere = run(Path::new("/"));
+    assert_eq!(
+        here, elsewhere,
+        "the inventory must not depend on the working directory"
+    );
+
+    // Every measured surface, with the stage label that says when a session
+    // reads it, appears in the report.
+    for surface in [
+        "AGENTS.md",
+        "skills/exitbind-bootstrap/SKILL.md",
+        "skills/exitbind/SKILL.md",
+        "skills/exitbind/references/preservation.md",
+        "plugins/exitbind/skills/exitbind/SKILL.md",
+    ] {
+        assert!(here.contains(surface), "inventory omits {surface}");
+    }
+    for stage in [
+        "bootstrap",
+        "activated-skill",
+        "delayed-reference",
+        "packaged-duplicate",
+    ] {
+        assert!(here.contains(stage), "inventory omits stage {stage}");
+    }
+
+    // Leave the absolute checkout path out: no root prefix, no home directory.
+    let absolute = root.to_str().unwrap();
+    assert!(
+        !here.contains(absolute),
+        "inventory leaks the checkout path"
+    );
+    if let Some(home) = std::env::var_os("HOME").and_then(|home| home.into_string().ok()) {
+        assert!(!here.contains(&home), "inventory leaks the home directory");
+    }
+
+    // The report is sizes, not estimates: every measured line carries integer
+    // bytes and lines, and no provider token count is invented.
+    let rows: Vec<&str> = here
+        .lines()
+        .filter(|line| line.contains("skills/") || line.starts_with("AGENTS.md"))
+        .collect();
+    assert!(!rows.is_empty(), "no measured rows: {here}");
+    for row in rows {
+        let numbers: Vec<&str> = row
+            .split_whitespace()
+            .filter(|field| field.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        assert_eq!(
+            numbers.len(),
+            2,
+            "row must carry byte and line counts only: {row}"
+        );
+    }
+    assert!(
+        !here.to_lowercase().contains("token"),
+        "the inventory must not estimate provider tokens: {here}"
+    );
+}

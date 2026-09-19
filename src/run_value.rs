@@ -623,7 +623,7 @@ fn validate_requirement_text(text: &str) -> Result<(), &'static str> {
 }
 
 pub(crate) fn validate_check_event(event: &Value, line: usize) -> Result<(), String> {
-    if matches!(event["version"].as_u64(), Some(4..=6)) {
+    if matches!(event["version"].as_u64(), Some(4..=7)) {
         return validate_check_event_v4(event, line);
     }
     let record: CheckObservation = serde_json::from_value(event.clone())
@@ -787,7 +787,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
     };
     if !required.iter().all(|key| object.contains_key(*key))
         || (event["version"].as_u64() >= Some(5) && !object.contains_key("subjectSha256"))
-        || !matches!(record.version, 4..=6)
+        || !matches!(record.version, 4..=7)
         || record.kind != "run"
         || record.action != CheckAction::Check
         || !crate::producer::valid(&record.producer)
@@ -823,7 +823,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
 }
 
 pub(crate) fn validate_protection_event(event: &Value, line: usize) -> Result<(), String> {
-    if matches!(event["version"].as_u64(), Some(4..=6)) {
+    if matches!(event["version"].as_u64(), Some(4..=7)) {
         return validate_protection_event_v4(event, line);
     }
     let record: ProtectionRecord = serde_json::from_value(event.clone())
@@ -941,7 +941,7 @@ fn validate_protection_event_v4(event: &Value, line: usize) -> Result<(), String
         .get("checkEvidence")
         .and_then(Value::as_array)
         .ok_or_else(|| format!("invalid run ledger line {line}: malformed protection evidence"))?;
-    if !matches!(event["version"].as_u64(), Some(4..=6))
+    if !matches!(event["version"].as_u64(), Some(4..=7))
         || event["kind"] != "run"
         || event["action"] != "protect"
         || !crate::producer::valid(&event["producer"])
@@ -1150,7 +1150,7 @@ pub(crate) fn validate_check_against_state(
     let policy_matches = event["checkCommand"] == command
         && event["checkCommandSha256"] == command_sha256
         && event["origin"] == origin.as_str();
-    let shape_matches = if matches!(version, 4..=6) {
+    let shape_matches = if matches!(version, 4..=7) {
         event["version"] == version
             && matches!(event["acquisition"].as_str(), Some("reported" | "observed"))
     } else {
@@ -1201,7 +1201,7 @@ pub(crate) fn validate_protection_against_state(
         .iter()
         .filter(|target| target.is_missing() || target.is_failed())
         .map(|target| {
-            if matches!(state["version"].as_u64(), Some(4..=6)) {
+            if matches!(state["version"].as_u64(), Some(4..=7)) {
                 target.protection_value()
             } else {
                 target.value()
@@ -1248,7 +1248,7 @@ pub(crate) fn protection_event(
         .iter()
         .filter(|target| target.is_missing() || target.is_failed())
         .map(|target| {
-            if matches!(version, 4..=6) {
+            if matches!(version, 4..=7) {
                 target.protection_value()
             } else {
                 target.value()
@@ -1591,14 +1591,14 @@ fn human_checks(
     } else {
         HumanCheckState::Passed
     };
-    if !matches!(version, 4..=6) {
+    if !matches!(version, 4..=7) {
         for target in &mut targets {
             target.acquisition = Some("reported".to_owned());
         }
     }
     HumanChecks {
         state,
-        observed_capable: matches!(version, 4..=6),
+        observed_capable: matches!(version, 4..=7),
         command: Some(policy.command.clone()),
         command_sha256: Some(policy.command_sha256.clone()),
         origin: Some(policy.origin.as_str().to_owned()),
@@ -1607,7 +1607,7 @@ fn human_checks(
 }
 
 fn check_guidance(state: &Value) -> &'static str {
-    if matches!(state["version"].as_u64(), Some(4..=6)) {
+    if matches!(state["version"].as_u64(), Some(4..=7)) {
         "observe the frozen check locally with run observe-check, or report the actual result from the host with run record-check, for every current worker target"
     } else {
         "run the configured check in its host and report the actual result for every current worker target with run record-check"

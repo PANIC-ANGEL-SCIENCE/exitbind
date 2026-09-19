@@ -84,9 +84,24 @@
         "host": { "type": "string", "minLength": 1 },
         "model": { "type": "string", "minLength": 1 },
         "reasoningEffort": { "type": "string", "minLength": 1 },
-        "fallback": { "type": "string", "minLength": 1 }
+        "fallback": {
+          "oneOf": [
+            { "const": "none" },
+            { "$ref": "#/$defs/runtimeBinding" }
+          ]
+        }
       },
       "additionalProperties": false
+    },
+    "runtimeBinding": {
+      "type": "object",
+      "properties": {
+        "host": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "model": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "reasoningEffort": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
     },
     "memory": {
       "type": "object",

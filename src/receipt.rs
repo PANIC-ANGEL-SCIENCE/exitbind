@@ -599,6 +599,10 @@ fn plan_profiles(plan: &Value) -> Result<BTreeMap<String, Value>, String> {
             .as_array()
             .ok_or("run plan agents are missing")?
         {
+            // One selected agent is one reviewer contract. Its authorized
+            // alternate binding travels inside `requestedRuntime.fallback`, so
+            // the receipt binds the contract and the alternative together
+            // without pretending a second contract exists.
             let name = agent["name"]
                 .as_str()
                 .ok_or("run plan agent name is missing")?;

@@ -35,6 +35,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "proof-origin",
     "purpose",
     "project-id",
+    "reason",
     "receipt",
     "requirement",
     "root",

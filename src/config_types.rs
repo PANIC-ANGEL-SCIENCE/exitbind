@@ -55,8 +55,62 @@ pub struct RuntimeConfig {
     pub model: Option<String>,
     #[serde(rename = "reasoningEffort", default)]
     pub reasoning_effort: Option<String>,
+    /// "none" declines fallback; otherwise an alternate execution binding for
+    /// this same agent.
     #[serde(default = "default_fallback")]
-    pub fallback: String,
+    pub fallback: Fallback,
+}
+
+/// An alternate execution binding authorized for an agent whose primary binding
+/// cannot run.
+///
+/// A fallback never names another agent. It therefore carries no profile,
+/// purpose, or declared boundary, and substituting it cannot exchange the
+/// reviewer contract for a second, possibly weaker, one.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Fallback {
+    /// The literal "none": no substitution is authorized.
+    Declined(String),
+    Runtime(RuntimeBinding),
+}
+
+/// Where a role executes: host, model, and reasoning effort, and nothing that
+/// could carry authority.
+#[derive(Clone, Debug, Deserialize)]
+pub struct RuntimeBinding {
+    #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(rename = "reasoningEffort", default)]
+    pub reasoning_effort: Option<String>,
+}
+
+impl Fallback {
+    pub fn runtime(&self) -> Option<&RuntimeBinding> {
+        match self {
+            Self::Runtime(binding) => Some(binding),
+            Self::Declined(_) => None,
+        }
+    }
+
+    fn value(&self) -> Value {
+        match self {
+            Self::Declined(declined) => json!(declined),
+            Self::Runtime(binding) => binding.value(),
+        }
+    }
+}
+
+impl RuntimeBinding {
+    pub fn value(&self) -> Value {
+        json!({
+            "host": self.host,
+            "model": self.model,
+            "reasoningEffort": self.reasoning_effort,
+        })
+    }
 }
 
 impl Default for RuntimeConfig {
@@ -70,8 +124,8 @@ impl Default for RuntimeConfig {
     }
 }
 
-fn default_fallback() -> String {
-    "none".to_owned()
+fn default_fallback() -> Fallback {
+    Fallback::Declined("none".to_owned())
 }
 
 pub fn from_validated_agents(
@@ -92,7 +146,7 @@ impl AgentConfig {
             "host": self.runtime.host,
             "model": self.runtime.model,
             "reasoningEffort": self.runtime.reasoning_effort,
-            "fallback": self.runtime.fallback,
+            "fallback": self.runtime.fallback.value(),
         })
     }
 

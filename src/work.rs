@@ -68,6 +68,7 @@ pub(crate) fn return_result(
     work: &str,
     assignment: &str,
     outcome: &str,
+    reason: Option<&str>,
 ) -> Result<Value, String> {
     if outcome.trim().is_empty() {
         return Err("work return requires --outcome OUTCOME".into());
@@ -81,11 +82,15 @@ pub(crate) fn return_result(
         return Err("assignment is not the current pending work action".into());
     }
     let expected = run::AssignmentIdentity::from_action(&action)?;
+    // `unavailable` is admissible only for a reviewer, and only to report that
+    // the target could not execute — never to escape an adverse verdict, which
+    // the reducer refuses independently.
     let allowed = action["role"] == "lead"
         && action["outcomes"]
             .as_array()
             .is_some_and(|outcomes| outcomes.iter().any(|item| item == outcome))
-        || action["role"] == "reviewer" && ["approved", "rework", "blocked"].contains(&outcome)
+        || action["role"] == "reviewer"
+            && ["approved", "rework", "blocked", "unavailable"].contains(&outcome)
         || matches!(action["role"].as_str(), Some("worker" | "adviser"))
             && ["completed", "blocked"].contains(&outcome);
     if !allowed {
@@ -97,9 +102,10 @@ pub(crate) fn return_result(
     std::io::stdin()
         .read_to_end(&mut bytes)
         .map_err(|error| format!("work result could not be read: {error}"))?;
-    let _submitted = run::submit_for_assignment(loaded, &ledger, expected, outcome, || {
-        write_artifact(loaded, work, assignment, &bytes)
-    })?;
+    let _submitted =
+        run::submit_for_assignment(loaded, &ledger, expected, outcome, reason, || {
+            write_artifact(loaded, work, assignment, &bytes)
+        })?;
     // The decision that reaches a terminal state is exactly where its display
     // belongs: returning it here means the caller copies the product's own
     // wording instead of assembling a sentence from status and progress.

@@ -344,15 +344,56 @@ fn validate_runtime(name: &str, value: &Value, errors: &mut Vec<String>) {
     };
     let fields = ["host", "model", "reasoningEffort", "fallback"];
     reject_unknown(runtime, &fields, &format!("agents.{name}.runtime"), errors);
-    for field in fields {
+    for field in BINDING_FIELDS {
         if runtime
-            .get(field)
+            .get(*field)
             .is_some_and(|value| value.as_str().map_or(true, |entry| entry.trim().is_empty()))
         {
             errors.push(format!(
                 "agents.{name}.runtime.{field} must be a non-empty string"
             ));
         }
+    }
+    // A fallback is an alternate execution binding for this same agent: it can
+    // move where a role runs, never which contract it runs. Naming another
+    // agent is refused outright, so no configuration can substitute a second
+    // profile, purpose, or boundary for the one the plan selected.
+    match runtime.get("fallback") {
+        None => {}
+        Some(Value::String(declined)) if declined == "none" => {}
+        Some(Value::Object(binding)) => validate_fallback_binding(name, binding, errors),
+        Some(_) => errors.push(format!(
+            "agents.{name}.runtime.fallback must be \"none\" or an alternate runtime binding of host, model, and reasoningEffort"
+        )),
+    }
+}
+
+const BINDING_FIELDS: &[&str] = &["host", "model", "reasoningEffort"];
+
+fn validate_fallback_binding(name: &str, binding: &Map<String, Value>, errors: &mut Vec<String>) {
+    reject_unknown(
+        binding,
+        BINDING_FIELDS,
+        &format!("agents.{name}.runtime.fallback"),
+        errors,
+    );
+    for field in BINDING_FIELDS {
+        if binding
+            .get(*field)
+            .is_some_and(|value| value.as_str().map_or(true, |entry| entry.trim().is_empty()))
+        {
+            errors.push(format!(
+                "agents.{name}.runtime.fallback.{field} must be a non-empty string"
+            ));
+        }
+    }
+    if !BINDING_FIELDS
+        .iter()
+        .any(|field| binding.get(*field).and_then(Value::as_str).is_some())
+    {
+        errors.push(format!(
+            "agents.{name}.runtime.fallback must bind at least one of host, model, or reasoningEffort"
+        ));
     }
 }
 

@@ -8,7 +8,7 @@
 
 mod support;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{fs, io};
@@ -251,4 +251,106 @@ fn a_historical_project_stays_readable_under_its_own_identity() {
             "new state recorded a historical producer: {line}"
         );
     }
+}
+
+#[test]
+fn a_fresh_exitbind_config_accepts_the_fallback_shape_in_its_declared_schema() {
+    let mut fresh = Fresh::new("fresh-schema");
+    fresh.run(&["init", "--mode", "portable", "--root", "."]);
+
+    let config_path = fresh.project.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    let schema_uri = config["$schema"]
+        .as_str()
+        .expect("fresh config declares a schema URI");
+    let schema: Value = serde_json::from_str(include_str!("../schema/exitbind.schema.json"))
+        .expect("current schema is valid JSON");
+    assert_eq!(
+        schema_uri, schema["$id"],
+        "fresh config names the current schema"
+    );
+
+    let fallback = json!({
+        "host": "claude",
+        "model": "alternate-review",
+        "reasoningEffort": "high",
+    });
+    config["agents"]["reviewer"]["runtime"]["fallback"] = fallback.clone();
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+    let checked = fresh.run(&["check", "--json"]);
+    assert!(
+        checked.contains("\"valid\":true"),
+        "runtime validation rejected the schema regression fixture: {checked}"
+    );
+    assert!(schema_accepts_fallback(&schema, &fallback));
+    assert!(schema_accepts_fallback(&schema, &json!("none")));
+    for rejected in [
+        json!("alternate"),
+        json!({}),
+        json!({"host": "claude", "unexpected": "field"}),
+    ] {
+        assert!(
+            !schema_accepts_fallback(&schema, &rejected),
+            "schema accepted malformed fallback {rejected}"
+        );
+    }
+    let whitespace_only = json!({"host": " "});
+    assert!(!schema_accepts_fallback(&schema, &whitespace_only));
+    config["agents"]["reviewer"]["runtime"]["fallback"] = whitespace_only;
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let rejected = fresh.run(&["check", "--json"]);
+    assert!(
+        rejected.contains("invalid configuration")
+            && rejected.contains("fallback.host must be a non-empty string"),
+        "runtime validation accepted whitespace-only fallback: {rejected}"
+    );
+}
+
+/// Exercise the fallback subschema from the declared schema without adding a
+/// schema-engine dependency just for this public-boundary regression.
+fn schema_accepts_fallback(schema: &Value, fallback: &Value) -> bool {
+    let alternatives = &schema["$defs"]["agent"]["properties"]["runtime"]["$ref"];
+    let runtime_name = alternatives.as_str().and_then(|reference| {
+        reference
+            .strip_prefix("#/$defs/")
+            .map(|name| schema["$defs"][name].clone())
+    });
+    let Some(runtime) = runtime_name else {
+        return false;
+    };
+    let Some(options) = runtime["properties"]["fallback"]["oneOf"].as_array() else {
+        return false;
+    };
+    if options
+        .iter()
+        .any(|option| option.get("const") == Some(fallback))
+    {
+        return true;
+    }
+    let Some(binding_name) = options.iter().find_map(|option| {
+        option["$ref"]
+            .as_str()
+            .and_then(|reference| reference.strip_prefix("#/$defs/"))
+    }) else {
+        return false;
+    };
+    let Some(binding) = schema["$defs"][binding_name].as_object() else {
+        return false;
+    };
+    let Some(object) = fallback.as_object() else {
+        return false;
+    };
+    object.len() >= binding["minProperties"].as_u64().unwrap_or(0) as usize
+        && object.iter().all(|(name, value)| {
+            binding["properties"][name]["pattern"] == json!(".*\\S.*")
+                && value.as_str().is_some_and(|text| {
+                    text.len()
+                        >= binding["properties"][name]["minLength"]
+                            .as_u64()
+                            .unwrap_or(0) as usize
+                        && text.chars().any(|character| !character.is_whitespace())
+                })
+        })
+        && binding["additionalProperties"] == json!(false)
 }

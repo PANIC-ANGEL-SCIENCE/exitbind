@@ -51,12 +51,96 @@ pub(crate) fn pending(state: &Value) -> Vec<Value> {
         .as_u64()
         .unwrap_or(agents.len() as u64)
         .max(1) as usize;
-    agents
+    let mut assignments: Vec<Value> = agents
         .iter()
         .filter(|agent| !submitted.contains(agent["name"].as_str().unwrap_or("")))
         .map(|agent| packet(state, agent, &upstream))
         .take(limit)
-        .collect()
+        .collect();
+    // A reviewer whose primary binding could not execute is re-issued onto its
+    // authorized alternate binding: same stage, attempt, role, and reviewer
+    // contract — only where it executes is substituted.  At most one
+    // substitution per stage+attempt is ever issued.
+    for agent in agents {
+        let Some(alternate) = agent
+            .get("fallbackRuntime")
+            .filter(|binding| binding.is_object())
+        else {
+            continue;
+        };
+        let name = agent["name"].as_str().unwrap_or("");
+        let current: Vec<&Value> = submissions
+            .iter()
+            .filter(|event| {
+                event["stage"] == state["currentStage"]
+                    && event["attempt"] == state["attempt"]
+                    && event["agent"] == name
+            })
+            .collect();
+        // Exactly one recorded unavailability and nothing else opens the
+        // substitution: a verdict has already closed the reviewer, and a second
+        // unavailability has already ended the attempt rather than opening a
+        // third binding.
+        let [unavailable] = current[..] else {
+            continue;
+        };
+        if unavailable["outcome"] != "unavailable" {
+            continue;
+        }
+        assignments.push(substitution(
+            state,
+            agent,
+            alternate,
+            unavailable,
+            &upstream,
+        ));
+    }
+    assignments
+}
+
+/// The substitution packet: the primary's own reviewer contract — purpose,
+/// profile, profile SHA-256, declared boundary — re-issued against the
+/// alternate execution binding, with the operational reason carried so the
+/// substitution is legible without upgrading caller-reported identity into
+/// observed evidence.
+fn substitution(
+    state: &Value,
+    agent: &Value,
+    alternate: &Value,
+    unavailable: &Value,
+    upstream: &[Value],
+) -> Value {
+    let mut packet = packet(state, agent, upstream);
+    let primary_runtime = binding(&agent["runtime"]);
+    // Executing under the alternate binding, with no further fallback: the
+    // substitution is bounded to one, so a second operational failure ends the
+    // attempt instead of searching for a third binding.
+    packet["runtime"] = json!({
+        "host": alternate["host"],
+        "model": alternate["model"],
+        "reasoningEffort": alternate["reasoningEffort"],
+        "fallback": "none",
+    });
+    if let Some(object) = packet.as_object_mut() {
+        object.remove("fallbackRuntime");
+    }
+    packet["substitution"] = json!({
+        "reason": unavailable["fallback"]["reason"],
+        "primaryRuntime": primary_runtime,
+        "runtime": alternate,
+        "identitySource": "host-reported",
+    });
+    packet
+}
+
+/// A runtime value reduced to where it executes, dropping the fallback
+/// authorization that is not part of any execution identity.
+pub(crate) fn binding(runtime: &Value) -> Value {
+    json!({
+        "host": runtime["host"],
+        "model": runtime["model"],
+        "reasoningEffort": runtime["reasoningEffort"],
+    })
 }
 
 fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
@@ -99,6 +183,15 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
     }
     if let Some(policy) = state.get("checkPolicy") {
         assignment["checkPolicy"] = policy.clone();
+    }
+    if let Some(alternate) = agent
+        .get("fallbackRuntime")
+        .filter(|binding| binding.is_object())
+    {
+        // The authorized alternate binding travels with the primary packet so
+        // the caller can see what a substitution would be allowed to move to
+        // before it reports the primary unavailable.
+        assignment["fallbackRuntime"] = alternate.clone();
     }
     assignment
 }

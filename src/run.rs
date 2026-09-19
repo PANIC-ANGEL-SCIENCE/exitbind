@@ -118,7 +118,13 @@ pub fn start_with_policy(
             None
         };
         let version = if crate::producer::exitbind_surface() {
-            6
+            // A run that authorizes provider-quota fallback records fallback
+            // provenance, which only the v7 submit shape can carry.
+            if has_fallback_runtime(&plan) {
+                7
+            } else {
+                6
+            }
         } else if check_policy.is_some() {
             4
         } else if reference.is_some() {
@@ -169,6 +175,7 @@ pub fn submit(
     outcome: &str,
     artifact: &str,
     artifact_root: Option<&str>,
+    reason: Option<&str>,
 ) -> Result<Value, String> {
     if agent.trim().is_empty() {
         return Err("agent is required".into());
@@ -177,9 +184,18 @@ pub fn submit(
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let artifact = artifact.to_owned();
-    submit_locked(loaded, &path, agent, outcome, None, artifact_root, || {
-        Ok(artifact)
-    })
+    submit_locked(
+        loaded,
+        &path,
+        agent,
+        outcome,
+        reason,
+        None,
+        SubmitSubject {
+            root: artifact_root,
+            artifact: || Ok(artifact),
+        },
+    )
 }
 
 /// The exact assignment selected by the work façade before it reads the
@@ -231,6 +247,7 @@ pub(crate) fn submit_for_assignment<F>(
     ledger: &str,
     expected: AssignmentIdentity,
     outcome: &str,
+    reason: Option<&str>,
     artifact: F,
 ) -> Result<Value, String>
 where
@@ -245,10 +262,20 @@ where
         &path,
         &agent,
         outcome,
+        reason,
         Some(&expected),
-        Some("state"),
-        artifact,
+        SubmitSubject {
+            root: Some("state"),
+            artifact,
+        },
     )
+}
+
+/// The submitted subject: an artifact root and a producer deferred until the
+/// assignment has been revalidated under the ledger lock.
+struct SubmitSubject<'r, F> {
+    root: Option<&'r str>,
+    artifact: F,
 }
 
 fn submit_locked<F>(
@@ -256,13 +283,15 @@ fn submit_locked<F>(
     path: &run_ledger::LedgerPath,
     agent: &str,
     outcome: &str,
+    reason: Option<&str>,
     expected: Option<&AssignmentIdentity>,
-    artifact_root: Option<&str>,
-    artifact: F,
+    subject: SubmitSubject<'_, F>,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
 {
+    let SubmitSubject { root, artifact } = subject;
+    let artifact_root = root;
     let targets = [path.path.as_path(), path.lock.as_path()];
     with_lock(path, || {
         crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
@@ -354,6 +383,9 @@ where
                 } else {
                     state["subject"]["sha256"].clone()
                 };
+        }
+        if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
+            event_value["fallback"] = fallback;
         }
         let event = run_state::make_event(event_value);
         let mut all = events;
@@ -1228,7 +1260,11 @@ pub fn supersede_with_policy(
             "configSha256": claim.value["oldConfigSha256"]
         });
         let version = if crate::producer::exitbind_surface() {
-            6
+            if has_fallback_runtime(&plan) {
+                7
+            } else {
+                6
+            }
         } else if check_policy.is_some() {
             4
         } else if harness_reference.is_some() {
@@ -1462,6 +1498,65 @@ fn has_worker_stage(plan: &Value) -> bool {
     })
 }
 
+/// Whether any selected stage agent carries an authorized alternate binding.
+fn has_fallback_runtime(plan: &Value) -> bool {
+    plan["stages"].as_array().is_some_and(|stages| {
+        stages.iter().any(|stage| {
+            stage["agents"].as_array().is_some_and(|agents| {
+                agents
+                    .iter()
+                    .any(|agent| agent.get("fallbackRuntime").is_some())
+            })
+        })
+    })
+}
+
+/// Build the fallback provenance a submit event carries, if this submission is
+/// an operational unavailability or the substitution that answers one.
+///
+/// The reason is a bounded code chosen by the caller, never parsed from vendor
+/// prose, and the binding is recorded as `host-reported`: it is what the caller
+/// declared it would run, not something Exitbind observed a provider execute.
+fn fallback_provenance(
+    assignment: &Value,
+    outcome: &str,
+    reason: Option<&str>,
+    version: u64,
+) -> Result<Option<Value>, String> {
+    if outcome == "unavailable" {
+        let reason = reason.ok_or("--outcome unavailable requires --reason")?;
+        if !crate::run_state::FALLBACK_REASONS.contains(&reason) {
+            return Err(format!(
+                "--reason must be one of: {}",
+                crate::run_state::FALLBACK_REASONS.join(", ")
+            ));
+        }
+        // Only a v7 run can carry the reason; an unauthorized run still records
+        // the operational failure, it just has no bounded code to attach.
+        if version < 7 {
+            return Ok(None);
+        }
+        // The binding that could not execute, so the ledger answers which
+        // execution identity was unavailable and not merely that one was.
+        return Ok(Some(json!({
+            "reason": reason,
+            "runtime": crate::run_assignment::binding(&assignment["runtime"]),
+            "identitySource": "host-reported",
+        })));
+    }
+    if let Some(substitution) = assignment["substitution"].as_object() {
+        // The alternate binding that actually produced this verdict, under the
+        // same reviewer contract the primary carried.
+        return Ok(Some(json!({
+            "reason": substitution["reason"],
+            "runtime": substitution["runtime"],
+            "identitySource": "host-reported",
+            "substituted": true,
+        })));
+    }
+    Ok(None)
+}
+
 fn artifact_current(loaded: &Loaded, state: &Value) -> Result<bool, String> {
     match crate::run_artifact::assert_current(loaded, state) {
         Ok(()) => Ok(true),
@@ -1505,24 +1600,7 @@ fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
             if !seen.insert(name) {
                 continue;
             }
-            let configured = loaded
-                .agent(name)
-                .ok_or_else(|| format!("profile selection changed: agent '{name}' is missing"))?;
-            let path = config::file(&loaded.control_root, &configured.profile)
-                .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?;
-            let profile_sha = hash::text(
-                &fs::read_to_string(&path)
-                    .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?,
-            );
-            if config::rel(&loaded.control_root, &path)? != selected["profile"]
-                || profile_sha != selected["profileSha256"]
-            {
-                return Err(run_error::machine_drift(DriftError::profile(
-                    name.to_owned(),
-                    selected["profileSha256"].as_str().unwrap_or("").to_owned(),
-                    profile_sha,
-                )));
-            }
+            assert_selected_agent(loaded, selected)?;
             if let Some(references) = selected.get("memoryReferences") {
                 let expected = hash::value(references);
                 let current = match crate::memory_selection::resolve(loaded, name) {
@@ -1545,6 +1623,42 @@ fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
     }
     if let Some(reference) = state.get("harnessReceipt") {
         crate::receipt::assert_current(loaded, reference, &state["plan"])?;
+    }
+    Ok(())
+}
+
+/// A selected agent's profile bytes and requested runtime must still match the
+/// configuration that produced the plan.  The authorized alternate binding is
+/// part of that runtime, so it drifts with the contract it belongs to.
+fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result<(), String> {
+    let name = selected["name"].as_str().unwrap_or("");
+    let configured = loaded
+        .agent(name)
+        .ok_or_else(|| format!("profile selection changed: agent '{name}' is missing"))?;
+    let path = config::file(&loaded.control_root, &configured.profile)
+        .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?;
+    let profile_sha = hash::text(
+        &fs::read_to_string(&path)
+            .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?,
+    );
+    if config::rel(&loaded.control_root, &path)? != selected["profile"]
+        || profile_sha != selected["profileSha256"]
+    {
+        return Err(run_error::machine_drift(DriftError::profile(
+            name.to_owned(),
+            selected["profileSha256"].as_str().unwrap_or("").to_owned(),
+            profile_sha,
+        )));
+    }
+    if selected
+        .get("runtime")
+        .is_some_and(|runtime| runtime != &configured.runtime_value())
+    {
+        return Err(run_error::machine_drift(DriftError::profile(
+            name.to_owned(),
+            hash::value(&selected["runtime"]),
+            hash::value(&configured.runtime_value()),
+        )));
     }
     Ok(())
 }
