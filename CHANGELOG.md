@@ -18,6 +18,15 @@
   progress.
 - `exitbind host install --all` is accepted again; the flag was documented but
   rejected by the argument parser.
+- Preservation no longer depends on a second installation. The distribution
+  carries `skills/exitbind/references/preservation.md`, projects it beside the
+  project skill for both hosts, and ships it in the plugin bundle. A governed
+  run with accepted requirements resolves its own route and quality - every
+  formal task is assigned `FULL` - and returns that assignment in
+  `humanHelp.preservationAssignment`. The preservation line now reads
+  `Holytail :FULL · FORMAL · evidence=<how the evidence was acquired>`, where
+  the evidence axis distinguishes a check Exitbind ran itself from one a host
+  reported, and never claims independent verification.
 - Temporary files written during normal use are Exitbind-named. The rename
   history moved out of the README into
   [docs/legacy-compatibility.md](docs/legacy-compatibility.md), and a

@@ -222,10 +222,14 @@ fn preservation_speaks_when_it_becomes_active_and_then_stays_quiet() {
     let active = project.presentation(&work);
     assert_eq!(active["state"]["preservation"], "active");
     let holytail = active["holytail"].as_str().unwrap();
-    assert!(holytail.starts_with("Holytail :"), "{holytail}");
-    // Exitbind carries no quality or route axis: it says so instead of inventing one.
-    assert!(holytail.contains("MODE-UNBOUND"), "{holytail}");
-    assert!(holytail.contains("evidence="), "{holytail}");
+    // The accepted requirements resolve the route, and the accepted policy
+    // assigns FULL to the formal route. The evidence axis reports how the
+    // evidence was acquired, never that anything was independently verified.
+    // No requirement check has run yet, so the evidence axis says exactly that.
+    assert_eq!(
+        holytail, "Holytail :FULL · FORMAL · evidence=none",
+        "{holytail}"
+    );
 
     let again = project.presentation(&work);
     assert!(again["transition"].is_null(), "{again}");

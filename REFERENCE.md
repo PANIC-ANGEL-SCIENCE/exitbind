@@ -20,7 +20,10 @@ owns the weighted progress and terminal decision.
 Holytail preservation detail is exceptional: surface it only when requested or
 when a material preservation failure, regression, unresolved invariant, or
 decision-relevant change needs reporting. Exact technical state and refusal
-reasons remain available.
+reasons remain available. The packaged reference
+`skills/exitbind/references/preservation.md` holds the route and quality
+policy, the accepted-meaning and read-back templates, and the evidence labels;
+a project needs no separate preservation install.
 
 Exitbind is a provider-free local protocol for bounded coding-agent handoffs.
 It records task envelopes, hashes, run transitions, and memory-lifecycle

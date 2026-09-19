@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 const SOULMATE: &str = include_str!("../skills/soulmate/SKILL.md");
 const SOULMATE_REFERENCE: &str = include_str!("../skills/soulmate/references/manual.md");
 const EXITBIND: &str = include_str!("../skills/exitbind/SKILL.md");
+const EXITBIND_PRESERVATION: &str = include_str!("../skills/exitbind/references/preservation.md");
 const COFFEE: &str = include_str!("../skills/coffee/SKILL.md");
 const SKILL_MARKER: &str = "<!-- soulmate-managed-skill:v1 -->";
 const EXITBIND_SKILL_MARKER: &str = "<!-- exitbind-managed-skill:v1 -->";
@@ -138,6 +139,18 @@ pub(crate) fn diagnose(control: &Path) -> Vec<SkillObservation> {
                 EXITBIND,
                 false,
             ),
+            (
+                "Exitbind",
+                ".agents/skills/exitbind/references/preservation.md",
+                EXITBIND_PRESERVATION,
+                false,
+            ),
+            (
+                "Exitbind",
+                ".claude/skills/exitbind/references/preservation.md",
+                EXITBIND_PRESERVATION,
+                false,
+            ),
         ]
     } else {
         vec![
@@ -234,19 +247,26 @@ fn selected_destinations(control: &Path, coffee: bool) -> Result<Vec<SkillDestin
     if exitbind {
         let mut destinations = Vec::new();
         for base in [".agents/skills", ".claude/skills"] {
-            let path = control.join(base).join("exitbind").join("SKILL.md");
-            validate_managed_directory(
-                control,
-                path.parent().ok_or("project skill asset has no parent")?,
-            )?;
-            let state = inspect_skill(&path, EXITBIND)?;
-            destinations.push(SkillDestination {
-                path,
-                content: EXITBIND.to_owned(),
-                label: format!("{base}/exitbind/SKILL.md"),
-                skill: "Exitbind",
-                state,
-            });
+            // The delayed preservation detail ships with the skill so a project
+            // never has to fetch a separate preservation package.
+            for (relative, content) in [
+                ("SKILL.md", EXITBIND),
+                ("references/preservation.md", EXITBIND_PRESERVATION),
+            ] {
+                let path = control.join(base).join("exitbind").join(relative);
+                validate_managed_directory(
+                    control,
+                    path.parent().ok_or("project skill asset has no parent")?,
+                )?;
+                let state = inspect_skill(&path, content)?;
+                destinations.push(SkillDestination {
+                    path,
+                    content: content.to_owned(),
+                    label: format!("{base}/exitbind/{relative}"),
+                    skill: "Exitbind",
+                    state,
+                });
+            }
         }
         return Ok(destinations);
     }

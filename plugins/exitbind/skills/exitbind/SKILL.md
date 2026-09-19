@@ -56,7 +56,14 @@ reported-versus-observed check provenance. Bind every check, review, and lead
 decision to the current subject; stale or partial evidence must remain refused
 or blocked. Curiosity is non-blocking and cannot expand scope or become proof.
 
-For preservation-risk work, activate Holytail selectively. Its narrow path is:
+For preservation-risk work, activate Holytail selectively. Route and quality are
+separate axes: the route is `INLINE` or `FORMAL`, the assigned quality is `FULL`,
+`ECO`, or `MODE-UNBOUND` when no assignment exists, and neither is ever inferred
+from the other, from a model name, or from a host effort label. Every `FORMAL`
+task is assigned `FULL`. Read
+[references/preservation.md](references/preservation.md) before running the
+formal path; it ships with Exitbind, so no separate preservation install,
+checkout, or second instruction source is needed. Its narrow path is:
 
 1. Clarify the accepted behavior, invariants, allowed changes, ambiguity,
    preservation risks, and evidence needed to demonstrate continuity.
@@ -79,6 +86,9 @@ checked run: start the work with `--preserve-requirement ID:TEXT` and a
 `preservation_failed` as blocked or refused evidence, not model judgment.
 `work resume` reports which preservation evidence is still reusable and which
 requirement check remains; do not install standalone Holytail for this path.
+`work next` returns the resolved route and quality in
+`humanHelp.preservationAssignment`; carry that assignment to any child agent and
+refuse a packet that arrives with none or with conflicting ones.
 Before skipping work listed in a saved packet, run
 `exitbind work validate WORK --packet FILE`; skip only when it returns `usable`.
 

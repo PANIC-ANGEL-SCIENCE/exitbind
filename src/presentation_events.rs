@@ -211,8 +211,14 @@ fn phrase(key: &str) -> &'static str {
 }
 
 /// The Holytail line appears only while a preservation obligation is genuinely
-/// in play. Exitbind carries no quality or route axis, so those stay unbound
-/// rather than invented; the evidence axis is the acquisition Exitbind recorded.
+/// in play.
+///
+/// Route and quality are two axes and neither is inferred from the other, from
+/// a model name, or from a host effort label: the run's accepted preservation
+/// requirements resolve them through the recorded assignment, and an assignment
+/// Exitbind cannot resolve stays `MODE-UNBOUND`. The evidence axis reports how
+/// the preservation evidence was acquired, never that it was independently
+/// verified.
 fn holytail_line(packet: &Value, classification: &Classification) -> Option<String> {
     if !matches!(
         classification.preservation,
@@ -220,10 +226,17 @@ fn holytail_line(packet: &Value, classification: &Classification) -> Option<Stri
     ) {
         return None;
     }
+    let assignment = &packet["humanHelp"]["preservationAssignment"];
+    let quality = assignment["quality"].as_str().unwrap_or("MODE-UNBOUND");
+    let route = assignment["route"].as_str().unwrap_or("FORMAL");
+    // Before any requirement check runs there is nothing to label: saying so
+    // beats borrowing a stronger word.
     let evidence = packet["humanHelp"]["preservationEvidence"]
         .as_str()
-        .unwrap_or("agent_declared");
-    Some(format!("Holytail :MODE-UNBOUND · evidence={evidence}"))
+        .unwrap_or("none");
+    Some(format!(
+        "Holytail :{quality} · {route} · evidence={evidence}"
+    ))
 }
 
 /// Build the presentation block for one projected packet, remembering what was

@@ -338,12 +338,57 @@ fn help(
             "not_required",
         )
     };
-    json!({
+    let mut help = json!({
         "whatHappened": what,
         "whatRemains": remaining,
         "nextAction": {"actor": actor, "summary": summary, "command": cmd},
         "ownerDecision": owner,
-    })
+    });
+    if let Some(evidence) = preservation_evidence(targets) {
+        help["preservationEvidence"] = json!(evidence);
+    }
+    if targets
+        .iter()
+        .any(|target| target["kind"] == "preservation")
+    {
+        // A governed run carrying accepted preservation requirements is the
+        // formal route, and the accepted policy assigns FULL to every formal
+        // task. Resolve that here so the assignment travels with the
+        // assignment packet instead of being guessed downstream. Exitbind
+        // records the assignment; it cannot enforce a host's quality setting.
+        help["preservationAssignment"] = json!({
+            "route": "FORMAL",
+            "quality": "FULL",
+            "resolvedBy": "accepted_preservation_requirements",
+            "enforcement": "recorded_not_enforced",
+        });
+    }
+    help
+}
+
+/// How the preservation evidence in this run was acquired, in the run's own
+/// terms. `command_observed` means Exitbind ran the requirement's check itself;
+/// `agent_declared` means the host reported the result. Neither is independent
+/// verification of what the check's output means.
+fn preservation_evidence(targets: &[Value]) -> Option<&'static str> {
+    let mut observed = false;
+    let mut declared = false;
+    for target in targets
+        .iter()
+        .filter(|target| target["kind"] == "preservation")
+    {
+        match target["acquisition"].as_str() {
+            Some("observed") => observed = true,
+            Some(_) => declared = true,
+            // A requirement with no evidence yet says nothing about acquisition.
+            None => {}
+        }
+    }
+    match (observed, declared) {
+        (true, false) => Some("command_observed"),
+        (_, true) => Some("agent_declared"),
+        (false, false) => None,
+    }
 }
 
 pub(crate) fn read_bounded(path: &str) -> Result<Value, String> {

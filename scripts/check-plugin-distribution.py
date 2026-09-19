@@ -28,6 +28,7 @@ EXPECTED_FILES = {
     ".codex-plugin/plugin.json",
     ".claude-plugin/plugin.json",
     "skills/exitbind/SKILL.md",
+    "skills/exitbind/references/preservation.md",
 }
 FORBIDDEN_COMPONENTS = {
     "hooks",
@@ -258,11 +259,15 @@ def check_catalogs(repo_root: Path, errors: list[str]) -> None:
 
 
 def check_archive(package: Path, archive: Path, errors: list[str]) -> None:
-    expected = {"exitbind"}
+    # Directories are the prefixes the expected files imply; adding a file in a
+    # new directory must not need a second list to be edited by hand.
+    directories = {"exitbind"}
     for path in EXPECTED_FILES:
         parts = path.split("/")
-        expected.update("exitbind/" + "/".join(parts[:index]) for index in range(1, len(parts)))
-        expected.add("exitbind/" + path)
+        directories.update(
+            "exitbind/" + "/".join(parts[:index]) for index in range(1, len(parts))
+        )
+    expected = directories | {"exitbind/" + path for path in EXPECTED_FILES}
     try:
         with tarfile.open(archive, mode="r:gz") as tar:
             members = tar.getmembers()
@@ -273,7 +278,7 @@ def check_archive(package: Path, archive: Path, errors: list[str]) -> None:
                     fail(errors, f"unexpected archive member: {member.name}")
                     continue
                 relative = member.name.removeprefix("exitbind/")
-                if member.name == "exitbind" or relative in {".codex-plugin", ".claude-plugin", "skills", "skills/exitbind"}:
+                if member.name in directories:
                     if not member.isdir():
                         fail(errors, f"archive directory is not a directory: {member.name}")
                     continue
