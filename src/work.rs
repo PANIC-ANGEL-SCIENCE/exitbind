@@ -100,7 +100,11 @@ pub(crate) fn return_result(
     let _submitted = run::submit_for_assignment(loaded, &ledger, expected, outcome, || {
         write_artifact(loaded, work, assignment, &bytes)
     })?;
-    Ok(json!({"work": work, "next": next_for(loaded, work, &ledger)?}))
+    // The decision that reaches a terminal state is exactly where its display
+    // belongs: returning it here means the caller copies the product's own
+    // wording instead of assembling a sentence from status and progress.
+    let (next, _residual, presentation) = next_and_residual(loaded, work, &ledger, false)?;
+    Ok(json!({"work": work, "next": next, "presentation": presentation}))
 }
 
 /// Decide whether a previously issued residual packet still applies to the

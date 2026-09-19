@@ -10,6 +10,12 @@
   is refused, and file permissions are preserved.
 - Legacy hook retirement matches only the two exact published record shapes, so
   a foreign hook that merely mentions the old command is never removed.
+- The terminal status line is the product's to write, not the host's. A
+  presentation block carries `terminal` - exactly `EXIT READY` when the
+  canonical acceptance decision says so, and nothing otherwise - and the
+  decision that reaches that state now returns the block with it, so a lead has
+  the wording in hand at the moment it accepts. Both distributed guidance
+  copies say to print it as its own final line with nothing attached.
 - `exitbind work next` and `exitbind work resume` return a `presentation`
   block: percent progress, the exit state, a classified state summary, and at
   most one transition phrase. Reading the same state again says nothing new.

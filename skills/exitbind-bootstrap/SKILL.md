@@ -50,8 +50,13 @@ Say Exitbind is active only after a real lifecycle action exists — a work
 handle, a recorded check, a review, or an acceptance. Projected files, an
 installed binary, and this text are not activation.
 
-Report the exit state the CLI gives you (`EXIT READY`, `EXIT REFUSED`,
-`EXIT BLOCKED`) with its reason code. Never present a passing check as
+Report the exit state the CLI gives you with its reason code. When a response
+carries a non-null `presentation.terminal`, that value is the terminal status
+block: print it as its own final line, exactly as given, with nothing else on
+that line - not inside a sentence, not wrapped in emphasis, and with no
+percentage, parenthesis, dash clause, or closing remark attached. Everything
+worth saying goes in its own sentences above it. Never build that line yourself
+from the exit state or the progress number. Never present a passing check as
 acceptance, and never reuse evidence the CLI has refused.
 
 Run `exitbind host status` when the user asks whether Exitbind is installed and

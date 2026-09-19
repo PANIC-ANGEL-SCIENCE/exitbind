@@ -257,6 +257,10 @@ fn terminal_readiness_says_exit_ready_and_nothing_else() {
     );
     assert_eq!(accepted["next"]["progress"]["state"], "READY");
     assert_eq!(accepted["next"]["progress"]["percent"], 100);
+    // The decision itself hands back the block to print, so nothing has to be
+    // assembled from status and progress.
+    assert_eq!(accepted["presentation"]["terminal"], "EXIT READY");
+    assert!(accepted["presentation"]["phrase"].is_null());
 
     let ready = project.presentation(&work);
     assert_eq!(ready["exitState"], "READY");
@@ -411,4 +415,93 @@ mod cache {
         .unwrap();
         fs::remove_dir_all(project.root).unwrap();
     }
+}
+
+/// `EXIT READY` is the canonical acceptance decision speaking, not a formatting
+/// choice. Nothing short of that decision may reach the terminal block, and
+/// suppressing the decoration changes no machine value.
+#[test]
+fn only_the_accepted_decision_reaches_the_terminal_block() {
+    // Checks pass, review approves, acceptance is still pending.
+    let pending = Project::new("terminal-pending");
+    let work = begin(&pending, false);
+    let decision = pending.drive_until(&work, "lead_decision");
+    let waiting = pending.presentation(&work);
+    assert!(waiting["terminal"].is_null(), "{waiting}");
+    assert_eq!(waiting["state"]["check"], "current");
+    assert_eq!(waiting["state"]["review"], "approved");
+    assert_ne!(waiting["progress"], 100);
+
+    // The lead blocks instead. The run is terminal, and still not ready.
+    let refused_decision = pending.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        Some(b"blocked"),
+    );
+    assert!(refused_decision["presentation"]["terminal"].is_null());
+    let blocked = pending.presentation(&work);
+    assert!(blocked["terminal"].is_null(), "{blocked}");
+    assert_ne!(blocked["exitState"], "READY");
+    fs::remove_dir_all(pending.root).unwrap();
+
+    // A failing check is evidence against readiness, never a route to it.
+    let failing = Project::new("terminal-failing");
+    let broken = begin(&failing, false);
+    failing.drive_until(&broken, "check");
+    fs::write(failing.root.join("source.txt"), b"nothing it looks for\n").unwrap();
+    failing.value(&["work", "check", &broken], None);
+    let refused = failing.presentation(&broken);
+    assert!(refused["terminal"].is_null(), "{refused}");
+    assert_eq!(refused["state"]["check"], "failed");
+    fs::remove_dir_all(failing.root).unwrap();
+
+    // Work that was never governed has no terminal block to copy.
+    let idle = Project::new("terminal-idle");
+    let none = idle.value(&["work", "resume"], None);
+    assert_eq!(none["status"], "none");
+    assert!(none["presentation"].is_null());
+    fs::remove_dir_all(idle.root).unwrap();
+}
+
+/// The terminal block is display only: the machine record beneath it keeps its
+/// decision, evidence, and reuse values exactly as the run recorded them.
+#[test]
+fn the_terminal_block_changes_no_machine_value() {
+    let project = Project::new("terminal-machine");
+    let work = begin(&project, false);
+    let decision = project.drive_until(&work, "lead_decision");
+    let accepted = project.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    let seen = project.value(&["work", "next", &work], None);
+
+    // Valid JSON with the recorded decision intact beside the display value.
+    assert_eq!(seen["presentation"]["terminal"], "EXIT READY");
+    assert_eq!(seen["next"]["progress"]["state"], "READY");
+    assert_eq!(seen["next"]["progress"]["percent"], 100);
+    assert_eq!(
+        seen["next"]["progress"]["state"],
+        accepted["next"]["progress"]["state"]
+    );
+    assert_eq!(seen["residual"]["historical"], true);
+    // Acceptance is history: it authorizes no further work.
+    let help = seen["residual"]["humanHelp"]["whatHappened"]
+        .as_str()
+        .unwrap();
+    assert!(help.contains("history"), "{help}");
+    fs::remove_dir_all(project.root).unwrap();
 }

@@ -158,7 +158,7 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
     // The product supplies the terminal block and the host copies it without
     // rebuilding it from state or progress.
     assert!(text.contains(
-        "carries a non-null `terminal`, copy that value verbatim\nas the terminal status block"
+        "carries a non-null `terminal`, that value is the terminal\nstatus block: print it as its own final line, exactly as given"
     ));
     assert!(text.contains("Never reconstruct terminal wording from\n`exitState` or `progress`."));
     // Holytail sits directly above the Neuro line only when it applies.
@@ -1730,4 +1730,32 @@ fn terminal_history_never_authorizes_current_continuation() {
         .as_str()
         .unwrap()
         .contains("not accepted"));
+}
+
+/// Both installed guidance copies must carry the same terminal rule. The
+/// bootstrap is what a fresh host reads first, so a looser instruction there
+/// is what a lead actually follows.
+#[test]
+fn every_distributed_guidance_copy_states_the_terminal_block_rule() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "skills/exitbind/SKILL.md",
+        "plugins/exitbind/skills/exitbind/SKILL.md",
+        "skills/exitbind-bootstrap/SKILL.md",
+    ] {
+        let text = std::fs::read_to_string(root.join(relative)).unwrap();
+        assert!(
+            text.contains("print it as its own final line, exactly as given"),
+            "{relative} does not state the terminal block rule"
+        );
+        assert!(
+            text.contains("not inside a sentence, not wrapped in emphasis"),
+            "{relative} does not forbid decorating the block"
+        );
+        // Nothing may invite the host to assemble the line itself.
+        assert!(
+            !text.contains("Report the exit state the CLI gives you (`EXIT READY`"),
+            "{relative} still invites paraphrasing the exit state"
+        );
+    }
 }
