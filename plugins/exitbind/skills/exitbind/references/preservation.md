@@ -151,3 +151,32 @@ requirement invalidates the evidence that depended on it. Historical acceptance
 remains history: it never authorizes new work. Before skipping work a saved
 packet lists, run `exitbind work validate WORK --packet FILE` and skip only on
 `usable`.
+
+## v0.22 context, checkpoint, sensor, and recovery
+
+The canonical run reducer remains authoritative. A v0.22 context object is a
+projection with a digest; it is valid only when its run identity, exact subject,
+tested-input identity, ledger head, and digest match a fresh projection. The
+`obligations` and `evidence` fields carry exact requirement text, checker
+identity, target/check event hashes, acquisition, result, and provenance.
+Every omitted ledger event or artifact is reachable by an `expansions` entry
+with an exact hash/path reference. A summary is not evidence and never replaces
+those references.
+
+Before each mutation unit, call `exitbind work permit WORK ASSIGNMENT
+--operation OPERATION` and mutate only when it returns `allowed=true`. This
+cooperative action revalidates the assignment and tested inputs and appends
+its governor event under the canonical run-ledger lock before returning
+permission. Replay governor events in order. The hard
+budget belongs to the mutation lineage, not a prompt or timestamp. Wrappers,
+comments, wording, subject hashes, and evidence-equivalent replans consume the
+same budget; genuine new evidence is recorded but never extends it. A
+completed worker submission remains a separate lifecycle transition.
+
+Sensor input/output is versioned and bound to run, subject, attempt,
+checkpoint, and input digest, with at-most-once deduplication. Unavailable,
+malformed, stale, duplicate, low-confidence, or optimistic results are inert.
+A conservative high-confidence low-information result may stop earlier, but
+can never grant READY, waive a check, reset/extend the hard limit, or request a
+retry. Native-host interception outside the cooperative checkpoint remains an
+explicitly unverified link.

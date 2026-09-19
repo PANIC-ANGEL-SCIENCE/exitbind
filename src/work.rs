@@ -63,6 +63,35 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     Ok(json!({"work": work, "next": next, "residual": residual, "presentation": presentation}))
 }
 
+/// Atomically authorize and record one cooperative product-mutation unit for
+/// the exact current assignment.  Callers must perform their product edit
+/// only after this succeeds; the ledger lock and replay reducer own the
+/// refusal boundary.
+pub(crate) fn permit(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    operation: &str,
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let action = next_for(loaded, work, &ledger)?;
+    if action["action"] != "spawn" && action["action"] != "lead_decision" {
+        return Err("a governed assignment is not the current work action".into());
+    }
+    if action["assignment"] != assignment {
+        return Err("assignment is not the current pending work action".into());
+    }
+    let expected = run::AssignmentIdentity::from_action(&action)?;
+    let permission = run::permit_for_assignment(loaded, &ledger, assignment, expected, operation)?;
+    Ok(json!({
+        "work": work,
+        "allowed": permission["allowed"],
+        "event": permission["event"],
+        "governor": permission["governor"],
+        "next": next_for(loaded, work, &ledger)?,
+    }))
+}
+
 pub(crate) fn return_result(
     loaded: &Loaded,
     work: &str,
@@ -305,6 +334,15 @@ fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result
         "packet": packet,
         "progress": progress
     });
+    let view = snapshot.inspect_view();
+    let status = if view["status"] == "running" {
+        snapshot.status_view()?
+    } else {
+        Value::Null
+    };
+    if let Ok(context) = crate::context::project(work, &view, &status, &result) {
+        result["packet"]["context"] = context;
+    }
     if role == "lead" {
         result["outcomes"] = if value["currentStage"] == 1 {
             json!(["scoped", "blocked"])

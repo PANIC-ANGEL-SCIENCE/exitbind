@@ -24,7 +24,7 @@ Report stale, historical, unavailable, and unverified layers explicitly;
 resolve the active host path before deletion, use supported host-specific
 refresh only, and treat reload/new-session evidence separately.
 
-In the stable `v0.21.0` release, `run observe-check` executes only the frozen command
+In the stable `v0.22.0` release, `run observe-check` executes only the frozen command
 in ProductRoot with inherited permissions and environment. It discards child
 stdout from the machine JSON stream, inherits stderr, records exit and signal
 results distinctly, and writes no check event when launch, timeout, or durable
@@ -92,7 +92,7 @@ deleted, or substituted prior artifact blocks resume and submission.
 ## Checked-result evidence
 
 Opt-in run-v3 ledgers bind a frozen check command and source category to the
-run; v3 supports caller-reported `run record-check` only. The stable `v0.21.0`
+run; v3 supports caller-reported `run record-check` only. The stable `v0.22.0`
 release supports both reported `run record-check` and local `run observe-check`.
 `run record-check` consumes a caller-supplied exit status for an exact
 current worker submission. It does not execute that command, authenticate the

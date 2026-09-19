@@ -100,8 +100,10 @@ Before skipping work listed in a saved packet, run
 
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`
-and follow the returned handle through `work next`, `work return`, `work check`,
-and `work resume`. For a current accepted checked run, issue
+and follow the returned handle through `work next`, `work permit`, `work return`,
+`work check`, and `work resume`. Before each cooperative product mutation,
+issue `exitbind work permit WORK ASSIGNMENT --operation OPERATION` and mutate
+only after it returns `allowed: true`. For a current accepted checked run, issue
 `exitbind receipt --json LEDGER --config CONFIG --output RECEIPT`, then verify
 with `exitbind verify RECEIPT --config CONFIG`. A nonzero result or a
 REFUSED/BLOCKED outcome is evidence to inspect, never acceptance; the ledger
@@ -112,3 +114,24 @@ canonical URL. The lead inspects it and asks only for owner-controlled install,
 write, or permission decisions; the user need not learn commands or protocol.
 The host's compliance remains an honest boundary and is never inferred from a
 URL, projected bytes, or a process exit.
+
+## Thin context and bounded iteration
+
+In v0.22, `work next`, `work resume`, and `work validate` expose a
+role-specific `context` projection derived from validated canonical state. It
+carries the current goal, scope, subject, obligations, exact evidence
+identity, loop state, and next action. History and raw bytes are delayed behind
+exact `expansions` references; they are never discarded.
+
+Treat context as a staleable view, not authority. A changed ledger head,
+subject, tested input, or context digest requires reprojection. Use the
+canonical `work permit` action before each governed mutation unit; it
+revalidates the assignment and tested inputs and appends the governor event
+under the run-ledger lock before returning permission. The finite governor
+refuses the next unit after its hard budget; timestamps, wrappers, comments,
+wording, and equivalent replans cannot reset it. An optional sensor is
+provider-neutral and conservative: unavailable, malformed, stale, duplicate,
+low-confidence, or optimistic output cannot grant readiness, waive evidence,
+reset the bound, or create a retry loop. Read
+[references/preservation.md](references/preservation.md) for the exact
+packet, checkpoint, sensor, and recovery procedure.

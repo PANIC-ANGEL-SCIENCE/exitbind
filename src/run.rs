@@ -157,6 +157,12 @@ pub fn start_with_policy(
         if version >= 5 {
             value["subject"] = subject(goal, &value["plan"], &config_sha, &run_id);
         }
+        if version >= 6 {
+            value["governor"] = json!({
+                "version": crate::context::GOVERNOR_VERSION,
+                "budget": crate::context::HARD_ITERATION_BUDGET,
+            });
+        }
         let event = run_state::make_event(value);
         append(&path, &event, true, "")?;
         Ok(event)
@@ -269,6 +275,109 @@ where
             artifact,
         },
     )
+}
+
+/// Atomically consume one cooperative mutation unit for the exact pending
+/// assignment before a caller changes product files.  The permission is not
+/// a permit detached from state: it is a hashed run-ledger event whose
+/// governor payload is replayed by `run_state::reduce` under the same lock.
+pub(crate) fn permit_for_assignment(
+    loaded: &Loaded,
+    ledger: &str,
+    assignment_handle: &str,
+    expected: AssignmentIdentity,
+    operation: &str,
+) -> Result<Value, String> {
+    if operation.trim().is_empty() || operation.len() > 120 || operation.contains('\0') {
+        return Err("governor operation must be non-empty and at most 120 bytes".into());
+    }
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+        if claim_path(&path).exists() {
+            return Err("run has been superseded; no mutation was made".into());
+        }
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        crate::run_artifact::assert_current(loaded, &state)?;
+        if state["governor"]["enabled"] != true {
+            return Err("cooperative governor is unavailable on this run".into());
+        }
+        let assignment = crate::run_assignment::pending(&state)
+            .into_iter()
+            .find(|item| item["agent"] == expected.agent)
+            .ok_or_else(|| format!("agent '{}' is not currently pending", expected.agent))?;
+        if !expected.matches(&assignment) {
+            return Err(
+                "assignment changed while governor permission was requested; no mutation was made"
+                    .into(),
+            );
+        }
+        let inputs = live_inputs(&state)?;
+        let last = events.last().ok_or("run ledger has no event head")?;
+        let previous_governor = state["governor"]["headSha256"]
+            .as_str()
+            .map(|head| json!({"eventSha256": head}));
+        let lineage = state["governor"]["lineageSha256"]
+            .as_str()
+            .map_or_else(|| state["subject"]["sha256"].clone(), |value| json!(value));
+        let checkpoint = state["governor"]["spent"]
+            .as_u64()
+            .unwrap_or_default()
+            .saturating_add(1);
+        let governor_event = crate::context::event(
+            previous_governor.as_ref(),
+            json!({
+                "action": "mutation",
+                "runId": state["runId"],
+                "subjectSha256": state["subject"]["sha256"],
+                "attempt": state["attempt"],
+                "checkpoint": checkpoint,
+                "inputSha256": inputs.clone(),
+                "lineageSha256": lineage,
+                "carryLineage": true,
+                "unit": format!("{}-mutation", expected.role),
+                "operation": operation,
+                "newEvidenceSha256": Value::Null,
+            }),
+        );
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state is missing version")?;
+        let event_value = json!({
+            "version": version,
+            "kind": "run",
+            "producer": crate::producer::evidence_for_version(version),
+            "action": "govern",
+            "runId": state["runId"],
+            "stage": assignment["stage"],
+            "attempt": assignment["attempt"],
+            "agent": assignment["agent"],
+            "role": assignment["role"],
+            "subjectSha256": state["subject"]["sha256"],
+            "inputsSha256": inputs,
+            "assignmentSha256": crate::hash::text(assignment_handle),
+            "operation": operation,
+            "governorEvent": governor_event,
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?,
+        });
+        let event = run_state::make_event(event_value);
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = run_state::reduce(&all)?;
+        append(&path, &event, false, &source)?;
+        Ok(json!({
+            "valid": true,
+            "allowed": true,
+            "event": event,
+            "runId": next_state["runId"],
+            "governor": next_state["governor"],
+        }))
+    })
 }
 
 /// The submitted subject: an artifact root and a producer deferred until the
@@ -386,6 +495,54 @@ where
         }
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
             event_value["fallback"] = fallback;
+        }
+        let pre_mutation_permit = events.iter().any(|event| {
+            event["action"] == "govern"
+                && event["stage"] == assignment["stage"]
+                && event["attempt"] == assignment["attempt"]
+                && event["agent"] == assignment["agent"]
+                && event["role"] == assignment["role"]
+        });
+        if state["governor"]["enabled"] == true
+            && assignment["role"] == "worker"
+            && outcome == "completed"
+            && !pre_mutation_permit
+        {
+            let previous_governor = state["governor"]["headSha256"]
+                .as_str()
+                .map(|head| json!({"eventSha256": head}));
+            let lineage = state["governor"]["lineageSha256"]
+                .as_str()
+                .map_or_else(|| state["subject"]["sha256"].clone(), |value| json!(value));
+            let input_sha = state
+                .get("inputsSha256")
+                .filter(|value| value.is_string())
+                .cloned()
+                .unwrap_or_else(|| json!(crate::hash::text("unbound")));
+            // Pre-mutation permits and completed submissions share one
+            // canonical governor lineage.  Counting submissions alone would
+            // replay a post-permit completion at checkpoint 1 and make the
+            // ledger unreducible (or silently reset the bound).
+            let checkpoint = state["governor"]["spent"]
+                .as_u64()
+                .unwrap_or_default()
+                .saturating_add(1);
+            event_value["governorEvent"] = crate::context::event(
+                previous_governor.as_ref(),
+                json!({
+                    "action": "mutation",
+                    "runId": state["runId"],
+                    "subjectSha256": state["subject"]["sha256"],
+                    "attempt": state["attempt"],
+                    "checkpoint": checkpoint,
+                    "inputSha256": input_sha,
+                    "lineageSha256": lineage,
+                    "carryLineage": true,
+                    "unit": "worker",
+                    "operation": "completed_submission",
+                    "newEvidenceSha256": artifact_value["sha256"],
+                }),
+            );
         }
         let event = run_state::make_event(event_value);
         let mut all = events;
@@ -1298,6 +1455,12 @@ pub fn supersede_with_policy(
         if version >= 5 {
             event_value["subject"] = subject(goal, &event_value["plan"], &config_sha, &run_id);
         }
+        if version >= 6 {
+            event_value["governor"] = json!({
+                "version": crate::context::GOVERNOR_VERSION,
+                "budget": crate::context::HARD_ITERATION_BUDGET,
+            });
+        }
         let event = run_state::make_event(event_value);
         let successor = if new.path.exists() {
             match load_at(loaded, &new) {
@@ -1421,6 +1584,9 @@ impl RunSnapshot {
                 InputContext::Current(inputs) => json!(inputs),
                 _ => Value::Null,
             };
+        }
+        if state.get("governor").is_some() {
+            result["governor"] = state["governor"].clone();
         }
         result
     }

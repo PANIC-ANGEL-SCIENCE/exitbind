@@ -184,6 +184,17 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
     if let Some(policy) = state.get("checkPolicy") {
         assignment["checkPolicy"] = policy.clone();
     }
+    if let Some(preservation) = state.get("preservation") {
+        // Preserve the resolved requirement text and exact checker identity in
+        // every role packet.  This is a projection of validated canonical
+        // state, not a human-supplied prompt fragment.
+        assignment["preservationAssignment"] = json!({
+            "version": preservation["version"],
+            "requirements": preservation["requirements"],
+            "nonGoals": state.get("nonGoals").cloned().unwrap_or_else(|| json!([])),
+            "source": "canonical_state",
+        });
+    }
     if let Some(alternate) = agent
         .get("fallbackRuntime")
         .filter(|binding| binding.is_object())

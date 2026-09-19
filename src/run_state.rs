@@ -26,6 +26,16 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
         "currentStage": 1, "attempt": 1, "submissions": [], "checks": [],
         "protections": [], "events": events
     });
+    let governor_enabled = first
+        .get("governor")
+        .is_some_and(crate::context::validate_marker);
+    if first.get("governor").is_some() && !governor_enabled {
+        return Err("invalid run start: malformed governor marker".into());
+    }
+    if governor_enabled {
+        state["governor"] = crate::context::reduce_governor(&[])?;
+        state["governor"]["enabled"] = json!(true);
+    }
     if let Some(receipt) = first.get("harnessReceipt") {
         state["harnessReceipt"] = receipt.clone();
     }
@@ -45,6 +55,28 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
                 "invalid run ledger line {}: runId changed",
                 index + 1
             ));
+        }
+        if event["action"] == "govern" && !governor_enabled {
+            return Err(format!(
+                "invalid run ledger line {}: governor action requires a v0.22 marker",
+                index + 1
+            ));
+        }
+        if let Some(governor_event) = event.get("governorEvent") {
+            if !governor_enabled {
+                return Err(format!(
+                    "invalid run ledger line {}: governor event requires a v0.22 marker",
+                    index + 1
+                ));
+            }
+            let mut governor_events = state["governorEvents"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            governor_events.push(governor_event.clone());
+            state["governor"] = crate::context::reduce_governor(&governor_events)?;
+            state["governor"]["enabled"] = json!(true);
+            state["governorEvents"] = Value::Array(governor_events);
         }
         apply_event(&mut state, event)?;
     }
@@ -80,7 +112,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         return Err(format!("invalid run ledger line {line}: invalid producer"));
     }
     let action = event["action"].as_str().unwrap_or_default();
-    if !matches!(action, "start" | "submit" | "check" | "protect") {
+    if !matches!(action, "start" | "submit" | "check" | "protect" | "govern") {
         return Err(format!("invalid run ledger line {line}: invalid action"));
     }
     if previous.is_some() && action == "start" {
@@ -133,6 +165,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         validate_start_version(event, line, version.unwrap_or_default())
     } else if event["action"] == "submit" {
         validate_submission(event, line)
+    } else if event["action"] == "govern" {
+        validate_governor_event(event, line)
     } else if event["action"] == "check" {
         crate::run_value::validate_check_event(event, line)
     } else {
@@ -429,6 +463,74 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
         ));
     }
     validate_fallback_binding(event, line)?;
+    if let Some(governor_event) = event.get("governorEvent") {
+        if event["version"].as_u64() < Some(6)
+            || event["role"] != "worker"
+            || event["outcome"] != "completed"
+            || governor_event.as_object().is_none()
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: governor event requires a completed worker submission"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_governor_event(event: &Value, line: usize) -> Result<(), String> {
+    if event["version"].as_u64() < Some(6) {
+        return Err(format!(
+            "invalid run ledger line {line}: governor action requires v6"
+        ));
+    }
+    for field in ["stage", "attempt"] {
+        if event[field].as_u64().map_or(true, |value| value < 1) {
+            return Err(format!(
+                "invalid run ledger line {line}: invalid governor stage or attempt"
+            ));
+        }
+    }
+    if event["agent"]
+        .as_str()
+        .map_or(true, |value| value.trim().is_empty())
+        || !ROLES.contains(&event["role"].as_str().unwrap_or(""))
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: invalid governor actor"
+        ));
+    }
+    for field in ["subjectSha256", "inputsSha256", "assignmentSha256"] {
+        if !is_sha(event[field].as_str()) {
+            return Err(format!(
+                "invalid run ledger line {line}: governor binding is missing {field}"
+            ));
+        }
+    }
+    if event["operation"]
+        .as_str()
+        .map_or(true, |value| value.trim().is_empty() || value.len() > 120)
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: governor operation is invalid"
+        ));
+    }
+    let Some(governor_event) = event.get("governorEvent") else {
+        return Err(format!(
+            "invalid run ledger line {line}: governor event is missing"
+        ));
+    };
+    if governor_event["action"] != "mutation"
+        || governor_event["runId"] != event["runId"]
+        || governor_event["subjectSha256"] != event["subjectSha256"]
+        || governor_event["attempt"] != event["attempt"]
+        || governor_event["inputSha256"] != event["inputsSha256"]
+        || governor_event["operation"] != event["operation"]
+        || governor_event["carryLineage"] != true
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: governor event does not bind to the action"
+        ));
+    }
     Ok(())
 }
 
@@ -510,10 +612,18 @@ pub(crate) fn validate_fallback_binding(event: &Value, line: usize) -> Result<()
 fn apply_event(state: &mut Value, event: &Value) -> Result<(), String> {
     match event["action"].as_str() {
         Some("submit") => apply_submission(state, event),
+        Some("govern") => apply_govern(state, event),
         Some("check") => apply_check(state, event),
         Some("protect") => apply_protection(state, event),
         _ => Err("run event action is invalid".into()),
     }
+}
+
+fn apply_govern(state: &mut Value, _event: &Value) -> Result<(), String> {
+    if state["status"] != "running" {
+        return Err("governor action requires a running run".into());
+    }
+    Ok(())
 }
 
 fn apply_check(state: &mut Value, event: &Value) -> Result<(), String> {
@@ -793,6 +903,9 @@ fn reject_unknown(
         if version >= 6 {
             allowed.push("preservation");
         }
+        if version >= 6 {
+            allowed.push("governor");
+        }
         return object
             .keys()
             .find(|key| !allowed.contains(&key.as_str()))
@@ -827,7 +940,34 @@ fn reject_unknown(
         if version >= 7 {
             allowed.push("fallback");
         }
+        if version >= 6 {
+            allowed.push("governorEvent");
+        }
         return reject_unknown_fields(object, &allowed, line);
+    } else if action == "govern" {
+        return reject_unknown_fields(
+            object,
+            &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "stage",
+                "attempt",
+                "agent",
+                "role",
+                "subjectSha256",
+                "inputsSha256",
+                "assignmentSha256",
+                "operation",
+                "governorEvent",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            line,
+        );
     } else if action == "check" {
         if version >= 6 {
             return reject_unknown_fields(

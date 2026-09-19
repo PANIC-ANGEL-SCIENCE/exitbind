@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.22.0
+
+- Added deterministic role-specific thin context projections with exact
+  expansion references and replay-safe stale/tamper refusal.
+- Added a provider-neutral cooperative checkpoint governor with a finite hard
+  iteration budget and conservative, at-most-once sensor input handling.
+- Added the canonical `work permit` action: it revalidates the current
+  assignment and tested inputs and consumes a governor unit in the run ledger
+  before a cooperative product mutation; completion does not double-count it.
+- Extended the context-surface inventory with reproducible HEAD/current JSON
+  measurements; historical run-event formats remain readable.
+
 ## 0.21.0
 
 - The terminal block is offered on the low-level run surface too. A lead that

@@ -253,7 +253,7 @@ fn project_from(
         InputContext::Current(digest) => json!(digest),
         _ => Value::Null,
     };
-    json!({
+    let mut packet = json!({
         "version": PACKET_VERSION,
         "work": work,
         "workflow": view["workflow"],
@@ -278,7 +278,14 @@ fn project_from(
             "testedInputChangeInvalidates": input_bound,
             "inputCoverage": if input_bound { json!(crate::run_inputs::COVERAGE) } else { Value::Null },
         }
-    })
+    });
+    // The context projection is a thin, role-specific view over this same
+    // validated snapshot.  It carries exact expansion references rather than
+    // copying history into every prompt.
+    if let Ok(context) = crate::context::project(work, view, status, next) {
+        packet["context"] = context;
+    }
+    packet
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,6 +593,28 @@ fn judge(work: &str, packet: &Value, fresh: &Value) -> Judgment {
     }
     if packet["snapshot"] != fresh["snapshot"] {
         return ("refresh_required", "ledger_advanced", Vec::new());
+    }
+    // Preserve the v0.21 applicability precedence for the canonical packet
+    // before judging the additive v0.22 context projection.  A changed
+    // tested input, ledger, or terminal state must retain its established
+    // refusal reason even though that same change also makes context stale.
+    if packet.get("context").is_some() {
+        if let Err(error) = crate::context::validate_projection(packet, fresh) {
+            let malformed = error.contains("malformed") || error.contains("missing");
+            return (
+                if malformed {
+                    CANNOT
+                } else {
+                    "refresh_required"
+                },
+                if malformed {
+                    "malformed_context_projection"
+                } else {
+                    "context_projection_changed"
+                },
+                vec!["context"],
+            );
+        }
     }
     let mismatched: Vec<&'static str> = BEHAVIOR_FIELDS
         .iter()

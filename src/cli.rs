@@ -193,6 +193,9 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
     if command == "benchmark" {
         return benchmark_command(a);
     }
+    if command == "context" {
+        return context_command(a);
+    }
     if !matches!(
         command,
         "check"
@@ -230,11 +233,54 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
     }
 }
 
+fn context_command(a: &Arguments) -> Result<(), String> {
+    let action = positional(a, 0, "context requires reduce, checkpoint, or seal")?;
+    match action {
+        "reduce" => {
+            args::assert_options("context reduce", a, &["events", "json"])?;
+            args::assert_positionals("context reduce", a, 1)?;
+            let events = option(a, "events", "context reduce requires --events FILE")?;
+            print_json(&crate::context::reduce_file(events)?)
+        }
+        "checkpoint" => {
+            args::assert_options("context checkpoint", a, &["state", "proposal", "json"])?;
+            args::assert_positionals("context checkpoint", a, 1)?;
+            let state = crate::context::read_json(option(
+                a,
+                "state",
+                "context checkpoint requires --state FILE",
+            )?)?;
+            let proposal = crate::context::read_json(option(
+                a,
+                "proposal",
+                "context checkpoint requires --proposal FILE",
+            )?)?;
+            print_json(&crate::context::checkpoint(&state, &proposal))
+        }
+        "seal" => {
+            args::assert_options("context seal", a, &["event", "previous", "json"])?;
+            args::assert_positionals("context seal", a, 1)?;
+            let value = crate::context::read_json(option(
+                a,
+                "event",
+                "context seal requires --event FILE",
+            )?)?;
+            let previous = a
+                .options
+                .get("previous")
+                .map(|path| crate::context::read_json(path))
+                .transpose()?;
+            print_json(&crate::context::event(previous.as_ref(), value))
+        }
+        _ => Err("context requires reduce, checkpoint, or seal".into()),
+    }
+}
+
 fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "work requires begin, next, return, check, validate, or resume",
+        "work requires begin, next, permit, return, check, validate, or resume",
     )?;
     match action {
         "begin" => {
@@ -287,6 +333,16 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 positional(a, 1, "work next requires WORK")?,
             )?)
         }
+        "permit" => {
+            args::assert_options("work permit", a, &["config", "operation"])?;
+            args::assert_positionals("work permit", a, 3)?;
+            print_json(&crate::work::permit(
+                l,
+                positional(a, 1, "work permit requires WORK ASSIGNMENT")?,
+                positional(a, 2, "work permit requires WORK ASSIGNMENT")?,
+                option(a, "operation", "work permit requires --operation OPERATION")?,
+            )?)
+        }
         "return" => {
             args::assert_options("work return", a, &["config", "outcome", "reason"])?;
             args::assert_positionals("work return", a, 3)?;
@@ -324,7 +380,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_positionals("work resume", a, 1)?;
             print_json(&crate::work::resume(l)?)
         }
-        _ => Err("work requires begin, next, return, check, validate, or resume".into()),
+        _ => Err("work requires begin, next, permit, return, check, validate, or resume".into()),
     }
 }
 
@@ -1080,7 +1136,7 @@ fn print_help() {
         "soulmate"
     };
     println!(
-        "{product} {VERSION}\n\nUsage: {command} <command> [options]\n\nCore: init, brief, work, check\n  init prepares portable project setup and reviewable agent configuration.\n  brief presents one bounded task to an existing agent host.\n  work drives a checked task through opaque next actions and managed evidence.\n  check validates configuration, profiles, and declared boundaries; the host runs project tests and reports their result.\n\nRun '{command} benchmark' for the model-free checked-work demonstration.\nRun '{command} help advanced' for work/run actions, recovery, migration, hooks, receipts, and optional surfaces."
+        "{product} {VERSION}\n\nUsage: {command} <command> [options]\n\nCore: init, brief, work, check\n  init prepares portable project setup and reviewable agent configuration.\n  brief presents one bounded task to an existing agent host.\n  work drives a checked task through opaque next actions and managed evidence.\n  check validates configuration, profiles, and declared boundaries; the host runs project tests and reports their result.\n\nRun '{command} benchmark' for the model-free checked-work demonstration.\nRun '{command} help advanced' for work/run actions, recovery, migration, hooks, receipts, and optional surfaces.\nRun '{command} context reduce|checkpoint|seal' for replayable bounded context state."
     );
 }
 

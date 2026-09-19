@@ -5,6 +5,7 @@ mod cli;
 mod compatibility;
 mod config;
 mod config_types;
+mod context;
 mod envelope;
 mod forgetting;
 mod git_preflight;
