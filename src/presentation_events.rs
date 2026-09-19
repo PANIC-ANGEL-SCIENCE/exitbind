@@ -50,6 +50,11 @@ fn remembered(state_root: &Path, work: &str) -> Option<(String, Value)> {
     };
     let text = String::from_utf8(bytes).ok()?;
     let document = serde_json::from_str::<Value>(&text).ok()?;
+    if document["kind"] != "derived_display_memo" {
+        // Written by something else, or by a version that meant something
+        // else by this file. Read nothing from it and replace nothing in it.
+        return None;
+    }
     Some((text, document))
 }
 
@@ -261,8 +266,12 @@ pub(crate) fn project(
         .filter(|_| applicable)
         .map(|percent| format!("[Neuro] Exitbind progress: {percent}%."));
     // The host copies the product-owned terminal block verbatim. Keeping it
-    // separate from machine state prevents host-generated suffixes.
-    let terminal = crate::run_exit::is_ready(&current.exit_state).then_some("EXIT READY");
+    // separate from machine state prevents host-generated suffixes, and it is
+    // offered only while the acceptance still describes the files present now:
+    // history must not speak for a tree that changed under it.
+    let terminal = (crate::run_exit::is_ready(&current.exit_state)
+        && facts["acceptance"] == "current")
+        .then_some("EXIT READY");
     json!({
         "progress": if applicable { progress["percent"].clone() } else { Value::Null },
         "exitState": current.exit_state,
@@ -289,7 +298,13 @@ fn remember(state_root: &Path, work: &str, current: &Classification, previous: O
     if crate::managed_files::ensure_managed_directory(state_root, directory).is_err() {
         return;
     }
+    // The file says what it is. A reader that finds it while browsing state
+    // must not mistake a replaceable display memo for the run record, and a
+    // live host observed doing exactly that is why this field exists.
     let document = json!({
+        "kind": "derived_display_memo",
+        "authority": "none",
+        "describes": "what was last shown for this work, to avoid repeating it",
         "signature": current.signature(),
         "classification": current.value(),
     });

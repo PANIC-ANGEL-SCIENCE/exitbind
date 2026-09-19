@@ -46,12 +46,12 @@ number and never show one when no governed run applies. `work next` and
 `phrase` is present add that one short line in the user's language. Say nothing
 extra when it is absent - repeated reads of an unchanged state stay quiet. When
 the presentation block carries a non-null `terminal`, that value is the terminal
-status block: print it as its own final line, exactly as given, with nothing
-else on that line - not inside a sentence, not wrapped in emphasis, and with no
+status block: print it on a line of its own, exactly as given, with nothing else
+on that line - not inside a sentence, not wrapped in emphasis, and with no
 `neuro`, `phrase`, percentage, parenthesis, dash clause, or closing remark
-attached. The READY value is exactly `EXIT READY`; facts worth reporting go in
-their own sentences above it. Never reconstruct terminal wording from
-`exitState` or `progress`.
+attached to it. The READY value is exactly `EXIT READY`; a summary, test
+results, and limitations belong in their own sentences around it. Never
+reconstruct terminal wording from `exitState` or `progress`.
 
 Do not add a routine Holytail progress report. When the presentation block
 carries a `holytail` line, place it directly above the Neuro line with no blank

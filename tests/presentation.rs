@@ -505,3 +505,94 @@ fn the_terminal_block_changes_no_machine_value() {
     assert!(help.contains("history"), "{help}");
     fs::remove_dir_all(project.root).unwrap();
 }
+
+/// A finished run is where "what is the state here?" actually lands, and an
+/// acceptance speaks for the present only while the tree it was bound to is
+/// still the one on disk.
+#[test]
+fn a_finished_run_is_reported_and_stops_speaking_when_the_tree_moves() {
+    let project = Project::new("terminal-resume");
+    let work = begin(&project, false);
+    let decision = project.drive_until(&work, "lead_decision");
+    project.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+
+    // Nothing is active, and the product still supplies the block to print.
+    let settled = project.value(&["work", "resume"], None);
+    assert_eq!(settled["status"], "none");
+    assert_eq!(settled["recent"]["work"], work.as_str());
+    assert_eq!(settled["recent"]["exitState"], "READY");
+    assert_eq!(settled["presentation"]["terminal"], "EXIT READY");
+
+    // One covered file changes: the acceptance is history again, so the
+    // terminal block goes quiet while the recorded decision stays readable.
+    fs::write(project.root.join("source.txt"), b"env-first\nlater edit\n").unwrap();
+    let moved = project.value(&["work", "resume"], None);
+    assert_eq!(moved["recent"]["work"], work.as_str());
+    assert_eq!(moved["recent"]["exitState"], "READY");
+    assert!(
+        moved["presentation"]["terminal"].is_null(),
+        "history must not speak for a tree that changed under it: {moved}"
+    );
+    let direct = project.value(&["work", "next", &work], None);
+    assert!(direct["presentation"]["terminal"].is_null());
+    let help = direct["residual"]["humanHelp"]["whatHappened"]
+        .as_str()
+        .unwrap();
+    assert!(help.contains("history"), "{help}");
+
+    // Restoring the exact tested inputs restores the decision's reach.
+    fs::write(project.root.join("source.txt"), b"env-first\n").unwrap();
+    let restored = project.value(&["work", "resume"], None);
+    assert_eq!(restored["presentation"]["terminal"], "EXIT READY");
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+/// The display memo is not the run record. It says so in its own bytes,
+/// because a live host was observed reading it off disk and reporting it as
+/// the status instead of asking the CLI.
+#[test]
+fn the_display_memo_names_itself_and_claims_no_authority() {
+    let project = Project::new("memo-self-describing");
+    let work = begin(&project, false);
+    project.drive_until(&work, "check");
+    project.value(&["work", "check", &work], None);
+    project.presentation(&work);
+
+    let memo: Value = serde_json::from_str(
+        &fs::read_to_string(
+            project
+                .root
+                .join(".exitbind/presentation")
+                .join(format!("{work}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(memo["kind"], "derived_display_memo");
+    assert_eq!(memo["authority"], "none");
+    // It carries no decision of its own: no terminal block, no evidence.
+    assert!(memo["terminal"].is_null());
+    assert!(memo["classification"]["exitState"].is_string());
+
+    // A memo that does not say what it is reads as nothing, and is left alone.
+    let path = project
+        .root
+        .join(".exitbind/presentation")
+        .join(format!("{work}.json"));
+    let foreign = "{\"classification\":{\"exitState\":\"READY\"},\"signature\":\"x\"}\n";
+    fs::write(&path, foreign).unwrap();
+    let seen = project.presentation(&work);
+    assert_ne!(seen["exitState"], "READY");
+    assert_eq!(fs::read_to_string(&path).unwrap(), foreign);
+    fs::remove_dir_all(project.root).unwrap();
+}

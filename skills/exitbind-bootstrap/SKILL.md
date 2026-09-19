@@ -52,11 +52,11 @@ installed binary, and this text are not activation.
 
 Report the exit state the CLI gives you with its reason code. When a response
 carries a non-null `presentation.terminal`, that value is the terminal status
-block: print it as its own final line, exactly as given, with nothing else on
+block: print it on a line of its own, exactly as given, with nothing else on
 that line - not inside a sentence, not wrapped in emphasis, and with no
-percentage, parenthesis, dash clause, or closing remark attached. Everything
-worth saying goes in its own sentences above it. Never build that line yourself
-from the exit state or the progress number. Never present a passing check as
+percentage, parenthesis, dash clause, or closing remark attached to it.
+Everything worth saying goes in its own sentences around it. Never build that
+line yourself from the exit state or the progress number. Never present a passing check as
 acceptance, and never reuse evidence the CLI has refused.
 
 Run `exitbind host status` when the user asks whether Exitbind is installed and

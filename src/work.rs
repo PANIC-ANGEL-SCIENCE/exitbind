@@ -135,10 +135,13 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return none_result(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return none_result(loaded, Vec::new())
+        }
         Err(error) => return Err(error.to_string()),
     };
     let mut candidates = Vec::new();
+    let mut finished: Vec<(String, String, String)> = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let info = entry.file_type().map_err(|error| error.to_string())?;
@@ -168,10 +171,16 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
                 ledger,
                 progress,
             ));
+        } else if let Some(at) = view["events"]
+            .as_array()
+            .and_then(|events| events.last())
+            .and_then(|event| event["timestamp"].as_str())
+        {
+            finished.push((at.to_owned(), format!("{WORK_PREFIX}{token}"), ledger));
         }
     }
     match candidates.len() {
-        0 => none_result(),
+        0 => none_result(loaded, finished),
         1 => {
             let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
             let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)?;
@@ -195,8 +204,26 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
     }
 }
 
-fn none_result() -> Result<Value, String> {
-    Ok(json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}}))
+/// No work is active. The most recently finished run is still reported, with
+/// the presentation the product would print for it, so the answer to "where
+/// does this stand" comes from recorded state rather than from a reader's
+/// summary of the ledger. Its terminal block appears only while that decision
+/// still describes the files present now.
+fn none_result(
+    loaded: &Loaded,
+    mut finished: Vec<(String, String, String)>,
+) -> Result<Value, String> {
+    let mut result =
+        json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}});
+    finished.sort_by(|left, right| left.0.cmp(&right.0));
+    if let Some((_, work, ledger)) = finished.pop() {
+        let (next, _residual, presentation) = next_and_residual(loaded, &work, &ledger, false)?;
+        // `presentation` sits where every other work response carries it, so
+        // one documented path holds for every answer a host has to render.
+        result["recent"] = json!({"work": work, "exitState": next["progress"]["state"]});
+        result["presentation"] = presentation;
+    }
+    Ok(result)
 }
 
 /// Next action and residual packet derived from one captured revision, plus the
@@ -210,7 +237,11 @@ fn next_and_residual(
     let snapshot = run::RunSnapshot::capture(loaded, ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
     let residual = crate::work_packet::project(work, &snapshot, &next)?;
-    let facts = crate::work_packet::facts(&snapshot, &next)?;
+    // The fingerprint is computed only when a terminal acceptance has to be
+    // compared with the tree; a running run already carries its own.
+    let facts = crate::work_packet::facts(&snapshot, &next, || {
+        crate::run_inputs::fingerprint(loaded).ok()
+    })?;
     let presentation = crate::presentation_events::project(
         &loaded.state_root,
         work,

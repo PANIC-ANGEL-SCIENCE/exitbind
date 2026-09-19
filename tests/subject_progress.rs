@@ -158,9 +158,9 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
     // The product supplies the terminal block and the host copies it without
     // rebuilding it from state or progress.
     assert!(text.contains(
-        "carries a non-null `terminal`, that value is the terminal\nstatus block: print it as its own final line, exactly as given"
+        "carries a non-null `terminal`, that value is the terminal\nstatus block: print it on a line of its own, exactly as given"
     ));
-    assert!(text.contains("Never reconstruct terminal wording from\n`exitState` or `progress`."));
+    assert!(text.contains("Never\nreconstruct terminal wording from `exitState` or `progress`."));
     // Holytail sits directly above the Neuro line only when it applies.
     assert!(text.contains(
         "directly above the Neuro line with no blank\nline between them; otherwise omit it"
@@ -1745,7 +1745,7 @@ fn every_distributed_guidance_copy_states_the_terminal_block_rule() {
     ] {
         let text = std::fs::read_to_string(root.join(relative)).unwrap();
         assert!(
-            text.contains("print it as its own final line, exactly as given"),
+            text.contains("print it on a line of its own, exactly as given"),
             "{relative} does not state the terminal block rule"
         );
         assert!(

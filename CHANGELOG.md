@@ -12,10 +12,21 @@
   a foreign hook that merely mentions the old command is never removed.
 - The terminal status line is the product's to write, not the host's. A
   presentation block carries `terminal` - exactly `EXIT READY` when the
-  canonical acceptance decision says so, and nothing otherwise - and the
-  decision that reaches that state now returns the block with it, so a lead has
-  the wording in hand at the moment it accepts. Both distributed guidance
-  copies say to print it as its own final line with nothing attached.
+  canonical acceptance decision says so, and nothing otherwise - and every work
+  response carries that block at the same path: `work next`, `work resume`
+  (including when nothing is active and the last run is reported), and the
+  decision that reaches the state. Both distributed guidance copies say to
+  print the value on a line of its own with nothing attached to it.
+- An acceptance stops speaking for the tree once the tree moves. A terminal
+  run's identities are historical, so the terminal block is offered only while
+  the exact tested inputs the acceptance was bound to are still the ones on
+  disk; the recorded decision stays readable either way.
+- `exitbind work resume` reports the most recently finished run when no work is
+  active, instead of answering only `no_active_work` and leaving the reader to
+  summarise the ledger itself.
+- The presentation cache names itself in its own bytes as a derived display
+  memo with no authority, and a file that does not is read as nothing and left
+  untouched.
 - `exitbind work next` and `exitbind work resume` return a `presentation`
   block: percent progress, the exit state, a classified state summary, and at
   most one transition phrase. Reading the same state again says nothing new.

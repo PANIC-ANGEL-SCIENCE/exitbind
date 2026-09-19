@@ -48,14 +48,48 @@ pub(crate) fn project(work: &str, snapshot: &RunSnapshot, next: &Value) -> Resul
 /// assessment that drive work decisions, so rewording or translating human
 /// help can never move a classification. Presentation reads these; it never
 /// reads display text.
-pub(crate) fn facts(snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
+pub(crate) fn facts(
+    snapshot: &RunSnapshot,
+    next: &Value,
+    current_inputs: impl FnOnce() -> Option<String>,
+) -> Result<Value, String> {
     let view = snapshot.inspect_view();
     let status = if view["status"] == "running" {
         snapshot.status_view()?
     } else {
         Value::Null
     };
-    Ok(facts_from(&view, &status, next))
+    let mut facts = facts_from(&view, &status, next);
+    facts["acceptance"] = json!(acceptance_state(&view, current_inputs));
+    Ok(facts)
+}
+
+/// Whether a recorded acceptance still describes the files present now.
+///
+/// A terminal run's identities are the historical ones: the kernel establishes
+/// nothing about the current tree for it. So an acceptance may speak for the
+/// present only while the exact tested inputs it was bound to are still the
+/// ones on disk. Anything else - a changed file, an unreadable tree, a run
+/// from before inputs were bound at all - leaves it as history.
+fn acceptance_state(view: &Value, current_inputs: impl FnOnce() -> Option<String>) -> &'static str {
+    if view["status"] != "accepted" {
+        return "none";
+    }
+    let accepted = view["submissions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|event| event["role"] == "lead" && event["outcome"] == "accepted")
+        .last()
+        .and_then(|event| event["inputsSha256"].as_str().map(str::to_owned));
+    let Some(accepted) = accepted else {
+        return "unbound";
+    };
+    match current_inputs() {
+        Some(now) if now == accepted => "current",
+        Some(_) => "superseded",
+        None => "unknown",
+    }
 }
 
 fn facts_from(view: &Value, status: &Value, next: &Value) -> Value {
