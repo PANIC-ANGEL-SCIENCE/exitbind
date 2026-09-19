@@ -2,6 +2,11 @@
 
 ## 0.21.0
 
+- The terminal block is offered on the low-level run surface too. A lead that
+  drilled down to `run status` found no product wording there and composed its
+  own closing sentence; both surfaces now read the same rule, so the run surface
+  ends on the same block and `run status --json` carries it as `terminal`. The
+  guard is unchanged: a changed tree ends the block.
 - The host bridge can no longer be downgraded by an older process. `exitbind
   update` hands post-update bridge synchronization to the newly installed
   binary, and an up-to-date binary reports what is missing instead of
