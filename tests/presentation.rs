@@ -158,6 +158,7 @@ fn an_unchanged_state_is_read_without_repeating_the_line() {
     let first = project.presentation(&work);
     assert_eq!(first["transition"], "evidence_became_current");
     assert_eq!(first["phrase"], "It fits now.");
+    assert!(first["terminal"].is_null());
     for _ in 0..3 {
         let again = project.presentation(&work);
         assert!(again["transition"].is_null(), "{again}");
@@ -221,6 +222,7 @@ fn preservation_speaks_when_it_becomes_active_and_then_stays_quiet() {
 
     let active = project.presentation(&work);
     assert_eq!(active["state"]["preservation"], "active");
+    assert!(active["terminal"].is_null());
     let holytail = active["holytail"].as_str().unwrap();
     // The accepted requirements resolve the route, and the accepted policy
     // assigns FULL to the formal route. The evidence axis reports how the
@@ -258,12 +260,17 @@ fn terminal_readiness_says_exit_ready_and_nothing_else() {
 
     let ready = project.presentation(&work);
     assert_eq!(ready["exitState"], "READY");
+    assert_eq!(ready["terminal"], "EXIT READY");
     assert!(
         ready["transition"].is_null(),
         "READY takes no flavour line: {ready}"
     );
     assert!(ready["phrase"].is_null());
     assert_eq!(ready["neuro"], "[Neuro] Exitbind progress: 100%.");
+    let reread = project.presentation(&work);
+    assert_eq!(reread["terminal"], "EXIT READY");
+    assert!(reread["transition"].is_null());
+    assert!(reread["phrase"].is_null());
     fs::remove_dir_all(project.root).unwrap();
 }
 

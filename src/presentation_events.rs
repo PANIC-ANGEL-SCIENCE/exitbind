@@ -260,9 +260,13 @@ pub(crate) fn project(
         .as_u64()
         .filter(|_| applicable)
         .map(|percent| format!("[Neuro] Exitbind progress: {percent}%."));
+    // The host copies the product-owned terminal block verbatim. Keeping it
+    // separate from machine state prevents host-generated suffixes.
+    let terminal = crate::run_exit::is_ready(&current.exit_state).then_some("EXIT READY");
     json!({
         "progress": if applicable { progress["percent"].clone() } else { Value::Null },
         "exitState": current.exit_state,
+        "terminal": terminal,
         "next": current.next,
         "state": current.value(),
         "transition": key,
