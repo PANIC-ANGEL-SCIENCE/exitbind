@@ -345,3 +345,29 @@ fn stale_session_cache_refreshes_with_local_fake_curl() {
     assert!(calls.is_file());
     assert!(String::from_utf8_lossy(&output.stdout).contains("Run `soulmate` update"));
 }
+
+/// A session that never opens the skill file still learns the one rule that
+/// decides what the user sees at the end: the injected project context names
+/// it, because the host's own guidance discovery is not guaranteed.
+#[test]
+fn session_context_carries_the_terminal_block_rule() {
+    let fixture = Fixture::new("portable");
+    let response =
+        fixture.hook(&serde_json::to_vec(&fixture.payload("SessionStart", "startup")).unwrap());
+    let response: Value = serde_json::from_slice(&response.stdout).unwrap();
+    let context = response["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        context.contains(
+            "carries a non-null `presentation.terminal`, print that value on a line of its own"
+        ),
+        "the injected context does not state the terminal rule: {context}"
+    );
+    // It stays a pointer-sized fact, not a copy of the skill.
+    assert!(
+        context.len() < 1200,
+        "injected context grew to {}",
+        context.len()
+    );
+}

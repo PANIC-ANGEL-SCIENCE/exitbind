@@ -17,6 +17,9 @@
   (including when nothing is active and the last run is reported), and the
   decision that reaches the state. Both distributed guidance copies say to
   print the value on a line of its own with nothing attached to it.
+- The session context a configured project injects names the terminal rule, so
+  a lead that never opens the skill file still knows to print the value it is
+  handed rather than compose a sentence around it.
 - An acceptance stops speaking for the tree once the tree moves. A terminal
   run's identities are historical, so the terminal block is offered only while
   the exact tested inputs the acceptance was bound to are still the ones on
