@@ -596,3 +596,47 @@ fn the_display_memo_names_itself_and_claims_no_authority() {
     assert_eq!(fs::read_to_string(&path).unwrap(), foreign);
     fs::remove_dir_all(project.root).unwrap();
 }
+
+/// A reader who drills down to the low-level run surface must not lose the
+/// product's wording: a lead was observed doing exactly that and composing its
+/// own closing sentence because this surface offered none.
+#[test]
+fn the_run_surface_offers_the_same_terminal_block() {
+    let project = Project::new("terminal-run-surface");
+    let work = begin(&project, false);
+    let decision = project.drive_until(&work, "lead_decision");
+    project.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work["smw_".len()..]);
+
+    let printed = project.call(&["run", "status", &ledger], None);
+    assert!(printed.status.success(), "{printed:?}");
+    let text = String::from_utf8_lossy(&printed.stdout);
+    assert_eq!(
+        text.lines().last(),
+        Some("EXIT READY"),
+        "the run surface does not end with the terminal block: {text}"
+    );
+    assert_eq!(text.matches("EXIT READY").count(), 1);
+
+    let machine = project.value(&["run", "status", &ledger, "--json"], None);
+    assert_eq!(machine["terminal"], "EXIT READY");
+
+    // The same guard applies here: a changed tree ends the block.
+    fs::write(project.root.join("source.txt"), b"env-first\nlater\n").unwrap();
+    let after = String::from_utf8_lossy(&project.call(&["run", "status", &ledger], None).stdout)
+        .into_owned();
+    assert!(!after.contains("EXIT READY"), "{after}");
+    let machine = project.value(&["run", "status", &ledger, "--json"], None);
+    assert!(machine["terminal"].is_null());
+    fs::remove_dir_all(project.root).unwrap();
+}

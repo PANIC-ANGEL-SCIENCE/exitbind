@@ -987,6 +987,16 @@ pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<
     crate::run_value::explain_with_artifact(&state, event_id, artifact_current)
 }
 
+/// The terminal block this run offers a reader, if any. Read-only, and
+/// separate from the status projection so the display surfaces can share one
+/// rule with the work facade.
+pub(crate) fn terminal_display(loaded: &Loaded, ledger: &str) -> Option<&'static str> {
+    let snapshot = RunSnapshot::capture(loaded, ledger).ok()?;
+    crate::work_packet::terminal_display(&snapshot.inspect_view(), || {
+        crate::run_inputs::fingerprint(loaded).ok()
+    })
+}
+
 /// Build the typed read-only projection used by the default human status view.
 pub(crate) fn human_status(
     loaded: &Loaded,

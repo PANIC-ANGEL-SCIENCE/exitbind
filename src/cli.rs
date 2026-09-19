@@ -860,8 +860,11 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let ledger = positional(a, 1, "run status requires LEDGER")?;
             let json_output = a.flags.contains_key("json");
             if json_output {
-                let value = run::status(l, ledger)
+                let mut value = run::status(l, ledger)
                     .map_err(|error| map_run_error(error, true))?;
+                if let Some(terminal) = run::terminal_display(l, ledger) {
+                    value["terminal"] = json!(terminal);
+                }
                 print_json(&value)?;
                 return Ok(());
             }
@@ -892,6 +895,12 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                         println!("Inspect: {}", crate::presentation::read_command("inspect", config, ledger));
                     }
                 }
+            }
+            // The same block the work facade offers, last, so a reader who
+            // drilled down to the run surface still has the product's own
+            // wording instead of composing a sentence from the report above.
+            if let Some(terminal) = run::terminal_display(l, ledger) {
+                println!("{terminal}");
             }
             return Ok(());
         }

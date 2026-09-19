@@ -71,6 +71,16 @@ pub(crate) fn facts(
 /// present only while the exact tested inputs it was bound to are still the
 /// ones on disk. Anything else - a changed file, an unreadable tree, a run
 /// from before inputs were bound at all - leaves it as history.
+/// The terminal display value for a run, or nothing. Every surface that
+/// reports a decision offers the same wording from the same rule, so a reader
+/// never has to compose one.
+pub(crate) fn terminal_display(
+    view: &Value,
+    current_inputs: impl FnOnce() -> Option<String>,
+) -> Option<&'static str> {
+    (acceptance_state(view, current_inputs) == "current").then_some("EXIT READY")
+}
+
 fn acceptance_state(view: &Value, current_inputs: impl FnOnce() -> Option<String>) -> &'static str {
     if view["status"] != "accepted" {
         return "none";
