@@ -636,6 +636,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
         let goal = json!({
             "requestId": "one", "explicitLeadClosure": true,
             "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
@@ -670,6 +671,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
         assert!(failure_joke_once(
             &root,
             "run:blocked:check_missing",
