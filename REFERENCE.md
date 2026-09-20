@@ -44,10 +44,10 @@ Install the supported release as a single Rust binary. Node.js, npm, Python,
 and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.22.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.23.0/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
-exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --ledger .exitbind/runs/run.jsonl --config exitbind.json
+exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --review-policy required --ledger .exitbind/runs/run.jsonl --config exitbind.json
 exitbind check --config exitbind.json
 ```
 
@@ -58,7 +58,7 @@ The stable release includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The v0.22.0 stable release targets Linux x86_64 and native macOS on Apple
+The v0.23.0 stable release targets Linux x86_64 and native macOS on Apple
 Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -142,7 +142,8 @@ exercise, jump to [Evaluation](#evaluation).
 
 For an unchecked handoff after initialization, use a new ledger. This form
 has no check-result requirement; use [checked acceptance](#checked-acceptance)
-when project checks must qualify acceptance:
+when project checks must qualify acceptance. The explicit `--review-policy
+required` below marks the new run and keeps the reviewer gate selected at entry:
 
 ```sh
 exitbind run start change --goal "Describe the bounded change you want to make" --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -168,6 +169,19 @@ exitbind run submit lead .exitbind/runs/run.jsonl \
 Submissions are role-scoped evidence, not votes; matching outcomes do not prove
 consensus.
 
+The owner can revise the policy only on a marked running run. Record the actual
+choice with the lead agent and ledger path:
+
+```sh
+exitbind run review-policy lead .exitbind/runs/run.jsonl \
+  --decision omitted --reason "Owner selected no independent review" \
+  --config exitbind.json
+```
+
+`--decision required` and `--decision omitted` are the only choices. A run
+started without `--review-policy` is the unmarked historical path: it retains
+required-review semantics and cannot use `run review-policy` later.
+
 ### Checked acceptance
 
 Opt a new run into one frozen deterministic check command:
@@ -175,7 +189,8 @@ Opt a new run into one frozen deterministic check command:
 ```sh
 exitbind run start change --goal "Describe the bounded change" \
   --ledger .exitbind/runs/checked.jsonl \
-  --check-command "cargo test --locked" --config exitbind.json
+  --check-command "cargo test --locked" --review-policy required \
+  --config exitbind.json
 ```
 
 The native host performs and submits the normal assignments. With the stable
@@ -194,7 +209,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in the `v0.22.0` stable release use run-event format 6. The
+New checked runs in the `v0.23.0` stable release use run-event format 6. The
 reader retains historical v1–v5 ledgers, including their original producer
 values and guarantees; v5 binds an Accepted Subject to each result and evidence
 record. The stable release supports v3 caller-reported and v4 observed-check
@@ -309,7 +324,7 @@ files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.22.0/install.sh | EXITBIND_VERSION=v0.22.0 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.23.0/install.sh | EXITBIND_VERSION=v0.23.0 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -572,6 +587,7 @@ is not the starter config created by `exitbind init`:
 exitbind run start change --goal "One bounded change" \
   --ledger .exitbind/boundary-run.jsonl \
   --boundary examples/boundaries/change.json \
+  --review-policy required \
   --config examples/exitbind.json
 ```
 
@@ -618,6 +634,7 @@ exitbind plan change --goal "One bounded change" \
 exitbind run start change --goal "One bounded change" \
   --ledger .exitbind/runs/away.jsonl \
   --harness-receipt .exitbind/receipts/harness.json \
+  --review-policy required \
   --config examples/exitbind.json
 # After the lead has submitted `scoped` and `run next` shows this assignment:
 exitbind away start implementation_worker .exitbind/runs/away.jsonl \
@@ -667,14 +684,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.22.0
+dotagents --project add envy404/exitbind --ref v0.23.0
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.22.0
+dotagents --project add envy404/exitbind --ref v0.23.0
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -766,7 +783,7 @@ Removing the binary leaves the managed host bridge in place. Delete
 records in `~/.codex/hooks.json` and `~/.claude/settings.json` if the hosts
 should no longer discover Exitbind.
 
-An install or update since `v0.22.0` keeps the replaced binary in one hidden
+An install or update since `v0.23.0` keeps the replaced binary in one hidden
 `.exitbind-previous-PID/` directory beside the installed binary, so a running
 older updater is not disrupted; the next install removes it, or delete it
 explicitly with the binary.
@@ -842,7 +859,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.22.0/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.23.0/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

@@ -2,15 +2,21 @@
 
 **A reported “done” is not an accepted result.**
 
-You already merge changes from Codex or Claude. The agent says the work is
-finished and the tests pass—and the pass may be real but belong to the agent's
-previous result or to files that changed since, or the review may have approved
-a result that was replaced.
-That evidence opens a different door.
+The code can be current. The tests can have passed. The review can have
+approved. All three can still belong to different results.
 
-Exitbind is a local CLI for the agent you already use. A check, a review, and
-lead acceptance count only for the exact result they were taken on. **No result
-exits unbound.**
+Exitbind is a local acceptance boundary for coding-agent work. Checks,
+independent review, and Lead acceptance count only for the exact result they
+were taken on. When that result changes, evidence that no longer belongs to it
+stays historical.
+
+**The map can be stale. The room cannot.**
+
+Packets, summaries, progress, and display are derived views. Recorded state and
+the current subject identity decide what still holds. A real check or review
+from another result remains historical evidence.
+
+**No result exits unbound.**
 
 ```text
 Without Exitbind
@@ -24,7 +30,7 @@ With Exitbind
   Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current stable release: `v0.22.0`. One local binary; it calls no model and runs
+Current stable release: `v0.23.0`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -33,13 +39,13 @@ no daemon or cloud service.
 
 ## See a wrong door refused
 
-This page describes `v0.22.0` for Linux x86_64 and macOS on Apple Silicon or
+This page describes `v0.23.0` for Linux x86_64 and macOS on Apple Silicon or
 Intel. The pinned installer places the executable under `$HOME/.local/bin` and
 verifies the archive checksum. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.22.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.23.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -77,8 +83,8 @@ passed" can both be true while the pass belongs to another version.
 
 A **wrong door** is evidence taken on a different result: a check from before the
 last worker result or before a covered project file changed, or a review of a
-result that was replaced. Evidence is not a
-master key, so Exitbind will not reuse it. The CLI does not print the words
+result that was replaced. **Evidence is not a master key**, so Exitbind will not
+reuse it. The CLI does not print the words
 "wrong door"; it reports one of three exit states with a precise reason code:
 
 - `EXIT READY`: the current result earned every required step.
@@ -100,7 +106,9 @@ asks before installation, project writes, or permission changes. After you
 approve, it uses the local CLI plus project-local guidance:
 
 - **Small and reversible work** stays direct; Exitbind is used selectively.
-- **Material work** binds its evidence to the exact result before it can exit.
+- **Material or promotion-required work** binds its evidence to the exact result
+  before it can exit. Classification follows consequence and promotion, not
+  file count; read-only planning and disposable exploration can stay direct.
 - **Resumed work** keeps evidence that still belongs to the same result, so a
   new session does not redo a valid check or review. A changed result needs fresh
   evidence.
@@ -111,7 +119,8 @@ A pasted URL is guidance, not proof that a host followed it.
 ## How material work exits
 
 ```text
-one link -> classify -> exact-result check -> independent review -> lead acceptance -> verified receipt
+one link -> classify -> exact-result check -> review decision
+          -> applicable review -> lead acceptance -> verified receipt
 ```
 
 ```text
@@ -120,7 +129,8 @@ normal request
   -> material: bind the requirements and exact result
        -> implementation complete
        -> exact-result check passed
-       -> independent review complete
+       -> review decision (Lead recommends; owner decides and may revise)
+       -> applicable review complete
        -> lead accepted
        -> EXIT READY, EXIT REFUSED, or EXIT BLOCKED
 ```
@@ -130,6 +140,27 @@ These doors stay separate:
 - Worker completion is not a passing check.
 - A passing check is not reviewer approval.
 - Reviewer approval is not lead acceptance.
+
+For important work, the Lead recommends independent review and the owner decides
+whether it is required. The owner can revise that choice while work continues.
+An explicit omission is recorded as an omission; it is never called review
+approval. When review is required, current independent approval remains
+necessary. Checks, preservation obligations, currentness, and Lead acceptance
+remain separate gates in either policy.
+
+At a new governed entry, record that owner choice explicitly with
+`--review-policy required` or `--review-policy omitted`. To revise a choice on
+the marked running run, use the actual run interface, for example:
+
+```sh
+exitbind run review-policy lead .exitbind/runs/run.jsonl \
+  --decision omitted --reason "Owner selected no independent review" \
+  --config exitbind.json
+```
+
+A run started without `--review-policy` is the unmarked historical path. It
+keeps the historical required-review semantics and cannot later use
+`run review-policy`; a new run should choose its policy at entry.
 
 In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change. For an accepted checked run it can emit a
 verifiable receipt.
@@ -143,6 +174,25 @@ reviews not to repeat. A session restart alone does not erase valid evidence.
 Before skipping work listed in a saved packet, `work validate WORK --packet FILE`
 rechecks it against current state and returns the canonical packet to act on. A
 finished run is history: its packet never authorizes skipping new work.
+
+## The Lead sets the Frame
+
+For work where structure matters, the Lead sets the Frame before workers move
+in. The Frame fixes the shared decisions that must not be silently
+reinterpreted: ownership, interfaces, stable identities, material state
+transitions, compatibility constraints, preserved behavior, decisive cases, and
+explicit non-goals.
+
+The Frame is not a full implementation plan or a transcript summary. Workers
+choose local implementation details inside its open zones. If implementation
+exposes a contradiction, the worker returns it to the Lead instead of silently
+choosing new meaning. The Frame is current authority, not eternal truth; the
+Lead can supersede it with a successor basis when evidence requires one.
+
+Workers share the Frame. The independent reviewer does not owe it agreement and
+can challenge the shared assumption, preservation, compatibility, authority,
+lifecycle, or evidence. A finding requires causal disposition and renewal of the
+affected evidence.
 
 For material work, the optional narration stays small:
 
@@ -185,7 +235,7 @@ project writes:
 
 ```sh
 # Codex
-codex plugin marketplace add envy404/exitbind --ref v0.22.0
+codex plugin marketplace add envy404/exitbind --ref v0.23.0
 codex plugin add exitbind@exitbind-plugins
 
 # Claude Code
@@ -193,7 +243,7 @@ claude plugin marketplace add envy404/exitbind
 claude plugin install exitbind@exitbind-plugins
 ```
 
-The Codex command pins `v0.22.0`; Claude Code follows the repository's current
+The Codex command pins `v0.23.0`; Claude Code follows the repository's current
 default branch. The plugin contains the Exitbind skill only: it installs no CLI,
 hook, MCP server, app, or model.
 

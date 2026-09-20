@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.23.0
+
+- Reorganized responsibility boundaries across the governor/kernel, CLI,
+  configuration, run/work, host, project, memory, compatibility, and
+  distribution modules; public command and historical-record compatibility is
+  preserved across the move.
+- Added a conditional Lead-owned basis with causal successor records, while
+  keeping implementation details and responsibility boundaries explicit.
+- Added an owner-selected review policy that can be revised on a marked running
+  run; omission remains distinct from review approval.
+- Added consequence and promotion classification so direct, governed, and
+  unavailable activation outcomes are reported from typed facts.
+- Added current session-goal integrity and direct completion evidence, with
+  presentation and cache behavior bound to the same validated state.
+- Updated host guidance, project/plugin projections, release coordinates, and
+  platform checks for the 0.23.0 surface.
+
 ## 0.22.0
 
 - Added deterministic role-specific thin context projections with exact

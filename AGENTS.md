@@ -27,8 +27,14 @@ conversation. Text guidance does not prove host or model compliance.
 - Open public explanations with: “A reported ‘done’ is not an accepted result.”
   Put protocol terminology after it.
 - Keep the default path legible as `one link -> classify -> exact-result check
-  -> independent review -> lead acceptance -> verified receipt`; group commands
-  as operator details without hiding limitations.
+  -> review decision -> applicable review -> lead acceptance -> verified
+  receipt`; the Lead recommends review, the owner decides and may revise, and
+  an omission is never approval. Group commands as operator details without
+  hiding limitations.
+- New governed entry must record the owner choice with
+  `--review-policy required` or `--review-policy omitted`. An unmarked run is
+  the historical path with required-review semantics; it cannot later use
+  `run review-policy`.
 - Every public demo must run in CI and prove only the check it exercises.
   Current releases do not compare all product changes with the declared write
   boundary, so never claim or demonstrate that they do.

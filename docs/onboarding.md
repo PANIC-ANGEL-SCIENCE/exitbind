@@ -3,10 +3,12 @@
 Start in the existing Codex or Claude root conversation. Describe the work in
 ordinary language; when a reviewed project preference makes it appropriate, the
 root lead handles authorized Exitbind setup, selection, records, checks,
-recovery, and a concise report in that conversation. Ordinary reversible work
-stays direct. The human owns the outcome, preferences, permissions, and genuine
-decisions; silence is never approval. A preference is selective guidance, not a
-host permission grant or proof that native roles are usable.
+recovery, and a concise report in that conversation. Classify by material
+consequence or promotion requirement, not file count: ordinary reversible work
+stays direct where its consequence permits it. The human owns the outcome,
+preferences, permissions, and genuine decisions; silence is never approval. A
+preference is selective guidance, not a host permission grant or proof that
+native roles are usable.
 
 For a real change, [ask your existing host](#ask-your-existing-host-to-manage-the-run)
 to handle the governed path, or inspect the model-free
@@ -47,6 +49,20 @@ With the human's approval, add one short note to the project's existing
 selectively for tasks that need independent review, resumability, or a
 deterministic handoff; keep routine small reversible work direct.” This is
 project-scoped guidance, not a global setting or a permission grant.
+
+For important work, the Lead recommends independent review; the owner chooses
+whether it is required and may revise that choice while work continues. An
+explicit omission is recorded as an omission, never as review approval. Checks,
+currentness, preservation obligations, and Lead acceptance remain separate.
+
+At a new governed entry, record the choice explicitly with
+`--review-policy required` or `--review-policy omitted`. A marked running run
+can record a later owner revision with
+`exitbind run review-policy lead LEDGER --decision omitted --reason REASON
+--config CONFIG`; use `--decision required` for the other choice. A run started
+without `--review-policy` is an unmarked
+historical path: it retains required-review semantics and cannot use that later
+policy command.
 
 ## Ask your existing host to manage the run
 
@@ -110,7 +126,7 @@ or an unavailable native agent requires a real resolution.
 This path also works with the historical JSON command surface when a compatible
 installed binary is required; it does not require building Rust locally. The
 bundled skill describes the handoff and your host executes it. Exitbind
-`v0.22.0` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.23.0` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.

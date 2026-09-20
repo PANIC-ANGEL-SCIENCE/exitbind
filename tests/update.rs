@@ -404,7 +404,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
     );
     fs::remove_dir_all(stable_root).unwrap();
 
-    let upgrade_case = matrix::case("updater-prerelease-order");
+    let upgrade_version = available_update_tag();
     let upgrade_root = support::temp("updater-valid-control");
     let upgrade_bin = upgrade_root.join("bin");
     let upgrade_prefix = upgrade_root.join("prefix");
@@ -424,10 +424,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         .env("HOME", &upgrade_root)
         .env("EXITBIND_NO_UPDATE_CHECK", "1")
         .env("EXITBIND_INSTALL_PREFIX", &upgrade_prefix)
-        .env(
-            "FAKE_RELEASE_TAG",
-            upgrade_case["version"].as_str().unwrap(),
-        )
+        .env("FAKE_RELEASE_TAG", &upgrade_version)
         .output()
         .unwrap();
     assert!(upgraded.status.success(), "{upgraded:?}");
@@ -440,10 +437,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
                 .stdout
         )
         .trim(),
-        upgrade_case["version"]
-            .as_str()
-            .unwrap()
-            .trim_start_matches('v')
+        upgrade_version.trim_start_matches('v')
     );
     fs::remove_dir_all(upgrade_root).unwrap();
 }

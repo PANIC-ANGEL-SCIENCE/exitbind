@@ -2,13 +2,14 @@
 
 It verifies what you asked an agent to do and what came back, in the same record.
 
-Follow a change from a completion claim through its check, review, and lead
-acceptance. When the check fails, keep the earlier result and continue with a
-fresh attempt. The [authority boundary](../REFERENCE.md#authority-boundary)
+Follow a change from a completion claim through its check, the applicable
+owner-selected review policy, and lead acceptance. When the check fails, keep
+the earlier result and continue with a fresh attempt. The
+[authority boundary](../REFERENCE.md#authority-boundary)
 defines who owns each action; [SECURITY.md](../SECURITY.md) defines what the
 local evidence can establish.
 
-In `v0.22.0`, new checked runs use run-event format 6. Exitbind binds each submission, check,
+In `v0.23.0`, new checked runs use run-event format 6. Exitbind binds each submission, check,
 review, and acceptance result to the run's exact Accepted Subject and records
 the tested-input identity of the product root; a stale subject or changed
 tested inputs are refused. Historical v1–v5 ledgers remain readable under their
@@ -76,8 +77,9 @@ normal version-control checkpoint or backup for product changes. Exitbind
 records results; it does not undo product edits.
 
 The following uses a new portable project configuration and the starter
-`change` workflow (`lead`, `worker`, `reviewer`, then `lead`). If already
-configured, keep that configuration and follow its assignments instead. For
+`change` workflow (`lead`, `worker`, `reviewer`, then `lead`), which exercises a
+review-required path. If already configured, keep that configuration and follow
+its assignments and owner-selected review policy instead. For
 control/state outside the checkout, follow [local mode](onboarding.md#choose-the-storage-mode).
 
 Raw goals, command strings, result documents, and ledgers are private operational
@@ -112,15 +114,20 @@ ledger=.exitbind/runs/run.jsonl
 attempt=1
 exitbind brief worker --task "$goal" --config exitbind.json
 exitbind run start change --goal "$goal" --check-command "$check_command" \
-  --ledger "$ledger" --config exitbind.json
+  --review-policy required --ledger "$ledger" --config exitbind.json
 exitbind check --config exitbind.json
 exitbind run next "$ledger" --text --config exitbind.json
 ```
 
 `run start` prints a checked-run notice on stderr while keeping JSON stdout.
-`check` validates configuration; the project check runs later. An unchecked run
-is still supported by omitting `--check-command`, but it has no check-result
-requirement for acceptance.
+This example explicitly selects the review-required policy at entry. An owner
+who has selected omission can use `--review-policy omitted` instead and may
+revise that choice later while the marked run is running. A `run start` that
+omits the option is the historical unmarked path: it retains required-review
+semantics and cannot later use `run review-policy`. `check` validates
+configuration; the project check runs later. An unchecked run is still
+supported by omitting `--check-command`, but it has no check-result requirement
+for acceptance.
 
 ### 1. Record the lead's scope
 
@@ -265,7 +272,7 @@ recorded bytes. Intentional governing-input changes need explicit
 [supersession](../REFERENCE.md#run-and-recovery) where permitted; accepted and
 rejected predecessors remain final.
 
-For the stable `v0.22.0` release, `run observe-check` can execute only the frozen
+For the stable `v0.23.0` release, `run observe-check` can execute only the frozen
 command locally while v3 ledgers remain report-only. After updating the binary, refresh owned project skills with `exitbind init
 --refresh-skills --root .` and reload the host. Keep a binary compatible with
 run-event format 3 for checked-ledger rollback. Remove optional hooks before

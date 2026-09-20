@@ -25,8 +25,8 @@ Verified current facts:
   plugin manifests, and git parentage. It does not read run state.
 
 So on 2026-09-19 a commit produced by a run that closed `blocked` reached the
-`v0.22.0` ancestry, and no mechanical check objected. The ledger was honest;
-nothing consumed its honesty.
+then-current release ancestry, and no mechanical check objected. The ledger was
+honest; nothing consumed its honesty.
 
 Scope caveat, stated up front: **this must not make every arbitrary Git tag
 depend on Exitbind.** Any binding must apply only to a clearly configured
