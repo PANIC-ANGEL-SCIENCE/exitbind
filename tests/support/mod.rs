@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub fn temp(label: &str) -> PathBuf {
@@ -15,6 +16,22 @@ pub fn temp(label: &str) -> PathBuf {
             Err(error) => panic!("create test directory: {error}"),
         }
     }
+}
+
+/// Run a command under a pseudo-terminal on both GNU and BSD `script`.
+///
+/// GNU accepts `script -qec COMMAND /dev/null`; macOS uses `script -q
+/// /dev/null sh -c COMMAND`. Keeping the platform spelling here preserves
+/// the TTY-dependent presentation checks without skipping them on macOS.
+#[allow(dead_code)]
+pub fn pty(command: &str) -> Command {
+    let mut process = Command::new("script");
+    if cfg!(target_os = "macos") {
+        process.args(["-q", "/dev/null", "sh", "-c", command]);
+    } else {
+        process.args(["-qec", command, "/dev/null"]);
+    }
+    process
 }
 
 /// Place an executable at `target` without racing another thread's fork.

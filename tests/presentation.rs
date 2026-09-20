@@ -1196,8 +1196,7 @@ fn resolved_goal_facts_are_not_projected_as_pending_card_items() {
         ledger,
         project.root.join("exitbind.json").display()
     );
-    let output = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let output = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1294,8 +1293,7 @@ fn all_five_resolved_categories_emit_then_new_open_item_suppresses_card() {
         ledger,
         project.root.join("exitbind.json").display()
     );
-    let output = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let output = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1315,8 +1313,7 @@ fn all_five_resolved_categories_emit_then_new_open_item_suppresses_card() {
         ],
         None,
     );
-    let output = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let output = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1366,8 +1363,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
         project.root.join("exitbind.json").display()
     );
     fs::write(project.root.join("source.txt"), b"drifted\n").unwrap();
-    let first = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let first = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1381,8 +1377,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
         .root
         .join(".exitbind/presentation/session-goal.json");
     fs::write(&cache, b"corrupt cache").unwrap();
-    let corrupt_stale = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let corrupt_stale = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1393,8 +1388,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
         "{corrupt_stale_text}"
     );
     fs::write(project.root.join("source.txt"), b"env-first\n").unwrap();
-    let current = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let current = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1406,8 +1400,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     );
     fs::write(project.root.join("source.txt"), b"drifted\n").unwrap();
     fs::remove_file(&cache).unwrap();
-    let second = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let second = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1469,8 +1462,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
     );
     // The display-only flag cannot manufacture whole-session closure, even
     // when the run itself is READY.
-    let before_goal = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let before_goal = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1508,8 +1500,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
         ],
         None,
     );
-    let first = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let first = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1517,8 +1508,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
     let first_text = String::from_utf8_lossy(&first.stdout).replace('\r', "");
     assert_eq!(first_text.matches(card).count(), 1, "{first_text}");
     assert_eq!(first_text.lines().last(), Some("EXIT READY"));
-    let second = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let second = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1530,8 +1520,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
             .join(".exitbind/presentation/session-goal.json"),
     )
     .unwrap();
-    let after_loss = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let after_loss = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1574,8 +1563,7 @@ fn interactive_failure_joke_is_transition_scoped_and_machine_silent() {
         ledger,
         project.root.join("exitbind.json").display()
     );
-    let first = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let first = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
@@ -1584,8 +1572,7 @@ fn interactive_failure_joke_is_transition_scoped_and_machine_silent() {
     let joke = "Developer special: the bug has requested a second opinion.";
     assert_eq!(first_text.matches(joke).count(), 1, "{first_text}");
     assert!(first_text.find("Lead decision: blocked").unwrap() < first_text.find(joke).unwrap());
-    let second = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let second = support::pty(&command)
         .current_dir(&project.root)
         .output()
         .unwrap();
