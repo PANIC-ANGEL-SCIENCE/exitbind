@@ -1,5 +1,5 @@
 use crate::config::{self, Loaded};
-use crate::hash;
+use crate::evidence::hash;
 use serde_json::{json, Value};
 
 const BRIEF_NOTICE: &str = "This is a plan-only brief. Runtime fields are requested bindings, not a model invocation or OS sandbox. The lead remains responsible for scope and final acceptance.";
@@ -112,8 +112,9 @@ fn attach_memory_references(
     agent_name: &str,
     envelope: &mut Value,
 ) -> Result<(), String> {
-    if crate::memory_policy::get(&loaded.config).is_some() {
-        envelope["memoryReferences"] = json!(crate::memory_selection::resolve(loaded, agent_name)?);
+    if crate::memory::policy::get(&loaded.config).is_some() {
+        envelope["memoryReferences"] =
+            json!(crate::memory::selection::resolve(loaded, agent_name)?);
     }
     Ok(())
 }

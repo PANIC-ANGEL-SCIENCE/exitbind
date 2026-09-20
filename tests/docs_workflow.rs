@@ -191,7 +191,7 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     let first = read("docs/first-checked-run.md");
     let methodology = read("docs/value-proof-methodology.md");
     let glossary = read("docs/glossary.md");
-    let cli = read("src/cli.rs");
+    let cli = read("src/cli/mod.rs");
     for document in [&readme, &reference, &security] {
         assert!(document.contains("v0.22.0"));
         assert!(!document.contains("unreleased v5"));

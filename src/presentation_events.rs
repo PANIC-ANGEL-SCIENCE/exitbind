@@ -15,6 +15,188 @@ use std::path::{Path, PathBuf};
 /// A cache holds at most one small document; anything larger is not ours.
 const CACHE_LIMIT: u64 = 64 * 1024;
 
+#[allow(dead_code)]
+pub(crate) const SESSION_GOAL_CARD: &str =
+    "+------------------------------+\n| Nothing remains here.        |\n+------------------------------+\n\nEXIT READY";
+
+/// Render the explicit whole-session closure card from lead-owned facts. A
+/// ready run alone is insufficient: every requested category must be empty and
+/// closure must be explicitly recorded by the lead. This function is pure so
+/// interactive renderers can keep it out of structured protocol output.
+#[allow(dead_code)]
+pub(crate) fn session_goal_card(
+    packet: &Value,
+    progress: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let goal = &packet["humanHelp"]["sessionGoal"];
+    let empty = |key: &str| goal[key].as_array().is_some_and(|items| items.is_empty());
+    if !interactive
+        || closed_stdin
+        || !crate::run_exit::is_ready(progress["state"].as_str().unwrap_or(""))
+        || goal["explicitLeadClosure"] != true
+        || ![
+            "subgoals",
+            "findings",
+            "blockers",
+            "decisions",
+            "externalActions",
+        ]
+        .iter()
+        .all(|key| empty(key))
+    {
+        return None;
+    }
+    Some(SESSION_GOAL_CARD)
+}
+
+/// Once-only transition helper for a renderer's replaceable memo. A new
+/// request identity deliberately prevents reuse of an earlier closure.
+#[allow(dead_code)]
+pub(crate) fn session_goal_card_transition(
+    previous: Option<&Value>,
+    packet: &Value,
+    progress: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let card = session_goal_card(packet, progress, interactive, closed_stdin)?;
+    let request = packet["humanHelp"]["sessionGoal"]["requestId"].as_str()?;
+    if previous.is_some_and(|value| {
+        value["requestId"].as_str() == Some(request) && value["cardEmitted"] == true
+    }) {
+        None
+    } else {
+        Some(card)
+    }
+}
+
+/// Human-only bridge for the lead-owned session closure card. The memo is a
+/// replaceable display cache: loss or corruption can repeat an optional card,
+/// but never changes canonical state, acceptance, or evidence.
+pub(crate) fn session_goal_card_for_human(
+    state_root: &Path,
+    session_goal: &Value,
+    progress: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let packet = json!({"humanHelp": {"sessionGoal": session_goal}});
+    let previous = remembered_session_card(state_root);
+    let card = session_goal_card_transition(
+        previous.as_ref(),
+        &packet,
+        progress,
+        interactive,
+        closed_stdin,
+    )?;
+    remember_session_card(state_root, session_goal["requestId"].as_str()?);
+    Some(card)
+}
+
+/// Record one optional human-only failure joke for a meaningful transition.
+/// The memo is display state only and is safe to lose or corrupt.
+pub(crate) fn failure_joke_once(
+    state_root: &Path,
+    transition_key: &str,
+    interactive: bool,
+    closed_stdin: bool,
+) -> bool {
+    if !interactive || closed_stdin {
+        return false;
+    }
+    let relative = format!(
+        "{}/presentation/failure-joke.json",
+        crate::project::layout_types::state_namespace()
+    );
+    let (previous, previous_raw) = match crate::project::path::secure_bytes_observation(
+        state_root,
+        &relative,
+        "failure joke cache",
+    ) {
+        crate::project::path::SecureBytesResult::Bytes(bytes) => {
+            let raw = String::from_utf8(bytes).ok();
+            let value = raw
+                .as_deref()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok());
+            (value, raw)
+        }
+        _ => (None, None),
+    };
+    if previous.as_ref().is_some_and(|value| {
+        value["kind"] == "derived_failure_joke_memo" && value["transition"] == transition_key
+    }) {
+        return false;
+    }
+    let path = state_root.join(&relative);
+    let Some(directory) = path.parent() else {
+        return false;
+    };
+    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+        return false;
+    }
+    let document = json!({
+        "kind": "derived_failure_joke_memo",
+        "authority": "none",
+        "transition": transition_key,
+    });
+    crate::host::settings::atomic_write(
+        &path,
+        &format!("{document}\n"),
+        Some(0o600),
+        previous_raw.as_deref(),
+        state_root,
+    )
+    .is_ok()
+}
+
+fn session_card_relative() -> String {
+    format!(
+        "{}/presentation/session-goal.json",
+        crate::project::layout_types::state_namespace()
+    )
+}
+
+fn remembered_session_card(state_root: &Path) -> Option<Value> {
+    let relative = session_card_relative();
+    let bytes = match crate::project::path::secure_bytes_observation(
+        state_root,
+        &relative,
+        "session card cache",
+    ) {
+        crate::project::path::SecureBytesResult::Bytes(bytes) => bytes,
+        _ => return None,
+    };
+    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+    (value["kind"] == "derived_session_card_memo").then_some(value)
+}
+
+fn remember_session_card(state_root: &Path, request_id: &str) {
+    let relative = session_card_relative();
+    let path = state_root.join(relative);
+    let Some(directory) = path.parent() else {
+        return;
+    };
+    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+        return;
+    }
+    let document = json!({
+        "kind": "derived_session_card_memo",
+        "authority": "none",
+        "requestId": request_id,
+        "cardEmitted": true,
+    });
+    let previous = std::fs::read_to_string(&path).ok();
+    let _ = crate::host::settings::atomic_write(
+        &path,
+        &format!("{document}\n"),
+        Some(0o600),
+        previous.as_deref(),
+        state_root,
+    );
+}
+
 /// Derived, replaceable memory of what was last presented for one work item.
 /// This is a cache beside the run state, never a second ledger: losing it can
 /// only repeat an optional line, and nothing read from it becomes evidence or
@@ -22,7 +204,7 @@ const CACHE_LIMIT: u64 = 64 * 1024;
 fn cache_relative(work: &str) -> String {
     format!(
         "{}/presentation/{work}.json",
-        crate::project_layout::state_namespace()
+        crate::project::layout_types::state_namespace()
     )
 }
 
@@ -40,12 +222,12 @@ fn remembered(state_root: &Path, work: &str) -> Option<(String, Value)> {
     if std::fs::symlink_metadata(path.as_path()).ok()?.len() > CACHE_LIMIT {
         return None;
     }
-    let bytes = match crate::project_path::secure_bytes_observation(
+    let bytes = match crate::project::path::secure_bytes_observation(
         state_root,
         &cache_relative(work),
         "presentation cache",
     ) {
-        crate::project_path::SecureBytesResult::Bytes(bytes) => bytes,
+        crate::project::path::SecureBytesResult::Bytes(bytes) => bytes,
         _ => return None,
     };
     let text = String::from_utf8(bytes).ok()?;
@@ -73,7 +255,7 @@ struct Classification {
 impl Classification {
     /// The signature decides whether anything worth speaking about changed.
     fn signature(&self) -> String {
-        crate::hash::value(&json!([
+        crate::evidence::hash::value(&json!([
             self.exit_state,
             self.next,
             self.check,
@@ -295,7 +477,7 @@ fn remember(state_root: &Path, work: &str, current: &Classification, previous: O
     let Some(directory) = path.parent() else {
         return;
     };
-    if crate::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
         return;
     }
     // The file says what it is. A reader that finds it while browsing state
@@ -308,7 +490,7 @@ fn remember(state_root: &Path, work: &str, current: &Classification, previous: O
         "signature": current.signature(),
         "classification": current.value(),
     });
-    let _ = crate::hook_settings::atomic_write(
+    let _ = crate::host::settings::atomic_write(
         &path,
         &format!("{document}\n"),
         Some(0o600),
@@ -394,5 +576,130 @@ mod tests {
             None
         );
         assert!(phrase("exit_ready").is_empty());
+    }
+
+    #[test]
+    fn session_card_requires_explicit_lead_closure_and_all_categories_resolved() {
+        let progress = json!({"state": "READY"});
+        let packet = json!({"humanHelp": {"sessionGoal": {
+            "explicitLeadClosure": true,
+            "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
+        }}});
+        assert_eq!(
+            session_goal_card(&packet, &progress, true, false),
+            Some(SESSION_GOAL_CARD)
+        );
+        assert!(session_goal_card(&packet, &progress, false, false).is_none());
+        assert!(session_goal_card(&packet, &progress, true, true).is_none());
+
+        let mut unresolved = packet.clone();
+        unresolved["humanHelp"]["sessionGoal"]["findings"] = json!(["open"]);
+        assert!(session_goal_card(&unresolved, &progress, true, false).is_none());
+        unresolved["humanHelp"]["sessionGoal"]["explicitLeadClosure"] = json!(false);
+        unresolved["humanHelp"]["sessionGoal"]["findings"] = json!([]);
+        assert!(session_goal_card(&unresolved, &progress, true, false).is_none());
+    }
+
+    #[test]
+    fn session_card_is_silent_after_emission_and_for_a_new_unclosed_request() {
+        let progress = json!({"state": "READY"});
+        let packet = json!({"humanHelp": {"sessionGoal": {
+            "requestId": "one", "explicitLeadClosure": true,
+            "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
+        }}});
+        let previous = json!({"requestId": "one", "cardEmitted": true});
+        assert!(
+            session_goal_card_transition(Some(&previous), &packet, &progress, true, false)
+                .is_none()
+        );
+
+        let mut new_request = packet.clone();
+        new_request["humanHelp"]["sessionGoal"]["requestId"] = json!("two");
+        new_request["humanHelp"]["sessionGoal"]["explicitLeadClosure"] = json!(false);
+        assert!(session_goal_card_transition(
+            Some(&previous),
+            &new_request,
+            &progress,
+            true,
+            false
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn interactive_session_card_bridge_is_once_only_and_cache_loss_is_safe() {
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-session-card-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let goal = json!({
+            "requestId": "one", "explicitLeadClosure": true,
+            "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
+        });
+        let progress = json!({"state": "READY"});
+        assert_eq!(
+            session_goal_card_for_human(&root, &goal, &progress, true, false),
+            Some(SESSION_GOAL_CARD)
+        );
+        assert!(session_goal_card_for_human(&root, &goal, &progress, true, false).is_none());
+        let cache = root.join(session_card_relative());
+        std::fs::write(cache, b"corrupt").unwrap();
+        assert_eq!(
+            session_goal_card_for_human(&root, &goal, &progress, true, false),
+            Some(SESSION_GOAL_CARD)
+        );
+        let mut new_goal = goal.clone();
+        new_goal["requestId"] = json!("two");
+        new_goal["explicitLeadClosure"] = json!(false);
+        assert!(session_goal_card_for_human(&root, &new_goal, &progress, true, false).is_none());
+        assert!(session_goal_card_for_human(&root, &goal, &progress, true, true).is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failure_joke_bridge_is_interactive_transition_only() {
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-failure-joke-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(failure_joke_once(
+            &root,
+            "run:blocked:check_missing",
+            true,
+            false
+        ));
+        assert!(!failure_joke_once(
+            &root,
+            "run:blocked:check_missing",
+            true,
+            false
+        ));
+        assert!(!failure_joke_once(
+            &root,
+            "run:blocked:check_missing",
+            false,
+            false
+        ));
+        assert!(!failure_joke_once(
+            &root,
+            "run:blocked:check_missing",
+            true,
+            true
+        ));
+        assert!(failure_joke_once(
+            &root,
+            "run:refused:check_failed",
+            true,
+            false
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -1,11 +1,20 @@
 //! Human-readable rendering of the typed, validated run projection.
 
+use serde_json::Value;
+use std::path::Path;
+
 use crate::run_human::{
     HumanCheckState, HumanCheckTarget, HumanExplanation, HumanIdentity, HumanLeadDecision,
     HumanLeadState, HumanProtection, HumanRecord, HumanReviewer, HumanStatus, HumanWorker,
 };
 
-pub(crate) fn print_status(status: &HumanStatus) {
+pub(crate) fn print_status(
+    status: &HumanStatus,
+    session_goal: &Value,
+    state_root: &Path,
+    interactive: bool,
+    closed_stdin: bool,
+) -> bool {
     println!(
         "Run {}: {} (stage {}, attempt {})",
         inert(&status.run_id),
@@ -34,9 +43,29 @@ pub(crate) fn print_status(status: &HumanStatus) {
     if let Some(guidance) = status.guidance {
         println!("Guidance: {guidance}");
     }
+    if let Some(card) = crate::presentation_events::session_goal_card_for_human(
+        state_root,
+        session_goal,
+        &status.progress,
+        interactive,
+        closed_stdin,
+    ) {
+        println!("{card}");
+        return true;
+    }
+    if let Some(joke) = developer_joke(status, state_root, interactive, closed_stdin) {
+        println!("{joke}");
+    }
+    false
 }
 
-pub(crate) fn print_explain(explanation: &HumanExplanation) {
+pub(crate) fn print_explain(
+    explanation: &HumanExplanation,
+    session_goal: &Value,
+    state_root: &Path,
+    interactive: bool,
+    closed_stdin: bool,
+) -> bool {
     println!("Run {} explanation", inert(&explanation.status.run_id));
     println!(
         "Status: {} (artifact {})",
@@ -64,6 +93,67 @@ pub(crate) fn print_explain(explanation: &HumanExplanation) {
         None => println!("Protection: none selected"),
     }
     println!("Guidance: {}", explanation.guidance);
+    if let Some(card) = crate::presentation_events::session_goal_card_for_human(
+        state_root,
+        session_goal,
+        &explanation.status.progress,
+        interactive,
+        closed_stdin,
+    ) {
+        println!("{card}");
+        return true;
+    }
+    if let Some(joke) = developer_joke(&explanation.status, state_root, interactive, closed_stdin) {
+        println!("{joke}");
+    }
+    false
+}
+
+/// Optional human-only flavor. It is selected from typed terminal facts after
+/// the full diagnostic and never enters JSON, ledgers, receipts, or evidence.
+fn developer_joke(
+    status: &HumanStatus,
+    state_root: &Path,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let blocked_transition = matches!(status.lead.state, HumanLeadState::Blocked)
+        && status
+            .lead
+            .current
+            .iter()
+            .any(|record| record.outcome == "blocked");
+    let refused_transition = status.protections.iter().any(|protection| {
+        protection.current
+            && matches!(
+                protection.reason.as_str(),
+                "check_missing" | "check_failed" | "preservation_missing" | "preservation_failed"
+            )
+    });
+    if !interactive || closed_stdin || !(blocked_transition || refused_transition) {
+        return None;
+    }
+    let transition = status
+        .protections
+        .iter()
+        .find(|protection| protection.current)
+        .map(|protection| format!("refusal:{}", protection.event_sha256))
+        .or_else(|| {
+            status
+                .lead
+                .current
+                .iter()
+                .find(|record| record.outcome == "blocked")
+                .map(|record| format!("blocked:{}", record.event_sha256))
+        })
+        .unwrap_or_else(|| format!("{}:blocked", status.run_id));
+    crate::presentation_events::failure_joke_once(
+        state_root,
+        &transition,
+        interactive,
+        closed_stdin,
+    )
+    .then_some("Developer special: the bug has requested a second opinion.")
 }
 
 fn print_workers(workers: &[HumanWorker]) {

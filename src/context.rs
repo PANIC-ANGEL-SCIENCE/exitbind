@@ -5,14 +5,16 @@
 //! it.  The governor is a small append-only reducer so a fresh process can
 //! replay the same decision without conversation history.
 
-use crate::governor::{LoopState, Phase, Transition};
-pub(crate) use crate::governor::{HARD_ITERATION_BUDGET, NO_INFORMATION_LIMIT, POST_REPLAN_LIMIT};
-use crate::hash;
+use crate::evidence::hash;
+use crate::kernel::governor::{LoopState, Phase, Transition};
+pub(crate) use crate::kernel::governor::{
+    HARD_ITERATION_BUDGET, NO_INFORMATION_LIMIT, POST_REPLAN_LIMIT,
+};
 use serde_json::{json, Map, Value};
 use std::fs;
 
 pub(crate) const CONTEXT_VERSION: u64 = 2;
-pub(crate) const GOVERNOR_VERSION: u64 = crate::governor::VERSION;
+pub(crate) const GOVERNOR_VERSION: u64 = crate::kernel::governor::VERSION;
 pub(crate) const SENSOR_VERSION: u64 = 1;
 pub(crate) const GRANT_PROTOCOL_VERSION: u64 = 1;
 
@@ -114,8 +116,12 @@ pub(crate) fn project(
 
 fn scope(view: &Value) -> Value {
     json!({
+        "source": "run_ledger",
+        "owner": "lead",
         "planSha256": view["subject"]["planSha256"],
+        "basisSha256": view["subject"]["sha256"],
         "configSha256": view["subject"]["configSha256"],
+        "freshness": if view["status"] == "running" { "current" } else { "historical" },
         "attempt": view["attempt"],
         "currentStage": view["currentStage"],
     })
@@ -123,10 +129,13 @@ fn scope(view: &Value) -> Value {
 
 fn next_surface(next: &Value) -> Value {
     let mut value = json!({
+        "source": "run_state",
+        "owner": next_owner(next),
         "action": next["action"],
         "role": next["role"],
         "agent": next["agent"],
         "assignment": next["assignment"],
+        "freshness": "current",
     });
     if let Some(outcomes) = next.get("outcomes") {
         value["outcomes"] = outcomes.clone();
@@ -135,6 +144,30 @@ fn next_surface(next: &Value) -> Value {
         value["check"] = check.clone();
     }
     value
+}
+
+fn next_owner(next: &Value) -> &'static str {
+    if let Some(actor) = next["resolvedActor"].as_str() {
+        return match actor {
+            "worker" => "worker",
+            "reviewer" => "reviewer",
+            "adviser" => "adviser",
+            "exitbind" => "exitbind",
+            _ => "lead",
+        };
+    }
+    if next["action"] == "check" {
+        "exitbind"
+    } else if next["action"] == "lead_decision" {
+        "lead"
+    } else {
+        match next["role"].as_str() {
+            Some("worker") => "worker",
+            Some("reviewer") => "reviewer",
+            Some("adviser") => "adviser",
+            _ => "lead",
+        }
+    }
 }
 
 fn obligations(view: &Value, status: &Value, next: &Value) -> Value {
@@ -147,6 +180,8 @@ fn obligations(view: &Value, status: &Value, next: &Value) -> Value {
             let mut item = json!({
                 "kind": target["kind"],
                 "status": target["status"],
+                "freshness": if target["status"] == "passed" { "current" } else { "unresolved" },
+                "strength": evidence_strength(target["acquisition"].as_str()),
                 "targetEventSha256": target["targetEventSha256"],
                 "checkEventSha256": target["checkEventSha256"],
                 "requirementId": target["requirementId"],
@@ -225,6 +260,18 @@ fn evidence(work: &str, view: &Value, status: &Value) -> Value {
                     item.insert(key.to_owned(), value.clone());
                 }
             }
+            item.insert(
+                "freshness".into(),
+                json!(if target["status"] == "passed" {
+                    "current"
+                } else {
+                    "unresolved"
+                }),
+            );
+            item.insert(
+                "strength".into(),
+                json!(evidence_strength(target["acquisition"].as_str())),
+            );
             if let Some(requirement_id) = item.get("requirementId").and_then(Value::as_str) {
                 if let Some(requirement) = view["events"][0]["preservation"]["requirements"]
                     .as_array()
@@ -287,6 +334,14 @@ fn evidence(work: &str, view: &Value, status: &Value) -> Value {
     Value::Array(result)
 }
 
+fn evidence_strength(acquisition: Option<&str>) -> &'static str {
+    match acquisition {
+        Some("observed") => "observed",
+        Some("reported") => "reported",
+        _ => "unknown",
+    }
+}
+
 /// Keep the immediately prior attempt visible for recovery without replaying
 /// every historical submission. Older evidence remains reachable through the
 /// exact ledger snapshot reference in `expansions`.
@@ -342,13 +397,13 @@ fn history_path(work: &str) -> String {
         || {
             format!(
                 "{}/runs/{work}.jsonl",
-                crate::project_layout::state_namespace()
+                crate::project::layout_types::state_namespace()
             )
         },
         |token| {
             format!(
                 "{}/runs/work-{token}.jsonl",
-                crate::project_layout::state_namespace()
+                crate::project::layout_types::state_namespace()
             )
         },
     )

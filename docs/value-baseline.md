@@ -21,10 +21,10 @@ Source inspection establishes these existing boundaries:
 | Are rework attempts distinguishable? | Assignment paths include stage/attempt; rework advances the attempt while retaining old submissions. | Existing protection |
 | Does a declaration prove all writes stayed in scope? | The current declared boundary is not a measured full-project write set. | Execution limitation |
 
-The source insertion points are [run coordination](../src/run.rs),
-[canonical state reduction](../src/run_state.rs),
-[artifact checks](../src/run_artifact.rs), and
-[receipt validation](../src/receipt.rs). New observation evidence belongs beside
+The source insertion points are [run coordination](../src/run/mod.rs),
+[canonical state reduction](../src/run/state.rs),
+[artifact checks](../src/run/artifact.rs), and
+[receipt validation](../src/evidence/receipt.rs). New observation evidence belongs beside
 run transitions; changing receipt assertions into execution proof would erase
 an existing distinction.
 

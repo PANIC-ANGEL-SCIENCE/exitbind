@@ -3,8 +3,8 @@
   "version": 1,
   "agents": {
     "implementation_worker": {
-      "observe": ["Cargo.toml", "src/run.rs", "tests/run_boundary.rs"],
-      "write": ["src/run.rs", "tests/run_boundary.rs"]
+      "observe": ["Cargo.toml", "src/run/mod.rs", "tests/run_boundary.rs"],
+      "write": ["src/run/mod.rs", "tests/run_boundary.rs"]
     }
   }
 }

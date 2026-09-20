@@ -574,7 +574,7 @@ mod tests {
             "status": status,
             "attempt": 1,
             "subject": {"sha256": SUBJECT},
-            "checkPolicy": {"version":1,"command":"true","commandSha256":crate::hash::text("true"),"origin":"local_report"},
+            "checkPolicy": {"version":1,"command":"true","commandSha256":crate::evidence::hash::text("true"),"origin":"local_report"},
             "plan": {"stages": [{"agents": [{"role":"worker"},{"role":"reviewer"}]}]},
             "submissions": submissions,
             "checks": checks,
@@ -596,7 +596,7 @@ mod tests {
             ExitDecision::NotApplicable("unchecked_run")
         ));
         let mut checked = base;
-        checked["checkPolicy"] = json!({"version":1,"command":"true","commandSha256":crate::hash::text("true"),"origin":"local_report"});
+        checked["checkPolicy"] = json!({"version":1,"command":"true","commandSha256":crate::evidence::hash::text("true"),"origin":"local_report"});
         assert!(matches!(
             reduce(&checked).unwrap().decision(),
             ExitDecision::InProgress

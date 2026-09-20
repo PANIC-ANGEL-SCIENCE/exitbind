@@ -923,6 +923,15 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
     let failed = fixture.value(&["work", "check", &work], None);
     assert_eq!(failed["next"]["action"], "spawn");
     assert_eq!(failed["next"]["role"], "reviewer");
+    let failed_next = fixture.value(&["work", "next", &work], None);
+    assert_eq!(
+        failed["next"]["resolvedActor"],
+        failed_next["residual"]["humanHelp"]["nextAction"]["actor"]
+    );
+    assert_eq!(
+        failed["next"]["packet"]["context"]["next"]["owner"],
+        failed["next"]["resolvedActor"]
+    );
     assert_eq!(
         failed["next"]["packet"]["checkEvidence"][0]["status"],
         "failed"

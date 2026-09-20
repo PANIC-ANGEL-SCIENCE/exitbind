@@ -27,7 +27,7 @@ mod progress_tests {
             "checkPolicy": {
                 "version": 1,
                 "command": "true",
-                "commandSha256": crate::hash::text("true"),
+                "commandSha256": crate::evidence::hash::text("true"),
                 "origin": "local_report"
             },
             "plan":{"stages":[{"agents":[{"role":"worker"}]}]},
@@ -101,7 +101,7 @@ mod progress_tests {
             "checkPolicy": {
                 "version": 1,
                 "command": "true",
-                "commandSha256": crate::hash::text("true"),
+                "commandSha256": crate::evidence::hash::text("true"),
                 "origin": "local_report"
             },
             "plan": {"stages": [{"agents": [
@@ -144,7 +144,7 @@ mod progress_tests {
             "checkPolicy": {
                 "version": 1,
                 "command": "true",
-                "commandSha256": crate::hash::text("true"),
+                "commandSha256": crate::evidence::hash::text("true"),
                 "origin": "local_report"
             },
             "plan": {"stages": [{"agents": [
@@ -486,7 +486,7 @@ pub(crate) fn policy_from_cli(
         .unwrap_or(ProofOrigin::LocalReport);
     Ok(Some(CheckPolicy {
         command: command.to_owned(),
-        command_sha256: crate::hash::text(command),
+        command_sha256: crate::evidence::hash::text(command),
         origin,
     }))
 }
@@ -509,7 +509,7 @@ pub(crate) fn policy_from_value(value: &Value, line: usize) -> Result<CheckPolic
             "invalid run ledger line {line}: malformed checkPolicy"
         ));
     }
-    if crate::hash::text(&record.command) != record.command_sha256 {
+    if crate::evidence::hash::text(&record.command) != record.command_sha256 {
         return Err(format!(
             "invalid run ledger line {line}: checkPolicy command hash mismatch"
         ));
@@ -558,7 +558,7 @@ pub(crate) fn preservation_from_cli(
             id: id.to_owned(),
             text: text.to_owned(),
             command: command.to_owned(),
-            command_sha256: crate::hash::text(command),
+            command_sha256: crate::evidence::hash::text(command),
             origin,
         }],
     }))
@@ -589,7 +589,7 @@ pub(crate) fn preservation_from_value(
         if item.command.trim().is_empty()
             || item.command.contains('\0')
             || !is_sha(Some(&item.command_sha256))
-            || crate::hash::text(&item.command) != item.command_sha256
+            || crate::evidence::hash::text(&item.command) != item.command_sha256
             || !seen.insert(item.id.clone())
         {
             return Err(format!(
@@ -677,7 +677,7 @@ pub(crate) fn validate_check_event(event: &Value, line: usize) -> Result<(), Str
         || record.check_command.trim().is_empty()
         || record.check_command.contains('\0')
         || !is_sha(Some(&record.check_command_sha256))
-        || crate::hash::text(&record.check_command) != record.check_command_sha256
+        || crate::evidence::hash::text(&record.check_command) != record.check_command_sha256
         || !valid_timestamp(&record.timestamp)
         || !is_sha(Some(&record.event_sha256))
     {
@@ -802,7 +802,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         || record.check_command.trim().is_empty()
         || record.check_command.contains('\0')
         || !is_sha(Some(&record.check_command_sha256))
-        || crate::hash::text(&record.check_command) != record.check_command_sha256
+        || crate::evidence::hash::text(&record.check_command) != record.check_command_sha256
         || record.origin.as_str() != event["origin"]
         || !matches!(record.acquisition.as_str(), "reported" | "observed")
         || !result_valid
@@ -1230,7 +1230,7 @@ pub(crate) fn validate_protection_against_state(
             "invalid run ledger line {line}: protection event requires a running run"
         ));
     }
-    let assignments = crate::run_assignment::pending(state);
+    let assignments = crate::run::assignment::pending(state);
     let assignment = assignments
         .iter()
         .find(|assignment| assignment["agent"] == event["actor"])
@@ -1442,6 +1442,8 @@ pub(crate) struct HumanStatus {
     pub(crate) history: Vec<HumanRecord>,
     pub(crate) protections: Vec<HumanProtection>,
     pub(crate) guidance: Option<&'static str>,
+    pub(crate) session_goal: Value,
+    pub(crate) progress: Value,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1835,6 +1837,23 @@ pub(crate) fn human_status_from_kernel(
             HumanCheckState::Unconfigured => None,
         }
     };
+    let progress = crate::run_progress::project(state);
+    let run_ready = matches!(lead_state, HumanLeadState::Accepted)
+        && crate::run_exit::is_ready(progress["state"].as_str().unwrap_or(""))
+        && artifact_current;
+    let session_goal = json!({
+        "requestId": state["runId"],
+        // Run acceptance is a separate fact. The human renderer may set the
+        // explicit Lead session closure only when its caller supplies that
+        // declaration; it is never inferred from READY here.
+        "explicitLeadClosure": false,
+        "leadAccepted": run_ready,
+        "subgoals": if run_ready { json!([]) } else { json!([state["goal"].clone()]) },
+        "findings": [],
+        "blockers": if run_ready { json!([]) } else { json!([progress["reason"]["code"].clone()]) },
+        "decisions": if run_ready { json!([]) } else { json!(["lead_decision"]) },
+        "externalActions": [],
+    });
     Ok(HumanStatus {
         run_id: required_str(state, "runId", "run state")?,
         status: required_str(state, "status", "run state")?,
@@ -1856,6 +1875,8 @@ pub(crate) fn human_status_from_kernel(
         history,
         protections,
         guidance,
+        session_goal,
+        progress,
     })
 }
 
@@ -2090,7 +2111,7 @@ pub(crate) fn aggregate(states: &[Value]) -> Result<Value, String> {
         let run_id = state["runId"]
             .as_str()
             .ok_or("report run is missing a runId")?;
-        let state_hash = crate::hash::value(state);
+        let state_hash = crate::evidence::hash::value(state);
         if let Some(previous) = seen_runs.insert(run_id.to_owned(), state_hash.clone()) {
             if previous != state_hash {
                 return Err("duplicate runId has conflicting ledger evidence".into());

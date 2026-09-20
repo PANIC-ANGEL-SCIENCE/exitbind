@@ -1,5 +1,5 @@
 # Absent --root defaults are CLI option defaults, not path conversion.
-src/cli.rs:a.options.get("root").map(String::as_str).unwrap_or("."),
-src/project_commands.rs:.unwrap_or(".");
+src/cli/mod.rs:a.options.get("root").map(String::as_str).unwrap_or("."),
+src/project/commands.rs:.unwrap_or(".");
 # Human display fallback only; the separate command conversion below stays strict.
-src/project_commands.rs:let value = path.to_string_lossy();
+src/project/commands.rs:let value = path.to_string_lossy();

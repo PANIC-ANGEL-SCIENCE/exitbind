@@ -13,7 +13,7 @@
         "artifact_scope": "Recorded artifact hashes do not establish the state of every project file or the execution environment."
       },
       "scenarioIds": ["false-completion-v1"],
-      "implementationRefs": ["src/run_value.rs", "src/run_state.rs", "src/run.rs"],
+      "implementationRefs": ["src/run_value.rs", "src/run/state.rs", "src/run/mod.rs"],
       "publicDocsRefs": ["README.md", "docs/value-proof-methodology.md"]
     }
   ],

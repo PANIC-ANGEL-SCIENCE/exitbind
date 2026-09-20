@@ -111,8 +111,8 @@ mod tests {
             "subject": {"sha256": subject},
             "inputsSha256": "c".repeat(64),
             "runId": "a".repeat(64),
-            "checkPolicy": {"version":1,"command":"true","commandSha256":crate::hash::text("true"),"origin":"local_report"},
-            "preservation": {"version":1,"requirements":[{"id":"precedence","text":"env wins","command":"true","commandSha256":crate::hash::text("true"),"origin":"local_report"}]},
+            "checkPolicy": {"version":1,"command":"true","commandSha256":crate::evidence::hash::text("true"),"origin":"local_report"},
+            "preservation": {"version":1,"requirements":[{"id":"precedence","text":"env wins","command":"true","commandSha256":crate::evidence::hash::text("true"),"origin":"local_report"}]},
             "plan": {"version":1,"maxParallel":1,"stages":[{"agents":[{"role":"worker","name":"worker"}]},{"agents":[{"role":"reviewer","name":"reviewer"}]}]},
             "submissions": [
                 {"stage":1,"attempt":1,"agent":"lead","role":"lead","outcome":"scoped","eventSha256":"d".repeat(64)},
@@ -146,7 +146,7 @@ mod tests {
                 "subject": {"sha256": subject},
                 "inputsSha256": current_inputs,
                 "runId": "a".repeat(64),
-                "checkPolicy": {"version":1,"command":"true","commandSha256":crate::hash::text("true"),"origin":"local_report"},
+                "checkPolicy": {"version":1,"command":"true","commandSha256":crate::evidence::hash::text("true"),"origin":"local_report"},
                 "plan": {"version":1,"maxParallel":1,"stages":[{"agents":[{"role":"worker","name":"worker"}]},{"agents":[{"role":"reviewer","name":"reviewer"}]}]},
                 "submissions": [
                     {"stage":1,"attempt":1,"agent":"lead","role":"lead","outcome":"scoped","eventSha256":"d".repeat(64)},
