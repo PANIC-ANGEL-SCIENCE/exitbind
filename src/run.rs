@@ -14,15 +14,23 @@ use run_ledger::{
     with_lock,
 };
 use serde_json::{json, Value};
-use std::fs;
-use std::io;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_OBSERVE_TIMEOUT_MS: u64 = 1_800_000;
 const OBSERVE_POLL_MS: u64 = 10;
 const OBSERVE_TERMINATION_GRACE_MS: u64 = 250;
+
+fn timestamp_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos())
+}
 
 pub fn start(
     loaded: &Loaded,
@@ -120,11 +128,7 @@ pub fn start_with_policy(
         let version = if crate::producer::exitbind_surface() {
             // A run that authorizes provider-quota fallback records fallback
             // provenance, which only the v7 submit shape can carry.
-            if has_fallback_runtime(&plan) {
-                7
-            } else {
-                6
-            }
+            8
         } else if check_policy.is_some() {
             4
         } else if reference.is_some() {
@@ -161,6 +165,9 @@ pub fn start_with_policy(
             value["governor"] = json!({
                 "version": crate::context::GOVERNOR_VERSION,
                 "budget": crate::context::HARD_ITERATION_BUDGET,
+                "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
+                "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
+                "grantProtocol": crate::context::GRANT_PROTOCOL_VERSION,
             });
         }
         let event = run_state::make_event(value);
@@ -196,6 +203,7 @@ pub fn submit(
         agent,
         outcome,
         reason,
+        None,
         None,
         SubmitSubject {
             root: artifact_root,
@@ -251,6 +259,7 @@ impl AssignmentIdentity {
 pub(crate) fn submit_for_assignment<F>(
     loaded: &Loaded,
     ledger: &str,
+    assignment_handle: &str,
     expected: AssignmentIdentity,
     outcome: &str,
     reason: Option<&str>,
@@ -263,6 +272,7 @@ where
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let agent = expected.agent.clone();
+    let assignment_sha256 = crate::hash::text(assignment_handle);
     submit_locked(
         loaded,
         &path,
@@ -270,6 +280,7 @@ where
         outcome,
         reason,
         Some(&expected),
+        Some(&assignment_sha256),
         SubmitSubject {
             root: Some("state"),
             artifact,
@@ -284,6 +295,7 @@ where
 pub(crate) fn permit_for_assignment(
     loaded: &Loaded,
     ledger: &str,
+    work: &str,
     assignment_handle: &str,
     expected: AssignmentIdentity,
     operation: &str,
@@ -292,6 +304,10 @@ pub(crate) fn permit_for_assignment(
         return Err("governor operation must be non-empty and at most 120 bytes".into());
     }
     let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let canonical_work = canonical_work_for_ledger(&path)?;
+    if canonical_work != work {
+        return Err("work identifier is not bound to the canonical ledger".into());
+    }
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     with_lock(&path, || {
@@ -310,6 +326,14 @@ pub(crate) fn permit_for_assignment(
             .into_iter()
             .find(|item| item["agent"] == expected.agent)
             .ok_or_else(|| format!("agent '{}' is not currently pending", expected.agent))?;
+        if assignment["role"] != "worker" || expected.role != "worker" {
+            return Err(
+                "only the exact current worker assignment may receive a mutation grant".into(),
+            );
+        }
+        if crate::run_assignment::handle(work, &assignment)? != assignment_handle {
+            return Err("assignment handle is not bound to this run's current worker".into());
+        }
         if !expected.matches(&assignment) {
             return Err(
                 "assignment changed while governor permission was requested; no mutation was made"
@@ -328,22 +352,25 @@ pub(crate) fn permit_for_assignment(
             .as_u64()
             .unwrap_or_default()
             .saturating_add(1);
-        let governor_event = crate::context::event(
-            previous_governor.as_ref(),
-            json!({
-                "action": "mutation",
-                "runId": state["runId"],
-                "subjectSha256": state["subject"]["sha256"],
-                "attempt": state["attempt"],
-                "checkpoint": checkpoint,
-                "inputSha256": inputs.clone(),
-                "lineageSha256": lineage,
-                "carryLineage": true,
-                "unit": format!("{}-mutation", expected.role),
-                "operation": operation,
-                "newEvidenceSha256": Value::Null,
-            }),
-        );
+        let terminal_refusal = state["governor"]["state"] == "evidence_required";
+        let mut governor_payload = json!({
+            "action": if terminal_refusal { "blocked" } else { "mutation" },
+            "runId": state["runId"],
+            "subjectSha256": state["subject"]["sha256"],
+            "attempt": state["attempt"],
+            "checkpoint": checkpoint,
+            "inputSha256": inputs.clone(),
+        });
+        if terminal_refusal {
+            governor_payload["reason"] = json!("new exact evidence is required");
+        } else {
+            governor_payload["lineageSha256"] = lineage;
+            governor_payload["carryLineage"] = json!(true);
+            governor_payload["unit"] = json!(format!("{}-mutation", expected.role));
+            governor_payload["operation"] = json!(operation);
+            governor_payload["newEvidenceSha256"] = Value::Null;
+        }
+        let governor_event = crate::context::event(previous_governor.as_ref(), governor_payload);
         let version = state["version"]
             .as_u64()
             .ok_or("run state is missing version")?;
@@ -370,6 +397,9 @@ pub(crate) fn permit_for_assignment(
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
         append(&path, &event, false, &source)?;
+        if terminal_refusal {
+            return Err("governor durably blocked; exact evidence is required".into());
+        }
         Ok(json!({
             "valid": true,
             "allowed": true,
@@ -380,6 +410,409 @@ pub(crate) fn permit_for_assignment(
     })
 }
 
+fn canonical_work_for_ledger(path: &run_ledger::LedgerPath) -> Result<String, String> {
+    let relative = path
+        .path
+        .strip_prefix(&path.root)
+        .map_err(|_| "ledger is outside the canonical state root")?
+        .to_str()
+        .ok_or("ledger path is not valid UTF-8")?
+        .replace('\\', "/");
+    let prefix = format!("{}/runs/work-", crate::project_layout::state_namespace());
+    let token = relative
+        .strip_prefix(&prefix)
+        .and_then(|value| value.strip_suffix(".jsonl"))
+        .filter(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
+        .ok_or("governed permits require a canonical work ledger")?;
+    Ok(format!("smw_{token}"))
+}
+
+/// Record a material governor re-plan for the exact pending assignment.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn replan_for_assignment(
+    loaded: &Loaded,
+    ledger: &str,
+    assignment_handle: &str,
+    expected: AssignmentIdentity,
+    hypothesis: Option<&str>,
+    evidence_request: Option<&str>,
+    scope_decision: Option<&str>,
+    blocker: Option<&str>,
+) -> Result<Value, String> {
+    let semantic = [hypothesis, evidence_request, scope_decision, blocker]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.trim().is_empty());
+    if !semantic {
+        return Err(
+            "re-plan requires a material hypothesis, evidence request, scope decision, or blocker"
+                .into(),
+        );
+    }
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+        if claim_path(&path).exists() {
+            return Err("run has been superseded; no mutation was made".into());
+        }
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        crate::run_artifact::assert_current(loaded, &state)?;
+        if state["governor"]["enabled"] != true {
+            return Err("cooperative governor is unavailable on this run".into());
+        }
+        if state["governor"]["state"] != "replan_required" {
+            return Err("material re-plan is not currently required".into());
+        }
+        let assignment = crate::run_assignment::pending(&state)
+            .into_iter()
+            .find(|item| item["agent"] == "worker")
+            .ok_or("no pending worker assignment is available for re-plan")?;
+        if !expected.matches(&assignment) {
+            return Err(
+                "assignment changed while re-plan was requested; no mutation was made".into(),
+            );
+        }
+        let inputs = live_inputs(&state)?;
+        let last = events.last().ok_or("run has no event head")?;
+        let previous_governor = state["governor"]["headSha256"]
+            .as_str()
+            .map(|head| json!({"eventSha256": head}));
+        let governor_event = crate::context::event(
+            previous_governor.as_ref(),
+            json!({
+                "action": "replan",
+                "runId": state["runId"],
+                "subjectSha256": state["subject"]["sha256"],
+                "attempt": state["attempt"],
+                "checkpoint": state["governor"]["spent"],
+                "inputSha256": inputs,
+                "hypothesis": hypothesis,
+                "evidenceRequest": evidence_request,
+                "scopeDecision": scope_decision,
+                "blocker": blocker,
+            }),
+        );
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state has no version")?;
+        let event = run_state::make_event(json!({
+            "version": version,
+            "kind": "run",
+            "producer": crate::producer::evidence_for_version(version),
+            "action": "govern",
+            "runId": state["runId"],
+            "stage": assignment["stage"],
+            "attempt": assignment["attempt"],
+            "agent": assignment["agent"],
+            "role": assignment["role"],
+            "subjectSha256": state["subject"]["sha256"],
+            "inputsSha256": live_inputs(&state)?,
+            "assignmentSha256": crate::hash::text(assignment_handle),
+            "operation": "replan",
+            "governorEvent": governor_event,
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?,
+        }));
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = run_state::reduce(&all)?;
+        append(&path, &event, false, &source)?;
+        Ok(json!({"valid": true, "event": event, "governor": next_state["governor"]}))
+    })
+}
+
+/// Bind one exact product/state artifact as new governor evidence under the
+/// same assignment lock used by mutation permission and completion.
+pub(crate) fn evidence_for_assignment(
+    loaded: &Loaded,
+    ledger: &str,
+    assignment_handle: &str,
+    expected: AssignmentIdentity,
+    artifact_root: Option<&str>,
+    artifact_path: &str,
+) -> Result<Value, String> {
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        crate::run_artifact::assert_current(loaded, &state)?;
+        if state["governor"]["enabled"] != true {
+            return Err("cooperative governor is unavailable on this run".into());
+        }
+        let assignment = crate::run_assignment::pending(&state)
+            .into_iter()
+            .find(|item| item["agent"] == expected.agent)
+            .ok_or("assignment is not currently pending")?;
+        if !expected.matches(&assignment) {
+            return Err("assignment changed while evidence was requested".into());
+        }
+        let mut evidence = crate::run_artifact::evidence(loaded, artifact_root, artifact_path)?;
+        evidence["subjectSha256"] = state["subject"]["sha256"].clone();
+        evidence["attempt"] = state["attempt"].clone();
+        evidence["inputSha256"] = live_inputs(&state)?;
+        if let Some(previous) = state["governor"]["evidence"].as_array().and_then(|items| {
+            items.iter().find(|item| {
+                item["root"] == evidence["root"]
+                    && item["path"] == evidence["path"]
+                    && item["sha256"] == evidence["sha256"]
+                    && item["subjectSha256"] == evidence["subjectSha256"]
+                    && item["attempt"] == evidence["attempt"]
+                    && item["inputSha256"] == evidence["inputSha256"]
+            })
+        }) {
+            let event = events.iter().rev().find(|event| {
+                event["governorEvent"]["action"] == "evidence"
+                    && event["governorEvent"]["evidence"] == *previous
+            });
+            if let Some(event) = event {
+                return Ok(
+                    json!({"valid": true, "idempotent": true, "event": event, "governor": state["governor"]}),
+                );
+            }
+        }
+        if state["governor"]["evidence"]
+            .as_array()
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["root"] == evidence["root"]
+                        && item["path"] == evidence["path"]
+                        && item["sha256"] != evidence["sha256"]
+                })
+            })
+        {
+            return Err("evidence artifact changed for the same path".into());
+        }
+        let last = events.last().ok_or("run has no event head")?;
+        let previous_governor = state["governor"]["headSha256"]
+            .as_str()
+            .map(|head| json!({"eventSha256": head}));
+        let governor_event = crate::context::event(
+            previous_governor.as_ref(),
+            json!({
+                "action": "evidence",
+                "runId": state["runId"],
+                "subjectSha256": state["subject"]["sha256"],
+                "attempt": state["attempt"],
+                "inputSha256": evidence["inputSha256"],
+                "evidence": evidence,
+            }),
+        );
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state has no version")?;
+        let event = run_state::make_event(json!({
+            "version": version,
+            "kind": "run",
+            "producer": crate::producer::evidence_for_version(version),
+            "action": "govern",
+            "runId": state["runId"],
+            "stage": assignment["stage"],
+            "attempt": assignment["attempt"],
+            "agent": assignment["agent"],
+            "role": assignment["role"],
+            "subjectSha256": state["subject"]["sha256"],
+            "inputsSha256": live_inputs(&state)?,
+            "assignmentSha256": crate::hash::text(assignment_handle),
+            "operation": "evidence",
+            "governorEvent": governor_event,
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?,
+        }));
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = run_state::reduce(&all)?;
+        append(&path, &event, false, &source)?;
+        Ok(json!({"valid": true, "event": event, "governor": next_state["governor"]}))
+    })
+}
+
+pub(crate) fn sensor_request_for_assignment(
+    loaded: &Loaded,
+    ledger: &str,
+    assignment_handle: &str,
+    expected: AssignmentIdentity,
+) -> Result<Value, String> {
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        let assignment = crate::run_assignment::pending(&state)
+            .into_iter()
+            .find(|item| item["agent"] == expected.agent)
+            .ok_or("assignment is not currently pending")?;
+        if !expected.matches(&assignment) {
+            return Err("assignment changed while sensor request was requested".into());
+        }
+        let request = crate::context::sensor_request(&state["governor"])?;
+        if state["governor"]["currentSensorRequest"]["requestDigest"] == request["requestDigest"] {
+            if let Some(event) = events.iter().rev().find(|event| {
+                event["governorEvent"]["action"] == "sensor_request"
+                    && event["governorEvent"]["requestDigest"] == request["requestDigest"]
+            }) {
+                return Ok(
+                    json!({"valid": true, "idempotent": true, "event": event, "governor": state["governor"]}),
+                );
+            }
+        }
+        let last = events.last().ok_or("run has no event head")?;
+        let previous = state["governor"]["headSha256"]
+            .as_str()
+            .map(|head| json!({"eventSha256": head}));
+        let governor_event = crate::context::event(previous.as_ref(), request);
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state has no version")?;
+        let event = run_state::make_event(json!({
+            "version": version, "kind": "run",
+            "producer": crate::producer::evidence_for_version(version),
+            "action": "govern", "runId": state["runId"],
+            "stage": assignment["stage"], "attempt": assignment["attempt"],
+            "agent": assignment["agent"], "role": assignment["role"],
+            "subjectSha256": state["subject"]["sha256"],
+            "inputsSha256": live_inputs(&state)?,
+            "assignmentSha256": crate::hash::text(assignment_handle),
+            "operation": "sensor_request", "governorEvent": governor_event,
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?,
+        }));
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = run_state::reduce(&all)?;
+        append(&path, &event, false, &source)?;
+        Ok(json!({"valid": true, "event": event, "governor": next_state["governor"]}))
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sensor_result_for_assignment(
+    loaded: &Loaded,
+    ledger: &str,
+    assignment_handle: &str,
+    expected: AssignmentIdentity,
+    assessment: &str,
+    confidence: Option<&str>,
+    input_digest: &str,
+    identity_source: &str,
+) -> Result<Value, String> {
+    if !matches!(
+        assessment,
+        "unavailable" | "low_information" | "replan" | "evidence" | "block" | "ready"
+    ) {
+        return Err("sensor assessment is outside the bounded schema".into());
+    }
+    if input_digest.len() != 64
+        || !input_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err("sensor input-digest must be lowercase SHA-256".into());
+    }
+    if identity_source != "host-reported" {
+        return Err("sensor identity must remain host-reported".into());
+    }
+    let confidence = confidence
+        .map(|value| {
+            value
+                .parse::<f64>()
+                .map_err(|_| "sensor confidence is invalid".to_owned())
+        })
+        .transpose()?;
+    if confidence.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value)) {
+        return Err("sensor confidence must be finite and within 0..=1".into());
+    }
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        let assignment = crate::run_assignment::pending(&state)
+            .into_iter()
+            .find(|item| item["agent"] == expected.agent)
+            .ok_or("assignment is not currently pending")?;
+        if !expected.matches(&assignment) {
+            return Err("assignment changed while sensor result was requested".into());
+        }
+        let request = state["governor"]["currentSensorRequest"]
+            .as_object()
+            .ok_or("sensor result has no current request")?;
+        let current = state["governor"]["currentMutation"]
+            .as_object()
+            .ok_or("sensor result has no current mutation")?;
+        if let Some(previous) = events.iter().rev().find(|event| {
+            event["governorEvent"]["action"] == "sensor"
+                && event["governorEvent"]["requestDigest"] == request["requestDigest"]
+        }) {
+            let prior = &previous["governorEvent"];
+            let expected_confidence = confidence.map_or(Value::Null, |value| json!(value));
+            if prior["assessment"] == assessment
+                && prior["inputDigest"] == input_digest
+                && prior["confidence"] == expected_confidence
+            {
+                return Ok(
+                    json!({"valid": true, "idempotent": true, "event": previous, "governor": state["governor"]}),
+                );
+            }
+            return Err("conflicting duplicate sensor result refused".into());
+        }
+        let last = events.last().ok_or("run has no event head")?;
+        let previous = state["governor"]["headSha256"]
+            .as_str()
+            .map(|head| json!({"eventSha256": head}));
+        let mut payload = json!({
+            "action": "sensor", "sensorVersion": crate::context::SENSOR_VERSION,
+            "runId": state["runId"], "subjectSha256": state["subject"]["sha256"],
+            "attempt": state["attempt"], "checkpoint": current["checkpoint"],
+            "inputSha256": current["inputSha256"], "inputDigest": input_digest,
+            "requestDigest": request["requestDigest"], "assessment": assessment,
+            "identitySource": identity_source,
+        });
+        if let Some(confidence) = confidence {
+            payload["confidence"] = json!(confidence);
+        } else {
+            payload["confidence"] = Value::Null;
+        }
+        let governor_event = crate::context::event(previous.as_ref(), payload);
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state has no version")?;
+        let event = run_state::make_event(json!({
+            "version": version, "kind": "run",
+            "producer": crate::producer::evidence_for_version(version),
+            "action": "govern", "runId": state["runId"],
+            "stage": assignment["stage"], "attempt": assignment["attempt"],
+            "agent": assignment["agent"], "role": assignment["role"],
+            "subjectSha256": state["subject"]["sha256"],
+            "inputsSha256": live_inputs(&state)?,
+            "assignmentSha256": crate::hash::text(assignment_handle),
+            "operation": "sensor", "governorEvent": governor_event,
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?,
+        }));
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = run_state::reduce(&all)?;
+        append(&path, &event, false, &source)?;
+        Ok(json!({"valid": true, "event": event, "governor": next_state["governor"]}))
+    })
+}
+
 /// The submitted subject: an artifact root and a producer deferred until the
 /// assignment has been revalidated under the ledger lock.
 struct SubmitSubject<'r, F> {
@@ -387,6 +820,60 @@ struct SubmitSubject<'r, F> {
     artifact: F,
 }
 
+fn matching_mutation_grants(
+    events: &[Value],
+    state: &Value,
+    assignment: &Value,
+    assignment_sha256: Option<&str>,
+) -> Result<Vec<(String, String)>, String> {
+    let Some(subject) = state["subject"]["sha256"].as_str() else {
+        return Err("run subject is not available for grant matching".into());
+    };
+    let Some(_result_input) = state["inputsSha256"].as_str() else {
+        return Err("tested input identity is not available for grant matching".into());
+    };
+    let lineage = state["governor"]["lineageSha256"].as_str();
+    let mut acknowledged = std::collections::BTreeSet::new();
+    for event in events {
+        if let Some(grants) = event["governorEvent"]["grantEventSha256s"].as_array() {
+            acknowledged.extend(grants.iter().filter_map(Value::as_str));
+        }
+    }
+    let mut result = Vec::new();
+    for event in events {
+        let nested = &event["governorEvent"];
+        if event["action"] != "govern"
+            || event["runId"] != state["runId"]
+            || event["subjectSha256"] != subject
+            || event["stage"] != assignment["stage"]
+            || event["attempt"] != assignment["attempt"]
+            || event["agent"] != assignment["agent"]
+            || event["role"] != assignment["role"]
+            || assignment_sha256.map_or(false, |hash| event["assignmentSha256"] != hash)
+            || nested["action"] != "mutation"
+            || nested["runId"] != state["runId"]
+            || nested["subjectSha256"] != subject
+            || nested["attempt"] != state["attempt"]
+            || nested["inputSha256"] != event["inputsSha256"]
+            || nested["carryLineage"] != true
+            || lineage.map_or(true, |value| nested["lineageSha256"] != value)
+        {
+            continue;
+        }
+        let Some(hash) = event["eventSha256"].as_str() else {
+            return Err("mutation grant has no outer event identity".into());
+        };
+        if !acknowledged.contains(hash) {
+            let source = nested["inputSha256"]
+                .as_str()
+                .ok_or("mutation grant has no source input identity")?;
+            result.push((hash.to_owned(), source.to_owned()));
+        }
+    }
+    Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn submit_locked<F>(
     loaded: &Loaded,
     path: &run_ledger::LedgerPath,
@@ -394,6 +881,7 @@ fn submit_locked<F>(
     outcome: &str,
     reason: Option<&str>,
     expected: Option<&AssignmentIdentity>,
+    assignment_sha256: Option<&str>,
     subject: SubmitSubject<'_, F>,
 ) -> Result<Value, String>
 where
@@ -409,6 +897,9 @@ where
         }
         let (_, events, source) = load_at(loaded, path)?;
         let state = reduce_live(loaded, &events)?;
+        if state["governor"]["enabled"] == true && state["governor"]["state"] == "blocked" {
+            return Err("governor is durably blocked; work result refused".into());
+        }
         assert_no_drift(loaded, &state)?;
         crate::run_artifact::assert_current(loaded, &state)?;
         let assignment = crate::run_assignment::pending(&state)
@@ -423,6 +914,22 @@ where
                 );
             }
         }
+        let mut grant_hashes = Vec::new();
+        if state["governor"]["enabled"] == true
+            && assignment["role"] == "worker"
+            && outcome == "completed"
+        {
+            if state["governor"]["state"] != "ready" {
+                return Err("governor requires re-plan or evidence before work completion".into());
+            }
+            grant_hashes =
+                matching_mutation_grants(&events, &state, &assignment, assignment_sha256)?;
+            if assignment_sha256.is_none() && !grant_hashes.is_empty() {
+                return Err(
+                    "exact assignment identity is required to acknowledge mutation grants".into(),
+                );
+            }
+        }
         let artifact = artifact()?;
         let artifact_value = crate::run_artifact::evidence(loaded, artifact_root, &artifact)?;
         let last = events.last().ok_or("run ledger has no head event")?;
@@ -431,6 +938,11 @@ where
         let version = state["version"]
             .as_u64()
             .ok_or("run state is missing version")?;
+        let result_inputs = if version >= 6 {
+            Some(live_inputs(&state)?)
+        } else {
+            None
+        };
         if assignment["role"] == "lead" && outcome == "accepted" {
             let assessment = crate::run_exit::reduce(&state)?.assessment;
             if assessment.is_blocked() {
@@ -475,13 +987,20 @@ where
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?
         });
+        if version >= 6 {
+            if let Some(assignment_sha256) = assignment_sha256 {
+                event_value["assignmentSha256"] = json!(assignment_sha256);
+            }
+        }
         if version >= 6
             && matches!(
                 (assignment["role"].as_str(), outcome),
-                (Some("reviewer"), "approved") | (Some("lead"), "accepted")
+                (Some("reviewer"), "approved")
+                    | (Some("lead"), "accepted")
+                    | (Some("worker"), "completed")
             )
         {
-            event_value["inputsSha256"] = live_inputs(&state)?;
+            event_value["inputsSha256"] = result_inputs.clone().unwrap();
         }
         if version >= 5 {
             event_value["subjectSha256"] =
@@ -496,17 +1015,9 @@ where
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
             event_value["fallback"] = fallback;
         }
-        let pre_mutation_permit = events.iter().any(|event| {
-            event["action"] == "govern"
-                && event["stage"] == assignment["stage"]
-                && event["attempt"] == assignment["attempt"]
-                && event["agent"] == assignment["agent"]
-                && event["role"] == assignment["role"]
-        });
         if state["governor"]["enabled"] == true
             && assignment["role"] == "worker"
             && outcome == "completed"
-            && !pre_mutation_permit
         {
             let previous_governor = state["governor"]["headSha256"]
                 .as_str()
@@ -514,35 +1025,38 @@ where
             let lineage = state["governor"]["lineageSha256"]
                 .as_str()
                 .map_or_else(|| state["subject"]["sha256"].clone(), |value| json!(value));
-            let input_sha = state
-                .get("inputsSha256")
-                .filter(|value| value.is_string())
-                .cloned()
+            let input_sha = result_inputs
+                .clone()
                 .unwrap_or_else(|| json!(crate::hash::text("unbound")));
             // Pre-mutation permits and completed submissions share one
             // canonical governor lineage.  Counting submissions alone would
             // replay a post-permit completion at checkpoint 1 and make the
             // ledger unreducible (or silently reset the bound).
-            let checkpoint = state["governor"]["spent"]
-                .as_u64()
-                .unwrap_or_default()
-                .saturating_add(1);
-            event_value["governorEvent"] = crate::context::event(
-                previous_governor.as_ref(),
-                json!({
-                    "action": "mutation",
-                    "runId": state["runId"],
-                    "subjectSha256": state["subject"]["sha256"],
-                    "attempt": state["attempt"],
-                    "checkpoint": checkpoint,
-                    "inputSha256": input_sha,
-                    "lineageSha256": lineage,
-                    "carryLineage": true,
-                    "unit": "worker",
-                    "operation": "completed_submission",
-                    "newEvidenceSha256": artifact_value["sha256"],
-                }),
-            );
+            let explicit = !grant_hashes.is_empty();
+            let (grant_event_sha256s, source_inputs_sha256s): (Vec<_>, Vec<_>) =
+                grant_hashes.iter().cloned().unzip();
+            let mutation = json!({
+                "action": "mutation",
+                "runId": state["runId"],
+                "subjectSha256": state["subject"]["sha256"],
+                "attempt": state["attempt"],
+                "checkpoint": if grant_hashes.is_empty() {
+                    json!(state["governor"]["spent"].as_u64().unwrap_or_default().saturating_add(1))
+                } else {
+                    state["governor"]["spent"].clone()
+                },
+                "inputSha256": input_sha,
+                "lineageSha256": lineage,
+                "carryLineage": true,
+                "unit": "worker",
+                "operation": "completed_submission",
+                "newEvidenceSha256": artifact_value["sha256"],
+                "authorizationMode": if explicit { "explicit" } else { "implicit" },
+                "grantEventSha256s": grant_event_sha256s,
+                "sourceInputsSha256s": source_inputs_sha256s,
+            });
+            event_value["governorEvent"] =
+                crate::context::event(previous_governor.as_ref(), mutation);
         }
         let event = run_state::make_event(event_value);
         let mut all = events;
@@ -709,7 +1223,7 @@ pub fn observe_check_for_requirement(
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-    let (source, policy, inputs) = with_lock(&path, || {
+    let (source, policy, inputs, identity, capture_logs) = with_lock(&path, || {
         crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         if claim_path(&path).exists() {
             return Err("run has been superseded; no mutation was made".into());
@@ -732,13 +1246,32 @@ pub fn observe_check_for_requirement(
         } else {
             None
         };
-        Ok((source, policy, inputs))
+        Ok((
+            source,
+            policy.clone(),
+            inputs.clone(),
+            json!({
+                "runId": state["runId"],
+                "targetEventSha256": target,
+                "subjectSha256": state["subject"]["sha256"],
+                "inputsSha256": inputs,
+                "checkCommandSha256": policy.command_sha256,
+            }),
+            state["version"] == 8,
+        ))
     })?;
 
-    let (status, duration_ms) = run_observed_command(loaded, &policy.command, timeout_ms)?;
-    let result = observed_result(&status)?;
+    let capture = match if capture_logs {
+        capture_observed_command(loaded, &policy.command, timeout_ms, &identity)
+    } else {
+        run_observed_command(loaded, &policy.command, timeout_ms).map(CapturedCheck::without_logs)
+    } {
+        Ok(capture) => capture,
+        Err(error) => return Err(error),
+    };
 
-    with_lock(&path, || {
+    let result = observed_result(&capture.status)?;
+    let committed = with_lock(&path, || {
         crate::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, current_events, current_source) = load_at(loaded, &path)?;
         let current_state = reduce_live(loaded, &current_events)?;
@@ -776,10 +1309,14 @@ pub fn observe_check_for_requirement(
             "origin": policy.origin.as_str(),
             "acquisition": "observed",
             "result": result,
-            "durationMs": duration_ms,
+            "durationMs": capture.duration_ms,
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?
         });
+        if let (Some(stdout), Some(stderr)) = (&capture.stdout_artifact, &capture.stderr_artifact) {
+            event_value["stdout"] = stdout.clone();
+            event_value["stderr"] = stderr.clone();
+        }
         if current_state["version"].as_u64() >= Some(5) {
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
         }
@@ -798,7 +1335,38 @@ pub fn observe_check_for_requirement(
         let mut all = current_events;
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
-        append(&path, &event, false, &current_source)?;
+        let installed_stdout = match (&capture.stdout_temp, &capture.stdout_final) {
+            (Some(temp), Some(final_path)) => install_capture(temp, final_path)?,
+            _ => false,
+        };
+        let installed_stderr = match (&capture.stderr_temp, &capture.stderr_final) {
+            (Some(temp), Some(final_path)) => match install_capture(temp, final_path) {
+                Ok(installed) => installed,
+                Err(error) => {
+                    if installed_stdout {
+                        if let Some(final_path) = &capture.stdout_final {
+                            let _ = fs::remove_file(final_path);
+                        }
+                    }
+                    return Err(error);
+                }
+            },
+            _ => false,
+        };
+        let append_result = append(&path, &event, false, &current_source);
+        if let Err(error) = append_result {
+            if installed_stdout {
+                if let Some(final_path) = &capture.stdout_final {
+                    let _ = fs::remove_file(final_path);
+                }
+            }
+            if installed_stderr {
+                if let Some(final_path) = &capture.stderr_final {
+                    let _ = fs::remove_file(final_path);
+                }
+            }
+            return Err(error);
+        }
         Ok(json!({
             "valid": true,
             "event": event,
@@ -806,7 +1374,14 @@ pub fn observe_check_for_requirement(
             "status": next_state["status"],
             "checks": crate::run_value::status(&next_state, Some(true))?["checks"]
         }))
-    })
+    });
+    if let Some(path) = &capture.stdout_temp {
+        let _ = fs::remove_file(path);
+    }
+    if let Some(path) = &capture.stderr_temp {
+        let _ = fs::remove_file(path);
+    }
+    committed
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -848,6 +1423,32 @@ fn active_check_policy(
             command_sha256: policy.command_sha256,
             origin: policy.origin,
         })
+    }
+}
+
+struct CapturedCheck {
+    status: ExitStatus,
+    duration_ms: u64,
+    stdout_temp: Option<PathBuf>,
+    stderr_temp: Option<PathBuf>,
+    stdout_final: Option<PathBuf>,
+    stderr_final: Option<PathBuf>,
+    stdout_artifact: Option<Value>,
+    stderr_artifact: Option<Value>,
+}
+
+impl CapturedCheck {
+    fn without_logs((status, duration_ms): (ExitStatus, u64)) -> Self {
+        Self {
+            status,
+            duration_ms,
+            stdout_temp: None,
+            stderr_temp: None,
+            stdout_final: None,
+            stderr_final: None,
+            stdout_artifact: None,
+            stderr_artifact: None,
+        }
     }
 }
 
@@ -911,6 +1512,382 @@ fn run_observed_command(
                 }
             }
         }
+    }
+}
+
+fn child_stderr_stdio() -> Result<Stdio, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::{FromRawFd, RawFd};
+        let fd: RawFd = unsafe { libc::dup(libc::STDERR_FILENO) };
+        if fd < 0 {
+            return Err(format!(
+                "check command stderr could not be connected: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        Ok(unsafe { Stdio::from(std::fs::File::from_raw_fd(fd)) })
+    }
+    #[cfg(not(unix))]
+    {
+        Err("observe-check requires a POSIX host".into())
+    }
+}
+
+fn capture_observed_command(
+    loaded: &Loaded,
+    command_text: &str,
+    timeout_ms: u64,
+    identity: &Value,
+) -> Result<CapturedCheck, String> {
+    let artifact_dir = loaded
+        .state_root
+        .join(crate::project_layout::state_namespace())
+        .join("artifacts");
+    crate::managed_files::ensure_managed_directory(&loaded.state_root, &artifact_dir)?;
+    let log_id = hash::value(identity);
+    let stdout_final = artifact_dir.join(format!("check-log-{log_id}-stdout.raw"));
+    let stderr_final = artifact_dir.join(format!("check-log-{log_id}-stderr.raw"));
+    let nonce = format!("{}-{}", std::process::id(), timestamp_nanos());
+    let stdout_temp = artifact_dir.join(format!(".check-log-{log_id}-{nonce}-stdout.tmp"));
+    let stderr_temp = artifact_dir.join(format!(".check-log-{log_id}-{nonce}-stderr.tmp"));
+    let result = capture_to_files(loaded, command_text, timeout_ms, &stdout_temp, &stderr_temp);
+    let (status, duration_ms) = match result {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_temp);
+            let _ = fs::remove_file(&stderr_temp);
+            return Err(error);
+        }
+    };
+    let stdout = match fs::read(&stdout_temp) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_temp);
+            let _ = fs::remove_file(&stderr_temp);
+            return Err(error.to_string());
+        }
+    };
+    let stderr = match fs::read(&stderr_temp) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_temp);
+            let _ = fs::remove_file(&stderr_temp);
+            return Err(error.to_string());
+        }
+    };
+    let stdout_artifact = match artifact_value(loaded, &stdout_final, &stdout) {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_temp);
+            let _ = fs::remove_file(&stderr_temp);
+            return Err(error);
+        }
+    };
+    let stderr_artifact = match artifact_value(loaded, &stderr_final, &stderr) {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_temp);
+            let _ = fs::remove_file(&stderr_temp);
+            return Err(error);
+        }
+    };
+    Ok(CapturedCheck {
+        status,
+        duration_ms,
+        stdout_temp: Some(stdout_temp),
+        stderr_temp: Some(stderr_temp),
+        stdout_final: Some(stdout_final),
+        stderr_final: Some(stderr_final),
+        stdout_artifact: Some(stdout_artifact),
+        stderr_artifact: Some(stderr_artifact),
+    })
+}
+
+fn capture_to_files(
+    loaded: &Loaded,
+    command_text: &str,
+    timeout_ms: u64,
+    stdout_temp: &PathBuf,
+    stderr_temp: &PathBuf,
+) -> Result<(ExitStatus, u64), String> {
+    #[cfg(not(unix))]
+    {
+        let _ = (loaded, command_text, timeout_ms, stdout_temp, stderr_temp);
+        return Err("observe-check requires a POSIX host".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        let stdout_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(stdout_temp)
+            .map_err(|error| format!("stdout capture could not be created: {error}"))?;
+        let stderr_file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(stderr_temp)
+        {
+            Ok(file) => file,
+            Err(error) => {
+                let _ = fs::remove_file(stdout_temp);
+                return Err(format!("stderr capture could not be created: {error}"));
+            }
+        };
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg(command_text)
+            .arg("exitbind-observe-check")
+            .current_dir(&loaded.product_root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0);
+        let started = Instant::now();
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = fs::remove_file(stdout_temp);
+                let _ = fs::remove_file(stderr_temp);
+                return Err(format!("check command could not be launched: {error}"));
+            }
+        };
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = terminate_process_group(&mut child);
+                let _ = fs::remove_file(stdout_temp);
+                let _ = fs::remove_file(stderr_temp);
+                return Err("check stdout pipe was not available; no mutation was made".into());
+            }
+        };
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                let _ = terminate_process_group(&mut child);
+                let _ = fs::remove_file(stdout_temp);
+                let _ = fs::remove_file(stderr_temp);
+                return Err("check stderr pipe was not available; no mutation was made".into());
+            }
+        };
+        let (sender, receiver) = mpsc::channel();
+        let stdout_thread = {
+            let sender = sender.clone();
+            thread::spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    drain_capture_stream(stdout, stdout_file, "stdout")
+                }))
+                .map_err(|_| "stdout capture reader panicked".to_owned())
+                .and_then(|result| result);
+                let _ = sender.send(result);
+            })
+        };
+        let stderr_thread = {
+            let sender = sender.clone();
+            thread::spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    drain_capture_stream(stderr, stderr_file, "stderr")
+                }))
+                .map_err(|_| "stderr capture reader panicked".to_owned())
+                .and_then(|result| result);
+                let _ = sender.send(result);
+            })
+        };
+        drop(sender);
+        let timeout = Duration::from_millis(timeout_ms);
+        let deadline = started
+            .checked_add(timeout)
+            .unwrap_or_else(|| Instant::now() + timeout);
+        let mut stream_results = Vec::new();
+        let mut stream_error = None;
+        let mut status = None;
+        let mut timed_out = false;
+        loop {
+            while let Ok(result) = receiver.try_recv() {
+                if let Err(error) = &result {
+                    stream_error = Some(error.clone());
+                }
+                stream_results.push(result);
+            }
+            if stream_error.is_some() || (status.is_some() && stream_results.len() == 2) {
+                break;
+            }
+            if status.is_none() {
+                match child.try_wait() {
+                    Ok(Some(exit_status)) => status = Some(exit_status),
+                    Ok(None) => {}
+                    Err(error) => {
+                        stream_error =
+                            Some(format!("check command could not be observed: {error}"));
+                        break;
+                    }
+                }
+            }
+            if stream_results.len() == 2 {
+                if status.is_some() {
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    break;
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
+                continue;
+            }
+            if Instant::now() >= deadline {
+                timed_out = true;
+                break;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = remaining.min(Duration::from_millis(OBSERVE_POLL_MS));
+            match receiver.recv_timeout(wait) {
+                Ok(result) => {
+                    if let Err(error) = &result {
+                        stream_error = Some(error.clone());
+                    }
+                    stream_results.push(result);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    stream_error = Some(format!(
+                        "capture reader stopped unexpectedly ({} stream result(s))",
+                        stream_results.len()
+                    ));
+                }
+            }
+        }
+
+        let cleanup = if timed_out || stream_error.is_some() {
+            // A failed reader can leave a descendant holding the other pipe
+            // even after the shell leader has exited; always inspect and
+            // terminate the process group on this path.
+            terminate_process_group(&mut child)
+        } else {
+            Ok(())
+        };
+        while stream_results.len() < 2 {
+            match receiver.recv_timeout(Duration::from_millis(OBSERVE_TERMINATION_GRACE_MS)) {
+                Ok(result) => {
+                    if let Err(error) = &result {
+                        stream_error = Some(error.clone());
+                    }
+                    stream_results.push(result);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    stream_error = Some("capture readers did not finish after cleanup".into());
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    stream_error = Some(format!(
+                        "capture reader stopped unexpectedly ({} stream result(s))",
+                        stream_results.len()
+                    ));
+                    break;
+                }
+            }
+        }
+        if stream_results.len() == 2 {
+            let stdout_panicked = stdout_thread.join().is_err();
+            let stderr_panicked = stderr_thread.join().is_err();
+            if stdout_panicked || stderr_panicked {
+                stream_error = Some("capture reader panicked".into());
+            }
+        } else {
+            // A reader which did not report by the bounded cleanup deadline is
+            // deliberately detached here: joining it could turn a failed
+            // capture into an unbounded wait. Its pathname is removed below.
+            drop(stdout_thread);
+            drop(stderr_thread);
+        }
+        if let Some(error) = stream_error {
+            let _ = fs::remove_file(stdout_temp);
+            let _ = fs::remove_file(stderr_temp);
+            return Err(format!("{error}; no mutation was made"));
+        }
+        if let Err(error) = cleanup {
+            let _ = fs::remove_file(stdout_temp);
+            let _ = fs::remove_file(stderr_temp);
+            return Err(format!(
+                "check process cleanup failed: {error}; no mutation was made"
+            ));
+        }
+        if timed_out {
+            let _ = fs::remove_file(stdout_temp);
+            let _ = fs::remove_file(stderr_temp);
+            return Err(format!(
+                "check observation timed out after {timeout_ms} ms; no mutation was made"
+            ));
+        }
+        let status = status.ok_or("check command ended without a status")?;
+        if stream_results.iter().any(Result::is_err) {
+            let _ = fs::remove_file(stdout_temp);
+            let _ = fs::remove_file(stderr_temp);
+            return Err("check capture failed; no mutation was made".into());
+        }
+        Ok((status, elapsed_ms(started)))
+    }
+}
+
+fn drain_capture_stream<R: Read>(
+    mut reader: R,
+    mut file: File,
+    stream: &str,
+) -> Result<(), String> {
+    let mut total = 0usize;
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| format!("{stream} capture read failed: {error}"))?;
+        if count == 0 {
+            file.flush()
+                .map_err(|error| format!("{stream} capture flush failed: {error}"))?;
+            file.sync_all()
+                .map_err(|error| format!("{stream} capture sync failed: {error}"))?;
+            return Ok(());
+        }
+        if (total + count) as u64 > crate::run_value::MAX_CAPTURE_BYTES {
+            return Err(format!(
+                "{stream} capture exceeded the 1048576-byte stream limit"
+            ));
+        }
+        file.write_all(&buffer[..count])
+            .map_err(|error| format!("{stream} capture write failed: {error}"))?;
+        total += count;
+    }
+}
+
+fn artifact_value(loaded: &Loaded, path: &std::path::Path, bytes: &[u8]) -> Result<Value, String> {
+    let relative = crate::config::rel(&loaded.state_root, path)?;
+    Ok(json!({
+        "root": "state",
+        "path": relative,
+        "sha256": hash::bytes(bytes),
+        "bytes": bytes.len(),
+    }))
+}
+
+fn install_capture(temp: &std::path::Path, final_path: &std::path::Path) -> Result<bool, String> {
+    match fs::symlink_metadata(final_path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("captured log artifact already exists with invalid type".into());
+            }
+            let existing = fs::read(final_path).map_err(|error| error.to_string())?;
+            let proposed = fs::read(temp).map_err(|error| error.to_string())?;
+            if existing != proposed {
+                return Err("captured log artifact already exists with different bytes".into());
+            }
+            Ok(false)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(temp, final_path).map_err(|error| error.to_string())?;
+            Ok(true)
+        }
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -1045,12 +2022,39 @@ fn process_group_exists(process_group: i32) -> Result<bool, String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::{
-        process_group_exists, terminate_process_group, Duration, Instant,
-        OBSERVE_TERMINATION_GRACE_MS,
+        canonical_work_for_ledger, process_group_exists, terminate_process_group, Duration,
+        Instant, OBSERVE_TERMINATION_GRACE_MS,
     };
+    use crate::run_ledger::LedgerPath;
     use std::os::unix::process::CommandExt;
+    use std::path::PathBuf;
     use std::process::Command;
     use std::{fs, thread};
+
+    #[test]
+    fn canonical_work_binding_rejects_cross_run_ledger_pairs() {
+        let root = PathBuf::from("/fixture");
+        let token_a = "a".repeat(64);
+        let token_b = "b".repeat(64);
+        let path = root.join(format!(
+            "{}/runs/work-{token_a}.jsonl",
+            crate::project_layout::state_namespace()
+        ));
+        let ledger = LedgerPath {
+            path: path.clone(),
+            lock: root.join(".exitbind/locks/permit.lock"),
+            root,
+            expected: path,
+        };
+        assert_eq!(
+            canonical_work_for_ledger(&ledger).unwrap(),
+            format!("smw_{token_a}")
+        );
+        assert_ne!(
+            canonical_work_for_ledger(&ledger).unwrap(),
+            format!("smw_{token_b}")
+        );
+    }
 
     #[test]
     fn cleanup_reports_reap_failure_after_still_killing_the_group() {
@@ -1118,25 +2122,6 @@ fn observed_result(status: &std::process::ExitStatus) -> Result<Value, String> {
         .code()
         .map(|code| json!({"kind": "exit", "code": code as u64}))
         .ok_or_else(|| "check command ended indeterminately; no mutation was made".into())
-}
-
-fn child_stderr_stdio() -> Result<Stdio, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::{FromRawFd, RawFd};
-        let fd: RawFd = unsafe { libc::dup(libc::STDERR_FILENO) };
-        if fd < 0 {
-            return Err(format!(
-                "check command stderr could not be connected: {}",
-                io::Error::last_os_error()
-            ));
-        }
-        Ok(unsafe { Stdio::from(std::fs::File::from_raw_fd(fd)) })
-    }
-    #[cfg(not(unix))]
-    {
-        Err("observe-check requires a POSIX host".into())
-    }
 }
 
 fn parse_nonnegative(option: &str, value: &str) -> Result<u64, String> {
@@ -1372,6 +2357,14 @@ pub fn supersede_with_policy(
         if preservation.is_some() && !crate::producer::exitbind_surface() {
             return Err("preservation requirements require Exitbind v6 runs".into());
         }
+        if old_state["governor"]["enabled"] == true
+            && old_state["subject"]["goalSha256"] == hash::text(goal)
+        {
+            return Err(
+                "same-goal supersession is refused until governor lineage carry is persisted"
+                    .into(),
+            );
+        }
         let old_rel = config::rel(&loaded.state_root, &old.expected)?;
         let old_sha = hash::text(&old_source);
         let head = old_events
@@ -1417,11 +2410,7 @@ pub fn supersede_with_policy(
             "configSha256": claim.value["oldConfigSha256"]
         });
         let version = if crate::producer::exitbind_surface() {
-            if has_fallback_runtime(&plan) {
-                7
-            } else {
-                6
-            }
+            8
         } else if check_policy.is_some() {
             4
         } else if harness_reference.is_some() {
@@ -1459,6 +2448,8 @@ pub fn supersede_with_policy(
             event_value["governor"] = json!({
                 "version": crate::context::GOVERNOR_VERSION,
                 "budget": crate::context::HARD_ITERATION_BUDGET,
+                "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
+                "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
             });
         }
         let event = run_state::make_event(event_value);
@@ -1531,13 +2522,14 @@ pub(crate) struct RunSnapshot {
     events: Vec<Value>,
     state: Value,
     inputs: InputContext,
+    ledger_sha256: String,
     drift: Result<(), String>,
     artifact_current: Result<bool, String>,
 }
 
 impl RunSnapshot {
     pub(crate) fn capture(loaded: &Loaded, ledger: &str) -> Result<Self, String> {
-        let (_, events, _) = load(loaded, ledger)?;
+        let (_, events, source) = load(loaded, ledger)?;
         let (state, inputs) = reduce_with_inputs(loaded, &events)?;
         predecessor(loaded, &events[0])?;
         let drift = assert_no_drift(loaded, &state);
@@ -1550,6 +2542,7 @@ impl RunSnapshot {
             events,
             state,
             inputs,
+            ledger_sha256: hash::bytes(source.as_bytes()),
             drift,
             artifact_current,
         })
@@ -1575,6 +2568,7 @@ impl RunSnapshot {
             "events": self.events,
             "submissions": state["submissions"]
         });
+        result["ledgerSha256"] = json!(self.ledger_sha256.clone());
         if state.get("checkPolicy").is_some() {
             result["assignments"] = state["assignments"].clone();
         }
@@ -1665,6 +2659,7 @@ fn has_worker_stage(plan: &Value) -> bool {
 }
 
 /// Whether any selected stage agent carries an authorized alternate binding.
+#[allow(dead_code)]
 fn has_fallback_runtime(plan: &Value) -> bool {
     plan["stages"].as_array().is_some_and(|stages| {
         stages.iter().any(|stage| {

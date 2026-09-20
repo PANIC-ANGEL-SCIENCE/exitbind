@@ -42,7 +42,7 @@ const EXITBIND: Profile = Profile {
     caller: "exitbind",
     product: "exitbind",
     producer: "exitbind",
-    format_version: 6,
+    format_version: 8,
     config: "exitbind.json",
     control: "exitbind",
     state: ".exitbind",
@@ -137,7 +137,7 @@ mod tests {
     fn profiles_own_the_two_public_surfaces() {
         assert_eq!(EXITBIND.caller, "exitbind");
         assert_eq!(EXITBIND.product, "exitbind");
-        assert_eq!(EXITBIND.format_version, 6);
+        assert_eq!(EXITBIND.format_version, 8);
         assert_eq!(EXITBIND.installed_commands, ["exitbind"]);
         assert_eq!(SOULMATE.caller, "soulmate");
         assert_eq!(SOULMATE.product, "soulmate");

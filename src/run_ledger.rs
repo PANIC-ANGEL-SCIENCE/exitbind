@@ -8,6 +8,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone)]
@@ -21,6 +22,15 @@ pub(crate) struct LedgerPath {
 pub(crate) struct SupersessionClaim {
     pub(crate) value: Value,
     created_inode: Option<(u64, u64)>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+enum AppendFailure {
+    None,
+    StageWrite,
+    StageFlush,
+    Commit,
 }
 
 pub(crate) fn load(
@@ -153,38 +163,131 @@ pub(crate) fn append(
     create: bool,
     expected: &str,
 ) -> Result<(), String> {
-    let mut file = open_nofollow(&ledger.path, create, true)?;
-    let opened_metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !opened_metadata.is_file() {
-        return Err("ledger must be a regular file".into());
+    #[cfg(test)]
+    {
+        append_with_failure(ledger, event, create, expected, AppendFailure::None)
     }
-    let opened = fs::canonicalize(&ledger.path).map_err(|error| error.to_string())?;
-    if !opened.starts_with(&ledger.root) || opened != ledger.expected {
-        return Err("ledger path changed while opening".into());
+    #[cfg(not(test))]
+    {
+        append_with_failure(ledger, event, create, expected)
     }
-    let current = fs::symlink_metadata(&ledger.path).map_err(|error| error.to_string())?;
-    if current.file_type().is_symlink() || inode(&current) != inode(&opened_metadata) {
-        return Err("ledger changed while opening".into());
-    }
-    if !create {
-        file.seek(SeekFrom::Start(0))
-            .map_err(|error| error.to_string())?;
-        let mut source = String::new();
+}
+
+fn append_with_failure(
+    ledger: &LedgerPath,
+    event: &Value,
+    create: bool,
+    expected: &str,
+    #[cfg(test)] failure: AppendFailure,
+) -> Result<(), String> {
+    let line = serde_json::to_string(event).map_err(|error| error.to_string())?;
+    let mut source = String::new();
+    let opened_metadata = if create {
+        match fs::symlink_metadata(&ledger.path) {
+            Ok(_) => return Err("ledger already exists; run was not started".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        }
+    } else {
+        let mut file = open_read_nofollow(&ledger.path).map_err(|error| error.to_string())?;
+        let metadata = file.metadata().map_err(|error| error.to_string())?;
+        verify_opened(ledger, &metadata)?;
         file.read_to_string(&mut source)
             .map_err(|error| error.to_string())?;
         if source != expected {
             return Err("ledger changed before append".into());
         }
+        Some(metadata)
+    };
+
+    let staged = stage_path(&ledger.path);
+    let result = (|| {
+        let mut file = open_stage(&staged)?;
+        let bytes = if create {
+            format!("{line}\n").into_bytes()
+        } else {
+            format!("{source}{line}\n").into_bytes()
+        };
+        #[cfg(test)]
+        if matches!(failure, AppendFailure::StageWrite) {
+            return Err("injected ledger stage write failure".into());
+        }
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        #[cfg(test)]
+        if matches!(failure, AppendFailure::StageFlush) {
+            return Err("injected ledger stage flush failure".into());
+        }
+        file.flush().map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        drop(file);
+
+        if let Some(metadata) = &opened_metadata {
+            verify_opened(ledger, metadata)?;
+            let mut confirmed =
+                open_read_nofollow(&ledger.path).map_err(|error| error.to_string())?;
+            let mut current_source = String::new();
+            confirmed
+                .read_to_string(&mut current_source)
+                .map_err(|error| error.to_string())?;
+            if current_source != expected {
+                return Err("ledger changed before commit".into());
+            }
+            #[cfg(test)]
+            if matches!(failure, AppendFailure::Commit) {
+                return Err("injected ledger commit precondition failure".into());
+            }
+            fs::rename(&staged, &ledger.path).map_err(|error| error.to_string())?;
+        } else {
+            fs::hard_link(&staged, &ledger.path).map_err(|error| error.to_string())?;
+            let current = fs::symlink_metadata(&ledger.path).map_err(|error| error.to_string())?;
+            if current.file_type().is_symlink() || !current.is_file() {
+                let _ = fs::remove_file(&ledger.path);
+                return Err("ledger changed while committing".into());
+            }
+        }
+        Ok(())
+    })();
+    let _ = fs::remove_file(&staged);
+    result
+}
+
+fn verify_opened(ledger: &LedgerPath, opened: &fs::Metadata) -> Result<(), String> {
+    if !opened.is_file() {
+        return Err("ledger must be a regular file".into());
     }
-    let line = serde_json::to_string(event).map_err(|error| error.to_string())?;
-    file.write_all(format!("{line}\n").as_bytes())
-        .map_err(|error| error.to_string())?;
-    file.flush().map_err(|error| error.to_string())?;
+    let canonical = fs::canonicalize(&ledger.path).map_err(|error| error.to_string())?;
+    if !canonical.starts_with(&ledger.root) || canonical != ledger.expected {
+        return Err("ledger path changed while opening".into());
+    }
     let current = fs::symlink_metadata(&ledger.path).map_err(|error| error.to_string())?;
-    if current.file_type().is_symlink() || inode(&current) != inode(&opened_metadata) {
-        return Err("ledger changed while appending".into());
+    if current.file_type().is_symlink() || !current.is_file() || inode(&current) != inode(opened) {
+        return Err("ledger changed while opening".into());
     }
     Ok(())
+}
+
+fn stage_path(path: &Path) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    path.with_file_name(format!(
+        ".{}.append-{}-{nonce}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("ledger"),
+        std::process::id()
+    ))
+}
+
+fn open_stage(path: &Path) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path).map_err(|error| error.to_string())
 }
 
 pub(crate) fn with_lock<T, F: FnOnce() -> Result<T, String>>(
@@ -573,4 +676,58 @@ fn sha(value: Option<&str>) -> bool {
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixture() -> (PathBuf, LedgerPath, String) {
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-run-ledger-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("runs.jsonl");
+        let source = "{\"version\":8,\"kind\":\"run\",\"action\":\"start\"}\n".to_owned();
+        fs::write(&path, &source).unwrap();
+        let expected = fs::canonicalize(&path).unwrap();
+        let ledger = LedgerPath {
+            path: expected.clone(),
+            lock: root.join("runs.lock"),
+            root: fs::canonicalize(&root).unwrap(),
+            expected,
+        };
+        (root, ledger, source)
+    }
+
+    #[test]
+    fn staged_failures_preserve_ledger_bytes_and_remove_stage_files() {
+        for failure in [
+            AppendFailure::StageWrite,
+            AppendFailure::StageFlush,
+            AppendFailure::Commit,
+        ] {
+            let (root, ledger, source) = fixture();
+            let result = append_with_failure(
+                &ledger,
+                &json!({"version": 8, "kind": "run", "action": "check"}),
+                false,
+                &source,
+                failure,
+            );
+            assert!(result.is_err());
+            assert_eq!(fs::read(&ledger.path).unwrap(), source.as_bytes());
+            assert!(fs::read_dir(&root)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .all(|name| !name.to_str().is_some_and(|name| name.contains(".append-"))));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }

@@ -234,7 +234,11 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
 }
 
 fn context_command(a: &Arguments) -> Result<(), String> {
-    let action = positional(a, 0, "context requires reduce, checkpoint, or seal")?;
+    let action = positional(
+        a,
+        0,
+        "context requires reduce, checkpoint, sensor-request, or seal",
+    )?;
     match action {
         "reduce" => {
             args::assert_options("context reduce", a, &["events", "json"])?;
@@ -257,6 +261,16 @@ fn context_command(a: &Arguments) -> Result<(), String> {
             )?)?;
             print_json(&crate::context::checkpoint(&state, &proposal))
         }
+        "sensor-request" => {
+            args::assert_options("context sensor-request", a, &["state", "json"])?;
+            args::assert_positionals("context sensor-request", a, 1)?;
+            let state = crate::context::read_json(option(
+                a,
+                "state",
+                "context sensor-request requires --state FILE",
+            )?)?;
+            print_json(&crate::context::sensor_request(&state)?)
+        }
         "seal" => {
             args::assert_options("context seal", a, &["event", "previous", "json"])?;
             args::assert_positionals("context seal", a, 1)?;
@@ -272,7 +286,7 @@ fn context_command(a: &Arguments) -> Result<(), String> {
                 .transpose()?;
             print_json(&crate::context::event(previous.as_ref(), value))
         }
-        _ => Err("context requires reduce, checkpoint, or seal".into()),
+        _ => Err("context requires reduce, checkpoint, sensor-request, or seal".into()),
     }
 }
 
@@ -280,7 +294,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "work requires begin, next, permit, return, check, validate, or resume",
+        "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume",
     )?;
     match action {
         "begin" => {
@@ -343,6 +357,71 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "operation", "work permit requires --operation OPERATION")?,
             )?)
         }
+        "replan" => {
+            args::assert_options(
+                "work replan",
+                a,
+                &[
+                    "config",
+                    "hypothesis",
+                    "evidence-request",
+                    "scope-decision",
+                    "blocker",
+                ],
+            )?;
+            args::assert_positionals("work replan", a, 3)?;
+            print_json(&crate::work::replan(
+                l,
+                positional(a, 1, "work replan requires WORK ASSIGNMENT")?,
+                positional(a, 2, "work replan requires WORK ASSIGNMENT")?,
+                a.options.get("hypothesis").map(String::as_str),
+                a.options.get("evidence-request").map(String::as_str),
+                a.options.get("scope-decision").map(String::as_str),
+                a.options.get("blocker").map(String::as_str),
+            )?)
+        }
+        "evidence" => {
+            args::assert_options("work evidence", a, &["config", "artifact", "artifact-root"])?;
+            args::assert_positionals("work evidence", a, 3)?;
+            print_json(&crate::work::evidence(
+                l,
+                positional(a, 1, "work evidence requires WORK ASSIGNMENT")?,
+                positional(a, 2, "work evidence requires WORK ASSIGNMENT")?,
+                a.options
+                    .get("artifact-root")
+                    .map(String::as_str),
+                option(a, "artifact", "work evidence requires --artifact PATH")?,
+            )?)
+        }
+        "sensor-request" => {
+            args::assert_options("work sensor-request", a, &["config"])?;
+            args::assert_positionals("work sensor-request", a, 3)?;
+            print_json(&crate::work::sensor_request(
+                l,
+                positional(a, 1, "work sensor-request requires WORK ASSIGNMENT")?,
+                positional(a, 2, "work sensor-request requires WORK ASSIGNMENT")?,
+            )?)
+        }
+        "sensor-result" => {
+            args::assert_options(
+                "work sensor-result",
+                a,
+                &["config", "assessment", "confidence", "input-digest", "identity-source"],
+            )?;
+            args::assert_positionals("work sensor-result", a, 3)?;
+            print_json(&crate::work::sensor_result(
+                l,
+                positional(a, 1, "work sensor-result requires WORK ASSIGNMENT")?,
+                positional(a, 2, "work sensor-result requires WORK ASSIGNMENT")?,
+                option(a, "assessment", "work sensor-result requires --assessment VALUE")?,
+                a.options.get("confidence").map(String::as_str),
+                option(a, "input-digest", "work sensor-result requires --input-digest HEX")?,
+                a.options
+                    .get("identity-source")
+                    .map(String::as_str)
+                    .unwrap_or("host-reported"),
+            )?)
+        }
         "return" => {
             args::assert_options("work return", a, &["config", "outcome", "reason"])?;
             args::assert_positionals("work return", a, 3)?;
@@ -375,12 +454,24 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 packet,
             )?)
         }
+        "expand" => {
+            args::assert_options("work expand", a, &["config"])?;
+            args::assert_positionals("work expand", a, 3)?;
+            print_json(&crate::work::expand(
+                l,
+                positional(a, 1, "work expand requires WORK REF")?,
+                positional(a, 2, "work expand requires WORK REF")?,
+            )?)
+        }
         "resume" => {
             args::assert_options("work resume", a, &["config"])?;
             args::assert_positionals("work resume", a, 1)?;
             print_json(&crate::work::resume(l)?)
         }
-        _ => Err("work requires begin, next, permit, return, check, validate, or resume".into()),
+        _ => Err(
+            "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume"
+                .into(),
+        ),
     }
 }
 

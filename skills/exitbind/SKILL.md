@@ -117,21 +117,10 @@ URL, projected bytes, or a process exit.
 
 ## Thin context and bounded iteration
 
-In v0.22, `work next`, `work resume`, and `work validate` expose a
-role-specific `context` projection derived from validated canonical state. It
-carries the current goal, scope, subject, obligations, exact evidence
-identity, loop state, and next action. History and raw bytes are delayed behind
-exact `expansions` references; they are never discarded.
+The activated v0.22 surface routes context, checkpoint, sensor, and recovery
+procedure to [references/preservation.md](references/preservation.md). That
+reference defines the role-specific projection and exact expansion references.
 
-Treat context as a staleable view, not authority. A changed ledger head,
-subject, tested input, or context digest requires reprojection. Use the
-canonical `work permit` action before each governed mutation unit; it
-revalidates the assignment and tested inputs and appends the governor event
-under the run-ledger lock before returning permission. The finite governor
-refuses the next unit after its hard budget; timestamps, wrappers, comments,
-wording, and equivalent replans cannot reset it. An optional sensor is
-provider-neutral and conservative: unavailable, malformed, stale, duplicate,
-low-confidence, or optimistic output cannot grant readiness, waive evidence,
-reset the bound, or create a retry loop. Read
-[references/preservation.md](references/preservation.md) for the exact
-packet, checkpoint, sensor, and recovery procedure.
+The delayed reference also defines currentness checks and the conservative loop
+boundary; this router stays small so the procedure is loaded only when the
+preservation path is active.

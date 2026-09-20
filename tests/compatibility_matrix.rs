@@ -1081,7 +1081,7 @@ fn producer_cases_execute_persisted_identity_and_format_projections() {
             .unwrap(),
     );
     assert_eq!(current_event["producer"]["name"], current_producer["name"]);
-    assert_eq!(current_event["version"], 6);
+    assert_eq!(current_event["version"], 8);
 
     let legacy_config = legacy_root.join(legacy_paths["defaultConfig"].as_str().unwrap());
     let legacy_ledger = format!(

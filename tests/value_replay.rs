@@ -450,7 +450,7 @@ fn producer_identity_preserves_v1_history_and_accepts_current_exitbind() {
     );
     assert!(v5_started.status.success(), "{}", text(&v5_started));
     let v5_events = read_events(&v5_root, v5_ledger);
-    assert_eq!(v5_events[0]["version"], 6);
+    assert_eq!(v5_events[0]["version"], 8);
     assert_eq!(v5_events[0]["producer"]["name"], "exitbind");
     let v5_inspected = invoke_exitbind(
         &v5_root,

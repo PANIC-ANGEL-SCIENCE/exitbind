@@ -352,9 +352,10 @@ fn primary_unavailable_falls_back_and_still_requires_lead_acceptance() {
     let ledger = fixture.ledger(&work);
 
     // The configuration change alone is enough to make the run record fallback
-    // provenance, so the ledger opens at v7 while plain runs stay at v6.
+    // provenance, so the ledger opens at v8 while plain runs stay on the
+    // historical v1-v7 compatibility range.
     let start = fixture.events(&ledger).remove(0);
-    assert_eq!(start["version"], 7);
+    assert_eq!(start["version"], 8);
     let reviewer = fixture.selected_reviewer(&ledger);
     assert_eq!(reviewer["name"], "reviewer");
     assert_eq!(reviewer["runtime"]["fallback"], alternate());
@@ -425,7 +426,7 @@ fn primary_unavailable_falls_back_and_still_requires_lead_acceptance() {
     // The binding that actually produced the verdict.
     assert_eq!(substitution["fallback"]["runtime"], alternate());
     assert_eq!(substitution["fallback"]["identitySource"], "host-reported");
-    assert_eq!(substitution["version"], 7);
+    assert_eq!(substitution["version"], 8);
     // The substitution ran the same stage and attempt as the binding it
     // replaced.
     assert_eq!(substitution["stage"], reported["stage"]);
@@ -499,7 +500,7 @@ fn primary_unavailable_without_a_fallback_stays_blocked() {
     let (work, checked) = fixture.to_reviewer("no fallback");
     let ledger = fixture.ledger(&work);
     let start = fixture.events(&ledger).remove(0);
-    assert_eq!(start["version"], 6);
+    assert_eq!(start["version"], 8);
 
     let unavailable = fixture.value(
         &[
@@ -526,10 +527,10 @@ fn primary_unavailable_without_a_fallback_stays_blocked() {
         .find(|event| event["outcome"] == "unavailable")
         .unwrap();
     assert_eq!(reported["agent"], "reviewer");
-    // No bounded reason is attachable without the v7 fallback shape, and no
-    // fabricated fallback binding appears.
-    assert_eq!(reported["version"], 6);
-    assert!(reported.get("fallback").is_none());
+    // v8 carries the bounded operational reason, without fabricating an
+    // alternate reviewer binding.
+    assert_eq!(reported["version"], 8);
+    assert_eq!(reported["fallback"]["reason"], "provider_unavailable");
 
     // No reviewer ever produced a verdict.
     let events = fixture.events(&ledger);

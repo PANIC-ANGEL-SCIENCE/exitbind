@@ -9,6 +9,7 @@ mod context;
 mod envelope;
 mod forgetting;
 mod git_preflight;
+mod governor;
 mod harness_manifest;
 mod hash;
 mod hook_runtime;

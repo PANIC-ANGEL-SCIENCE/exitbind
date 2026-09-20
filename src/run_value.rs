@@ -318,6 +318,10 @@ struct CheckObservationV4 {
     result: CheckResult,
     #[serde(rename = "durationMs")]
     duration_ms: Option<u64>,
+    #[serde(default)]
+    stdout: Option<Value>,
+    #[serde(default)]
+    stderr: Option<Value>,
     #[serde(rename = "previousEventSha256")]
     previous_event_sha256: Option<String>,
     timestamp: String,
@@ -623,7 +627,7 @@ fn validate_requirement_text(text: &str) -> Result<(), &'static str> {
 }
 
 pub(crate) fn validate_check_event(event: &Value, line: usize) -> Result<(), String> {
-    if matches!(event["version"].as_u64(), Some(4..=7)) {
+    if matches!(event["version"].as_u64(), Some(4..=8)) {
         return validate_check_event_v4(event, line);
     }
     let record: CheckObservation = serde_json::from_value(event.clone())
@@ -732,6 +736,8 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "acquisition",
         "result",
         "durationMs",
+        "stdout",
+        "stderr",
         "previousEventSha256",
         "timestamp",
         "eventSha256",
@@ -787,7 +793,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
     };
     if !required.iter().all(|key| object.contains_key(*key))
         || (event["version"].as_u64() >= Some(5) && !object.contains_key("subjectSha256"))
-        || !matches!(record.version, 4..=7)
+        || !matches!(record.version, 4..=8)
         || record.kind != "run"
         || record.action != CheckAction::Check
         || !crate::producer::valid(&record.producer)
@@ -807,6 +813,24 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
             "invalid run ledger line {line}: malformed check event"
         ));
     }
+    if record.version == 8 {
+        match record.acquisition.as_str() {
+            "observed" => {
+                validate_log_artifact(record.stdout.as_ref(), line, "stdout")?;
+                validate_log_artifact(record.stderr.as_ref(), line, "stderr")?;
+            }
+            "reported" if record.stdout.is_some() || record.stderr.is_some() => {
+                return Err(format!(
+                    "invalid run ledger line {line}: reported checks cannot claim captured logs"
+                ));
+            }
+            _ => {}
+        }
+    } else if record.stdout.is_some() || record.stderr.is_some() {
+        return Err(format!(
+            "invalid run ledger line {line}: captured logs require v8"
+        ));
+    }
     if record.previous_event_sha256.is_none() && event["previousEventSha256"] != Value::Null {
         return Err(format!(
             "invalid run ledger line {line}: previous event hash is malformed"
@@ -822,8 +846,40 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) const MAX_CAPTURE_BYTES: u64 = 1_048_576;
+
+fn validate_log_artifact(value: Option<&Value>, line: usize, stream: &str) -> Result<(), String> {
+    let Some(object) = value.and_then(Value::as_object) else {
+        return Err(format!(
+            "invalid run ledger line {line}: observed {stream} log artifact is missing"
+        ));
+    };
+    let invalid_path = object["path"].as_str().map_or(true, |path| {
+        let portable = path.replace('\\', "/");
+        path.is_empty()
+            || std::path::Path::new(path).is_absolute()
+            || portable.starts_with('/')
+            || portable == ".."
+            || portable.starts_with("../")
+            || portable.contains("/../")
+    });
+    if object.len() != 4
+        || object["root"] != "state"
+        || invalid_path
+        || !is_sha(object["sha256"].as_str())
+        || object["bytes"]
+            .as_u64()
+            .map_or(true, |bytes| bytes > MAX_CAPTURE_BYTES)
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: malformed observed {stream} log artifact"
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_protection_event(event: &Value, line: usize) -> Result<(), String> {
-    if matches!(event["version"].as_u64(), Some(4..=7)) {
+    if matches!(event["version"].as_u64(), Some(4..=8)) {
         return validate_protection_event_v4(event, line);
     }
     let record: ProtectionRecord = serde_json::from_value(event.clone())
@@ -941,7 +997,7 @@ fn validate_protection_event_v4(event: &Value, line: usize) -> Result<(), String
         .get("checkEvidence")
         .and_then(Value::as_array)
         .ok_or_else(|| format!("invalid run ledger line {line}: malformed protection evidence"))?;
-    if !matches!(event["version"].as_u64(), Some(4..=7))
+    if !matches!(event["version"].as_u64(), Some(4..=8))
         || event["kind"] != "run"
         || event["action"] != "protect"
         || !crate::producer::valid(&event["producer"])
@@ -1150,7 +1206,7 @@ pub(crate) fn validate_check_against_state(
     let policy_matches = event["checkCommand"] == command
         && event["checkCommandSha256"] == command_sha256
         && event["origin"] == origin.as_str();
-    let shape_matches = if matches!(version, 4..=7) {
+    let shape_matches = if matches!(version, 4..=8) {
         event["version"] == version
             && matches!(event["acquisition"].as_str(), Some("reported" | "observed"))
     } else {
@@ -1201,7 +1257,7 @@ pub(crate) fn validate_protection_against_state(
         .iter()
         .filter(|target| target.is_missing() || target.is_failed())
         .map(|target| {
-            if matches!(state["version"].as_u64(), Some(4..=7)) {
+            if matches!(state["version"].as_u64(), Some(4..=8)) {
                 target.protection_value()
             } else {
                 target.value()
@@ -1248,7 +1304,7 @@ pub(crate) fn protection_event(
         .iter()
         .filter(|target| target.is_missing() || target.is_failed())
         .map(|target| {
-            if matches!(version, 4..=7) {
+            if matches!(version, 4..=8) {
                 target.protection_value()
             } else {
                 target.value()
@@ -1591,14 +1647,14 @@ fn human_checks(
     } else {
         HumanCheckState::Passed
     };
-    if !matches!(version, 4..=7) {
+    if !matches!(version, 4..=8) {
         for target in &mut targets {
             target.acquisition = Some("reported".to_owned());
         }
     }
     HumanChecks {
         state,
-        observed_capable: matches!(version, 4..=7),
+        observed_capable: matches!(version, 4..=8),
         command: Some(policy.command.clone()),
         command_sha256: Some(policy.command_sha256.clone()),
         origin: Some(policy.origin.as_str().to_owned()),
@@ -1607,7 +1663,7 @@ fn human_checks(
 }
 
 fn check_guidance(state: &Value) -> &'static str {
-    if matches!(state["version"].as_u64(), Some(4..=7)) {
+    if matches!(state["version"].as_u64(), Some(4..=8)) {
         "observe the frozen check locally with run observe-check, or report the actual result from the host with run record-check, for every current worker target"
     } else {
         "run the configured check in its host and report the actual result for every current worker target with run record-check"

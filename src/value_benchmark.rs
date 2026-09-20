@@ -1093,7 +1093,7 @@ fn require_submission_event(
         || event["outcome"] != outcome
         || event["attempt"] != attempt
         || if exitbind_surface() {
-            event["version"] != 6
+            event["version"] != crate::compatibility::profile().format_version
         } else {
             !matches!(event["version"].as_u64(), Some(3 | 4))
         }

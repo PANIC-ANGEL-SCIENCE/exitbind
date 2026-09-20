@@ -6,7 +6,6 @@ use std::fs::{self, OpenOptions};
 use std::io::Read;
 
 const WORK_PREFIX: &str = "smw_";
-const ASSIGNMENT_PREFIX: &str = "sma_";
 
 fn runs_dir() -> String {
     format!("{}/runs", crate::project_layout::state_namespace())
@@ -75,14 +74,15 @@ pub(crate) fn permit(
 ) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
     let action = next_for(loaded, work, &ledger)?;
-    if action["action"] != "spawn" && action["action"] != "lead_decision" {
-        return Err("a governed assignment is not the current work action".into());
+    if action["action"] != "spawn" || action["role"] != "worker" {
+        return Err("a worker assignment is required for a governed mutation".into());
     }
     if action["assignment"] != assignment {
         return Err("assignment is not the current pending work action".into());
     }
     let expected = run::AssignmentIdentity::from_action(&action)?;
-    let permission = run::permit_for_assignment(loaded, &ledger, assignment, expected, operation)?;
+    let permission =
+        run::permit_for_assignment(loaded, &ledger, work, assignment, expected, operation)?;
     Ok(json!({
         "work": work,
         "allowed": permission["allowed"],
@@ -90,6 +90,130 @@ pub(crate) fn permit(
         "governor": permission["governor"],
         "next": next_for(loaded, work, &ledger)?,
     }))
+}
+
+pub(crate) fn replan(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    hypothesis: Option<&str>,
+    evidence_request: Option<&str>,
+    scope_decision: Option<&str>,
+    blocker: Option<&str>,
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let action = next_for(loaded, work, &ledger)?;
+    if action["action"] != "spawn" || action["role"] != "worker" {
+        return Err("a worker assignment is required for re-plan".into());
+    }
+    if action["assignment"] != assignment {
+        return Err("assignment is not the current pending work action".into());
+    }
+    let expected = run::AssignmentIdentity::from_action(&action)?;
+    let result = run::replan_for_assignment(
+        loaded,
+        &ledger,
+        assignment,
+        expected,
+        hypothesis,
+        evidence_request,
+        scope_decision,
+        blocker,
+    )?;
+    Ok(json!({
+        "work": work,
+        "event": result["event"],
+        "governor": result["governor"],
+        "next": next_for(loaded, work, &ledger)?,
+    }))
+}
+
+pub(crate) fn evidence(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    artifact_root: Option<&str>,
+    artifact_path: &str,
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let action = next_for(loaded, work, &ledger)?;
+    if action["action"] != "spawn" || action["role"] != "worker" {
+        return Err("a worker assignment is required for evidence".into());
+    }
+    if action["assignment"] != assignment {
+        return Err("assignment is not the current pending work action".into());
+    }
+    let expected = run::AssignmentIdentity::from_action(&action)?;
+    let result = run::evidence_for_assignment(
+        loaded,
+        &ledger,
+        assignment,
+        expected,
+        artifact_root,
+        artifact_path,
+    )?;
+    Ok(json!({
+        "work": work,
+        "event": result["event"],
+        "governor": result["governor"],
+        "next": next_for(loaded, work, &ledger)?,
+    }))
+}
+
+pub(crate) fn sensor_request(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let action = next_for(loaded, work, &ledger)?;
+    if action["action"] != "spawn" || action["role"] != "worker" {
+        return Err("a worker assignment is required for a sensor request".into());
+    }
+    if action["assignment"] != assignment {
+        return Err("assignment is not the current pending work action".into());
+    }
+    let result = run::sensor_request_for_assignment(
+        loaded,
+        &ledger,
+        assignment,
+        run::AssignmentIdentity::from_action(&action)?,
+    )?;
+    Ok(
+        json!({"work": work, "event": result["event"], "governor": result["governor"], "next": next_for(loaded, work, &ledger)?}),
+    )
+}
+
+pub(crate) fn sensor_result(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    assessment: &str,
+    confidence: Option<&str>,
+    input_digest: &str,
+    identity_source: &str,
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let action = next_for(loaded, work, &ledger)?;
+    if action["action"] != "spawn" || action["role"] != "worker" {
+        return Err("a worker assignment is required for a sensor result".into());
+    }
+    if action["assignment"] != assignment {
+        return Err("assignment is not the current pending work action".into());
+    }
+    let result = run::sensor_result_for_assignment(
+        loaded,
+        &ledger,
+        assignment,
+        run::AssignmentIdentity::from_action(&action)?,
+        assessment,
+        confidence,
+        input_digest,
+        identity_source,
+    )?;
+    Ok(
+        json!({"work": work, "event": result["event"], "governor": result["governor"], "next": next_for(loaded, work, &ledger)?}),
+    )
 }
 
 pub(crate) fn return_result(
@@ -131,10 +255,15 @@ pub(crate) fn return_result(
     std::io::stdin()
         .read_to_end(&mut bytes)
         .map_err(|error| format!("work result could not be read: {error}"))?;
-    let _submitted =
-        run::submit_for_assignment(loaded, &ledger, expected, outcome, reason, || {
-            write_artifact(loaded, work, assignment, &bytes)
-        })?;
+    let _submitted = run::submit_for_assignment(
+        loaded,
+        &ledger,
+        assignment,
+        expected,
+        outcome,
+        reason,
+        || write_artifact(loaded, work, assignment, &bytes),
+    )?;
     // The decision that reaches a terminal state is exactly where its display
     // belongs: returning it here means the caller copies the product's own
     // wording instead of assembling a sentence from status and progress.
@@ -150,6 +279,164 @@ pub(crate) fn validate(loaded: &Loaded, work: &str, packet_path: &str) -> Result
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
     crate::work_packet::validate(work, &snapshot, &next, &packet)
+}
+
+/// Expand one opaque reference emitted by the current context projection.
+/// Paths and hashes supplied by a caller are never accepted as a substitute
+/// for the packet-bound reference.
+pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+    let next = next_from(loaded, work, &snapshot)?;
+    let packet = crate::work_packet::project(work, &snapshot, &next)?;
+    let context = packet
+        .get("context")
+        .ok_or("current packet has no context projection")?;
+    let canonical = find_reference(context, reference)
+        .ok_or("reference is not an opaque reference from the current context")?;
+    if canonical["exact"] != true
+        || canonical["root"] != "state"
+        || canonical["path"].as_str().is_none()
+    {
+        return Err("reference is malformed".into());
+    }
+    let (_path, events, source) = crate::run_ledger::load(loaded, &ledger)?;
+    let raw_sha = hash::bytes(source.as_bytes());
+    let expected_path = expected_history_path(work);
+    if canonical["path"] != expected_path
+        || canonical["sha256"] != raw_sha
+        || canonical["headEventSha256"]
+            != events
+                .last()
+                .and_then(|event| event["eventSha256"].as_str())
+                .unwrap_or_default()
+        || canonical["eventCount"].as_u64() != Some(events.len() as u64)
+    {
+        return Err("reference is stale or ledger bytes changed".into());
+    }
+    let kind = canonical["kind"].as_str().unwrap_or_default();
+    match kind {
+        "ledger_history" => Ok(expansion_response(
+            &canonical,
+            "history",
+            source.as_bytes(),
+            json!({"events": events}),
+        )),
+        "ledger_event" => {
+            let wanted = canonical["selector"]
+                .as_str()
+                .ok_or("event reference has no selected event")?;
+            let (index, event) = events
+                .iter()
+                .enumerate()
+                .find(|(_, event)| event["eventSha256"].as_str() == Some(wanted))
+                .ok_or("selected event is not in the referenced ledger")?;
+            let line = source
+                .split('\n')
+                .filter(|line| !line.is_empty())
+                .nth(index)
+                .ok_or("selected event bytes are unavailable")?;
+            Ok(expansion_response(
+                &canonical,
+                "event",
+                line.as_bytes(),
+                json!({"event": event, "eventIndex": index}),
+            ))
+        }
+        "check_log" => expand_check_log(loaded, &canonical, &events),
+        _ => Err("reference kind is unsupported".into()),
+    }
+}
+
+fn find_reference(value: &Value, requested: &str) -> Option<Value> {
+    if let Some(object) = value.as_object() {
+        let matches = object.get("id").and_then(Value::as_str) == Some(requested);
+        if matches && object.contains_key("kind") && object.contains_key("exact") {
+            return Some(value.clone());
+        }
+        for child in object.values() {
+            if let Some(found) = find_reference(child, requested) {
+                return Some(found);
+            }
+        }
+    } else if let Some(array) = value.as_array() {
+        for child in array {
+            if let Some(found) = find_reference(child, requested) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn expected_history_path(work: &str) -> String {
+    work.strip_prefix(WORK_PREFIX).map_or_else(
+        || {
+            format!(
+                "{}/runs/{work}.jsonl",
+                crate::project_layout::state_namespace()
+            )
+        },
+        |token| {
+            format!(
+                "{}/runs/work-{token}.jsonl",
+                crate::project_layout::state_namespace()
+            )
+        },
+    )
+}
+
+fn expansion_response(reference: &Value, kind: &str, bytes: &[u8], metadata: Value) -> Value {
+    let mut response = json!({
+        "valid": true,
+        "kind": kind,
+        "reference": reference,
+        "encoding": "hex",
+        "bytes": bytes.len(),
+        "contentHex": hex(bytes),
+    });
+    if let (Some(object), Some(extra)) = (response.as_object_mut(), metadata.as_object()) {
+        object.extend(
+            extra
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
+    response
+}
+
+fn expand_check_log(loaded: &Loaded, reference: &Value, events: &[Value]) -> Result<Value, String> {
+    let wanted = reference["checkEventSha256"]
+        .as_str()
+        .ok_or("check-log reference has no check event")?;
+    let event = events
+        .iter()
+        .find(|event| event["eventSha256"].as_str() == Some(wanted))
+        .ok_or("check-log event is not in the referenced ledger")?;
+    if event["action"] != "check" || event["acquisition"] != "observed" {
+        return Err("check-log reference does not name an observed check".into());
+    }
+    let stdout = crate::run_artifact::read(loaded, &event["stdout"], "stdout")?;
+    let stderr = crate::run_artifact::read(loaded, &event["stderr"], "stderr")?;
+    if reference["stdout"] != event["stdout"] || reference["stderr"] != event["stderr"] {
+        return Err("check-log artifact reference is stale or tampered".into());
+    }
+    Ok(json!({
+        "valid": true,
+        "kind": "check_log",
+        "reference": reference,
+        "event": event,
+        "stdout": {"encoding":"hex", "bytes":stdout.len(), "contentHex":hex(&stdout)},
+        "stderr": {"encoding":"hex", "bytes":stderr.len(), "contentHex":hex(&stderr)},
+    }))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push_str(&format!("{byte:02x}"));
+    }
+    value
 }
 
 pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
@@ -462,19 +749,7 @@ fn write_artifact(
 }
 
 fn assignment_handle(work: &str, assignment: &Value) -> Result<String, String> {
-    let stage = assignment["stage"]
-        .as_u64()
-        .ok_or("assignment stage is invalid")?;
-    let attempt = assignment["attempt"]
-        .as_u64()
-        .ok_or("assignment attempt is invalid")?;
-    let agent = assignment["agent"]
-        .as_str()
-        .ok_or("assignment agent is invalid")?;
-    Ok(format!(
-        "{ASSIGNMENT_PREFIX}{}",
-        hash::text(&format!("{work}\n{stage}\n{attempt}\n{agent}"))
-    ))
+    crate::run_assignment::handle(work, assignment)
 }
 
 fn valid_token(token: &str) -> bool {

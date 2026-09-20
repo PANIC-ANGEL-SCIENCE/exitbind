@@ -163,15 +163,35 @@ Every omitted ledger event or artifact is reachable by an `expansions` entry
 with an exact hash/path reference. A summary is not evidence and never replaces
 those references.
 
+The current context emits one bounded `ledger_history` reference. Pass its
+opaque digest `id` string to `exitbind work expand WORK REF` to retrieve
+the exact lower-case hexadecimal ledger bytes. Event and observed-check-log
+references are resolved against the same ledger snapshot and state-root
+artifacts; stale heads, changed bytes, traversal, symlinks, cross-work
+references, and malformed identities fail closed. Observed v8 checks retain
+separate stdout/stderr raw artifacts, each capped at 1,048,576 bytes; reported
+checks and historical versions do not claim captured logs. Expansion does not
+capture arbitrary host logs or dereference an unpersisted reference.
+
 Before each mutation unit, call `exitbind work permit WORK ASSIGNMENT
 --operation OPERATION` and mutate only when it returns `allowed=true`. This
 cooperative action revalidates the assignment and tested inputs and appends
 its governor event under the canonical run-ledger lock before returning
-permission. Replay governor events in order. The hard
-budget belongs to the mutation lineage, not a prompt or timestamp. Wrappers,
-comments, wording, subject hashes, and evidence-equivalent replans consume the
-same budget; genuine new evidence is recorded but never extends it. A
-completed worker submission remains a separate lifecycle transition.
+permission. Replay governor events in order. The marker's budget is the
+bounded no-information-path default, while total mutations remain monotonic
+telemetry, not a lifetime cap. Wrappers, comments, wording, subject hashes,
+and evidence-equivalent replans consume the same trajectory; only a newly
+verified exact artifact resets its consecutive streak. A completed worker
+submission remains a separate lifecycle transition.
+
+After two consecutive no-information mutations, use `work replan WORK
+ASSIGNMENT --hypothesis TEXT` (or another material semantic field) before
+continuing. The typed governor then permits one further no-information unit;
+the next request appends one durable blocked/refusal event. To reset only the
+consecutive trajectory, use `work evidence WORK ASSIGNMENT --artifact PATH`
+with an exact current product/state artifact; artifact bytes are resolved and
+revalidated under the ledger lock. Historical SHA-only telemetry is not reset
+authority.
 
 Sensor input/output is versioned and bound to run, subject, attempt,
 checkpoint, and input digest, with at-most-once deduplication. Unavailable,

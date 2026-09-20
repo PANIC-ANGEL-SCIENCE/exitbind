@@ -62,7 +62,40 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
             return Err(format!("artifact drift detected: {requested}"));
         }
     }
+    for check in state["checks"].as_array().unwrap_or(&Vec::new()) {
+        for stream in ["stdout", "stderr"] {
+            if let Some(artifact) = check.get(stream) {
+                read(loaded, artifact, "check log")
+                    .map_err(|_| format!("artifact drift detected: {stream} log"))?;
+            }
+        }
+    }
     Ok(())
+}
+
+pub(crate) fn read(loaded: &Loaded, artifact: &Value, label: &str) -> Result<Vec<u8>, String> {
+    if artifact["root"] != "state" {
+        return Err(format!("{label} artifact root is invalid"));
+    }
+    let requested = artifact["path"]
+        .as_str()
+        .ok_or_else(|| format!("{label} artifact path is invalid"))?;
+    let path = confined(&loaded.state_root, requested)?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!("{label} artifact is not a regular file"));
+    }
+    let real = config::file(&loaded.state_root, requested)?;
+    if config::rel(&loaded.state_root, &real)? != requested {
+        return Err(format!("{label} artifact path changed"));
+    }
+    let bytes = fs::read(real).map_err(|error| error.to_string())?;
+    if artifact["bytes"].as_u64() != Some(bytes.len() as u64)
+        || artifact["sha256"] != hash::bytes(&bytes)
+    {
+        return Err(format!("{label} artifact bytes changed"));
+    }
+    Ok(bytes)
 }
 
 fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> {

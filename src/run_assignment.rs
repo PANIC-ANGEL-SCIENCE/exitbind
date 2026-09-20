@@ -1,7 +1,7 @@
 //! Pending assignment packets derived from validated run state.
 
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn pending(state: &Value) -> Vec<Value> {
     if state["status"] != "running" {
@@ -27,26 +27,64 @@ pub(crate) fn pending(state: &Value) -> Vec<Value> {
         })
         .filter_map(|event| event["agent"].as_str())
         .collect();
-    let upstream: Vec<Value> = submissions
-        .iter()
-        .filter(|event| {
-            let attempt = event["attempt"].as_u64().unwrap_or(0);
-            let current_attempt = state["attempt"].as_u64().unwrap_or(0);
-            let stage = event["stage"].as_u64().unwrap_or(0);
-            let current_stage = state["currentStage"].as_u64().unwrap_or(0);
-            attempt < current_attempt || (attempt == current_attempt && stage < current_stage)
-        })
-        .map(|event| json!({
-            "stage": event["stage"],
-            "attempt": event["attempt"],
-            "agent": event["agent"],
-            "role": event["role"],
-            "root": event["artifact"]["root"].as_str().unwrap_or("product"),
-            "path": event["artifact"]["path"],
-            "sha256": event["artifact"]["sha256"],
-            "attemptStatus": if event["attempt"] == state["attempt"] { "current" } else { "prior" }
-        }))
-        .collect();
+    let current_attempt = state["attempt"].as_u64().unwrap_or(0);
+    let current_stage = state["currentStage"].as_u64().unwrap_or(0);
+    let mut upstream_by_identity = BTreeMap::new();
+    for event in submissions {
+        let attempt = event["attempt"].as_u64().unwrap_or(0);
+        let stage = event["stage"].as_u64().unwrap_or(0);
+        // Current preceding stages, the immediately prior attempt's current
+        // artifact, and its lead rework are the only dependencies a fresh
+        // role needs eagerly. Older attempt artifacts remain reachable from
+        // the context snapshot reference.
+        let prior_rework_lead = current_attempt > 0
+            && attempt.checked_add(1) == Some(current_attempt)
+            && event["role"] == "lead"
+            && event["outcome"] == "rework";
+        let relevant = (attempt == current_attempt && stage < current_stage)
+            || (current_attempt > 0
+                && attempt.checked_add(1) == Some(current_attempt)
+                && stage == current_stage)
+            || prior_rework_lead;
+        if !relevant {
+            continue;
+        }
+        let key = format!(
+            "{}:{}:{}",
+            stage,
+            event["agent"].as_str().unwrap_or_default(),
+            event["role"].as_str().unwrap_or_default()
+        );
+        upstream_by_identity.insert(
+            key,
+            json!({
+                "stage": event["stage"],
+                "attempt": event["attempt"],
+                "agent": event["agent"],
+                "role": event["role"],
+                "root": event["artifact"]["root"].as_str().unwrap_or("product"),
+                "path": event["artifact"]["path"],
+                "sha256": event["artifact"]["sha256"],
+                "attemptStatus": if event["attempt"] == state["attempt"] { "current" } else { "prior" }
+            }),
+        );
+    }
+    let mut upstream: Vec<Value> = upstream_by_identity.into_values().collect();
+    upstream.sort_by_key(|item| {
+        let stage = item["stage"].as_u64().unwrap_or(u64::MAX);
+        let priority = if stage < current_stage {
+            0
+        } else if item["attemptStatus"] == "prior" && item["role"] == "lead" {
+            1
+        } else {
+            2
+        };
+        (
+            priority,
+            stage,
+            item["agent"].as_str().unwrap_or_default().to_owned(),
+        )
+    });
     let limit = state["plan"]["maxParallel"]
         .as_u64()
         .unwrap_or(agents.len() as u64)
@@ -189,6 +227,10 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         // every role packet.  This is a projection of validated canonical
         // state, not a human-supplied prompt fragment.
         assignment["preservationAssignment"] = json!({
+            "route": "FORMAL",
+            "quality": "FULL",
+            "resolvedBy": "accepted_preservation_requirements",
+            "enforcement": "recorded_not_enforced",
             "version": preservation["version"],
             "requirements": preservation["requirements"],
             "nonGoals": state.get("nonGoals").cloned().unwrap_or_else(|| json!([])),
@@ -205,4 +247,20 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         assignment["fallbackRuntime"] = alternate.clone();
     }
     assignment
+}
+
+pub(crate) fn handle(work: &str, assignment: &Value) -> Result<String, String> {
+    let stage = assignment["stage"]
+        .as_u64()
+        .ok_or("assignment stage is invalid")?;
+    let attempt = assignment["attempt"]
+        .as_u64()
+        .ok_or("assignment attempt is invalid")?;
+    let agent = assignment["agent"]
+        .as_str()
+        .ok_or("assignment agent is invalid")?;
+    Ok(format!(
+        "sma_{}",
+        crate::hash::text(&format!("{work}\n{stage}\n{attempt}\n{agent}"))
+    ))
 }

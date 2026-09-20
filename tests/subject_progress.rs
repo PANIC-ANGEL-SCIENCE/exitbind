@@ -1082,7 +1082,7 @@ fn preservation_without_functional_policy_is_refused_at_creation_and_replay() {
     let ledger = fixture.ledger(begin["work"].as_str().unwrap());
     let text = fs::read_to_string(fixture.root.join(ledger)).unwrap();
     let mut start: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
-    assert_eq!(start["version"], 6);
+    assert_eq!(start["version"], 8);
     start.as_object_mut().unwrap().remove("checkPolicy");
     let forged = ".exitbind/runs/forged.jsonl";
     fs::write(

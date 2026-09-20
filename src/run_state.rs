@@ -35,6 +35,10 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     if governor_enabled {
         state["governor"] = crate::context::reduce_governor(&[])?;
         state["governor"]["enabled"] = json!(true);
+        state["governor"]["defaults"] = first["governor"].clone();
+        if let Some(protocol) = first["governor"].get("grantProtocol") {
+            state["governor"]["grantProtocol"] = protocol.clone();
+        }
     }
     if let Some(receipt) = first.get("harnessReceipt") {
         state["harnessReceipt"] = receipt.clone();
@@ -62,6 +66,19 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
                 index + 1
             ));
         }
+        if state["governor"]["grantProtocol"] == crate::context::GRANT_PROTOCOL_VERSION
+            && event["action"] == "submit"
+            && event["role"] == "worker"
+            && event["outcome"] == "completed"
+        {
+            let governor_event = event.get("governorEvent").ok_or_else(|| {
+                format!(
+                    "invalid run ledger line {}: completion authorization is missing",
+                    index + 1
+                )
+            })?;
+            validate_grant_acknowledgement(&state, &events[..index], event, governor_event)?;
+        }
         if let Some(governor_event) = event.get("governorEvent") {
             if !governor_enabled {
                 return Err(format!(
@@ -69,13 +86,25 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
                     index + 1
                 ));
             }
+            if event["action"] == "submit"
+                && event["role"] == "worker"
+                && event["outcome"] == "completed"
+                && (governor_event.get("authorizationMode").is_some()
+                    || governor_event.get("grantEventSha256s").is_some())
+            {
+                validate_grant_acknowledgement(&state, &events[..index], event, governor_event)?;
+            }
             let mut governor_events = state["governorEvents"]
                 .as_array()
                 .cloned()
                 .unwrap_or_default();
             governor_events.push(governor_event.clone());
+            let grant_protocol = state["governor"]["grantProtocol"].clone();
             state["governor"] = crate::context::reduce_governor(&governor_events)?;
             state["governor"]["enabled"] = json!(true);
+            if !grant_protocol.is_null() {
+                state["governor"]["grantProtocol"] = grant_protocol;
+            }
             state["governorEvents"] = Value::Array(governor_events);
         }
         apply_event(&mut state, event)?;
@@ -89,7 +118,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         .as_object()
         .ok_or_else(|| format!("invalid run ledger line {line}: event must be an object"))?;
     let version = event["version"].as_u64();
-    if !matches!(version, Some(1..=7)) || event["kind"] != "run" {
+    if !matches!(version, Some(1..=8)) || event["kind"] != "run" {
         return Err(format!(
             "invalid run ledger line {line}: invalid event header"
         ));
@@ -107,7 +136,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
                 .get("producer")
                 .is_some_and(|producer| producer["name"] != "soulmate"))
         || (matches!(version, Some(2..=4)) && event["producer"]["name"] != "soulmate")
-        || (matches!(version, Some(5 | 6)) && event["producer"]["name"] != "exitbind")
+        || (matches!(version, Some(5..=8)) && event["producer"]["name"] != "exitbind")
     {
         return Err(format!("invalid run ledger line {line}: invalid producer"));
     }
@@ -125,7 +154,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             "invalid run ledger line {line}: ledger must begin with start"
         ));
     }
-    if !matches!(version, Some(3..=7)) && matches!(action, "check" | "protect") {
+    if !matches!(version, Some(3..=8)) && matches!(action, "check" | "protect") {
         return Err(format!(
             "invalid run ledger line {line}: value-proof actions require version 3"
         ));
@@ -178,12 +207,125 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
     shape.and_then(|_| reject_unknown(object, action, version.unwrap_or_default(), line))
 }
 
+fn validate_grant_acknowledgement(
+    state: &Value,
+    prior_events: &[Value],
+    event: &Value,
+    governor_event: &Value,
+) -> Result<(), String> {
+    let grants = governor_event["grantEventSha256s"]
+        .as_array()
+        .ok_or("grant acknowledgement is missing")?;
+    let sources = governor_event["sourceInputsSha256s"]
+        .as_array()
+        .ok_or("grant source inputs are missing")?;
+    let mode = governor_event["authorizationMode"]
+        .as_str()
+        .ok_or("grant authorization mode is missing")?;
+    if governor_event["action"] != "mutation" || event["action"] != "submit" {
+        return Err("grant acknowledgement is only valid on a worker mutation completion".into());
+    }
+    let assignment = crate::run_assignment::pending(state)
+        .into_iter()
+        .find(|item| item["agent"] == event["agent"])
+        .ok_or("grant acknowledgement has no current assignment")?;
+    if assignment["role"] != "worker"
+        || event["role"] != "worker"
+        || event["outcome"] != "completed"
+        || event["stage"] != assignment["stage"]
+        || event["attempt"] != assignment["attempt"]
+    {
+        return Err("grant acknowledgement is not bound to the current worker".into());
+    }
+    let assignment_sha256 = event["assignmentSha256"].as_str();
+    let subject = state["subject"]["sha256"].clone();
+    let result_input = event["inputsSha256"].clone();
+    let lineage = state["governor"]["lineageSha256"].clone();
+    let mut expected = Vec::new();
+    let mut already_acknowledged = std::collections::BTreeSet::new();
+    for prior in prior_events {
+        if let Some(previous) = prior["governorEvent"]["grantEventSha256s"].as_array() {
+            already_acknowledged.extend(previous.iter().filter_map(Value::as_str));
+        }
+    }
+    for prior in prior_events {
+        let nested = &prior["governorEvent"];
+        if prior["action"] == "govern"
+            && prior["runId"] == state["runId"]
+            && prior["subjectSha256"] == subject
+            && prior["stage"] == assignment["stage"]
+            && prior["attempt"] == assignment["attempt"]
+            && prior["agent"] == assignment["agent"]
+            && prior["role"] == assignment["role"]
+            && nested["action"] == "mutation"
+            && nested["runId"] == state["runId"]
+            && nested["subjectSha256"] == subject
+            && nested["attempt"] == state["attempt"]
+            && nested["inputSha256"] == prior["inputsSha256"]
+            && nested["lineageSha256"] == lineage
+            && nested["carryLineage"] == true
+            && assignment_sha256.map_or(true, |value| prior["assignmentSha256"] == value)
+        {
+            let hash = prior["eventSha256"]
+                .as_str()
+                .ok_or("mutation grant has no outer event identity")?;
+            if !already_acknowledged.contains(hash) {
+                expected.push((
+                    hash.to_owned(),
+                    nested["inputSha256"]
+                        .as_str()
+                        .ok_or("mutation grant has no source input identity")?
+                        .to_owned(),
+                ));
+            }
+        }
+    }
+    let mut actual = grants
+        .iter()
+        .zip(sources)
+        .map(|(grant, source)| {
+            Ok((
+                grant
+                    .as_str()
+                    .ok_or("grant reference is malformed")?
+                    .to_owned(),
+                source
+                    .as_str()
+                    .ok_or("grant source input is malformed")?
+                    .to_owned(),
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if grants.len() != sources.len() {
+        return Err("grant references and source inputs have different lengths".into());
+    }
+    expected.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    actual.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    match mode {
+        "explicit" if assignment_sha256.is_none() || expected.is_empty() || expected != actual => {
+            return Err("mutation completion does not acknowledge exact outstanding grants".into())
+        }
+        "implicit" if !expected.is_empty() || !actual.is_empty() => {
+            return Err("implicit completion has outstanding explicit grants".into())
+        }
+        "explicit" | "implicit" => {}
+        _ => return Err("grant authorization mode is invalid".into()),
+    }
+    if governor_event["inputSha256"] != result_input {
+        return Err("completion governor input does not match result input".into());
+    }
+    if state["governor"]["state"] != "ready" {
+        return Err("mutation grant completion requires a ready governor".into());
+    }
+    Ok(())
+}
+
 pub fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     validate_start_version(event, line, event["version"].as_u64().unwrap_or_default())
 }
 
 fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<(), String> {
-    if !matches!(version, 1..=7) {
+    if !matches!(version, 1..=8) {
         return Err(format!(
             "invalid run ledger line {line}: invalid event version"
         ));
@@ -451,15 +593,35 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
         (event["role"].as_str(), event["outcome"].as_str()),
         (Some("reviewer"), Some("approved")) | (Some("lead"), Some("accepted"))
     );
+    let worker_completion = matches!(
+        (event["role"].as_str(), event["outcome"].as_str()),
+        (Some("worker"), Some("completed"))
+    );
     if event["version"].as_u64() >= Some(6) && binds_inputs {
         if !is_sha(event["inputsSha256"].as_str()) {
             return Err(format!(
                 "invalid run ledger line {line}: approval requires tested input identity"
             ));
         }
+    } else if worker_completion {
+        if let Some(inputs) = event.get("inputsSha256") {
+            if !is_sha(inputs.as_str()) {
+                return Err(format!(
+                    "invalid run ledger line {line}: invalid worker input identity"
+                ));
+            }
+        }
     } else if event.get("inputsSha256").is_some() {
         return Err(format!(
             "invalid run ledger line {line}: unexpected tested input identity"
+        ));
+    }
+    if event
+        .get("assignmentSha256")
+        .is_some_and(|value| !is_sha(value.as_str()))
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: invalid assignment identity"
         ));
     }
     validate_fallback_binding(event, line)?;
@@ -472,6 +634,32 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
             return Err(format!(
                 "invalid run ledger line {line}: governor event requires a completed worker submission"
             ));
+        }
+        if let Some(grants) = governor_event.get("grantEventSha256s") {
+            let Some(grants) = grants.as_array() else {
+                return Err(format!(
+                    "invalid run ledger line {line}: mutation grant acknowledgement is malformed"
+                ));
+            };
+            let mut seen = std::collections::BTreeSet::new();
+            if grants.iter().any(|grant| {
+                grant.as_str().map_or(true, |hash| {
+                    hash.len() != SHA_LEN
+                        || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        || !seen.insert(hash.to_owned())
+                })
+            }) {
+                return Err(format!(
+                    "invalid run ledger line {line}: mutation grant acknowledgement is malformed"
+                ));
+            }
+            if governor_event["action"] != "mutation"
+                || (grants.is_empty() && governor_event["authorizationMode"] != "implicit")
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: grant acknowledgement requires mutation"
+                ));
+            }
         }
     }
     Ok(())
@@ -519,17 +707,67 @@ fn validate_governor_event(event: &Value, line: usize) -> Result<(), String> {
             "invalid run ledger line {line}: governor event is missing"
         ));
     };
-    if governor_event["action"] != "mutation"
-        || governor_event["runId"] != event["runId"]
+    let action = governor_event["action"].as_str().unwrap_or_default();
+    if governor_event["runId"] != event["runId"]
         || governor_event["subjectSha256"] != event["subjectSha256"]
         || governor_event["attempt"] != event["attempt"]
         || governor_event["inputSha256"] != event["inputsSha256"]
-        || governor_event["operation"] != event["operation"]
-        || governor_event["carryLineage"] != true
     {
         return Err(format!(
             "invalid run ledger line {line}: governor event does not bind to the action"
         ));
+    }
+    match action {
+        "mutation" => {
+            if governor_event["operation"] != event["operation"]
+                || governor_event["carryLineage"] != true
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: governor mutation does not bind to the action"
+                ));
+            }
+        }
+        "replan" => {
+            if ["hypothesis", "evidenceRequest", "scopeDecision", "blocker"]
+                .iter()
+                .all(|field| governor_event.get(*field).is_none())
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: material re-plan is missing semantic fields"
+                ));
+            }
+        }
+        "evidence" => {
+            if governor_event.get("evidence").is_none() {
+                return Err(format!(
+                    "invalid run ledger line {line}: governor evidence is missing"
+                ));
+            }
+        }
+        "sensor_request" => {
+            if governor_event["requestDigest"].as_str().is_none()
+                || governor_event["questions"].as_array().is_none()
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: sensor request is malformed"
+                ));
+            }
+        }
+        "sensor" => {
+            if governor_event["requestDigest"].as_str().is_none()
+                || governor_event["assessment"].as_str().is_none()
+            {
+                return Err(format!(
+                    "invalid run ledger line {line}: sensor result is malformed"
+                ));
+            }
+        }
+        "blocked" => {}
+        _ => {
+            return Err(format!(
+                "invalid run ledger line {line}: unknown governor event action"
+            ));
+        }
     }
     Ok(())
 }
@@ -567,7 +805,7 @@ pub(crate) fn validate_fallback_binding(event: &Value, line: usize) -> Result<()
     let Some(fallback) = event.get("fallback") else {
         return Ok(());
     };
-    if event["version"].as_u64() != Some(7) {
+    if !matches!(event["version"].as_u64(), Some(7 | 8)) {
         return Err(format!(
             "invalid run ledger line {line}: fallback provenance requires v7"
         ));
@@ -893,7 +1131,7 @@ fn reject_unknown(
         if version == 2 {
             allowed.push("harnessReceipt");
         }
-        if matches!(version, 3..=7) {
+        if matches!(version, 3..=8) {
             allowed.push("harnessReceipt");
             allowed.push("checkPolicy");
         }
@@ -937,6 +1175,9 @@ fn reject_unknown(
         if version >= 6 {
             allowed.push("inputsSha256");
         }
+        if version >= 6 {
+            allowed.push("assignmentSha256");
+        }
         if version >= 7 {
             allowed.push("fallback");
         }
@@ -969,6 +1210,34 @@ fn reject_unknown(
             line,
         );
     } else if action == "check" {
+        if version == 8 {
+            return reject_unknown_fields(
+                object,
+                &[
+                    "version",
+                    "kind",
+                    "producer",
+                    "action",
+                    "runId",
+                    "subjectSha256",
+                    "inputsSha256",
+                    "targetEventSha256",
+                    "requirementId",
+                    "checkCommand",
+                    "checkCommandSha256",
+                    "origin",
+                    "acquisition",
+                    "result",
+                    "durationMs",
+                    "stdout",
+                    "stderr",
+                    "previousEventSha256",
+                    "timestamp",
+                    "eventSha256",
+                ],
+                line,
+            );
+        }
         if version >= 6 {
             return reject_unknown_fields(
                 object,
