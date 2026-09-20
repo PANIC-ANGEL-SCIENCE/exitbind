@@ -16,6 +16,8 @@ that choice while work continues. Retained work gets useful exact-result checks
 proportionate to risk; promotion means applicable obligations require
 governance, not merely keeping a harmless local file.
 
+For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+
 Continue existing work with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
 `--review-policy omitted` at entry. Follow the returned next action instead of asking

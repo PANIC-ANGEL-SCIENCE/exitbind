@@ -83,6 +83,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "help",
     "version",
     "with-coffee",
+    "skip-skills",
     "direct",
     "refresh-skills",
     "require-harness-receipt",

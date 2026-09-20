@@ -30,7 +30,7 @@ With Exitbind
   Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current stable release: `v0.23.0`. One local binary; it calls no model and runs
+Current prerelease: `v0.23.1-rc.1`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -39,13 +39,13 @@ no daemon or cloud service.
 
 ## See a wrong door refused
 
-This page describes `v0.23.0` for Linux x86_64 and macOS on Apple Silicon or
-Intel. The pinned installer places the executable under `$HOME/.local/bin` and
+This page describes the opt-in release candidate `v0.23.1-rc.1` for Linux x86_64
+and macOS on Apple Silicon or Intel. The pinned installer places the executable under `$HOME/.local/bin` and
 verifies the archive checksum. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.23.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.23.1-rc.1/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -105,7 +105,9 @@ On this URL-only path your lead inspects the project, explains the effect, and
 asks before installation, project writes, or permission changes. After you
 approve, it uses the local CLI plus project-local guidance:
 
-- **Small and reversible work** stays direct; Exitbind is used selectively.
+- **Small and reversible work** stays direct, without setup or review-policy
+  questions. The lead classifies actual effects; an instruction or configuration
+  filename alone does not require governance.
 - **Material or promotion-required work** binds its evidence to the exact result
   before it can exit. Classification follows consequence and promotion, not
   file count; read-only planning and disposable exploration can stay direct.
@@ -217,7 +219,12 @@ After approving project writes, initialize a portable project from its root:
 exitbind init --mode portable --root .
 ```
 
-This creates `exitbind.json`, private ignored state under `.exitbind/`,
+If your host already manages project skills, add `--skip-skills` to keep those
+paths untouched. This includes symlinked skill directories. Exitbind still
+creates configuration, role profiles, and private state; it does not claim
+that project guidance was installed or loaded. See [setup options](docs/onboarding.md).
+
+The default command creates `exitbind.json`, private ignored state under `.exitbind/`,
 reviewable role profiles, and project-local guidance for Codex and Claude. Setup
 installs no hook, launches no agent, and grants no host or OS permission. Review
 the generated boundaries and native worker/reviewer mapping before project work;
@@ -235,7 +242,7 @@ project writes:
 
 ```sh
 # Codex
-codex plugin marketplace add envy404/exitbind --ref v0.23.0
+codex plugin marketplace add envy404/exitbind --ref v0.23.1-rc.1
 codex plugin add exitbind@exitbind-plugins
 
 # Claude Code
@@ -243,7 +250,7 @@ claude plugin marketplace add envy404/exitbind
 claude plugin install exitbind@exitbind-plugins
 ```
 
-The Codex command pins `v0.23.0`; Claude Code follows the repository's current
+The Codex command pins `v0.23.1-rc.1`; Claude Code follows the repository's current
 default branch. The plugin contains the Exitbind skill only: it installs no CLI,
 hook, MCP server, app, or model.
 

@@ -126,7 +126,7 @@ or an unavailable native agent requires a real resolution.
 This path also works with the historical JSON command surface when a compatible
 installed binary is required; it does not require building Rust locally. The
 bundled skill describes the handoff and your host executes it. Exitbind
-`v0.23.0` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.23.1-rc.1` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.
@@ -236,3 +236,34 @@ Reload the host or start a new session to discover the refreshed skill. This
 refresh does not install hooks or change the host's authentication/permissions.
 Keep a compatible binary for existing checked ledgers during rollback; see
 [update and removal](../REFERENCE.md#removal).
+
+## Keep host-managed project skills
+
+When project skill directories belong to another tool, initialize with:
+
+```sh
+exitbind init --mode portable --root . --skip-skills
+```
+
+This skips all project skill projections, including their path preflight. It
+preserves existing skill files and symlinks without following them. Configuration,
+role profiles, and private state are still created and checked normally. No
+permission or evidence gate is waived. The default command retains its existing
+refusal when a skill destination is unsafe or owned by someone else.
+
+Use your existing host-managed Exitbind guidance or explicitly load the matching
+release skill before governed work. Skipped projection does not prove discovery
+or activation. `--skip-skills` conflicts with `--refresh-skills` and
+`--with-coffee`. To install project guidance later, first resolve path ownership,
+then explicitly run `exitbind init --refresh-skills --root .`.
+
+## Routine edits stay direct
+
+For low-consequence reversible work, the lead acts directly without Exitbind
+commands, project initialization, workflow selection, or review-policy questions.
+A writing preference or harmless configuration correction is not governed merely
+because it appears in an instruction or configuration file. The lead evaluates
+actual authority, security, data, compatibility, and publication effects plus
+applicable project requirements. Reuse decisions already made for the current
+scope; ask only for a genuinely new choice. This guidance is shipped to both
+configured and unconfigured sessions; the host still owns compliance.

@@ -52,6 +52,8 @@ fn classify_uses_consequence_and_promotion_with_real_cli_entry() {
     for index in 0..20 {
         fs::write(root.join(format!("prototype-{index}.txt")), b"disposable\n").unwrap();
     }
+    fs::write(root.join("AGENTS.md"), b"Use concise updates.\n").unwrap();
+    fs::write(root.join("settings.json"), b"{}\n").unwrap();
     let before = fs::read_dir(&root).unwrap().count();
     let direct = classify(&root, false, false, false);
     assert_eq!(direct["assessment"]["activation"], "direct");
@@ -99,6 +101,12 @@ fn classify_reports_governance_available_after_initialization() {
     let root = support::temp("activation-classify-configured");
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{init:?}");
+    let direct = classify(&root, false, false, true);
+    assert_eq!(direct["assessment"]["activation"], "direct");
+    assert_eq!(
+        fs::read_dir(root.join(".exitbind/runs")).unwrap().count(),
+        0
+    );
     let consequence = classify(&root, true, false, true);
     assert_eq!(consequence["assessment"]["activation"], "governed");
     assert_eq!(consequence["assessment"]["reason"], "governance_available");

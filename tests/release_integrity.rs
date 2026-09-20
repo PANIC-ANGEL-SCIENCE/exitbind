@@ -703,6 +703,63 @@ esac
             assert!(calls.contains("--title Exitbind v99.98.97"), "{calls}");
         }
     }
+    fs::write(
+        fixture.0.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"99.98.97-rc.1\"\n",
+    )
+    .unwrap();
+    for (scenario, success, create) in [
+        ("ready", true, false),
+        ("missing", true, true),
+        ("stable", false, false),
+        ("draft", false, false),
+        ("malformed", false, false),
+    ] {
+        fs::write(&calls, b"").unwrap();
+        let output = gate_command("publish-release-assets.sh", &fixture.0, &[])
+            .env("PATH", &path)
+            .env("GITHUB_REF_NAME", "v99.98.97-rc.1")
+            .env("GITHUB_REPOSITORY", "example/project")
+            .env("SCENARIO", scenario)
+            .env("CALLS", &calls)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), success, "{scenario}: {output:?}");
+        let calls = fs::read_to_string(&calls).unwrap();
+        assert!(calls.contains(".isPrerelease == true and .isDraft == false"));
+        assert_eq!(calls.contains("release create "), create, "{calls}");
+        assert_eq!(calls.contains("release upload "), success, "{calls}");
+        assert!(!calls.contains("--clobber"));
+        if create {
+            assert!(calls.contains("--prerelease --latest=false"), "{calls}");
+            assert!(calls.contains("--verify-tag"), "{calls}");
+        }
+    }
+    for (version, prerelease) in [
+        ("99.98.97+build-one", false),
+        ("99.98.97-rc.1+build-one", true),
+    ] {
+        fs::write(
+            fixture.0.join("Cargo.toml"),
+            format!("[package]\nname = \"fixture\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+        fs::write(&calls, b"").unwrap();
+        let output = gate_command("publish-release-assets.sh", &fixture.0, &[])
+            .env("PATH", &path)
+            .env("GITHUB_REF_NAME", format!("v{version}"))
+            .env("GITHUB_REPOSITORY", "example/project")
+            .env("SCENARIO", "missing")
+            .env("CALLS", &calls)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let calls = fs::read_to_string(&calls).unwrap();
+        assert!(calls.contains(&format!(
+            ".isPrerelease == {prerelease} and .isDraft == false"
+        )));
+        assert_eq!(calls.contains("--prerelease --latest=false"), prerelease);
+    }
     for missing in ["GITHUB_REF_NAME", "GITHUB_REPOSITORY"] {
         fs::write(&calls, b"").unwrap();
         let output = gate_command("publish-release-assets.sh", &fixture.0, &[])

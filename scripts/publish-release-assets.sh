@@ -14,20 +14,23 @@ test -n "$version" || {
 }
 expected_tag="v$version"
 test "$tag" = "$expected_tag" || {
-  printf '%s\n' "exitbind: release tag '$tag' does not exactly match current stable version '$expected_tag'" >&2
+  printf '%s\n' "exitbind: release tag '$tag' does not exactly match current package version '$expected_tag'" >&2
   exit 1
 }
-case "$version" in
-  *-*) printf '%s\n' "exitbind: current package version is not stable" >&2; exit 1 ;;
-esac
+prerelease=false
+case "${version%%+*}" in *-*) prerelease=true ;; esac
 
-if release=$(gh release view "$tag" --repo "$repository" --json isPrerelease,isDraft --jq '.isPrerelease == false and .isDraft == false'); then
+if release=$(gh release view "$tag" --repo "$repository" --json isPrerelease,isDraft --jq ".isPrerelease == $prerelease and .isDraft == false"); then
   test "$release" = true || {
-    printf '%s\n' "exitbind: existing release must be published and non-prerelease" >&2
+    printf '%s\n' "exitbind: existing release must be published and match the package release channel" >&2
     exit 1
   }
 else
-  gh release create "$tag" --repo "$repository" --verify-tag --title "Exitbind $tag" --generate-notes
+  if test "$prerelease" = true; then
+    gh release create "$tag" --repo "$repository" --verify-tag --title "Exitbind $tag" --generate-notes --prerelease --latest=false
+  else
+    gh release create "$tag" --repo "$repository" --verify-tag --title "Exitbind $tag" --generate-notes
+  fi
 fi
 
 gh release upload "$tag" --repo "$repository" dist/*

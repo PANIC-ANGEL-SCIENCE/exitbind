@@ -189,6 +189,10 @@ pub fn run() -> Result<(), String> {
     }
     let text = if event == "SessionStart" {
         let mut text = session_summary(&loaded.config);
+        if crate::producer::exitbind_surface() {
+            text.push('\n');
+            text.push_str(DIRECT_WORK);
+        }
         if let Some(update) = update_context {
             text.push('\n');
             text.push_str(&update);
@@ -234,7 +238,9 @@ pub fn run() -> Result<(), String> {
 /// A session in a repository Exitbind does not govern yet still needs to know
 /// Exitbind exists and when to reach for it. This stays small: the detailed
 /// protocol arrives only after the project is configured.
-const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor work with a material consequence or promotion requirement - authority, trust, security, data loss, release, lifecycle, evidence, compatibility, or a required check or review - select Exitbind before consequential edits. Keep read-only planning, disposable prototypes, and tiny obvious reversible edits direct. For important work, the Lead recommends review; the owner chooses whether it is required and may revise that choice while work continues.\nStart or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nIf required activation is unavailable or fails, report the refusal and its failing layer; do not downgrade the work to direct execution.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
+const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
+
+const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor work with a material consequence or promotion requirement - authority, trust, security, data loss, release, lifecycle, evidence, compatibility, or a required check or review - select Exitbind before consequential edits. Keep read-only planning, disposable prototypes, and tiny obvious reversible edits direct. For important work, the Lead recommends review; the owner chooses whether it is required and may revise that choice while work continues.\nOnly for selected governed work, start or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nIf required activation is unavailable or fails, report the refusal and its failing layer; do not downgrade the work to direct execution.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
 
 fn unconfigured_text(event: &str, update: Option<&str>) -> Option<String> {
     // The legacy Soulmate surface keeps its original silent contract; only the
@@ -242,7 +248,7 @@ fn unconfigured_text(event: &str, update: Option<&str>) -> Option<String> {
     if event != "SessionStart" || !crate::producer::exitbind_surface() {
         return update.map(str::to_owned);
     }
-    let mut text = String::from(UNCONFIGURED);
+    let mut text = format!("{UNCONFIGURED}\n{DIRECT_WORK}");
     if let Some(update) = update {
         text.push('\n');
         text.push_str(update);

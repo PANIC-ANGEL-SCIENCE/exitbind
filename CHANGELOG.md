@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.23.1-rc.1
+
+- Make direct handling explicit in installed guidance and session hooks: routine
+  low-consequence edits need no setup, workflow, or review-policy questionnaire.
+  File names alone do not select governance; existing scoped decisions carry on.
+
+- Let owners initialize configuration and private state with `init --skip-skills`
+  when another tool manages project skill paths. Existing files and symlink
+  targets remain untouched; default initialization retains its protections.
+- Report skipped guidance installation explicitly and reject conflicting setup
+  options before mutation. Existing projects and run formats are unchanged.
+- Publish release candidates as prereleases without replacing the stable latest
+  release, with channel-matching checks for existing releases.
+
 ## 0.23.0
 
 - Reorganized responsibility boundaries across the governor/kernel, CLI,

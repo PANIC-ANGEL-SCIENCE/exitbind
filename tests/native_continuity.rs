@@ -210,6 +210,14 @@ fn newer_version() -> String {
     format!("v{major}.{}.0", minor + 1)
 }
 
+fn package_channel() -> &'static str {
+    if env!("CARGO_PKG_VERSION").contains('-') {
+        "all"
+    } else {
+        "stable"
+    }
+}
+
 #[test]
 fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     let fixture = Fixture::new("portable");
@@ -220,8 +228,9 @@ fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     fs::write(
         cache.join("update.json"),
         format!(
-            "{{\"checked_at\":{},\"channel\":\"stable\",\"latest\":\"{next}\"}}",
+            "{{\"checked_at\":{},\"channel\":\"{}\",\"latest\":\"{next}\"}}",
             chrono::Utc::now().timestamp(),
+            package_channel(),
         ),
     )
     .unwrap();
@@ -259,8 +268,9 @@ fn fresh_no_update_cache_stays_silent_without_curl() {
     fs::write(
         cache.join("update.json"),
         format!(
-            "{{\"checked_at\":{},\"channel\":\"stable\"}}",
-            chrono::Utc::now().timestamp()
+            "{{\"checked_at\":{},\"channel\":\"{}\"}}",
+            chrono::Utc::now().timestamp(),
+            package_channel()
         ),
     )
     .unwrap();

@@ -11,6 +11,8 @@ Exitbind is installed on this machine. It is a local CLI that decides whether a
 result has earned acceptance: checks, review, and lead acceptance count only for
 the exact result they were taken on.
 
+For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+
 ## Select it for material work
 
 Select Exitbind before consequential repository mutation when the task has a
@@ -62,6 +64,12 @@ the single project write it needs and ask the owner before running:
 ```sh
 exitbind init --mode portable --root .
 ```
+
+If project skills are managed elsewhere, the owner may choose `--skip-skills`
+on that initialization command. It preserves those paths, including symlinks,
+while creating configuration, profiles, and state. Report guidance projection
+as skipped and use matching host-managed guidance; do not remove existing
+links or weaken path checks to make setup succeed.
 
 Initialization writes project configuration, private state, and project-local
 Exitbind guidance. It installs no hook, starts no agent, and grants no host

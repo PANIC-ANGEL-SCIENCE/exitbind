@@ -19,14 +19,26 @@ const EXITBIND_SCHEMA: &str = concat!(
     "/schema/exitbind.schema.json"
 );
 
-pub fn init_with_options(
-    product_root: &str,
-    coffee: bool,
-    mode: Option<&str>,
-    project_id: Option<&str>,
-    control_root: Option<&str>,
-    state_root: Option<&str>,
-) -> Result<PathBuf, String> {
+pub struct InitOptions<'a> {
+    pub product_root: &'a str,
+    pub coffee: bool,
+    pub skip_skills: bool,
+    pub mode: Option<&'a str>,
+    pub project_id: Option<&'a str>,
+    pub control_root: Option<&'a str>,
+    pub state_root: Option<&'a str>,
+}
+
+pub fn init_with_options(options: InitOptions<'_>) -> Result<PathBuf, String> {
+    let InitOptions {
+        product_root,
+        coffee,
+        skip_skills,
+        mode,
+        project_id,
+        control_root,
+        state_root,
+    } = options;
     let requested = absolute(Path::new(product_root))?;
     let product = ordinary_directory(&requested, "project path")?;
     let in_worktree = match crate::project::git_preflight::worktree_root(&product) {
@@ -89,15 +101,19 @@ pub fn init_with_options(
         agents_dir.join("lead.md"),
         agents_dir.join("worker.md"),
         agents_dir.join("reviewer.md"),
-        control.join(format!(".agents/skills/{control_skill}/SKILL.md")),
-        control.join(format!(".claude/skills/{control_skill}/SKILL.md")),
     ];
+    if !skip_skills {
+        target_paths.extend([
+            control.join(format!(".agents/skills/{control_skill}/SKILL.md")),
+            control.join(format!(".claude/skills/{control_skill}/SKILL.md")),
+        ]);
+    }
     target_paths.extend(
         crate::project::layout_types::control_dirs().map(|relative| control.join(relative)),
     );
     target_paths
         .extend(crate::project::layout_types::state_dirs().map(|relative| state.join(relative)));
-    if coffee {
+    if coffee && !skip_skills {
         target_paths.push(control.join(".agents/skills/coffee/SKILL.md"));
         target_paths.push(control.join(".claude/skills/coffee/SKILL.md"));
     }
@@ -113,10 +129,12 @@ pub fn init_with_options(
         .collect::<Vec<_>>();
     crate::project::git_preflight::refuse_tracked_targets(&control, &control_targets)?;
     crate::project::git_preflight::refuse_tracked_targets(&state, &state_targets)?;
-    project_skills::activate(
-        &control,
-        coffee && !crate::project::layout_types::exitbind_surface(),
-    )?;
+    if !skip_skills {
+        project_skills::activate(
+            &control,
+            coffee && !crate::project::layout_types::exitbind_surface(),
+        )?;
+    }
     crate::project::managed_files::ensure_managed_directory(&state, &state.join(state_namespace))?;
     let state_dir = state.join(state_namespace);
     preserve_or_create(

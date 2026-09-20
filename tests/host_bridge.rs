@@ -81,6 +81,7 @@ fn install_makes_both_hosts_discoverable_and_status_separates_the_layers() {
         assert!(text.contains("refactors, migrations"));
         assert!(text.contains("Keep read-only questions and tiny obvious reversible edits direct."));
         assert!(text.contains("<!-- exitbind-managed-bootstrap:v1 -->"));
+        assert!(text.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
     }
 
     let after = json(exitbind(&home, &["host", "status", "--json"]));
@@ -320,12 +321,34 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
     assert!(session.contains("exitbind init --mode portable --root ."));
     assert!(session.contains("tiny obvious reversible edits direct"));
     assert!(session.contains("Do not report Exitbind as active"));
+    assert!(session.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
+    assert!(session.contains("filename alone does not make a change consequential"));
+    assert!(session.contains("Only for selected governed work"));
+    assert!(!project.join("exitbind.json").exists());
+    assert!(!project.join(".exitbind").exists());
     // Small bootstrap, not the protocol.
     assert!(session.len() < 2048, "bootstrap grew to {}", session.len());
     assert!(!session.contains("run record-check"));
 
     // A subagent start in an unconfigured project stays silent.
     assert!(hook("SubagentStart").trim().is_empty());
+    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--mode", "portable", "--root"])
+        .arg(&project)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(initialized.status.success(), "{initialized:?}");
+    let configured = hook("SessionStart");
+    assert!(configured.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
+    assert!(configured.contains("Reuse existing scoped authorization and review decisions"));
+    assert_eq!(
+        fs::read_dir(project.join(".exitbind/runs"))
+            .unwrap()
+            .count(),
+        0
+    );
+
     fs::remove_dir_all(home).unwrap();
 }
 

@@ -18,6 +18,7 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
         &[
             "root",
             "with-coffee",
+            "skip-skills",
             "refresh-skills",
             "mode",
             "project-id",
@@ -26,9 +27,15 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
         ],
     )?;
     args::assert_positionals("init", arguments, 0)?;
-    if crate::project::layout_types::exitbind_surface()
-        && arguments.flags.contains_key("with-coffee")
-    {
+    let skip_skills = arguments.flags.contains_key("skip-skills");
+    let with_coffee = arguments.flags.contains_key("with-coffee");
+    let refresh_skills = arguments.flags.contains_key("refresh-skills");
+    if skip_skills && (with_coffee || refresh_skills) {
+        return Err(
+            "--skip-skills cannot be combined with --with-coffee or --refresh-skills".into(),
+        );
+    }
+    if crate::project::layout_types::exitbind_surface() && with_coffee {
         return Err("--with-coffee is retired; Exitbind readiness guidance is built into the Exitbind skill".into());
     }
     let root = arguments
@@ -36,8 +43,8 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
         .get("root")
         .map(String::as_str)
         .unwrap_or(".");
-    if arguments.flags.contains_key("refresh-skills") {
-        let statuses = onboarding::refresh(root, arguments.flags.contains_key("with-coffee"))?;
+    if refresh_skills {
+        let statuses = onboarding::refresh(root, with_coffee)?;
         let product = if crate::project::layout_types::exitbind_surface() {
             "Exitbind"
         } else {
@@ -64,24 +71,21 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
         );
         return Ok(());
     }
-    let path = onboarding::init_with_options(
-        root,
-        arguments.flags.contains_key("with-coffee"),
-        arguments.options.get("mode").map(String::as_str),
-        arguments.options.get("project-id").map(String::as_str),
-        arguments.options.get("control-root").map(String::as_str),
-        arguments.options.get("state-root").map(String::as_str),
-    )?;
+    let path = onboarding::init_with_options(onboarding::InitOptions {
+        product_root: root,
+        coffee: with_coffee,
+        skip_skills,
+        mode: arguments.options.get("mode").map(String::as_str),
+        project_id: arguments.options.get("project-id").map(String::as_str),
+        control_root: arguments.options.get("control-root").map(String::as_str),
+        state_root: arguments.options.get("state-root").map(String::as_str),
+    })?;
     let created = crate::config::load(Some(
         path.to_str()
             .ok_or("configuration path is not valid UTF-8")?,
     ))?;
     let empty_starter = is_empty_starter(&created.agents);
-    let coffee = if arguments.flags.contains_key("with-coffee") {
-        " + opt-in Coffee"
-    } else {
-        ""
-    };
+    let coffee = if with_coffee { " + opt-in Coffee" } else { "" };
     let quoted_config = crate::presentation::shell_quote(
         path.to_str()
             .ok_or("configuration path is not valid UTF-8")?,
@@ -91,19 +95,30 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
     } else {
         "soulmate"
     };
-    let skill = path
-        .parent()
-        .ok_or("configuration path has no parent")?
-        .join(format!(".agents/skills/{skill_name}/SKILL.md"));
-    let quoted_skill =
-        crate::presentation::shell_quote(skill.to_str().ok_or("skill path is not valid UTF-8")?);
-    println!(
-        "Created {}\nPrepared project skills for Codex and Claude: {skill_name}{coffee}.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  {skill_name} skill: {quoted_skill}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not install host software or change host permissions; ask before any future installation or permission change.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration and skill above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace YOUR_TEST_COMMAND with a real project check command):\n  {skill_name} brief worker --task \"Describe the change you want to make\" --config={quoted_config}\n  {skill_name} work begin change --goal \"Describe the bounded change\" --check-command \"YOUR_TEST_COMMAND\" --config={quoted_config}\n  {skill_name} check --config={quoted_config}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
-        path.display()
-    );
-    println!(
-        "Installation: no host software installation performed; {skill_name} is available in this invoking binary.\nProject-scoped selective preference: confirmed in the projected {skill_name} skill. At the start of each material task, classify once; for a governed trigger that materially matters, select {skill_name} automatically and run high-level {skill_name} work begin before any scoped implementation or mutation, proceeding only after it succeeds and returns a work handle and next action. Tiny, obvious, reversible work stays direct without activation.\nProjection/materialization: confirmed for Codex and Claude project skill paths (exact embedded bytes).\nFresh-session discovery: unverified (no host probe was performed).\nActive-session discovery: unverified (setup does not inspect or refresh an already-loaded session).\nSelection: not performed by setup; the lead decides task by task.\nActivation: not performed by setup; only a successful {skill_name} work begin result creates machine-confirmed governed state.\nProjected bytes and setup text do not prove session discovery, future compliance, selection, or activation."
-    );
+    if skip_skills {
+        println!(
+            "Created {}\nProject skill projection skipped by explicit --skip-skills.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not inspect, install, or change project skill destinations, host software, or host permissions; resolve skill ownership before running init --refresh-skills --root ROOT to request project skill projection.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace YOUR_TEST_COMMAND with a real project check command):\n  {skill_name} brief worker --task \"Describe the change you want to make\" --config={quoted_config}\n  {skill_name} work begin change --goal \"Describe the bounded change\" --check-command \"YOUR_TEST_COMMAND\" --config={quoted_config}\n  {skill_name} check --config={quoted_config}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
+            path.display()
+        );
+        println!(
+            "Installation: no host software installation performed; {skill_name} is available in this invoking binary.\nProject skill projection: skipped by explicit --skip-skills; no project skill destination was inspected or changed.\nFresh-session discovery: unverified (setup did not probe the host).\nActive-session discovery: unverified (setup does not inspect or refresh an already-loaded session).\nSelection: not performed by setup; the lead decides task by task.\nActivation: not performed by setup; only a successful {skill_name} work begin result creates machine-confirmed governed state."
+        );
+    } else {
+        let skill = path
+            .parent()
+            .ok_or("configuration path has no parent")?
+            .join(format!(".agents/skills/{skill_name}/SKILL.md"));
+        let quoted_skill = crate::presentation::shell_quote(
+            skill.to_str().ok_or("skill path is not valid UTF-8")?,
+        );
+        println!(
+            "Created {}\nPrepared project skills for Codex and Claude: {skill_name}{coffee}.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  {skill_name} skill: {quoted_skill}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not install host software or change host permissions; ask before any future installation or permission change.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration and skill above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace YOUR_TEST_COMMAND with a real project check command):\n  {skill_name} brief worker --task \"Describe the change you want to make\" --config={quoted_config}\n  {skill_name} work begin change --goal \"Describe the bounded change\" --check-command \"YOUR_TEST_COMMAND\" --config={quoted_config}\n  {skill_name} check --config={quoted_config}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
+            path.display()
+        );
+        println!(
+            "Installation: no host software installation performed; {skill_name} is available in this invoking binary.\nProject-scoped selective preference: confirmed in the projected {skill_name} skill. At the start of each material task, classify once; for a governed trigger that materially matters, select {skill_name} automatically and run high-level {skill_name} work begin before any scoped implementation or mutation, proceeding only after it succeeds and returns a work handle and next action. Tiny, obvious, reversible work stays direct without activation.\nProjection/materialization: confirmed for Codex and Claude project skill paths (exact embedded bytes).\nFresh-session discovery: unverified (no host probe was performed).\nActive-session discovery: unverified (setup does not inspect or refresh an already-loaded session).\nSelection: not performed by setup; the lead decides task by task.\nActivation: not performed by setup; only a successful {skill_name} work begin result creates machine-confirmed governed state.\nProjected bytes and setup text do not prove session discovery, future compliance, selection, or activation."
+        );
+    }
     if empty_starter {
         println!("warning: {EMPTY_STARTER_DETAIL}");
     }
