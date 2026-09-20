@@ -24,8 +24,22 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
         "runId": first["runId"], "workflow": first["workflow"], "goal": first["goal"],
         "configSha256": first["configSha256"], "plan": first["plan"], "status": "running",
         "currentStage": 1, "attempt": 1, "submissions": [], "checks": [],
-        "protections": [], "events": events
+        "protections": [], "events": events,
+        "basisHistory": [], "dispositions": [], "pendingDisposition": Value::Null
     });
+    if let Some(marker) = first.get("basisProtocol") {
+        if marker != crate::kernel::basis::PROTOCOL_VERSION {
+            return Err("invalid run start: unsupported basis protocol".into());
+        }
+        state["basisProtocol"] = marker.clone();
+        if let Some(basis) = first.get("basis") {
+            state["basis"] = basis.clone();
+        }
+        if let Some(review) = first.get("reviewPolicy") {
+            state["reviewPolicy"] = review.clone();
+            state["reviewDecisions"] = json!([review]);
+        }
+    }
     let governor_enabled = first
         .get("governor")
         .is_some_and(crate::context::validate_marker);
@@ -141,7 +155,10 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         return Err(format!("invalid run ledger line {line}: invalid producer"));
     }
     let action = event["action"].as_str().unwrap_or_default();
-    if !matches!(action, "start" | "submit" | "check" | "protect" | "govern") {
+    if !matches!(
+        action,
+        "start" | "submit" | "check" | "protect" | "govern" | "review_policy"
+    ) {
         return Err(format!("invalid run ledger line {line}: invalid action"));
     }
     if previous.is_some() && action == "start" {
@@ -196,6 +213,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         validate_submission(event, line)
     } else if event["action"] == "govern" {
         validate_governor_event(event, line)
+    } else if event["action"] == "review_policy" {
+        validate_review_policy_event(event, line)
     } else if event["action"] == "check" {
         crate::run_value::validate_check_event(event, line)
     } else {
@@ -356,6 +375,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             "invalid run ledger line {line}: checked start requires a valid subject"
         ));
     }
+    validate_basis_extension(event, line, version)?;
     let plan = &event["plan"];
     if plan["version"] != 1 {
         return Err(format!(
@@ -624,6 +644,43 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
             "invalid run ledger line {line}: invalid assignment identity"
         ));
     }
+    if event["version"].as_u64() >= Some(8)
+        && event.get("basisSha256").is_some()
+        && !event["basisSha256"].is_null()
+        && !is_sha(event["basisSha256"].as_str())
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: invalid basis identity"
+        ));
+    }
+    if event["version"].as_u64() >= Some(8)
+        && event.get("reviewDecisionSha256").is_some()
+        && !is_sha(event["reviewDecisionSha256"].as_str())
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: invalid review decision identity"
+        ));
+    }
+    if event["outcome"] == "disposition" {
+        if event["role"] != "lead"
+            || (!event["basisSha256"].is_null() && !is_sha(event["basisSha256"].as_str()))
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: disposition requires marked Lead basis identity"
+            ));
+        }
+        crate::kernel::basis::parse_disposition(
+            event
+                .get("disposition")
+                .ok_or_else(|| format!("invalid run ledger line {line}: disposition is missing"))?,
+            "disposition",
+        )
+        .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+    } else if event.get("disposition").is_some() {
+        return Err(format!(
+            "invalid run ledger line {line}: unexpected disposition"
+        ));
+    }
     validate_fallback_binding(event, line)?;
     if let Some(governor_event) = event.get("governorEvent") {
         if event["version"].as_u64() < Some(6)
@@ -772,6 +829,78 @@ fn validate_governor_event(event: &Value, line: usize) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_basis_extension(event: &Value, line: usize, version: u64) -> Result<(), String> {
+    let has_extended_fields = event.get("basisProtocol").is_some()
+        || event.get("basis").is_some()
+        || event.get("reviewPolicy").is_some();
+    if !has_extended_fields {
+        return Ok(());
+    }
+    if version != 8 || event["basisProtocol"] != crate::kernel::basis::PROTOCOL_VERSION {
+        return Err(format!(
+            "invalid run ledger line {line}: basis extension requires protocol marker v8"
+        ));
+    }
+    if let Some(basis) = event.get("basis") {
+        let basis = crate::kernel::basis::parse_basis(basis, "basis")
+            .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+        if event["subject"]["basisSha256"] != basis.sha256 {
+            return Err(format!(
+                "invalid run ledger line {line}: subject is not bound to basis"
+            ));
+        }
+    }
+    let review = event.get("reviewPolicy").ok_or_else(|| {
+        format!("invalid run ledger line {line}: basis extension requires reviewPolicy")
+    })?;
+    crate::kernel::basis::parse_review(review, "reviewPolicy")
+        .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+    Ok(())
+}
+
+fn validate_review_policy_event(event: &Value, line: usize) -> Result<(), String> {
+    if event["version"].as_u64() != Some(8)
+        || event["basisProtocol"] != crate::kernel::basis::PROTOCOL_VERSION
+        || event["role"] != "lead"
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: review policy requires marked v8 Lead transition"
+        ));
+    }
+    if event["stage"].as_u64().map_or(true, |value| value < 1)
+        || event["attempt"].as_u64().map_or(true, |value| value < 1)
+        || event["agent"]
+            .as_str()
+            .map_or(true, |value| value.trim().is_empty())
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: review policy actor binding is invalid"
+        ));
+    }
+    let policy = event
+        .get("reviewPolicy")
+        .ok_or_else(|| format!("invalid run ledger line {line}: review policy is missing"))?;
+    crate::kernel::basis::parse_review(policy, "reviewPolicy")
+        .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+    if event["basisSha256"].is_null() {
+        if event["basisProtocol"] != crate::kernel::basis::PROTOCOL_VERSION {
+            return Err(format!(
+                "invalid run ledger line {line}: review policy basis marker is invalid"
+            ));
+        }
+    } else if !is_sha(event["basisSha256"].as_str()) {
+        return Err(format!(
+            "invalid run ledger line {line}: review policy binding is missing basisSha256"
+        ));
+    }
+    if !is_sha(event["previousDecisionSha256"].as_str()) {
+        return Err(format!(
+                "invalid run ledger line {line}: review policy binding is missing previousDecisionSha256"
+            ));
+    }
+    Ok(())
+}
+
 /// An alternate execution binding: host, model, and reasoning effort only.
 ///
 /// The shape is the whole guarantee. A binding carries no name, profile,
@@ -851,6 +980,7 @@ fn apply_event(state: &mut Value, event: &Value) -> Result<(), String> {
     match event["action"].as_str() {
         Some("submit") => apply_submission(state, event),
         Some("govern") => apply_govern(state, event),
+        Some("review_policy") => apply_review_policy(state, event),
         Some("check") => apply_check(state, event),
         Some("protect") => apply_protection(state, event),
         _ => Err("run event action is invalid".into()),
@@ -860,6 +990,73 @@ fn apply_event(state: &mut Value, event: &Value) -> Result<(), String> {
 fn apply_govern(state: &mut Value, _event: &Value) -> Result<(), String> {
     if state["status"] != "running" {
         return Err("governor action requires a running run".into());
+    }
+    Ok(())
+}
+
+fn apply_review_policy(state: &mut Value, event: &Value) -> Result<(), String> {
+    if state["status"] != "running" || state.get("basisProtocol").is_none() {
+        return Err("review policy requires a marked running run".into());
+    }
+    let current = state["reviewPolicy"]["sha256"]
+        .as_str()
+        .ok_or("review policy has no current decision identity")?;
+    if event["previousDecisionSha256"].as_str() != Some(current)
+        || event["basisSha256"] != state["basis"]["sha256"]
+    {
+        return Err("review policy transition is stale".into());
+    }
+    let policy = event
+        .get("reviewPolicy")
+        .ok_or("review policy transition is missing its decision")?;
+    let parsed = crate::kernel::basis::parse_review(policy, "reviewPolicy")
+        .map_err(|error| error.to_string())?;
+    if parsed.previous_sha256.as_deref() != Some(current) {
+        return Err("review policy transition does not chain its prior decision".into());
+    }
+    if policy["decision"] == state["reviewPolicy"]["decision"]
+        && policy["reason"] == state["reviewPolicy"]["reason"]
+    {
+        return Err("duplicate review policy decision is refused".into());
+    }
+    state["reviewPolicy"] = policy.clone();
+    state["reviewDecisions"]
+        .as_array_mut()
+        .ok_or("review decision history is invalid")?
+        .push(policy.clone());
+    if policy["decision"] == "omitted" && state["pendingDisposition"].is_null() {
+        let current_stage = state["currentStage"].as_u64().unwrap_or_default();
+        let reviewer_pending = state["plan"]["stages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|stage| {
+                stage["stage"] == current_stage
+                    && stage["agents"].as_array().is_some_and(|agents| {
+                        agents.iter().any(|agent| agent["role"] == "reviewer")
+                    })
+            });
+        if reviewer_pending {
+            state["currentStage"] = json!(lead_stage(state)?);
+        }
+    } else if policy["decision"] == "required" {
+        let current_stage = state["currentStage"].as_u64().unwrap_or_default();
+        let lead_pending = state["plan"]["stages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|stage| {
+                stage["stage"] == current_stage
+                    && stage["agents"]
+                        .as_array()
+                        .is_some_and(|agents| agents.iter().any(|agent| agent["role"] == "lead"))
+            });
+        if lead_pending
+            && state["pendingDisposition"].is_null()
+            && current_stage == lead_stage(state)?
+        {
+            state["currentStage"] = json!(reviewer_stage(state)?);
+        }
     }
     Ok(())
 }
@@ -907,6 +1104,72 @@ fn apply_protection(state: &mut Value, event: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn apply_disposition(state: &mut Value, event: &Value, _assignment: &Value) -> Result<(), String> {
+    let pending = state
+        .get("pendingDisposition")
+        .filter(|value| value.is_object())
+        .ok_or("Lead disposition is not currently pending")?;
+    let disposition = event
+        .get("disposition")
+        .ok_or("Lead disposition is missing")?;
+    let disposition = crate::kernel::basis::parse_disposition(disposition, "disposition")
+        .map_err(|error| error.to_string())?;
+    if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str()
+        || pending["basisSha256"] != state["basis"]["sha256"]
+        || pending["owner"] != "lead"
+        || pending["findingSha256s"] != json!(disposition.finding_sha256s)
+    {
+        return Err("Lead disposition does not match the pending finding cycle".into());
+    }
+    let mut submission = json!({
+        "stage": event["stage"],
+        "attempt": event["attempt"],
+        "agent": event["agent"],
+        "role": event["role"],
+        "outcome": "disposition",
+        "artifact": event["artifact"],
+        "eventSha256": event["eventSha256"],
+        "disposition": disposition.value(),
+    });
+    if let Some(inputs) = event.get("inputsSha256") {
+        submission["inputsSha256"] = inputs.clone();
+    }
+    for field in ["basisSha256", "reviewDecisionSha256"] {
+        if let Some(value) = event.get(field) {
+            submission[field] = value.clone();
+        }
+    }
+    state["submissions"]
+        .as_array_mut()
+        .ok_or("run state submissions are invalid")?
+        .push(submission);
+    state["dispositions"]
+        .as_array_mut()
+        .ok_or("run disposition history is invalid")?
+        .push(disposition.value());
+    let previous_basis = state["basis"].clone();
+    let disposition_sha = disposition.sha256.clone();
+    let finding_shas = disposition.finding_sha256s.clone();
+    if let Some(successor) = disposition.successor_basis.clone() {
+        state["basisHistory"]
+            .as_array_mut()
+            .ok_or("run basis history is invalid")?
+            .push(json!({
+                "basis": previous_basis,
+                "dispositionSha256": disposition_sha,
+                "triggeringFindingSha256s": finding_shas,
+            }));
+        state["basis"] = successor.value();
+        state["subject"] =
+            subject_for_basis_revision(state, &state["basis"]["sha256"], &disposition.sha256);
+    }
+    state["pendingDisposition"] = Value::Null;
+    state["currentStage"] = json!(worker_stage(state)?);
+    let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
+    state["attempt"] = json!(attempt + 1);
+    Ok(())
+}
+
 fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     if state["status"] != "running" {
         return Err("run has already reached a terminal state".into());
@@ -926,6 +1189,9 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     {
         return Err("submission is out of order".into());
     }
+    if state.get("basisProtocol").is_some() && event["basisSha256"] != state["basis"]["sha256"] {
+        return Err("submission is bound to a stale basis".into());
+    }
     if state["version"].as_u64() >= Some(5) {
         let expected = if event["role"] == "worker" && event["outcome"] == "completed" {
             subject_for_submission(state, &assignment, &event["artifact"])["sha256"].clone()
@@ -944,8 +1210,16 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         .as_str()
         .ok_or("submission outcome is invalid")?;
     let all = match role {
-        "lead" => &["scoped", "blocked", "accepted", "rework", "rejected"][..],
-        "adviser" | "worker" => &["completed", "blocked"][..],
+        "lead" => &[
+            "scoped",
+            "blocked",
+            "accepted",
+            "rework",
+            "rejected",
+            "disposition",
+        ][..],
+        "adviser" => &["completed", "blocked"][..],
+        "worker" => &["completed", "blocked", "contradiction"][..],
         "reviewer" => &["approved", "rework", "blocked", "unavailable"][..],
         _ => &[],
     };
@@ -958,6 +1232,17 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     if outcome == "unavailable" {
         return apply_unavailable(state, event, &assignment);
     }
+    if outcome == "contradiction"
+        && (state.get("basisProtocol").is_none() || state["basis"].get("sha256").is_none())
+    {
+        return Err("contradiction requires a marked basis record".into());
+    }
+    if outcome == "disposition" {
+        if role != "lead" || state.get("basisProtocol").is_none() {
+            return Err("disposition requires the marked Lead transition".into());
+        }
+        return apply_disposition(state, event, &assignment);
+    }
     if role == "lead" && state["currentStage"] == 1 && !["scoped", "blocked"].contains(&outcome) {
         return Err(format!(
             "outcome '{}' is not allowed for this stage",
@@ -965,6 +1250,9 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         ));
     }
     if role == "lead" && outcome == "accepted" {
+        if state["pendingDisposition"].is_object() {
+            return Err("acceptance requires the pending Lead disposition".into());
+        }
         if let Some(inputs) = event.get("inputsSha256") {
             // Acceptance is judged against the tested inputs it declares, so
             // replay and the live gate apply one rule.
@@ -976,6 +1264,11 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     if let Some(inputs) = event.get("inputsSha256") {
         submission["inputsSha256"] = inputs.clone();
     }
+    for field in ["basisSha256", "reviewDecisionSha256"] {
+        if let Some(value) = event.get(field) {
+            submission[field] = value.clone();
+        }
+    }
     state["submissions"]
         .as_array_mut()
         .ok_or("run state submissions are invalid")?
@@ -985,6 +1278,17 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         return Ok(());
     }
     if outcome == "rework" {
+        if role == "reviewer" && state.get("basisProtocol").is_some() {
+            state["pendingDisposition"] = json!({
+                "owner": "lead",
+                "triggerEventSha256": event["eventSha256"],
+                "basisSha256": state["basis"]["sha256"],
+                "kind": "review_rework",
+                "findingSha256s": [event["eventSha256"]]
+            });
+            state["currentStage"] = json!(lead_stage(state)?);
+            return Ok(());
+        }
         let stages = state["plan"]["stages"]
             .as_array()
             .ok_or("run state plan stages are invalid")?;
@@ -999,6 +1303,17 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         state["currentStage"] = worker["stage"].clone();
         let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
         state["attempt"] = json!(attempt + 1);
+        return Ok(());
+    }
+    if outcome == "contradiction" {
+        state["pendingDisposition"] = json!({
+            "owner": "lead",
+            "triggerEventSha256": event["eventSha256"],
+            "basisSha256": state["basis"]["sha256"],
+            "kind": "contradiction",
+            "findingSha256s": [event["eventSha256"]]
+        });
+        state["currentStage"] = json!(lead_stage(state)?);
         return Ok(());
     }
     let stages = state["plan"]["stages"]
@@ -1025,6 +1340,20 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
             .as_u64()
             .ok_or("run current stage is invalid")?;
         state["currentStage"] = json!(current + 1);
+        if state["reviewPolicy"]["decision"] == "omitted"
+            && state["plan"]["stages"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|stage| {
+                    stage["stage"] == state["currentStage"]
+                        && stage["agents"].as_array().is_some_and(|agents| {
+                            agents.iter().any(|agent| agent["role"] == "reviewer")
+                        })
+                })
+        {
+            state["currentStage"] = json!(lead_stage(state)?);
+        }
     }
     Ok(())
 }
@@ -1144,6 +1473,11 @@ fn reject_unknown(
         if version >= 6 {
             allowed.push("governor");
         }
+        if version >= 8 {
+            allowed.push("basisProtocol");
+            allowed.push("basis");
+            allowed.push("reviewPolicy");
+        }
         return object
             .keys()
             .find(|key| !allowed.contains(&key.as_str()))
@@ -1181,10 +1515,38 @@ fn reject_unknown(
         if version >= 7 {
             allowed.push("fallback");
         }
+        if version >= 8 {
+            allowed.push("basisSha256");
+            allowed.push("reviewDecisionSha256");
+            allowed.push("disposition");
+        }
         if version >= 6 {
             allowed.push("governorEvent");
         }
         return reject_unknown_fields(object, &allowed, line);
+    } else if action == "review_policy" {
+        return reject_unknown_fields(
+            object,
+            &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "stage",
+                "attempt",
+                "agent",
+                "role",
+                "basisProtocol",
+                "basisSha256",
+                "previousDecisionSha256",
+                "reviewPolicy",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            line,
+        );
     } else if action == "govern" {
         return reject_unknown_fields(
             object,
@@ -1468,12 +1830,13 @@ fn valid_subject(value: Option<&Value>) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
-    object.len() == 10
+    (object.len() == 10 || object.len() == 11)
         && value["version"] == 1
         && is_sha(value["runId"].as_str())
         && is_sha(value["goalSha256"].as_str())
         && is_sha(value["planSha256"].as_str())
         && is_sha(value["configSha256"].as_str())
+        && (value.get("basisSha256").is_none() || is_sha(value["basisSha256"].as_str()))
         && value["attempt"].as_u64().is_some()
         && (value["previousSubjectSha256"].is_null()
             || is_sha(value["previousSubjectSha256"].as_str()))
@@ -1499,6 +1862,56 @@ pub(crate) fn subject_for_submission(state: &Value, assignment: &Value, artifact
     subject["transitionSha256"] = json!(transition);
     let sha = crate::evidence::hash::value(&without(&subject, "sha256"));
     subject["sha256"] = json!(sha);
+    subject
+}
+
+fn stage_for_role(state: &Value, role: &str, last: bool) -> Result<u64, String> {
+    let mut stages = state["plan"]["stages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|stage| {
+            stage["agents"]
+                .as_array()
+                .is_some_and(|agents| agents.iter().any(|agent| agent["role"] == role))
+        })
+        .filter_map(|stage| stage["stage"].as_u64());
+    let stage = if last {
+        stages.next_back()
+    } else {
+        stages.next()
+    };
+    stage.ok_or_else(|| format!("run has no {role} stage"))
+}
+
+fn lead_stage(state: &Value) -> Result<u64, String> {
+    stage_for_role(state, "lead", true)
+}
+fn reviewer_stage(state: &Value) -> Result<u64, String> {
+    stage_for_role(state, "reviewer", false)
+}
+fn worker_stage(state: &Value) -> Result<u64, String> {
+    stage_for_role(state, "worker", false)
+}
+
+fn subject_for_basis_revision(
+    state: &Value,
+    basis_sha256: &Value,
+    disposition_sha256: &str,
+) -> Value {
+    let mut subject = state["subject"].clone();
+    let previous = subject["sha256"].clone();
+    subject["basisSha256"] = basis_sha256.clone();
+    subject["attempt"] = json!(state["attempt"].as_u64().unwrap_or_default() + 1);
+    subject["previousSubjectSha256"] = previous.clone();
+    subject["workerArtifactSha256"] = Value::Null;
+    subject["transitionSha256"] = json!(crate::evidence::hash::value(&json!({
+        "runId": state["runId"],
+        "previousSubjectSha256": previous,
+        "dispositionSha256": disposition_sha256,
+        "basisSha256": basis_sha256,
+    })));
+    subject["sha256"] = json!(crate::evidence::hash::value(&without(&subject, "sha256")));
     subject
 }
 fn timestamp_ms(value: Option<&str>) -> i64 {

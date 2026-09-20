@@ -283,6 +283,8 @@ fn project_from(
             "inputsSha256": current_inputs,
         },
         "currentSubject": view["subject"],
+        "basis": view.get("basis").cloned().unwrap_or(Value::Null),
+        "reviewPolicy": view.get("reviewPolicy").cloned().unwrap_or(Value::Null),
         "alreadyEstablished": established,
         "stillValid": still_valid,
         "remaining": remaining,

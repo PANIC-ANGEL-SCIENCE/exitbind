@@ -161,36 +161,33 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
         "carries a non-null `terminal`, that value is the terminal\nstatus block: print it on a line of its own, exactly as given"
     ));
     assert!(text.contains("Never\nreconstruct terminal wording from `exitState` or `progress`."));
-    // Holytail sits directly above the Neuro line only when it applies.
-    assert!(text.contains(
-        "directly above the Neuro line with no blank\nline between them; otherwise omit it"
-    ));
+    assert!(text.contains("Do not add a routine preservation progress report."));
 }
 
 #[test]
-fn skill_keeps_readiness_lead_owned_and_holytail_preservation_narrow() {
+fn skill_keeps_readiness_lead_owned_and_preservation_narrow() {
     let text = std::str::from_utf8(include_bytes!("../skills/exitbind/SKILL.md"))
         .unwrap()
         .to_lowercase();
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     for contract in [
         "complex but has no material semantic-preservation risk",
-        "keeps holytail off",
+        "does not add a preservation route",
         "tool and agent selection remains the lead's responsibility",
         "clarify the accepted behavior, invariants, allowed changes",
         "freeze that accepted meaning",
         "preserve the frozen meaning",
         "read back the same accepted meaning",
         "current implementation subject",
-        "trivial work has no holytail ceremony",
+        "trivial work has no preservation ceremony",
         "minimizer may reduce mechanism",
         "does not choose the goal, tools, or agents",
         "does not own final acceptance",
         "does not create a second ledger",
-        "standalone holytail install",
+        "separate preservation installation",
         "preservation_missing",
         "preservation_failed",
-        "do not install standalone holytail for this path",
+        "do not install a separate preservation tool for this path",
     ] {
         assert!(
             text.contains(contract),

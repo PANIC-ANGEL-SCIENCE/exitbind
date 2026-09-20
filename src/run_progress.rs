@@ -48,11 +48,15 @@ pub(crate) fn project_kernel(kernel: &ExitState) -> Value {
     // required check is still missing.
     let check_total = kernel.worker_total * kernel.assessment.targets_per_worker;
     let check_earned = proportional(CHECK_WEIGHT, check_completed, check_total);
-    let review_earned = proportional(
-        REVIEW_WEIGHT,
-        kernel.reviewer_completed,
-        kernel.reviewer_total,
-    );
+    let review_earned = if kernel.review_required {
+        proportional(
+            REVIEW_WEIGHT,
+            kernel.reviewer_completed,
+            kernel.reviewer_total,
+        )
+    } else {
+        REVIEW_WEIGHT
+    };
     let lead_completed = u64::from(kernel.lead_accepted());
     let lead_earned = lead_completed * LEAD_WEIGHT;
     let percent = scope_earned + worker_earned + check_earned + review_earned + lead_earned;
@@ -72,7 +76,12 @@ pub(crate) fn project_kernel(kernel: &ExitState) -> Value {
             "scope": {"completed": u64::from(kernel.scope_completed), "total": 1, "earned": scope_earned},
             "worker": {"completed": kernel.worker_completed, "total": kernel.worker_total, "earned": worker_earned},
             "check": {"completed": check_completed, "total": check_total, "earned": check_earned},
-            "review": {"completed": kernel.reviewer_completed, "total": kernel.reviewer_total, "earned": review_earned},
+            "review": {
+                "status": if kernel.review_required { "required" } else { "omitted" },
+                "completed": kernel.reviewer_completed,
+                "total": kernel.reviewer_total,
+                "earned": review_earned
+            },
             "lead": {"completed": lead_completed, "total": 1, "earned": lead_earned}
         }
     })

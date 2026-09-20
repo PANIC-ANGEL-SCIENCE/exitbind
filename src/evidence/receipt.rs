@@ -145,11 +145,18 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
     let (outcome, reason, detail) = decision.wire();
     let assessment = kernel.assessment.clone();
     let current = kernel.current_submissions.iter().collect::<Vec<_>>();
-    let reviewer = current
-        .iter()
-        .rev()
-        .find(|event| event["role"] == "reviewer" && event["outcome"] == "approved")
-        .ok_or("Exit Path receipt requires reviewer approval")?;
+    let reviewer = if kernel.review_required {
+        current
+            .iter()
+            .rev()
+            .find(|event| event["role"] == "reviewer" && event["outcome"] == "approved")
+            .copied()
+    } else {
+        None
+    };
+    if kernel.review_required && reviewer.is_none() {
+        return Err("Exit Path receipt requires reviewer approval".into());
+    }
     let acceptance = current
         .iter()
         .rev()
@@ -165,11 +172,41 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
         .iter()
         .filter(|event| {
             (event["role"] == "worker" && event["outcome"] == "completed")
-                || (event["role"] == "reviewer" && event["outcome"] == "approved")
+                || (kernel.review_required
+                    && event["role"] == "reviewer"
+                    && event["outcome"] == "approved")
                 || (event["role"] == "lead" && event["outcome"] == "accepted")
         })
         .map(|event| event["artifact"].clone())
         .collect::<Vec<_>>();
+    let marked_policy = state.get("basisProtocol").is_some();
+    let review = reviewer.map_or_else(
+        || {
+            if marked_policy {
+                json!({
+                    "status": "omitted",
+                    "decisionSha256": kernel.review_decision_sha256,
+                    "source": "owner-reported",
+                })
+            } else {
+                json!({})
+            }
+        },
+        |reviewer| {
+            if marked_policy {
+                json!({
+                    "status": "approved",
+                    "eventSha256": reviewer["eventSha256"],
+                    "artifactSha256": reviewer["artifact"]["sha256"],
+                })
+            } else {
+                json!({
+                    "eventSha256": reviewer["eventSha256"],
+                    "artifactSha256": reviewer["artifact"]["sha256"],
+                })
+            }
+        },
+    );
     Ok(json!({
         "version": 1,
         "format": "exit-path-v1",
@@ -187,7 +224,7 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
         "subject": state["subject"],
         "artifacts": artifacts,
         "check": {"status": "passed", "targets": assessment.targets_for_receipt()},
-        "review": {"eventSha256": reviewer["eventSha256"], "artifactSha256": reviewer["artifact"]["sha256"]},
+        "review": review,
         "acceptance": {"eventSha256": acceptance["eventSha256"], "artifactSha256": acceptance["artifact"]["sha256"]},
     }))
 }

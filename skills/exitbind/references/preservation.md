@@ -52,7 +52,9 @@ requirements — when the configured workflow requires it, the owner asks, or:
 
 A subject area does not escalate work by itself, and open exploration must not
 be forced into accepted meaning early. Tiny, obvious, reversible work stays
-direct.
+direct. Retained work gets useful exact-result checks proportionate to risk;
+promotion means applicable obligations require governance, not merely keeping a
+harmless local file.
 
 ## Accepted meaning before implementation
 
@@ -85,9 +87,22 @@ Start the run with the frozen requirements:
 ```sh
 exitbind work begin change --goal "..." \
   --check-command "YOUR_FUNCTIONAL_CHECK" \
+  --review-policy required \
   --preserve-requirement ID:TEXT \
   --preservation-check-command "YOUR_PRESERVATION_CHECK"
 ```
+
+Choose `--review-policy omitted` when that is the owner's selected policy.
+Without the option, the work entry is the unmarked historical path: it keeps
+required-review semantics and cannot later use `run review-policy`. A marked
+running run can record a revised choice with:
+
+```sh
+exitbind run review-policy lead LEDGER \
+  --decision omitted --reason "OWNER_REASON" --config CONFIG
+```
+
+Use `--decision required` when that is the owner's selected choice.
 
 Exitbind then requires a functional check policy, refuses acceptance while a
 requirement's check is missing (`preservation_missing`) or failing
@@ -103,9 +118,22 @@ without exactly one assignment, or with conflicting assignments, is refused
 work rather than run on a guess. Exitbind records the assignment; it does not
 enforce a host's own quality setting.
 
-Do not create `.holytail/accepted.md`, `.holytail/check.md`, or any parallel
+Do not create a standalone accepted artifact, check artifact, or any parallel
 authority file in a configured project. The run state already holds the
 accepted requirements, the evidence, and the acceptance.
+
+For important work, the Lead recommends independent review and the owner
+chooses whether review is required. The owner may revise that choice while the
+work continues; preserve the predecessor decision, reason, and any actual
+finding. A recommendation or an explicit omission is not review evidence, and
+an unfinished or missing choice is not an implicit waiver.
+
+While a frozen candidate awaits review, non-mutating preparation may continue
+when it uses the same subject and links the exact requirement and evidence
+references. Preparation does not advance review or acceptance. Form batches by
+shared obligations and check boundaries rather than file count, reuse shared
+requirement references, and state which incorrect behavior each decisive check
+rejects.
 
 ## Read-back after implementation
 

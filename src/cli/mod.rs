@@ -211,6 +211,9 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
     if command == "context" {
         return context_command(a);
     }
+    if command == "work" && a.positional.first().map(String::as_str) == Some("classify") {
+        return work_classify_command(a);
+    }
     if !matches!(
         command,
         "check"
@@ -305,6 +308,36 @@ fn context_command(a: &Arguments) -> Result<(), String> {
     }
 }
 
+fn work_classify_command(a: &Arguments) -> Result<(), String> {
+    args::assert_options(
+        "work classify",
+        a,
+        &[
+            "config",
+            "material-consequence",
+            "promotion-required",
+            "json",
+        ],
+    )?;
+    args::assert_positionals("work classify", a, 1)?;
+    let parse_bool = |name: &str| -> Result<bool, String> {
+        match a.options.get(name).map(String::as_str) {
+            Some("true") => Ok(true),
+            Some("false") => Ok(false),
+            Some(_) => Err(format!("--{name} requires true or false")),
+            None => Err(format!("work classify requires --{name} true|false")),
+        }
+    };
+    let loaded = config::load(a.options.get("config").map(String::as_str)).ok();
+    let current_dir = std::env::current_dir().map_err(|error| error.to_string())?;
+    print_json(&crate::work::classify(
+        loaded.as_ref(),
+        &current_dir,
+        parse_bool("material-consequence")?,
+        parse_bool("promotion-required")?,
+    ))
+}
+
 fn goal_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(a, 0, "goal requires incorporate, close, or status")?;
     match action {
@@ -326,48 +359,97 @@ fn goal_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "result-ref",
                     "consider",
                     "none-applicable",
+                    "direct",
+                    "external-scope",
                     "json",
                 ],
             )?;
             args::assert_positionals("goal incorporate", a, 1)?;
-            let value = crate::session_goal::incorporate(
-                l,
-                option(a, "goal-id", "goal incorporate requires --goal-id")?,
-                option(a, "goal", "goal incorporate requires --goal")?,
-                a.options.get("obligation").map(String::as_str),
-                a.options.get("finding").map(String::as_str),
-                a.options.get("blocker").map(String::as_str),
-                a.options.get("decision").map(String::as_str),
-                a.options.get("external-action").map(String::as_str),
-                a.options.get("scope").map(String::as_str),
-                a.options.get("disposition").map(String::as_str),
-                a.options.get("result-ref").map(String::as_str),
-                a.options.get("consider").map(String::as_str),
-                a.options.get("none-applicable").map(String::as_str),
-            )?;
+            let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
+            let goal = option(a, "goal", "goal incorporate requires --goal")?;
+            let direct = a.flags.contains_key("direct");
+            let direct_items = [
+                ("obligations", a.options.get("obligation")),
+                ("findings", a.options.get("finding")),
+                ("blockers", a.options.get("blocker")),
+                ("decisions", a.options.get("decision")),
+                ("externalActions", a.options.get("external-action")),
+            ];
+            let selected = direct_items
+                .iter()
+                .filter_map(|(category, value)| value.as_deref().map(|item| (*category, item)))
+                .collect::<Vec<_>>();
+            let value = if direct && selected.len() == 1 {
+                let (category, item) = selected[0];
+                crate::session_goal::direct_complete(
+                    l,
+                    goal_id,
+                    goal,
+                    category,
+                    item,
+                    a.options.get("external-scope").map(String::as_str),
+                )?
+            } else {
+                crate::session_goal::incorporate(
+                    l,
+                    goal_id,
+                    goal,
+                    a.options.get("obligation").map(String::as_str),
+                    a.options.get("finding").map(String::as_str),
+                    a.options.get("blocker").map(String::as_str),
+                    a.options.get("decision").map(String::as_str),
+                    a.options.get("external-action").map(String::as_str),
+                    a.options.get("scope").map(String::as_str),
+                    a.options.get("disposition").map(String::as_str),
+                    a.options.get("result-ref").map(String::as_str),
+                    a.options.get("consider").map(String::as_str),
+                    a.options.get("none-applicable").map(String::as_str),
+                )?
+            };
             print_json(&value)
         }
         "close" => {
             args::assert_options(
                 "goal close",
                 a,
-                &["config", "goal-id", "result-ref", "json"],
+                &["config", "goal-id", "result-ref", "direct", "json"],
             )?;
             args::assert_positionals("goal close", a, 1)?;
-            let value = crate::session_goal::close(
-                l,
-                option(a, "goal-id", "goal close requires --goal-id")?,
-                option(a, "result-ref", "goal close requires --result-ref")?,
-            )?;
+            let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
+            let value = if a.flags.contains_key("direct") {
+                crate::session_goal::close_direct(
+                    l,
+                    goal_id,
+                    a.options.get("result-ref").map(String::as_str),
+                )?
+            } else {
+                crate::session_goal::close(
+                    l,
+                    goal_id,
+                    option(a, "result-ref", "goal close requires --result-ref")?,
+                )?
+            };
             print_json(&value)
         }
         "status" => {
             args::assert_options("goal status", a, &["config", "json"])?;
             args::assert_positionals("goal status", a, 1)?;
-            print_json(
-                &crate::session_goal::read(&l.state_root)?
-                    .unwrap_or_else(|| json!({"closed": false})),
-            )
+            let record = crate::session_goal::read(&l.state_root)?;
+            let value = record.clone().unwrap_or_else(|| json!({"closed": false}));
+            print_json(&value)?;
+            if !a.flags.contains_key("json") {
+                let presentation =
+                    crate::session_goal::presentation_for_loaded(l, record.as_ref())?;
+                if let Some(card) = crate::presentation_events::session_goal_direct_card_for_human(
+                    &l.state_root,
+                    &presentation,
+                    std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
+                    !std::io::stdin().is_terminal(),
+                ) {
+                    println!("{card}");
+                }
+            }
+            Ok(())
         }
         _ => Err("goal requires incorporate, close, or status".into()),
     }
@@ -394,6 +476,8 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "preserve-requirement",
                     "preservation-check-command",
                     "preservation-proof-origin",
+                    "basis",
+                    "review-policy",
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
@@ -419,6 +503,8 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                         .options
                         .get("preservation-proof-origin")
                         .map(String::as_str),
+                    basis: a.options.get("basis").map(String::as_str),
+                    review_policy: a.options.get("review-policy").map(String::as_str),
                 },
             )?)
         }
@@ -506,7 +592,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "return" => {
-            args::assert_options("work return", a, &["config", "outcome", "reason"])?;
+            args::assert_options("work return", a, &["config", "outcome", "reason", "disposition"])?;
             args::assert_positionals("work return", a, 3)?;
             print_json(&crate::work::return_result(
                 l,
@@ -514,6 +600,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 positional(a, 2, "work return requires WORK ASSIGNMENT")?,
                 option(a, "outcome", "work return requires --outcome OUTCOME")?,
                 a.options.get("reason").map(String::as_str),
+                a.options.get("disposition").map(String::as_str),
             )?)
         }
         "check" => {
@@ -948,10 +1035,13 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "preserve-requirement",
             "preservation-check-command",
             "preservation-proof-origin",
+            "basis",
+            "review-policy",
         ][..],
         "next" => &["config", "json", "text"][..],
         "inspect" => &["config", "json"][..],
-        "submit" => &["config", "outcome", "artifact", "artifact-root", "reason", "json", "event-id"][..],
+        "submit" => &["config", "outcome", "artifact", "artifact-root", "reason", "disposition", "json", "event-id"][..],
+        "review-policy" => &["config", "decision", "reason", "json"][..],
         "record-check" => &[
             "config",
             "target",
@@ -977,10 +1067,12 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "preserve-requirement",
             "preservation-check-command",
             "preservation-proof-origin",
+            "basis",
+            "review-policy",
             "json",
         ][..],
         _ => {
-            return Err("run requires one action: start, next, submit, record-check, observe-check, status, explain, report, inspect, or supersede".into())
+            return Err("run requires one action: start, next, submit, review-policy, record-check, observe-check, status, explain, report, inspect, or supersede".into())
         }
     };
     args::assert_options("run", a, allowed)?;
@@ -1013,6 +1105,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 && preserve_requirement.is_none()
                 && preservation_check_command.is_none()
                 && preservation_proof_origin.is_none()
+                && a.options.get("basis").is_none()
+                && a.options.get("review-policy").is_none()
             {
                 run::start(l, workflow, goal, ledger, boundary, receipt)
             } else {
@@ -1028,6 +1122,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     preserve_requirement,
                     preservation_check_command,
                     preservation_proof_origin,
+                    a.options.get("basis").map(String::as_str),
+                    a.options.get("review-policy").map(String::as_str),
                 )
             }
         }
@@ -1044,6 +1140,17 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "outcome", "run submit requires --outcome")?,
                 option(a, "artifact", "run submit requires --artifact")?,
                 a.options.get("artifact-root").map(String::as_str),
+                a.options.get("reason").map(String::as_str),
+                a.options.get("disposition").map(String::as_str),
+            )
+        }
+        "review-policy" => {
+            args::assert_positionals("run review-policy", a, 3)?;
+            run::review_policy(
+                l,
+                positional(a, 1, "run review-policy requires AGENT")?,
+                positional(a, 2, "run review-policy requires LEDGER")?,
+                option(a, "decision", "run review-policy requires --decision required|omitted")?,
                 a.options.get("reason").map(String::as_str),
             )
         }
@@ -1225,6 +1332,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 && preserve_requirement.is_none()
                 && preservation_check_command.is_none()
                 && preservation_proof_origin.is_none()
+                && a.options.get("basis").is_none()
+                && a.options.get("review-policy").is_none()
             {
                 run::supersede(l, old_ledger, workflow, goal, ledger, boundary, receipt)
             } else {

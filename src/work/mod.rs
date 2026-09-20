@@ -6,11 +6,50 @@ use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Read;
+use std::path::Path;
 
 const WORK_PREFIX: &str = "smw_";
 
 fn runs_dir() -> String {
     format!("{}/runs", crate::project::layout_types::state_namespace())
+}
+
+/// Read-only activation assessment used by the explicit `work classify`
+/// bridge. The caller supplies both typed consequence facts; local availability
+/// and activation are derived from the loaded project or current directory.
+pub(crate) fn classify(
+    loaded: Option<&Loaded>,
+    current_dir: &Path,
+    material_consequence: bool,
+    promotion_required: bool,
+) -> Value {
+    let state_root = loaded.map_or(current_dir, |value| value.state_root.as_path());
+    let activation_available =
+        loaded.is_some_and(|value| value.path.is_file() && value.state_root.is_dir());
+    let managed_namespace = state_root.join(crate::project::layout_types::state_namespace());
+    let activation_ready = activation_available
+        && managed_namespace.is_dir()
+        && managed_namespace.join("runs").is_dir()
+        && managed_namespace.join("locks").is_dir();
+    let assessment =
+        crate::host::runtime::assess_activation(crate::host::runtime::ActivationFacts {
+            material_consequence,
+            promotion_required,
+            available: activation_available,
+            activated: activation_ready,
+        });
+    json!({
+        "facts": {
+            "materialConsequence": material_consequence,
+            "promotionRequired": promotion_required,
+        },
+        "availability": {
+            "configuration": activation_available,
+            "managedNamespace": activation_ready,
+        },
+        "assessment": assessment.value(),
+        "provenance": "host_reported",
+    })
 }
 
 fn artifacts_dir() -> String {
@@ -30,6 +69,8 @@ pub(crate) struct BeginOptions<'a> {
     pub(crate) preserve_requirement: Option<&'a str>,
     pub(crate) preservation_check_command: Option<&'a str>,
     pub(crate) preservation_proof_origin: Option<&'a str>,
+    pub(crate) basis: Option<&'a str>,
+    pub(crate) review_policy: Option<&'a str>,
 }
 
 pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value, String> {
@@ -79,6 +120,8 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         options.preserve_requirement,
         options.preservation_check_command,
         options.preservation_proof_origin,
+        options.basis,
+        options.review_policy,
     )?;
     let work = format!("{WORK_PREFIX}{token}");
     let next = next_for(loaded, &work, &ledger)?;
@@ -251,6 +294,7 @@ pub(crate) fn return_result(
     assignment: &str,
     outcome: &str,
     reason: Option<&str>,
+    disposition: Option<&str>,
 ) -> Result<Value, String> {
     if outcome.trim().is_empty() {
         return Err("work return requires --outcome OUTCOME".into());
@@ -274,7 +318,8 @@ pub(crate) fn return_result(
         || action["role"] == "reviewer"
             && ["approved", "rework", "blocked", "unavailable"].contains(&outcome)
         || matches!(action["role"].as_str(), Some("worker" | "adviser"))
-            && ["completed", "blocked"].contains(&outcome);
+            && (["completed", "blocked"].contains(&outcome)
+                || action["role"] == "worker" && outcome == "contradiction");
     if !allowed {
         return Err(format!(
             "outcome '{outcome}' is not allowed for this assignment"
@@ -291,6 +336,7 @@ pub(crate) fn return_result(
         expected,
         outcome,
         reason,
+        disposition,
         || write_artifact(loaded, work, assignment, &bytes),
     )?;
     // The decision that reaches a terminal state is exactly where its display
@@ -678,7 +724,7 @@ fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result
         result["outcomes"] = if value["currentStage"] == 1 {
             json!(["scoped", "blocked"])
         } else {
-            json!(["accepted", "rework", "blocked"])
+            json!(["accepted", "rework", "blocked", "disposition"])
         };
     }
     Ok(result)

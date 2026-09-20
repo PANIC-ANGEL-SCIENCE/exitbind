@@ -265,6 +265,8 @@ pub(crate) struct ExitState {
     pub(crate) reviewer_total: usize,
     pub(crate) worker_completed: usize,
     pub(crate) reviewer_completed: usize,
+    pub(crate) review_required: bool,
+    pub(crate) review_decision_sha256: Option<String>,
     pub(crate) scope_completed: bool,
 }
 
@@ -290,6 +292,8 @@ impl ExitState {
                 scope_completed: false,
                 worker_total: 0,
                 reviewer_total: 0,
+                review_required: true,
+                review_decision_sha256: None,
             });
         }
         let attempt = state["attempt"]
@@ -304,7 +308,14 @@ impl ExitState {
             .filter(|event| event["attempt"] == attempt)
             .cloned()
             .collect::<Vec<_>>();
-        let (worker_total, reviewer_total) = planned_counts(state)?;
+        let (worker_total, planned_reviewers) = planned_counts(state)?;
+        let review_decision_sha256 = state["reviewPolicy"]["sha256"].as_str().map(str::to_owned);
+        let review_required = state["reviewPolicy"]["decision"] != "omitted";
+        let reviewer_total = if review_required {
+            planned_reviewers
+        } else {
+            0
+        };
         let assessment = assess(state)?;
         Ok(Self {
             version,
@@ -325,6 +336,8 @@ impl ExitState {
                 .any(|event| event["role"] == "lead" && event["outcome"] == "scoped"),
             worker_total,
             reviewer_total,
+            review_required,
+            review_decision_sha256,
             assessment,
             current_submissions,
         })
@@ -375,7 +388,11 @@ impl ExitState {
     }
 
     pub(crate) fn acceptance_gate(&self) -> Result<(), String> {
-        if self.version >= 5 && self.assessment.policy.is_some() && !self.reviewer_approved() {
+        if self.version >= 5
+            && self.assessment.policy.is_some()
+            && self.review_required
+            && !self.reviewer_approved()
+        {
             return Err("canonical acceptance requires reviewer approval".into());
         }
         if self.assessment.is_blocked() {

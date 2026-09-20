@@ -23,7 +23,11 @@ pub(crate) fn pending(state: &Value) -> Vec<Value> {
     let submitted: BTreeSet<&str> = submissions
         .iter()
         .filter(|event| {
-            event["stage"] == state["currentStage"] && event["attempt"] == state["attempt"]
+            event["stage"] == state["currentStage"]
+                && event["attempt"] == state["attempt"]
+                && (event["role"] != "reviewer"
+                    || state["reviewPolicy"]["decision"] != "required"
+                    || event["reviewDecisionSha256"] == state["reviewPolicy"]["sha256"])
         })
         .filter_map(|event| event["agent"].as_str())
         .collect();
@@ -189,6 +193,8 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         "displayName": agent["displayName"],
         "nativeTaskName": agent["nativeTaskName"],
         "role": agent["role"],
+        "basisSha256": state["basis"].get("sha256").cloned().unwrap_or(Value::Null),
+        "reviewDecisionSha256": state["reviewPolicy"].get("sha256").cloned().unwrap_or(Value::Null),
         "goal": state["goal"],
         "purpose": agent["purpose"],
         "profile": {"path": agent["profile"], "sha256": agent["profileSha256"]},
@@ -259,8 +265,12 @@ pub(crate) fn handle(work: &str, assignment: &Value) -> Result<String, String> {
     let agent = assignment["agent"]
         .as_str()
         .ok_or("assignment agent is invalid")?;
-    Ok(format!(
-        "sma_{}",
-        crate::evidence::hash::text(&format!("{work}\n{stage}\n{attempt}\n{agent}"))
-    ))
+    let basis = assignment["basisSha256"].as_str().unwrap_or("");
+    let review = assignment["reviewDecisionSha256"].as_str().unwrap_or("");
+    let identity = if basis.is_empty() && review.is_empty() {
+        format!("{work}\n{stage}\n{attempt}\n{agent}")
+    } else {
+        format!("{work}\n{stage}\n{attempt}\n{agent}\n{basis}\n{review}")
+    };
+    Ok(format!("sma_{}", crate::evidence::hash::text(&identity)))
 }

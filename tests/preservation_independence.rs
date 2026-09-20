@@ -266,12 +266,7 @@ fn a_governed_run_resolves_its_own_route_and_quality() {
     // Exitbind records the assignment; it never claims to enforce a host's mode.
     assert_eq!(assignment["enforcement"], "recorded_not_enforced");
 
-    let holytail = seen["presentation"]["holytail"].as_str().unwrap();
-    assert_eq!(
-        holytail, "Holytail :FULL · FORMAL · evidence=command_observed",
-        "the preservation line must report the resolved assignment and how the evidence was acquired"
-    );
-    assert!(!holytail.contains("independently_verified"));
+    assert!(seen["presentation"]["holytail"].is_null());
 
     // Ungoverned reading keeps the line off entirely.
     let quiet = Fixture::new("preservation-quiet");

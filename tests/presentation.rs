@@ -254,7 +254,7 @@ fn a_review_that_goes_stale_speaks_once() {
 }
 
 #[test]
-fn preservation_speaks_when_it_becomes_active_and_then_stays_quiet() {
+fn preservation_state_keeps_retired_line_null_and_stays_quiet() {
     let project = Project::new("presentation-preservation");
     let work = begin(&project, true);
     project.drive_until(&work, "check");
@@ -262,19 +262,11 @@ fn preservation_speaks_when_it_becomes_active_and_then_stays_quiet() {
     let active = project.presentation(&work);
     assert_eq!(active["state"]["preservation"], "active");
     assert!(active["terminal"].is_null());
-    let holytail = active["holytail"].as_str().unwrap();
-    // The accepted requirements resolve the route, and the accepted policy
-    // assigns FULL to the formal route. The evidence axis reports how the
-    // evidence was acquired, never that anything was independently verified.
-    // No requirement check has run yet, so the evidence axis says exactly that.
-    assert_eq!(
-        holytail, "Holytail :FULL · FORMAL · evidence=none",
-        "{holytail}"
-    );
+    assert!(active["holytail"].is_null());
 
     let again = project.presentation(&work);
     assert!(again["transition"].is_null(), "{again}");
-    assert_eq!(again["holytail"], active["holytail"]);
+    assert!(again["holytail"].is_null());
     fs::remove_dir_all(project.root).unwrap();
 }
 
@@ -336,7 +328,7 @@ fn resuming_with_valid_evidence_can_say_so_once() {
 }
 
 #[test]
-fn without_governed_work_there_is_no_progress_or_holytail_line() {
+fn without_governed_work_there_is_no_progress_or_preservation_line() {
     let project = Project::new("presentation-none");
     let idle = project.value(&["work", "resume"], None);
     assert_eq!(idle["status"], "none");

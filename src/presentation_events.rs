@@ -72,6 +72,54 @@ pub(crate) fn session_goal_card_transition(
     }
 }
 
+/// Render a direct-only closure card from the validated session-goal
+/// projection. Direct completion has no run progress, so this path never
+/// fabricates a READY state or a governed result.
+pub(crate) fn session_goal_direct_card(
+    packet: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let goal = &packet["humanHelp"]["sessionGoal"];
+    let empty = |key: &str| goal[key].as_array().is_some_and(|items| items.is_empty());
+    if !interactive
+        || closed_stdin
+        || goal["completionMode"] != "direct"
+        || goal["explicitLeadClosure"] != true
+        || ![
+            "subgoals",
+            "findings",
+            "blockers",
+            "decisions",
+            "externalActions",
+        ]
+        .iter()
+        .all(|key| empty(key))
+    {
+        return None;
+    }
+    Some(SESSION_GOAL_CARD)
+}
+
+/// Once-only transition helper for a direct closure card. The same display
+/// memo as governed cards prevents repeat output without becoming authority.
+pub(crate) fn session_goal_direct_card_transition(
+    previous: Option<&Value>,
+    packet: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let card = session_goal_direct_card(packet, interactive, closed_stdin)?;
+    let request = packet["humanHelp"]["sessionGoal"]["requestId"].as_str()?;
+    if previous.is_some_and(|value| {
+        value["requestId"].as_str() == Some(request) && value["cardEmitted"] == true
+    }) {
+        None
+    } else {
+        Some(card)
+    }
+}
+
 /// Human-only bridge for the lead-owned session closure card. The memo is a
 /// replaceable display cache: loss or corruption can repeat an optional card,
 /// but never changes canonical state, acceptance, or evidence.
@@ -91,6 +139,22 @@ pub(crate) fn session_goal_card_for_human(
         interactive,
         closed_stdin,
     )?;
+    remember_session_card(state_root, session_goal["requestId"].as_str()?);
+    Some(card)
+}
+
+/// Human-only bridge for a validated direct session-goal closure. It shares
+/// the governed card memo and remains silent for headless or machine output.
+pub(crate) fn session_goal_direct_card_for_human(
+    state_root: &Path,
+    session_goal: &Value,
+    interactive: bool,
+    closed_stdin: bool,
+) -> Option<&'static str> {
+    let packet = json!({"humanHelp": {"sessionGoal": session_goal}});
+    let previous = remembered_session_card(state_root);
+    let card =
+        session_goal_direct_card_transition(previous.as_ref(), &packet, interactive, closed_stdin)?;
     remember_session_card(state_root, session_goal["requestId"].as_str()?);
     Some(card)
 }
@@ -378,35 +442,6 @@ fn phrase(key: &str) -> &'static str {
     }
 }
 
-/// The Holytail line appears only while a preservation obligation is genuinely
-/// in play.
-///
-/// Route and quality are two axes and neither is inferred from the other, from
-/// a model name, or from a host effort label: the run's accepted preservation
-/// requirements resolve them through the recorded assignment, and an assignment
-/// Exitbind cannot resolve stays `MODE-UNBOUND`. The evidence axis reports how
-/// the preservation evidence was acquired, never that it was independently
-/// verified.
-fn holytail_line(packet: &Value, classification: &Classification) -> Option<String> {
-    if !matches!(
-        classification.preservation,
-        "active" | "failed" | "satisfied"
-    ) {
-        return None;
-    }
-    let assignment = &packet["humanHelp"]["preservationAssignment"];
-    let quality = assignment["quality"].as_str().unwrap_or("MODE-UNBOUND");
-    let route = assignment["route"].as_str().unwrap_or("FORMAL");
-    // Before any requirement check runs there is nothing to label: saying so
-    // beats borrowing a stronger word.
-    let evidence = packet["humanHelp"]["preservationEvidence"]
-        .as_str()
-        .unwrap_or("none");
-    Some(format!(
-        "Holytail :{quality} · {route} · evidence={evidence}"
-    ))
-}
-
 /// Build the presentation block for one projected packet, remembering what was
 /// presented so an unchanged state does not speak twice.
 pub(crate) fn project(
@@ -464,7 +499,9 @@ pub(crate) fn project(
         "phraseKey": key,
         "phrase": key.map(phrase),
         "neuro": neuro,
-        "holytail": holytail_line(packet, &current),
+        // Keep the optional field readable for compatible consumers while the
+        // retired presentation line stays absent from new product output.
+        "holytail": Value::Null,
     })
 }
 
@@ -598,6 +635,25 @@ mod tests {
         unresolved["humanHelp"]["sessionGoal"]["explicitLeadClosure"] = json!(false);
         unresolved["humanHelp"]["sessionGoal"]["findings"] = json!([]);
         assert!(session_goal_card(&unresolved, &progress, true, false).is_none());
+    }
+
+    #[test]
+    fn direct_session_card_requires_validated_direct_closure_without_progress() {
+        let packet = json!({"humanHelp": {"sessionGoal": {
+            "requestId": "direct:r2",
+            "completionMode": "direct",
+            "explicitLeadClosure": true,
+            "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
+        }}});
+        assert_eq!(
+            session_goal_direct_card(&packet, true, false),
+            Some(SESSION_GOAL_CARD)
+        );
+        assert!(session_goal_direct_card(&packet, false, false).is_none());
+        assert!(session_goal_direct_card(&packet, true, true).is_none());
+        let mut governed = packet.clone();
+        governed["humanHelp"]["sessionGoal"]["completionMode"] = json!("governed");
+        assert!(session_goal_direct_card(&governed, true, false).is_none());
     }
 
     #[test]

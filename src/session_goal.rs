@@ -243,6 +243,92 @@ fn result_refs(value: Option<&str>) -> Result<Vec<Value>, String> {
     }
 }
 
+fn current_inputs(loaded: &crate::config::Loaded) -> Result<String, String> {
+    crate::run::inputs::fingerprint(loaded)
+}
+
+fn direct_item(
+    list: &mut Vec<Value>,
+    id: String,
+    text_value: String,
+    goal_id: &str,
+    revision: u64,
+    inputs_sha256: &str,
+    category: &str,
+) -> Result<(), String> {
+    if let Some(existing) = list.iter().find(|item| item["id"] == id) {
+        if !matches!(
+            existing["disposition"].as_str(),
+            Some("open") | Some("direct")
+        ) {
+            return Err(format!(
+                "cannot replace governed completion in {category} with direct completion"
+            ));
+        }
+    }
+    let item = json!({
+        "id": id,
+        "text": text_value,
+        "disposition": "direct",
+        "resultRefs": [],
+        "directCompletion": {
+            "kind": "lead_reported",
+            "goalId": goal_id,
+            "revision": revision,
+            "inputsSha256": inputs_sha256,
+        },
+    });
+    if let Some(existing) = list.iter_mut().find(|item| item["id"] == id) {
+        *existing = item;
+    } else {
+        list.push(item);
+    }
+    Ok(())
+}
+
+fn direct_external_item(
+    list: &mut Vec<Value>,
+    action: String,
+    scope: &str,
+    goal_id: &str,
+    revision: u64,
+    inputs_sha256: &str,
+) -> Result<(), String> {
+    if !matches!(scope, "in_scope" | "outside_scope") {
+        return Err("--scope must be in_scope or outside_scope".into());
+    }
+    if let Some(existing) = list.iter().find(|item| item["id"] == action) {
+        if !matches!(
+            existing["disposition"].as_str(),
+            Some("open") | Some("direct")
+        ) {
+            return Err(
+                "cannot replace governed completion in external actions with direct completion"
+                    .into(),
+            );
+        }
+    }
+    let item = json!({
+        "id": action,
+        "action": action,
+        "scope": scope,
+        "disposition": "direct",
+        "resultRefs": [],
+        "directCompletion": {
+            "kind": "lead_reported",
+            "goalId": goal_id,
+            "revision": revision,
+            "inputsSha256": inputs_sha256,
+        },
+    });
+    if let Some(existing) = list.iter_mut().find(|item| item["id"] == action) {
+        *existing = item;
+    } else {
+        list.push(item);
+    }
+    Ok(())
+}
+
 fn update_item(
     list: &mut Vec<Value>,
     id: String,
@@ -458,6 +544,113 @@ pub(crate) fn incorporate(
     })
 }
 
+/// Record one explicit Lead-reported direct completion.  This is deliberately
+/// separate from governed result references: the claim is bound to the
+/// current product inputs and goal revision, but it is not check evidence.
+pub(crate) fn direct_complete(
+    loaded: &crate::config::Loaded,
+    goal_id: &str,
+    goal: &str,
+    category: &str,
+    item: &str,
+    external_scope: Option<&str>,
+) -> Result<Value, String> {
+    let goal_id = text(Some(goal_id), "goal-id")?;
+    let goal = text(Some(goal), "goal")?;
+    let item = text(Some(item), category)?;
+    if !CATEGORIES.contains(&category) {
+        return Err(format!("unknown session-goal category '{category}'"));
+    }
+    mutate(&loaded.state_root, |previous| {
+        let revision = previous
+            .and_then(|value| value["revision"].as_u64())
+            .unwrap_or(0)
+            .saturating_add(1);
+        let inputs_sha256 = current_inputs(loaded)?;
+        let mut obligations = items(previous, "obligations");
+        let mut findings = items(previous, "findings");
+        let mut blockers = items(previous, "blockers");
+        let mut decisions = items(previous, "decisions");
+        let mut external_actions = items(previous, "externalActions");
+        match category {
+            "obligations" => direct_item(
+                &mut obligations,
+                item.clone(),
+                item.clone(),
+                &goal_id,
+                revision,
+                &inputs_sha256,
+                category,
+            )?,
+            "findings" => direct_item(
+                &mut findings,
+                item.clone(),
+                item.clone(),
+                &goal_id,
+                revision,
+                &inputs_sha256,
+                category,
+            )?,
+            "blockers" => direct_item(
+                &mut blockers,
+                item.clone(),
+                item.clone(),
+                &goal_id,
+                revision,
+                &inputs_sha256,
+                category,
+            )?,
+            "decisions" => direct_item(
+                &mut decisions,
+                item.clone(),
+                item.clone(),
+                &goal_id,
+                revision,
+                &inputs_sha256,
+                category,
+            )?,
+            "externalActions" => direct_external_item(
+                &mut external_actions,
+                item.clone(),
+                external_scope.unwrap_or("in_scope"),
+                &goal_id,
+                revision,
+                &inputs_sha256,
+            )?,
+            _ => unreachable!(),
+        }
+        let mut category_state = previous
+            .and_then(|value| value["categories"].as_object().cloned())
+            .unwrap_or_default();
+        category_state.insert(category.into(), json!("considered"));
+        let predecessor =
+            previous.map(|value| json!({"goalId": value["goalId"], "revision": value["revision"]}));
+        let successor_of = previous
+            .filter(|value| value["goalId"] != goal_id)
+            .map(|value| json!({"goalId": value["goalId"], "revision": value["revision"]}));
+        Ok(sealed(
+            json!({
+                "kind": "lead_session_goal",
+                "version": 2,
+                "goalId": goal_id,
+                "revision": revision,
+                "goal": goal,
+                "source": {"owner": "lead", "kind": "explicit_direct_completion"},
+                "predecessor": predecessor,
+                "successorOf": successor_of,
+                "obligations": obligations,
+                "findings": findings,
+                "blockers": blockers,
+                "decisions": decisions,
+                "externalActions": external_actions,
+                "categories": category_state,
+                "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
+            }),
+            previous,
+        ))
+    })
+}
+
 fn category_resolved(record: &Value, key: &str) -> bool {
     if !matches!(
         record["categories"][key].as_str(),
@@ -467,12 +660,20 @@ fn category_resolved(record: &Value, key: &str) -> bool {
     }
     record[key].as_array().is_some_and(|items| {
         items.iter().all(|item| {
-            matches!(
-                item["disposition"].as_str(),
-                Some("accepted") | Some("outside_scope") | Some("successor")
-            ) && item["resultRefs"]
-                .as_array()
-                .is_some_and(|refs| !refs.is_empty())
+            if item["disposition"].as_str() == Some("direct") {
+                item["resultRefs"].as_array().is_some_and(Vec::is_empty)
+                    && item["directCompletion"]["kind"] == "lead_reported"
+                    && item["directCompletion"]["goalId"].is_string()
+                    && item["directCompletion"]["revision"].is_u64()
+                    && item["directCompletion"]["inputsSha256"].is_string()
+            } else {
+                matches!(
+                    item["disposition"].as_str(),
+                    Some("accepted") | Some("outside_scope") | Some("successor")
+                ) && item["resultRefs"]
+                    .as_array()
+                    .is_some_and(|refs| !refs.is_empty())
+            }
         })
     })
 }
@@ -481,6 +682,60 @@ fn unresolved(record: &Value) -> bool {
     CATEGORIES
         .iter()
         .any(|category| !category_resolved(record, category))
+}
+
+fn direct_completion_current(
+    loaded: &crate::config::Loaded,
+    record: &Value,
+    item: &Value,
+) -> Result<bool, String> {
+    let completion = &item["directCompletion"];
+    if item["disposition"] != "direct"
+        || !item["resultRefs"].as_array().is_some_and(Vec::is_empty)
+        || completion["kind"] != "lead_reported"
+        || completion["goalId"] != record["goalId"]
+    {
+        return Ok(false);
+    }
+    let Some(revision) = completion["revision"].as_u64() else {
+        return Ok(false);
+    };
+    let Some(current_revision) = record["revision"].as_u64() else {
+        return Ok(false);
+    };
+    let Some(expected_inputs) = completion["inputsSha256"].as_str() else {
+        return Ok(false);
+    };
+    Ok(revision > 0 && revision <= current_revision && current_inputs(loaded)? == expected_inputs)
+}
+
+fn item_evidence_current(
+    loaded: &crate::config::Loaded,
+    record: &Value,
+    category: &str,
+    item: &Value,
+) -> Result<bool, String> {
+    if item["disposition"].as_str() == Some("open") {
+        return Ok(true);
+    }
+    if item["disposition"].as_str() == Some("direct") {
+        return direct_completion_current(loaded, record, item);
+    }
+    let Some(refs) = item["resultRefs"].as_array() else {
+        return Err(format!("{category} has malformed result references"));
+    };
+    if refs.is_empty() {
+        return Ok(false);
+    }
+    for reference in refs {
+        let Some(reference) = reference.as_str() else {
+            return Err(format!("{category} has malformed result references"));
+        };
+        if !crate::run::current_result_ref(loaded, reference)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(crate) fn close(
@@ -500,21 +755,15 @@ pub(crate) fn close(
         for category in CATEGORIES {
             if let Some(items) = previous[category].as_array() {
                 for item in items {
-                    if item["disposition"].as_str() == Some("open") {
-                        continue;
-                    }
-                    let Some(refs) = item["resultRefs"].as_array() else {
-                        return Err(format!("{category} has malformed result references"));
-                    };
-                    for reference in refs {
-                        let Some(reference) = reference.as_str() else {
-                            return Err(format!("{category} has malformed result references"));
-                        };
-                        if !crate::run::current_result_ref(loaded, reference)? {
+                    if !item_evidence_current(loaded, previous, category, item)? {
+                        if item["disposition"] == "direct" {
                             return Err(format!(
-                                "{category} result reference is not a current governed result"
+                                "{category} direct completion is not current for the product inputs"
                             ));
                         }
+                        return Err(format!(
+                            "{category} result reference is not a current governed result"
+                        ));
                     }
                 }
             }
@@ -538,6 +787,80 @@ pub(crate) fn close(
     })
 }
 
+/// Close a goal from explicit Lead-reported direct facts.  A governed result
+/// may be supplied for a mixed goal; when it is absent, no run is required.
+pub(crate) fn close_direct(
+    loaded: &crate::config::Loaded,
+    goal_id: &str,
+    result_ref: Option<&str>,
+) -> Result<Value, String> {
+    let result_ref = result_ref
+        .map(|value| text(Some(value), "result-ref"))
+        .transpose()?;
+    mutate(&loaded.state_root, |previous| {
+        let previous = previous.ok_or("no canonical session goal is open")?;
+        if previous["goalId"].as_str() != Some(goal_id) {
+            return Err("session goal identity does not match the current revision".into());
+        }
+        if unresolved(previous) {
+            return Err("session goal has unresolved or unconsidered obligations, findings, blockers, decisions, or external actions".into());
+        }
+        let mut has_governed_evidence = false;
+        for category in CATEGORIES {
+            if let Some(items) = previous[category].as_array() {
+                for item in items {
+                    if item["disposition"] != "direct" && item["disposition"] != "open" {
+                        has_governed_evidence = true;
+                    }
+                    if !item_evidence_current(loaded, previous, category, item)? {
+                        if item["disposition"] == "direct" {
+                            return Err(format!(
+                                "{category} direct completion is not current for the product inputs"
+                            ));
+                        }
+                        return Err(format!(
+                            "{category} result reference is not a current governed result"
+                        ));
+                    }
+                }
+            }
+        }
+        if has_governed_evidence && result_ref.is_none() {
+            return Err(
+                "mixed session goal requires --result-ref for governed closure evidence".into(),
+            );
+        }
+        if let Some(result_ref) = result_ref.as_deref() {
+            if !crate::run::current_result_ref(loaded, result_ref)? {
+                return Err(
+                    "session goal result reference is not a current governed result".into(),
+                );
+            }
+        }
+        let inputs_sha256 = current_inputs(loaded)?;
+        let revision = previous["revision"]
+            .as_u64()
+            .ok_or("session goal revision is missing")?;
+        let mut record = previous.clone();
+        record
+            .as_object_mut()
+            .expect("validated session goal record")
+            .remove("eventSha256");
+        record["revision"] = json!(revision + 1);
+        record["predecessor"] = json!({"goalId": goal_id, "revision": revision});
+        record["successorOf"] = Value::Null;
+        record["closure"] = json!({
+            "closed": true,
+            "revision": revision + 1,
+            "resultRefs": result_ref.map_or_else(|| json!([]), |value| json!([value])),
+            "owner": "lead",
+            "kind": "direct",
+            "inputsSha256": inputs_sha256,
+        });
+        Ok(sealed(record, Some(previous)))
+    })
+}
+
 pub(crate) fn presentation(value: Option<&Value>) -> Value {
     let Some(record) = value else {
         return json!({"requestId":"unknown","explicitLeadClosure":false,"subgoals":["session goal not explicitly incorporated"],"findings":[],"blockers":[],"decisions":[],"externalActions":[]});
@@ -547,15 +870,21 @@ pub(crate) fn presentation(value: Option<&Value>) -> Value {
         record["goalId"].as_str().unwrap_or("unknown"),
         record["revision"].as_u64().unwrap_or(0)
     );
+    let closure_has_evidence = if record["closure"]["kind"] == "direct" {
+        record["closure"]["inputsSha256"].is_string()
+    } else {
+        record["closure"]["resultRefs"]
+            .as_array()
+            .is_some_and(|refs| !refs.is_empty() && refs.iter().all(Value::is_string))
+    };
     let closure_current = record["closure"]["closed"] == true
         && record["closure"]["revision"] == record["revision"]
         && !unresolved(record)
-        && record["closure"]["resultRefs"]
-            .as_array()
-            .is_some_and(|refs| !refs.is_empty() && refs.iter().all(Value::is_string));
+        && closure_has_evidence;
     json!({
         "requestId":request_id,
         "explicitLeadClosure":closure_current,
+        "completionMode": if record["closure"]["kind"] == "direct" { "direct" } else { "governed" },
         "subgoals":pending_items(record, "obligations", "subgoals"),
         "findings":pending_items(record, "findings", "findings"),
         "blockers":pending_items(record, "blockers", "blockers"),
@@ -591,7 +920,7 @@ fn pending_items(record: &Value, key: &str, label: &str) -> Vec<Value> {
                 };
                 pending.push(json!(value));
             }
-            Some("accepted" | "outside_scope" | "successor") => {}
+            Some("accepted" | "outside_scope" | "successor" | "direct") => {}
             _ => return unavailable(),
         }
     }
@@ -602,6 +931,16 @@ fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Resu
     let Some(closure_refs) = record["closure"]["resultRefs"].as_array() else {
         return Ok(false);
     };
+    if record["closure"]["kind"] == "direct" {
+        let Some(expected_inputs) = record["closure"]["inputsSha256"].as_str() else {
+            return Ok(false);
+        };
+        if current_inputs(loaded)? != expected_inputs {
+            return Ok(false);
+        }
+    } else if closure_refs.is_empty() {
+        return Ok(false);
+    }
     for reference in closure_refs {
         let Some(reference) = reference.as_str() else {
             return Ok(false);
@@ -616,6 +955,12 @@ fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Resu
         };
         for item in items {
             if item["disposition"].as_str() == Some("open") {
+                continue;
+            }
+            if item["disposition"].as_str() == Some("direct") {
+                if !direct_completion_current(loaded, record, item)? {
+                    return Ok(false);
+                }
                 continue;
             }
             let Some(refs) = item["resultRefs"].as_array() else {

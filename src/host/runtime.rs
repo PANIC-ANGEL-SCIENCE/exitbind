@@ -19,6 +19,77 @@ pub(crate) enum Activation {
     Blocked,
 }
 
+impl Activation {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Governed => "governed",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ActivationFacts {
+    pub(crate) material_consequence: bool,
+    pub(crate) promotion_required: bool,
+    pub(crate) available: bool,
+    pub(crate) activated: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ActivationReason {
+    NoMaterialConsequence,
+    GovernanceAvailable,
+    GovernanceUnavailable,
+}
+
+impl ActivationReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::NoMaterialConsequence => "no_material_consequence",
+            Self::GovernanceAvailable => "governance_available",
+            Self::GovernanceUnavailable => "governance_unavailable",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ActivationAssessment {
+    pub(crate) activation: Activation,
+    pub(crate) reason: ActivationReason,
+    pub(crate) provenance: &'static str,
+}
+
+impl ActivationAssessment {
+    pub(crate) fn value(self) -> Value {
+        json!({
+            "activation": self.activation.as_str(),
+            "reason": self.reason.as_str(),
+            "provenance": self.provenance,
+        })
+    }
+}
+
+pub(crate) fn assess_activation(facts: ActivationFacts) -> ActivationAssessment {
+    let activation = classify_activation(
+        facts.material_consequence,
+        facts.promotion_required,
+        facts.available,
+        facts.activated,
+    );
+    let reason = match activation {
+        Activation::Direct => ActivationReason::NoMaterialConsequence,
+        Activation::Governed => ActivationReason::GovernanceAvailable,
+        Activation::Blocked => ActivationReason::GovernanceUnavailable,
+    };
+    ActivationAssessment {
+        activation,
+        reason,
+        provenance: "host_reported",
+    }
+}
+
 #[allow(dead_code)]
 pub(crate) fn classify_activation(
     material_consequence: bool,
@@ -163,7 +234,7 @@ pub fn run() -> Result<(), String> {
 /// A session in a repository Exitbind does not govern yet still needs to know
 /// Exitbind exists and when to reach for it. This stays small: the detailed
 /// protocol arrives only after the project is configured.
-const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor material repository work - multi-file changes, refactors, migrations, compatibility-sensitive edits, resumed work, or changes that need a check or review - select Exitbind before consequential edits.\nStart or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nKeep read-only questions and tiny obvious reversible edits direct.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
+const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor work with a material consequence or promotion requirement - authority, trust, security, data loss, release, lifecycle, evidence, compatibility, or a required check or review - select Exitbind before consequential edits. Keep read-only planning, disposable prototypes, and tiny obvious reversible edits direct. For important work, the Lead recommends review; the owner chooses whether it is required and may revise that choice while work continues.\nStart or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nIf required activation is unavailable or fails, report the refusal and its failing layer; do not downgrade the work to direct execution.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
 
 fn unconfigured_text(event: &str, update: Option<&str>) -> Option<String> {
     // The legacy Soulmate surface keeps its original silent contract; only the
@@ -384,7 +455,9 @@ fn contained_existing(root: &Path, target: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_activation, redact, Activation};
+    use serde_json::json;
+
+    use super::{assess_activation, classify_activation, redact, Activation, ActivationFacts};
 
     #[test]
     fn activation_uses_consequence_and_promotion_not_file_count() {
@@ -403,6 +476,27 @@ mod tests {
         assert_eq!(
             classify_activation(false, true, true, false),
             Activation::Blocked
+        );
+    }
+
+    #[test]
+    fn activation_assessment_is_typed_and_provenance_labeled() {
+        let assessment = assess_activation(ActivationFacts {
+            material_consequence: false,
+            promotion_required: false,
+            available: false,
+            activated: false,
+        });
+        assert_eq!(assessment.activation, Activation::Direct);
+        assert_eq!(assessment.reason.as_str(), "no_material_consequence");
+        assert_eq!(assessment.provenance, "host_reported");
+        assert_eq!(
+            assessment.value(),
+            json!({
+                "activation": "direct",
+                "reason": "no_material_consequence",
+                "provenance": "host_reported"
+            })
         );
     }
 

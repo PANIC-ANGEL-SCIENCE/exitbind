@@ -61,6 +61,8 @@ pub fn start(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 
@@ -79,6 +81,8 @@ pub fn start_with_policy(
     preserve_requirement: Option<&str>,
     preservation_check_command: Option<&str>,
     preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -97,6 +101,7 @@ pub fn start_with_policy(
         preservation_check_command,
         preservation_proof_origin,
     )?;
+    let extension = extension_from_cli(basis, review_policy)?;
     if check_policy.is_some() && !has_worker_stage(&plan) {
         return Err("checked run requires a workflow with at least one worker stage".into());
     }
@@ -167,8 +172,24 @@ pub fn start_with_policy(
         if let Some(preservation) = &preservation {
             value["preservation"] = preservation.value();
         }
+        if let Some(extension) = &extension {
+            value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+            if let Some(basis) = &extension.basis {
+                value["basis"] = basis.value();
+            }
+            value["reviewPolicy"] = extension.review.value();
+        }
         if version >= 5 {
-            value["subject"] = subject(goal, &value["plan"], &config_sha, &run_id);
+            value["subject"] = subject(
+                goal,
+                &value["plan"],
+                &config_sha,
+                &run_id,
+                extension
+                    .as_ref()
+                    .and_then(|x| x.basis.as_ref())
+                    .map(|x| x.sha256.as_str()),
+            );
         }
         if version >= 6 {
             value["governor"] = json!({
@@ -184,6 +205,63 @@ pub fn start_with_policy(
         Ok(event)
     })?;
     result(&[event])
+}
+
+/// Record the owner-controlled review choice for the current marked run.
+/// This is a ledger transition, so a later choice is explicitly chained to
+/// the prior decision and cannot be inferred from a missing review.
+pub fn review_policy(
+    loaded: &Loaded,
+    agent: &str,
+    ledger: &str,
+    decision: &str,
+    reason: Option<&str>,
+) -> Result<Value, String> {
+    let path = ledger_path(&loaded.state_root, ledger, false)?;
+    let targets = [path.path.as_path(), path.lock.as_path()];
+    crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+    with_lock(&path, || {
+        let (_, events, source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        assert_no_drift(loaded, &state)?;
+        crate::run::artifact::assert_current(loaded, &state)?;
+        if state["status"] != "running" || state.get("basisProtocol").is_none() {
+            return Err("review policy changes require a marked running run".into());
+        }
+        let previous = state["reviewPolicy"]["sha256"]
+            .as_str()
+            .ok_or("run has no current review policy")?;
+        let review = crate::kernel::basis::review_value_with_previous(
+            decision,
+            reason.unwrap_or("owner decision supplied through the explicit run interface"),
+            Some(previous),
+        )?;
+        let last = events.last().ok_or("run ledger has no event head")?;
+        let event = run_state::make_event(json!({
+            "version": 8,
+            "kind": "run",
+            "producer": crate::producer::evidence_for_version(8),
+            "action": "review_policy",
+            "runId": state["runId"],
+            "stage": state["currentStage"],
+            "attempt": state["attempt"],
+            "agent": agent,
+            "role": "lead",
+            "basisProtocol": crate::kernel::basis::PROTOCOL_VERSION,
+            "basisSha256": state["basis"]["sha256"],
+            "previousDecisionSha256": previous,
+            "reviewPolicy": review.value(),
+            "previousEventSha256": last["eventSha256"],
+            "timestamp": nondecreasing(&last["timestamp"])?
+        }));
+        let mut all = events;
+        all.push(event.clone());
+        let next_state = reduce_live(loaded, &all)?;
+        append(&path, &event, false, &source)?;
+        Ok(
+            json!({"valid":true,"event":event,"status":next_state["status"],"assignments":crate::run::assignment::pending(&next_state)}),
+        )
+    })
 }
 
 pub fn next(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
@@ -253,6 +331,7 @@ pub(crate) fn current_result_ref(loaded: &Loaded, reference: &str) -> Result<boo
     Ok(false)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn submit(
     loaded: &Loaded,
     agent: &str,
@@ -261,6 +340,7 @@ pub fn submit(
     artifact: &str,
     artifact_root: Option<&str>,
     reason: Option<&str>,
+    disposition: Option<&str>,
 ) -> Result<Value, String> {
     if agent.trim().is_empty() {
         return Err("agent is required".into());
@@ -277,6 +357,7 @@ pub fn submit(
         reason,
         None,
         None,
+        disposition,
         SubmitSubject {
             root: artifact_root,
             artifact: || Ok(artifact),
@@ -293,6 +374,8 @@ pub(crate) struct AssignmentIdentity {
     pub(crate) attempt: u64,
     pub(crate) agent: String,
     pub(crate) role: String,
+    pub(crate) basis_sha256: Option<String>,
+    pub(crate) review_decision_sha256: Option<String>,
 }
 
 impl AssignmentIdentity {
@@ -315,6 +398,8 @@ impl AssignmentIdentity {
                 .as_str()
                 .ok_or("current work action has no role")?
                 .to_owned(),
+            basis_sha256: packet["basisSha256"].as_str().map(str::to_owned),
+            review_decision_sha256: packet["reviewDecisionSha256"].as_str().map(str::to_owned),
         })
     }
 
@@ -323,11 +408,14 @@ impl AssignmentIdentity {
             && assignment["attempt"].as_u64() == Some(self.attempt)
             && assignment["agent"].as_str() == Some(&self.agent)
             && assignment["role"].as_str() == Some(&self.role)
+            && assignment["basisSha256"].as_str() == self.basis_sha256.as_deref()
+            && assignment["reviewDecisionSha256"].as_str() == self.review_decision_sha256.as_deref()
     }
 }
 
 /// Submit a work result after revalidating the façade's exact assignment
 /// under the ledger lock.  The artifact is produced only after that check.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn submit_for_assignment<F>(
     loaded: &Loaded,
     ledger: &str,
@@ -335,6 +423,7 @@ pub(crate) fn submit_for_assignment<F>(
     expected: AssignmentIdentity,
     outcome: &str,
     reason: Option<&str>,
+    disposition: Option<&str>,
     artifact: F,
 ) -> Result<Value, String>
 where
@@ -353,6 +442,7 @@ where
         reason,
         Some(&expected),
         Some(&assignment_sha256),
+        disposition,
         SubmitSubject {
             root: Some("state"),
             artifact,
@@ -957,6 +1047,7 @@ fn submit_locked<F>(
     reason: Option<&str>,
     expected: Option<&AssignmentIdentity>,
     assignment_sha256: Option<&str>,
+    disposition: Option<&str>,
     subject: SubmitSubject<'_, F>,
 ) -> Result<Value, String>
 where
@@ -977,6 +1068,22 @@ where
         }
         assert_no_drift(loaded, &state)?;
         crate::run::artifact::assert_current(loaded, &state)?;
+        if agent == "lead"
+            && outcome == "accepted"
+            && state["reviewPolicy"]["decision"] == "required"
+            && state["plan"]["stages"].as_array().is_some_and(|stages| {
+                stages.iter().any(|stage| {
+                    stage["stage"] == state["currentStage"]
+                        && stage["agents"].as_array().is_some_and(|agents| {
+                            agents
+                                .iter()
+                                .any(|candidate| candidate["role"] == "reviewer")
+                        })
+                })
+            })
+        {
+            return Err("canonical acceptance requires reviewer approval".into());
+        }
         let assignment = crate::run::assignment::pending(&state)
             .into_iter()
             .find(|item| item["agent"] == agent)
@@ -1086,6 +1193,19 @@ where
                 } else {
                     state["subject"]["sha256"].clone()
                 };
+        }
+        if version >= 8 && state.get("basisProtocol").is_some() {
+            event_value["basisSha256"] = state["basis"]["sha256"].clone();
+            event_value["reviewDecisionSha256"] = state["reviewPolicy"]["sha256"].clone();
+        }
+        if outcome == "disposition" {
+            let raw = disposition
+                .or(reason)
+                .ok_or("a disposition submission requires --disposition JSON")?;
+            let parsed: Value = serde_json::from_str(raw)
+                .map_err(|error| format!("disposition is not valid JSON: {error}"))?;
+            let disposition = crate::kernel::basis::parse_disposition(&parsed, "disposition")?;
+            event_value["disposition"] = disposition.value();
         }
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
             event_value["fallback"] = fallback;
@@ -2517,7 +2637,8 @@ pub fn supersede_with_policy(
             event_value["preservation"] = preservation.value();
         }
         if version >= 5 {
-            event_value["subject"] = subject(goal, &event_value["plan"], &config_sha, &run_id);
+            event_value["subject"] =
+                subject(goal, &event_value["plan"], &config_sha, &run_id, None);
         }
         if version >= 6 {
             event_value["governor"] = json!({
@@ -2703,7 +2824,13 @@ fn result(events: &[Value]) -> Result<Value, String> {
     }))
 }
 
-fn subject(goal: &str, plan: &Value, config_sha: &str, run_id: &str) -> Value {
+fn subject(
+    goal: &str,
+    plan: &Value,
+    config_sha: &str,
+    run_id: &str,
+    basis_sha256: Option<&str>,
+) -> Value {
     let goal_sha = hash::text(goal);
     let plan_sha = hash::value(plan);
     let basis = json!({
@@ -2717,10 +2844,37 @@ fn subject(goal: &str, plan: &Value, config_sha: &str, run_id: &str) -> Value {
         "workerArtifactSha256": Value::Null,
         "transitionSha256": Value::Null,
     });
-    let sha = hash::value(&basis);
     let mut value = basis;
+    if let Some(basis_sha256) = basis_sha256 {
+        value["basisSha256"] = json!(basis_sha256);
+    }
+    let sha = hash::value(&value);
     value["sha256"] = json!(sha);
     value
+}
+
+struct ProtocolExtension {
+    basis: Option<crate::kernel::basis::Basis>,
+    review: crate::kernel::basis::ReviewDecision,
+}
+
+fn extension_from_cli(
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+) -> Result<Option<ProtocolExtension>, String> {
+    if basis.is_none() && review_policy.is_none() {
+        return Ok(None);
+    }
+    let review_policy = review_policy
+        .ok_or("--basis requires an explicit --review-policy required|omitted decision")?;
+    let basis = basis
+        .map(|value| crate::kernel::basis::parse_basis_text(value, "basis"))
+        .transpose()?;
+    let review = crate::kernel::basis::review_value(
+        review_policy,
+        "owner decision supplied through the explicit run interface",
+    )?;
+    Ok(Some(ProtocolExtension { basis, review }))
 }
 
 fn has_worker_stage(plan: &Value) -> bool {

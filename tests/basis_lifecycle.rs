@@ -1,0 +1,781 @@
+#![cfg(unix)]
+
+mod support;
+
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
+    process::{Command, Output, Stdio},
+};
+
+struct Fixture {
+    root: PathBuf,
+}
+
+impl Fixture {
+    fn new(label: &str) -> Self {
+        let root = support::temp(label);
+        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .args(["init", "--mode", "portable", "--root"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        assert!(init.status.success(), "{init:?}");
+        Self { root }
+    }
+
+    fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .current_dir(&self.root)
+            .args(args)
+            .arg("--config")
+            .arg(self.root.join("exitbind.json"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(input) = input {
+            command.stdin(Stdio::piped());
+            let mut child = command.spawn().unwrap();
+            child.stdin.take().unwrap().write_all(input).unwrap();
+            child.wait_with_output().unwrap()
+        } else {
+            command.output().unwrap()
+        }
+    }
+
+    fn value(&self, args: &[&str]) -> Value {
+        self.value_with_input(args, b"")
+    }
+
+    fn value_with_input(&self, args: &[&str], input: &[u8]) -> Value {
+        let output = self.call(args, Some(input));
+        assert!(
+            output.status.success(),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "{args:?}: invalid JSON ({error}): {}",
+                String::from_utf8_lossy(&output.stdout)
+            )
+        })
+    }
+
+    fn artifact(&self, name: &str, body: &[u8]) -> String {
+        let path = self.root.join(".exitbind/artifacts").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, body).unwrap();
+        format!(".exitbind/artifacts/{name}")
+    }
+
+    fn ledger(&self) -> &'static str {
+        ".exitbind/runs/basis.jsonl"
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            let fields = keys
+                .into_iter()
+                .map(|key| format!("{key:?}:{}", canonical(&object[key])))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{fields}}}")
+        }
+        Value::Array(values) => format!(
+            "[{}]",
+            values.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+fn hash_value(value: &Value) -> String {
+    let digest = Sha256::digest(canonical(value).as_bytes());
+    format!("{digest:x}")
+}
+
+fn basis_with_hash(mut basis: Value) -> Value {
+    basis["sha256"] = json!(hash_value(&basis));
+    basis
+}
+
+fn disposition_with_hash(mut disposition: Value) -> Value {
+    disposition["sha256"] = json!(hash_value(&disposition));
+    disposition
+}
+
+fn ledger_events(fixture: &Fixture) -> Vec<Value> {
+    ledger_events_at(fixture, fixture.ledger())
+}
+
+fn ledger_events_at(fixture: &Fixture, ledger: &str) -> Vec<Value> {
+    fs::read_to_string(fixture.root.join(ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+#[test]
+fn marked_basis_contradiction_successor_preserves_governor_and_currentness() {
+    let fixture = Fixture::new("basis-lifecycle");
+    let basis = json!({
+        "version": 1,
+        "constraints": ["preserve history"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["contradiction routes to Lead"]
+    });
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "basis lifecycle",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+        "--basis",
+        &serde_json::to_string(&basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let start_event = ledger_events(&fixture).pop().unwrap();
+    assert_eq!(start_event["version"], 8);
+    assert_eq!(start_event["basisProtocol"], 1);
+    let original_basis_sha = start_event["basis"]["sha256"].as_str().unwrap().to_owned();
+    let initial_governor = fixture.value(&["run", "inspect", fixture.ledger()])["governor"].clone();
+
+    let duplicate_policy = fixture.call(
+        &[
+            "run",
+            "review-policy",
+            "lead",
+            fixture.ledger(),
+            "--decision",
+            "required",
+        ],
+        None,
+    );
+    assert!(!duplicate_policy.status.success());
+    assert!(
+        String::from_utf8_lossy(&duplicate_policy.stderr).contains("duplicate")
+            || String::from_utf8_lossy(&duplicate_policy.stdout).contains("duplicate")
+    );
+    assert_eq!(ledger_events(&fixture).len(), 1);
+
+    let lead = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(lead["assignments"][0]["role"], "lead");
+    let lead_artifact = fixture.artifact("lead.md", b"scoped basis work");
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "scoped",
+            "--artifact",
+            &lead_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"scoped basis work",
+    );
+
+    let worker = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(worker["assignments"][0]["role"], "worker");
+    let worker_artifact = fixture.artifact("worker.md", b"contradiction finding");
+    let contradiction = fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "worker",
+            fixture.ledger(),
+            "--outcome",
+            "contradiction",
+            "--artifact",
+            &worker_artifact,
+            "--artifact-root",
+            "state",
+            "--reason",
+            "basis assumption failed",
+        ],
+        b"contradiction finding",
+    );
+    let finding_sha = contradiction["event"]["eventSha256"].as_str().unwrap();
+    let pending = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(pending["assignments"][0]["role"], "lead");
+    assert_eq!(pending["assignments"][0]["stage"], 4);
+
+    let successor = basis_with_hash(json!({
+        "version": 1,
+        "constraints": ["preserve history", "require currentness"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["successor rechecks contradiction"]
+    }));
+    let disposition = disposition_with_hash(json!({
+        "category": "contract_or_design_defect",
+        "findingSha256s": [finding_sha],
+        "basisSha256": original_basis_sha,
+        "causalAssumption": "the original basis omitted a required currentness constraint",
+        "affectedPaths": ["worker implementation"],
+        "repairBoundary": "successor basis and fresh worker evidence",
+        "decisiveRegression": "contradiction routes through Lead disposition",
+        "invalidatedEvidence": [finding_sha],
+        "successorBasis": successor,
+    }));
+    let disposition_text = serde_json::to_string(&disposition).unwrap();
+    let disposition_artifact = fixture.artifact("disposition.md", b"Lead disposition");
+    let events_before_invalid = ledger_events(&fixture).len();
+    let mut wrong_finding = disposition.clone();
+    wrong_finding["findingSha256s"] = json!(["0".repeat(64)]);
+    let wrong_finding = disposition_with_hash(wrong_finding);
+    let mut wrong_basis = disposition.clone();
+    wrong_basis["basisSha256"] = json!("0".repeat(64));
+    let wrong_basis = disposition_with_hash(wrong_basis);
+    let mut wrong_category = disposition.clone();
+    wrong_category["category"] = json!("unknown_category");
+    let wrong_category = disposition_with_hash(wrong_category);
+    for (agent, raw) in [
+        ("lead", serde_json::to_string(&wrong_finding).unwrap()),
+        ("lead", serde_json::to_string(&wrong_basis).unwrap()),
+        ("lead", serde_json::to_string(&wrong_category).unwrap()),
+        ("worker", disposition_text.clone()),
+    ] {
+        let refused = fixture.call(
+            &[
+                "run",
+                "submit",
+                agent,
+                fixture.ledger(),
+                "--outcome",
+                "disposition",
+                "--artifact",
+                &disposition_artifact,
+                "--artifact-root",
+                "state",
+                "--disposition",
+                &raw,
+            ],
+            None,
+        );
+        assert!(
+            !refused.status.success(),
+            "invalid disposition unexpectedly accepted"
+        );
+        assert_eq!(ledger_events(&fixture).len(), events_before_invalid);
+    }
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "disposition",
+            "--artifact",
+            &disposition_artifact,
+            "--artifact-root",
+            "state",
+            "--disposition",
+            &disposition_text,
+        ],
+        b"Lead disposition",
+    );
+
+    let fresh_worker = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(fresh_worker["assignments"][0]["role"], "worker");
+    assert_ne!(
+        fresh_worker["assignments"][0]["basisSha256"],
+        original_basis_sha
+    );
+    let state = fixture.value(&["run", "status", fixture.ledger(), "--json"]);
+    let inspect = fixture.value(&["run", "inspect", fixture.ledger()]);
+    assert_eq!(state["status"], "running");
+    assert_eq!(
+        inspect["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["action"] == "submit" && event["outcome"] == "disposition")
+            .count(),
+        1
+    );
+    assert_eq!(inspect["governor"]["enabled"], true);
+    assert!(inspect["governor"]["spent"].is_number());
+    assert!(inspect["governor"]["consumedGrants"].is_array());
+    assert_eq!(inspect["governor"]["spent"], initial_governor["spent"]);
+    assert_eq!(
+        inspect["governor"]["consumedGrants"],
+        initial_governor["consumedGrants"]
+    );
+    assert_eq!(
+        inspect["governor"]["lineageSha256"],
+        initial_governor["lineageSha256"]
+    );
+
+    let fresh_artifact = fixture.artifact("fresh-worker.md", b"fresh successor evidence");
+    let completed = fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "worker",
+            fixture.ledger(),
+            "--outcome",
+            "completed",
+            "--artifact",
+            &fresh_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"fresh successor evidence",
+    );
+    fixture.value(&[
+        "run",
+        "record-check",
+        fixture.ledger(),
+        "--target",
+        completed["event"]["eventSha256"].as_str().unwrap(),
+        "--check-command",
+        "true",
+        "--exit-code",
+        "0",
+        "--duration-ms",
+        "1",
+    ]);
+    fs::write(
+        fixture.root.join(&fresh_artifact),
+        b"tampered successor evidence",
+    )
+    .unwrap();
+    let stale = fixture.value(&["run", "status", fixture.ledger(), "--json"]);
+    assert_eq!(
+        stale["artifact"]["status"], "drifted",
+        "tampered artifact unexpectedly remained current: {stale}"
+    );
+
+    let events = ledger_events(&fixture);
+    assert!(events
+        .iter()
+        .any(|event| event["action"] == "submit" && event["outcome"] == "contradiction"));
+    assert!(events
+        .iter()
+        .any(|event| event["action"] == "submit" && event["outcome"] == "disposition"));
+    assert!(events
+        .iter()
+        .any(|event| event["action"] == "start" && event["version"] == 8));
+    let events_after_disposition = events.len();
+    let duplicate = fixture.call(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "disposition",
+            "--artifact",
+            &disposition_artifact,
+            "--artifact-root",
+            "state",
+            "--disposition",
+            &disposition_text,
+        ],
+        None,
+    );
+    assert!(!duplicate.status.success());
+    assert_eq!(ledger_events(&fixture).len(), events_after_disposition);
+}
+
+#[test]
+fn successor_retains_a_real_governor_grant_and_owner_lineage() {
+    let fixture = Fixture::new("basis-governor-successor");
+    let basis = json!({
+        "version": 1,
+        "constraints": ["preserve governor lineage"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["review rework gets a Lead disposition"]
+    });
+    let begin = fixture.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "governor successor",
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+        "--basis",
+        &serde_json::to_string(&basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let lead = begin["next"].clone();
+    let lead_handle = lead["assignment"].as_str().unwrap();
+    let scoped = fixture.value_with_input(
+        &["work", "return", &work, lead_handle, "--outcome", "scoped"],
+        b"scope",
+    );
+    let worker = scoped["next"].clone();
+    let worker_handle = worker["assignment"].as_str().unwrap();
+    let permit = fixture.value(&[
+        "work",
+        "permit",
+        &work,
+        worker_handle,
+        "--operation",
+        "successor worker mutation",
+    ]);
+    assert_eq!(permit["governor"]["enabled"], true);
+    assert!(
+        permit["governor"].is_object(),
+        "invalid governor projection: {permit}"
+    );
+    let granted = fixture.value_with_input(
+        &[
+            "work",
+            "return",
+            &work,
+            worker_handle,
+            "--outcome",
+            "completed",
+        ],
+        b"worker evidence",
+    );
+    fixture.value(&["work", "check", &work]);
+    let reviewer = fixture.value(&["work", "next", &work])["next"].clone();
+    assert_eq!(reviewer["role"], "reviewer");
+    let rework = fixture.value_with_input(
+        &[
+            "work",
+            "return",
+            &work,
+            reviewer["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        b"review finding",
+    );
+    assert_eq!(rework["next"]["role"], "lead");
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let before = fixture.value(&["run", "inspect", &ledger]);
+    let events_before = ledger_events_at(&fixture, &ledger);
+    let finding = events_before
+        .iter()
+        .find(|event| event["outcome"] == "rework")
+        .unwrap()["eventSha256"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let current_basis = events_before[0]["basis"]["sha256"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let successor = basis_with_hash(json!({
+        "version": 1,
+        "constraints": ["preserve governor lineage", "preserve review finding"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["fresh worker evidence"]
+    }));
+    let disposition = disposition_with_hash(json!({
+        "category": "contract_or_design_defect",
+        "findingSha256s": [finding],
+        "basisSha256": current_basis,
+        "causalAssumption": "review rework identifies a design correction",
+        "affectedPaths": ["reviewed worker path"],
+        "repairBoundary": "successor basis and fresh evidence",
+        "decisiveRegression": "the next worker is bound to the successor",
+        "invalidatedEvidence": [finding],
+        "successorBasis": successor,
+    }));
+    let lead_after_rework = rework["next"]["assignment"].as_str().unwrap();
+    let after = fixture.value_with_input(
+        &[
+            "work",
+            "return",
+            &work,
+            lead_after_rework,
+            "--outcome",
+            "disposition",
+            "--disposition",
+            &serde_json::to_string(&disposition).unwrap(),
+        ],
+        b"Lead disposition",
+    );
+    assert_eq!(after["next"]["role"], "worker");
+    assert_eq!(after["next"]["resolvedActor"], "worker");
+    assert!(after["next"]["packet"]["context"].is_object());
+    let after_inspect = fixture.value(&["run", "inspect", &ledger]);
+    assert_eq!(before["governor"]["enabled"], true);
+    assert!(before["governor"]["spent"].as_u64().unwrap_or(0) > 0);
+    assert!(!before["governor"]["consumedGrants"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(after_inspect["governor"]["enabled"], true);
+    assert_eq!(
+        after_inspect["governor"]["spent"],
+        before["governor"]["spent"]
+    );
+    assert_eq!(
+        after_inspect["governor"]["consumedGrants"],
+        before["governor"]["consumedGrants"]
+    );
+    assert_eq!(
+        after_inspect["governor"]["lineageSha256"],
+        before["governor"]["lineageSha256"]
+    );
+    let _ = granted;
+}
+
+#[test]
+fn marked_required_to_omitted_accepts_and_exit_receipt_detects_tamper() {
+    let fixture = Fixture::new("review-omission");
+    let basis = json!({
+        "version": 1,
+        "constraints": ["preserve findings"],
+        "openZones": [],
+        "decisiveCases": ["omission remains explicit"]
+    });
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "review omission",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+        "--basis",
+        &serde_json::to_string(&basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let lead = fixture.value(&["run", "next", fixture.ledger()]);
+    let lead_artifact = fixture.artifact("lead.md", b"lead scope");
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "scoped",
+            "--artifact",
+            &lead_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"lead scope",
+    );
+    let worker = fixture.value(&["run", "next", fixture.ledger()]);
+    let worker_artifact = fixture.artifact("worker.md", b"worker finding");
+    let completed = fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "worker",
+            fixture.ledger(),
+            "--outcome",
+            "completed",
+            "--artifact",
+            &worker_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"worker finding",
+    );
+    fixture.value(&[
+        "run",
+        "record-check",
+        fixture.ledger(),
+        "--target",
+        completed["event"]["eventSha256"].as_str().unwrap(),
+        "--check-command",
+        "true",
+        "--exit-code",
+        "0",
+        "--duration-ms",
+        "1",
+    ]);
+    let reviewer = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(
+        reviewer["assignments"][0]["role"], "reviewer",
+        "unexpected reviewer-stage view: {reviewer}"
+    );
+    fixture.value(&[
+        "run",
+        "review-policy",
+        "lead",
+        fixture.ledger(),
+        "--decision",
+        "omitted",
+        "--reason",
+        "owner accepted the explicit omission after the worker finding",
+    ]);
+    let final_lead = fixture.value(&["run", "next", fixture.ledger()]);
+    assert_eq!(final_lead["assignments"][0]["role"], "lead");
+    assert_eq!(final_lead["assignments"][0]["stage"], 4);
+    let acceptance_artifact = fixture.artifact("acceptance.md", b"accepted with finding preserved");
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "accepted",
+            "--artifact",
+            &acceptance_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"accepted with finding preserved",
+    );
+    let status = fixture.value(&["run", "status", fixture.ledger(), "--json"]);
+    assert_eq!(status["status"], "accepted");
+    assert_eq!(status["review"]["status"], "omitted");
+    assert_eq!(status["review"]["source"], "owner-reported");
+    assert_eq!(status["evidence"]["submissionCount"], 3);
+
+    let receipt = fixture.value(&[
+        "receipt",
+        fixture.ledger(),
+        "--output",
+        ".exitbind/receipts/omitted.json",
+        "--json",
+    ]);
+    assert_eq!(receipt["review"]["status"], "omitted");
+    let receipt_path = fixture.root.join(".exitbind/receipts/omitted.json");
+    let verified = fixture.value(&["verify", ".exitbind/receipts/omitted.json"]);
+    assert_eq!(verified["valid"], true);
+    let mut tampered: Value = serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    tampered["review"]["status"] = json!("approved");
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+    let invalid = fixture.call(&["verify", ".exitbind/receipts/omitted.json"], None);
+    assert!(!invalid.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid.stdout).contains("receipt_mismatch")
+            || String::from_utf8_lossy(&invalid.stderr).contains("receipt_mismatch")
+    );
+
+    let events = ledger_events(&fixture);
+    assert!(events.iter().any(|event| event["action"] == "review_policy"
+        && event["reviewPolicy"]["decision"] == "omitted"));
+    assert!(!events.iter().any(|event| event["role"] == "reviewer"));
+    let finding = events
+        .iter()
+        .find(|event| event["role"] == "worker" && event["outcome"] == "completed")
+        .unwrap();
+    let finding_path = finding["artifact"]["path"].as_str().unwrap();
+    assert!(fs::read(fixture.root.join(finding_path))
+        .unwrap()
+        .windows(b"worker finding".len())
+        .any(|window| window == b"worker finding"));
+    let _ = lead;
+    let _ = worker;
+}
+
+#[test]
+fn unmarked_historic_start_remains_unmarked() {
+    let fixture = Fixture::new("historic-unmarked");
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "historic",
+        "--ledger",
+        fixture.ledger(),
+    ]);
+    let start_event = ledger_events(&fixture).pop().unwrap();
+    assert_eq!(start_event["version"], 8);
+    assert!(start_event.get("basisProtocol").is_none());
+    assert!(start_event.get("reviewPolicy").is_none());
+    let events = ledger_events(&fixture);
+    assert_eq!(events.len(), 1);
+    assert!(events[0].get("basis").is_none());
+}
+
+#[test]
+fn marked_extension_is_rejected_by_the_installed_older_reader() {
+    let Ok(old_reader) = std::env::var("EXITBIND_V022_BIN") else {
+        eprintln!("skipped: set EXITBIND_V022_BIN to the installed v0.22 reader");
+        return;
+    };
+    let version = Command::new(&old_reader).arg("--version").output().unwrap();
+    assert!(version.status.success(), "older reader --version failed");
+    let version_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&version.stdout),
+        String::from_utf8_lossy(&version.stderr)
+    );
+    assert!(
+        version_text.contains("0.22"),
+        "unexpected reader version: {version_text}"
+    );
+    let fixture = Fixture::new("old-reader-marked");
+    let basis = json!({
+        "version": 1,
+        "constraints": ["preserve history"],
+        "openZones": [],
+        "decisiveCases": ["old readers refuse the marker"]
+    });
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "old reader",
+        "--ledger",
+        fixture.ledger(),
+        "--basis",
+        &serde_json::to_string(&basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let output = Command::new(&old_reader)
+        .current_dir(&fixture.root)
+        .args([
+            "run",
+            "status",
+            fixture.ledger(),
+            "--config",
+            "exitbind.json",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        text.contains("unknown field") || text.contains("unsupported"),
+        "{text}"
+    );
+}
