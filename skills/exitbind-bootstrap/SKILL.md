@@ -1,6 +1,6 @@
 ---
 name: exitbind
-description: Automatically use Exitbind for material coding work in a repository - refactors, migrations, bug fixes, and changes with authority, trust, security, data-loss, release, lifecycle, evidence, compatibility, or check/review consequences. Bind each check, review, and acceptance to the exact current result so stale evidence cannot be reused. Keep read-only questions and tiny obvious reversible edits direct.
+description: Use Exitbind when the actual target and existing project policy make coding work consequential - refactors, migrations, bug fixes, and changes with authority, trust, security, data-loss, release, lifecycle, evidence, compatibility, or check/review consequences. Bind each check, review, and acceptance to the exact current result so stale evidence cannot be reused. Keep read-only questions and tiny obvious reversible edits direct.
 ---
 
 <!-- exitbind-managed-bootstrap:v1 -->
@@ -12,6 +12,14 @@ result has earned acceptance: checks, review, and lead acceptance count only for
 the exact result they were taken on.
 
 For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+
+## Check applicability before setup
+
+Use the actual target and any existing project policy to decide whether the
+task requires governed acceptance. A repository or configuration filename by
+itself does not activate Exitbind, and an installed bootstrap is not an active
+session. If the target and policy do not require governance, keep ordinary work
+on the native host without initialization.
 
 ## Select it for material work
 

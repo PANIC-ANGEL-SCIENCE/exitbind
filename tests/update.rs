@@ -860,7 +860,7 @@ fn an_up_to_date_binary_reports_and_repairs_only_what_it_manages() {
     assert!(!home.join(".claude/skills/exitbind/SKILL.md").exists());
     assert!(fs::read_to_string(&codex)
         .unwrap()
-        .contains("Automatically use Exitbind for material coding work"));
+        .contains("Use Exitbind when the actual target and existing project policy make coding work consequential"));
     fs::remove_dir_all(&release.root).unwrap();
 }
 

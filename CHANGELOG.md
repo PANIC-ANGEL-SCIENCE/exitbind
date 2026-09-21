@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.23.1-rc.2
+
+- Keep ordinary low-consequence work outside Exitbind project initialization
+  when the target has no applicable governed policy.
+- Distinguish clean unconfigured absence from malformed, unsafe, or unresolved
+  target configuration; unresolved routing never claims native-only status.
+- Preserve existing governed project behavior and host-managed skill paths.
+
 ## 0.23.1-rc.1
 
 - Make direct handling explicit in installed guidance and session hooks: routine

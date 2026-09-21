@@ -142,37 +142,75 @@ pub fn run() -> Result<(), String> {
         .or_else(|| object.get("current_directory"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    let Some(project) = absolute_directory(cwd) else {
-        if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
-            emit(event, &text)?;
+    let project = match absolute_directory(cwd) {
+        Ok(project) => project,
+        Err(()) => {
+            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
+            {
+                emit(event, &text)?;
+            }
+            return Ok(());
         }
-        return Ok(());
     };
     let portable = if crate::producer::exitbind_surface() {
         project.join("exitbind.json")
     } else {
         project.join("soulmate.json")
     };
-    let config_path = if contained(&project, &portable)
-        && portable.is_file()
-        && contained_existing(&project, &portable)
-    {
+    let portable_present = match fs::symlink_metadata(&portable) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => {
+            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
+            {
+                emit(event, &text)?;
+            }
+            return Ok(());
+        }
+    };
+    let config_path = if portable_present {
+        let safe = fs::symlink_metadata(&portable)
+            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+            && contained(&project, &portable)
+            && contained_existing(&project, &portable);
+        if !safe {
+            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
+            {
+                emit(event, &text)?;
+            }
+            return Ok(());
+        }
         portable
     } else {
         match crate::project::layout_types::config_for_product(&project) {
             Ok(Some(path)) => path,
-            _ => {
-                if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+            Ok(None) => {
+                if let Some(text) =
+                    routing_text(event, update_context.as_deref(), Routing::CleanAbsence)
+                {
+                    emit(event, &text)?;
+                }
+                return Ok(());
+            }
+            Err(_) => {
+                if let Some(text) =
+                    routing_text(event, update_context.as_deref(), Routing::Unresolved)
+                {
                     emit(event, &text)?;
                 }
                 return Ok(());
             }
         }
     };
-    let loaded = match crate::config::load(config_path.to_str()) {
+    let loaded = match config_path
+        .to_str()
+        .ok_or(())
+        .and_then(|path| crate::config::load(Some(path)).map_err(|_| ()))
+    {
         Ok(value) => value,
         Err(_) => {
-            if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
+            {
                 emit(event, &text)?;
             }
             return Ok(());
@@ -182,7 +220,7 @@ pub fn run() -> Result<(), String> {
         || (loaded.mode == crate::project::layout_types::Mode::Portable
             && !contained_existing(&project, &loaded.control_root))
     {
-        if let Some(text) = unconfigured_text(event, update_context.as_deref()) {
+        if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved) {
             emit(event, &text)?;
         }
         return Ok(());
@@ -238,17 +276,26 @@ pub fn run() -> Result<(), String> {
 /// A session in a repository Exitbind does not govern yet still needs to know
 /// Exitbind exists and when to reach for it. This stays small: the detailed
 /// protocol arrives only after the project is configured.
+#[derive(Clone, Copy)]
+enum Routing {
+    CleanAbsence,
+    Unresolved,
+}
+
+const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task. Ordinary work may use the native host without initialization. Use Exitbind only when the task or existing project policy requires governed acceptance.";
+const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
-const UNCONFIGURED: &str = "Exitbind is installed on this machine, and this project is not configured for it yet.\nFor work with a material consequence or promotion requirement - authority, trust, security, data loss, release, lifecycle, evidence, compatibility, or a required check or review - select Exitbind before consequential edits. Keep read-only planning, disposable prototypes, and tiny obvious reversible edits direct. For important work, the Lead recommends review; the owner chooses whether it is required and may revise that choice while work continues.\nOnly for selected governed work, start or continue with `exitbind work resume` or `exitbind work begin`. If the project must be configured first, explain that single project write and ask the owner before running `exitbind init --mode portable --root .`.\nIf required activation is unavailable or fails, report the refusal and its failing layer; do not downgrade the work to direct execution.\nDo not report Exitbind as active until a work handle, recorded check, review, or acceptance exists.";
-
-fn unconfigured_text(event: &str, update: Option<&str>) -> Option<String> {
+fn routing_text(event: &str, update: Option<&str>, routing: Routing) -> Option<String> {
     // The legacy Soulmate surface keeps its original silent contract; only the
     // Exitbind surface offers the bootstrap.
     if event != "SessionStart" || !crate::producer::exitbind_surface() {
         return update.map(str::to_owned);
     }
-    let mut text = format!("{UNCONFIGURED}\n{DIRECT_WORK}");
+    let mut text = match routing {
+        Routing::CleanAbsence => NATIVE_ABSENCE.to_owned(),
+        Routing::Unresolved => UNRESOLVED.to_owned(),
+    };
     if let Some(update) = update {
         text.push('\n');
         text.push_str(update);
@@ -443,12 +490,24 @@ fn safe_multiline(value: &str) -> String {
         })
         .collect()
 }
-fn absolute_directory(value: &str) -> Option<PathBuf> {
+fn absolute_directory(value: &str) -> Result<PathBuf, ()> {
     if value.is_empty() || value.contains('\0') || !Path::new(value).is_absolute() {
-        return None;
+        return Err(());
     }
     let path = PathBuf::from(value);
-    path.is_dir().then(|| fs::canonicalize(path).ok()).flatten()
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component);
+        let metadata = fs::symlink_metadata(&current).map_err(|_| ())?;
+        if metadata.file_type().is_symlink() {
+            return Err(());
+        }
+    }
+    let metadata = fs::symlink_metadata(&path).map_err(|_| ())?;
+    if !metadata.is_dir() {
+        return Err(());
+    }
+    fs::canonicalize(path).map_err(|_| ())
 }
 fn contained(root: &Path, target: &Path) -> bool {
     target.starts_with(root)

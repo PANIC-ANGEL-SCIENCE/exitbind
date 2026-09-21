@@ -77,8 +77,9 @@ fn install_makes_both_hosts_discoverable_and_status_separates_the_layers() {
         let text = fs::read_to_string(&path).unwrap();
         // The description carries the triggers a host matches before it ever
         // loads the body.
-        assert!(text.contains("description: Automatically use Exitbind for material coding work"));
+        assert!(text.contains("description: Use Exitbind when the actual target and existing project policy make coding work consequential"));
         assert!(text.contains("refactors, migrations"));
+        assert!(text.contains("Check applicability before setup"));
         assert!(text.contains("Keep read-only questions and tiny obvious reversible edits direct."));
         assert!(text.contains("<!-- exitbind-managed-bootstrap:v1 -->"));
         assert!(text.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
@@ -316,14 +317,17 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
     };
 
     let session = hook("SessionStart");
-    assert!(session.contains("not configured for it yet"), "{session}");
-    assert!(session.contains("select Exitbind before consequential edits"));
-    assert!(session.contains("exitbind init --mode portable --root ."));
-    assert!(session.contains("tiny obvious reversible edits direct"));
-    assert!(session.contains("Do not report Exitbind as active"));
-    assert!(session.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
-    assert!(session.contains("filename alone does not make a change consequential"));
-    assert!(session.contains("Only for selected governed work"));
+    assert!(
+        session.contains("Exitbind is available but not active for this task"),
+        "{session}"
+    );
+    assert!(session.contains("Ordinary work may use the native host without initialization"));
+    assert!(session.contains(
+        "Use Exitbind only when the task or existing project policy requires governed acceptance"
+    ));
+    assert!(!session.contains("exitbind init"));
+    assert!(!session.contains("review-policy"));
+    assert!(!session.contains("start or continue"));
     assert!(!project.join("exitbind.json").exists());
     assert!(!project.join(".exitbind").exists());
     // Small bootstrap, not the protocol.
@@ -350,6 +354,67 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
     );
 
     fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn malformed_or_unsafe_target_config_never_claims_clean_native_absence() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let home = host_home("host-bridge-unresolved");
+    let project = home.join("repo");
+    fs::create_dir_all(&project).unwrap();
+    let before_project: Vec<_> = fs::read_dir(&project)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+
+    let hook = || -> String {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .arg("hook-run")
+            .env("HOME", &home)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let payload = serde_json::json!({"hook_event_name": "SessionStart", "cwd": project.to_string_lossy()});
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+
+    fs::write(project.join("exitbind.json"), b"{ malformed").unwrap();
+    let malformed = hook();
+    assert!(malformed.contains("could not verify this target or its configuration"));
+    assert!(!malformed.contains("native host"));
+    assert!(!malformed.contains("exitbind init"));
+
+    fs::remove_file(project.join("exitbind.json")).unwrap();
+    let outside = support::temp("host-bridge-unresolved-outside");
+    fs::write(outside.join("exitbind.json"), b"not used").unwrap();
+    std::os::unix::fs::symlink(outside.join("exitbind.json"), project.join("exitbind.json"))
+        .unwrap();
+    let unsafe_config = hook();
+    assert!(unsafe_config.contains("could not verify this target or its configuration"));
+    assert!(!unsafe_config.contains("native host"));
+    assert!(!unsafe_config.contains("exitbind init"));
+
+    let after_project: Vec<_> = fs::read_dir(&project)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(before_project, Vec::<std::ffi::OsString>::new());
+    assert_eq!(after_project.len(), 1);
+    assert!(!project.join(".exitbind").exists());
+    fs::remove_dir_all(home).unwrap();
+    fs::remove_dir_all(outside).unwrap();
 }
 
 /// Only the exact record Exitbind itself published for the superseded caller is
