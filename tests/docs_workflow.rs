@@ -200,6 +200,8 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     // The rename history belongs to the legacy document, not the main path.
     assert!(legacy.contains("renamed continuation of Soulmate"));
     assert!(legacy.contains("run-event\nversions 1 through 4"));
+    assert!(legacy
+        .contains("use version 8, while current readers retain historical versions 1 through 7"));
     assert!(readme.contains("docs/legacy-compatibility.md"));
     assert!(reference.contains("Historical checked Soulmate runs use run-event version 3"));
     assert!(reference.contains("new Exitbind\nstarts use v8"));
@@ -226,7 +228,10 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
         env!("CARGO_PKG_VERSION")
     )));
     assert!(glossary.contains("Exitbind progress"));
-    assert!(cli.contains("historical v3-v7 runs remain readable"));
+    assert!(cli.contains("Checked run: v8 acceptance"));
+    assert!(cli.contains("Historical v1-v7 runs remain readable"));
+    assert!(cli.contains("Checked {} runs may use"));
+    assert!(cli.contains("if crate::producer::exitbind_surface() { \"v8\" }"));
     assert!(cli.contains("new v8 runs may observe"));
     assert!(cli.contains("[--timeout-ms MS]"));
     assert!(cli.contains("1,800,000 ms (30 minute) timeout"));

@@ -1,9 +1,13 @@
 # Changelog
 
-## 0.24.0-rc.5
+## 0.24.0-rc.6
 
 - Reduce needless progress/status polling in shipped guidance: reuse one native
   handle, wait for meaningful transitions, and keep unchanged state quiet.
+- Align current CLI and legacy compatibility guidance with run-event v8 and
+  historical v1-v7 readers.
+- Bind checked-start subjects to the event run ID and reject reconstructed
+  ledgers whose subject identity does not match the start event.
 
 ## 0.24.0-rc.2
 

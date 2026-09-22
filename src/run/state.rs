@@ -389,7 +389,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             "invalid run ledger line {line}: invalid config hash"
         ));
     }
-    if version >= 5 && !valid_subject(event.get("subject")) {
+    if version >= 5 && !valid_subject(event.get("subject"), event["runId"].as_str()) {
         return Err(format!(
             "invalid run ledger line {line}: checked start requires a valid subject"
         ));
@@ -1961,7 +1961,7 @@ fn native_name(value: Option<&str>) -> bool {
 fn is_timestamp(value: Option<&str>) -> bool {
     value.is_some_and(|x| x.contains('T') && timestamp_ms(Some(x)) != i64::MIN)
 }
-fn valid_subject(value: Option<&Value>) -> bool {
+fn valid_subject(value: Option<&Value>, event_run_id: Option<&str>) -> bool {
     let Some(value) = value else { return false };
     let Some(object) = value.as_object() else {
         return false;
@@ -1969,6 +1969,7 @@ fn valid_subject(value: Option<&Value>) -> bool {
     (object.len() == 10 || object.len() == 11)
         && value["version"] == 1
         && is_sha(value["runId"].as_str())
+        && value["runId"].as_str() == event_run_id
         && is_sha(value["goalSha256"].as_str())
         && is_sha(value["planSha256"].as_str())
         && is_sha(value["configSha256"].as_str())
@@ -2059,7 +2060,7 @@ fn timestamp_ms(value: Option<&str>) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_govern, apply_unavailable, subject_for_submission};
+    use super::{apply_govern, apply_unavailable, subject_for_submission, valid_subject, without};
     use serde_json::json;
 
     const SHA: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
@@ -2229,5 +2230,29 @@ mod tests {
         );
         assert_ne!(first["sha256"], second["sha256"]);
         assert_eq!(second["previousSubjectSha256"], first["sha256"]);
+    }
+
+    #[test]
+    fn checked_start_subject_is_bound_to_the_event_run_id() {
+        let run_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let other_run_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mut subject = json!({
+            "version": 1,
+            "runId": run_id,
+            "goalSha256": SHA,
+            "planSha256": SHA,
+            "configSha256": SHA,
+            "attempt": 0,
+            "previousSubjectSha256": null,
+            "workerArtifactSha256": null,
+            "transitionSha256": null
+        });
+        subject["sha256"] = json!(crate::evidence::hash::value(&subject));
+        assert!(valid_subject(Some(&subject), Some(run_id)));
+        assert!(!valid_subject(Some(&subject), Some(other_run_id)));
+        assert_eq!(
+            subject["sha256"],
+            crate::evidence::hash::value(&without(&subject, "sha256"))
+        );
     }
 }

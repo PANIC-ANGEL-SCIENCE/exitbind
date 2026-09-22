@@ -1361,7 +1361,7 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     .map_err(|error| map_run_error(error, a.flags.contains_key("json")))?;
     if action == "start" {
         if a.options.contains_key("check-command") {
-            eprintln!("Checked run: v5 acceptance may use local observe-check or a caller-reported record-check for each current worker submission, bound to the frozen command. Historical v3-v4 runs remain readable.");
+            eprintln!("Checked run: v8 acceptance may use local observe-check or a caller-reported record-check for each current worker submission, bound to the frozen command. Historical v1-v7 runs remain readable.");
         } else {
             eprintln!("Unchecked run: no check-result requirement is configured. Start with --check-command to require check evidence before acceptance.");
         }
@@ -1475,7 +1475,7 @@ fn print_advanced_help() {
         "Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.",
         value_help,
     ));
-    println!("  Checked {} runs may use: {command} run observe-check LEDGER --target EVENT_SHA [--timeout-ms MS]", if crate::producer::exitbind_surface() { "v5" } else { "v4" });
+    println!("  Checked {} runs may use: {command} run observe-check LEDGER --target EVENT_SHA [--timeout-ms MS]", if crate::producer::exitbind_surface() { "v8" } else { "v4" });
     println!("  Local observation defaults to a 1,800,000 ms (30 minute) timeout; --timeout-ms must be positive.");
     println!("Run '{command} update' to explicitly install the newest allowed release.");
 }

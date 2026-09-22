@@ -39,7 +39,8 @@ ledger never rewrites it, and a successor run records the current identity
 without restating the old one as its own.
 
 Checked runs written by Soulmate use run-event version 3; new Exitbind starts
-use version 6. `REFERENCE.md` holds the exact reader and writer matrix.
+use version 8, while current readers retain historical versions 1 through 7.
+`REFERENCE.md` holds the exact reader and writer matrix.
 
 The immutable schema files `schema/soulmate.schema.json`,
 `schema/run-event-v3.schema.json`, and `schema/run-event-v4.schema.json` describe
