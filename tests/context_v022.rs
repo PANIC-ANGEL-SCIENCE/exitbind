@@ -336,7 +336,10 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
         .unwrap()
         .iter()
         .all(|item| {
-            item["exact"] == true && item["sha256"].is_string() && item["path"].is_string()
+            item["exact"] == true
+                && item["sha256"].is_string()
+                && item["id"].as_str().is_some_and(|id| id.starts_with("ref:"))
+                && item["path"].is_null()
         }));
     assert!(context["digest"].as_str().unwrap().len() == 64);
 

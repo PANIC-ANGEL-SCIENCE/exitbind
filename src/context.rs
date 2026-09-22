@@ -325,7 +325,7 @@ fn evidence(work: &str, view: &Value, status: &Value) -> Value {
                     result.push(json!({
                         "kind": "submission",
                         "evidenceId": sha,
-                        "artifact": event["artifact"],
+                        "artifact": artifact_reference(&event["artifact"], "evidence"),
                         "rawEventRef": event_ref(work, view, sha, "ledger_event"),
                     }));
                 }
@@ -382,8 +382,6 @@ fn expansions(view: &Value, _status: &Value, work: &str) -> Value {
     let mut reference = json!({
         "kind": "ledger_history",
         "work": work,
-        "root": "state",
-        "path": history_path(work),
         "sha256": view["ledgerSha256"],
         "headEventSha256": head,
         "eventCount": events.len(),
@@ -391,23 +389,6 @@ fn expansions(view: &Value, _status: &Value, work: &str) -> Value {
     });
     set_opaque_id(&mut reference);
     Value::Array(vec![reference])
-}
-
-fn history_path(work: &str) -> String {
-    work.strip_prefix("smw_").map_or_else(
-        || {
-            format!(
-                "{}/runs/{work}.jsonl",
-                crate::project::layout_types::state_namespace()
-            )
-        },
-        |token| {
-            format!(
-                "{}/runs/work-{token}.jsonl",
-                crate::project::layout_types::state_namespace()
-            )
-        },
-    )
 }
 
 fn event_ref(work: &str, view: &Value, event_sha: &str, kind: &str) -> Value {
@@ -419,8 +400,6 @@ fn event_ref(work: &str, view: &Value, event_sha: &str, kind: &str) -> Value {
     let mut reference = json!({
         "kind": kind,
         "work": work,
-        "root": "state",
-        "path": history_path(work),
         "sha256": view["ledgerSha256"],
         "headEventSha256": head,
         "eventCount": events.len(),
@@ -446,18 +425,29 @@ fn check_log_ref(work: &str, view: &Value, check_sha: &str) -> Option<Value> {
     let mut reference = json!({
         "kind": "check_log",
         "work": work,
-        "root": "state",
-        "path": history_path(work),
         "sha256": view["ledgerSha256"],
         "headEventSha256": head,
         "eventCount": events.len(),
         "checkEventSha256": check_sha,
-        "stdout": event["stdout"],
-        "stderr": event["stderr"],
+        "stdout": artifact_reference(&event["stdout"], "stdout"),
+        "stderr": artifact_reference(&event["stderr"], "stderr"),
         "exact": true,
     });
     set_opaque_id(&mut reference);
     Some(reference)
+}
+
+/// Public evidence references identify canonical bytes without carrying the
+/// state-root transport needed to resolve them.
+pub(crate) fn artifact_reference(artifact: &Value, kind: &str) -> Value {
+    let mut reference = json!({
+        "kind": kind,
+        "sha256": artifact["sha256"],
+        "bytes": artifact["bytes"],
+        "exact": true,
+    });
+    reference["id"] = json!(format!("ref:{}", hash::value(artifact)));
+    reference
 }
 
 fn set_opaque_id(reference: &mut Value) {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.24.0-rc.2
+
+- Make `work check` guidance explicit that the frozen command is executed and
+  recorded once, and distinguish worker/reviewer blocked attempts from an
+  owner decision boundary.
+- Preserve explicit `--basis` and `--review-policy` values when creating a
+  successor with `run supersede`, and bind the successor subject to its basis.
+- Add deterministic coverage for successor basis and owner review-policy
+  propagation while retaining historical no-option behavior.
+
 ## 0.23.1-rc.2
 
 - Keep ordinary low-consequence work outside Exitbind project initialization

@@ -132,6 +132,247 @@ fn ledger_events_at(fixture: &Fixture, ledger: &str) -> Vec<Value> {
 }
 
 #[test]
+fn supersede_preserves_explicit_basis_and_review_policy_options() {
+    let fixture = Fixture::new("supersede-policy-propagation");
+    let original_basis = json!({
+        "version": 1,
+        "constraints": ["preserve predecessor"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["successor records owner policy"]
+    });
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "original goal",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+        "--basis",
+        &serde_json::to_string(&original_basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let _lead = fixture.value(&["run", "next", fixture.ledger()]);
+    let lead_artifact = fixture.artifact("supersede-lead.md", b"scope");
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "scoped",
+            "--artifact",
+            &lead_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"scope",
+    );
+
+    let successor_basis = basis_with_hash(json!({
+        "version": 1,
+        "constraints": ["preserve predecessor", "require currentness"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["successor records owner policy"]
+    }));
+    let successor = fixture.value(&[
+        "run",
+        "supersede",
+        fixture.ledger(),
+        "--workflow",
+        "change",
+        "--goal",
+        "successor goal",
+        "--ledger",
+        ".exitbind/runs/successor.jsonl",
+        "--basis",
+        &serde_json::to_string(&successor_basis).unwrap(),
+        "--review-policy",
+        "omitted",
+    ]);
+    let event = ledger_events_at(&fixture, ".exitbind/runs/successor.jsonl")[0].clone();
+    assert_eq!(event["basis"], successor_basis);
+    assert_eq!(event["reviewPolicy"]["decision"], "omitted");
+    assert_eq!(event["subject"]["basisSha256"], successor_basis["sha256"]);
+    let next = fixture.value(&["run", "next", ".exitbind/runs/successor.jsonl"]);
+    assert_eq!(
+        next["assignments"][0]["basisSha256"],
+        successor_basis["sha256"]
+    );
+    assert_eq!(
+        next["assignments"][0]["reviewDecisionSha256"],
+        event["reviewPolicy"]["sha256"]
+    );
+    assert!(successor["runId"].is_string());
+}
+
+#[test]
+fn supersede_rejects_basis_only_or_invalid_review_without_durable_mutation() {
+    let fixture = Fixture::new("supersede-invalid-extension");
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "original goal",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+    ]);
+    let original = fs::read(fixture.root.join(fixture.ledger())).unwrap();
+    let basis = basis_with_hash(json!({
+        "version": 1,
+        "constraints": ["preserve predecessor"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["invalid extension is inert"]
+    }));
+
+    let basis_only = fixture.call(
+        &[
+            "run",
+            "supersede",
+            fixture.ledger(),
+            "--workflow",
+            "change",
+            "--goal",
+            "basis-only successor",
+            "--ledger",
+            ".exitbind/runs/basis-only.jsonl",
+            "--basis",
+            &serde_json::to_string(&basis).unwrap(),
+        ],
+        None,
+    );
+    assert!(!basis_only.status.success());
+    assert!(String::from_utf8_lossy(&basis_only.stderr)
+        .contains("--basis requires an explicit --review-policy"));
+    assert_eq!(
+        fs::read(fixture.root.join(fixture.ledger())).unwrap(),
+        original
+    );
+    assert!(!fixture
+        .root
+        .join(".exitbind/runs/basis-only.jsonl")
+        .exists());
+    assert!(!fixture
+        .root
+        .join(format!("{}.supersede", fixture.ledger()))
+        .exists());
+
+    let invalid_review = fixture.call(
+        &[
+            "run",
+            "supersede",
+            fixture.ledger(),
+            "--workflow",
+            "change",
+            "--goal",
+            "invalid-review successor",
+            "--ledger",
+            ".exitbind/runs/invalid-review.jsonl",
+            "--review-policy",
+            "unsupported",
+        ],
+        None,
+    );
+    assert!(!invalid_review.status.success());
+    assert_eq!(
+        fs::read(fixture.root.join(fixture.ledger())).unwrap(),
+        original
+    );
+    assert!(!fixture
+        .root
+        .join(".exitbind/runs/invalid-review.jsonl")
+        .exists());
+}
+
+#[test]
+fn supersede_review_policy_only_creates_marked_basisless_successor_assignment() {
+    let fixture = Fixture::new("supersede-review-policy-only");
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "original goal",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+    ]);
+    fixture.value(&[
+        "run",
+        "supersede",
+        fixture.ledger(),
+        "--workflow",
+        "change",
+        "--goal",
+        "review-only successor",
+        "--ledger",
+        ".exitbind/runs/review-only.jsonl",
+        "--review-policy",
+        "omitted",
+    ]);
+
+    let event = ledger_events_at(&fixture, ".exitbind/runs/review-only.jsonl")[0].clone();
+    assert_eq!(event["reviewPolicy"]["decision"], "omitted");
+    assert!(event["basisProtocol"].is_number());
+    assert!(event.get("basis").is_none());
+    assert!(event["subject"].get("basisSha256").is_none());
+    let next = fixture.value(&["run", "next", ".exitbind/runs/review-only.jsonl"]);
+    assert!(next["assignments"][0]["basisSha256"].is_null());
+    assert_eq!(
+        next["assignments"][0]["reviewDecisionSha256"],
+        event["reviewPolicy"]["sha256"]
+    );
+}
+
+#[test]
+fn supersede_without_options_keeps_historical_unmarked_compatibility() {
+    let fixture = Fixture::new("supersede-historical-no-options");
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "original goal",
+        "--ledger",
+        fixture.ledger(),
+    ]);
+    fixture.value(&[
+        "run",
+        "supersede",
+        fixture.ledger(),
+        "--workflow",
+        "change",
+        "--goal",
+        "historical successor",
+        "--ledger",
+        ".exitbind/runs/historical-successor.jsonl",
+    ]);
+
+    let event = ledger_events_at(&fixture, ".exitbind/runs/historical-successor.jsonl")[0].clone();
+    assert!(event.get("basisProtocol").is_none());
+    assert!(event.get("basis").is_none());
+    assert!(event.get("reviewPolicy").is_none());
+    assert!(event["subject"].get("basisSha256").is_none());
+    let next = fixture.value(&["run", "next", ".exitbind/runs/historical-successor.jsonl"]);
+    assert!(next["assignments"][0]["basisSha256"].is_null());
+    assert!(next["assignments"][0]["reviewDecisionSha256"].is_null());
+}
+
+#[test]
 fn marked_basis_contradiction_successor_preserves_governor_and_currentness() {
     let fixture = Fixture::new("basis-lifecycle");
     let basis = json!({

@@ -84,6 +84,16 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn ledger_path(&self, work: &str) -> PathBuf {
+        self.root.join(ledger_reference(work))
+    }
+
+    fn artifact_path(&self, work: &str, stream: &str) -> PathBuf {
+        let source = fs::read_to_string(self.ledger_path(work)).unwrap();
+        let event: Value = serde_json::from_str(source.lines().last().unwrap()).unwrap();
+        self.root.join(event[stream]["path"].as_str().unwrap())
+    }
+
     fn return_body(&self, work: &str, assignment: &str, outcome: &str, body: &[u8]) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
         command
@@ -123,10 +133,7 @@ impl Fixture {
             b"worker\n",
         );
         assert!(completed.status.success(), "{completed:?}");
-        let ledger = format!(
-            ".exitbind/runs/work-{}.jsonl",
-            work.strip_prefix("smw_").unwrap()
-        );
+        let ledger = ledger_reference(&work);
         let source = fs::read_to_string(self.root.join(&ledger)).unwrap();
         let target = serde_json::from_str::<Value>(source.lines().last().unwrap()).unwrap()
             ["eventSha256"]
@@ -135,6 +142,13 @@ impl Fixture {
             .to_owned();
         (started, work, ledger, target)
     }
+}
+
+fn ledger_reference(work: &str) -> String {
+    format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    )
 }
 
 impl Drop for Fixture {
@@ -194,17 +208,14 @@ fn v8_context_refs_expand_exactly_and_refuse_stale_cross_work_and_traversal() {
     let work = started["work"].as_str().unwrap().to_owned();
     let history = started["next"]["packet"]["context"]["expansions"][0].clone();
     assert_eq!(started["next"]["packet"]["context"]["version"], 2);
-    assert_eq!(history["root"], "state");
-    assert!(history["path"]
-        .as_str()
-        .unwrap()
-        .starts_with(".exitbind/runs/"));
+    assert!(history.get("root").is_none());
+    assert!(history.get("path").is_none());
     assert_eq!(history["sha256"].as_str().unwrap().len(), 64);
     let history_arg = history["id"].as_str().unwrap().to_owned();
     let expanded = fixture.call(&["work", "expand", &work, &history_arg]);
     assert!(expanded.status.success(), "{expanded:?}");
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
-    let source = fs::read(fixture.root.join(history["path"].as_str().unwrap())).unwrap();
+    let source = fs::read(fixture.ledger_path(&work)).unwrap();
     assert_eq!(expanded["encoding"], "hex");
     assert_eq!(expanded["bytes"], source.len());
     assert_eq!(expanded["contentHex"], hex(&source));
@@ -245,7 +256,7 @@ fn v8_context_refs_expand_exactly_and_refuse_stale_cross_work_and_traversal() {
     );
     assert!(
         !fixture
-            .call(&["work", "expand", &work, history["path"].as_str().unwrap()])
+            .call(&["work", "expand", &work, &ledger_reference(&work)])
             .status
             .success(),
         "path reference was accepted"
@@ -263,7 +274,7 @@ fn v8_context_refs_expand_exactly_and_refuse_stale_cross_work_and_traversal() {
         "wrong-kind or forged reference was accepted"
     );
 
-    let ledger_path = fixture.root.join(history["path"].as_str().unwrap());
+    let ledger_path = fixture.ledger_path(&work);
     let original = fs::read(&ledger_path).unwrap();
     let mut tampered = original.clone();
     tampered[0] ^= 1;
@@ -312,7 +323,9 @@ fn symlinked_ledger_is_refused_even_when_target_bytes_match() {
     ]);
     let work = started["work"].as_str().unwrap();
     let reference = started["next"]["packet"]["context"]["expansions"][0].clone();
-    let path = fixture.root.join(reference["path"].as_str().unwrap());
+    assert!(reference.get("root").is_none());
+    assert!(reference.get("path").is_none());
+    let path = fixture.ledger_path(work);
     let backup = path.with_extension("jsonl.backup");
     fs::rename(&path, &backup).unwrap();
     symlink(&backup, &path).unwrap();
@@ -349,6 +362,8 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         .unwrap();
     assert_eq!(check["logStatus"], "available");
     assert_ne!(check["targetEventSha256"], check["checkEventSha256"]);
+    assert!(reference["stdout"].get("path").is_none());
+    assert!(reference["stderr"].get("path").is_none());
     let check_event_ref = check["checkEventRef"]["id"].as_str().unwrap();
     let check_event = fixture.call(&["work", "expand", &work, check_event_ref]);
     assert!(check_event.status.success(), "{check_event:?}");
@@ -357,9 +372,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         check_event["event"]["eventSha256"],
         check["checkEventSha256"]
     );
-    let stdout_path = fixture
-        .root
-        .join(reference["stdout"]["path"].as_str().unwrap());
+    let stdout_path = fixture.artifact_path(&work, "stdout");
     let stdout = fs::read(&stdout_path).unwrap();
     let mut changed = stdout.clone();
     changed[0] ^= 1;
@@ -384,9 +397,8 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
             .find_map(|item| item.get("checkLogRef"))
             .unwrap()
             .clone();
-        let stdout = symlink_fixture
-            .root
-            .join(reference["stdout"]["path"].as_str().unwrap());
+        assert!(reference["stdout"].get("path").is_none());
+        let stdout = symlink_fixture.artifact_path(&symlink_work, "stdout");
         let target = symlink_fixture.root.join("symlink-target.raw");
         fs::write(&target, b"ok").unwrap();
         fs::remove_file(&stdout).unwrap();

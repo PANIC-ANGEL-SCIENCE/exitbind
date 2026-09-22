@@ -9,6 +9,7 @@ use std::io::Read;
 use std::path::Path;
 
 const WORK_PREFIX: &str = "smw_";
+pub(crate) const DIAGNOSTIC_PREFIX: &str = "EXITBIND_WORK_DIAGNOSTIC:";
 
 fn runs_dir() -> String {
     format!("{}/runs", crate::project::layout_types::state_namespace())
@@ -129,9 +130,27 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
 }
 
 pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
-    let ledger = resolve(loaded, work)?;
-    let (next, residual, presentation) = next_and_residual(loaded, work, &ledger, false)?;
-    Ok(json!({"work": work, "next": next, "residual": residual, "presentation": presentation}))
+    let ledger = resolve(loaded, work).map_err(|_| {
+        diagnostic_error(
+            "work handle is stale or unknown. Inspect the handle before continuing.",
+            "stale_handle",
+            "no-change",
+            reference(work),
+            safe_action("inspect"),
+        )
+    })?;
+    let (next, residual, presentation) = next_and_residual(loaded, work, &ledger, false)
+        .map_err(|error| discovery_error(error, work))?;
+    Ok(json!({
+        "work": work,
+        "next": next,
+        "residual": residual,
+        "presentation": presentation,
+        "reason": {"code": "explicit_handle"},
+        "effect": "no-change",
+        "reference": reference(work),
+        "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
+    }))
 }
 
 /// Atomically authorize and record one cooperative product-mutation unit for
@@ -369,17 +388,12 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
         .ok_or("current packet has no context projection")?;
     let canonical = find_reference(context, reference)
         .ok_or("reference is not an opaque reference from the current context")?;
-    if canonical["exact"] != true
-        || canonical["root"] != "state"
-        || canonical["path"].as_str().is_none()
-    {
+    if canonical["exact"] != true || canonical["id"].as_str().is_none() {
         return Err("reference is malformed".into());
     }
     let (_path, events, source) = crate::run::ledger::load(loaded, &ledger)?;
     let raw_sha = hash::bytes(source.as_bytes());
-    let expected_path = expected_history_path(work);
-    if canonical["path"] != expected_path
-        || canonical["sha256"] != raw_sha
+    if canonical["sha256"] != raw_sha
         || canonical["headEventSha256"]
             != events
                 .last()
@@ -444,23 +458,6 @@ fn find_reference(value: &Value, requested: &str) -> Option<Value> {
     None
 }
 
-fn expected_history_path(work: &str) -> String {
-    work.strip_prefix(WORK_PREFIX).map_or_else(
-        || {
-            format!(
-                "{}/runs/{work}.jsonl",
-                crate::project::layout_types::state_namespace()
-            )
-        },
-        |token| {
-            format!(
-                "{}/runs/work-{token}.jsonl",
-                crate::project::layout_types::state_namespace()
-            )
-        },
-    )
-}
-
 fn expansion_response(reference: &Value, kind: &str, bytes: &[u8], metadata: Value) -> Value {
     let mut response = json!({
         "valid": true,
@@ -493,7 +490,9 @@ fn expand_check_log(loaded: &Loaded, reference: &Value, events: &[Value]) -> Res
     }
     let stdout = crate::run::artifact::read(loaded, &event["stdout"], "stdout")?;
     let stderr = crate::run::artifact::read(loaded, &event["stderr"], "stderr")?;
-    if reference["stdout"] != event["stdout"] || reference["stderr"] != event["stderr"] {
+    if reference["stdout"] != crate::context::artifact_reference(&event["stdout"], "stdout")
+        || reference["stderr"] != crate::context::artifact_reference(&event["stderr"], "stderr")
+    {
         return Err("check-log artifact reference is stale or tampered".into());
     }
     Ok(json!({
@@ -557,10 +556,15 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             continue;
         }
         let ledger = format!("{}/{}", runs_dir(), name);
-        let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+        let snapshot = run::RunSnapshot::capture(loaded, &ledger)
+            .map_err(|error| discovery_error(error, &format!("{WORK_PREFIX}{token}")))?;
         let view = snapshot.inspect_view();
         if view["status"] == "running" {
-            let progress = snapshot.next_view(loaded)?["progress"].clone();
+            let progress = snapshot
+                .next_view(loaded)
+                .map_err(|error| discovery_error(error, &format!("{WORK_PREFIX}{token}")))?
+                ["progress"]
+                .clone();
             candidates.push((
                 format!("{WORK_PREFIX}{token}"),
                 view["workflow"].clone(),
@@ -576,11 +580,13 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             finished.push((at.to_owned(), format!("{WORK_PREFIX}{token}"), ledger));
         }
     }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0));
     match candidates.len() {
         0 => none_result(loaded, finished),
         1 => {
             let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
-            let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)?;
+            let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)
+                .map_err(|error| discovery_error(error, &work))?;
             Ok(json!({
                 "status": "resumed",
                 "work": work,
@@ -591,6 +597,10 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         }
         _ => Ok(json!({
             "status": "ambiguous",
+            "reason": {"code": "ambiguous_candidates"},
+            "effect": "no-change",
+            "reference": {"works": candidates.iter().map(|(work, _, _, _, _)| work).collect::<Vec<_>>()},
+            "nextAction": safe_action("choose_explicit_handle"),
             "works": candidates.into_iter().map(|(work, workflow, goal, _, progress)| json!({
                 "work": work,
                 "workflow": workflow,
@@ -614,13 +624,111 @@ fn none_result(
         json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}});
     finished.sort_by(|left, right| left.0.cmp(&right.0));
     if let Some((_, work, ledger)) = finished.pop() {
-        let (next, _residual, presentation) = next_and_residual(loaded, &work, &ledger, false)?;
+        let (next, _residual, presentation) = next_and_residual(loaded, &work, &ledger, false)
+            .map_err(|error| discovery_error(error, &work))?;
         // `presentation` sits where every other work response carries it, so
         // one documented path holds for every answer a host has to render.
         result["recent"] = json!({"work": work, "exitState": next["progress"]["state"]});
         result["presentation"] = presentation;
     }
     Ok(result)
+}
+
+fn reference(work: &str) -> Value {
+    json!({"work": work})
+}
+
+fn safe_action(kind: &str) -> Value {
+    json!({"type": kind, "safe": true})
+}
+
+fn diagnostic_error(
+    error: &str,
+    reason: &str,
+    effect: &str,
+    reference: Value,
+    next_action: Value,
+) -> String {
+    format!(
+        "{DIAGNOSTIC_PREFIX}{}",
+        serde_json::to_string(&json!({
+            "error": error,
+            "reason": {"code": reason},
+            "effect": effect,
+            "reference": reference,
+            "nextAction": next_action,
+        }))
+        .expect("work diagnostic is serializable")
+    )
+}
+
+fn discovery_error(error: String, work: &str) -> String {
+    if error.starts_with("artifact drift detected:") {
+        return diagnostic_error(
+            "artifact drift detected after run start. Inspect the recorded result and restore the original artifact before continuing.",
+            "artifact_drift",
+            "no-change",
+            reference(work),
+            safe_action("inspect"),
+        );
+    }
+    if let Some(machine) = error
+        .strip_prefix(crate::run::error::DRIFT_PREFIX)
+        .or_else(|| error.strip_prefix(crate::run::error::LEGACY_DRIFT_PREFIX))
+    {
+        if let Ok(value) = serde_json::from_str::<Value>(machine) {
+            let classification = match value["classification"].as_str() {
+                Some("profile_drift") => "profile_drift",
+                Some("memory_drift") => "memory_drift",
+                Some("boundary_drift") => "boundary_drift",
+                Some("harness_receipt_drift") => "harness_receipt_drift",
+                _ => "config_drift",
+            };
+            let human = match classification {
+                "profile_drift" => format!(
+                    "profile drift detected after run start for {} (expected {}, current {}). Inspect the old run before choosing a successor.",
+                    value["agent"].as_str().unwrap_or("unknown agent"),
+                    value["expectedProfileSha256"].as_str().unwrap_or("unknown"),
+                    value["currentProfileSha256"].as_str().unwrap_or("unknown")
+                ),
+                "boundary_drift" => format!(
+                    "run boundary manifest drift detected after run start (expected {}, current {}). Restore the exact manifest or explicitly supersede the run.",
+                    value["expectedBoundarySha256"].as_str().unwrap_or("unknown"),
+                    value["currentBoundarySha256"].as_str().unwrap_or("unknown")
+                ),
+                "harness_receipt_drift" => format!(
+                    "harness receipt drift detected after run start (expected {}, current {}). Restore the exact receipt and manifest or explicitly supersede the run.",
+                    value["expectedHarnessReceiptSha256"].as_str().unwrap_or("unknown"),
+                    value["currentHarnessReceiptSha256"].as_str().unwrap_or("unknown")
+                ),
+                "memory_drift" => format!(
+                    "memory drift detected after run start for {} (expected set {}, current set {}). Inspect the old run and current memory references, then use 'exitbind run supersede' to begin an intentional successor.",
+                    value["agent"].as_str().unwrap_or("unknown agent"),
+                    value["expectedMemorySetSha256"].as_str().unwrap_or("unknown"),
+                    value["currentMemorySetSha256"].as_str().unwrap_or("unknown")
+                ),
+                _ => format!(
+                    "configuration drift detected after run start (expected {}, current {}). Inspect the old run, then use 'exitbind run supersede' to begin an explicit successor.",
+                    value["expectedConfigSha256"].as_str().unwrap_or("unknown"),
+                    value["currentConfigSha256"].as_str().unwrap_or("unknown")
+                ),
+            };
+            return diagnostic_error(
+                &human,
+                classification,
+                "no-change",
+                reference(work),
+                safe_action("supersede"),
+            );
+        }
+    }
+    diagnostic_error(
+        "work discovery failed. Inspect the recorded run before taking further action.",
+        "corrupt_ledger",
+        "no-change",
+        reference(work),
+        safe_action("inspect"),
+    )
 }
 
 /// Next action and residual packet derived from one captured revision, plus the
@@ -701,6 +809,7 @@ fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result
             object.insert("checkEvidence".into(), summary);
         }
     }
+    crate::work::packet::sanitize_assignment(&mut packet);
     let mut result = json!({
         "action": action,
         "assignment": assignment_handle,

@@ -7,7 +7,10 @@
 //! canonical packet for the consumer to act on. Nothing in a submitted packet
 //! is executed, and a terminal run is history, not permission to continue.
 
-use crate::run::{InputContext, RunSnapshot};
+use crate::{
+    evidence::hash,
+    run::{InputContext, RunSnapshot},
+};
 use serde_json::{json, Value};
 use std::io::Read;
 
@@ -164,6 +167,40 @@ fn facts_from(view: &Value, status: &Value, next: &Value) -> Value {
         _ => "none",
     };
     json!({"check": check, "review": review, "preservation": preservation})
+}
+
+/// Remove transport paths from the agent-facing assignment while retaining
+/// stable evidence identities and all execution-boundary meaning.
+pub(crate) fn sanitize_assignment(value: &mut Value) {
+    sanitize_path_fields(value);
+}
+
+fn sanitize_path_fields(value: &mut Value) {
+    match value {
+        Value::Array(items) => items.iter_mut().for_each(sanitize_path_fields),
+        Value::Object(object) => {
+            let original = Value::Object(object.clone());
+            for child in object.values_mut() {
+                sanitize_path_fields(child);
+            }
+            for key in [
+                "artifactRootHint",
+                "artifactPathHint",
+                "profilePath",
+                "ledgerPath",
+            ] {
+                object.remove(key);
+            }
+            if object.remove("path").is_some() {
+                object.remove("root");
+                object.insert(
+                    "id".into(),
+                    json!(format!("ref:{}", hash::value(&original))),
+                );
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
 }
 
 fn head(view: &Value) -> Value {
@@ -370,6 +407,27 @@ fn label(target: &Value) -> String {
     }
 }
 
+fn blocked_owner_decision(view: &Value) -> bool {
+    // A worker/reviewer reporting a blocked attempt leaves the Lead an
+    // actionable rework or supersession decision. Only a Lead's own terminal
+    // block is an owner boundary; unknown terminal causes stay conservative.
+    let Some(events) = view["events"].as_array() else {
+        return true;
+    };
+    events
+        .iter()
+        .rev()
+        .find(|event| event["outcome"] == "blocked")
+        .map(|event| {
+            let actor = event["agent"]
+                .as_str()
+                .or_else(|| event["role"].as_str())
+                .unwrap_or("");
+            actor != "worker" && actor != "reviewer"
+        })
+        .unwrap_or(true)
+}
+
 /// Human help derived from canonical state. `ownerDecision` distinguishes an
 /// internal lead action from a decision only the human owner can make.
 fn help(
@@ -391,9 +449,17 @@ fn help(
                 "not_required",
             ),
             "blocked" => (
-                "This run ended blocked. The requested outcome was not accepted.",
-                "decide whether to start new work, change the goal, or stop",
-                "required",
+                if blocked_owner_decision(view) {
+                    "This run ended blocked at an owner decision. The requested outcome was not accepted."
+                } else {
+                    "A worker or reviewer reported a blocked attempt. The requested outcome was not accepted; the Lead can inspect it and rework or explicitly supersede the run."
+                },
+                if blocked_owner_decision(view) {
+                    "decide whether to start new work, change the goal, or stop"
+                } else {
+                    "inspect the blocked attempt, then rework or explicitly supersede the run"
+                },
+                if blocked_owner_decision(view) { "required" } else { "not_required" },
             ),
             _ => (
                 "This run ended without acceptance. The requested outcome was not accepted.",
@@ -403,7 +469,11 @@ fn help(
         };
         (
             what.to_owned(),
-            "owner",
+            if status == "blocked" && !blocked_owner_decision(view) {
+                "lead"
+            } else {
+                "owner"
+            },
             summary.to_owned(),
             Value::Null,
             owner,
@@ -492,6 +562,12 @@ fn help(
         "nextAction": {"actor": actor, "summary": summary, "command": cmd},
         "ownerDecision": owner,
     });
+    if view["status"] == "running" && targets.iter().any(|target| target["status"] == "missing") {
+        help["checkInstruction"] = json!({
+            "mode": "execute_and_record_once",
+            "summary": "work check runs the frozen command and records its result; do not run the command separately before invoking it"
+        });
+    }
     if let Some(evidence) = preservation_evidence(targets) {
         help["preservationEvidence"] = json!(evidence);
     }

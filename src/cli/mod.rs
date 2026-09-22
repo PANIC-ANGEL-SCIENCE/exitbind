@@ -509,7 +509,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "next" => {
-            args::assert_options("work next", a, &["config"])?;
+            args::assert_options("work next", a, &["config", "json"])?;
             args::assert_positionals("work next", a, 2)?;
             print_json(&crate::work::next(
                 l,
@@ -634,7 +634,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "resume" => {
-            args::assert_options("work resume", a, &["config"])?;
+            args::assert_options("work resume", a, &["config", "json"])?;
             args::assert_positionals("work resume", a, 1)?;
             print_json(&crate::work::resume(l)?)
         }
@@ -1350,6 +1350,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     preserve_requirement,
                     preservation_check_command,
                     preservation_proof_origin,
+                    a.options.get("basis").map(String::as_str),
+                    a.options.get("review-policy").map(String::as_str),
                 )
             }
         }

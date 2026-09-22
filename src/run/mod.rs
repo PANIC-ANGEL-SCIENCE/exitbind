@@ -2435,6 +2435,8 @@ pub fn supersede(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 
@@ -2455,6 +2457,8 @@ pub fn supersede_with_policy(
     preserve_requirement: Option<&str>,
     preservation_check_command: Option<&str>,
     preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -2489,6 +2493,7 @@ pub fn supersede_with_policy(
             selected_plan(envelope::plan(loaded, workflow, goal)?)?,
             boundary,
         )?;
+        let extension = extension_from_cli(basis, review_policy)?;
         let old_policy = old_state
             .get("checkPolicy")
             .map(|policy| crate::run_value::policy_from_value(policy, 0))
@@ -2636,9 +2641,24 @@ pub fn supersede_with_policy(
         if let Some(preservation) = &preservation {
             event_value["preservation"] = preservation.value();
         }
+        if let Some(extension) = &extension {
+            event_value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+            if let Some(basis) = &extension.basis {
+                event_value["basis"] = basis.value();
+            }
+            event_value["reviewPolicy"] = extension.review.value();
+        }
         if version >= 5 {
-            event_value["subject"] =
-                subject(goal, &event_value["plan"], &config_sha, &run_id, None);
+            event_value["subject"] = subject(
+                goal,
+                &event_value["plan"],
+                &config_sha,
+                &run_id,
+                extension
+                    .as_ref()
+                    .and_then(|x| x.basis.as_ref())
+                    .map(|x| x.sha256.as_str()),
+            );
         }
         if version >= 6 {
             event_value["governor"] = json!({
