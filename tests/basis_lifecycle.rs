@@ -9,6 +9,8 @@ use std::{
     io::Write,
     path::PathBuf,
     process::{Command, Output, Stdio},
+    sync::{Arc, Barrier},
+    thread,
 };
 
 struct Fixture {
@@ -225,6 +227,130 @@ fn supersede_preserves_explicit_basis_and_review_policy_options() {
         event["reviewPolicy"]["sha256"]
     );
     assert!(successor["runId"].is_string());
+}
+
+#[test]
+fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
+    let fixture = Fixture::new("supersede-concurrent-claim");
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "concurrent predecessor",
+        "--ledger",
+        fixture.ledger(),
+    ]);
+
+    let barrier = Arc::new(Barrier::new(2));
+    let root = fixture.root.clone();
+    let workers = (0..2)
+        .map(|_| {
+            let barrier = Arc::clone(&barrier);
+            let root = root.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                Command::new(env!("CARGO_BIN_EXE_exitbind"))
+                    .current_dir(&root)
+                    .args([
+                        "run",
+                        "supersede",
+                        ".exitbind/runs/basis.jsonl",
+                        "--workflow",
+                        "change",
+                        "--goal",
+                        "concurrent successor",
+                        "--ledger",
+                        ".exitbind/runs/concurrent-successor.jsonl",
+                        "--review-policy",
+                        "omitted",
+                        "--config",
+                    ])
+                    .arg(root.join("exitbind.json"))
+                    .output()
+                    .unwrap()
+            })
+        })
+        .collect::<Vec<_>>();
+    let outputs = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        outputs
+            .iter()
+            .filter(|output| output.status.success())
+            .count(),
+        1,
+        "concurrent supersede did not choose one winner: {:?}",
+        outputs
+            .iter()
+            .map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
+            .collect::<Vec<_>>()
+    );
+    assert!(outputs.iter().any(|output| {
+        !output.status.success()
+            && (String::from_utf8_lossy(&output.stderr).contains("busy")
+                || String::from_utf8_lossy(&output.stderr).contains("already claimed"))
+    }));
+
+    let claim = fixture.root.join(".exitbind/runs/basis.jsonl.supersede");
+    let successor = fixture
+        .root
+        .join(".exitbind/runs/concurrent-successor.jsonl");
+    assert!(claim.is_file());
+    assert!(successor.is_file());
+    assert_eq!(
+        ledger_events_at(&fixture, ".exitbind/runs/concurrent-successor.jsonl").len(),
+        1
+    );
+    let claim_bytes = fs::read(&claim).unwrap();
+    let successor_bytes = fs::read(&successor).unwrap();
+
+    let rerun = fixture.call(
+        &[
+            "run",
+            "supersede",
+            fixture.ledger(),
+            "--workflow",
+            "change",
+            "--goal",
+            "concurrent successor",
+            "--ledger",
+            ".exitbind/runs/concurrent-successor.jsonl",
+            "--review-policy",
+            "omitted",
+        ],
+        None,
+    );
+    assert!(
+        rerun.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rerun.stderr)
+    );
+    assert_eq!(fs::read(&claim).unwrap(), claim_bytes);
+    assert_eq!(fs::read(&successor).unwrap(), successor_bytes);
+
+    let conflicting = fixture.call(
+        &[
+            "run",
+            "supersede",
+            fixture.ledger(),
+            "--workflow",
+            "change",
+            "--goal",
+            "different concurrent successor",
+            "--ledger",
+            ".exitbind/runs/conflicting-successor.jsonl",
+        ],
+        None,
+    );
+    assert!(!conflicting.status.success());
+    assert!(String::from_utf8_lossy(&conflicting.stderr).contains("already claimed"));
+    assert!(!fixture
+        .root
+        .join(".exitbind/runs/conflicting-successor.jsonl")
+        .exists());
 }
 
 #[test]

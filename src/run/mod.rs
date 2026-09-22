@@ -2730,6 +2730,9 @@ pub fn supersede_with_policy(
             return Err("successor ledger exists without a matching predecessor claim".into());
         }
         let claim = obtain_claim(&claim_path, &wanted_claim)?;
+        let successor_run_id = claim.value["newRunId"]
+            .as_str()
+            .ok_or("supersession claim has no successor run id")?;
         let supersedes = json!({
             "ledgerPath": claim.value["oldLedgerPath"],
             "ledgerSha256": claim.value["oldLedgerSha256"],
@@ -2751,7 +2754,7 @@ pub fn supersede_with_policy(
             "kind": "run",
             "producer": crate::producer::evidence_for_version(version),
             "action": "start",
-            "runId": claim.value["newRunId"],
+            "runId": successor_run_id,
             "workflow": workflow,
             "goal": goal,
             "configSha256": config_sha,
@@ -2781,7 +2784,7 @@ pub fn supersede_with_policy(
                 goal,
                 &event_value["plan"],
                 &config_sha,
-                &run_id,
+                successor_run_id,
                 extension
                     .as_ref()
                     .and_then(|x| x.basis.as_ref())
@@ -2797,16 +2800,52 @@ pub fn supersede_with_policy(
             });
         }
         let event = run_state::make_event(event_value);
-        let successor = if new.path.exists() {
-            match load_at(loaded, &new) {
-                Ok((_, existing, _)) if existing.first() == Some(&event) => Ok(()),
-                Ok(_) => Err("successor ledger already exists with different provenance".into()),
-                Err(error) => Err(error),
+        if new.path.exists() {
+            let (_, existing, _) = load_at(loaded, &new)?;
+            let request_fields = [
+                "runId",
+                "workflow",
+                "goal",
+                "configSha256",
+                "plan",
+                "checkPolicy",
+                "preservation",
+                "basisProtocol",
+                "basis",
+                "reviewPolicy",
+                "governor",
+                "supersedes",
+            ];
+            let mismatched = existing.first().map(|current| {
+                request_fields
+                    .into_iter()
+                    .filter(|field| current.get(*field) != event.get(*field))
+                    .collect::<Vec<_>>()
+            });
+            let same_subject = existing.first().is_some_and(|current| {
+                match (current.get("subject"), event.get("subject")) {
+                    (Some(Value::Object(current)), Some(Value::Object(requested))) => current
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != "sha256")
+                        .all(|(key, value)| requested.get(key) == Some(value)),
+                    (None, None) => true,
+                    _ => false,
+                }
+            });
+            let same_request = mismatched.as_ref().is_some_and(Vec::is_empty) && same_subject;
+            if same_request {
+                return result(&existing);
             }
-        } else {
-            append(&new, &event, true, "")
-        };
-        if let Err(error) = successor {
+            let mut fields = mismatched.unwrap_or_default();
+            if !same_subject {
+                fields.push("subject");
+            }
+            return Err(format!(
+                "successor ledger already exists with different provenance (fields: {})",
+                fields.join(", ")
+            ));
+        }
+        if let Err(error) = append(&new, &event, true, "") {
             rollback_claim(&claim_path, &claim);
             return Err(error);
         }

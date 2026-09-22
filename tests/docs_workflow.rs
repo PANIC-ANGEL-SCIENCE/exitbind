@@ -202,9 +202,9 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     assert!(legacy.contains("run-event\nversions 1 through 4"));
     assert!(readme.contains("docs/legacy-compatibility.md"));
     assert!(reference.contains("Historical checked Soulmate runs use run-event version 3"));
-    assert!(reference.contains("new Exitbind\nstarts use v6"));
-    assert!(glossary.contains("Observed check | v4–v6 source evidence"));
-    assert!(glossary.contains("one permitted route in v4–v6"));
+    assert!(reference.contains("new Exitbind\nstarts use v8"));
+    assert!(glossary.contains("Observed check | v4–v8 source evidence"));
+    assert!(glossary.contains("one permitted route in v4–v8"));
     assert!(security.contains("v3 supports caller-reported `run record-check` only"));
     assert!(security.contains(&format!("`v{}`", env!("CARGO_PKG_VERSION"))));
     assert!(reference.contains("1,800,000 ms (30 minute)\ndefault deadline"));
@@ -222,12 +222,12 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     assert!(first.contains("historical v3 procedure"));
     assert!(methodology.contains("v3 `run record-check` is caller-reported-only"));
     assert!(methodology.contains(&format!(
-        "`v{}` release candidate writes v6 records",
+        "`v{}` release candidate writes v8 records",
         env!("CARGO_PKG_VERSION")
     )));
     assert!(glossary.contains("Exitbind progress"));
-    assert!(cli.contains("historical v3-v4 runs remain readable"));
-    assert!(cli.contains("new v5 runs may observe"));
+    assert!(cli.contains("historical v3-v7 runs remain readable"));
+    assert!(cli.contains("new v8 runs may observe"));
     assert!(cli.contains("[--timeout-ms MS]"));
     assert!(cli.contains("1,800,000 ms (30 minute) timeout"));
 }
