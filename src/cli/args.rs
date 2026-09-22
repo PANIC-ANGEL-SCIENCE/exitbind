@@ -53,6 +53,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "previous",
     "purpose",
     "project-id",
+    "request-id",
     "reason",
     "receipt",
     "requirement",

@@ -198,6 +198,7 @@ pub fn start_with_policy(
                 "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
                 "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
                 "grantProtocol": crate::context::GRANT_PROTOCOL_VERSION,
+                "replanBinding": "assignment_packet_v1",
             });
         }
         let event = run_state::make_event(value);
@@ -362,6 +363,7 @@ pub fn submit(
             root: artifact_root,
             artifact: || Ok(artifact),
         },
+        |_, _| Ok(()),
     )
 }
 
@@ -376,6 +378,39 @@ pub(crate) struct AssignmentIdentity {
     pub(crate) role: String,
     pub(crate) basis_sha256: Option<String>,
     pub(crate) review_decision_sha256: Option<String>,
+}
+
+pub(crate) const REQUEST_ID_MAX_BYTES: usize = 120;
+
+/// Reconstruct the durable identity of a cooperative mutation request from
+/// fields that are present in the ledger event.  Keeping this derivation in
+/// the run layer lets both the writer and historical reducer reject a
+/// rehashed or colliding request instead of trusting a SHA-shaped string.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn governor_request_digest(
+    run_id: &str,
+    stage: u64,
+    attempt: u64,
+    agent: &str,
+    role: &str,
+    subject_sha256: &str,
+    inputs_sha256: &str,
+    assignment_sha256: &str,
+    operation: &str,
+    request_id: &str,
+) -> String {
+    hash::value(&json!({
+        "runId": run_id,
+        "stage": stage,
+        "attempt": attempt,
+        "agent": agent,
+        "role": role,
+        "subjectSha256": subject_sha256,
+        "inputsSha256": inputs_sha256,
+        "assignmentSha256": assignment_sha256,
+        "operation": operation,
+        "requestId": request_id,
+    }))
 }
 
 impl AssignmentIdentity {
@@ -416,7 +451,7 @@ impl AssignmentIdentity {
 /// Submit a work result after revalidating the façade's exact assignment
 /// under the ledger lock.  The artifact is produced only after that check.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn submit_for_assignment<F>(
+pub(crate) fn submit_for_assignment<F, P>(
     loaded: &Loaded,
     ledger: &str,
     assignment_handle: &str,
@@ -425,9 +460,11 @@ pub(crate) fn submit_for_assignment<F>(
     reason: Option<&str>,
     disposition: Option<&str>,
     artifact: F,
+    preflight: P,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
+    P: FnOnce(&[Value], &str) -> Result<(), String>,
 {
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
@@ -447,6 +484,7 @@ where
             root: Some("state"),
             artifact,
         },
+        preflight,
     )
 }
 
@@ -461,9 +499,17 @@ pub(crate) fn permit_for_assignment(
     assignment_handle: &str,
     expected: AssignmentIdentity,
     operation: &str,
+    request_id: Option<&str>,
 ) -> Result<Value, String> {
     if operation.trim().is_empty() || operation.len() > 120 || operation.contains('\0') {
         return Err("governor operation must be non-empty and at most 120 bytes".into());
+    }
+    if request_id.is_some_and(|value| {
+        value.trim().is_empty() || value.len() > REQUEST_ID_MAX_BYTES || value.contains('\0')
+    }) {
+        return Err(format!(
+            "governor request-id must be non-empty and at most {REQUEST_ID_MAX_BYTES} bytes"
+        ));
     }
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let canonical_work = canonical_work_for_ledger(&path)?;
@@ -503,6 +549,58 @@ pub(crate) fn permit_for_assignment(
             );
         }
         let inputs = live_inputs(&state)?;
+        let assignment_sha256 = crate::evidence::hash::text(assignment_handle);
+        let request_digest = request_id.map(|request_id| {
+            governor_request_digest(
+                state["runId"].as_str().unwrap_or_default(),
+                assignment["stage"].as_u64().unwrap_or_default(),
+                assignment["attempt"].as_u64().unwrap_or_default(),
+                assignment["agent"].as_str().unwrap_or_default(),
+                assignment["role"].as_str().unwrap_or_default(),
+                state["subject"]["sha256"].as_str().unwrap_or_default(),
+                inputs.as_str().unwrap_or_default(),
+                assignment_sha256.as_str(),
+                operation,
+                request_id,
+            )
+        });
+        if let (Some(request_id), Some(request_digest)) = (request_id, request_digest.as_deref()) {
+            if let Some(previous) = events
+                .iter()
+                .rev()
+                .find(|event| event["action"] == "govern" && event["requestId"] == request_id)
+            {
+                let same_request = previous["requestDigest"] == request_digest
+                    && previous["operation"] == operation
+                    && previous["runId"] == state["runId"]
+                    && previous["stage"] == assignment["stage"]
+                    && previous["attempt"] == assignment["attempt"]
+                    && previous["agent"] == assignment["agent"]
+                    && previous["role"] == assignment["role"]
+                    && previous["subjectSha256"] == state["subject"]["sha256"]
+                    && previous["inputsSha256"] == inputs
+                    && previous["assignmentSha256"] == assignment_sha256
+                    && previous["governorEvent"]["requestId"] == request_id
+                    && previous["governorEvent"]["requestDigest"] == request_digest;
+                if !same_request {
+                    return Err(
+                        "request-id conflict: it is already bound to a different governor request"
+                            .into(),
+                    );
+                }
+                if previous["governorEvent"]["action"] == "blocked" {
+                    return Err("governor durably blocked; exact evidence is required".into());
+                }
+                return Ok(json!({
+                    "valid": true,
+                    "allowed": previous["governorEvent"]["action"] == "mutation",
+                    "idempotent": true,
+                    "event": previous,
+                    "runId": state["runId"],
+                    "governor": state["governor"],
+                }));
+            }
+        }
         let last = events.last().ok_or("run ledger has no event head")?;
         let previous_governor = state["governor"]["headSha256"]
             .as_str()
@@ -532,11 +630,15 @@ pub(crate) fn permit_for_assignment(
             governor_payload["operation"] = json!(operation);
             governor_payload["newEvidenceSha256"] = Value::Null;
         }
+        if let (Some(request_id), Some(request_digest)) = (request_id, request_digest.as_deref()) {
+            governor_payload["requestId"] = json!(request_id);
+            governor_payload["requestDigest"] = json!(request_digest);
+        }
         let governor_event = crate::context::event(previous_governor.as_ref(), governor_payload);
         let version = state["version"]
             .as_u64()
             .ok_or("run state is missing version")?;
-        let event_value = json!({
+        let mut event_value = json!({
             "version": version,
             "kind": "run",
             "producer": crate::producer::evidence_for_version(version),
@@ -548,12 +650,16 @@ pub(crate) fn permit_for_assignment(
             "role": assignment["role"],
             "subjectSha256": state["subject"]["sha256"],
             "inputsSha256": inputs,
-            "assignmentSha256": crate::evidence::hash::text(assignment_handle),
+            "assignmentSha256": assignment_sha256,
             "operation": operation,
             "governorEvent": governor_event,
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?,
         });
+        if let (Some(request_id), Some(request_digest)) = (request_id, request_digest.as_deref()) {
+            event_value["requestId"] = json!(request_id);
+            event_value["requestDigest"] = json!(request_digest);
+        }
         let event = run_state::make_event(event_value);
         let mut all = events;
         all.push(event.clone());
@@ -655,6 +761,8 @@ pub(crate) fn replan_for_assignment(
             previous_governor.as_ref(),
             json!({
                 "action": "replan",
+                "identityTransition": "carried_mutation_v1",
+                "assignmentPacketSha256": crate::evidence::hash::value(&assignment),
                 "runId": state["runId"],
                 "subjectSha256": state["subject"]["sha256"],
                 "attempt": state["attempt"],
@@ -1039,7 +1147,7 @@ fn matching_mutation_grants(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn submit_locked<F>(
+fn submit_locked<F, P>(
     loaded: &Loaded,
     path: &run_ledger::LedgerPath,
     agent: &str,
@@ -1049,9 +1157,11 @@ fn submit_locked<F>(
     assignment_sha256: Option<&str>,
     disposition: Option<&str>,
     subject: SubmitSubject<'_, F>,
+    preflight: P,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
+    P: FnOnce(&[Value], &str) -> Result<(), String>,
 {
     let SubmitSubject { root, artifact } = subject;
     let artifact_root = root;
@@ -1065,6 +1175,9 @@ where
         let state = reduce_live(loaded, &events)?;
         if state["governor"]["enabled"] == true && state["governor"]["state"] == "blocked" {
             return Err("governor is durably blocked; work result refused".into());
+        }
+        if state["status"] != "running" {
+            return Err("run has already reached a terminal state; no mutation was made".into());
         }
         assert_no_drift(loaded, &state)?;
         crate::run::artifact::assert_current(loaded, &state)?;
@@ -1096,6 +1209,24 @@ where
                 );
             }
         }
+        if outcome == "disposition" && assignment["role"] != "lead" {
+            return Err("disposition requires the pending Lead assignment".into());
+        }
+        if outcome != "disposition" && disposition.is_some() {
+            return Err("--disposition requires --outcome disposition".into());
+        }
+        let parsed_disposition = if outcome == "disposition" {
+            let raw = disposition
+                .or(reason)
+                .ok_or("a disposition submission requires --disposition JSON")?;
+            let parsed: Value = serde_json::from_str(raw)
+                .map_err(|error| format!("disposition is not valid JSON: {error}"))?;
+            let parsed = crate::kernel::basis::parse_disposition(&parsed, "disposition")?;
+            run_state::validate_disposition(&state, &parsed)?;
+            Some(parsed)
+        } else {
+            None
+        };
         let mut grant_hashes = Vec::new();
         if state["governor"]["enabled"] == true
             && assignment["role"] == "worker"
@@ -1198,13 +1329,7 @@ where
             event_value["basisSha256"] = state["basis"]["sha256"].clone();
             event_value["reviewDecisionSha256"] = state["reviewPolicy"]["sha256"].clone();
         }
-        if outcome == "disposition" {
-            let raw = disposition
-                .or(reason)
-                .ok_or("a disposition submission requires --disposition JSON")?;
-            let parsed: Value = serde_json::from_str(raw)
-                .map_err(|error| format!("disposition is not valid JSON: {error}"))?;
-            let disposition = crate::kernel::basis::parse_disposition(&parsed, "disposition")?;
+        if let Some(disposition) = parsed_disposition {
             event_value["disposition"] = disposition.value();
         }
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
@@ -1257,6 +1382,9 @@ where
         let mut all = events;
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
+        let line = serde_json::to_string(&event).map_err(|error| error.to_string())?;
+        let projected_source = format!("{source}{line}\n");
+        preflight(&all, &projected_source)?;
         append(path, &event, false, &source)?;
         Ok(json!({
             "valid": true,
@@ -2746,7 +2874,18 @@ pub(crate) struct RunSnapshot {
 impl RunSnapshot {
     pub(crate) fn capture(loaded: &Loaded, ledger: &str) -> Result<Self, String> {
         let (_, events, source) = load(loaded, ledger)?;
-        let (state, inputs) = reduce_with_inputs(loaded, &events)?;
+        Self::from_events(loaded, &events, &source)
+    }
+
+    pub(crate) fn from_events(
+        loaded: &Loaded,
+        events: &[Value],
+        source: &str,
+    ) -> Result<Self, String> {
+        if events.is_empty() {
+            return Err("run ledger has no events".into());
+        }
+        let (state, inputs) = reduce_with_inputs(loaded, events)?;
         predecessor(loaded, &events[0])?;
         let drift = assert_no_drift(loaded, &state);
         let artifact_current = if drift.is_ok() {
@@ -2755,7 +2894,7 @@ impl RunSnapshot {
             Ok(false)
         };
         Ok(Self {
-            events,
+            events: events.to_vec(),
             state,
             inputs,
             ledger_sha256: hash::bytes(source.as_bytes()),
@@ -3042,15 +3181,18 @@ fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
 /// part of that runtime, so it drifts with the contract it belongs to.
 fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result<(), String> {
     let name = selected["name"].as_str().unwrap_or("");
-    let configured = loaded
-        .agent(name)
-        .ok_or_else(|| format!("profile selection changed: agent '{name}' is missing"))?;
-    let path = config::file(&loaded.control_root, &configured.profile)
-        .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?;
-    let profile_sha = hash::text(
-        &fs::read_to_string(&path)
-            .map_err(|error| format!("profile cannot be read for '{name}': {error}"))?,
-    );
+    let expected_profile = selected["profileSha256"].as_str().unwrap_or("").to_owned();
+    let unavailable = || {
+        run_error::machine_drift(DriftError::profile(
+            name.to_owned(),
+            expected_profile.clone(),
+            String::new(),
+        ))
+    };
+    let configured = loaded.agent(name).ok_or_else(unavailable)?;
+    let path =
+        config::file(&loaded.control_root, &configured.profile).map_err(|_| unavailable())?;
+    let profile_sha = hash::text(&fs::read_to_string(&path).map_err(|_| unavailable())?);
     if config::rel(&loaded.control_root, &path)? != selected["profile"]
         || profile_sha != selected["profileSha256"]
     {

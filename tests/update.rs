@@ -28,7 +28,7 @@ if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
 if [ "$FAKE_INSTALL_DIRECTORY" = "1" ]; then rm -f "$SOULMATE_INSTALL_PREFIX/soulmate"; mkdir "$SOULMATE_INSTALL_PREFIX/soulmate"; exit 0; fi
 version=${EXITBIND_VERSION#v}
 if [ "$FAKE_INSTALL_WRONG" = "1" ]; then version=0.14.0-rc.9; fi
-if [ "$FAKE_INSTALL_RENAME" = "1" ]; then stage="$EXITBIND_INSTALL_PREFIX/.exitbind-install-$$"; printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$stage"; chmod 755 "$stage"; mv -f "$stage" "$target"; exit 0; fi
+if [ "$FAKE_INSTALL_RENAME" = "1" ]; then stage="$EXITBIND_INSTALL_PREFIX/.exitbind-install-$$"; aside="$EXITBIND_INSTALL_PREFIX/.exitbind-previous-$$"; printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$stage"; chmod 755 "$stage"; if test -f "$target" && test ! -L "$target"; then mkdir "$aside"; mv -f "$target" "$aside/exitbind"; fi; mv -f "$stage" "$target"; exit 0; fi
 printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$target"
 chmod 755 "$target"' > "$out" ;;
 esac

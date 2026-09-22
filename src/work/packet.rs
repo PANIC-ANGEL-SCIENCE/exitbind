@@ -19,7 +19,7 @@ const MAX_PACKET_BYTES: u64 = 256 * 1024;
 
 /// Fields whose values drive consumer behavior. `humanHelp` is display text
 /// derived from the same facts and is replaced, never compared.
-const BEHAVIOR_FIELDS: [&str; 13] = [
+const BEHAVIOR_FIELDS: [&str; 15] = [
     "version",
     "work",
     "workflow",
@@ -33,6 +33,8 @@ const BEHAVIOR_FIELDS: [&str; 13] = [
     "next",
     "doNotRepeat",
     "invalidation",
+    "basis",
+    "reviewPolicy",
 ];
 
 pub(crate) fn project(work: &str, snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
@@ -188,15 +190,25 @@ fn sanitize_path_fields(value: &mut Value) {
                 "artifactPathHint",
                 "profilePath",
                 "ledgerPath",
+                "sourcePath",
             ] {
                 object.remove(key);
             }
             if object.remove("path").is_some() {
                 object.remove("root");
-                object.insert(
-                    "id".into(),
-                    json!(format!("ref:{}", hash::value(&original))),
-                );
+                if object.get("exact") == Some(&Value::Bool(true))
+                    && object
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .is_some_and(|kind| {
+                            matches!(kind, "ledger_history" | "ledger_event" | "check_log")
+                        })
+                {
+                    object.insert(
+                        "id".into(),
+                        json!(format!("ref:{}", hash::value(&original))),
+                    );
+                }
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
@@ -349,6 +361,7 @@ fn project_from(
     if let Ok(context) = crate::context::project(work, view, status, &resolved_next) {
         packet["context"] = context;
     }
+    sanitize_assignment(&mut packet);
     packet
 }
 
@@ -752,7 +765,8 @@ mod tests {
         let mut packet = json!({
             "version": 2, "work": "w", "workflow": "change", "goal": "g", "historical": false,
             "snapshot": {"eventCount": 3, "headEventSha256": "h", "inputsSha256": "i"},
-            "currentSubject": {"sha256": "s"}, "alreadyEstablished": [],
+            "currentSubject": {"sha256": "s"}, "basis": null, "reviewPolicy": null,
+            "alreadyEstablished": [],
             "stillValid": [{"evidence": "current_check"}], "remaining": [{"obligation": "review"}],
             "next": "spawn", "doNotRepeat": ["passed_check"], "invalidation": {"rule": "r"}
         });

@@ -123,6 +123,332 @@ impl Drop for Fixture {
     }
 }
 
+fn assert_no_transport_paths(value: &Value) {
+    match value {
+        Value::Object(object) => {
+            for key in [
+                "artifactPathHint",
+                "artifactRootHint",
+                "ledgerPath",
+                "path",
+                "profilePath",
+                "root",
+                "sourcePath",
+            ] {
+                assert!(!object.contains_key(key), "transport path leaked: {key}");
+            }
+            object.values().for_each(assert_no_transport_paths);
+        }
+        Value::Array(values) => values.iter().for_each(assert_no_transport_paths),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn assert_resolver_backed_references(value: &Value) {
+    match value {
+        Value::Object(object) => {
+            if object
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id.starts_with("ref:"))
+            {
+                assert_eq!(object.get("exact"), Some(&json!(true)));
+                assert!(matches!(
+                    object.get("kind").and_then(Value::as_str),
+                    Some(
+                        "ledger_history"
+                            | "ledger_event"
+                            | "check_log"
+                            | "evidence"
+                            | "stdout"
+                            | "stderr",
+                    )
+                ));
+            }
+            if object.contains_key("path") {
+                assert!(!object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| id.starts_with("ref:")));
+            }
+            object.values().for_each(assert_resolver_backed_references);
+        }
+        Value::Array(values) => values.iter().for_each(assert_resolver_backed_references),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn resolver_ids(value: &Value, ids: &mut Vec<String>) {
+    match value {
+        Value::Object(object) => {
+            if let Some(id) = object.get("id").and_then(Value::as_str) {
+                if id.starts_with("ref:") {
+                    ids.push(id.to_owned());
+                }
+            }
+            object.values().for_each(|value| resolver_ids(value, ids));
+        }
+        Value::Array(values) => values.iter().for_each(|value| resolver_ids(value, ids)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| {
+                        format!(
+                            "{}:{}",
+                            serde_json::to_string(key).unwrap(),
+                            canonical(&object[key])
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Value::Array(values) => format!(
+            "[{}]",
+            values.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+fn refresh_digest(value: &mut Value) {
+    value.as_object_mut().unwrap().remove("digest");
+    let digest = Sha256::digest(canonical(value).as_bytes());
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write;
+        write!(&mut encoded, "{byte:02x}").unwrap();
+    }
+    value["digest"] = json!(encoded);
+}
+
+fn refresh_event_hash(value: &mut Value) {
+    value.as_object_mut().unwrap().remove("eventSha256");
+    let digest = Sha256::digest(canonical(value).as_bytes());
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut encoded, "{byte:02x}").unwrap();
+    }
+    value["eventSha256"] = json!(encoded);
+}
+
+#[test]
+fn agent_facing_projection_strips_memory_transport_paths() {
+    let fixture = Fixture::new();
+    let config: Value = serde_json::from_slice(&fs::read(&fixture.config).unwrap()).unwrap();
+    let mut config = config;
+    config["memory"] = json!({
+        "root": ".exitbind/memory",
+        "maxItems": 8,
+        "maxBytes": 4096,
+        "protocolScopes": ["invariants"],
+        "syntheticScopes": []
+    });
+    for agent in ["lead", "worker"] {
+        config["agents"][agent]["memoryRead"] = json!(["invariants"]);
+        config["agents"][agent]["crossContext"] = json!("protocol-only");
+    }
+    config["agents"]["lead"]["memoryWrite"] = json!(["invariants"]);
+    config["agents"]["lead"]["memoryReview"] = json!(["invariants"]);
+    config["agents"]["lead"]["memoryPromote"] = json!(["invariants"]);
+    fs::write(
+        &fixture.config,
+        format!("{}\n", serde_json::to_string_pretty(&config).unwrap()),
+    )
+    .unwrap();
+    fs::write(fixture.root.join("memory.md"), "accepted invariant\n").unwrap();
+    let ledger = ".exitbind/memory/invariant.jsonl";
+    for args in [
+        vec![
+            "memory",
+            "propose",
+            "lead",
+            "memory.md",
+            "--scope",
+            "invariants",
+            "--ledger",
+            ledger,
+        ],
+        vec!["memory", "review", "lead", ledger],
+        vec!["memory", "promote", "lead", ledger],
+    ] {
+        let output = fixture.call(&args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+    }
+
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "opaque memory projection",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    let scoped = fixture.return_body(
+        &work,
+        started["next"]["assignment"].as_str().unwrap(),
+        "scoped",
+        b"scope\n",
+    );
+    assert!(scoped.status.success(), "{scoped:?}");
+    let next = fixture.json(&["work", "next", &work]);
+
+    assert_no_transport_paths(&started);
+    assert_no_transport_paths(&next);
+    assert_resolver_backed_references(&started);
+    assert_resolver_backed_references(&next);
+    assert!(next["next"]["packet"]["memoryReferences"].is_array());
+}
+
+#[test]
+fn historical_v2_context_is_accepted_as_stale_not_malformed() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "historical opaque context",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap();
+    let residual = fixture.json(&["work", "next", work])["residual"].clone();
+    let packet_path = fixture.root.join(".exitbind/legacy-residual.json");
+    let mut legacy = residual;
+    legacy["context"]["version"] = json!(2);
+    refresh_digest(&mut legacy["context"]);
+    fs::write(&packet_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let packet_path = packet_path.to_str().unwrap();
+    let validated = fixture.json(&["work", "validate", work, "--packet", packet_path]);
+    assert_eq!(validated["result"], "refresh_required");
+    assert_eq!(validated["reason"], "context_projection_changed");
+}
+
+#[test]
+fn fresh_or_compacted_consumer_gets_current_packet_blockers_and_resolvers() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "fresh consumer minimum",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    let scoped = fixture.return_body(
+        &work,
+        started["next"]["assignment"].as_str().unwrap(),
+        "scoped",
+        b"scope\n",
+    );
+    assert!(scoped.status.success(), "{scoped:?}");
+    let next_output = fixture.call(&["work", "next", &work]);
+    assert!(next_output.status.success(), "{next_output:?}");
+    let next: Value = serde_json::from_slice(&next_output.stdout).unwrap();
+    let resumed = fixture.json(&["work", "resume"]);
+    let packet = &resumed["residual"];
+    let next_context = &next["next"]["packet"]["context"];
+    let context = &packet["context"];
+
+    assert_eq!(next["work"], work);
+    assert_eq!(resumed["work"], work);
+    assert_no_transport_paths(&next);
+    assert_no_transport_paths(&resumed);
+    assert_resolver_backed_references(&next);
+    assert_resolver_backed_references(&resumed);
+
+    // These are the pre-context packet fields consumed by older JSON clients;
+    // context is additive and does not replace the raw packet shape.
+    for field in [
+        "version",
+        "work",
+        "workflow",
+        "goal",
+        "historical",
+        "snapshot",
+        "alreadyEstablished",
+        "stillValid",
+        "remaining",
+        "next",
+        "doNotRepeat",
+        "invalidation",
+    ] {
+        assert!(
+            packet.get(field).is_some(),
+            "legacy packet field missing: {field}"
+        );
+    }
+    assert_eq!(packet["version"], 2);
+    assert!(packet["snapshot"]["eventCount"].is_u64());
+    assert!(packet["snapshot"]["headEventSha256"].is_string());
+    assert!(packet["snapshot"]["inputsSha256"].is_string());
+    assert!(!packet["remaining"].as_array().unwrap().is_empty());
+    assert!(packet["humanHelp"]["whatRemains"].is_array());
+    assert!(packet["humanHelp"]["nextAction"]["actor"].is_string());
+    assert!(packet["humanHelp"]["nextAction"]["summary"].is_string());
+    assert!(packet["humanHelp"]["nextAction"]["command"].is_object());
+
+    for field in [
+        "version",
+        "run",
+        "subject",
+        "goal",
+        "scope",
+        "obligations",
+        "evidence",
+        "loop",
+        "next",
+        "expansions",
+        "recovery",
+        "digest",
+    ] {
+        assert!(
+            context.get(field).is_some(),
+            "context field missing: {field}"
+        );
+    }
+    assert_eq!(context["version"], 3);
+    assert_eq!(context["scope"]["freshness"], "current");
+    assert_eq!(context["next"]["freshness"], "current");
+    assert_eq!(next_context, context);
+    assert_eq!(context["recovery"]["next"], context["next"]);
+    assert!(!context["recovery"]["missing"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(context["recovery"]["stale"], json!([]));
+
+    let mut ids = Vec::new();
+    resolver_ids(context, &mut ids);
+    ids.sort();
+    ids.dedup();
+    assert!(!ids.is_empty());
+    for id in ids {
+        let expanded = fixture.call(&["work", "expand", &work, &id]);
+        assert!(expanded.status.success(), "{id}: {expanded:?}");
+        let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+        assert_eq!(expanded["valid"], true, "{id}: {expanded}");
+    }
+
+    let resumed_context = &resumed["residual"]["context"];
+    assert_eq!(resumed_context["digest"], context["digest"]);
+    assert_eq!(resumed_context["next"], context["next"]);
+}
+
 #[test]
 fn worker_packet_carries_resolved_preservation_assignment_before_artifact() {
     let fixture = Fixture::new();
@@ -325,7 +651,7 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
     assert!(started["next"]["packet"]["context"]["digest"].is_string());
     let residual = fixture.json(&["work", "next", &work]);
     let context = &residual["residual"]["context"];
-    assert_eq!(context["version"], 2);
+    assert_eq!(context["version"], 3);
     assert_eq!(context["role"], "lead");
     assert_eq!(context["run"]["workflow"], "change");
     assert!(context["goal"].is_string());
@@ -603,6 +929,550 @@ fn persisted_work_governor_refuses_a_fourth_worker_mutation() {
     let inspected = fixture.json(&["run", "inspect", &ledger]);
     assert_eq!(inspected["governor"]["spent"], 3);
     assert_eq!(inspected["governor"]["state"], "blocked");
+}
+
+#[test]
+fn request_id_replays_exact_permit_without_new_event_or_spent() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "replay a mutation request",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let args = [
+        "work",
+        "permit",
+        work.as_str(),
+        assignment.as_str(),
+        "--operation",
+        "edit",
+        "--request-id",
+        "request-1",
+    ];
+    let first = fixture.call(&args);
+    assert!(first.status.success(), "{first:?}");
+    let first: Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(first["event"]["requestId"], "request-1");
+    assert_eq!(
+        first["event"]["requestDigest"],
+        first["event"]["governorEvent"]["requestDigest"]
+    );
+    assert_eq!(
+        first["event"]["requestId"],
+        first["event"]["governorEvent"]["requestId"]
+    );
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let replay = fixture.call(&args);
+    assert!(replay.status.success(), "{replay:?}");
+    let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["idempotent"], true);
+    assert_eq!(
+        replay["event"]["eventSha256"],
+        first["event"]["eventSha256"]
+    );
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
+    assert_eq!(
+        fixture.json(&["run", "inspect", &ledger])["governor"]["spent"],
+        1
+    );
+}
+
+#[test]
+fn request_id_conflicting_operation_refuses_without_ledger_mutation() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "reject a conflicting mutation request",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    assert!(fixture
+        .call(&[
+            "work",
+            "permit",
+            &work,
+            &assignment,
+            "--operation",
+            "edit",
+            "--request-id",
+            "request-1",
+        ])
+        .status
+        .success());
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let conflict = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "different-edit",
+        "--request-id",
+        "request-1",
+    ]);
+    assert!(!conflict.status.success(), "{conflict:?}");
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("request-id conflict"));
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
+    assert_eq!(
+        fixture.json(&["run", "inspect", &ledger])["governor"]["spent"],
+        1
+    );
+}
+
+#[test]
+fn stale_request_id_is_not_replayed_after_assignment_advances() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "refuse a stale mutation request",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(fixture
+        .call(&[
+            "work",
+            "permit",
+            &work,
+            &assignment,
+            "--operation",
+            "edit",
+            "--request-id",
+            "request-1",
+        ])
+        .status
+        .success());
+    fs::write(fixture.root.join("product.txt"), b"advanced\n").unwrap();
+    assert_eq!(fixture.json(&["work", "resume"])["status"], "resumed");
+    assert!(fixture
+        .return_body(&work, &assignment, "completed", b"worker\n")
+        .status
+        .success());
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let stale = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        "request-1",
+    ]);
+    assert!(
+        !stale.status.success(),
+        "stale request was replayed: {stale:?}"
+    );
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
+}
+
+#[test]
+fn invalid_request_id_is_refused_before_ledger_append() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "validate mutation request ids",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let empty = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        "",
+    ]);
+    assert!(!empty.status.success());
+    let oversized = "x".repeat(121);
+    let oversized_call = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        oversized.as_str(),
+    ]);
+    assert!(!oversized_call.status.success());
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
+}
+
+#[test]
+fn blocked_request_id_replay_remains_refused_without_a_second_event() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "preserve a durable blocked refusal",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let mut assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for request_id in ["request-1", "request-2"] {
+        let permit = fixture.call(&[
+            "work",
+            "permit",
+            &work,
+            &assignment,
+            "--operation",
+            "edit",
+            "--request-id",
+            request_id,
+        ]);
+        assert!(permit.status.success(), "{permit:?}");
+        fs::write(fixture.root.join("product.txt"), request_id).unwrap();
+        assert_eq!(fixture.json(&["work", "resume"])["status"], "resumed");
+        if request_id == "request-2" {
+            let replanned = fixture.call(&[
+                "work",
+                "replan",
+                &work,
+                &assignment,
+                "--hypothesis",
+                "bounded blocked replay",
+            ]);
+            assert!(replanned.status.success(), "{replanned:?}");
+            assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+        }
+    }
+    let third = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        "request-3",
+    ]);
+    assert!(third.status.success(), "{third:?}");
+    fs::write(fixture.root.join("product.txt"), b"request-3").unwrap();
+    assert_eq!(fixture.json(&["work", "resume"])["status"], "resumed");
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let blocked = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        "request-4",
+    ]);
+    assert!(
+        !blocked.status.success(),
+        "blocked permit unexpectedly succeeded"
+    );
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("durably blocked"));
+    let after_block = fs::read(fixture.root.join(&ledger)).unwrap();
+    let replay = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        &assignment,
+        "--operation",
+        "edit",
+        "--request-id",
+        "request-4",
+    ]);
+    assert!(
+        !replay.status.success(),
+        "blocked request replay escaped refusal"
+    );
+    assert!(String::from_utf8_lossy(&replay.stderr).contains("durably blocked"));
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), after_block);
+}
+
+#[test]
+fn reducer_rejects_rehashed_request_digest_and_duplicate_request_scope() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "reject forged request identity history",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    assert!(fixture
+        .call(&[
+            "work",
+            "permit",
+            &work,
+            &assignment,
+            "--operation",
+            "edit",
+            "--request-id",
+            "request-1",
+        ])
+        .status
+        .success());
+
+    let path = fixture.root.join(&ledger);
+    let mut lines: Vec<Value> = fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let last = lines.last_mut().unwrap();
+    last["requestDigest"] = json!("f".repeat(64));
+    last["governorEvent"]["requestDigest"] = last["requestDigest"].clone();
+    refresh_event_hash(&mut last["governorEvent"]);
+    refresh_event_hash(last);
+    fs::write(
+        &path,
+        lines
+            .iter()
+            .map(serde_json::to_string)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let forged = fixture.call(&["run", "inspect", &ledger]);
+    assert!(
+        !forged.status.success(),
+        "forged request digest was accepted"
+    );
+    assert!(String::from_utf8_lossy(&forged.stderr).contains("request digest"));
+
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "reject duplicate request identity history",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    assert!(fixture
+        .call(&[
+            "work",
+            "permit",
+            &work,
+            &assignment,
+            "--operation",
+            "edit",
+            "--request-id",
+            "request-1",
+        ])
+        .status
+        .success());
+    let path = fixture.root.join(&ledger);
+    let mut lines: Vec<Value> = fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut duplicate = lines.last().unwrap().clone();
+    duplicate["previousEventSha256"] = lines.last().unwrap()["eventSha256"].clone();
+    refresh_event_hash(&mut duplicate);
+    lines.push(duplicate);
+    fs::write(
+        &path,
+        lines
+            .iter()
+            .map(serde_json::to_string)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let duplicate = fixture.call(&["run", "inspect", &ledger]);
+    assert!(
+        !duplicate.status.success(),
+        "duplicate request identity was accepted"
+    );
+    assert!(String::from_utf8_lossy(&duplicate.stderr).contains("duplicate governor request"));
+}
+
+#[test]
+fn legacy_permit_without_request_id_keeps_historical_event_shape() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "preserve legacy mutation permits",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n",
+        )
+        .status
+        .success());
+    let worker = fixture.json(&["work", "next", &work]);
+    let permit = fixture.call(&[
+        "work",
+        "permit",
+        &work,
+        worker["next"]["assignment"].as_str().unwrap(),
+        "--operation",
+        "edit",
+    ]);
+    assert!(permit.status.success(), "{permit:?}");
+    let value: Value = serde_json::from_slice(&permit.stdout).unwrap();
+    assert!(value["event"]["requestId"].is_null());
+    assert!(value["event"]["requestDigest"].is_null());
+    assert!(value["event"]["governorEvent"]["requestId"].is_null());
+    assert_eq!(value["governor"]["spent"], 1);
 }
 
 #[test]
@@ -943,6 +1813,22 @@ fn nonmutation_evidence_then_implicit_completion_is_typed() {
         "state",
     ]);
     assert!(evidenced.status.success(), "{evidenced:?}");
+    let evidenced: Value = serde_json::from_slice(&evidenced.stdout).unwrap();
+    assert_no_transport_paths(&evidenced);
+    assert_resolver_backed_references(&evidenced);
+    let next = fixture.json(&["work", "next", &work]);
+    assert_no_transport_paths(&next);
+    let packet_path = fixture.root.join(".exitbind/evidence-residual.json");
+    fs::write(&packet_path, serde_json::to_vec(&next["residual"]).unwrap()).unwrap();
+    let validated = fixture.json(&[
+        "work",
+        "validate",
+        &work,
+        "--packet",
+        packet_path.to_str().unwrap(),
+    ]);
+    assert_eq!(validated["result"], "usable");
+    assert_no_transport_paths(&validated);
     let completed = fixture.return_body(&work, &assignment, "completed", b"implicit result\n");
     assert!(completed.status.success(), "{completed:?}");
     let ledger = format!(
@@ -1056,6 +1942,49 @@ fn lead_permit_is_refused_without_a_ledger_mutation() {
     let refused = fixture.call(&["work", "permit", work, assignment, "--operation", "edit"]);
     assert!(!refused.status.success());
     assert_eq!(fs::read(&ledger).unwrap(), before);
+}
+
+#[test]
+fn stale_assignment_and_unknown_outcome_refuse_before_artifact_or_ledger_mutation() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "reject invalid worker returns",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    let scoped = fixture.return_body(
+        &work,
+        started["next"]["assignment"].as_str().unwrap(),
+        "scoped",
+        b"scope\n",
+    );
+    assert!(scoped.status.success(), "{scoped:?}");
+    let assignment = fixture.json(&["work", "next", &work])["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut stale = assignment.clone();
+    stale.push('x');
+    let ledger = fixture.root.join(format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    ));
+    let before = fs::read(&ledger).unwrap();
+    let artifacts = fixture.artifact_snapshot();
+    let refused = fixture.return_body(&work, &stale, "completed", b"must not persist\n");
+    assert!(!refused.status.success(), "stale assignment was accepted");
+    assert_eq!(fs::read(&ledger).unwrap(), before);
+    assert_eq!(fixture.artifact_snapshot(), artifacts);
+
+    let refused = fixture.return_body(&work, &assignment, "unknown", b"must not persist\n");
+    assert!(!refused.status.success(), "unknown outcome was accepted");
+    assert_eq!(fs::read(&ledger).unwrap(), before);
+    assert_eq!(fixture.artifact_snapshot(), artifacts);
 }
 
 #[test]

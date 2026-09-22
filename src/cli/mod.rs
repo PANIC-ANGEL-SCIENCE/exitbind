@@ -517,13 +517,14 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "permit" => {
-            args::assert_options("work permit", a, &["config", "operation"])?;
+            args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
             args::assert_positionals("work permit", a, 3)?;
             print_json(&crate::work::permit(
                 l,
                 positional(a, 1, "work permit requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work permit requires WORK ASSIGNMENT")?,
                 option(a, "operation", "work permit requires --operation OPERATION")?,
+                a.options.get("request-id").map(String::as_str),
             )?)
         }
         "replan" => {

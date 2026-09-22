@@ -452,6 +452,29 @@ pub(crate) fn project(
     facts: &Value,
     resumed: bool,
 ) -> Value {
+    project_with_memory(state_root, work, packet, progress, facts, resumed, true)
+}
+
+pub(crate) fn project_without_memory(
+    state_root: &Path,
+    work: &str,
+    packet: &Value,
+    progress: &Value,
+    facts: &Value,
+    resumed: bool,
+) -> Value {
+    project_with_memory(state_root, work, packet, progress, facts, resumed, false)
+}
+
+fn project_with_memory(
+    state_root: &Path,
+    work: &str,
+    packet: &Value,
+    progress: &Value,
+    facts: &Value,
+    resumed: bool,
+    remember_state: bool,
+) -> Value {
     let current = classify(packet, progress, facts);
     let remembered = remembered(state_root, work);
     let stored = remembered.as_ref().map(|(_, document)| document);
@@ -470,12 +493,14 @@ pub(crate) fn project(
         transition(previous.as_ref(), &current)
     };
 
-    remember(
-        state_root,
-        work,
-        &current,
-        remembered.as_ref().map(|(text, _)| text.as_str()),
-    );
+    if remember_state {
+        remember(
+            state_root,
+            work,
+            &current,
+            remembered.as_ref().map(|(text, _)| text.as_str()),
+        );
+    }
 
     let applicable = progress["applicable"] == Value::Bool(true);
     let neuro = progress["percent"]

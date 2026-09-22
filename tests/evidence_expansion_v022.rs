@@ -207,7 +207,7 @@ fn v8_context_refs_expand_exactly_and_refuse_stale_cross_work_and_traversal() {
     ]);
     let work = started["work"].as_str().unwrap().to_owned();
     let history = started["next"]["packet"]["context"]["expansions"][0].clone();
-    assert_eq!(started["next"]["packet"]["context"]["version"], 2);
+    assert_eq!(started["next"]["packet"]["context"]["version"], 3);
     assert!(history.get("root").is_none());
     assert!(history.get("path").is_none());
     assert_eq!(history["sha256"].as_str().unwrap().len(), 64);
@@ -364,6 +364,8 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     assert_ne!(check["targetEventSha256"], check["checkEventSha256"]);
     assert!(reference["stdout"].get("path").is_none());
     assert!(reference["stderr"].get("path").is_none());
+    assert!(reference["stdout"].get("id").is_none());
+    assert!(reference["stderr"].get("id").is_none());
     let check_event_ref = check["checkEventRef"]["id"].as_str().unwrap();
     let check_event = fixture.call(&["work", "expand", &work, check_event_ref]);
     assert!(check_event.status.success(), "{check_event:?}");

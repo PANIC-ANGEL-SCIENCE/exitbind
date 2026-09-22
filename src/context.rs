@@ -14,6 +14,7 @@ use serde_json::{json, Map, Value};
 use std::fs;
 
 pub(crate) const CONTEXT_VERSION: u64 = 2;
+pub(crate) const OPAQUE_CONTEXT_VERSION: u64 = 3;
 pub(crate) const GOVERNOR_VERSION: u64 = crate::kernel::governor::VERSION;
 pub(crate) const SENSOR_VERSION: u64 = 1;
 pub(crate) const GRANT_PROTOCOL_VERSION: u64 = 1;
@@ -23,8 +24,9 @@ pub(crate) const GRANT_PROTOCOL_VERSION: u64 = 1;
 /// of spent budget and are replayed by `reduce_governor`.
 pub(crate) fn validate_marker(value: &Value) -> bool {
     value.as_object().is_some_and(|object| {
-        let legacy = object.len() == 2;
-        let current = (object.len() == 4 || object.len() == 5)
+        let legacy = object.len() == 2
+            || (object.len() == 3 && value["replanBinding"] == "assignment_packet_v1");
+        let current = (object.len() == 4 || object.len() == 5 || object.len() == 6)
             && value["noInformationLimit"].as_u64() == Some(NO_INFORMATION_LIMIT)
             && value["postReplanLimit"].as_u64() == Some(POST_REPLAN_LIMIT);
         (legacy || current)
@@ -32,6 +34,8 @@ pub(crate) fn validate_marker(value: &Value) -> bool {
             && value["budget"].as_u64() == Some(HARD_ITERATION_BUDGET)
             && (object.len() == 2
                 || object.len() == 4
+                || (object.len() == 3 && value["replanBinding"] == "assignment_packet_v1")
+                || (object.len() == 6 && value["replanBinding"] == "assignment_packet_v1")
                 || value["grantProtocol"].as_u64() == Some(GRANT_PROTOCOL_VERSION))
     })
 }
@@ -97,7 +101,7 @@ pub(crate) fn project(
     });
     let expansions = expansions(view, status, work);
     let mut value = json!({
-        "version": CONTEXT_VERSION,
+        "version": OPAQUE_CONTEXT_VERSION,
         "role": role,
         "run": {"id": run_id, "workflow": workflow},
         "subject": subject,
@@ -110,6 +114,7 @@ pub(crate) fn project(
         "expansions": expansions,
         "recovery": recovery,
     });
+    crate::work::packet::sanitize_assignment(&mut value);
     value["digest"] = json!(hash::value(&value));
     Ok(value)
 }
@@ -440,13 +445,12 @@ fn check_log_ref(work: &str, view: &Value, check_sha: &str) -> Option<Value> {
 /// Public evidence references identify canonical bytes without carrying the
 /// state-root transport needed to resolve them.
 pub(crate) fn artifact_reference(artifact: &Value, kind: &str) -> Value {
-    let mut reference = json!({
+    let reference = json!({
         "kind": kind,
         "sha256": artifact["sha256"],
         "bytes": artifact["bytes"],
         "exact": true,
     });
-    reference["id"] = json!(format!("ref:{}", hash::value(artifact)));
     reference
 }
 
@@ -516,7 +520,10 @@ fn valid_projection(value: &Value) -> bool {
     PROJECTION_FIELDS
         .iter()
         .all(|field| object.contains_key(*field))
-        && value["version"].as_u64() == Some(CONTEXT_VERSION)
+        && matches!(
+            value["version"].as_u64(),
+            Some(OPAQUE_CONTEXT_VERSION | CONTEXT_VERSION)
+        )
         && value["digest"].as_str().is_some_and(|digest| {
             let mut copy = value.clone();
             copy.as_object_mut().unwrap().remove("digest");
@@ -752,6 +759,8 @@ fn apply_mutation(state: &mut Value, event: &Value) -> Result<(), String> {
     sync_loop(state, loop_state);
     state["currentMutation"] = json!({
         "runId": event["runId"],
+        "eventSha256": event["eventSha256"],
+        "carryLineage": event["carryLineage"],
         "subjectSha256": event["subjectSha256"],
         "attempt": event["attempt"],
         "checkpoint": event["checkpoint"],
@@ -877,7 +886,11 @@ fn apply_replan(state: &mut Value, event: &Value) -> Result<(), String> {
     if state["state"] != "replan_required" {
         return Err("re-plan is not currently required".into());
     }
-    bind_identity(state, event)?;
+    // A completed worker mutation may carry the governor lineage into a new
+    // subject/attempt.  The following re-plan belongs to that fresh subject;
+    // requiring the pre-mutation identity here would make the governor
+    // impossible to recover after a legitimate reviewer/worker transition.
+    bind_replan_identity(state, event)?;
     let semantic = replan_semantic(event)?;
     if state["currentReplan"] == semantic {
         return Err("duplicate re-plan does not extend the bound".into());
@@ -887,6 +900,52 @@ fn apply_replan(state: &mut Value, event: &Value) -> Result<(), String> {
     let mut loop_state = loop_state(state)?;
     loop_state.apply(Transition::MaterialReplan)?;
     sync_loop(state, loop_state);
+    Ok(())
+}
+
+fn bind_replan_identity(state: &mut Value, event: &Value) -> Result<(), String> {
+    if state["runId"].is_null() {
+        state["runId"] = event["runId"].clone();
+    } else if state["runId"] != event["runId"] {
+        return Err("governor identity changed: runId".into());
+    }
+    let current_mutation = state["currentMutation"].as_object();
+    let identity_transition = event["identityTransition"].as_str();
+    if identity_transition == Some("carried_mutation_v1") {
+        let current_mutation =
+            current_mutation.ok_or("re-plan requires a current carried mutation")?;
+        if current_mutation["carryLineage"] != true {
+            return Err("re-plan requires the current mutation to carry lineage".into());
+        }
+        if event["previousSha256"] != current_mutation["eventSha256"] {
+            return Err("re-plan is not immediately after the current mutation".into());
+        }
+    }
+    let prior_attempt = state["attempt"].as_u64();
+    let next_attempt = event["attempt"].as_u64();
+    if identity_transition == Some("carried_mutation_v1")
+        && state["subjectSha256"] != event["subjectSha256"]
+    {
+        if prior_attempt
+            .zip(next_attempt)
+            .map_or(true, |(prior, next)| next != prior + 1)
+        {
+            return Err(format!(
+                "governor identity changed: subjectSha256 (attempt {:?} -> {:?})",
+                prior_attempt, next_attempt
+            ));
+        }
+        state["subjectSha256"] = event["subjectSha256"].clone();
+        state["attempt"] = event["attempt"].clone();
+    } else if identity_transition != Some("carried_mutation_v1") {
+        // Version-1 governor ledgers predate the explicit assignment binding.
+        // Keep their replay readable; new run ledgers reject this transition
+        // at the outer run reducer via replanBinding.
+        state["subjectSha256"] = event["subjectSha256"].clone();
+        state["attempt"] = event["attempt"].clone();
+    } else if state["attempt"] != event["attempt"] {
+        return Err("governor identity changed: attempt".into());
+    }
     Ok(())
 }
 
@@ -1253,6 +1312,90 @@ mod tests {
         assert_eq!(bounded["state"], "blocked");
         let refused = checkpoint(&bounded, &json!({"operation":"replan"}));
         assert_eq!(refused["allowed"], false);
+    }
+
+    #[test]
+    fn replan_follows_a_carried_lineage_subject_transition() {
+        let first = mutation(None, 1, None);
+        let second = event(
+            Some(&first),
+            json!({
+                "action":"mutation", "runId":"run", "subjectSha256":"next-subject",
+                "attempt":2, "checkpoint":2, "inputSha256":"input",
+                "lineageSha256":"lineage", "carryLineage":true, "unit":"unit",
+                "operation":"completed_submission", "newEvidenceSha256":null,
+            }),
+        );
+        let replan = event(
+            Some(&second),
+            json!({
+                "action":"replan", "runId":"run", "subjectSha256":"next-subject",
+                "attempt":2, "inputSha256":"input", "hypothesis":"repair the fresh attempt"
+            }),
+        );
+        let state = reduce_governor(&[first, second, replan]).unwrap();
+        assert_eq!(state["state"], "ready");
+        assert_eq!(state["attempt"], 2);
+        assert_eq!(state["subjectSha256"], "next-subject");
+    }
+
+    #[test]
+    fn marked_replan_requires_a_carried_current_mutation() {
+        let first = mutation(None, 1, None);
+        let second = mutation(Some(&first), 2, None);
+        let replan = event(
+            Some(&second),
+            json!({
+                "action":"replan", "identityTransition":"carried_mutation_v1",
+                "runId":"run", "subjectSha256":"subject", "attempt":1,
+                "inputSha256":"input", "hypothesis":"ordinary mutation replay"
+            }),
+        );
+        let error = reduce_governor(&[first, second, replan]).unwrap_err();
+        assert!(error.contains("carry lineage"), "{error}");
+    }
+
+    #[test]
+    fn markerless_replan_preserves_legacy_identity_transition() {
+        let first = mutation(None, 1, None);
+        let second = mutation(Some(&first), 2, None);
+        let replan = event(
+            Some(&second),
+            json!({
+                "action":"replan", "runId":"run",
+                "subjectSha256":"new-subject", "attempt":2,
+                "inputSha256":"input", "hypothesis":"legacy identity bypass"
+            }),
+        );
+        let state = reduce_governor(&[first, second, replan]).unwrap();
+        assert_eq!(state["subjectSha256"], "new-subject");
+        assert_eq!(state["attempt"], 2);
+    }
+
+    #[test]
+    fn identity_changing_replan_requires_the_current_carried_mutation() {
+        let mut state = json!({
+            "runId": "run",
+            "subjectSha256": "old-subject",
+            "attempt": 2,
+            "state": "replan_required",
+            "currentMutation": null,
+            "currentReplan": null,
+            "replanCount": 0,
+            "spent": 2,
+            "noInformationStreak": 2,
+            "postReplanSpent": 0,
+            "afterReplan": false,
+        });
+        let event = event(
+            None,
+            json!({
+                "action":"replan", "identityTransition":"carried_mutation_v1",
+                "runId":"run", "subjectSha256":"new-subject", "attempt":3,
+                "inputSha256":"input", "hypothesis":"forged transition"
+            }),
+        );
+        assert!(apply_replan(&mut state, &event).is_err());
     }
 
     #[test]

@@ -104,6 +104,39 @@ impl Disposition {
     }
 }
 
+/// A successor basis may clarify or narrow the accepted meaning, but existing
+/// constraints and bound provenance must be preserved while open zones narrow.
+pub(crate) fn validate_successor(current: &Basis, successor: &Basis) -> Result<(), String> {
+    if !current
+        .constraints
+        .iter()
+        .all(|item| successor.constraints.contains(item))
+    {
+        return Err("successor basis must preserve every current constraint".into());
+    }
+    if !current
+        .decisive_cases
+        .iter()
+        .all(|item| successor.decisive_cases.contains(item))
+    {
+        return Err("successor basis must preserve every current decisive case".into());
+    }
+    if !successor
+        .open_zones
+        .iter()
+        .all(|item| current.open_zones.contains(item))
+    {
+        return Err("successor basis may only narrow current open zones".into());
+    }
+    if current.boundary_sha256 != successor.boundary_sha256 {
+        return Err("successor basis must preserve the current boundary".into());
+    }
+    if current.preservation_sha256 != successor.preservation_sha256 {
+        return Err("successor basis must preserve the current preservation claim".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn parse_basis(value: &Value, label: &str) -> Result<Basis, String> {
     let object = value
         .as_object()
