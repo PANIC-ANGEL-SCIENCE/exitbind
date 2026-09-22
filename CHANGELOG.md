@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.24.0-rc.3
+
+- Reduce needless progress/status polling in shipped guidance: reuse one native
+  handle, wait for meaningful transitions, and keep unchanged state quiet.
+
 ## 0.24.0-rc.2
 
 - Make `work check` guidance explicit that the frozen command is executed and

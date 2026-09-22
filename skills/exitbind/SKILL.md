@@ -76,6 +76,14 @@ Do not add a routine preservation progress report. The presentation block's
 canonical progress and optional transition phrase remain subordinate to the
 recorded run state and never announce acceptance by wording alone.
 
+When a native command or child assignment is still running, keep one handle
+and wait for completion or a meaningful state transition. Use a meaningful
+wait window (normally 30–60 seconds), and do not start a fresh watch process or
+poll status at short intervals when nothing has changed. A timeout is not a
+failure and never authorizes restarting the command; wait on the same handle
+or inspect the authoritative state. Stay quiet on unchanged state, while an
+explicit human status request still receives the current truth.
+
 Keep observed, reported, inferred, and proposed facts distinct. Preserve
 reported-versus-observed check provenance. Bind every check, review, and lead
 decision to the current subject; stale or partial evidence must remain refused

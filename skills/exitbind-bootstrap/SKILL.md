@@ -101,3 +101,11 @@ acceptance, and never reuse evidence the CLI has refused.
 
 Run `exitbind host status` when the user asks whether Exitbind is installed and
 current.
+
+For a native command or child assignment that is still running, keep one
+handle and wait for completion or a meaningful state transition, normally for
+30–60 seconds. Do not start a fresh watch process or poll unchanged status at
+short intervals. A timeout is not a failure and never authorizes restarting
+the command; wait on the same handle or inspect authoritative state. Stay
+quiet when nothing changed, but answer an explicit human status request with
+the current truth.

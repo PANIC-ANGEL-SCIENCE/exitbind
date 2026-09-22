@@ -614,6 +614,12 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
     ));
     assert!(text.contains("Never\nreconstruct terminal wording from `exitState` or `progress`."));
     assert!(text.contains("Do not add a routine preservation progress report."));
+    assert!(
+        text.contains("keep one handle\nand wait for completion or a meaningful state transition")
+    );
+    assert!(
+        text.contains("A timeout is not a\nfailure and never authorizes restarting the command")
+    );
 }
 
 #[test]
@@ -2214,6 +2220,33 @@ fn every_distributed_guidance_copy_states_the_terminal_block_rule() {
         assert!(
             !text.contains("Report the exit state the CLI gives you (`EXIT READY`"),
             "{relative} still invites paraphrasing the exit state"
+        );
+    }
+}
+
+#[test]
+fn distributed_guidance_limits_unchanged_status_polling() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "skills/exitbind/SKILL.md",
+        "plugins/exitbind/skills/exitbind/SKILL.md",
+        "skills/exitbind-bootstrap/SKILL.md",
+    ] {
+        let text = std::fs::read_to_string(root.join(relative)).unwrap();
+        let lower = text.to_lowercase();
+        assert!(
+            lower.contains("do not start a fresh watch process"),
+            "{relative}"
+        );
+        assert!(
+            lower.contains("poll status at short intervals")
+                || (lower.contains("poll unchanged status") && lower.contains("short intervals")),
+            "{relative}"
+        );
+        assert!(lower.contains("a timeout is not a"), "{relative}");
+        assert!(
+            lower.contains("explicit human status request"),
+            "{relative}"
         );
     }
 }
