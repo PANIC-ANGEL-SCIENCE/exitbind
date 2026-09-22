@@ -1350,6 +1350,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     preserve_requirement,
                     preservation_check_command,
                     preservation_proof_origin,
+                    a.options.get("basis").map(String::as_str),
+                    a.options.get("review-policy").map(String::as_str),
                 )
             }
         }

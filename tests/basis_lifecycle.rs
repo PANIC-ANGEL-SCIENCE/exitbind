@@ -132,6 +132,77 @@ fn ledger_events_at(fixture: &Fixture, ledger: &str) -> Vec<Value> {
 }
 
 #[test]
+fn supersede_preserves_explicit_basis_and_review_policy_options() {
+    let fixture = Fixture::new("supersede-policy-propagation");
+    let original_basis = json!({
+        "version": 1,
+        "constraints": ["preserve predecessor"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["successor records owner policy"]
+    });
+    fixture.value(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "original goal",
+        "--ledger",
+        fixture.ledger(),
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "local_report",
+        "--basis",
+        &serde_json::to_string(&original_basis).unwrap(),
+        "--review-policy",
+        "required",
+    ]);
+    let _lead = fixture.value(&["run", "next", fixture.ledger()]);
+    let lead_artifact = fixture.artifact("supersede-lead.md", b"scope");
+    fixture.value_with_input(
+        &[
+            "run",
+            "submit",
+            "lead",
+            fixture.ledger(),
+            "--outcome",
+            "scoped",
+            "--artifact",
+            &lead_artifact,
+            "--artifact-root",
+            "state",
+        ],
+        b"scope",
+    );
+
+    let successor_basis = basis_with_hash(json!({
+        "version": 1,
+        "constraints": ["preserve predecessor", "require currentness"],
+        "openZones": ["worker implementation"],
+        "decisiveCases": ["successor records owner policy"]
+    }));
+    let successor = fixture.value(&[
+        "run",
+        "supersede",
+        fixture.ledger(),
+        "--workflow",
+        "change",
+        "--goal",
+        "successor goal",
+        "--ledger",
+        ".exitbind/runs/successor.jsonl",
+        "--basis",
+        &serde_json::to_string(&successor_basis).unwrap(),
+        "--review-policy",
+        "omitted",
+    ]);
+    let event = ledger_events_at(&fixture, ".exitbind/runs/successor.jsonl")[0].clone();
+    assert_eq!(event["basis"], successor_basis);
+    assert_eq!(event["reviewPolicy"]["decision"], "omitted");
+    assert!(successor["runId"].is_string());
+}
+
+#[test]
 fn marked_basis_contradiction_successor_preserves_governor_and_currentness() {
     let fixture = Fixture::new("basis-lifecycle");
     let basis = json!({
