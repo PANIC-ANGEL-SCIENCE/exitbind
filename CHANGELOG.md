@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.24.0-rc.3
+## 0.24.0-rc.4
 
 - Reduce needless progress/status polling in shipped guidance: reuse one native
   handle, wait for meaningful transitions, and keep unchanged state quiet.
