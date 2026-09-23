@@ -171,28 +171,49 @@ fn mixed_direct_closure_cannot_bypass_missing_governed_evidence() {
     ]);
     let refused = project.call(&["goal", "close", "--direct", "--goal-id", "direct"]);
     assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("current governed result"));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("not a governed result"));
     assert_no_run_files(&project);
     fs::remove_dir_all(project.root).unwrap();
 }
 
 #[test]
-fn direct_card_rejects_input_drift_with_corrupt_or_missing_memo() {
+fn direct_close_and_card_continue_with_input_drift_and_corrupt_or_missing_memo() {
     let project = Project::new("direct-goal-drift");
     establish_direct_goal(&project);
-    project.value(&["goal", "close", "--direct", "--goal-id", "direct"]);
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--direct",
+        "--goal-id",
+        "direct",
+        "--goal",
+        "finish directly",
+        "--finding",
+        "direct finding",
+    ]);
+    fs::write(project.root.join("source.txt"), b"drifted-input\n").unwrap();
+    let closed = project.call(&["goal", "close", "--direct", "--goal-id", "direct"]);
+    assert!(
+        closed.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&closed.stdout),
+        String::from_utf8_lossy(&closed.stderr)
+    );
+    assert!(String::from_utf8_lossy(&closed.stderr).contains("tested_inputs_drift"));
+    let closed: Value = serde_json::from_slice(&closed.stdout).unwrap();
+    assert_eq!(closed["closure"]["closed"], true);
     assert_eq!(pty_status(&project).matches(CARD).count(), 1);
+    assert_no_run_files(&project);
+
     let cache = project
         .root
         .join(".exitbind/presentation/session-goal.json");
-
-    fs::write(project.root.join("source.txt"), b"drifted-input\n").unwrap();
     fs::write(&cache, b"corrupt cache").unwrap();
     let corrupt = pty_status(&project);
-    assert_eq!(corrupt.matches(CARD).count(), 0, "{corrupt}");
+    assert_eq!(corrupt.matches(CARD).count(), 1, "{corrupt}");
     fs::remove_file(&cache).unwrap();
     let missing = pty_status(&project);
-    assert_eq!(missing.matches(CARD).count(), 0, "{missing}");
+    assert_eq!(missing.matches(CARD).count(), 1, "{missing}");
     fs::remove_dir_all(project.root).unwrap();
 }
 

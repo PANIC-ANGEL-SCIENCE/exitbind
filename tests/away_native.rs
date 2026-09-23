@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 mod support;
 use std::{
     fs,
+    io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -65,7 +66,10 @@ fn required_harness_refuses_before_any_codex_launch() {
     let fake = root.join("fake-codex");
     fs::write(
         &fake,
-        format!("#!/bin/sh\nprintf invoked > '{}'\n", marker.display()),
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = exec ] && [ \"$2\" = --help ]; then echo '-c -C --add-dir --ephemeral -m'; exit 0; fi\nprintf invoked > '{}'\n",
+            marker.display()
+        ),
     )
     .unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
@@ -134,7 +138,76 @@ fn required_harness_refuses_before_any_codex_launch() {
         None,
     );
     assert!(bound.status.success(), "{}", text(&bound));
-    use std::io::Write;
+    let config_bytes = fs::read(&config).unwrap();
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&config)
+        .unwrap()
+        .write_all(b"\n")
+        .unwrap();
+    let drifted_current = invoke(
+        &[
+            "away",
+            "start",
+            "lead",
+            ".soulmate/bound.jsonl",
+            "--require-harness-receipt",
+            "--config",
+            &config,
+        ],
+        Some(&fake),
+    );
+    assert!(
+        drifted_current.status.success(),
+        "{}",
+        text(&drifted_current)
+    );
+    assert!(
+        text(&drifted_current).contains("config_drift"),
+        "{}",
+        text(&drifted_current)
+    );
+    let _ = fs::remove_file(&marker);
+    for entry in fs::read_dir(root.join(".soulmate/away")).unwrap() {
+        fs::remove_dir_all(entry.unwrap().path()).unwrap();
+    }
+    fs::write(&config, config_bytes).unwrap();
+    let manifest_path = root.join("harness-manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).unwrap();
+    let mut changed_manifest: Value = serde_json::from_slice(&manifest_bytes).unwrap();
+    changed_manifest["harness"]["version"] = json!("changed");
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&changed_manifest).unwrap(),
+    )
+    .unwrap();
+    let drifted_manifest = invoke(
+        &[
+            "away",
+            "start",
+            "lead",
+            ".soulmate/bound.jsonl",
+            "--require-harness-receipt",
+            "--config",
+            &config,
+        ],
+        Some(&fake),
+    );
+    assert!(
+        drifted_manifest.status.success(),
+        "{}",
+        text(&drifted_manifest)
+    );
+    assert!(
+        text(&drifted_manifest).contains("harness_receipt_drift"),
+        "{}",
+        text(&drifted_manifest)
+    );
+    let _ = fs::remove_file(&marker);
+    for entry in fs::read_dir(root.join(".soulmate/away")).unwrap() {
+        fs::remove_dir_all(entry.unwrap().path()).unwrap();
+    }
+    fs::write(&manifest_path, manifest_bytes).unwrap();
     writeln!(fs::OpenOptions::new()
         .append(true)
         .open(root.join(".soulmate/harness-receipt.json"))
@@ -153,7 +226,7 @@ fn required_harness_refuses_before_any_codex_launch() {
         Some(&fake),
     );
     assert!(!drifted.status.success(), "{}", text(&drifted));
-    assert!(text(&drifted).contains("harness receipt drift"));
+    assert!(text(&drifted).contains("harness receipt reference is not exact"));
     assert!(!marker.exists());
     assert!(root.join(".soulmate/away").is_dir());
     assert!(fs::read_dir(root.join(".soulmate/away"))

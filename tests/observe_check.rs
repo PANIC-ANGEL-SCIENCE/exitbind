@@ -740,8 +740,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
 #[cfg(unix)]
 #[test]
 fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
-    let command =
-        "printf started > observe-started; while [ ! -f observe-continue ]; do sleep 0.01; done";
+    let command = "printf started > observe-started; while [ ! -f observe-continue ]; do sleep 0.01; done; printf observed > observe-effect.txt; exit 7";
     let (root, ledger, target) = checked_worker("observe-race", command);
     let observation = Command::new(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&root)
@@ -783,7 +782,17 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
     fs::write(root.join("observe-continue"), "continue\n").unwrap();
     let observed = observation.wait_with_output().unwrap();
     assert!(!observed.status.success());
-    assert!(text(&observed).contains("ledger changed while observing"));
+    assert!(root.join("observe-effect.txt").is_file());
+    let observed_text = text(&observed);
+    assert!(observed_text.contains("ledger changed while observing"));
+    assert!(
+        observed_text.contains("this check result was not recorded"),
+        "{observed_text}"
+    );
+    assert!(
+        !observed_text.contains("no mutation was made"),
+        "{observed_text}"
+    );
     let inspected = run(
         &root,
         &[
@@ -894,7 +903,6 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
     assert!(!root.join("launched.txt").exists());
 
     let (root, ledger, target) = checked_worker("observe-drift", "printf changed > soulmate.json");
-    let before = fs::read(root.join(&ledger)).unwrap();
     let drifted = call(
         &root,
         &[
@@ -907,9 +915,10 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
             "soulmate.json",
         ],
     );
-    assert!(!drifted.status.success());
-    assert!(text(&drifted).contains("drift"));
-    assert_eq!(fs::read(root.join(&ledger)).unwrap(), before);
+    assert!(drifted.status.success(), "{}", text(&drifted));
+    let observed: Value = serde_json::from_slice(&drifted.stdout).unwrap();
+    assert_eq!(observed["event"]["result"]["code"], 0);
+    assert_eq!(observed["warnings"][0]["classification"], "config_drift");
     fs::remove_dir_all(root).unwrap();
 
     let (root, ledger, target) = checked_worker(

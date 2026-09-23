@@ -3,6 +3,8 @@ mod support;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::thread;
@@ -437,7 +439,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
 
     let failure = Fixture::new();
     let (_started, _failure_work, failure_ledger, failure_target) =
-        failure.start_worker("head -c 1048577 /dev/zero");
+        failure.start_worker("head -c 8388609 /dev/zero");
     let before = fs::read_to_string(failure.root.join(&failure_ledger)).unwrap();
     let output = failure.call(&[
         "run",
@@ -446,7 +448,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         "--target",
         &failure_target,
         "--timeout-ms",
-        "50",
+        "1000",
     ]);
     assert!(!output.status.success(), "overflow unexpectedly recorded");
     assert_eq!(
@@ -603,20 +605,74 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         // makes the write failure observable to Exitbind instead.
         let capture_write = Fixture::new();
         let (_started, capture_work, capture_ledger, _capture_target) =
-            capture_write.start_worker("head -c 262144 /dev/zero; exit 0");
+            capture_write.start_worker("trap '' TERM; head -c 4096 /dev/zero; exit 7");
         let before_capture_write = fs::read(capture_write.root.join(&capture_ledger)).unwrap();
-        let output =
-            capture_write.call_with_file_limit(&["work", "check", &capture_work], 64 * 1024);
+        let output = capture_write.call_with_file_limit(&["work", "check", &capture_work], 1024);
         assert!(
             !output.status.success(),
             "capture writer failure unexpectedly succeeded: {output:?}"
         );
+        let capture_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            capture_text.contains("status=ExitStatus(unix_wait_status(1792))"),
+            "the child exit status observed during cleanup was lost: {capture_text}"
+        );
+        assert!(capture_text.contains("capture=failed"), "{capture_text}");
         assert_eq!(
             fs::read(capture_write.root.join(&capture_ledger)).unwrap(),
             before_capture_write
         );
         assert_no_capture_artifacts(&capture_write);
         assert_no_ledger_stage_artifacts(&capture_write);
+
+        // The check can finish with a real nonzero result before ledger
+        // storage fails. Preserve that observed outcome while leaving the
+        // append-only ledger unchanged and removing the owned captures.
+        let append_failure = Fixture::new();
+        let (_started, _append_work, append_ledger, append_target) =
+            append_failure.start_worker("chmod u-w .exitbind/runs; printf captured; exit 7");
+        let before_append = fs::read(append_failure.root.join(&append_ledger)).unwrap();
+        let output = append_failure.call(&[
+            "run",
+            "observe-check",
+            &append_ledger,
+            "--target",
+            &append_target,
+        ]);
+        assert!(
+            !output.status.success(),
+            "ledger append unexpectedly succeeded"
+        );
+        let failure_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            failure_text.contains("status={\"code\":7,\"kind\":\"exit\"}")
+                || failure_text.contains("status={\"kind\":\"exit\",\"code\":7}"),
+            "{failure_text}"
+        );
+        assert!(failure_text.contains("durationMs="), "{failure_text}");
+        assert!(
+            failure_text.contains("capture=complete(stdout=8, stderr=0)"),
+            "{failure_text}"
+        );
+        assert_eq!(
+            fs::read(append_failure.root.join(&append_ledger)).unwrap(),
+            before_append
+        );
+        fs::set_permissions(
+            append_failure.root.join(".exitbind/runs"),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        assert_no_capture_artifacts(&append_failure);
+        assert_no_ledger_stage_artifacts(&append_failure);
 
         // A signal result is semantic check evidence, not capture
         // infrastructure failure. It must remain recorded with both log
@@ -638,18 +694,62 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
             assert!(path.is_file(), "missing {stream} signal artifact");
         }
 
-        // Both readers drain concurrently, and the exact per-stream limit is
-        // accepted. This also proves the bound is not an off-by-one cap.
+        // Both readers drain concurrently, and streams above the legacy 1 MiB
+        // limit remain complete while staying within the new bounded cap.
         let exact = Fixture::new();
         let (_started, exact_work, exact_ledger, _exact_target) =
-            exact.start_worker("head -c 1048576 /dev/zero; head -c 1048576 /dev/zero >&2; exit 0");
+            exact.start_worker("head -c 2097152 /dev/zero; head -c 2097152 /dev/zero >&2; exit 0");
         let checked = exact.call(&["work", "check", &exact_work]);
         assert!(checked.status.success(), "{checked:?}");
         let exact_source = fs::read_to_string(exact.root.join(exact_ledger)).unwrap();
         let exact_event: Value =
             serde_json::from_str(exact_source.lines().last().unwrap()).unwrap();
-        assert_eq!(exact_event["stdout"]["bytes"], 1_048_576);
-        assert_eq!(exact_event["stderr"]["bytes"], 1_048_576);
+        for stream in ["stdout", "stderr"] {
+            assert_eq!(exact_event[stream]["bytes"], 2_097_152);
+            assert_eq!(
+                exact_event[stream]["sha256"],
+                "5647f05ec18958947d32874eeb788fa396a05d0bab7c1b71f112ceb7e9b31eee"
+            );
+        }
+        let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+        let log_ref = checked["next"]["packet"]["context"]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|item| item.get("checkLogRef"))
+            .unwrap();
+        let expanded = exact.call(&[
+            "work",
+            "expand",
+            &exact_work,
+            log_ref["id"].as_str().unwrap(),
+        ]);
+        assert!(expanded.status.success(), "{expanded:?}");
+        let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+        for stream in ["stdout", "stderr"] {
+            assert_eq!(expanded[stream]["bytes"], 2_097_152);
+            assert_eq!(expanded[stream]["displayedBytes"], 64 * 1024);
+            assert_eq!(
+                expanded[stream]["contentHex"].as_str().unwrap().len(),
+                128 * 1024
+            );
+            assert_eq!(expanded[stream]["truncated"], true);
+        }
+
+        // stderr reaches EOF before stdout. Counts must follow the stream
+        // that produced them, rather than whichever reader reports first.
+        let asymmetric = Fixture::new();
+        let (_started, asymmetric_work, asymmetric_ledger, _asymmetric_target) = asymmetric
+            .start_worker("printf e >&2; exec 2>&-; sleep 0.05; printf stdout-later; exit 7");
+        let checked = asymmetric.call(&["work", "check", &asymmetric_work]);
+        assert!(checked.status.success(), "{checked:?}");
+        let asymmetric_source =
+            fs::read_to_string(asymmetric.root.join(asymmetric_ledger)).unwrap();
+        let asymmetric_event: Value =
+            serde_json::from_str(asymmetric_source.lines().last().unwrap()).unwrap();
+        assert_eq!(asymmetric_event["result"]["code"], 7);
+        assert_eq!(asymmetric_event["stdout"]["bytes"], 12);
+        assert_eq!(asymmetric_event["stderr"]["bytes"], 1);
 
         // A successful shell leader is not enough: a background descendant
         // may still hold a pipe open. Capture must terminate the process group

@@ -367,6 +367,41 @@ pub(crate) fn claim_path(ledger: &LedgerPath) -> PathBuf {
     PathBuf::from(format!("{}.supersede", ledger.path.display()))
 }
 
+/// Read and validate an existing supersession claim without requiring a
+/// caller to know the successor request that created it.
+pub(crate) fn valid_claim(path: &Path) -> Result<Option<Value>, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("supersession claim is not a regular file".into());
+    }
+    let mut file = open_read_nofollow(path).map_err(|error| error.to_string())?;
+    let opened = file.metadata().map_err(|error| error.to_string())?;
+    if !opened.is_file() || inode(&opened) != inode(&metadata) {
+        return Err("supersession claim changed while opening".into());
+    }
+    let mut source = String::new();
+    file.read_to_string(&mut source)
+        .map_err(|error| error.to_string())?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| error.to_string())?;
+    let mut confirmed = String::new();
+    file.read_to_string(&mut confirmed)
+        .map_err(|error| error.to_string())?;
+    let current = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if source != confirmed || current.file_type().is_symlink() || inode(&current) != inode(&opened)
+    {
+        return Err("supersession claim changed while reading".into());
+    }
+    let value: Value =
+        serde_json::from_str(&source).map_err(|_| "invalid supersession claim".to_string())?;
+    validate_claim(&value)?;
+    Ok(Some(value))
+}
+
 pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionClaim, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {

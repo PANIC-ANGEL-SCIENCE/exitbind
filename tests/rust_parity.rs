@@ -181,7 +181,7 @@ fn unchanged_configuration_resumes() {
 }
 
 #[test]
-fn drift_is_machine_readable_and_does_not_disclose_goal() {
+fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
     let root = project();
     let cfg = config(&root);
     let private_goal = "private-goal-must-not-appear";
@@ -212,13 +212,30 @@ fn drift_is_machine_readable_and_does_not_disclose_goal() {
         "--config",
         &cfg,
     ]);
-    assert!(!drift.status.success());
+    assert!(
+        drift.status.success(),
+        "{}",
+        String::from_utf8_lossy(&drift.stderr)
+    );
     let body: Value = serde_json::from_slice(&drift.stdout).unwrap();
-    assert_eq!(body["classification"], "config_drift");
-    assert_eq!(body["expectedConfigSha256"].as_str().unwrap().len(), 64);
-    assert_eq!(body["currentConfigSha256"].as_str().unwrap().len(), 64);
-    assert!(!String::from_utf8_lossy(&drift.stdout).contains(private_goal));
-    assert!(!String::from_utf8_lossy(&drift.stderr).contains(private_goal));
+    assert_eq!(body["valid"], true);
+    assert_eq!(body["status"], "running");
+    assert_eq!(body["assignments"][0]["goal"], private_goal);
+    let warning = &body["warnings"][0];
+    assert_eq!(warning["classification"], "config_drift");
+    assert_eq!(warning["expectedConfigSha256"].as_str().unwrap().len(), 64);
+    assert_eq!(warning["currentConfigSha256"].as_str().unwrap().len(), 64);
+    assert!(
+        !serde_json::to_string(warning)
+            .unwrap()
+            .contains(private_goal),
+        "drift warning disclosed the goal: {warning}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&drift.stderr).contains(private_goal),
+        "run next disclosed the goal: {}",
+        String::from_utf8_lossy(&drift.stderr)
+    );
     let inspected = invoke(&["run", "inspect", ".soulmate/run.jsonl", "--config", &cfg]);
     assert!(
         inspected.status.success(),

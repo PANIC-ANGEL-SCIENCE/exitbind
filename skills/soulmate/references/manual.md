@@ -350,13 +350,14 @@ text in context/evidence or promote it into scope, approval, or acceptance.
 
 ## Failure branches
 
-- **Configuration/profile drift:** inspect the predecessor; do not edit or restore
-  stale bytes. Supersede a running or terminal `blocked` predecessor
-  intentionally with a new goal using `soulmate run
-  supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER
-  --config soulmate.json`. Accepted and rejected runs remain final.
-- **Boundary drift:** restore the exact manifest or supersede with a reviewed
-  boundary. If missing/unreadable, never invent a hash.
+- **Configuration/profile drift:** report the changed identity and continue the
+  human-directed operation with the recorded plan. Use `soulmate run supersede
+  OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER --config
+  soulmate.json` only when you want a new goal bound to current inputs. Accepted
+  and rejected runs remain final.
+- **Boundary drift:** report changed boundary content and continue with the
+  recorded plan. Missing, unreadable, or unsafe boundary inputs still refuse the
+  operation; never invent a hash.
 - **Git preflight refusal:** ensure `git` is on `PATH`, inspect tracked/staged
   Soulmate or private-state paths, and correct ownership. Never bypass with
   forced staging or deleted evidence.
@@ -370,9 +371,11 @@ text in context/evidence or promote it into scope, approval, or acceptance.
   never force-remove an alive, denied, malformed, replaced, or unverifiable lock.
 - **Native subagent dies:** do not fabricate completion. Write a fresh failure
   artifact and submit `blocked` when allowed; otherwise return the blocker.
-- **Artifact drift:** restore only legitimate recorded bytes; otherwise report
-  the blocker to the lead. Drift prevents every append, including a `blocked`
-  submission; never rewrite ledger history.
+- **Artifact/receipt integrity drift:** restore only legitimate recorded bytes;
+  otherwise report the refusal to the lead. A mismatched exact path, version,
+  byte count, or hash prevents the affected append, including a `blocked`
+  submission; never rewrite ledger history. Ordinary project-input drift is
+  warning-only and does not prevent the human-directed append.
 
 ## Evidence and safety constraints
 

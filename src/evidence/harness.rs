@@ -94,8 +94,8 @@ pub(crate) fn load(loaded: &Loaded, requested: &str) -> Result<Value, String> {
     recorded(&manifest, &bytes, requested)
 }
 
-pub(crate) fn verify(loaded: &Loaded, recorded: &Value) -> Result<bool, String> {
-    let object = recorded
+pub(crate) fn verify(loaded: &Loaded, receipt: &Value) -> Result<bool, String> {
+    let object = receipt
         .as_object()
         .filter(|object| object.len() == 7)
         .ok_or("unsupported or malformed harness receipt")?;
@@ -105,18 +105,31 @@ pub(crate) fn verify(loaded: &Loaded, recorded: &Value) -> Result<bool, String> 
         .filter(|path| supported_path(loaded, path))
         .ok_or("unsupported or malformed harness receipt")?;
 
-    match crate::config::file(&loaded.control_root, path) {
-        Ok(_) => {}
+    let bytes = match project_path::secure_bytes(&loaded.control_root, path, "harness manifest") {
+        Ok(bytes) => bytes,
         Err(error) if error.starts_with("declared file does not exist:") => return Ok(false),
         Err(error) => return Err(error),
+    };
+    if hash::bytes(&bytes) != object["manifestSha256"] {
+        return Ok(false);
     }
-    Ok(load(loaded, path)? == *recorded)
+    let manifest = match serde_json::from_slice::<Manifest>(&bytes) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(false),
+    };
+    if validate(&manifest, loaded).is_err() {
+        return Ok(false);
+    }
+    Ok(recorded(&manifest, &bytes, path)? == *receipt)
 }
 
-/// Read and validate the exact raw manifest named by a receipt. The returned
-/// value is intentionally kept in memory by the native away adapter; it is
-/// never copied into a receipt or recovery state.
-pub(crate) fn raw_for_receipt(loaded: &Loaded, recorded: &Value) -> Result<String, String> {
+/// Read and validate the current raw manifest named by a receipt. The returned
+/// bytes remain in memory; the boolean reports whether their hash still matches
+/// the receipt so callers can warn without blocking the recorded work.
+pub(crate) fn raw_for_receipt(
+    loaded: &Loaded,
+    recorded: &Value,
+) -> Result<(Option<String>, String), String> {
     let object = recorded
         .as_object()
         .filter(|object| object.len() == 7)
@@ -131,14 +144,29 @@ pub(crate) fn raw_for_receipt(loaded: &Loaded, recorded: &Value) -> Result<Strin
         .and_then(Value::as_str)
         .filter(|hash| valid_sha256(hash))
         .ok_or("unsupported or malformed harness receipt")?;
-    let bytes = project_path::secure_bytes(&loaded.control_root, path, "harness manifest")?;
-    if hash::bytes(&bytes) != expected {
-        return Err("harness manifest changed since receipt creation".into());
+    let bytes = match project_path::secure_bytes(&loaded.control_root, path, "harness manifest") {
+        Ok(bytes) => bytes,
+        Err(error) if error.starts_with("declared file does not exist:") => {
+            return Ok((None, String::new()))
+        }
+        Err(error) => return Err(error),
+    };
+    let current = hash::bytes(&bytes);
+    if current != expected {
+        return Ok((None, current));
     }
-    let manifest: Manifest = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("invalid harness manifest JSON: {error}"))?;
-    validate(&manifest, loaded)?;
-    String::from_utf8(bytes).map_err(|_| "harness manifest must be UTF-8".to_owned())
+    let manifest = match serde_json::from_slice::<Manifest>(&bytes) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok((None, current)),
+    };
+    if validate(&manifest, loaded).is_err() {
+        return Ok((None, current));
+    }
+    let raw = match String::from_utf8(bytes) {
+        Ok(raw) => raw,
+        Err(_) => return Ok((None, current)),
+    };
+    Ok((Some(raw), current))
 }
 
 fn recorded(manifest: &Manifest, bytes: &[u8], path: &str) -> Result<Value, String> {

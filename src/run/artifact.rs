@@ -1,8 +1,17 @@
 //! Typed run-artifact evidence and immutable-byte revalidation.
 
-use crate::{config, config::Loaded, evidence::hash};
+use crate::{config, config::Loaded};
 use serde_json::{json, Value};
-use std::{fs, path::Path};
+use sha2::{Digest, Sha256};
+use std::{fs, io::Read, path::Path};
+
+const VERIFY_BUFFER_BYTES: usize = 64 * 1024;
+
+pub(crate) struct VerifiedArtifact {
+    pub(crate) bytes: u64,
+    pub(crate) sha256: String,
+    pub(crate) preview: Vec<u8>,
+}
 
 pub(crate) fn evidence(
     loaded: &Loaded,
@@ -27,10 +36,11 @@ pub(crate) fn evidence(
         let targets = [real.as_path()];
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     }
+    let verified = verify_file(&real, 0).map_err(|error| error.to_string())?;
     Ok(json!({
         "root": root_name,
         "path": config::rel(root, &real)?,
-        "sha256": hash::bytes(&fs::read(real).map_err(|error| error.to_string())?)
+        "sha256": verified.sha256
     }))
 }
 
@@ -55,9 +65,14 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
             .map_err(|_| format!("artifact drift detected: {requested}"))?;
         if config::rel(root, &real).map_err(|_| format!("artifact drift detected: {requested}"))?
             != requested
-            || hash::bytes(
-                &fs::read(real).map_err(|_| format!("artifact drift detected: {requested}"))?,
-            ) != item["artifact"]["sha256"]
+            || {
+                let verified = verify_file(&real, 0)
+                    .map_err(|_| format!("artifact drift detected: {requested}"))?;
+                item["artifact"]["bytes"]
+                    .as_u64()
+                    .is_some_and(|expected| expected != verified.bytes)
+                    || verified.sha256 != item["artifact"]["sha256"]
+            }
         {
             return Err(format!("artifact drift detected: {requested}"));
         }
@@ -73,7 +88,11 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
     Ok(())
 }
 
-pub(crate) fn read(loaded: &Loaded, artifact: &Value, label: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read(
+    loaded: &Loaded,
+    artifact: &Value,
+    label: &str,
+) -> Result<VerifiedArtifact, String> {
     if artifact["root"] != "state" {
         return Err(format!("{label} artifact root is invalid"));
     }
@@ -89,13 +108,36 @@ pub(crate) fn read(loaded: &Loaded, artifact: &Value, label: &str) -> Result<Vec
     if config::rel(&loaded.state_root, &real)? != requested {
         return Err(format!("{label} artifact path changed"));
     }
-    let bytes = fs::read(real).map_err(|error| error.to_string())?;
-    if artifact["bytes"].as_u64() != Some(bytes.len() as u64)
-        || artifact["sha256"] != hash::bytes(&bytes)
-    {
+    let verified = verify_file(&real, 64 * 1024).map_err(|error| error.to_string())?;
+    if artifact["bytes"].as_u64() != Some(verified.bytes) || artifact["sha256"] != verified.sha256 {
         return Err(format!("{label} artifact bytes changed"));
     }
-    Ok(bytes)
+    Ok(verified)
+}
+
+fn verify_file(path: &Path, preview_limit: usize) -> std::io::Result<VerifiedArtifact> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    let mut preview = Vec::with_capacity(preview_limit.min(VERIFY_BUFFER_BYTES));
+    let mut buffer = [0u8; VERIFY_BUFFER_BYTES];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+        bytes = bytes
+            .checked_add(count as u64)
+            .ok_or_else(|| std::io::Error::other("artifact byte count overflowed"))?;
+        let remaining = preview_limit.saturating_sub(preview.len());
+        preview.extend_from_slice(&buffer[..count.min(remaining)]);
+    }
+    Ok(VerifiedArtifact {
+        bytes,
+        sha256: format!("{:x}", hasher.finalize()),
+        preview,
+    })
 }
 
 fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> {

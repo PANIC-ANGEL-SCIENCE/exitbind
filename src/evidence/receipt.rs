@@ -366,34 +366,70 @@ pub(crate) fn assert_current(
     plan: &Value,
 ) -> Result<(), String> {
     let expected = reference["sha256"].as_str().unwrap_or_default();
-    let (relative, source) =
-        match read_state_bytes(loaded, reference["path"].as_str().unwrap_or("")) {
-            Ok(value) => value,
-            Err(_) => return Err(harness_drift(expected, "")),
-        };
+    let (source, receipt) = exact_reference(loaded, reference)?;
     let current = hash::bytes(&source);
-    if reference["version"] != 2
-        || reference["path"] != relative
-        || !is_sha_text(expected)
-        || current != expected
-    {
-        return Err(harness_drift(expected, &current));
-    }
-    let receipt = parse(&source).map_err(|_| harness_drift(expected, &current))?;
-    if receipt["version"] != 2 {
-        return Err(harness_drift(expected, &current));
-    }
-    let mismatches =
-        verify_value(loaded, &receipt).map_err(|_| harness_drift(expected, &current))?;
+    let mismatches = verify_value(loaded, &receipt)?;
     if !mismatches.is_empty() {
         return Err(harness_drift(expected, &current));
     }
-    assert_plan_coverage(&receipt, plan).map_err(|_| harness_drift(expected, &current))
+    assert_plan_coverage(&receipt, plan)
 }
 
-/// Revalidate a bound receipt and return its raw ControlRoot manifest for an
-/// in-memory host prompt. Receipt and manifest bytes are never persisted here.
-pub(crate) fn manifest_for_reference(loaded: &Loaded, reference: &Value) -> Result<String, String> {
+/// Validate the persisted receipt's own identity independently of whether its
+/// recorded config and profiles still match today's project inputs.
+pub(crate) fn assert_exact_reference(loaded: &Loaded, reference: &Value) -> Result<(), String> {
+    exact_reference(loaded, reference).map(|_| ())
+}
+
+/// Identify an absent v2 receipt for a historical read-only run. A present
+/// receipt still has to pass the full exact-reference check.
+pub(crate) fn is_missing_historical_reference(
+    loaded: &Loaded,
+    reference: &Value,
+) -> Result<bool, String> {
+    let expected = reference["sha256"].as_str().unwrap_or_default();
+    let relative = state_relative(
+        &loaded.state_root,
+        reference["path"].as_str().unwrap_or_default(),
+    )?;
+    if reference["version"] != 2 || reference["path"] != relative || !is_sha_text(expected) {
+        return Err("harness receipt reference is not exact".into());
+    }
+    if matches!(
+        crate::project::path::secure_bytes_observation(&loaded.state_root, &relative, "receipt"),
+        crate::project::path::SecureBytesResult::Absent(_)
+    ) {
+        return Ok(true);
+    }
+    assert_exact_reference(loaded, reference)?;
+    Ok(false)
+}
+
+/// Read an exact persisted receipt for an away prompt while preserving it as
+/// historical evidence when current config/profile bytes have drifted. The
+/// path, symlink, byte/hash, version, and JSON checks remain mandatory; only
+/// semantic currentness against today's inputs is deferred to the run warning.
+pub(crate) fn historical_manifest_for_reference(
+    loaded: &Loaded,
+    reference: &Value,
+) -> Result<(Option<String>, Option<Value>), String> {
+    let (_, receipt) = exact_reference(loaded, reference)?;
+    let (manifest, current) = harness::raw_for_receipt(loaded, &receipt["harness"])?;
+    let expected = receipt["harness"]["manifestSha256"]
+        .as_str()
+        .unwrap_or_default();
+    let warning = (manifest.is_none() || current != expected).then(|| {
+        json!({
+            "error": "harness receipt drift detected after run start",
+            "classification": "harness_receipt_drift",
+            "expectedHarnessReceiptSha256": expected,
+            "currentHarnessReceiptSha256": current
+        })
+    });
+    Ok((manifest, warning))
+}
+
+fn exact_reference(loaded: &Loaded, reference: &Value) -> Result<(Vec<u8>, Value), String> {
     let expected = reference["sha256"].as_str().unwrap_or_default();
     let (relative, source) =
         read_state_bytes(loaded, reference["path"].as_str().unwrap_or_default())?;
@@ -408,14 +444,11 @@ pub(crate) fn manifest_for_reference(loaded: &Loaded, reference: &Value) -> Resu
     if receipt["version"] != 2 {
         return Err("harness receipt must be a version-2 receipt".into());
     }
-    let mismatches = verify_value(loaded, &receipt)?;
-    if !mismatches.is_empty() {
-        return Err("harness receipt is not current".into());
-    }
-    harness::raw_for_receipt(loaded, &receipt["harness"])
+    validate_receipt_shape(&receipt)?;
+    Ok((source, receipt))
 }
 
-fn verify_value(loaded: &Loaded, receipt: &Value) -> Result<Vec<String>, String> {
+fn validate_receipt_shape(receipt: &Value) -> Result<u64, String> {
     let version = receipt["version"]
         .as_u64()
         .filter(|version| matches!(version, 1 | 2))
@@ -446,6 +479,11 @@ fn verify_value(loaded: &Loaded, receipt: &Value) -> Result<Vec<String>, String>
     if version == 2 {
         validate_v2_shape(receipt)?;
     }
+    Ok(version)
+}
+
+fn verify_value(loaded: &Loaded, receipt: &Value) -> Result<Vec<String>, String> {
+    let version = validate_receipt_shape(receipt)?;
 
     let mut mismatches = Vec::new();
     if receipt["config"]["sha256"] != hash::text(&loaded.source) {

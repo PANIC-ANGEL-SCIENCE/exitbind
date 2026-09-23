@@ -846,7 +846,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) const MAX_CAPTURE_BYTES: u64 = 1_048_576;
+pub(crate) const MAX_CAPTURE_BYTES: u64 = 8 * 1_048_576;
 
 fn validate_log_artifact(value: Option<&Value>, line: usize, stream: &str) -> Result<(), String> {
     let Some(object) = value.and_then(Value::as_object) else {

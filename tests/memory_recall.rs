@@ -254,7 +254,7 @@ fn multiple_ledgers_resolve_in_stable_filename_order() {
 }
 
 #[test]
-fn run_freezes_memory_and_rejects_revocation_drift() {
+fn run_reports_revocation_drift_without_blocking_next() {
     let (root, config) = project();
     configure(&root, &config, "lead", "protocol-only", 32_768);
     let ledger = accepted(&root, &config);
@@ -283,12 +283,17 @@ fn run_freezes_memory_and_rejects_revocation_drift() {
         "--config",
         &config,
     ]);
-    assert!(!next.status.success());
+    assert!(next.status.success(), "{}", text(&next));
     let diagnostic: Value = serde_json::from_slice(&next.stdout).unwrap();
-    assert_eq!(diagnostic["classification"], "memory_drift");
-    assert_eq!(diagnostic["agent"], "lead");
-    assert!(diagnostic["expectedMemorySetSha256"].as_str().is_some());
-    assert!(diagnostic["currentMemorySetSha256"].as_str().is_some());
+    assert_eq!(diagnostic["valid"], true);
+    assert_eq!(diagnostic["warnings"][0]["classification"], "memory_drift");
+    assert_eq!(diagnostic["warnings"][0]["agent"], "lead");
+    assert!(diagnostic["warnings"][0]["expectedMemorySetSha256"]
+        .as_str()
+        .is_some());
+    assert!(diagnostic["warnings"][0]["currentMemorySetSha256"]
+        .as_str()
+        .is_some());
     assert!(!text(&next).contains("accepted invariant"));
     fs::remove_dir_all(root).unwrap();
 }

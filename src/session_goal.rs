@@ -684,58 +684,80 @@ fn unresolved(record: &Value) -> bool {
         .any(|category| !category_resolved(record, category))
 }
 
-fn direct_completion_current(
+fn direct_completion_inputs(
     loaded: &crate::config::Loaded,
     record: &Value,
     item: &Value,
-) -> Result<bool, String> {
+) -> Result<Option<(String, String)>, String> {
     let completion = &item["directCompletion"];
     if item["disposition"] != "direct"
         || !item["resultRefs"].as_array().is_some_and(Vec::is_empty)
         || completion["kind"] != "lead_reported"
         || completion["goalId"] != record["goalId"]
     {
-        return Ok(false);
+        return Ok(None);
     }
     let Some(revision) = completion["revision"].as_u64() else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(current_revision) = record["revision"].as_u64() else {
-        return Ok(false);
+        return Ok(None);
     };
     let Some(expected_inputs) = completion["inputsSha256"].as_str() else {
-        return Ok(false);
+        return Ok(None);
     };
-    Ok(revision > 0 && revision <= current_revision && current_inputs(loaded)? == expected_inputs)
+    if revision == 0 || revision > current_revision {
+        return Ok(None);
+    }
+    Ok(Some((expected_inputs.to_owned(), current_inputs(loaded)?)))
 }
 
-fn item_evidence_current(
-    loaded: &crate::config::Loaded,
-    record: &Value,
-    category: &str,
-    item: &Value,
-) -> Result<bool, String> {
-    if item["disposition"].as_str() == Some("open") {
-        return Ok(true);
-    }
-    if item["disposition"].as_str() == Some("direct") {
-        return direct_completion_current(loaded, record, item);
-    }
-    let Some(refs) = item["resultRefs"].as_array() else {
-        return Err(format!("{category} has malformed result references"));
+fn close_result_ref(loaded: &crate::config::Loaded, reference: &str) -> Result<(), String> {
+    let Some(evidence) = crate::run::result_ref_evidence(loaded, reference)? else {
+        return Err("session goal result reference is not a governed result".into());
     };
-    if refs.is_empty() {
-        return Ok(false);
+    if !evidence.accepted || !evidence.artifact_current {
+        return Err("session goal result reference is not a valid accepted result".into());
     }
-    for reference in refs {
-        let Some(reference) = reference.as_str() else {
-            return Err(format!("{category} has malformed result references"));
-        };
-        if !crate::run::current_result_ref(loaded, reference)? {
-            return Ok(false);
-        }
+    warn_result_ref_drift(reference, evidence.drift.as_ref(), evidence.inputs_current);
+    Ok(())
+}
+
+fn warn_result_ref_drift(reference: &str, drift: Option<&Value>, inputs_current: bool) {
+    if let Some(warning) = drift {
+        let classification = warning["classification"].as_str().unwrap_or("input_drift");
+        eprintln!(
+            "warning: {classification} detected for accepted result {reference}; retaining its recorded evidence"
+        );
     }
-    Ok(true)
+    if !inputs_current {
+        eprintln!(
+            "warning: tested_inputs_drift detected for accepted result {reference}; retaining recorded tested-input identity"
+        );
+    }
+}
+
+fn warn_direct_completion_drift(
+    category: &str,
+    recorded_inputs_sha256: &str,
+    current_inputs_sha256: &str,
+) {
+    if recorded_inputs_sha256 != current_inputs_sha256 {
+        eprintln!(
+            "warning: tested_inputs_drift detected for {category}; retaining its recorded completion"
+        );
+    }
+}
+
+fn accepted_result_ref(loaded: &crate::config::Loaded, reference: &str) -> bool {
+    let Ok(Some(evidence)) = crate::run::result_ref_evidence(loaded, reference) else {
+        return false;
+    };
+    if !evidence.accepted || !evidence.artifact_current {
+        return false;
+    }
+    warn_result_ref_drift(reference, evidence.drift.as_ref(), evidence.inputs_current);
+    true
 }
 
 pub(crate) fn close(
@@ -755,22 +777,34 @@ pub(crate) fn close(
         for category in CATEGORIES {
             if let Some(items) = previous[category].as_array() {
                 for item in items {
-                    if !item_evidence_current(loaded, previous, category, item)? {
-                        if item["disposition"] == "direct" {
-                            return Err(format!(
-                                "{category} direct completion is not current for the product inputs"
-                            ));
-                        }
-                        return Err(format!(
-                            "{category} result reference is not a current governed result"
-                        ));
+                    if item["disposition"] == "open" {
+                        continue;
+                    }
+                    if item["disposition"] == "direct" {
+                        let Some((recorded, current)) =
+                            direct_completion_inputs(loaded, previous, item)?
+                        else {
+                            return Err(format!("{category} direct completion is invalid"));
+                        };
+                        warn_direct_completion_drift(category, &recorded, &current);
+                        continue;
+                    }
+                    let Some(refs) = item["resultRefs"].as_array() else {
+                        return Err(format!("{category} has malformed result references"));
+                    };
+                    if refs.is_empty() {
+                        return Err(format!("{category} has no governed result evidence"));
+                    }
+                    for reference in refs {
+                        let Some(reference) = reference.as_str() else {
+                            return Err(format!("{category} has malformed result references"));
+                        };
+                        close_result_ref(loaded, reference)?;
                     }
                 }
             }
         }
-        if !crate::run::current_result_ref(loaded, &result_ref)? {
-            return Err("session goal result reference is not a current governed result".into());
-        }
+        close_result_ref(loaded, &result_ref)?;
         let revision = previous["revision"]
             .as_u64()
             .ok_or("session goal revision is missing")?;
@@ -782,7 +816,12 @@ pub(crate) fn close(
         record["revision"] = json!(revision + 1);
         record["predecessor"] = json!({"goalId": goal_id, "revision": revision});
         record["successorOf"] = Value::Null;
-        record["closure"] = json!({"closed": true, "revision": revision + 1, "resultRefs": [result_ref], "owner": "lead"});
+        record["closure"] = json!({
+            "closed": true,
+            "revision": revision + 1,
+            "resultRefs": [result_ref],
+            "owner": "lead",
+        });
         Ok(sealed(record, Some(previous)))
     })
 }
@@ -809,18 +848,30 @@ pub(crate) fn close_direct(
         for category in CATEGORIES {
             if let Some(items) = previous[category].as_array() {
                 for item in items {
-                    if item["disposition"] != "direct" && item["disposition"] != "open" {
-                        has_governed_evidence = true;
+                    if item["disposition"] == "open" {
+                        continue;
                     }
-                    if !item_evidence_current(loaded, previous, category, item)? {
-                        if item["disposition"] == "direct" {
-                            return Err(format!(
-                                "{category} direct completion is not current for the product inputs"
-                            ));
-                        }
-                        return Err(format!(
-                            "{category} result reference is not a current governed result"
-                        ));
+                    if item["disposition"] == "direct" {
+                        let Some((recorded, current)) =
+                            direct_completion_inputs(loaded, previous, item)?
+                        else {
+                            return Err(format!("{category} direct completion is invalid"));
+                        };
+                        warn_direct_completion_drift(category, &recorded, &current);
+                        continue;
+                    }
+                    has_governed_evidence = true;
+                    let Some(refs) = item["resultRefs"].as_array() else {
+                        return Err(format!("{category} has malformed result references"));
+                    };
+                    if refs.is_empty() {
+                        return Err(format!("{category} has no governed result evidence"));
+                    }
+                    for reference in refs {
+                        let Some(reference) = reference.as_str() else {
+                            return Err(format!("{category} has malformed result references"));
+                        };
+                        close_result_ref(loaded, reference)?;
                     }
                 }
             }
@@ -831,11 +882,7 @@ pub(crate) fn close_direct(
             );
         }
         if let Some(result_ref) = result_ref.as_deref() {
-            if !crate::run::current_result_ref(loaded, result_ref)? {
-                return Err(
-                    "session goal result reference is not a current governed result".into(),
-                );
-            }
+            close_result_ref(loaded, result_ref)?;
         }
         let inputs_sha256 = current_inputs(loaded)?;
         let revision = previous["revision"]
@@ -932,11 +979,14 @@ fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Resu
         return Ok(false);
     };
     if record["closure"]["kind"] == "direct" {
-        let Some(expected_inputs) = record["closure"]["inputsSha256"].as_str() else {
+        let Some(recorded_inputs) = record["closure"]["inputsSha256"].as_str() else {
             return Ok(false);
         };
-        if current_inputs(loaded)? != expected_inputs {
-            return Ok(false);
+        let current_inputs = current_inputs(loaded)?;
+        if recorded_inputs != current_inputs {
+            eprintln!(
+                "warning: tested_inputs_drift detected for direct session-goal closure; retaining its recorded closure"
+            );
         }
     } else if closure_refs.is_empty() {
         return Ok(false);
@@ -945,7 +995,7 @@ fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Resu
         let Some(reference) = reference.as_str() else {
             return Ok(false);
         };
-        if !crate::run::current_result_ref(loaded, reference).unwrap_or(false) {
+        if !accepted_result_ref(loaded, reference) {
             return Ok(false);
         }
     }
@@ -958,19 +1008,24 @@ fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Resu
                 continue;
             }
             if item["disposition"].as_str() == Some("direct") {
-                if !direct_completion_current(loaded, record, item)? {
+                let Some((recorded, current)) = direct_completion_inputs(loaded, record, item)?
+                else {
                     return Ok(false);
-                }
+                };
+                warn_direct_completion_drift("direct session-goal item", &recorded, &current);
                 continue;
             }
             let Some(refs) = item["resultRefs"].as_array() else {
                 return Ok(false);
             };
+            if refs.is_empty() {
+                return Ok(false);
+            }
             for reference in refs {
                 let Some(reference) = reference.as_str() else {
                     return Ok(false);
                 };
-                if !crate::run::current_result_ref(loaded, reference).unwrap_or(false) {
+                if !accepted_result_ref(loaded, reference) {
                     return Ok(false);
                 }
             }

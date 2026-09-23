@@ -50,6 +50,15 @@ impl DriftError {
         }
     }
 
+    pub fn boundary_absent(expected: String) -> Self {
+        Self {
+            kind: "boundary_absent",
+            expected,
+            current: String::new(),
+            agent: None,
+        }
+    }
+
     pub fn harness_receipt(expected: String, current: String) -> Self {
         Self {
             kind: "harness_receipt",
@@ -90,6 +99,14 @@ impl DriftError {
                 "expectedHarnessReceiptSha256": self.expected,
                 "currentHarnessReceiptSha256": self.current
             })
+        } else if self.kind == "boundary_absent" {
+            json!({
+                "error": "run boundary manifest is absent after run start",
+                "classification": "boundary_drift",
+                "expectedBoundarySha256": self.expected,
+                "currentBoundarySha256": null,
+                "currentBoundaryState": "absent"
+            })
         } else {
             json!({
                 "error": "run boundary manifest drift detected after run start",
@@ -103,7 +120,9 @@ impl DriftError {
 
 impl std::fmt::Display for DriftError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.kind == "boundary" {
+        if self.kind == "boundary_absent" {
+            write!(formatter, "run boundary manifest is absent after run start")
+        } else if self.kind == "boundary" {
             write!(
                 formatter,
                 "run boundary manifest drift detected after run start"

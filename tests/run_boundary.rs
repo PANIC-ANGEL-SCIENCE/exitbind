@@ -70,7 +70,7 @@ fn write_manifest(root: &Path, value: Value) -> PathBuf {
 }
 
 #[test]
-fn run_boundary_narrows_assignment_and_drift_fails_closed() {
+fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
     let (root, config) = fixture();
     let manifest = write_manifest(
         &root,
@@ -141,9 +141,13 @@ fn run_boundary_narrows_assignment_and_drift_fails_closed() {
             config.to_str().unwrap(),
         ],
     );
-    assert!(!drift.status.success());
+    assert!(drift.status.success(), "{}", text(&drift));
     let diagnostic: Value = serde_json::from_slice(&drift.stdout).unwrap();
-    assert_eq!(diagnostic["classification"], "boundary_drift");
+    assert_eq!(diagnostic["valid"], true);
+    assert_eq!(
+        diagnostic["warnings"][0]["classification"],
+        "boundary_drift"
+    );
     assert!(diagnostic.get("goal").is_none());
 
     fs::remove_file(root.join(".agents/boundaries/task.json")).unwrap();
@@ -158,13 +162,46 @@ fn run_boundary_narrows_assignment_and_drift_fails_closed() {
             config.to_str().unwrap(),
         ],
     );
-    assert!(!missing.status.success());
+    assert!(missing.status.success(), "{}", text(&missing));
     let missing_diagnostic: Value = serde_json::from_slice(&missing.stdout).unwrap();
-    assert!(missing_diagnostic["error"]
-        .as_str()
-        .unwrap()
-        .contains("missing or unreadable"));
-    assert!(missing_diagnostic.get("currentBoundarySha256").is_none());
+    assert_eq!(missing_diagnostic["valid"], true);
+    assert_eq!(missing_diagnostic["status"], "running");
+    assert_eq!(missing_diagnostic["assignments"][0]["goal"], "bounded");
+    assert_eq!(
+        missing_diagnostic["warnings"][0]["classification"],
+        "boundary_drift"
+    );
+    assert_eq!(
+        missing_diagnostic["warnings"][0]["currentBoundaryState"],
+        "absent"
+    );
+    assert_eq!(
+        missing_diagnostic["warnings"][0]["currentBoundarySha256"],
+        Value::Null
+    );
+    #[cfg(unix)]
+    {
+        let outside = root.join("outside-boundary.json");
+        fs::write(&outside, "{}\n").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join(".agents/boundaries/task.json")).unwrap();
+        let unsafe_path = invoke(
+            &root,
+            &[
+                "run",
+                "next",
+                ".soulmate/run.jsonl",
+                "--json",
+                "--config",
+                config.to_str().unwrap(),
+            ],
+        );
+        assert!(!unsafe_path.status.success());
+        assert!(
+            text(&unsafe_path).contains("unsafe or unreadable"),
+            "{}",
+            text(&unsafe_path)
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }
 

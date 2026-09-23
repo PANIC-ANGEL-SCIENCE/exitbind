@@ -6,11 +6,16 @@
 
 pub(crate) mod artifact;
 pub(crate) mod assignment;
+pub(crate) mod capture;
 pub(crate) mod error;
 pub(crate) mod inputs;
 pub(crate) mod ledger;
 pub(crate) mod state;
 
+use self::capture::{
+    capture_observed_command, cleanup_capture, install_capture, observed_result,
+    rollback_installed, run_observed_command, CapturePolicy, CapturedCheck, ObservationRequest,
+};
 pub use self::error::DriftError;
 use self::ledger::{
     append, claim_path, ledger_path, load, load_at, obtain_claim, predecessor, rollback_claim,
@@ -23,23 +28,9 @@ use crate::{
     evidence::hash,
 };
 use serde_json::{json, Value};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
+use std::fs;
+use std::time::{Duration, Instant};
 const DEFAULT_OBSERVE_TIMEOUT_MS: u64 = 1_800_000;
-const OBSERVE_POLL_MS: u64 = 10;
-const OBSERVE_TERMINATION_GRACE_MS: u64 = 250;
-
-fn timestamp_nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos())
-}
 
 pub fn start(
     loaded: &Loaded,
@@ -224,7 +215,8 @@ pub fn review_policy(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
         if state["status"] != "running" || state.get("basisProtocol").is_none() {
             return Err("review policy changes require a marked running run".into());
@@ -269,17 +261,30 @@ pub fn next(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     RunSnapshot::capture(loaded, ledger)?.next_view(loaded)
 }
 
-/// Accept only a result identity that is present at the head of a governed,
-/// accepted run ledger.  Goal closure is a separate Lead decision, so this
-/// helper supplies evidence identity without allowing arbitrary strings.
-pub(crate) fn current_result_ref(loaded: &Loaded, reference: &str) -> Result<bool, String> {
+/// Recorded facts for a result reference.  `inputs_current` is deliberately
+/// separate from the accepted and artifact checks: an accepted result keeps
+/// its recorded input identity even when the product has changed since it ran.
+pub(crate) struct ResultRefEvidence {
+    pub(crate) accepted: bool,
+    pub(crate) artifact_current: bool,
+    pub(crate) drift: Option<Value>,
+    pub(crate) inputs_current: bool,
+}
+
+/// Locate and validate the exact accepted result for a reference while
+/// retaining the recorded and current tested-input identities. Callers decide
+/// whether input drift is a warning or part of a stricter currentness query.
+pub(crate) fn result_ref_evidence(
+    loaded: &Loaded,
+    reference: &str,
+) -> Result<Option<ResultRefEvidence>, String> {
     let runs = loaded
         .state_root
         .join(crate::project::layout_types::state_namespace())
         .join("runs");
     let entries = match fs::read_dir(runs) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
     let requested_name = reference
@@ -313,23 +318,33 @@ pub(crate) fn current_result_ref(loaded: &Loaded, reference: &str) -> Result<boo
             continue;
         }
         let state = run_state::reduce(&events)?;
-        let tested_inputs_current = if state["version"].as_u64() >= Some(6) {
-            state["inputsSha256"].as_str().is_some_and(|expected| {
-                crate::run::inputs::fingerprint(loaded).is_ok_and(|current| current == expected)
-            })
+        if let Some(reference) = state.get("harnessReceipt") {
+            crate::evidence::receipt::assert_exact_reference(loaded, reference)?;
+        }
+        let inputs_current = if state["version"].as_u64() >= Some(6) {
+            let expected = state["inputsSha256"]
+                .as_str()
+                .ok_or("accepted run is missing its tested-input hash")?;
+            crate::run::inputs::fingerprint(loaded)? == expected
         } else {
             true
         };
-        let current = assert_no_drift(loaded, &state).is_ok()
-            && artifact_current(loaded, &state).unwrap_or(false)
-            && tested_inputs_current;
-        return Ok(current
-            && state["status"] == "accepted"
-            && last["action"] == "submit"
-            && last["role"] == "lead"
-            && last["outcome"] == "accepted");
+        let drift = match assert_no_drift(loaded, &state) {
+            Ok(()) => None,
+            Err(error) => drift_value(&error).map(Some).ok_or(error)?,
+        };
+        let artifact_current = artifact_current(loaded, &state)?;
+        return Ok(Some(ResultRefEvidence {
+            accepted: state["status"] == "accepted"
+                && last["action"] == "submit"
+                && last["role"] == "lead"
+                && last["outcome"] == "accepted",
+            artifact_current,
+            drift,
+            inputs_current,
+        }));
     }
-    Ok(false)
+    Ok(None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -525,7 +540,8 @@ pub(crate) fn permit_for_assignment(
         }
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
         if state["governor"]["enabled"] != true {
             return Err("cooperative governor is unavailable on this run".into());
@@ -735,7 +751,8 @@ pub(crate) fn replan_for_assignment(
         }
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
         if state["governor"]["enabled"] != true {
             return Err("cooperative governor is unavailable on this run".into());
@@ -819,7 +836,8 @@ pub(crate) fn evidence_for_assignment(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
         if state["governor"]["enabled"] != true {
             return Err("cooperative governor is unavailable on this run".into());
@@ -923,7 +941,8 @@ pub(crate) fn sensor_request_for_assignment(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         let assignment = crate::run::assignment::pending(&state)
             .into_iter()
             .find(|item| item["agent"] == expected.agent)
@@ -1014,7 +1033,8 @@ pub(crate) fn sensor_result_for_assignment(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
-        assert_no_drift(loaded, &state)?;
+        let drift = action_drift_warning(loaded, &state)?;
+        warn_drift(drift.as_ref());
         let assignment = crate::run::assignment::pending(&state)
             .into_iter()
             .find(|item| item["agent"] == expected.agent)
@@ -1179,7 +1199,7 @@ where
         if state["status"] != "running" {
             return Err("run has already reached a terminal state; no mutation was made".into());
         }
-        assert_no_drift(loaded, &state)?;
+        let warning = action_drift_warning(loaded, &state)?;
         crate::run::artifact::assert_current(loaded, &state)?;
         if agent == "lead"
             && outcome == "accepted"
@@ -1392,7 +1412,8 @@ where
             "status": next_state["status"],
             "currentStage": if next_state["status"] == "running" { next_state["currentStage"].clone() } else { Value::Null },
             "attempt": if next_state["status"] == "running" { next_state["attempt"].clone() } else { Value::Null },
-            "assignments": crate::run::assignment::pending(&next_state)
+            "assignments": crate::run::assignment::pending(&next_state),
+            "warnings": warning.map_or_else(|| json!([]), |warning| json!([warning]))
         }))
     })
 }
@@ -1452,7 +1473,7 @@ pub fn record_check_for_requirement(
         if state["status"] != "running" {
             return Err("run has already reached a terminal state; no mutation was made".into());
         }
-        assert_no_drift(loaded, &state)?;
+        let warning = action_drift_warning(loaded, &state)?;
         crate::run::artifact::assert_current(loaded, &state)?;
         let policy = active_check_policy(&state, requirement_id)?;
         if policy.command != check_command
@@ -1515,7 +1536,8 @@ pub fn record_check_for_requirement(
             "event": event,
             "runId": next_state["runId"],
             "status": next_state["status"],
-            "checks": crate::run_value::status(&next_state, Some(true))?["checks"]
+            "checks": crate::run_value::status(&next_state, Some(true))?["checks"],
+            "warnings": warning.map_or_else(|| json!([]), |warning| json!([warning]))
         }))
     })
 }
@@ -1546,51 +1568,71 @@ pub fn observe_check_for_requirement(
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-    let (source, policy, inputs, identity, capture_logs) = with_lock(&path, || {
-        crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-        if claim_path(&path).exists() {
-            return Err("run has been superseded; no mutation was made".into());
-        }
-        let (_, events, source) = load_at(loaded, &path)?;
-        let state = reduce_live(loaded, &events)?;
-        if state["version"].as_u64().unwrap_or(0) < 4 {
-            return Err("observe-check requires a newly created checked run".into());
-        }
-        if state["status"] != "running" {
-            return Err("run has already reached a terminal state; no mutation was made".into());
-        }
-        assert_no_drift(loaded, &state)?;
-        crate::run::artifact::assert_current(loaded, &state)?;
-        predecessor(loaded, &events[0])?;
-        let policy = active_check_policy(&state, requirement_id)?;
-        crate::run_value::validate_check_target(&state, target)?;
-        let inputs = if state["version"].as_u64() >= Some(6) {
-            Some(live_inputs(&state)?)
-        } else {
-            None
-        };
-        Ok((
-            source,
-            policy.clone(),
-            inputs.clone(),
-            json!({
-                "runId": state["runId"],
-                "targetEventSha256": target,
-                "subjectSha256": state["subject"]["sha256"],
-                "inputsSha256": inputs,
-                "checkCommandSha256": policy.command_sha256,
-            }),
-            state["version"] == 8,
-        ))
-    })?;
+    let (source, policy, inputs, identity, capture_logs, initial_warning) =
+        with_lock(&path, || {
+            crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+            if claim_path(&path).exists() {
+                return Err("run has been superseded; no mutation was made".into());
+            }
+            let (_, events, source) = load_at(loaded, &path)?;
+            let state = reduce_live(loaded, &events)?;
+            if state["version"].as_u64().unwrap_or(0) < 4 {
+                return Err("observe-check requires a newly created checked run".into());
+            }
+            if state["status"] != "running" {
+                return Err(
+                    "run has already reached a terminal state; no mutation was made".into(),
+                );
+            }
+            let warning = action_drift_warning(loaded, &state)?;
+            crate::run::artifact::assert_current(loaded, &state)?;
+            predecessor(loaded, &events[0])?;
+            let policy = active_check_policy(&state, requirement_id)?;
+            crate::run_value::validate_check_target(&state, target)?;
+            let inputs = if state["version"].as_u64() >= Some(6) {
+                Some(live_inputs(&state)?)
+            } else {
+                None
+            };
+            Ok((
+                source,
+                policy.clone(),
+                inputs.clone(),
+                json!({
+                    "runId": state["runId"],
+                    "targetEventSha256": target,
+                    "subjectSha256": state["subject"]["sha256"],
+                    "inputsSha256": inputs,
+                    "checkCommandSha256": policy.command_sha256,
+                }),
+                state["version"] == 8,
+                warning,
+            ))
+        })?;
 
+    warn_drift(initial_warning.as_ref());
+    let request = ObservationRequest {
+        command: policy.command.clone(),
+        working_dir: loaded.product_root.clone(),
+        artifact_dir: loaded
+            .state_root
+            .join(crate::project::layout_types::state_namespace())
+            .join("artifacts"),
+        state_root: loaded.state_root.clone(),
+        deadline: Instant::now()
+            .checked_add(Duration::from_millis(timeout_ms))
+            .unwrap_or_else(Instant::now),
+        timeout_ms,
+        operation_id: hash::value(&identity),
+        capture: CapturePolicy::FINITE,
+    };
     let capture = match if capture_logs {
-        capture_observed_command(loaded, &policy.command, timeout_ms, &identity)
+        capture_observed_command(&request)
     } else {
-        run_observed_command(loaded, &policy.command, timeout_ms).map(CapturedCheck::without_logs)
+        run_observed_command(&request).map(CapturedCheck::without_logs)
     } {
         Ok(capture) => capture,
-        Err(error) => return Err(error),
+        Err(error) => return Err(error.to_string()),
     };
 
     let result = observed_result(&capture.status)?;
@@ -1599,22 +1641,26 @@ pub fn observe_check_for_requirement(
         let (_, current_events, current_source) = load_at(loaded, &path)?;
         let current_state = reduce_live(loaded, &current_events)?;
         if claim_path(&path).exists() {
-            return Err("run has been superseded; no mutation was made".into());
+            return Err("run has been superseded; this check result was not recorded".into());
         }
         if current_source != source {
-            return Err("run ledger changed while observing; no mutation was made".into());
+            return Err(
+                "run ledger changed while observing; this check result was not recorded".into(),
+            );
         }
         if current_state["version"].as_u64().unwrap_or(0) < 4
             || current_state["status"] != "running"
         {
-            return Err("run changed while observing; no mutation was made".into());
+            return Err("run changed while observing; this check result was not recorded".into());
         }
-        assert_no_drift(loaded, &current_state)?;
+        let warning = action_drift_warning(loaded, &current_state)?;
         crate::run::artifact::assert_current(loaded, &current_state)?;
         predecessor(loaded, &current_events[0])?;
         let current_policy = active_check_policy(&current_state, requirement_id)?;
         if current_policy != policy {
-            return Err("check policy changed while observing; no mutation was made".into());
+            return Err(
+                "check policy changed while observing; this check result was not recorded".into(),
+            );
         }
         crate::run_value::validate_check_target(&current_state, target)?;
         let last = current_events
@@ -1659,52 +1705,89 @@ pub fn observe_check_for_requirement(
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
         let installed_stdout = match (&capture.stdout_temp, &capture.stdout_final) {
-            (Some(temp), Some(final_path)) => install_capture(temp, final_path)?,
+            (Some(temp), Some(final_path)) => match install_capture(temp, final_path) {
+                Ok(installed) => installed,
+                Err(error) => {
+                    let failure = match rollback_installed(&capture, false, false) {
+                        Ok(()) => error,
+                        Err(cleanup) => format!("{error}; cleanup failed: {cleanup}"),
+                    };
+                    return Err(observed_storage_failure(&capture, failure));
+                }
+            },
             _ => false,
         };
         let installed_stderr = match (&capture.stderr_temp, &capture.stderr_final) {
             (Some(temp), Some(final_path)) => match install_capture(temp, final_path) {
                 Ok(installed) => installed,
                 Err(error) => {
-                    if installed_stdout {
-                        if let Some(final_path) = &capture.stdout_final {
-                            let _ = fs::remove_file(final_path);
-                        }
-                    }
-                    return Err(error);
+                    let failure = match rollback_installed(&capture, installed_stdout, false) {
+                        Ok(()) => error,
+                        Err(cleanup) => format!("{error}; cleanup failed: {cleanup}"),
+                    };
+                    return Err(observed_storage_failure(&capture, failure));
                 }
             },
             _ => false,
         };
         let append_result = append(&path, &event, false, &current_source);
         if let Err(error) = append_result {
-            if installed_stdout {
-                if let Some(final_path) = &capture.stdout_final {
-                    let _ = fs::remove_file(final_path);
-                }
-            }
-            if installed_stderr {
-                if let Some(final_path) = &capture.stderr_final {
-                    let _ = fs::remove_file(final_path);
-                }
-            }
-            return Err(error);
+            let failure = match rollback_installed(&capture, installed_stdout, installed_stderr) {
+                Ok(()) => error,
+                Err(cleanup) => format!("{error}; cleanup failed: {cleanup}"),
+            };
+            return Err(observed_storage_failure(&capture, failure));
         }
         Ok(json!({
             "valid": true,
             "event": event,
             "runId": next_state["runId"],
             "status": next_state["status"],
-            "checks": crate::run_value::status(&next_state, Some(true))?["checks"]
+            "checks": crate::run_value::status(&next_state, Some(true))?["checks"],
+            "warnings": warning
+                .or_else(|| initial_warning.clone())
+                .map_or_else(|| json!([]), |warning| json!([warning]))
         }))
     });
-    if let Some(path) = &capture.stdout_temp {
-        let _ = fs::remove_file(path);
+    match (committed, cleanup_capture(&capture)) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(observed_storage_failure(&capture, error)),
+        (Err(error), Err(cleanup)) => Err(observed_storage_failure(
+            &capture,
+            format!("{error}; cleanup failed: {cleanup}"),
+        )),
+        (Ok(_), Err(cleanup)) => Err(format!(
+            "check result was recorded but capture cleanup failed: {cleanup}; {}",
+            observed_capture_summary(&capture)
+        )),
     }
-    if let Some(path) = &capture.stderr_temp {
-        let _ = fs::remove_file(path);
+}
+
+fn observed_capture_summary(capture: &CapturedCheck) -> String {
+    let status = observed_result(&capture.status)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| format!("{:?}", capture.status));
+    let stdout_bytes = capture
+        .stdout_artifact
+        .as_ref()
+        .and_then(|artifact| artifact["bytes"].as_u64())
+        .unwrap_or_default();
+    let stderr_bytes = capture
+        .stderr_artifact
+        .as_ref()
+        .and_then(|artifact| artifact["bytes"].as_u64())
+        .unwrap_or_default();
+    format!(
+        "observed check outcome: status={status}, durationMs={}, capture=complete(stdout={stdout_bytes}, stderr={stderr_bytes})",
+        capture.duration_ms
+    )
+}
+
+fn observed_storage_failure(capture: &CapturedCheck, error: String) -> String {
+    if error.contains("observed check outcome:") {
+        return error;
     }
-    committed
+    format!("{error}; {}", observed_capture_summary(capture))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1749,610 +1832,18 @@ fn active_check_policy(
     }
 }
 
-struct CapturedCheck {
-    status: ExitStatus,
-    duration_ms: u64,
-    stdout_temp: Option<PathBuf>,
-    stderr_temp: Option<PathBuf>,
-    stdout_final: Option<PathBuf>,
-    stderr_final: Option<PathBuf>,
-    stdout_artifact: Option<Value>,
-    stderr_artifact: Option<Value>,
-}
-
-impl CapturedCheck {
-    fn without_logs((status, duration_ms): (ExitStatus, u64)) -> Self {
-        Self {
-            status,
-            duration_ms,
-            stdout_temp: None,
-            stderr_temp: None,
-            stdout_final: None,
-            stderr_final: None,
-            stdout_artifact: None,
-            stderr_artifact: None,
-        }
-    }
-}
-
-fn run_observed_command(
-    loaded: &Loaded,
-    command_text: &str,
-    timeout_ms: u64,
-) -> Result<(ExitStatus, u64), String> {
-    #[cfg(not(unix))]
-    {
-        let _ = (loaded, command_text, timeout_ms);
-        return Err("observe-check requires a POSIX host".into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-
-        let child_stderr = child_stderr_stdio()?;
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(command_text)
-            .arg("exitbind-observe-check")
-            .current_dir(&loaded.product_root)
-            .stdout(child_stderr)
-            .stderr(Stdio::inherit())
-            .process_group(0);
-        let started = Instant::now();
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("check command could not be launched: {error}"))?;
-        let timeout = Duration::from_millis(timeout_ms);
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => return Ok((status, elapsed_ms(started))),
-                Ok(None) if started.elapsed() >= timeout => {
-                    let cleanup = terminate_process_group(&mut child);
-                    return Err(match cleanup {
-                        Ok(()) => format!(
-                            "check observation timed out after {timeout_ms} ms; no mutation was made"
-                        ),
-                        Err(cleanup) => format!(
-                            "check observation timed out after {timeout_ms} ms; cleanup failed: {cleanup}; no mutation was made"
-                        ),
-                    });
-                }
-                Ok(None) => {
-                    let remaining = timeout.saturating_sub(started.elapsed());
-                    thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-                }
-                Err(error) => {
-                    let cleanup = terminate_process_group(&mut child);
-                    return Err(match cleanup {
-                        Ok(()) => format!(
-                            "check command could not be observed: {error}; no mutation was made"
-                        ),
-                        Err(cleanup) => format!(
-                            "check command could not be observed: {error}; cleanup failed: {cleanup}; no mutation was made"
-                        ),
-                    });
-                }
-            }
-        }
-    }
-}
-
-fn child_stderr_stdio() -> Result<Stdio, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::{FromRawFd, RawFd};
-        let fd: RawFd = unsafe { libc::dup(libc::STDERR_FILENO) };
-        if fd < 0 {
-            return Err(format!(
-                "check command stderr could not be connected: {}",
-                io::Error::last_os_error()
-            ));
-        }
-        Ok(unsafe { Stdio::from(std::fs::File::from_raw_fd(fd)) })
-    }
-    #[cfg(not(unix))]
-    {
-        Err("observe-check requires a POSIX host".into())
-    }
-}
-
-fn capture_observed_command(
-    loaded: &Loaded,
-    command_text: &str,
-    timeout_ms: u64,
-    identity: &Value,
-) -> Result<CapturedCheck, String> {
-    let artifact_dir = loaded
-        .state_root
-        .join(crate::project::layout_types::state_namespace())
-        .join("artifacts");
-    crate::project::managed_files::ensure_managed_directory(&loaded.state_root, &artifact_dir)?;
-    let log_id = hash::value(identity);
-    let stdout_final = artifact_dir.join(format!("check-log-{log_id}-stdout.raw"));
-    let stderr_final = artifact_dir.join(format!("check-log-{log_id}-stderr.raw"));
-    let nonce = format!("{}-{}", std::process::id(), timestamp_nanos());
-    let stdout_temp = artifact_dir.join(format!(".check-log-{log_id}-{nonce}-stdout.tmp"));
-    let stderr_temp = artifact_dir.join(format!(".check-log-{log_id}-{nonce}-stderr.tmp"));
-    let result = capture_to_files(loaded, command_text, timeout_ms, &stdout_temp, &stderr_temp);
-    let (status, duration_ms) = match result {
-        Ok(result) => result,
-        Err(error) => {
-            let _ = fs::remove_file(&stdout_temp);
-            let _ = fs::remove_file(&stderr_temp);
-            return Err(error);
-        }
-    };
-    let stdout = match fs::read(&stdout_temp) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = fs::remove_file(&stdout_temp);
-            let _ = fs::remove_file(&stderr_temp);
-            return Err(error.to_string());
-        }
-    };
-    let stderr = match fs::read(&stderr_temp) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = fs::remove_file(&stdout_temp);
-            let _ = fs::remove_file(&stderr_temp);
-            return Err(error.to_string());
-        }
-    };
-    let stdout_artifact = match artifact_value(loaded, &stdout_final, &stdout) {
-        Ok(value) => value,
-        Err(error) => {
-            let _ = fs::remove_file(&stdout_temp);
-            let _ = fs::remove_file(&stderr_temp);
-            return Err(error);
-        }
-    };
-    let stderr_artifact = match artifact_value(loaded, &stderr_final, &stderr) {
-        Ok(value) => value,
-        Err(error) => {
-            let _ = fs::remove_file(&stdout_temp);
-            let _ = fs::remove_file(&stderr_temp);
-            return Err(error);
-        }
-    };
-    Ok(CapturedCheck {
-        status,
-        duration_ms,
-        stdout_temp: Some(stdout_temp),
-        stderr_temp: Some(stderr_temp),
-        stdout_final: Some(stdout_final),
-        stderr_final: Some(stderr_final),
-        stdout_artifact: Some(stdout_artifact),
-        stderr_artifact: Some(stderr_artifact),
-    })
-}
-
-fn capture_to_files(
-    loaded: &Loaded,
-    command_text: &str,
-    timeout_ms: u64,
-    stdout_temp: &PathBuf,
-    stderr_temp: &PathBuf,
-) -> Result<(ExitStatus, u64), String> {
-    #[cfg(not(unix))]
-    {
-        let _ = (loaded, command_text, timeout_ms, stdout_temp, stderr_temp);
-        return Err("observe-check requires a POSIX host".into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-
-        let stdout_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(stdout_temp)
-            .map_err(|error| format!("stdout capture could not be created: {error}"))?;
-        let stderr_file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(stderr_temp)
-        {
-            Ok(file) => file,
-            Err(error) => {
-                let _ = fs::remove_file(stdout_temp);
-                return Err(format!("stderr capture could not be created: {error}"));
-            }
-        };
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(command_text)
-            .arg("exitbind-observe-check")
-            .current_dir(&loaded.product_root)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0);
-        let started = Instant::now();
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = fs::remove_file(stdout_temp);
-                let _ = fs::remove_file(stderr_temp);
-                return Err(format!("check command could not be launched: {error}"));
-            }
-        };
-        let stdout = match child.stdout.take() {
-            Some(stdout) => stdout,
-            None => {
-                let _ = terminate_process_group(&mut child);
-                let _ = fs::remove_file(stdout_temp);
-                let _ = fs::remove_file(stderr_temp);
-                return Err("check stdout pipe was not available; no mutation was made".into());
-            }
-        };
-        let stderr = match child.stderr.take() {
-            Some(stderr) => stderr,
-            None => {
-                let _ = terminate_process_group(&mut child);
-                let _ = fs::remove_file(stdout_temp);
-                let _ = fs::remove_file(stderr_temp);
-                return Err("check stderr pipe was not available; no mutation was made".into());
-            }
-        };
-        let (sender, receiver) = mpsc::channel();
-        let stdout_thread = {
-            let sender = sender.clone();
-            thread::spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    drain_capture_stream(stdout, stdout_file, "stdout")
-                }))
-                .map_err(|_| "stdout capture reader panicked".to_owned())
-                .and_then(|result| result);
-                let _ = sender.send(result);
-            })
-        };
-        let stderr_thread = {
-            let sender = sender.clone();
-            thread::spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    drain_capture_stream(stderr, stderr_file, "stderr")
-                }))
-                .map_err(|_| "stderr capture reader panicked".to_owned())
-                .and_then(|result| result);
-                let _ = sender.send(result);
-            })
-        };
-        drop(sender);
-        let timeout = Duration::from_millis(timeout_ms);
-        let deadline = started
-            .checked_add(timeout)
-            .unwrap_or_else(|| Instant::now() + timeout);
-        let mut stream_results = Vec::new();
-        let mut stream_error = None;
-        let mut status = None;
-        let mut timed_out = false;
-        loop {
-            while let Ok(result) = receiver.try_recv() {
-                if let Err(error) = &result {
-                    stream_error = Some(error.clone());
-                }
-                stream_results.push(result);
-            }
-            if stream_error.is_some() || (status.is_some() && stream_results.len() == 2) {
-                break;
-            }
-            if status.is_none() {
-                match child.try_wait() {
-                    Ok(Some(exit_status)) => status = Some(exit_status),
-                    Ok(None) => {}
-                    Err(error) => {
-                        stream_error =
-                            Some(format!("check command could not be observed: {error}"));
-                        break;
-                    }
-                }
-            }
-            if stream_results.len() == 2 {
-                if status.is_some() {
-                    break;
-                }
-                if Instant::now() >= deadline {
-                    timed_out = true;
-                    break;
-                }
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-                continue;
-            }
-            if Instant::now() >= deadline {
-                timed_out = true;
-                break;
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let wait = remaining.min(Duration::from_millis(OBSERVE_POLL_MS));
-            match receiver.recv_timeout(wait) {
-                Ok(result) => {
-                    if let Err(error) = &result {
-                        stream_error = Some(error.clone());
-                    }
-                    stream_results.push(result);
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    stream_error = Some(format!(
-                        "capture reader stopped unexpectedly ({} stream result(s))",
-                        stream_results.len()
-                    ));
-                }
-            }
-        }
-
-        let cleanup = if timed_out || stream_error.is_some() {
-            // A failed reader can leave a descendant holding the other pipe
-            // even after the shell leader has exited; always inspect and
-            // terminate the process group on this path.
-            terminate_process_group(&mut child)
-        } else {
-            Ok(())
-        };
-        while stream_results.len() < 2 {
-            match receiver.recv_timeout(Duration::from_millis(OBSERVE_TERMINATION_GRACE_MS)) {
-                Ok(result) => {
-                    if let Err(error) = &result {
-                        stream_error = Some(error.clone());
-                    }
-                    stream_results.push(result);
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    stream_error = Some("capture readers did not finish after cleanup".into());
-                    break;
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    stream_error = Some(format!(
-                        "capture reader stopped unexpectedly ({} stream result(s))",
-                        stream_results.len()
-                    ));
-                    break;
-                }
-            }
-        }
-        if stream_results.len() == 2 {
-            let stdout_panicked = stdout_thread.join().is_err();
-            let stderr_panicked = stderr_thread.join().is_err();
-            if stdout_panicked || stderr_panicked {
-                stream_error = Some("capture reader panicked".into());
-            }
-        } else {
-            // A reader which did not report by the bounded cleanup deadline is
-            // deliberately detached here: joining it could turn a failed
-            // capture into an unbounded wait. Its pathname is removed below.
-            drop(stdout_thread);
-            drop(stderr_thread);
-        }
-        if let Some(error) = stream_error {
-            let _ = fs::remove_file(stdout_temp);
-            let _ = fs::remove_file(stderr_temp);
-            return Err(format!("{error}; no mutation was made"));
-        }
-        if let Err(error) = cleanup {
-            let _ = fs::remove_file(stdout_temp);
-            let _ = fs::remove_file(stderr_temp);
-            return Err(format!(
-                "check process cleanup failed: {error}; no mutation was made"
-            ));
-        }
-        if timed_out {
-            let _ = fs::remove_file(stdout_temp);
-            let _ = fs::remove_file(stderr_temp);
-            return Err(format!(
-                "check observation timed out after {timeout_ms} ms; no mutation was made"
-            ));
-        }
-        let status = status.ok_or("check command ended without a status")?;
-        if stream_results.iter().any(Result::is_err) {
-            let _ = fs::remove_file(stdout_temp);
-            let _ = fs::remove_file(stderr_temp);
-            return Err("check capture failed; no mutation was made".into());
-        }
-        Ok((status, elapsed_ms(started)))
-    }
-}
-
-fn drain_capture_stream<R: Read>(
-    mut reader: R,
-    mut file: File,
-    stream: &str,
-) -> Result<(), String> {
-    let mut total = 0usize;
-    let mut buffer = [0u8; 16 * 1024];
-    loop {
-        let count = reader
-            .read(&mut buffer)
-            .map_err(|error| format!("{stream} capture read failed: {error}"))?;
-        if count == 0 {
-            file.flush()
-                .map_err(|error| format!("{stream} capture flush failed: {error}"))?;
-            file.sync_all()
-                .map_err(|error| format!("{stream} capture sync failed: {error}"))?;
-            return Ok(());
-        }
-        if (total + count) as u64 > crate::run_value::MAX_CAPTURE_BYTES {
-            return Err(format!(
-                "{stream} capture exceeded the 1048576-byte stream limit"
-            ));
-        }
-        file.write_all(&buffer[..count])
-            .map_err(|error| format!("{stream} capture write failed: {error}"))?;
-        total += count;
-    }
-}
-
-fn artifact_value(loaded: &Loaded, path: &std::path::Path, bytes: &[u8]) -> Result<Value, String> {
-    let relative = crate::config::rel(&loaded.state_root, path)?;
-    Ok(json!({
-        "root": "state",
-        "path": relative,
-        "sha256": hash::bytes(bytes),
-        "bytes": bytes.len(),
-    }))
-}
-
-fn install_capture(temp: &std::path::Path, final_path: &std::path::Path) -> Result<bool, String> {
-    match fs::symlink_metadata(final_path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                return Err("captured log artifact already exists with invalid type".into());
-            }
-            let existing = fs::read(final_path).map_err(|error| error.to_string())?;
-            let proposed = fs::read(temp).map_err(|error| error.to_string())?;
-            if existing != proposed {
-                return Err("captured log artifact already exists with different bytes".into());
-            }
-            Ok(false)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::rename(temp, final_path).map_err(|error| error.to_string())?;
-            Ok(true)
-        }
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-#[cfg(unix)]
-fn terminate_process_group(child: &mut Child) -> Result<(), String> {
-    let process_group = match i32::try_from(child.id()) {
-        Ok(process_group) => Some(process_group),
-        Err(_) => None,
-    };
-    let mut failures = Vec::new();
-    if process_group.is_none() {
-        failures.push("check process identifier is outside the POSIX range".to_owned());
-    }
-    if let Some(process_group) = process_group {
-        if let Err(error) = signal_process_group(process_group, libc::SIGTERM) {
-            failures.push(format!("TERM cleanup failed: {error}"));
-        }
-    }
-
-    let cleanup_started = Instant::now();
-    let grace_started = Instant::now();
-    let grace = Duration::from_millis(OBSERVE_TERMINATION_GRACE_MS);
-    let cleanup_deadline = cleanup_started + grace.saturating_add(grace);
-    let mut group_present = process_group.is_some();
-    let mut leader_reaped = false;
-    while grace_started.elapsed() < grace && Instant::now() < cleanup_deadline {
-        match child.try_wait() {
-            Ok(Some(_)) => leader_reaped = true,
-            Ok(None) => {}
-            Err(error) => failures.push(format!("check process could not be inspected: {error}")),
-        }
-        if let Some(process_group) = process_group {
-            match process_group_exists(process_group) {
-                Ok(false) => {
-                    group_present = false;
-                    break;
-                }
-                Ok(true) => {}
-                Err(error) => failures.push(error),
-            }
-        }
-        let remaining = grace.saturating_sub(grace_started.elapsed());
-        if !remaining.is_zero() {
-            thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-        }
-    }
-    if group_present {
-        if let Some(process_group) = process_group {
-            if let Err(error) = signal_process_group(process_group, libc::SIGKILL) {
-                failures.push(format!("KILL cleanup failed: {error}"));
-            }
-        }
-    }
-
-    while !leader_reaped && Instant::now() < cleanup_deadline {
-        match child.try_wait() {
-            Ok(Some(_)) => leader_reaped = true,
-            Ok(None) => {}
-            Err(error) => {
-                failures.push(format!("check process could not be reaped: {error}"));
-                break;
-            }
-        }
-        let remaining = cleanup_deadline.saturating_duration_since(Instant::now());
-        if !remaining.is_zero() {
-            thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-        }
-    }
-    if !leader_reaped {
-        failures.push("check process could not be reaped before cleanup deadline".to_owned());
-    }
-
-    while group_present && Instant::now() < cleanup_deadline {
-        if let Some(process_group) = process_group {
-            match process_group_exists(process_group) {
-                Ok(false) => group_present = false,
-                Ok(true) => {}
-                Err(error) => failures.push(error),
-            }
-        } else {
-            break;
-        }
-        if group_present {
-            let remaining = cleanup_deadline.saturating_duration_since(Instant::now());
-            if !remaining.is_zero() {
-                thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-            }
-        }
-    }
-    if group_present {
-        failures.push("check process group remained after forced termination".into());
-    }
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        failures.sort();
-        failures.dedup();
-        Err(failures.join("; "))
-    }
-}
-
-#[cfg(unix)]
-fn signal_process_group(process_group: i32, signal: i32) -> Result<(), String> {
-    if unsafe { libc::kill(-process_group, signal) } == 0 {
-        return Ok(());
-    }
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
-    } else {
-        Err(format!(
-            "check process group could not be terminated: {error}"
-        ))
-    }
-}
-
-#[cfg(unix)]
-fn process_group_exists(process_group: i32) -> Result<bool, String> {
-    if unsafe { libc::kill(-process_group, 0) } == 0 {
-        return Ok(true);
-    }
-    let error = io::Error::last_os_error();
-    match error.raw_os_error() {
-        Some(libc::ESRCH) => Ok(false),
-        Some(libc::EPERM) => Ok(true),
-        _ => Err(format!(
-            "check process group could not be inspected: {error}"
-        )),
-    }
-}
-
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{
-        canonical_work_for_ledger, process_group_exists, terminate_process_group, Duration,
-        Instant, OBSERVE_TERMINATION_GRACE_MS,
-    };
+    use super::canonical_work_for_ledger;
+    use super::capture::{process_group_exists, terminate_process_group};
     use crate::run::ledger::LedgerPath;
     use std::os::unix::process::CommandExt;
     use std::path::PathBuf;
     use std::process::Command;
-    use std::{fs, thread};
+    use std::{
+        fs, thread,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn canonical_work_binding_rejects_cross_run_ledger_pairs() {
@@ -2418,7 +1909,7 @@ mod tests {
             "cleanup left the process group behind: {group_after:?}"
         );
         assert!(
-            started.elapsed() >= Duration::from_millis(OBSERVE_TERMINATION_GRACE_MS),
+            started.elapsed() >= Duration::from_millis(250),
             "cleanup skipped its bounded TERM grace"
         );
         assert!(
@@ -2427,24 +1918,6 @@ mod tests {
         );
         assert!(failure.contains("could not be reaped"), "{failure}");
     }
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    started.elapsed().as_millis().min(u64::MAX as u128) as u64
-}
-
-fn observed_result(status: &std::process::ExitStatus) -> Result<Value, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = status.signal() {
-            return Ok(json!({"kind": "signal", "signal": signal}));
-        }
-    }
-    status
-        .code()
-        .map(|code| json!({"kind": "exit", "code": code as u64}))
-        .ok_or_else(|| "check command ended indeterminately; no mutation was made".into())
 }
 
 fn parse_nonnegative(option: &str, value: &str) -> Result<u64, String> {
@@ -2478,7 +1951,8 @@ pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
 pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<Value, String> {
     let (_, events, _) = load(loaded, ledger)?;
     let state = reduce_live(loaded, &events)?;
-    assert_no_drift(loaded, &state)?;
+    let drift = drift_warning(loaded, &state)?;
+    warn_drift(drift.as_ref());
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
     crate::run_value::explain_with_artifact(&state, event_id, artifact_current)
@@ -2501,7 +1975,8 @@ pub(crate) fn human_status(
 ) -> Result<crate::run_human::HumanStatus, String> {
     let (_, events, _) = load(loaded, ledger)?;
     let state = reduce_live(loaded, &events)?;
-    assert_no_drift(loaded, &state)?;
+    let drift = drift_warning(loaded, &state)?;
+    warn_drift(drift.as_ref());
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
     crate::run_human::human_status(&state, artifact_current)
@@ -2515,7 +1990,8 @@ pub(crate) fn human_explain(
 ) -> Result<crate::run_human::HumanExplanation, String> {
     let (_, events, _) = load(loaded, ledger)?;
     let state = reduce_live(loaded, &events)?;
-    assert_no_drift(loaded, &state)?;
+    let drift = drift_warning(loaded, &state)?;
+    warn_drift(drift.as_ref());
     let artifact_current = artifact_current(loaded, &state)?;
     predecessor(loaded, &events[0])?;
     crate::run_human::human_explain(&state, event_id, artifact_current)
@@ -2527,13 +2003,20 @@ pub(crate) fn human_explain(
 /// artifact bytes.
 pub fn report(loaded: &Loaded, ledgers: &[&str]) -> Result<Value, String> {
     let mut states = Vec::with_capacity(ledgers.len());
+    let mut warnings = Vec::new();
     for ledger in ledgers {
         let (_, events, _) = load(loaded, ledger)?;
         let state = reduce_live(loaded, &events)?;
+        if let Some(warning) = drift_warning(loaded, &state)? {
+            warn_drift(Some(&warning));
+            warnings.push(json!({"ledger": ledger, "warning": warning}));
+        }
         predecessor(loaded, &events[0])?;
         states.push(state);
     }
-    crate::run_value::aggregate(&states)
+    let mut report = crate::run_value::aggregate(&states)?;
+    report["warnings"] = json!(warnings);
+    Ok(report)
 }
 
 pub fn report_markdown(report: &Value) -> String {
@@ -2926,12 +2409,13 @@ impl RunSnapshot {
         }
         let (state, inputs) = reduce_with_inputs(loaded, events)?;
         predecessor(loaded, &events[0])?;
-        let drift = assert_no_drift(loaded, &state);
-        let artifact_current = if drift.is_ok() {
-            artifact_current(loaded, &state)
-        } else {
-            Ok(false)
-        };
+        let drift = view_drift(loaded, &state);
+        if let Err(error) = &drift {
+            if drift_value(error).is_none() {
+                return Err(error.clone());
+            }
+        }
+        let artifact_current = artifact_current(loaded, &state);
         Ok(Self {
             events: events.to_vec(),
             state,
@@ -2962,6 +2446,12 @@ impl RunSnapshot {
             "events": self.events,
             "submissions": state["submissions"]
         });
+        result["warnings"] = self
+            .drift
+            .as_ref()
+            .err()
+            .and_then(|error| drift_value(error))
+            .map_or_else(|| json!([]), |warning| json!([warning]));
         result["ledgerSha256"] = json!(self.ledger_sha256.clone());
         if state.get("checkPolicy").is_some() {
             result["assignments"] = state["assignments"].clone();
@@ -2980,24 +2470,46 @@ impl RunSnapshot {
     }
 
     pub(crate) fn status_view(&self) -> Result<Value, String> {
-        self.drift.clone()?;
-        crate::run_value::status(&self.state, Some(self.artifact_current.clone()?))
+        let mut status =
+            crate::run_value::status(&self.state, Some(self.artifact_current.clone()?))?;
+        status["warnings"] = self
+            .drift
+            .as_ref()
+            .err()
+            .and_then(|error| drift_value(error))
+            .map_or_else(|| json!([]), |warning| json!([warning]));
+        Ok(status)
     }
 
     pub(crate) fn next_view(&self, loaded: &Loaded) -> Result<Value, String> {
-        self.drift.clone()?;
+        assert_exact_receipt(loaded, &self.state)?;
         crate::run::artifact::assert_current(loaded, &self.state)?;
         let state = &self.state;
-        Ok(json!({
+        let next = json!({
             "valid": true,
             "runId": state["runId"],
             "status": state["status"],
             "workflow": state["workflow"],
-            "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
-            "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
+            "currentStage": if state["status"] == "running" {
+                state["currentStage"].clone()
+            } else {
+                Value::Null
+            },
+            "attempt": if state["status"] == "running" {
+                state["attempt"].clone()
+            } else {
+                Value::Null
+            },
             "assignments": crate::run::assignment::pending(state),
-            "progress": crate::run_progress::project(state)
-        }))
+            "progress": crate::run_progress::project(state),
+            "warnings": self
+                .drift
+                .as_ref()
+                .err()
+                .and_then(|error| drift_value(error))
+                .map_or_else(|| json!([]), |warning| json!([warning]))
+        });
+        Ok(next)
     }
 }
 
@@ -3215,6 +2727,54 @@ fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn drift_value(error: &str) -> Option<Value> {
+    error
+        .strip_prefix(run_error::DRIFT_PREFIX)
+        .or_else(|| error.strip_prefix(run_error::LEGACY_DRIFT_PREFIX))
+        .and_then(|value| serde_json::from_str(value).ok())
+}
+
+fn drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
+    match view_drift(loaded, state) {
+        Ok(()) => Ok(None),
+        Err(error) => drift_value(&error).map(Some).ok_or(error),
+    }
+}
+
+fn view_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
+    if state["version"] == 2 {
+        if let Some(reference) = state.get("harnessReceipt") {
+            if crate::evidence::receipt::is_missing_historical_reference(loaded, reference)? {
+                let expected = reference["sha256"].as_str().unwrap_or_default().to_owned();
+                return Err(run_error::machine_drift(DriftError::harness_receipt(
+                    expected,
+                    String::new(),
+                )));
+            }
+        }
+    }
+    assert_exact_receipt(loaded, state)?;
+    assert_no_drift(loaded, state)
+}
+
+fn assert_exact_receipt(loaded: &Loaded, state: &Value) -> Result<(), String> {
+    if let Some(reference) = state.get("harnessReceipt") {
+        crate::evidence::receipt::assert_exact_reference(loaded, reference)?;
+    }
+    Ok(())
+}
+
+fn action_drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
+    assert_exact_receipt(loaded, state)?;
+    drift_warning(loaded, state)
+}
+
+fn warn_drift(warning: Option<&Value>) {
+    if let Some(classification) = warning.and_then(|value| value["classification"].as_str()) {
+        eprintln!("warning: {classification} detected; continuing with the recorded run");
+    }
+}
+
 /// A selected agent's profile bytes and requested runtime must still match the
 /// configuration that produced the plan.  The authorized alternate binding is
 /// part of that runtime, so it drifts with the contract it belongs to.
@@ -3255,7 +2815,8 @@ fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result<(), String
 }
 
 pub(crate) fn assert_current_for_receipt(loaded: &Loaded, state: &Value) -> Result<(), String> {
-    assert_no_drift(loaded, state)?;
+    let drift = action_drift_warning(loaded, state)?;
+    warn_drift(drift.as_ref());
     crate::run::artifact::assert_current(loaded, state)
 }
 

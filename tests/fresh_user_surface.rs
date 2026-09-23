@@ -207,6 +207,10 @@ fn a_historical_project_stays_readable_under_its_own_identity() {
         String::from_utf8_lossy(&output.stderr)
     );
     let inspected: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        inspected["warnings"][0]["classification"], "harness_receipt_drift",
+        "a missing sidecar on a v2 historical ledger should be disclosed as drift"
+    );
     let producers: Vec<&str> = inspected["events"]
         .as_array()
         .expect("inspected events")

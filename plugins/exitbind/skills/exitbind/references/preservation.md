@@ -197,7 +197,9 @@ the exact lower-case hexadecimal ledger bytes. Event and observed-check-log
 references are resolved against the same ledger snapshot and state-root
 artifacts; stale heads, changed bytes, traversal, symlinks, cross-work
 references, and malformed identities fail closed. Observed v8 checks retain
-separate stdout/stderr raw artifacts, each capped at 1,048,576 bytes; reported
+separate stdout/stderr raw artifacts, each capped at 8,388,608 bytes; combined
+capture is capped at 16,777,216 bytes. Work expansion displays at most 65,536
+bytes per stream; reported
 checks and historical versions do not claim captured logs. Expansion does not
 capture arbitrary host logs or dereference an unpersisted reference.
 

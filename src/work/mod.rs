@@ -579,9 +579,24 @@ fn expand_check_log(loaded: &Loaded, reference: &Value, events: &[Value]) -> Res
         "kind": "check_log",
         "reference": reference,
         "event": event,
-        "stdout": {"encoding":"hex", "bytes":stdout.len(), "contentHex":hex(&stdout)},
-        "stderr": {"encoding":"hex", "bytes":stderr.len(), "contentHex":hex(&stderr)},
+        "stdout": bounded_log_value(&stdout),
+        "stderr": bounded_log_value(&stderr),
     }))
+}
+
+const MAX_LOG_DISPLAY_BYTES: usize = 64 * 1024;
+
+fn bounded_log_value(artifact: &crate::run::artifact::VerifiedArtifact) -> Value {
+    let displayed = artifact.preview.len().min(MAX_LOG_DISPLAY_BYTES);
+    json!({
+        "encoding": "hex",
+        "bytes": artifact.bytes,
+        "totalBytes": artifact.bytes,
+        "sha256": artifact.sha256,
+        "displayedBytes": displayed,
+        "truncated": artifact.bytes > displayed as u64,
+        "contentHex": hex(&artifact.preview[..displayed]),
+    })
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -635,6 +650,9 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             continue;
         }
         let ledger = format!("{}/{}", runs_dir(), name);
+        if superseded_by_valid_claim(loaded, &ledger)? {
+            continue;
+        }
         let snapshot = run::RunSnapshot::capture(loaded, &ledger)
             .map_err(|error| discovery_error(error, &format!("{WORK_PREFIX}{token}")))?;
         let view = snapshot.inspect_view();
@@ -688,6 +706,43 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             })).collect::<Vec<_>>()
         })),
     }
+}
+
+fn superseded_by_valid_claim(loaded: &Loaded, ledger: &str) -> Result<bool, String> {
+    let claim_path = loaded.state_root.join(format!("{ledger}.supersede"));
+    let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
+        return Ok(false);
+    };
+    if claim["oldLedgerPath"] != ledger {
+        return Ok(false);
+    }
+    let (_, old_events, old_source) = crate::run::ledger::load(loaded, ledger)?;
+    let Some(old_head) = old_events.last() else {
+        return Ok(false);
+    };
+    if claim["oldLedgerSha256"] != hash::bytes(old_source.as_bytes())
+        || claim["oldRunId"] != old_events[0]["runId"]
+        || claim["oldHeadEventSha256"] != old_head["eventSha256"]
+        || claim["oldConfigSha256"] != old_events[0]["configSha256"]
+    {
+        return Ok(false);
+    }
+    let successor = claim["newLedgerPath"].as_str().unwrap_or_default();
+    let (_, successor_events, _) = match crate::run::ledger::load(loaded, successor) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    let Some(start) = successor_events.first() else {
+        return Ok(false);
+    };
+    let link = &start["supersedes"];
+    Ok(start["runId"] == claim["newRunId"]
+        && start["workflow"] == claim["workflow"]
+        && link["ledgerPath"] == claim["oldLedgerPath"]
+        && link["ledgerSha256"] == claim["oldLedgerSha256"]
+        && link["runId"] == claim["oldRunId"]
+        && link["headEventSha256"] == claim["oldHeadEventSha256"]
+        && link["configSha256"] == claim["oldConfigSha256"])
 }
 
 /// No work is active. The most recently finished run is still reported, with
@@ -769,29 +824,38 @@ fn discovery_error(error: String, work: &str) -> String {
             };
             let human = match classification {
                 "profile_drift" => format!(
-                    "profile drift detected after run start for {} (expected {}, current {}). Inspect the old run before choosing a successor.",
+                    "profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.",
                     value["agent"].as_str().unwrap_or("unknown agent"),
                     value["expectedProfileSha256"].as_str().unwrap_or("unknown"),
                     value["currentProfileSha256"].as_str().unwrap_or("unknown")
                 ),
-                "boundary_drift" => format!(
-                    "run boundary manifest drift detected after run start (expected {}, current {}). Restore the exact manifest or explicitly supersede the run.",
-                    value["expectedBoundarySha256"].as_str().unwrap_or("unknown"),
-                    value["currentBoundarySha256"].as_str().unwrap_or("unknown")
-                ),
+                "boundary_drift" => {
+                    if value["currentBoundaryState"] == "absent" {
+                        format!(
+                            "run boundary manifest is absent after run start (expected hash {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.",
+                            value["expectedBoundarySha256"].as_str().unwrap_or("unknown")
+                        )
+                    } else {
+                        format!(
+                            "run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.",
+                            value["expectedBoundarySha256"].as_str().unwrap_or("unknown"),
+                            value["currentBoundarySha256"].as_str().unwrap_or("unknown")
+                        )
+                    }
+                }
                 "harness_receipt_drift" => format!(
-                    "harness receipt drift detected after run start (expected {}, current {}). Restore the exact receipt and manifest or explicitly supersede the run.",
+                    "semantic harness drift detected after run start (expected {}, current {}); continue with the recorded plan. Exact receipt integrity failures are refused separately.",
                     value["expectedHarnessReceiptSha256"].as_str().unwrap_or("unknown"),
                     value["currentHarnessReceiptSha256"].as_str().unwrap_or("unknown")
                 ),
                 "memory_drift" => format!(
-                    "memory drift detected after run start for {} (expected set {}, current set {}). Inspect the old run and current memory references, then use 'exitbind run supersede' to begin an intentional successor.",
+                    "memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.",
                     value["agent"].as_str().unwrap_or("unknown agent"),
                     value["expectedMemorySetSha256"].as_str().unwrap_or("unknown"),
                     value["currentMemorySetSha256"].as_str().unwrap_or("unknown")
                 ),
                 _ => format!(
-                    "configuration drift detected after run start (expected {}, current {}). Inspect the old run, then use 'exitbind run supersede' to begin an explicit successor.",
+                    "configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.",
                     value["expectedConfigSha256"].as_str().unwrap_or("unknown"),
                     value["currentConfigSha256"].as_str().unwrap_or("unknown")
                 ),
@@ -801,7 +865,7 @@ fn discovery_error(error: String, work: &str) -> String {
                 classification,
                 "no-change",
                 reference(work),
-                safe_action("supersede"),
+                safe_action("continue"),
             );
         }
     }
@@ -882,14 +946,18 @@ fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> 
 fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
     let value = snapshot.next_view(loaded)?;
     let progress = value["progress"].clone();
+    let warnings = value["warnings"].clone();
     if value["status"] != "running" {
-        return Ok(json!({"action": "done", "status": value["status"], "progress": progress}));
+        return Ok(
+            json!({"action": "done", "status": value["status"], "progress": progress, "warnings": warnings}),
+        );
     }
     if let Some(pending) = current_check_target(snapshot)? {
         let mut result = json!({
             "action": "check",
             "check": pending.value(),
             "progress": progress,
+            "warnings": warnings,
         });
         result["resolvedActor"] = crate::work::packet::resolved_actor(work, snapshot, &result)?;
         let view = snapshot.inspect_view();
@@ -931,7 +999,8 @@ fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result
         "role": assignment["role"],
         "agent": assignment["agent"],
         "packet": packet,
-        "progress": progress
+        "progress": progress,
+        "warnings": warnings
     });
     let resolved_actor = crate::work::packet::resolved_actor(work, snapshot, &result)?;
     result["resolvedActor"] = resolved_actor;

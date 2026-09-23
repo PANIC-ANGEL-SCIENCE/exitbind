@@ -32,9 +32,12 @@ does not delete or rewrite it.
   ControlRoot. `--require-harness-receipt` refuses an unbound assignment.
 - `runtime.host` must be `codex`; a requested model and reasoning effort are
   passed explicitly to Codex. No fallback is selected.
-- The selected profile and project-local memory sources are re-read and hashed
-  immediately before native launch. Config, profile, memory, boundary, and
-  upstream-artifact drift therefore retain existing fail-closed behavior.
+- The selected profile and project-local memory sources are re-read
+  immediately before native launch. Configuration, profile, memory, boundary,
+  and semantic harness drift are reported as warnings while away continues with
+  the recorded plan. Changed or unavailable harness contents are omitted from
+  the prompt. Exact receipt and upstream-artifact integrity, unsafe paths, and
+  invalid run state still refuse launch or mutation.
 - With `--sandbox-mode`, Exitbind passes the selected `read-only`,
   `workspace-write`, or `danger-full-access` posture to Codex and records it.
   Without the option, Codex inherits its resolved configuration and Exitbind

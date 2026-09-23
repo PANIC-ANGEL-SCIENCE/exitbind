@@ -1176,6 +1176,43 @@ fn producer_cases_execute_persisted_identity_and_format_projections() {
     .unwrap();
     assert_eq!(historical_event["version"], 3);
     assert_eq!(historical_event["producer"]["name"], "soulmate");
+    let manifest = serde_json::json!({
+        "version": 1,
+        "project": {"id": "compatibility-matrix", "session": "fixture"},
+        "harness": {"name": "test", "version": "1"},
+        "activations": [
+            {"kind": "skill", "name": "test", "evidence": "configured"}
+        ]
+    });
+    fs::write(
+        legacy_root.join("harness-manifest.json"),
+        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+    )
+    .unwrap();
+    let state_dir = legacy_paths["defaultState"].as_str().unwrap();
+    let receipt_relative = format!("{state_dir}/harness-receipt.json");
+    let receipt_path = legacy_root.join(&receipt_relative);
+    let receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        .args([
+            "plan",
+            "change",
+            "--goal",
+            "compatibility receipt",
+            "--receipt",
+        ])
+        .arg(&receipt_path)
+        .args(["--harness-manifest", "harness-manifest.json", "--config"])
+        .arg(&legacy_config)
+        .current_dir(&legacy_root)
+        .output()
+        .unwrap();
+    assert!(receipt.status.success(), "{receipt:?}");
+    let receipt_bytes = fs::read(receipt_path).unwrap();
+    let receipt_reference = serde_json::json!({
+        "path": receipt_relative,
+        "sha256": format!("{:x}", Sha256::digest(receipt_bytes)),
+        "version": 2
+    });
     for version in [2, 4] {
         let mut event = if version == 2 {
             legacy_event.clone()
@@ -1184,11 +1221,7 @@ fn producer_cases_execute_persisted_identity_and_format_projections() {
         };
         event["version"] = Value::Number(version.into());
         if version == 2 {
-            event["harnessReceipt"] = serde_json::json!({
-                "path": "receipt.json",
-                "sha256": "0".repeat(64),
-                "version": 2
-            });
+            event["harnessReceipt"] = receipt_reference.clone();
         }
         rehash_event(&mut event);
         let ledger = format!(

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.25.0-rc.1
+
+- Let active human-directed runs continue with their recorded plan after
+  configuration, profile, memory, boundary-content, or semantic harness drift;
+  report the drift while keeping exact receipt and artifact integrity enforced.
+- Raise observed check capture to 8 MiB per stream and 16 MiB combined, with
+  bounded 64 KiB-per-stream expansion display.
+- Separate observed process capture and cleanup from run admission and artifact
+  ownership.
+
 ## 0.24.0-rc.7
 
 - Canonicalize the public author identity as `envy404`; retain

@@ -695,6 +695,13 @@ fn away_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 result["session"].as_str().unwrap_or(""),
                 result["state"].as_str().unwrap_or("")
             );
+            if let Some(warnings) = result["warnings"].as_array() {
+                for warning in warnings {
+                    if let Some(classification) = warning["classification"].as_str() {
+                        eprintln!("warning={classification}");
+                    }
+                }
+            }
             Ok(())
         }
         "list" => {
@@ -1398,27 +1405,34 @@ fn map_run_error(error: String, json_output: bool) -> String {
     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(machine) {
         if value["classification"] == "config_drift" {
             eprintln!(
-                "configuration drift detected after run start (expected {}, current {}). Inspect the old run, then use '{command} run supersede' to begin an explicit successor.",
+                "configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
                 value["expectedConfigSha256"], value["currentConfigSha256"]
             );
         } else if value["classification"] == "profile_drift" {
             eprintln!(
-                "profile drift detected after run start for {} (expected {}, current {}). Inspect the old run before choosing a successor.",
+                "profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
                 value["agent"], value["expectedProfileSha256"], value["currentProfileSha256"]
             );
         } else if value["classification"] == "boundary_drift" {
-            eprintln!(
-                "run boundary manifest drift detected after run start (expected {}, current {}). Restore the exact manifest or explicitly supersede the run.",
-                value["expectedBoundarySha256"], value["currentBoundarySha256"]
-            );
+            if value["currentBoundaryState"] == "absent" {
+                eprintln!(
+                    "run boundary manifest is absent after run start (expected hash {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                    value["expectedBoundarySha256"]
+                );
+            } else {
+                eprintln!(
+                    "run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                    value["expectedBoundarySha256"], value["currentBoundarySha256"]
+                );
+            }
         } else if value["classification"] == "harness_receipt_drift" {
             eprintln!(
-                "harness receipt drift detected after run start (expected {}, current {}). Restore the exact receipt and manifest or explicitly supersede the run.",
+                "semantic harness drift detected after run start (expected {}, current {}); continue with the recorded plan. Exact receipt integrity failures are refused separately.",
                 value["expectedHarnessReceiptSha256"], value["currentHarnessReceiptSha256"]
             );
         } else {
             eprintln!(
-                "memory drift detected after run start for {} (expected set {}, current set {}). Inspect the old run and current memory references, then use '{command} run supersede' for an intentional successor.",
+                "memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
                 value["agent"], value["expectedMemorySetSha256"], value["currentMemorySetSha256"]
             );
         }
@@ -1464,7 +1478,7 @@ fn print_advanced_help() {
         "soulmate"
     };
     let help = format!(
-        "{product} {VERSION}\n\nDo the next change\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' after configuration, profile, memory, boundary, or harness-receipt drift."
+        "{product} {VERSION}\n\nDo the next change\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' only when you want a successor bound to changed configuration, profile, memory, boundary, or harness inputs."
     );
     let value_help = if crate::producer::exitbind_surface() {
         "Run value proof: new v8 runs may observe the frozen check locally with 'run observe-check' or record a host report with 'run record-check'; historical v3-v7 runs remain readable. Use 'run status', 'run explain', and 'run report' for bounded evidence views."

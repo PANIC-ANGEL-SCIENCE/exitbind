@@ -71,12 +71,30 @@ pub(crate) fn assert_current(loaded: &Loaded, plan: &Value) -> Result<(), String
     let path = evidence["path"]
         .as_str()
         .ok_or("recorded run boundary manifest path is invalid")?;
-    let bytes = project_path::secure_bytes(&loaded.control_root, path, "run boundary manifest")
-        .map_err(|error| {
-            format!(
-                "run boundary manifest is missing or unreadable: {error}; restore the exact file or use the run supersede command"
-            )
-        })?;
+    let bytes = match project_path::secure_bytes_observation(
+        &loaded.control_root,
+        path,
+        "run boundary manifest",
+    ) {
+        project_path::SecureBytesResult::Bytes(bytes) => bytes,
+        project_path::SecureBytesResult::Absent(_) => {
+            return Err(run_error::machine_drift(
+                run_error::DriftError::boundary_absent(expected.to_owned()),
+            ));
+        }
+        project_path::SecureBytesResult::Unsafe(error)
+        | project_path::SecureBytesResult::Unreadable(error) => {
+            return Err(format!(
+                "run boundary manifest is unsafe or unreadable: {error}; restore the exact file or use the run supersede command"
+            ));
+        }
+        #[cfg(not(unix))]
+        project_path::SecureBytesResult::Unsupported(error) => {
+            return Err(format!(
+                "run boundary manifest cannot be checked safely: {error}; restore the exact file or use the run supersede command"
+            ));
+        }
+    };
     let current = hash::bytes(&bytes);
     if current != expected {
         return Err(run_error::machine_drift(run_error::DriftError::boundary(

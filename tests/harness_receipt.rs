@@ -211,6 +211,194 @@ fn v2_receipt_binds_bounded_harness_evidence_and_detects_drift() {
 }
 
 #[test]
+fn v2_receipt_integrity_precedes_missing_boundary_warning() {
+    let root = project();
+    let config_path = root.join("soulmate.json");
+    let config = config_path.to_string_lossy().into_owned();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src/a.rs"), "pub fn a() {}\n").unwrap();
+    let mut config_value: Value =
+        serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+    config_value["agents"]["worker"]["observe"] = json!(["src/**"]);
+    config_value["agents"]["worker"]["write"] = json!(["src/**"]);
+    write_json(&config_path, &config_value);
+
+    let boundary = root.join(".agents/boundaries/task.json");
+    fs::create_dir_all(boundary.parent().unwrap()).unwrap();
+    write_json(
+        &boundary,
+        &json!({
+            "version": 1,
+            "agents": {
+                "worker": {"observe": ["src/a.rs"], "write": ["src/a.rs"]}
+            }
+        }),
+    );
+    write_json(&root.join("harness-manifest.json"), &manifest());
+    let receipt = root.join(".soulmate/harness-receipt.json");
+    let planned = invoke(&[
+        "plan",
+        "change",
+        "--goal",
+        "boundary receipt regression",
+        "--receipt",
+        receipt.to_str().unwrap(),
+        "--harness-manifest",
+        "harness-manifest.json",
+        "--config",
+        &config,
+    ]);
+    assert!(
+        planned.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&planned.stdout),
+        String::from_utf8_lossy(&planned.stderr)
+    );
+
+    let started = invoke(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "boundary receipt regression",
+        "--ledger",
+        ".soulmate/run.jsonl",
+        "--boundary",
+        ".agents/boundaries/task.json",
+        "--harness-receipt",
+        receipt.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(
+        started.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&started.stdout),
+        String::from_utf8_lossy(&started.stderr)
+    );
+    let first: Value = serde_json::from_str(
+        fs::read_to_string(root.join(".soulmate/run.jsonl"))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(first["version"], 2);
+    assert_eq!(first["harnessReceipt"]["version"], 2);
+
+    fs::remove_file(&boundary).unwrap();
+    let authentic = invoke(&[
+        "run",
+        "next",
+        ".soulmate/run.jsonl",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert!(
+        authentic.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&authentic.stdout),
+        String::from_utf8_lossy(&authentic.stderr)
+    );
+    let authentic_value: Value = serde_json::from_slice(&authentic.stdout).unwrap();
+    assert_eq!(authentic_value["valid"], true);
+    assert_eq!(
+        authentic_value["warnings"][0]["classification"],
+        "boundary_drift"
+    );
+
+    let mut tampered = fs::read(&receipt).unwrap();
+    tampered.push(b'\n');
+    fs::write(&receipt, tampered).unwrap();
+    let rejected = invoke(&[
+        "run",
+        "next",
+        ".soulmate/run.jsonl",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert!(!rejected.status.success());
+    let rejected_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&rejected.stdout),
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    assert!(
+        rejected_text.contains("harness receipt reference is not exact"),
+        "{rejected_text}"
+    );
+
+    let read_surfaces = [
+        vec![
+            "run",
+            "status",
+            ".soulmate/run.jsonl",
+            "--json",
+            "--config",
+            config.as_str(),
+        ],
+        vec![
+            "run",
+            "inspect",
+            ".soulmate/run.jsonl",
+            "--json",
+            "--config",
+            config.as_str(),
+        ],
+        vec![
+            "run",
+            "explain",
+            ".soulmate/run.jsonl",
+            "--json",
+            "--config",
+            config.as_str(),
+        ],
+        vec![
+            "run",
+            "report",
+            ".soulmate/run.jsonl",
+            "--json",
+            "--config",
+            config.as_str(),
+        ],
+        vec![
+            "run",
+            "status",
+            ".soulmate/run.jsonl",
+            "--config",
+            config.as_str(),
+        ],
+        vec![
+            "run",
+            "explain",
+            ".soulmate/run.jsonl",
+            "--config",
+            config.as_str(),
+        ],
+    ];
+    for arguments in read_surfaces {
+        let rejected = invoke(&arguments);
+        assert!(
+            !rejected.status.success(),
+            "receipt tampering passed: {arguments:?}"
+        );
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&rejected.stdout),
+            String::from_utf8_lossy(&rejected.stderr)
+        );
+        assert!(
+            text.contains("harness receipt reference is not exact"),
+            "{arguments:?}: {text}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn manifest_rejects_private_or_unverifiable_fields_before_receipt_creation() {
     let root = project();
     let config = root.join("soulmate.json").to_string_lossy().into_owned();

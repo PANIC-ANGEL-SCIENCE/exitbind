@@ -44,7 +44,7 @@ Install the supported release as a single Rust binary. Node.js, npm, Python,
 and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.24.0-rc.7/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.1/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
 exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --review-policy required --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -58,7 +58,7 @@ The stable release includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The v0.24.0-rc.7 release candidate targets Linux x86_64 and native macOS on Apple
+The v0.25.0-rc.1 release candidate targets Linux x86_64 and native macOS on Apple
 Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -209,7 +209,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in the `v0.24.0-rc.7` release candidate use run-event format 8. The
+New checked runs in the `v0.25.0-rc.1` release candidate use run-event format 8. The
 reader retains historical v1–v7 ledgers, including their original producer
 values and guarantees. Current v8 records bind an Accepted Subject, tested-input
 identity, and the v0.24 basis/review-policy extension to each applicable result
@@ -325,7 +325,7 @@ files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.24.0-rc.7/install.sh | EXITBIND_VERSION=v0.24.0-rc.7 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.1/install.sh | EXITBIND_VERSION=v0.25.0-rc.1 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -593,9 +593,12 @@ exitbind run start change --goal "One bounded change" \
 ```
 
 Every attempt uses a fresh StateRoot artifact path. Prior artifacts are
-immutable; drift, deletion, unsafe paths, tracked/staged private state,
-configuration/profile/memory/boundary drift, or an unverifiable lock fails
-closed before mutation.
+immutable. Exact artifact or receipt path/byte/hash failures, deletion, unsafe
+paths, tracked/staged private state, unreadable required boundary inputs, and
+unverifiable locks still refuse mutation. Ordinary configuration, profile,
+memory, boundary-content, and semantic harness drift is reported as a warning;
+the active human-directed operation continues with its recorded plan. Use
+explicit supersession only when you want a new run bound to changed inputs.
 
 During an attended active session, every implementation worker and reviewer
 uses the host's native subagent spawn with the assignment's exact
@@ -685,14 +688,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.24.0-rc.7
+dotagents --project add envy404/exitbind --ref v0.25.0-rc.1
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.24.0-rc.7
+dotagents --project add envy404/exitbind --ref v0.25.0-rc.1
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -860,7 +863,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.24.0-rc.7/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.1/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

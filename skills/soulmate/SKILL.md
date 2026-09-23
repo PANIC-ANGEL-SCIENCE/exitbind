@@ -80,8 +80,10 @@ recovering, inspecting evidence, or using that low-level surface.
 
 Stop and ask the owning human/lead when a real goal, scope, permission,
 authority, or ambiguity decision is required; when native host execution is
-unavailable; when a returned action is stale or missing; or when configuration,
-boundary, profile, harness, memory, ledger, target, or artifact evidence drifts.
+unavailable; or when a returned action is stale or missing. Report ordinary
+configuration, boundary, profile, harness, and memory drift as a warning, then
+continue the human-directed task with its recorded plan. Exact ledger, target,
+receipt, or artifact integrity failures still refuse the affected operation.
 Never fabricate completion, acceptance, check evidence, or a recovery choice.
 
 ## REALITY, DECISIONS, READINESS

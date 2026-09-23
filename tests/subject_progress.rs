@@ -321,18 +321,20 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                 bytes.push(b'\n');
                 fs::write(&config, bytes).unwrap();
                 let output = fixture.call(&["work", "next", work, "--json"], None);
-                assert_eq!(
-                    output.status.code(),
-                    Some(1),
+                assert!(
+                    output.status.success(),
                     "{}{}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 );
                 let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_eq!(value["reason"]["code"], "config_drift");
+                assert_eq!(
+                    value["next"]["warnings"][0]["classification"],
+                    "config_drift"
+                );
                 assert_eq!(value["effect"], "no-change");
                 assert_opaque_reference(&value["reference"], serde_json::json!({"work": work}));
-                assert_eq!(value["nextAction"]["type"], "supersede");
+                assert_eq!(value["nextAction"]["type"], "continue");
                 assert_eq!(value["nextAction"]["safe"], true);
                 assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
                 assert_opaque_envelope(&value);
@@ -459,17 +461,19 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                 let before = fs::read(fixture.root.join(&ledger)).unwrap();
                 fs::write(fixture.root.join("memory.md"), b"changed memory\n").unwrap();
                 let output = fixture.call(&["work", "next", &work, "--json"], None);
-                assert_eq!(
-                    output.status.code(),
-                    Some(1),
+                assert!(
+                    output.status.success(),
                     "{}{}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 );
                 let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_eq!(value["reason"]["code"], "memory_drift");
+                assert_eq!(
+                    value["next"]["warnings"][0]["classification"],
+                    "memory_drift"
+                );
                 assert_eq!(value["effect"], "no-change");
-                assert_eq!(value["nextAction"]["type"], "supersede");
+                assert_eq!(value["nextAction"]["type"], "continue");
                 assert_eq!(value["nextAction"]["safe"], true);
                 assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
                 assert_opaque_envelope(&value);
@@ -497,13 +501,18 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                 let ledger = fixture.ledger(work);
                 let before = fs::read(fixture.root.join(&ledger)).unwrap();
                 let output = fixture.call(&["work", "resume", "--json"], None);
-                assert_eq!(output.status.code(), Some(1));
+                assert!(
+                    output.status.success(),
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_eq!(value["reason"]["code"], "profile_drift");
-                assert_eq!(value["effect"], "no-change");
-                assert_opaque_reference(&value["reference"], serde_json::json!({"work": work}));
-                assert_eq!(value["nextAction"]["type"], "supersede");
-                assert_eq!(value["nextAction"]["safe"], true);
+                assert_eq!(value["status"], "resumed");
+                assert_eq!(
+                    value["next"]["warnings"][0]["classification"],
+                    "profile_drift"
+                );
                 assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
                 assert_opaque_envelope(&value);
             }

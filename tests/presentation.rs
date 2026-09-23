@@ -911,7 +911,7 @@ fn goal_close_requires_explicit_categories_and_current_governed_result() {
         None,
     );
     assert!(!invalid.status.success());
-    assert!(String::from_utf8_lossy(&invalid.stderr).contains("current governed result"));
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("not a governed result"));
     let history = fs::read_to_string(explicit.root.join(".exitbind/session-goal.jsonl")).unwrap();
     assert_eq!(
         history.lines().count(),
@@ -920,6 +920,65 @@ fn goal_close_requires_explicit_categories_and_current_governed_result() {
     );
     fs::remove_dir_all(project.root).unwrap();
     fs::remove_dir_all(explicit.root).unwrap();
+}
+
+#[test]
+fn goal_close_keeps_accepted_result_after_config_drift_and_warns() {
+    let project = Project::new("goal-close-config-drift");
+    let work = begin(&project, false);
+    let decision = project.drive_until(&work, "lead_decision");
+    project.value(
+        &[
+            "work",
+            "return",
+            &work,
+            decision["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accepted"),
+    );
+    project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "g",
+            "--goal",
+            "ship",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+
+    let config = project.root.join("exitbind.json");
+    let mut config_bytes = fs::read(&config).unwrap();
+    config_bytes.push(b'\n');
+    fs::write(config, config_bytes).unwrap();
+    let closed = project.call(
+        &["goal", "close", "--goal-id", "g", "--result-ref", &work],
+        None,
+    );
+    assert!(
+        closed.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&closed.stdout),
+        String::from_utf8_lossy(&closed.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&closed.stderr).contains("config_drift"),
+        "{}",
+        String::from_utf8_lossy(&closed.stderr)
+    );
+    let value: Value = serde_json::from_slice(&closed.stdout).unwrap();
+    assert_eq!(value["closure"]["closed"], true);
+    assert_eq!(value["closure"]["resultRefs"][0], work);
+
+    let history = fs::read_to_string(project.root.join(".exitbind/session-goal.jsonl")).unwrap();
+    assert!(!history.contains("testedInputsSha256"));
+    assert!(!history.contains("\"warnings\""));
+    fs::remove_dir_all(project.root).unwrap();
 }
 
 #[test]
@@ -1362,7 +1421,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let first_text = String::from_utf8_lossy(&first.stdout).replace('\r', "");
     assert_eq!(
         first_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        0,
+        1,
         "{first_text}"
     );
     let cache = project
@@ -1376,7 +1435,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let corrupt_stale_text = String::from_utf8_lossy(&corrupt_stale.stdout).replace('\r', "");
     assert_eq!(
         corrupt_stale_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        0,
+        1,
         "{corrupt_stale_text}"
     );
     fs::write(project.root.join("source.txt"), b"env-first\n").unwrap();
@@ -1387,7 +1446,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let current_text = String::from_utf8_lossy(&current.stdout).replace('\r', "");
     assert_eq!(
         current_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        1,
+        0,
         "{current_text}"
     );
     fs::write(project.root.join("source.txt"), b"drifted\n").unwrap();
@@ -1399,7 +1458,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let second_text = String::from_utf8_lossy(&second.stdout).replace('\r', "");
     assert_eq!(
         second_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        0,
+        1,
         "{second_text}"
     );
     fs::remove_dir_all(project.root).unwrap();

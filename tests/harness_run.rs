@@ -186,7 +186,7 @@ fn sha256_without_event_hash(value: &Value) -> String {
 }
 
 #[test]
-fn receipt_drift_and_symlink_substitution_block_before_next_mutation() {
+fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
     let (root, config) = project();
     let receipt = create_receipt(&root, &config);
     let ledger = root.join(".soulmate/run.jsonl");
@@ -213,7 +213,7 @@ fn receipt_drift_and_symlink_substitution_block_before_next_mutation() {
     #[cfg(not(unix))]
     fs::copy(&external, &receipt).unwrap();
 
-    let drift = invoke(&[
+    let symlink = invoke(&[
         "run",
         "next",
         ".soulmate/run.jsonl",
@@ -221,9 +221,29 @@ fn receipt_drift_and_symlink_substitution_block_before_next_mutation() {
         "--config",
         &config,
     ]);
-    assert!(!drift.status.success(), "{}", text(&drift));
-    let body: Value = serde_json::from_slice(&drift.stdout).unwrap();
-    assert_eq!(body["classification"], "harness_receipt_drift");
+    assert!(!symlink.status.success(), "{}", text(&symlink));
+    assert!(text(&symlink).contains("receipt"), "{}", text(&symlink));
+    assert_eq!(fs::read(&ledger).unwrap(), before);
+
+    fs::remove_file(&receipt).unwrap();
+    fs::copy(&external, &receipt).unwrap();
+    let mut tampered = fs::read(&receipt).unwrap();
+    tampered.push(b'\n');
+    fs::write(&receipt, tampered).unwrap();
+    let bytes = invoke(&[
+        "run",
+        "next",
+        ".soulmate/run.jsonl",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert!(!bytes.status.success(), "{}", text(&bytes));
+    assert!(
+        text(&bytes).contains("receipt reference is not exact"),
+        "{}",
+        text(&bytes)
+    );
     assert_eq!(fs::read(&ledger).unwrap(), before);
     fs::remove_dir_all(root).unwrap();
 }

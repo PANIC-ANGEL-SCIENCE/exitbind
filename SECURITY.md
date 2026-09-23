@@ -24,7 +24,7 @@ Report stale, historical, unavailable, and unverified layers explicitly;
 resolve the active host path before deletion, use supported host-specific
 refresh only, and treat reload/new-session evidence separately.
 
-In the `v0.24.0-rc.7` release candidate, `run observe-check` executes only the frozen command
+In the `v0.25.0-rc.1` release candidate, `run observe-check` executes only the frozen command
 in ProductRoot with inherited permissions and environment. It discards child
 stdout from the machine JSON stream, inherits stderr, records exit and signal
 results distinctly, and writes no check event when launch, timeout, or durable
@@ -92,7 +92,7 @@ deleted, or substituted prior artifact blocks resume and submission.
 ## Checked-result evidence
 
 Opt-in run-v3 ledgers bind a frozen check command and source category to the
-run; v3 supports caller-reported `run record-check` only. The `v0.24.0-rc.7` release candidate
+run; v3 supports caller-reported `run record-check` only. The `v0.25.0-rc.1` release candidate
 release supports both reported `run record-check` and local `run observe-check`.
 `run record-check` consumes a caller-supplied exit status for an exact
 current worker submission. It does not execute that command, authenticate the
@@ -178,21 +178,22 @@ value must be 64 lowercase hexadecimal characters.
 A run may opt into that existing receipt-v2 evidence with
 `--harness-receipt RECEIPT`. The receipt must be an existing no-follow regular
 file beneath StateRoot, and Exitbind binds its relative path and exact SHA-256
-in a v2 start event. `run next` and `run submit` revalidate the exact receipt,
-current configuration/profile bytes, and recorded ControlRoot manifest before
-returning or mutating a run. A receipt profile/runtime set that does not cover
-the selected plan is rejected. This preserves evidence continuity across a
-tmux boundary; it does not prove that a model read, activated, or complied with
-the manifest claims.
+in a v2 start event. `run next` and `run submit` revalidate the receipt's exact
+path, version, bytes, and hash. Changes to current configuration/profile bytes
+or to the semantic ControlRoot manifest are reported as warnings; the
+human-directed run continues with its recorded plan. A receipt profile/runtime
+set that does not cover the selected plan is rejected. This preserves evidence
+continuity across a tmux boundary; it does not prove that a model read,
+activated, or complied with the manifest claims. Exact receipt or artifact
+integrity failures remain a hard refusal.
 
-Configuration drift remains fail closed. Explicit supersession creates a new
-bounded ledger linked to the predecessor's run ID, full ledger hash, verified
-head, and run-start configuration hash. It never edits the predecessor, copies
-its goal, or silently migrates configuration. A project-local exclusive claim
-seals the predecessor against later CLI submissions and prevents a different
-successor under the same claim. External replacement makes provenance
-inspection fail. Exitbind stores hashes, not a configuration snapshot or
-global archive.
+Explicit supersession creates a new bounded ledger linked to the predecessor's
+run ID, full ledger hash, verified head, and run-start configuration hash. It
+never edits the predecessor, copies its goal, or silently migrates
+configuration. A project-local exclusive claim seals the predecessor against
+later CLI submissions and prevents a different successor under the same claim.
+External replacement makes provenance inspection fail. Exitbind stores hashes,
+not a configuration snapshot or global archive.
 
 Run mutation uses a project-local no-follow lock containing only a PID and
 creation timestamp. Liveness and stale recovery are conservative and
