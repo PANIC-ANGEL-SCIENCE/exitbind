@@ -1187,6 +1187,9 @@ fn current_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingChe
 }
 
 fn retry_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
+    if let Some(target) = check_target(snapshot, false)? {
+        return Ok(Some(target));
+    }
     check_target(snapshot, true)
 }
 

@@ -51,7 +51,9 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = fs::remove_file(self.root.with_extension("check-pass"));
+        for suffix in ["check-pass", "preservation-check-pass"] {
+            let _ = fs::remove_file(self.root.with_extension(suffix));
+        }
         let _ = fs::remove_dir_all(&self.root);
     }
 }
@@ -86,7 +88,10 @@ fn artifact_bytes(fixture: &Fixture, event: &Value, stream: &str) -> Vec<u8> {
 fn failed_check_retry_selects_same_target_and_rotates_capture_paths() {
     let fixture = Fixture::new();
     let marker = fixture.root.with_extension("check-pass");
-    let check = format!("test -f '{}'", marker.display());
+    let check = format!(
+        "if test -f '{}'; then printf retry-ok; printf retry-ok-err >&2; else printf retry-fail; printf retry-fail-err >&2; exit 1; fi",
+        marker.display()
+    );
     let started = fixture.value(&[
         "work",
         "begin",
@@ -152,4 +157,107 @@ fn failed_check_retry_selects_same_target_and_rotates_capture_paths() {
         artifact_bytes(&fixture, &first_event, "stderr"),
         first_stderr
     );
+    assert_eq!(first_stdout, b"retry-fail");
+    assert_eq!(first_stderr, b"retry-fail-err");
+    assert_eq!(
+        artifact_bytes(&fixture, second_event, "stdout"),
+        b"retry-ok"
+    );
+    assert_eq!(
+        artifact_bytes(&fixture, second_event, "stderr"),
+        b"retry-ok-err"
+    );
+}
+
+#[test]
+fn failed_functional_check_waits_for_missing_preservation_before_retry() {
+    let fixture = Fixture::new();
+    let marker = fixture.root.with_extension("preservation-check-pass");
+    let functional = format!(
+        "if test -f '{}'; then printf functional-ok; else printf functional-fail; exit 1; fi",
+        marker.display()
+    );
+    let started = fixture.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "retry functional after preservation",
+        "--check-command",
+        &functional,
+        "--preserve-requirement",
+        "precedence:accepted precedence remains binding",
+        "--preservation-check-command",
+        "printf preservation-ok",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    fixture.value(&[
+        "work",
+        "return",
+        &work,
+        started["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "scoped",
+    ]);
+    let worker = fixture.value(&["work", "next", &work]);
+    fixture.value(&[
+        "work",
+        "return",
+        &work,
+        worker["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "completed",
+    ]);
+
+    let ledger = fixture.ledger(&work);
+    let first_next = fixture.value(&["work", "next", &work]);
+    assert_eq!(first_next["next"]["action"], "check");
+    assert_eq!(first_next["next"]["check"]["kind"], "check");
+    let failed = fixture.value(&["work", "check", &work]);
+    assert_eq!(failed["next"]["action"], "check");
+    assert_eq!(failed["next"]["check"]["kind"], "preservation");
+    let checks = observed_checks(&ledger);
+    assert_eq!(checks.len(), 1);
+    let failed_event = checks[0].clone();
+    assert_eq!(failed_event["result"]["code"], 1);
+    let failed_stdout = artifact_bytes(&fixture, &failed_event, "stdout");
+    assert_eq!(failed_stdout, b"functional-fail");
+
+    let preservation = fixture.value(&["work", "check", &work]);
+    assert_eq!(preservation["next"]["action"], "spawn");
+    let checks = observed_checks(&ledger);
+    assert_eq!(checks.len(), 2);
+    assert_eq!(checks[1]["requirementId"], "precedence");
+    let after_preservation = fixture.value(&["work", "next", &work]);
+    assert_ne!(after_preservation["next"]["check"]["kind"], "preservation");
+
+    fs::write(&marker, b"pass").unwrap();
+    let retried = fixture.value(&["work", "check", &work]);
+    let checks = observed_checks(&ledger);
+    assert_eq!(checks.len(), 3);
+    let retry_event = &checks[2];
+    assert_eq!(retry_event["result"]["code"], 0);
+    assert_eq!(
+        retry_event["targetEventSha256"],
+        failed_event["targetEventSha256"]
+    );
+    assert_eq!(retry_event["subjectSha256"], failed_event["subjectSha256"]);
+    assert_eq!(retry_event["inputsSha256"], failed_event["inputsSha256"]);
+    assert_ne!(
+        retry_event["stdout"]["path"],
+        failed_event["stdout"]["path"]
+    );
+    assert_ne!(
+        retry_event["stderr"]["path"],
+        failed_event["stderr"]["path"]
+    );
+    assert_eq!(
+        artifact_bytes(&fixture, &failed_event, "stdout"),
+        failed_stdout
+    );
+    assert_eq!(
+        artifact_bytes(&fixture, retry_event, "stdout"),
+        b"functional-ok"
+    );
+    assert_eq!(retried["next"]["action"], "spawn");
 }
