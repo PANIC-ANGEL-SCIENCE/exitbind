@@ -77,11 +77,16 @@ mkdir -p "$CARGO_TARGET_DIR"
 CARGO_TARGET_DIR=$(CDPATH= cd -- "$CARGO_TARGET_DIR" && pwd -P)
 export CARGO_TARGET_DIR
 if [ -z "${TMPDIR:-}" ]; then
-  TMPDIR="$CARGO_TARGET_DIR/tmp"
-  (umask 077; mkdir -p "$TMPDIR")
+  case "$CARGO_TARGET_DIR" in
+    "$root"|"$root"/*) TMPDIR=/tmp ;;
+    *) TMPDIR="$CARGO_TARGET_DIR/tmp"; (umask 077; mkdir -p "$TMPDIR") ;;
+  esac
 fi
 test -d "$TMPDIR" && test -w "$TMPDIR" || fail 'TMPDIR must be a writable directory'
 TMPDIR=$(CDPATH= cd -- "$TMPDIR" && pwd -P)
+case "$TMPDIR" in
+  "$root"|"$root"/*) fail 'TMPDIR must be outside the checkout for native test fixtures' ;;
+esac
 export TMPDIR
 EXITBIND_BIN="$CARGO_TARGET_DIR/debug/exitbind"
 export EXITBIND_BIN
