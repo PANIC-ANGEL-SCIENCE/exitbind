@@ -100,6 +100,9 @@ small verification needed to prove behavior.
 - For the full native CI sequence, use `scripts/ci-local.sh` rather than
   assembling the commands again. See [CONTRIBUTING.md](CONTRIBUTING.md) for
   prerequisites, proof-base selection, and checks that remain host-specific.
+- For a historical failed GitHub Actions run, use `scripts/ci-failure.sh RUN_ID`
+  to see failed steps and bounded error lines. Keep full remote logs out of
+  agent context; record the run ID, head SHA, failing step, and diagnosis.
 - For noisy verification in an agent session, use
   `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: success is one labeled
   line and failure preserves the command's complete output. The wrapper changes

@@ -329,7 +329,7 @@ fn a_broken_invariant_is_caught_while_the_functional_check_passes() {
 
     // Acceptance cannot be recorded over the failure.
     let assignment = seen["next"]["assignment"].as_str().unwrap().to_owned();
-    let refused = broken.call(
+    let recorded = broken.call(
         &[
             "work",
             "return",
@@ -340,7 +340,24 @@ fn a_broken_invariant_is_caught_while_the_functional_check_passes() {
         ],
         Some(b"accept"),
     );
-    assert!(!refused.status.success());
+    assert!(recorded.status.success(), "{recorded:?}");
+    let recorded: Value = serde_json::from_slice(&recorded.stdout).unwrap();
+    assert_eq!(recorded["effect"], "recorded");
+    assert_eq!(recorded["reason"]["code"], "recorded_then_failed");
+    assert_eq!(recorded["event"]["action"], "protect");
+    assert_eq!(
+        recorded["reference"]["eventSha256"],
+        recorded["event"]["eventSha256"]
+    );
+    assert_eq!(
+        recorded["reference"]["headEventSha256"],
+        recorded["event"]["eventSha256"]
+    );
+    assert_eq!(recorded["nextAction"]["type"], "inspect");
+    assert_eq!(recorded["nextAction"]["safe"], true);
+    let after = broken.value(&["work", "next", &work], None);
+    assert_ne!(after["presentation"]["exitState"], "READY");
+    assert_eq!(after["next"]["progress"]["state"], "REFUSED");
 
     // No parallel authority file appeared for either run.
     for fixture in [&preserved, &broken] {

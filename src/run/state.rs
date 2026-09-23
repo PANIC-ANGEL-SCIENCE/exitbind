@@ -613,14 +613,28 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
         ));
     }
     let artifact = &event["artifact"];
-    if artifact.as_object().map_or(true, |x| {
-        !matches!(x.len(), 2 | 3)
-            || !x.contains_key("path")
-            || !x.contains_key("sha256")
-            || (x.len() == 3 && !x.contains_key("root"))
-    }) || artifact
-        .get("root")
-        .is_some_and(|root| !matches!(root.as_str(), Some("product" | "state")))
+    let Some(artifact_object) = artifact.as_object() else {
+        return Err(format!(
+            "invalid run ledger line {line}: invalid artifact evidence"
+        ));
+    };
+    let has_bytes = artifact_object.contains_key("bytes");
+    let bytes_valid = artifact_object
+        .get("bytes")
+        .map_or(true, |bytes| bytes.as_u64().is_some());
+    let shape_valid = match artifact_object.len() {
+        2 => !artifact_object.contains_key("root") && !has_bytes,
+        3 => artifact_object.contains_key("root") ^ has_bytes,
+        4 => artifact_object.contains_key("root") && has_bytes,
+        _ => false,
+    };
+    if (!shape_valid
+        || !artifact_object.contains_key("path")
+        || !artifact_object.contains_key("sha256")
+        || !bytes_valid)
+        || artifact
+            .get("root")
+            .is_some_and(|root| !matches!(root.as_str(), Some("product" | "state")))
         || !relative(artifact["path"].as_str())
         || !is_sha(artifact["sha256"].as_str())
     {
@@ -2060,7 +2074,10 @@ fn timestamp_ms(value: Option<&str>) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_govern, apply_unavailable, subject_for_submission, valid_subject, without};
+    use super::{
+        apply_govern, apply_unavailable, subject_for_submission, valid_subject,
+        validate_submission, without,
+    };
     use serde_json::json;
 
     const SHA: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
@@ -2254,5 +2271,44 @@ mod tests {
             subject["sha256"],
             crate::evidence::hash::value(&without(&subject, "sha256"))
         );
+    }
+
+    fn submission_with_artifact(version: u64, artifact: serde_json::Value) -> serde_json::Value {
+        json!({
+            "version": version,
+            "stage": 1,
+            "attempt": 1,
+            "agent": "worker",
+            "role": "worker",
+            "outcome": "completed",
+            "artifact": artifact,
+        })
+    }
+
+    #[test]
+    fn v8_submissions_preserve_missing_bytes_and_validate_present_counts() {
+        let base = json!({"root":"product", "path":"artifact.md", "sha256":SHA});
+        assert!(validate_submission(&submission_with_artifact(7, base.clone()), 1).is_ok());
+        assert!(validate_submission(&submission_with_artifact(8, base), 1).is_ok());
+        assert!(validate_submission(
+            &submission_with_artifact(
+                8,
+                json!({
+                    "root":"product", "path":"artifact.md", "sha256":SHA, "bytes": 4
+                })
+            ),
+            1
+        )
+        .is_ok());
+        assert!(validate_submission(
+            &submission_with_artifact(
+                8,
+                json!({
+                    "root":"product", "path":"artifact.md", "sha256":SHA, "bytes": "4"
+                })
+            ),
+            1
+        )
+        .is_err());
     }
 }

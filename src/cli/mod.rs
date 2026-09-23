@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub(crate) mod args;
+mod help;
 
 use args::Arguments;
 
@@ -67,6 +68,10 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
     }
     if parsed.flags.contains_key("help") {
         args::assert_options(command, &parsed, &["help", "version"])?;
+        if let Some(help) = help::scoped_help(command, &parsed.positional) {
+            println!("{help}");
+            return Ok(());
+        }
         args::assert_positionals(command, &parsed, 0)?;
         print_help();
         return Ok(());
@@ -1495,9 +1500,32 @@ fn print_advanced_help() {
 }
 
 fn print_json(value: &serde_json::Value) -> Result<(), String> {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).map_err(|error| error.to_string())?
-    );
+    println!("{}", serialize_json(value)?);
     Ok(())
+}
+
+fn serialize_json(value: &serde_json::Value) -> Result<String, String> {
+    if value["compact"] == true {
+        serde_json::to_string(value).map_err(|error| error.to_string())
+    } else {
+        serde_json::to_string_pretty(value).map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_json;
+
+    #[test]
+    fn compact_responses_omit_only_serialization_whitespace() {
+        let compact = serialize_json(&serde_json::json!({
+            "compact": true,
+            "works": ["smw_example"],
+        }))
+        .unwrap();
+        assert_eq!(compact, r#"{"compact":true,"works":["smw_example"]}"#);
+
+        let pretty = serialize_json(&serde_json::json!({"works": ["smw_example"]})).unwrap();
+        assert!(pretty.contains('\n'));
+    }
 }

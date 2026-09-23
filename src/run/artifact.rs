@@ -40,7 +40,8 @@ pub(crate) fn evidence(
     Ok(json!({
         "root": root_name,
         "path": config::rel(root, &real)?,
-        "sha256": verified.sha256
+        "sha256": verified.sha256,
+        "bytes": verified.bytes,
     }))
 }
 
@@ -117,10 +118,17 @@ fn verify_submission(loaded: &Loaded, item: &Value) -> Result<bool, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.to_string()),
     };
-    let bytes_match = item["artifact"]["bytes"]
-        .as_u64()
-        .map_or(true, |expected| expected == verified.bytes);
+    let bytes_match = artifact_bytes_match(&item["artifact"], verified.bytes)?;
     Ok(bytes_match && item["artifact"]["sha256"] == verified.sha256)
+}
+
+fn artifact_bytes_match(artifact: &Value, actual: u64) -> Result<bool, String> {
+    match artifact.get("bytes") {
+        // Older ledgers predate byte counts. Their hash remains the historical
+        // integrity check; current evidence always records this field.
+        None => Ok(true),
+        Some(value) => Ok(value.as_u64().ok_or("artifact byte count is invalid")? == actual),
+    }
 }
 
 fn is_missing(error: &str) -> bool {
@@ -148,7 +156,8 @@ pub(crate) fn read(
         return Err(format!("{label} artifact path changed"));
     }
     let verified = verify_file(&real, 64 * 1024).map_err(|error| error.to_string())?;
-    if artifact["bytes"].as_u64() != Some(verified.bytes) || artifact["sha256"] != verified.sha256 {
+    let bytes_match = artifact_bytes_match(artifact, verified.bytes)?;
+    if !bytes_match || artifact["sha256"] != verified.sha256 {
         return Err(format!("{label} artifact bytes changed"));
     }
     Ok(verified)
@@ -201,4 +210,18 @@ fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> 
         return Err(format!("declared file does not exist: {requested}"));
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::artifact_bytes_match;
+    use serde_json::json;
+
+    #[test]
+    fn historical_missing_bytes_are_allowed_but_malformed_bytes_refuse() {
+        assert!(artifact_bytes_match(&json!({"sha256": "hash"}), 4).unwrap());
+        assert!(artifact_bytes_match(&json!({"bytes": 4}), 4).unwrap());
+        assert!(!artifact_bytes_match(&json!({"bytes": 3}), 4).unwrap());
+        assert!(artifact_bytes_match(&json!({"bytes": "4"}), 4).is_err());
+    }
 }

@@ -1,12 +1,20 @@
 //! Agent-facing work façade over the strict run protocol.
 
+mod mutation_response;
 pub(crate) mod packet;
+mod recovery;
 
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::Path;
+
+use mutation_response::{recorded_failure_event, recorded_projection_failure, recorded_reference};
+use recovery::{
+    add_identity, candidate_command, compact_progress, unreadable_candidate, work_identity,
+    Candidate,
+};
 
 const WORK_PREFIX: &str = "smw_";
 pub(crate) const DIAGNOSTIC_PREFIX: &str = "EXITBIND_WORK_DIAGNOSTIC:";
@@ -155,7 +163,7 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
                 })
             })
             .collect::<Vec<_>>();
-        return Ok(json!({
+        let mut response = json!({
             "work": work,
             "next": {"warnings": warnings},
             "presentation": presentation,
@@ -163,9 +171,11 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
             "effect": "no-change",
             "reference": reference(work),
             "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
-        }));
+        });
+        add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
+        return Ok(response);
     }
-    Ok(json!({
+    let mut response = json!({
         "work": work,
         "next": next,
         "residual": residual,
@@ -174,7 +184,9 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
         "effect": "no-change",
         "reference": reference(work),
         "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
-    }))
+    });
+    add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
+    Ok(response)
 }
 
 /// Atomically authorize and record one cooperative product-mutation unit for
@@ -374,6 +386,19 @@ pub(crate) fn return_result(
             "outcome '{outcome}' is not allowed for this assignment"
         ));
     }
+    let previous_head =
+        crate::run::ledger::load(loaded, &ledger)
+            .ok()
+            .and_then(|(_, events, _)| {
+                events
+                    .last()
+                    .and_then(|event| event["eventSha256"].as_str())
+                    .map(str::to_owned)
+            });
+    let expected_stage = expected.stage;
+    let expected_attempt = expected.attempt;
+    let expected_agent = expected.agent.clone();
+    let expected_role = expected.role.clone();
     let mut bytes = Vec::new();
     std::io::stdin()
         .read_to_end(&mut bytes)
@@ -394,24 +419,64 @@ pub(crate) fn return_result(
         },
         |events, source| preflight_submission(loaded, work, events, source),
     );
-    let _submitted = match submitted {
+    let submitted = match submitted {
         Ok(value) => value,
         Err(submission_error) => {
-            if let Some(path) = created_artifact.into_inner() {
+            let recorded = recorded_failure_event(
+                loaded,
+                &ledger,
+                mutation_response::RecordedFailureContext {
+                    previous_head: previous_head.as_deref(),
+                    stage: expected_stage,
+                    attempt: expected_attempt,
+                    agent: &expected_agent,
+                    role: &expected_role,
+                    outcome,
+                    submission_error: &submission_error,
+                },
+            );
+            let cleanup_error = if let Some(path) = created_artifact.into_inner() {
                 let artifact = loaded.state_root.join(&path);
-                if let Err(cleanup_error) = remove_created_artifact(&artifact) {
-                    return Err(format!(
-                        "{submission_error}; artifact cleanup failed at {path}: {cleanup_error}"
-                    ));
-                }
+                remove_created_artifact(&artifact)
+                    .err()
+                    .map(|error| format!("artifact cleanup failed at {path}: {error}"))
+            } else {
+                None
+            };
+            if let Some(event) = recorded {
+                let error = cleanup_error.map_or_else(
+                    || submission_error.clone(),
+                    |cleanup| format!("{submission_error}; {cleanup}"),
+                );
+                let submitted = json!({"event": event});
+                let reference = recorded_reference(loaded, &ledger, &submitted);
+                return Ok(recorded_projection_failure(
+                    work, &ledger, &submitted, &error, reference,
+                ));
+            }
+            if let Some(cleanup_error) = cleanup_error {
+                return Err(format!("{submission_error}; {cleanup_error}"));
             }
             return Err(submission_error);
         }
     };
-    // The decision that reaches a terminal state is exactly where its display
-    // belongs: returning it here means the caller copies the product's own
-    // wording instead of assembling a sentence from status and progress.
-    let (next, _residual, presentation) = next_and_residual(loaded, work, &ledger, false)?;
+    // The append above is durable before this projection runs.  If projection
+    // cannot read the new state, report that recorded fact with the exact
+    // event/head reference.  Returning an ordinary error here would invite a
+    // caller to retry a submission that is already in the ledger.
+    let (next, _residual, presentation) = match next_and_residual(loaded, work, &ledger, false) {
+        Ok(value) => value,
+        Err(projection_error) => {
+            let reference = recorded_reference(loaded, &ledger, &submitted);
+            return Ok(recorded_projection_failure(
+                work,
+                &ledger,
+                &submitted,
+                &projection_error,
+                reference,
+            ));
+        }
+    };
     Ok(json!({"work": work, "next": next, "presentation": presentation}))
 }
 
@@ -655,6 +720,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         Err(error) => return Err(error.to_string()),
     };
     let mut candidates = Vec::new();
+    let mut unreadable = Vec::new();
     let mut finished: Vec<(String, String, String)> = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -674,61 +740,104 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             continue;
         }
         let ledger = format!("{}/{}", runs_dir(), name);
-        if superseded_by_valid_claim(loaded, &ledger)? {
-            continue;
-        }
-        let snapshot = run::RunSnapshot::capture(loaded, &ledger)
-            .map_err(|error| discovery_error(error, &format!("{WORK_PREFIX}{token}")))?;
-        let view = snapshot.inspect_view();
-        if view["status"] == "running" {
-            let progress = snapshot
-                .next_view(loaded)
-                .map_err(|error| discovery_error(error, &format!("{WORK_PREFIX}{token}")))?
-                ["progress"]
-                .clone();
-            candidates.push((
-                format!("{WORK_PREFIX}{token}"),
-                view["workflow"].clone(),
-                view["events"][0]["goal"].clone(),
-                ledger,
-                progress,
-            ));
-        } else if let Some(at) = view["events"]
-            .as_array()
-            .and_then(|events| events.last())
-            .and_then(|event| event["timestamp"].as_str())
-        {
-            finished.push((at.to_owned(), format!("{WORK_PREFIX}{token}"), ledger));
+        let work = format!("{WORK_PREFIX}{token}");
+        let discovered = (|| -> Result<Option<Candidate>, String> {
+            if superseded_by_valid_claim(loaded, &ledger)? {
+                return Ok(None);
+            }
+            let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+            let view = snapshot.inspect_view();
+            if view["status"] == "running" {
+                let progress = snapshot.next_view(loaded)?["progress"].clone();
+                let identity = work_identity(loaded, Some(&ledger))?;
+                return Ok(Some((
+                    work.clone(),
+                    view["workflow"].clone(),
+                    view["events"][0]["goal"].clone(),
+                    ledger.clone(),
+                    progress,
+                    identity,
+                )));
+            }
+            if let Some(at) = view["events"]
+                .as_array()
+                .and_then(|events| events.last())
+                .and_then(|event| event["timestamp"].as_str())
+            {
+                finished.push((at.to_owned(), work.clone(), ledger.clone()));
+            }
+            Ok(None)
+        })();
+        match discovered {
+            Ok(Some(candidate)) => candidates.push(candidate),
+            Ok(None) => {}
+            Err(error) => unreadable.push(unreadable_candidate(&work, &ledger, &error)),
         }
     }
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    if !unreadable.is_empty() {
+        let status = if candidates.is_empty() {
+            "unresolved"
+        } else {
+            "ambiguous"
+        };
+        let mut result = json!({
+            "status": status,
+            "reason": {"code": "unreadable_candidate"},
+            "effect": "no-change",
+            "compact": true,
+            "omitted": ["candidate progress detail"],
+            "nextAction": safe_action("inspect_candidates"),
+            "works": candidates.iter().map(|(work, workflow, goal, _, progress, identity)| json!({
+                "work": work,
+                "workflow": workflow,
+                "goal": goal,
+                "progress": compact_progress(progress),
+                "command": candidate_command(work),
+                "ledgerProducer": identity["ledgerProducer"],
+            })).collect::<Vec<_>>(),
+            "unreadable": unreadable,
+        });
+        add_identity(&mut result, &work_identity(loaded, None)?);
+        return Ok(result);
+    }
     match candidates.len() {
         0 => none_result(loaded, finished),
         1 => {
-            let (work, _, _, ledger, _) = candidates.pop().expect("one candidate exists");
+            let (work, _, _, ledger, _, _) = candidates.pop().expect("one candidate exists");
             let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)
                 .map_err(|error| discovery_error(error, &work))?;
-            Ok(json!({
+            let mut result = json!({
                 "status": "resumed",
                 "work": work,
                 "next": next,
                 "residual": residual,
                 "presentation": presentation
-            }))
+            });
+            add_identity(&mut result, &work_identity(loaded, Some(&ledger))?);
+            Ok(result)
         }
-        _ => Ok(json!({
+        _ => {
+            let mut result = json!({
             "status": "ambiguous",
             "reason": {"code": "ambiguous_candidates"},
             "effect": "no-change",
-            "reference": {"works": candidates.iter().map(|(work, _, _, _, _)| work).collect::<Vec<_>>()},
+            "compact": true,
+            "omitted": ["candidate progress detail"],
+            "reference": {"works": candidates.iter().map(|(work, _, _, _, _, _)| work).collect::<Vec<_>>()},
             "nextAction": safe_action("choose_explicit_handle"),
-            "works": candidates.into_iter().map(|(work, workflow, goal, _, progress)| json!({
-                "work": work,
+            "works": candidates.into_iter().map(|(work, workflow, goal, _, progress, identity)| json!({
+                "work": work.clone(),
                 "workflow": workflow,
                 "goal": goal,
-                "progress": progress
+                "progress": compact_progress(&progress),
+                "command": candidate_command(&work),
+                "ledgerProducer": identity["ledgerProducer"],
             })).collect::<Vec<_>>()
-        })),
+            });
+            add_identity(&mut result, &work_identity(loaded, None)?);
+            Ok(result)
+        }
     }
 }
 
@@ -788,6 +897,9 @@ fn none_result(
         // one documented path holds for every answer a host has to render.
         result["recent"] = json!({"work": work, "exitState": next["progress"]["state"]});
         result["presentation"] = presentation;
+        add_identity(&mut result, &work_identity(loaded, Some(&ledger))?);
+    } else {
+        add_identity(&mut result, &work_identity(loaded, None)?);
     }
     Ok(result)
 }

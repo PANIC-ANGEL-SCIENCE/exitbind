@@ -660,6 +660,166 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
 }
 
 #[test]
+fn resume_lists_healthy_and_corrupt_candidates_without_selecting_one() {
+    let fixture = Fixture::new_single();
+    let healthy = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "healthy candidate",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let corrupt = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "corrupt candidate",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let corrupt_work = corrupt["work"].as_str().unwrap();
+    let corrupt_ledger = fixture.ledger(corrupt_work);
+    fs::write(fixture.root.join(corrupt_ledger), b"not-json\n").unwrap();
+
+    let output = fixture.call(&["work", "resume", "--json"], None);
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "ambiguous");
+    assert_eq!(value["reason"]["code"], "unreadable_candidate");
+    assert_eq!(value["effect"], "no-change");
+    assert_eq!(value["works"].as_array().unwrap().len(), 1);
+    assert_eq!(value["works"][0]["work"], healthy["work"]);
+    assert_eq!(value["works"][0]["command"][1], "work");
+    assert_eq!(value["works"][0]["command"][2], "next");
+    assert!(value["works"][0]["ledgerProducer"].is_object());
+    assert_eq!(value["unreadable"].as_array().unwrap().len(), 1);
+    assert_eq!(value["unreadable"][0]["work"], corrupt["work"]);
+    assert_eq!(value["nextAction"]["safe"], true);
+}
+
+#[test]
+fn resume_with_only_corrupt_candidate_stays_unresolved() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "corrupt only",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let ledger = fixture.ledger(begin["work"].as_str().unwrap());
+    fs::write(fixture.root.join(ledger), b"not-json\n").unwrap();
+
+    let output = fixture.call(&["work", "resume", "--json"], None);
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "unresolved");
+    assert_eq!(value["reason"]["code"], "unreadable_candidate");
+    assert_eq!(value["effect"], "no-change");
+    assert!(value["works"].as_array().unwrap().is_empty());
+    assert_eq!(value["unreadable"].as_array().unwrap().len(), 1);
+    assert_eq!(value["nextAction"]["type"], "inspect_candidates");
+    assert_eq!(value["nextAction"]["safe"], true);
+}
+
+#[test]
+fn work_return_reports_protection_event_as_recorded() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "protected acceptance",
+            "--check-command",
+            "false",
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let _lead = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let worker = fixture.value(&["work", "next", &work], None);
+    let _completed = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"worker"),
+    );
+    let check = fixture.value(&["work", "check", &work], None);
+    assert_eq!(check["next"]["action"], "spawn");
+    let reviewer = fixture.value(&["work", "next", &work], None);
+    let _reviewed = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            reviewer["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "approved",
+        ],
+        Some(b"review"),
+    );
+    let accepting_lead = fixture.value(&["work", "next", &work], None);
+    let output = fixture.call(
+        &[
+            "work",
+            "return",
+            &work,
+            accepting_lead["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept"),
+    );
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["effect"], "recorded");
+    assert_eq!(value["reason"]["code"], "recorded_then_failed");
+    assert_eq!(value["nextAction"]["type"], "inspect");
+    assert_eq!(value["nextAction"]["safe"], true);
+    assert_eq!(value["event"]["action"], "protect");
+    assert_eq!(
+        value["reference"]["headEventSha256"],
+        value["event"]["eventSha256"]
+    );
+    assert_eq!(
+        value["reference"]["eventSha256"],
+        value["event"]["eventSha256"]
+    );
+    assert!(value["nextAction"]["command"].is_array());
+}
+
+#[test]
 fn skill_presentation_is_exact_and_packaged_copy_matches() {
     const ROUTINE: &str = "[Neuro] Exitbind progress: N%.";
     let canonical = include_bytes!("../skills/exitbind/SKILL.md");
