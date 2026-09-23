@@ -183,14 +183,17 @@ fn primary_ci_and_release_keep_the_accepted_wsl_cadence() {
         .0;
     for block in [exit, macos] {
         assert_eq!(block.matches(PROOF_BASE_ENV).count(), 1);
-        assert!(block.contains(EMPTY_OR_ZERO_PROOF_BASE));
-        assert!(block.contains("git rev-parse --verify HEAD^"));
-        assert_eq!(block.matches(EXACT_FETCH).count(), 1);
-        assert_eq!(block.matches(VERIFY_PROOF_BASE).count(), 2);
-        assert!(block.find(EXACT_FETCH).unwrap() < block.find("cargo test --locked").unwrap());
-        assert!(!block.contains("git fetch origin main"));
-        assert!(!block.contains("VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^) ||"));
+        assert_eq!(block.matches("run: ./scripts/ci-local.sh\n").count(), 1);
+        assert!(!block.contains("cargo test --locked"));
     }
+    let shared = source("scripts/ci-local.sh");
+    assert!(shared.contains(EMPTY_OR_ZERO_PROOF_BASE));
+    assert!(shared.contains("git rev-parse --verify HEAD^"));
+    assert_eq!(shared.matches(EXACT_FETCH).count(), 1);
+    assert_eq!(shared.matches(VERIFY_PROOF_BASE).count(), 2);
+    assert!(shared.find(EXACT_FETCH).unwrap() < shared.find("test --locked").unwrap());
+    assert!(!shared.contains("git fetch origin main"));
+    assert!(!shared.contains("VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^) ||"));
 
     let wsl = ci
         .split_once("  windows-wsl:\n")
@@ -215,18 +218,25 @@ fn primary_ci_and_release_keep_the_accepted_wsl_cadence() {
     assert!(release.contains("  windows-wsl:\n"));
     assert!(release.contains("  publish:\n    needs: [linux, macos, windows-wsl]\n"));
     assert!(!release.contains(WSL_SCHEDULE));
+    for block in [
+        job_block(&release, "linux", "macos"),
+        job_block(&release, "macos", "windows-wsl"),
+    ] {
+        assert_eq!(
+            block
+                .matches("run: ./scripts/ci-local.sh --checks-only")
+                .count(),
+            1
+        );
+        assert!(!block.contains("cargo test --locked"));
+    }
 }
 
 #[test]
 fn workflow_dispatch_empty_proof_base_uses_head_parent_and_controls_remain_distinct() {
-    let ci = source(".github/workflows/ci.yml");
-    for block in [
-        job_block(&ci, "exit", "macos"),
-        job_block(&ci, "macos", "windows-wsl"),
-    ] {
-        assert_eq!(block.matches(EMPTY_OR_ZERO_PROOF_BASE).count(), 1);
-        assert!(!block.contains(ZERO_PROOF_BASE));
-    }
+    let shared = source("scripts/ci-local.sh");
+    assert_eq!(shared.matches(EMPTY_OR_ZERO_PROOF_BASE).count(), 1);
+    assert!(!shared.contains(ZERO_PROOF_BASE));
 
     assert_eq!(selected_proof_base("", "", "head-parent"), "head-parent");
     assert_eq!(

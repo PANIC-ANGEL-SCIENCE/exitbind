@@ -30,13 +30,38 @@ formatting and lint behavior aligned. The separate `rust-version` field in
 
 The project has no required service, database, daemon, or model runtime.
 
-Before submitting a change, run the checks used by primary CI:
+Run the shared native CI sequence from any working directory:
 
 ```sh
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+./scripts/ci-local.sh
 ```
+
+Use the script's absolute path when outside the checkout. On Linux it runs
+`cargo fmt --check`, path and product-surface gates,
+`cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
+refusal demo, native tmux handoff, release references, release build,
+onboarding smoke, packaging, and installer smoke. On macOS it runs the same
+native test/proof/build/package/installer sequence as the macOS CI jobs.
+Each stage stops on failure and prints its complete failure output.
+
+Cargo is resolved from `CARGO`, then `PATH`, then the usual Cargo home. The
+script adds that executable's directory to its own PATH; it does not change
+shell settings. Install the repository Rust toolchain and, on Linux, tmux
+before running. It never installs system packages. `CARGO_TARGET_DIR` defaults
+to the checkout's `target`; relative overrides are relative to the checkout.
+The script selects native builds; leave `CARGO_BUILD_TARGET` unset.
+
+Set `VALUE_PROOF_BASE` to the intended comparison commit. CI supplies the PR
+base or pre-push SHA; an empty/all-zero value uses `HEAD^`. The script requires
+full published ancestry and fetches an explicitly supplied missing base from
+`origin`. It does not silently substitute another comparison. `CANDIDATE_SHA`
+can additionally select the contributing head for the ancestry check.
+
+`--checks-only` stops before build/package steps; the release workflow uses it
+before its tag, build, attestation, and publication gates. Local completion
+covers only the selected native host and current working tree. GitHub's exact
+checkout checks, the other OS jobs, dependency audit, WSL, and release
+provenance checks remain separate; a local pass is not an exact-SHA CI pass.
 
 Add the smallest focused test that proves changed behavior. Documentation links
 and public wording contracts belong in the existing documentation tests. Do not

@@ -97,6 +97,9 @@ small verification needed to prove behavior.
   error; a missing final leaf may be rendered only after its parent is
   canonicalized.
 - Every user-visible command needs one focused test or fixture.
+- For the full native CI sequence, use `scripts/ci-local.sh` rather than
+  assembling the commands again. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+  prerequisites, proof-base selection, and checks that remain host-specific.
 - For noisy verification in an agent session, use
   `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: success is one labeled
   line and failure preserves the command's complete output. The wrapper changes

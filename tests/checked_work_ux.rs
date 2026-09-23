@@ -298,7 +298,10 @@ fn quoted_next_hints_execute_as_data_and_drift_or_terminal_guides_to_inspect() {
     fs::write(f.root.join(".soulmate/artifacts/scope.md"), "drift").unwrap();
     let before = f.bytes();
     let next = f.call(&["run", "next", &f.ledger, "--text"]);
-    assert!(!next.status.success());
+    assert!(next.status.success(), "{next:?}");
+    assert!(String::from_utf8_lossy(&next.stderr)
+        .contains("warning: run drift detected after start; continuing with recorded assignments"));
+    assert!(stdout(&next).contains("Pending assignments: 1"));
     assert!(follow_hint(&f, "Inspect: ").contains("submissions"));
     assert_eq!(f.bytes(), before);
     fs::write(

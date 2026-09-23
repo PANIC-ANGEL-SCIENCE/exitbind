@@ -38,25 +38,11 @@ jobs:
             cargo +stable install cargo-audit --locked --version 0.22.2 --force
           fi
           test "$(cargo-audit --version)" = "cargo-audit 0.22.2"
-      - run: cargo fmt --check
-      - name: Enforce path-rendering rule
-        run: ./scripts/check-path-rendering.sh
-      - name: Keep experimental observations out of the product
-        run: ./scripts/check-product-surface.sh
-      - name: Check release references
-        run: ./scripts/check-release-refs.sh
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Test behavior and immutable proof contracts
-        run: |
-          proof_base=$(git rev-parse --verify HEAD^)
-          VALUE_PROOF_BASE="$proof_base" cargo test --locked
-      - name: Keep the Exitbind refusal demo truthful
-        run: EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh
+      - name: Prepare native handoff dependency
+        run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
+      - name: Run shared native CI checks
+        run: ./scripts/ci-local.sh --checks-only
       - run: cargo audit
-      - name: Exercise native tmux handoff
-        run: |
-          command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
-          cargo test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
       - name: Build native Linux stable release
         env:
           EXITBIND_BUILD_COMMIT: ${{ github.sha }}
@@ -142,12 +128,8 @@ jobs:
           printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
             "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
             "${{ matrix.target }}" "$GITHUB_SHA"
-      - name: Test behavior and immutable proof contracts
-        run: |
-          proof_base=$(git rev-parse --verify HEAD^)
-          VALUE_PROOF_BASE="$proof_base" cargo test --locked
-      - name: Reproduce the Exitbind checked-acceptance claim
-        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
+      - name: Run shared native CI checks
+        run: ./scripts/ci-local.sh --checks-only
       - name: Build native macOS stable release
         env:
           EXITBIND_BUILD_COMMIT: ${{ github.sha }}

@@ -55,6 +55,14 @@ pub(crate) fn read_command(action: &str, config: &str, ledger: &str) -> String {
 }
 
 pub(crate) fn print_next(value: &Value) -> Result<(), String> {
+    if value["warnings"]
+        .as_array()
+        .is_some_and(|warnings| !warnings.is_empty())
+    {
+        eprintln!(
+            "warning: run drift detected after start; continuing with recorded assignments. Inspect the run before changing or replacing recorded evidence."
+        );
+    }
     let assignments = value["assignments"]
         .as_array()
         .ok_or("next packet must contain an assignments array")?;

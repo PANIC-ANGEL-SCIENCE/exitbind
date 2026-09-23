@@ -14,46 +14,13 @@ jobs:
           fetch-depth: 0
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - name: Preserve published Git ancestry
+      - name: Prepare native handoff dependency
+        run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
+      - name: Run shared native CI checks and packaging
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/check-public-history.sh "$CANDIDATE_SHA"
-      - run: cargo fmt --check
-      - name: Enforce path-rendering rule
-        run: ./scripts/check-path-rendering.sh
-      - name: Keep experimental observations out of the product
-        run: ./scripts/check-product-surface.sh
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Test behavior and immutable proof contracts
-        env:
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          # A new branch or tag has no previous ref; compare its first parent.
-          if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
-            VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
-            export VALUE_PROOF_BASE
-          elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
-            git fetch --no-tags origin "$VALUE_PROOF_BASE"
-          fi
-          git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
-          cargo test --locked
-      - name: Reproduce the Exitbind checked-acceptance claim
-        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
-      - name: Keep the Exitbind refusal demo truthful
-        run: EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh
-      - name: Exercise native tmux handoff
-        run: |
-          command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
-          cargo test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
-      - name: Check release references
-        run: ./scripts/check-release-refs.sh
-      - run: EXITBIND_BUILD_COMMIT="$GITHUB_SHA" cargo build --release --locked
-      - name: Single-binary smoke without language toolchains
-        run: ./scripts/onboarding-smoke.sh "$GITHUB_WORKSPACE/target/release/exitbind" "$GITHUB_WORKSPACE/skills/exitbind/SKILL.md"
-      - name: Package Linux stable release
-        run: ./scripts/package-release.sh x86_64-unknown-linux-gnu target/release/exitbind dist
-      - name: Exercise packaged Linux installer
-        run: ./scripts/installer-smoke.sh dist x86_64-unknown-linux-gnu
+        run: ./scripts/ci-local.sh
       - name: Upload Linux stable release for WSL
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -80,10 +47,6 @@ jobs:
           fetch-depth: 0
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - name: Preserve published Git ancestry
-        env:
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/check-public-history.sh "$CANDIDATE_SHA"
       - name: Verify native macOS host and target
         run: |
           test "$(uname -s)" = Darwin
@@ -92,29 +55,11 @@ jobs:
           printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
             "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
             "${{ matrix.target }}" "$GITHUB_SHA"
-      - name: Test behavior and immutable proof contracts
+      - name: Run shared native CI checks and packaging
         env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          # A new branch or tag has no previous ref; compare its first parent.
-          if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
-            VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
-            export VALUE_PROOF_BASE
-          elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
-            git fetch --no-tags origin "$VALUE_PROOF_BASE"
-          fi
-          git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
-          cargo test --locked
-      - name: Reproduce the Exitbind checked-acceptance claim
-        run: EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh
-      - name: Build native macOS stable release
-        env:
-          EXITBIND_BUILD_COMMIT: ${{ github.sha }}
-        run: cargo build --release --locked --target "${{ matrix.target }}"
-      - name: Package native macOS stable release
-        run: ./scripts/package-release.sh "${{ matrix.target }}" "target/${{ matrix.target }}/release/exitbind" dist
-      - name: Exercise packaged macOS installer
-        run: ./scripts/installer-smoke.sh dist "${{ matrix.target }}"
+        run: ./scripts/ci-local.sh
   windows-wsl:
     needs: exit
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
