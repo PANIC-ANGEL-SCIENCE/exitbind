@@ -1654,6 +1654,13 @@ pub fn observe_check_for_requirement(
             return Err("run changed while observing; this check result was not recorded".into());
         }
         let warning = action_drift_warning(loaded, &current_state)?;
+        let warning = inputs
+            .as_ref()
+            .and_then(Value::as_str)
+            .map(|expected| input_drift_warning_for(loaded, &current_state, Some(expected)))
+            .transpose()?
+            .flatten()
+            .or(warning);
         crate::run::artifact::assert_current(loaded, &current_state)?;
         predecessor(loaded, &current_events[0])?;
         let current_policy = active_check_policy(&current_state, requirement_id)?;
@@ -1690,11 +1697,6 @@ pub fn observe_check_for_requirement(
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
         }
         if let Some(inputs) = &inputs {
-            if current_state.get("inputsSha256") != Some(inputs) {
-                return Err(
-                    "tested inputs changed while the check ran; no evidence was recorded".into(),
-                );
-            }
             event_value["inputsSha256"] = inputs.clone();
             if let Some(id) = requirement_id {
                 event_value["requirementId"] = json!(id);
@@ -2390,6 +2392,7 @@ pub(crate) struct RunSnapshot {
     inputs: InputContext,
     ledger_sha256: String,
     drift: Result<(), String>,
+    artifact_drift: Option<Value>,
     artifact_current: Result<bool, String>,
 }
 
@@ -2415,6 +2418,7 @@ impl RunSnapshot {
                 return Err(error.clone());
             }
         }
+        let artifact_drift = crate::run::artifact::drift_warning(loaded, &state)?;
         let artifact_current = artifact_current(loaded, &state);
         Ok(Self {
             events: events.to_vec(),
@@ -2422,6 +2426,7 @@ impl RunSnapshot {
             inputs,
             ledger_sha256: hash::bytes(source.as_bytes()),
             drift,
+            artifact_drift,
             artifact_current,
         })
     }
@@ -2451,7 +2456,14 @@ impl RunSnapshot {
             .as_ref()
             .err()
             .and_then(|error| drift_value(error))
-            .map_or_else(|| json!([]), |warning| json!([warning]));
+            .map_or_else(
+                || {
+                    self.artifact_drift
+                        .clone()
+                        .map_or_else(|| json!([]), |warning| json!([warning]))
+                },
+                |warning| json!([warning]),
+            );
         result["ledgerSha256"] = json!(self.ledger_sha256.clone());
         if state.get("checkPolicy").is_some() {
             result["assignments"] = state["assignments"].clone();
@@ -2477,13 +2489,19 @@ impl RunSnapshot {
             .as_ref()
             .err()
             .and_then(|error| drift_value(error))
-            .map_or_else(|| json!([]), |warning| json!([warning]));
+            .map_or_else(
+                || {
+                    self.artifact_drift
+                        .clone()
+                        .map_or_else(|| json!([]), |warning| json!([warning]))
+                },
+                |warning| json!([warning]),
+            );
         Ok(status)
     }
 
     pub(crate) fn next_view(&self, loaded: &Loaded) -> Result<Value, String> {
         assert_exact_receipt(loaded, &self.state)?;
-        crate::run::artifact::assert_current(loaded, &self.state)?;
         let state = &self.state;
         let next = json!({
             "valid": true,
@@ -2507,7 +2525,10 @@ impl RunSnapshot {
                 .as_ref()
                 .err()
                 .and_then(|error| drift_value(error))
-                .map_or_else(|| json!([]), |warning| json!([warning]))
+                .map_or_else(
+                    || self.artifact_drift.clone().map_or_else(|| json!([]), |warning| json!([warning])),
+                    |warning| json!([warning]),
+                )
         });
         Ok(next)
     }
@@ -2766,7 +2787,37 @@ fn assert_exact_receipt(loaded: &Loaded, state: &Value) -> Result<(), String> {
 
 fn action_drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
     assert_exact_receipt(loaded, state)?;
-    drift_warning(loaded, state)
+    if let Some(warning) = drift_warning(loaded, state)? {
+        return Ok(Some(warning));
+    }
+    input_drift_warning(loaded, state)
+}
+
+fn input_drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
+    input_drift_warning_for(loaded, state, None)
+}
+
+fn input_drift_warning_for(
+    loaded: &Loaded,
+    state: &Value,
+    expected_override: Option<&str>,
+) -> Result<Option<Value>, String> {
+    if state["version"].as_u64() < Some(6) || state["status"] != "running" {
+        return Ok(None);
+    }
+    let Some(expected) = expected_override.or_else(|| state["inputsSha256"].as_str()) else {
+        return Ok(None);
+    };
+    let current = crate::run::inputs::fingerprint(loaded)?;
+    if current == expected {
+        return Ok(None);
+    }
+    Ok(Some(json!({
+        "error": "tested inputs drift detected after run start",
+        "classification": "input_drift",
+        "expectedInputsSha256": expected,
+        "currentInputsSha256": current,
+    })))
 }
 
 fn warn_drift(warning: Option<&Value>) {

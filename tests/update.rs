@@ -457,7 +457,8 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &target);
     fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(&target)
+    let mut update = Command::new(&target);
+    update
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
@@ -466,9 +467,8 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
         .env("SOULMATE_NO_UPDATE_CHECK", "1")
         .env_remove("EXITBIND_INSTALL_PREFIX")
         .env_remove("SOULMATE_INSTALL_PREFIX")
-        .env("FAKE_INSTALL_RENAME", "1")
-        .output()
-        .unwrap();
+        .env("FAKE_INSTALL_RENAME", "1");
+    let output = support::run(&mut update);
     assert!(
         output.status.success(),
         "{}{}",
@@ -479,7 +479,9 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
         fs::metadata(&target).unwrap().len() > 0,
         "installed binary was truncated"
     );
-    let installed = Command::new(&target).arg("version").output().unwrap();
+    let mut version = Command::new(&target);
+    version.arg("version");
+    let installed = support::run(&mut version);
     assert_eq!(
         String::from_utf8_lossy(&installed.stdout).trim(),
         available_update_tag().trim_start_matches('v')

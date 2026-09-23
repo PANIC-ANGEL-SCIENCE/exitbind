@@ -388,11 +388,19 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                 fs::write(fixture.root.join(&artifact), b"changed artifact").unwrap();
                 let before = fs::read(fixture.root.join(&ledger)).unwrap();
                 let output = fixture.call(&["work", "next", &work, "--json"], None);
-                assert_eq!(output.status.code(), Some(1));
+                assert!(
+                    output.status.success(),
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
                 let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_eq!(value["reason"]["code"], "artifact_drift");
+                assert_eq!(
+                    value["next"]["warnings"][0]["classification"],
+                    "artifact_drift"
+                );
                 assert_eq!(value["effect"], "no-change");
-                assert_eq!(value["nextAction"]["type"], "inspect");
+                assert_eq!(value["nextAction"]["type"], "continue");
                 assert_eq!(value["nextAction"]["safe"], true);
                 assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
                 assert_opaque_envelope(&value);

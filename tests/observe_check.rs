@@ -15,6 +15,14 @@ fn call(root: &Path, args: &[&str]) -> Output {
         .expect("soulmate should start")
 }
 
+fn call_exitbind(root: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(root)
+        .args(args)
+        .output()
+        .expect("exitbind should start")
+}
+
 fn text(output: &Output) -> String {
     format!(
         "{}{}",
@@ -96,6 +104,82 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
     assert!(worker_output.status.success(), "{}", text(&worker_output));
     let worker = json(&worker_output);
     let target = worker["event"]["eventSha256"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    (root, ledger, target)
+}
+
+fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
+    let root = support::temp(label);
+    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .args(["init", "--root", "."])
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{}", text(&init));
+    let ledger = format!(".exitbind/runs/{label}.jsonl");
+    let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .args([
+            "run",
+            "start",
+            "change",
+            "--goal",
+            "observe input drift",
+            "--ledger",
+            &ledger,
+            "--check-command",
+            command,
+            "--proof-origin",
+            "local_report",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(started.status.success(), "{}", text(&started));
+    let artifact = format!(".exitbind/artifacts/{label}.md");
+    fs::write(root.join(&artifact), "worker\n").unwrap();
+    let lead = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .args([
+            "run",
+            "submit",
+            "lead",
+            &ledger,
+            "--outcome",
+            "scoped",
+            "--artifact",
+            &artifact,
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(lead.status.success(), "{}", text(&lead));
+    let worker = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .args([
+            "run",
+            "submit",
+            "worker",
+            &ledger,
+            "--outcome",
+            "completed",
+            "--artifact",
+            &artifact,
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(worker.status.success(), "{}", text(&worker));
+    let target = json(&worker)["event"]["eventSha256"]
         .as_str()
         .unwrap_or_default()
         .to_owned();
@@ -941,6 +1025,54 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
     assert!(!drifted.status.success());
     assert!(text(&drifted).contains("artifact"));
     assert_eq!(fs::read(root.join(&ledger)).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn input_drift_during_observed_check_keeps_recorded_identity_and_result() {
+    let (root, ledger, target) = checked_exitbind_worker(
+        "observe-input-drift",
+        "printf changed > observed-input.txt; sleep 0.05; exit 7",
+    );
+    let before = call_exitbind(
+        &root,
+        &[
+            "run",
+            "inspect",
+            &ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(before.status.success(), "{}", text(&before));
+    let expected_inputs = json(&before)["inputsSha256"].clone();
+    assert!(expected_inputs.is_string());
+    let observed = call_exitbind(
+        &root,
+        &[
+            "run",
+            "observe-check",
+            &ledger,
+            "--target",
+            &target,
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(observed.status.success(), "{}", text(&observed));
+    let observed = json(&observed);
+    assert_eq!(observed["event"]["result"]["code"], 7);
+    assert_eq!(observed["event"]["inputsSha256"], expected_inputs);
+    assert_eq!(observed["warnings"][0]["classification"], "input_drift");
+    assert_eq!(
+        observed["warnings"][0]["expectedInputsSha256"],
+        expected_inputs
+    );
+    assert_ne!(
+        observed["warnings"][0]["currentInputsSha256"],
+        expected_inputs
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

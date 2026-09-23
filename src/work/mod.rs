@@ -141,6 +141,30 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     })?;
     let (next, residual, presentation) = next_and_residual(loaded, work, &ledger, false)
         .map_err(|error| discovery_error(error, work))?;
+    if let Some(warnings) = next["warnings"]
+        .as_array()
+        .filter(|warnings| !warnings.is_empty())
+    {
+        let classification = warnings[0]["classification"].as_str().unwrap_or("drift");
+        let warnings = warnings
+            .iter()
+            .map(|warning| {
+                json!({
+                    "classification": warning["classification"],
+                    "error": warning["error"],
+                })
+            })
+            .collect::<Vec<_>>();
+        return Ok(json!({
+            "work": work,
+            "next": {"warnings": warnings},
+            "presentation": presentation,
+            "reason": {"code": classification},
+            "effect": "no-change",
+            "reference": reference(work),
+            "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
+        }));
+    }
     Ok(json!({
         "work": work,
         "next": next,

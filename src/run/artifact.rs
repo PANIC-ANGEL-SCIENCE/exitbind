@@ -45,47 +45,86 @@ pub(crate) fn evidence(
 }
 
 pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), String> {
+    if let Some(path) = drift_warning(loaded, state)? {
+        return Err(format!(
+            "artifact drift detected: {}",
+            path["artifact"].as_str().unwrap_or("unknown")
+        ));
+    }
+    Ok(())
+}
+
+/// Return an ordinary artifact drift as a warning while preserving strict
+/// failures for malformed records, unsafe paths, and symlinks.
+pub(crate) fn drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
+    let mut drift = None;
     for item in state["submissions"].as_array().unwrap_or(&Vec::new()) {
-        let root = match item["artifact"]["root"].as_str().unwrap_or("product") {
-            "product" => &loaded.product_root,
-            "state" => &loaded.state_root,
-            _ => return Err("artifact drift detected: invalid root".into()),
-        };
-        let requested = item["artifact"]["path"].as_str().unwrap_or("");
-        let path = confined(root, requested)
-            .map_err(|_| format!("artifact drift detected: {requested}"))?;
-        if fs::symlink_metadata(&path)
-            .map_err(|_| format!("artifact drift detected: {requested}"))?
-            .file_type()
-            .is_symlink()
-        {
-            return Err(format!("artifact drift detected: {requested}"));
-        }
-        let real = config::file(root, requested)
-            .map_err(|_| format!("artifact drift detected: {requested}"))?;
-        if config::rel(root, &real).map_err(|_| format!("artifact drift detected: {requested}"))?
-            != requested
-            || {
-                let verified = verify_file(&real, 0)
-                    .map_err(|_| format!("artifact drift detected: {requested}"))?;
-                item["artifact"]["bytes"]
-                    .as_u64()
-                    .is_some_and(|expected| expected != verified.bytes)
-                    || verified.sha256 != item["artifact"]["sha256"]
-            }
-        {
-            return Err(format!("artifact drift detected: {requested}"));
+        if !verify_submission(loaded, item)? {
+            drift.get_or_insert(
+                item["artifact"]["path"]
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_owned(),
+            );
         }
     }
     for check in state["checks"].as_array().unwrap_or(&Vec::new()) {
         for stream in ["stdout", "stderr"] {
             if let Some(artifact) = check.get(stream) {
-                read(loaded, artifact, "check log")
-                    .map_err(|_| format!("artifact drift detected: {stream} log"))?;
+                if let Err(error) = read(loaded, artifact, "check log") {
+                    if is_missing(&error) {
+                        drift.get_or_insert(format!("{stream} log"));
+                    } else {
+                        return Err(error);
+                    }
+                }
             }
         }
     }
-    Ok(())
+    Ok(drift.map(|artifact| {
+        json!({
+            "error": "artifact drift detected after run start",
+            "classification": "artifact_drift",
+            "artifact": artifact,
+        })
+    }))
+}
+
+fn verify_submission(loaded: &Loaded, item: &Value) -> Result<bool, String> {
+    let root = match item["artifact"]["root"].as_str().unwrap_or("product") {
+        "product" => &loaded.product_root,
+        "state" => &loaded.state_root,
+        _ => return Err("artifact root is invalid".into()),
+    };
+    let requested = item["artifact"]["path"]
+        .as_str()
+        .ok_or("artifact path is invalid")?;
+    let path = match confined(root, requested) {
+        Ok(path) => path,
+        Err(error) if error.starts_with("declared file does not exist") => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("artifact must not be a symlink: {requested}"));
+    }
+    let real = config::file(root, requested)?;
+    if config::rel(root, &real)? != requested {
+        return Err(format!("artifact path changed: {requested}"));
+    }
+    let verified = match verify_file(&real, 0) {
+        Ok(verified) => verified,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    let bytes_match = item["artifact"]["bytes"]
+        .as_u64()
+        .map_or(true, |expected| expected == verified.bytes);
+    Ok(bytes_match && item["artifact"]["sha256"] == verified.sha256)
+}
+
+fn is_missing(error: &str) -> bool {
+    error.contains("No such file or directory") || error.starts_with("declared file does not exist")
 }
 
 pub(crate) fn read(
