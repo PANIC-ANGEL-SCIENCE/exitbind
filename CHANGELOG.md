@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0-rc.7
+
+- Canonicalize the public author identity as `envy404`; retain
+  `envy404` only for GitHub account and repository coordinates.
+- Add a deterministic `.mailmap` regression check and contributor guidance to
+  prevent future identity drift without rewriting published history.
+
 ## 0.24.0-rc.6
 
 - Reduce needless progress/status polling in shipped guidance: reuse one native

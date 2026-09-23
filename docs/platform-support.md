@@ -1,6 +1,6 @@
 # Install the binary for your platform
 
-The release candidate `v0.24.0-rc.6` targets Linux x86_64 and macOS on
+The release candidate `v0.24.0-rc.7` targets Linux x86_64 and macOS on
 Apple Silicon and Intel. The public release workflow is the authoritative path
 for validating native builds, packaged installation, and public asset
 installation; this source snapshot does not claim those checks have passed for

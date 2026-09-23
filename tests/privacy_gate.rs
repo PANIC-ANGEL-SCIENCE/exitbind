@@ -504,6 +504,22 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
         .unwrap()
         .success());
     assert!(scan(&root).is_empty());
+    let canonical = Command::new("git")
+        .args([
+            "-C",
+            root.to_str().unwrap(),
+            "log",
+            "-1",
+            "--use-mailmap",
+            "--format=%aN <%aE>",
+        ])
+        .output()
+        .unwrap();
+    assert!(canonical.status.success());
+    assert_eq!(
+        String::from_utf8(canonical.stdout).unwrap(),
+        "envy404 <legacy-operator@users.noreply.github.com>\n"
+    );
 
     let github_author = format!(
         "commit\0{GITHUB_COMMITTER_NAME}\0{GITHUB_COMMITTER_EMAIL}\0{ALLOWED_NAME}\0{ALLOWED_EMAIL}\0"

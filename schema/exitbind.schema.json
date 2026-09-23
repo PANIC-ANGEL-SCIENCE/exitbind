@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.24.0-rc.6/schema/exitbind.schema.json",
+  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.24.0-rc.7/schema/exitbind.schema.json",
   "title": "Exitbind project configuration",
   "type": "object",
   "required": ["version", "project", "orchestration", "agents", "workflows"],
