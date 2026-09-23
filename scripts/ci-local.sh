@@ -44,10 +44,73 @@ fi
 CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/target}
 case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR="$root/$CARGO_TARGET_DIR" ;; esac
 export CARGO_TARGET_DIR
+
+# Retain raw stage output independently of the caller's console/tee log.
+# Git-private storage is excluded from product input fingerprints and commits.
+log_root=$(git rev-parse --git-path ci-local-runs)
+mkdir -p "$log_root"
+log_root=$(CDPATH= cd -- "$log_root" && pwd -P)
+run_dir=$(umask 077; mktemp -d "$log_root/run.XXXXXX")
+current_stage=setup
+owns_lock=false
+finish() {
+  result=$?
+  trap - 0
+  printf '%s\n' "$result" > "$run_dir/run.exit"
+  printf 'stage=%s exit=%s\n' "$current_stage" "$result" > "$run_dir/state"
+  if [ "$owns_lock" = true ]; then
+    rm -f "$target_lock/owner" && rmdir "$target_lock" ||
+      printf 'ci-local: could not remove own target lock: %s\n' "$target_lock" >&2
+  fi
+  printf 'ci-local: exit=%s stage=%s logs=%s\n' "$result" "$current_stage" "$run_dir"
+  exit "$result"
+}
+trap finish 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+printf 'ci-local: logs=%s\n' "$run_dir"
+printf 'stage=setup running\n' > "$run_dir/state"
+
+# Do not let two ci-local invocations or different worktrees mix this cache.
+mkdir -p "$CARGO_TARGET_DIR"
+CARGO_TARGET_DIR=$(CDPATH= cd -- "$CARGO_TARGET_DIR" && pwd -P)
+export CARGO_TARGET_DIR
 EXITBIND_BIN="$CARGO_TARGET_DIR/debug/exitbind"
 export EXITBIND_BIN
+target_lock="$CARGO_TARGET_DIR/.ci-local-lock"
+mkdir "$target_lock" || fail "cannot acquire target lock: $target_lock; inspect its owner and filesystem before retrying"
+owns_lock=true
+printf 'pid=%s\nroot=%s\nlogs=%s\n' "$$" "$root" "$run_dir" > "$target_lock/owner"
+cache_owner="$CARGO_TARGET_DIR/.ci-local-checkout"
+if [ -e "$cache_owner" ]; then
+  previous_root=$(cat "$cache_owner")
+  test "$previous_root" = "$root" || fail 'target belongs to another checkout; choose a separate CARGO_TARGET_DIR (existing cache retained)'
+else
+  printf '%s\n' "$root" > "$cache_owner"
+fi
+{
+  printf 'head=%s\nroot=%s\ntarget=%s\ncandidate=%s\n' "$(git rev-parse HEAD)" "$root" "$CARGO_TARGET_DIR" "${CANDIDATE_SHA:-HEAD}"
+  "$CARGO" --version
+  rustc --version
+  git status --porcelain --untracked-files=normal
+} > "$run_dir/context"
 
-run() { ./scripts/quiet-command.sh "$@"; }
+run() {
+  current_stage=$1
+  printf 'stage=%s running\n' "$current_stage" > "$run_dir/state"
+  printf 'start: %s; log: %s/%s.log\n' "$current_stage" "$run_dir" "$current_stage"
+  started=$(date +%s)
+  if QUIET_COMMAND_LOG="$run_dir/$current_stage.log" ./scripts/quiet-command.sh "$@"; then
+    stage_status=0
+  else
+    stage_status=$?
+  fi
+  printf '%s\n' "$stage_status" > "$run_dir/$current_stage.log.exit"
+  printf 'stage=%s exit=%s seconds=%s\n' "$current_stage" "$stage_status" "$(($(date +%s) - started))" >> "$run_dir/stages"
+  test "$stage_status" -eq 0 || exit "$stage_status"
+}
+
 run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}"
 VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
 if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
@@ -57,6 +120,7 @@ elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
 fi
 git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
 export VALUE_PROOF_BASE
+printf 'proof-base=%s\n' "$VALUE_PROOF_BASE" >> "$run_dir/context"
 printf 'ci-local: platform=%s head=%s proof-base=%s\n' "$platform" "$(git rev-parse HEAD)" "$VALUE_PROOF_BASE"
 
 if [ "$platform" = linux ]; then
@@ -74,6 +138,7 @@ if [ "$platform" = linux ]; then
 fi
 
 if [ "$checks_only" = true ]; then
+  current_stage=checks-complete
   exit 0
 fi
 EXITBIND_BUILD_COMMIT=${GITHUB_SHA:-$(git rev-parse HEAD)}
@@ -88,3 +153,4 @@ else
 fi
 run package ./scripts/package-release.sh "$target" "$release_bin" dist
 run installer ./scripts/installer-smoke.sh dist "$target"
+current_stage=complete

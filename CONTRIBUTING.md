@@ -42,7 +42,19 @@ Use the script's absolute path when outside the checkout. On Linux it runs
 refusal demo, native tmux handoff, release references, release build,
 onboarding smoke, packaging, and installer smoke. On macOS it runs the same
 native test/proof/build/package/installer sequence as the macOS CI jobs.
-Each stage stops on failure and prints its complete failure output.
+Each stage announces its name and log path before it starts. Output stays
+quiet on success. Failure prints the last 8 KiB; complete stdout/stderr remain
+in the private per-run log directory printed at startup. Inspect that stage's
+log before retrying; the final console line is not necessarily the failed test.
+`state` shows the current stage, `stages` records exit codes and durations,
+`STAGE.log.exit` and `run.exit` retain command and script outcomes. A missing exit
+file means completion has not been recorded, not success. `context` records
+checkout/target paths, HEAD, dirty paths, tool versions, and comparison base;
+it is diagnostic context, not an immutable acceptance receipt.
+
+Logs live under Git's private `ci-local-runs` directory and are retained until
+you remove the selected completed run. They may contain private command output;
+inspect them before sharing. Do not delete a running run's logs or cache.
 
 Cargo is resolved from `CARGO`, then `PATH`, then the usual Cargo home. The
 script adds that executable's directory to its own PATH; it does not change
@@ -50,6 +62,18 @@ shell settings. Install the repository Rust toolchain and, on Linux, tmux
 before running. It never installs system packages. `CARGO_TARGET_DIR` defaults
 to the checkout's `target`; relative overrides are relative to the checkout.
 The script selects native builds; leave `CARGO_BUILD_TARGET` unset.
+
+Each target directory is associated with its canonical checkout path on first
+use. Later `ci-local.sh` runs from a different checkout must select a separate
+`CARGO_TARGET_DIR`. Avoid sharing targets with temporary worktrees: compiled
+tests can embed a fixture path from a checkout that is later removed. The
+association does not validate a cache previously populated by other commands.
+For an already mixed cache, select a fresh target once and reuse it for that
+checkout; do not delete another session's cache or create a fresh one per retry.
+A target lock prevents concurrent runs of this script. Direct Cargo commands
+and older script processes do not honor it. On an interrupted run, inspect the
+lock's `owner` record and actual process state before removing a stale lock;
+the script never removes another run's lock automatically.
 
 Set `VALUE_PROOF_BASE` to the intended comparison commit. CI supplies the PR
 base or pre-push SHA; an empty/all-zero value uses `HEAD^`. The script requires

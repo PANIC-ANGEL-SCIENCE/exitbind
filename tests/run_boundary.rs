@@ -515,7 +515,10 @@ fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
             config.to_str().unwrap(),
         ],
     );
-    assert!(!drift.status.success());
-    assert!(text(&drift).contains("artifact drift detected"));
+    assert!(drift.status.success(), "{}", text(&drift));
+    let drift: Value = serde_json::from_slice(&drift.stdout).unwrap();
+    assert_eq!(drift["status"], "accepted");
+    assert_eq!(drift["warnings"][0]["classification"], "artifact_drift");
+    assert!(drift["assignments"].as_array().unwrap().is_empty());
     fs::remove_dir_all(root).unwrap();
 }
