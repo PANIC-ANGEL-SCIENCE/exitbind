@@ -76,6 +76,13 @@ printf 'stage=setup running\n' > "$run_dir/state"
 mkdir -p "$CARGO_TARGET_DIR"
 CARGO_TARGET_DIR=$(CDPATH= cd -- "$CARGO_TARGET_DIR" && pwd -P)
 export CARGO_TARGET_DIR
+if [ -z "${TMPDIR:-}" ]; then
+  TMPDIR="$CARGO_TARGET_DIR/tmp"
+  (umask 077; mkdir -p "$TMPDIR")
+fi
+test -d "$TMPDIR" && test -w "$TMPDIR" || fail 'TMPDIR must be a writable directory'
+TMPDIR=$(CDPATH= cd -- "$TMPDIR" && pwd -P)
+export TMPDIR
 EXITBIND_BIN="$CARGO_TARGET_DIR/debug/exitbind"
 export EXITBIND_BIN
 target_lock="$CARGO_TARGET_DIR/.ci-local-lock"
@@ -151,6 +158,7 @@ else
   run release-build "$CARGO" build --release --locked --target "$target"
   release_bin="$CARGO_TARGET_DIR/$target/release/exitbind"
 fi
-run package ./scripts/package-release.sh "$target" "$release_bin" dist
-run installer ./scripts/installer-smoke.sh dist "$target"
+package_dir="$run_dir/dist"
+run package ./scripts/package-release.sh "$target" "$release_bin" "$package_dir"
+run installer ./scripts/installer-smoke.sh "$package_dir" "$target"
 current_stage=complete

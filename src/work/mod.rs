@@ -691,7 +691,7 @@ fn hex(bytes: &[u8]) -> String {
 pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
-    let pending = current_check_target(&snapshot)?.ok_or("no current worker check is pending")?;
+    let pending = retry_check_target(&snapshot)?.ok_or("no current worker check is pending")?;
     let _observed = run::observe_check_for_requirement(
         loaded,
         &ledger,
@@ -1183,13 +1183,26 @@ impl PendingCheck {
 }
 
 fn current_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
+    check_target(snapshot, false)
+}
+
+fn retry_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
+    check_target(snapshot, true)
+}
+
+fn check_target(
+    snapshot: &run::RunSnapshot,
+    include_failed: bool,
+) -> Result<Option<PendingCheck>, String> {
     if snapshot.status() != "running" {
         return Ok(None);
     }
     let status = snapshot.status_view()?;
     Ok(status["checks"]["targets"].as_array().and_then(|targets| {
         targets.iter().find_map(|item| {
-            (item["status"] == "missing").then(|| PendingCheck {
+            let pending =
+                item["status"] == "missing" || (include_failed && item["status"] == "failed");
+            pending.then(|| PendingCheck {
                 target_event_sha256: item["targetEventSha256"].as_str().unwrap_or("").to_owned(),
                 requirement_id: item["requirementId"].as_str().map(str::to_owned),
             })

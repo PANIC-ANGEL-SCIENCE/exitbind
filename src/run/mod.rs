@@ -1640,7 +1640,10 @@ pub fn observe_check_for_requirement(
             .checked_add(Duration::from_millis(timeout_ms))
             .unwrap_or_else(Instant::now),
         timeout_ms,
-        operation_id: hash::value(&identity),
+        operation_id: hash::value(&json!({
+            "identity": identity,
+            "ledgerSourceSha256": hash::text(&source),
+        })),
         capture: CapturePolicy::FINITE,
     };
     let capture = match if capture_logs {
