@@ -17,12 +17,17 @@ printf 'before\n' >"$demo_dir/result.txt"
   --artifact-root product --config "$config" >/dev/null
 printf 'after\n' >"$demo_dir/result.txt"
 
-if output=$("$bin" run next "$ledger" --config "$config" 2>&1); then
-  echo "demo failed: changed artifact was accepted" >&2
+if ! output=$("$bin" run next "$ledger" --text --config "$config" 2>&1); then
+  printf '%s\n' "$output" >&2
+  echo "demo failed: drift prevented reading the pending assignment" >&2
   exit 1
 fi
 
 case "$output" in
-  *"artifact drift detected: result.txt"*) printf '%s\n' "$output" ;;
-  *) printf '%s\n' "$output" >&2; exit 1 ;;
+  *"warning: run drift detected after start; continuing with recorded assignments"*) ;;
+  *) printf '%s\n' "$output" >&2; echo "demo failed: drift warning was missing" >&2; exit 1 ;;
+esac
+case "$output" in
+  *"Pending assignments: 1"*"Agent:"*worker*) printf '%s\n' "$output" ;;
+  *) printf '%s\n' "$output" >&2; echo "demo failed: pending worker assignment was missing" >&2; exit 1 ;;
 esac

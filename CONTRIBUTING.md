@@ -39,7 +39,7 @@ Run the shared native CI sequence from any working directory:
 Use the script's absolute path when outside the checkout. On Linux it runs
 `cargo fmt --check`, path and product-surface gates,
 `cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
-refusal demo, native tmux handoff, release references, release build,
+drift-warning demo, native tmux handoff, release references, release build,
 onboarding smoke, packaging, and installer smoke. On macOS it runs the same
 native test/proof/build/package/installer sequence as the macOS CI jobs.
 Each stage announces its name and log path before it starts. Output stays

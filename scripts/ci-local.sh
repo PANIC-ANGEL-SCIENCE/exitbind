@@ -132,7 +132,7 @@ fi
 run tests "$CARGO" test --locked
 run value-proof ./scripts/run-value-proof-suite.sh
 if [ "$platform" = linux ]; then
-  run refusal ./scripts/demo-refusal.sh
+  run drift-warning ./scripts/demo-drift-warning.sh
   run native-handoff "$CARGO" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
   run release-refs ./scripts/check-release-refs.sh
 fi
