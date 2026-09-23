@@ -129,7 +129,7 @@ fn failed_check_retry_selects_same_target_and_rotates_capture_paths() {
     let first_stderr = artifact_bytes(&fixture, &first_event, "stderr");
 
     fs::write(&marker, b"pass").unwrap();
-    let second = fixture.value(&["work", "check", &work]);
+    let second = fixture.value(&["work", "check", &work, "--json"]);
     assert_eq!(second["next"]["action"], "spawn");
     let checks = observed_checks(&ledger);
     assert_eq!(checks.len(), 2);

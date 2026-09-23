@@ -610,7 +610,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "check" => {
-            args::assert_options("work check", a, &["config"])?;
+            args::assert_options("work check", a, &["config", "json"])?;
             args::assert_positionals("work check", a, 2)?;
             print_json(&crate::work::check(
                 l,

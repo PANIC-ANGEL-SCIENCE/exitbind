@@ -41,6 +41,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+staged_bin=$tmp/exitbind
+cp "$bin" "$staged_bin" || fail 'cannot stage NEW_BIN'
+test -f "$staged_bin" && test -x "$staged_bin" && test ! -L "$staged_bin" || fail 'staged executable is invalid'
+cmp -s "$bin" "$staged_bin" || fail 'staged executable differs from NEW_BIN'
 
 head=$(git -C "$project" rev-parse HEAD)
 git -C "$project" worktree add --detach -q "$copy" "$head"
@@ -57,12 +61,12 @@ copytree(source, destination, dirs_exist_ok=True, symlinks=True, ignore=ignore)
 PY
 (
   cd "$copy"
-  "$bin" work resume --json > "$tmp/resume.json" || fail 'work resume failed on copied state'
+  "$staged_bin" work resume --json > "$tmp/resume.json" || fail 'work resume failed on copied state'
   count=0
   for ledger in .exitbind/runs/*.jsonl; do
     test -f "$ledger" || continue
-    "$bin" run inspect "$ledger" --json > /dev/null || fail "run inspect failed for $ledger"
-    "$bin" run status "$ledger" --json > /dev/null || fail "run status failed for $ledger"
+    "$staged_bin" run inspect "$ledger" --json > /dev/null || fail "run inspect failed for $ledger"
+    "$staged_bin" run status "$ledger" --json > /dev/null || fail "run status failed for $ledger"
     count=$((count + 1))
   done
   printf 'replay-state: ledgers=%s\n' "$count"
