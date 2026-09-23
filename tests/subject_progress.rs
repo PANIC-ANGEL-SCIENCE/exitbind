@@ -700,6 +700,18 @@ fn resume_lists_healthy_and_corrupt_candidates_without_selecting_one() {
     assert_eq!(value["works"][0]["work"], healthy["work"]);
     assert_eq!(value["works"][0]["command"][1], "work");
     assert_eq!(value["works"][0]["command"][2], "next");
+    let command = value["works"][0]["command"].as_array().unwrap();
+    assert_eq!(command[command.len() - 2], "--config");
+    assert_eq!(
+        command.last().unwrap(),
+        fixture
+            .root
+            .join("exitbind.json")
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
     assert!(value["works"][0]["ledgerProducer"].is_object());
     assert_eq!(value["unreadable"].as_array().unwrap().len(), 1);
     assert_eq!(value["unreadable"][0]["work"], corrupt["work"]);
@@ -817,6 +829,69 @@ fn work_return_reports_protection_event_as_recorded() {
         value["event"]["eventSha256"]
     );
     assert!(value["nextAction"]["command"].is_array());
+
+    let accepting_again = fixture.value(&["work", "next", &work], None);
+    let second = fixture.call(
+        &[
+            "work",
+            "return",
+            &work,
+            accepting_again["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "accepted",
+        ],
+        Some(b"accept again"),
+    );
+    assert!(second.status.success(), "{second:?}");
+    let second: Value = serde_json::from_slice(&second.stdout).unwrap();
+    assert_eq!(second["effect"], "recorded");
+    assert_eq!(second["event"]["action"], "protect");
+    assert_ne!(
+        value["event"]["eventSha256"],
+        second["event"]["eventSha256"]
+    );
+    assert_eq!(
+        second["reference"]["eventSha256"],
+        second["event"]["eventSha256"]
+    );
+    assert_eq!(
+        second["reference"]["headEventSha256"],
+        second["event"]["eventSha256"]
+    );
+}
+
+#[test]
+fn work_return_stale_assignment_does_not_report_recorded() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "stale assignment",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap();
+    let ledger = fixture.ledger(work);
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let output = fixture.call(
+        &[
+            "work",
+            "return",
+            work,
+            "sma_0000000000000000000000000000000000000000000000000000000000000000",
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"stale"),
+    );
+    assert!(!output.status.success(), "{output:?}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("recorded"));
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
 }
 
 #[test]

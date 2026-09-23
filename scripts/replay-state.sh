@@ -9,13 +9,25 @@ case "$bin" in /*) ;; *) bin="$(pwd -P)/$bin" ;; esac
 test -f "$bin" && test -x "$bin" && test ! -L "$bin" || fail 'NEW_BIN must be a regular executable'
 project=$(CDPATH= cd -- "$2" && pwd -P) || fail 'PROJECT_ROOT is unavailable'
 test "$(git -C "$project" rev-parse --show-toplevel)" = "$project" || fail 'PROJECT_ROOT must be the Git root'
-test -f "$project/exitbind.json" && test -d "$project/.exitbind" || fail 'configured Exitbind state is required'
+test -f "$project/exitbind.json" && test ! -L "$project/exitbind.json" || fail 'an ordinary exitbind.json is required'
+test -d "$project/.exitbind" && test ! -L "$project/.exitbind" || fail 'an ordinary .exitbind directory is required'
 test -z "$(git -C "$project" status --porcelain --untracked-files=no)" || fail 'commit the tracked candidate before replay'
 command -v python3 >/dev/null 2>&1 || fail 'python3 is required to inspect the replay result'
+python3 - "$project/exitbind.json" "$project/.exitbind" <<'PY' || fail 'replay requires portable project.root "." and self-contained state'
+import json, os, pathlib, sys
+config = json.loads(pathlib.Path(sys.argv[1]).read_text())
+project = config.get('project', {})
+if project.get('mode', 'portable') != 'portable' or project.get('root') != '.':
+    raise SystemExit(1)
+for directory, directories, files in os.walk(sys.argv[2], followlinks=False):
+    if any(pathlib.Path(directory, name).is_symlink() for name in directories + files):
+        raise SystemExit(1)
+PY
 
 scratch=${EXITBIND_REPLAY_TMPDIR:-${TMPDIR:-/tmp}}
 test -d "$scratch" || fail 'temporary directory is unavailable'
 scratch=$(CDPATH= cd -- "$scratch" && pwd -P)
+case "$scratch" in "$project"|"$project"/*) fail 'temporary directory must be outside PROJECT_ROOT' ;; esac
 tmp=$(mktemp -d "$scratch/exitbind-replay.XXXXXX") || fail 'cannot create private replay directory'
 copy=$tmp/repo
 created=false

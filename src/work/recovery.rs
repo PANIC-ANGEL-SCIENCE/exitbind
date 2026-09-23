@@ -3,13 +3,23 @@ use serde_json::{json, Value};
 
 pub(super) type Candidate = (String, Value, Value, String, Value, Value);
 
-pub(super) fn candidate_command(work: &str) -> Value {
+pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<Value, String> {
+    let config = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    Ok(candidate_command_for_config(config, work))
+}
+
+fn candidate_command_for_config(config: &str, work: &str) -> Value {
     json!([
         crate::compatibility::profile().caller,
         "work",
         "next",
         work,
-        "--json"
+        "--json",
+        "--config",
+        config,
     ])
 }
 
@@ -21,23 +31,38 @@ pub(super) fn compact_progress(progress: &Value) -> Value {
     })
 }
 
-pub(super) fn unreadable_candidate(work: &str, ledger: &str, error: &str) -> Value {
-    json!({
+pub(super) fn unreadable_candidate(
+    loaded: &Loaded,
+    work: &str,
+    ledger: &str,
+    error: &str,
+) -> Result<Value, String> {
+    Ok(json!({
         "work": work,
         "ledger": ledger,
         "reason": classify_discovery_error(error),
         "error": error,
-        "command": inspect_command(ledger),
-    })
+        "command": inspect_command(loaded, ledger)?,
+    }))
 }
 
-pub(super) fn inspect_command(ledger: &str) -> Value {
+pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
+    let config = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    Ok(inspect_command_for_config(config, ledger))
+}
+
+pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> Value {
     json!([
         crate::compatibility::profile().caller,
         "run",
         "inspect",
         ledger,
-        "--json"
+        "--json",
+        "--config",
+        config,
     ])
 }
 
@@ -115,19 +140,21 @@ pub(super) fn add_identity(value: &mut Value, identity: &Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_command, compact_progress, older_recorder};
+    use super::{candidate_command_for_config, compact_progress, older_recorder};
     use serde_json::json;
 
     #[test]
     fn ambiguous_candidate_command_is_executable_argv() {
         assert_eq!(
-            candidate_command("smw_abc"),
+            candidate_command_for_config("/project/exitbind.json", "smw_abc"),
             json!([
                 crate::compatibility::profile().caller,
                 "work",
                 "next",
                 "smw_abc",
-                "--json"
+                "--json",
+                "--config",
+                "/project/exitbind.json",
             ])
         );
     }

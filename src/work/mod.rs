@@ -10,7 +10,9 @@ use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::Path;
 
-use mutation_response::{recorded_failure_event, recorded_projection_failure, recorded_reference};
+use mutation_response::{
+    recorded_projection_failure, recorded_protection_reference, recorded_reference,
+};
 use recovery::{
     add_identity, candidate_command, compact_progress, unreadable_candidate, work_identity,
     Candidate,
@@ -386,24 +388,16 @@ pub(crate) fn return_result(
             "outcome '{outcome}' is not allowed for this assignment"
         ));
     }
-    let previous_head =
-        crate::run::ledger::load(loaded, &ledger)
-            .ok()
-            .and_then(|(_, events, _)| {
-                events
-                    .last()
-                    .and_then(|event| event["eventSha256"].as_str())
-                    .map(str::to_owned)
-            });
-    let expected_stage = expected.stage;
-    let expected_attempt = expected.attempt;
-    let expected_agent = expected.agent.clone();
-    let expected_role = expected.role.clone();
+    let config_path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
     let mut bytes = Vec::new();
     std::io::stdin()
         .read_to_end(&mut bytes)
         .map_err(|error| format!("work result could not be read: {error}"))?;
     let created_artifact = std::cell::RefCell::new(None);
+    let mut recorded_protection = None;
     let submitted = run::submit_for_assignment(
         loaded,
         &ledger,
@@ -418,23 +412,11 @@ pub(crate) fn return_result(
             Ok(path)
         },
         |events, source| preflight_submission(loaded, work, events, source),
+        &mut recorded_protection,
     );
     let submitted = match submitted {
         Ok(value) => value,
         Err(submission_error) => {
-            let recorded = recorded_failure_event(
-                loaded,
-                &ledger,
-                mutation_response::RecordedFailureContext {
-                    previous_head: previous_head.as_deref(),
-                    stage: expected_stage,
-                    attempt: expected_attempt,
-                    agent: &expected_agent,
-                    role: &expected_role,
-                    outcome,
-                    submission_error: &submission_error,
-                },
-            );
             let cleanup_error = if let Some(path) = created_artifact.into_inner() {
                 let artifact = loaded.state_root.join(&path);
                 remove_created_artifact(&artifact)
@@ -443,15 +425,24 @@ pub(crate) fn return_result(
             } else {
                 None
             };
-            if let Some(event) = recorded {
+            if let Some(recorded) = recorded_protection {
                 let error = cleanup_error.map_or_else(
                     || submission_error.clone(),
                     |cleanup| format!("{submission_error}; {cleanup}"),
                 );
-                let submitted = json!({"event": event});
-                let reference = recorded_reference(loaded, &ledger, &submitted);
+                let submitted = json!({"event": recorded.event});
+                let reference = recorded_protection_reference(
+                    &ledger,
+                    &submitted["event"],
+                    &recorded.ledger_sha256,
+                );
                 return Ok(recorded_projection_failure(
-                    work, &ledger, &submitted, &error, reference,
+                    work,
+                    &ledger,
+                    &submitted,
+                    &error,
+                    reference,
+                    config_path,
                 ));
             }
             if let Some(cleanup_error) = cleanup_error {
@@ -474,6 +465,7 @@ pub(crate) fn return_result(
                 &submitted,
                 &projection_error,
                 reference,
+                config_path,
             ));
         }
     };
@@ -771,7 +763,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         match discovered {
             Ok(Some(candidate)) => candidates.push(candidate),
             Ok(None) => {}
-            Err(error) => unreadable.push(unreadable_candidate(&work, &ledger, &error)),
+            Err(error) => unreadable.push(unreadable_candidate(loaded, &work, &ledger, &error)?),
         }
     }
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
@@ -781,6 +773,19 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         } else {
             "ambiguous"
         };
+        let works = candidates
+            .iter()
+            .map(|(work, workflow, goal, _, progress, identity)| {
+                Ok(json!({
+                    "work": work,
+                    "workflow": workflow,
+                    "goal": goal,
+                    "progress": compact_progress(progress),
+                    "command": candidate_command(loaded, work)?,
+                    "ledgerProducer": identity["ledgerProducer"],
+                }))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         let mut result = json!({
             "status": status,
             "reason": {"code": "unreadable_candidate"},
@@ -788,14 +793,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             "compact": true,
             "omitted": ["candidate progress detail"],
             "nextAction": safe_action("inspect_candidates"),
-            "works": candidates.iter().map(|(work, workflow, goal, _, progress, identity)| json!({
-                "work": work,
-                "workflow": workflow,
-                "goal": goal,
-                "progress": compact_progress(progress),
-                "command": candidate_command(work),
-                "ledgerProducer": identity["ledgerProducer"],
-            })).collect::<Vec<_>>(),
+            "works": works,
             "unreadable": unreadable,
         });
         add_identity(&mut result, &work_identity(loaded, None)?);
@@ -818,6 +816,19 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             Ok(result)
         }
         _ => {
+            let works = candidates
+                .iter()
+                .map(|(work, workflow, goal, _, progress, identity)| {
+                    Ok(json!({
+                        "work": work.clone(),
+                        "workflow": workflow,
+                        "goal": goal,
+                        "progress": compact_progress(progress),
+                        "command": candidate_command(loaded, work)?,
+                        "ledgerProducer": identity["ledgerProducer"],
+                    }))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
             let mut result = json!({
             "status": "ambiguous",
             "reason": {"code": "ambiguous_candidates"},
@@ -826,14 +837,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             "omitted": ["candidate progress detail"],
             "reference": {"works": candidates.iter().map(|(work, _, _, _, _, _)| work).collect::<Vec<_>>()},
             "nextAction": safe_action("choose_explicit_handle"),
-            "works": candidates.into_iter().map(|(work, workflow, goal, _, progress, identity)| json!({
-                "work": work.clone(),
-                "workflow": workflow,
-                "goal": goal,
-                "progress": compact_progress(&progress),
-                "command": candidate_command(&work),
-                "ledgerProducer": identity["ledgerProducer"],
-            })).collect::<Vec<_>>()
+            "works": works
             });
             add_identity(&mut result, &work_identity(loaded, None)?);
             Ok(result)

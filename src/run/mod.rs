@@ -379,6 +379,7 @@ pub fn submit(
             artifact: || Ok(artifact),
         },
         |_, _| Ok(()),
+        None,
     )
 }
 
@@ -393,6 +394,11 @@ pub(crate) struct AssignmentIdentity {
     pub(crate) role: String,
     pub(crate) basis_sha256: Option<String>,
     pub(crate) review_decision_sha256: Option<String>,
+}
+
+pub(crate) struct RecordedProtection {
+    pub(crate) event: Value,
+    pub(crate) ledger_sha256: String,
 }
 
 pub(crate) const REQUEST_ID_MAX_BYTES: usize = 120;
@@ -476,6 +482,7 @@ pub(crate) fn submit_for_assignment<F, P>(
     disposition: Option<&str>,
     artifact: F,
     preflight: P,
+    recorded_protection: &mut Option<RecordedProtection>,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
@@ -500,6 +507,7 @@ where
             artifact,
         },
         preflight,
+        Some(recorded_protection),
     )
 }
 
@@ -1178,6 +1186,7 @@ fn submit_locked<F, P>(
     disposition: Option<&str>,
     subject: SubmitSubject<'_, F>,
     preflight: P,
+    recorded_protection: Option<&mut Option<RecordedProtection>>,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
@@ -1293,7 +1302,15 @@ where
                     let mut protected = events.clone();
                     protected.push(protection.clone());
                     run_state::reduce(&protected)?;
+                    let line =
+                        serde_json::to_string(&protection).map_err(|error| error.to_string())?;
                     append(path, &protection, false, &source)?;
+                    if let Some(recorded) = recorded_protection {
+                        *recorded = Some(RecordedProtection {
+                            event: protection,
+                            ledger_sha256: hash::bytes(format!("{source}{line}\n").as_bytes()),
+                        });
+                    }
                     return Err(format!(
                         "acceptance refused: configured check evidence is {}",
                         assessment.reason().unwrap_or("blocked")
