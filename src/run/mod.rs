@@ -403,6 +403,18 @@ pub(crate) struct RecordedProtection {
 
 pub(crate) const REQUEST_ID_MAX_BYTES: usize = 120;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubmissionRefusal {
+    GovernorReplanOrEvidence,
+}
+
+const GOVERNOR_COMPLETION_REFUSAL: &str =
+    "governor requires re-plan or evidence before work completion";
+
+pub(crate) fn submission_refusal(error: &str) -> Option<SubmissionRefusal> {
+    (error == GOVERNOR_COMPLETION_REFUSAL).then_some(SubmissionRefusal::GovernorReplanOrEvidence)
+}
+
 /// Reconstruct the durable identity of a cooperative mutation request from
 /// fields that are present in the ledger event.  Keeping this derivation in
 /// the run layer lets both the writer and historical reducer reject a
@@ -1262,7 +1274,7 @@ where
             && outcome == "completed"
         {
             if state["governor"]["state"] != "ready" {
-                return Err("governor requires re-plan or evidence before work completion".into());
+                return Err(GOVERNOR_COMPLETION_REFUSAL.into());
             }
             grant_hashes =
                 matching_mutation_grants(&events, &state, &assignment, assignment_sha256)?;

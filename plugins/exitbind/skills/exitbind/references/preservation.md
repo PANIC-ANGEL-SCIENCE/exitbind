@@ -203,11 +203,13 @@ bytes per stream; reported
 checks and historical versions do not claim captured logs. Expansion does not
 capture arbitrary host logs or dereference an unpersisted reference.
 
-Before each mutation unit, call `exitbind work permit WORK ASSIGNMENT
+Before each worker product-mutation unit, call `exitbind work permit WORK ASSIGNMENT
 --operation OPERATION` and mutate only when it returns `allowed=true`. This
 cooperative action revalidates the assignment and tested inputs and appends
 its governor event under the canonical run-ledger lock before returning
-permission. Replay governor events in order. The marker's budget is the
+permission. Lead and reviewer returns, checks, and acceptance follow their
+own lifecycle actions without a worker permit. Replay governor events in order.
+The marker's budget is the
 bounded no-information-path default, while total mutations remain monotonic
 telemetry, not a lifetime cap. Wrappers, comments, wording, subject hashes,
 and evidence-equivalent replans consume the same trajectory; only a newly
@@ -222,6 +224,12 @@ consecutive trajectory, use `work evidence WORK ASSIGNMENT --artifact PATH`
 with an exact current product/state artifact; artifact bytes are resolved and
 revalidated under the ledger lock. Historical SHA-only telemetry is not reset
 authority.
+
+If `work return` reports `effect: held`, the worker completion has not been
+recorded. The private result stays available in `work next` or `work resume` as
+`held` (one result) or `heldResults` (multiple results). Resolve the governor
+requirement first, then explicitly resubmit the chosen reference with `work
+return WORK ASSIGNMENT --outcome completed --result-ref HELD_REFERENCE`.
 
 Sensor input/output is versioned and bound to run, subject, attempt,
 checkpoint, and input digest, with at-most-once deduplication. Unavailable,

@@ -129,9 +129,11 @@ Before skipping work listed in a saved packet, run
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`
 and follow the returned handle through `work next`, `work permit`, `work return`,
-`work check`, and `work resume`. Before each cooperative product mutation,
-issue `exitbind work permit WORK ASSIGNMENT --operation OPERATION` and mutate
-only after it returns `allowed: true`. For a current accepted checked run, issue
+`work check`, and `work resume`. Before a pending worker edits product files,
+issue `exitbind work permit WORK ASSIGNMENT --operation OPERATION` and edit
+only after it returns `allowed: true`. Lead and reviewer returns follow their
+own `work next` actions; they do not use a worker permit. For a current accepted
+checked run, issue
 `exitbind receipt --json LEDGER --config CONFIG --output RECEIPT`, then verify
 with `exitbind verify RECEIPT --config CONFIG`. A nonzero result or a
 REFUSED/BLOCKED outcome is evidence to inspect, never acceptance; the ledger

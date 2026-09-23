@@ -125,7 +125,11 @@ pub(crate) fn prepare_paths(loaded: &Loaded, apply: bool) -> Result<Value, Strin
         } else {
             &loaded.state_root
         };
-        managed_files::ensure_managed_directory(root, &operation.path)?;
+        if operation.root_name == "state" {
+            managed_files::ensure_state_directory(root, &operation.path)?;
+        } else {
+            managed_files::ensure_managed_directory(root, &operation.path)?;
+        }
     }
     if let Some((source, target, bytes)) = &manifest {
         if fs::read(regular_path(

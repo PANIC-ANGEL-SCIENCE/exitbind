@@ -135,23 +135,30 @@ pub fn init_with_options(options: InitOptions<'_>) -> Result<PathBuf, String> {
             coffee && !crate::project::layout_types::exitbind_surface(),
         )?;
     }
-    crate::project::managed_files::ensure_managed_directory(&state, &state.join(state_namespace))?;
+    crate::project::managed_files::ensure_state_directory(&state, &state.join(state_namespace))?;
     let state_dir = state.join(state_namespace);
     preserve_or_create(
         &state_dir.join(".gitignore"),
         "*\n!.gitignore\n",
         &format!("{state_namespace}/.gitignore"),
         &state,
+        true,
     )?;
     for relative in crate::project::layout_types::state_dirs() {
-        crate::project::managed_files::ensure_managed_directory(&state, &state.join(relative))?;
+        crate::project::managed_files::ensure_state_directory(&state, &state.join(relative))?;
     }
     for relative in crate::project::layout_types::control_dirs() {
         crate::project::managed_files::ensure_managed_directory(&control, &control.join(relative))?;
     }
     for (name, content) in PROFILES {
         let relative = format!("{}/{name}.md", crate::project::layout_types::agents_dir());
-        preserve_or_create(&control.join(&relative), content, &relative, &control)?;
+        preserve_or_create(
+            &control.join(&relative),
+            content,
+            &relative,
+            &control,
+            false,
+        )?;
     }
     if selected_mode == "local" {
         crate::project::layout_types::create_binding(
@@ -243,7 +250,13 @@ fn agent(name: &str, purpose: &str) -> Value {
     json!({"profile":format!("{}/{name}.md", crate::project::layout_types::agents_dir()),"purpose":purpose,"observe":[],"write":[],"commands":[],"skills":[],"memoryRead":[],"memoryWrite":[],"memoryForget":[],"retention":"task","crossContext":"none"})
 }
 
-fn preserve_or_create(path: &Path, content: &str, label: &str, root: &Path) -> Result<(), String> {
+fn preserve_or_create(
+    path: &Path,
+    content: &str,
+    label: &str,
+    root: &Path,
+    private_state: bool,
+) -> Result<(), String> {
     match fs::symlink_metadata(path) {
         Ok(info) => {
             if info.file_type().is_symlink() {
@@ -274,11 +287,14 @@ fn preserve_or_create(path: &Path, content: &str, label: &str, root: &Path) -> R
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            crate::project::managed_files::ensure_managed_directory(
-                root,
-                path.parent().ok_or("managed path has no parent")?,
-            )?;
-            crate::project::managed_files::write_exclusive(path, content.as_bytes())
+            let parent = path.parent().ok_or("managed path has no parent")?;
+            if private_state {
+                crate::project::managed_files::ensure_state_directory(root, parent)?;
+                crate::project::managed_files::write_state_exclusive(path, content.as_bytes())
+            } else {
+                crate::project::managed_files::ensure_managed_directory(root, parent)?;
+                crate::project::managed_files::write_exclusive(path, content.as_bytes())
+            }
         }
         Err(error) => Err(error.to_string()),
     }

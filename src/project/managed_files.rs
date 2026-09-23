@@ -3,6 +3,14 @@ use std::io::Write;
 use std::path::Path;
 
 pub(crate) fn ensure_managed_directory(root: &Path, path: &Path) -> Result<(), String> {
+    ensure_directory(root, path, false)
+}
+
+pub(crate) fn ensure_state_directory(root: &Path, path: &Path) -> Result<(), String> {
+    ensure_directory(root, path, true)
+}
+
+fn ensure_directory(root: &Path, path: &Path, private: bool) -> Result<(), String> {
     let relative = path
         .strip_prefix(root)
         .map_err(|_| format!("managed path escapes project root: {}", path.display()))?;
@@ -25,7 +33,20 @@ pub(crate) fn ensure_managed_directory(root: &Path, path: &Path) -> Result<(), S
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                fs::create_dir(&current).map_err(|e| e.to_string())?
+                if private {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::DirBuilderExt;
+                        fs::DirBuilder::new()
+                            .mode(0o700)
+                            .create(&current)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    #[cfg(not(unix))]
+                    fs::create_dir(&current).map_err(|e| e.to_string())?;
+                } else {
+                    fs::create_dir(&current).map_err(|e| e.to_string())?;
+                }
             }
             Err(error) => return Err(error.to_string()),
         }
@@ -47,5 +68,21 @@ pub(crate) fn write_exclusive(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .create_new(true)
         .open(path)
         .map_err(|e| e.to_string())?;
+    file.write_all(bytes).map_err(|e| e.to_string())
+}
+
+pub(crate) fn open_state_file(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
+}
+
+pub(crate) fn write_state_exclusive(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = open_state_file(path).map_err(|e| e.to_string())?;
     file.write_all(bytes).map_err(|e| e.to_string())
 }

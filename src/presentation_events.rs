@@ -197,7 +197,7 @@ pub(crate) fn failure_joke_once(
     let Some(directory) = path.parent() else {
         return false;
     };
-    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+    if crate::project::managed_files::ensure_state_directory(state_root, directory).is_err() {
         return false;
     }
     let document = json!({
@@ -242,7 +242,7 @@ fn remember_session_card(state_root: &Path, request_id: &str) {
     let Some(directory) = path.parent() else {
         return;
     };
-    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+    if crate::project::managed_files::ensure_state_directory(state_root, directory).is_err() {
         return;
     }
     let document = json!({
@@ -539,7 +539,7 @@ fn remember(state_root: &Path, work: &str, current: &Classification, previous: O
     let Some(directory) = path.parent() else {
         return;
     };
-    if crate::project::managed_files::ensure_managed_directory(state_root, directory).is_err() {
+    if crate::project::managed_files::ensure_state_directory(state_root, directory).is_err() {
         return;
     }
     // The file says what it is. A reader that finds it while browsing state

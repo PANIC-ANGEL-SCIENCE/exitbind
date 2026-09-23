@@ -295,7 +295,7 @@ pub(crate) fn with_lock<T, F: FnOnce() -> Result<T, String>>(
     ledger: &LedgerPath,
     action: F,
 ) -> Result<T, String> {
-    crate::project::managed_files::ensure_managed_directory(
+    crate::project::managed_files::ensure_state_directory(
         &ledger.root,
         ledger.lock.parent().ok_or("run lock has no parent")?,
     )?;

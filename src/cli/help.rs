@@ -12,7 +12,9 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "sensor-result"] => {
             "work sensor-result WORK ASSIGNMENT --assessment VALUE --input-digest HEX"
         }
-        ["work", "return"] => "work return WORK ASSIGNMENT --outcome OUTCOME",
+        ["work", "return"] => {
+            "work return WORK ASSIGNMENT --outcome OUTCOME [--result-ref HELD_REFERENCE]"
+        }
         ["work", "check"] => "work check WORK",
         ["work", "validate"] => "work validate WORK --packet FILE",
         ["work", "expand"] => "work expand WORK REFERENCE",
@@ -63,6 +65,8 @@ mod tests {
         let help = scoped_help("work", &["next".to_owned()]).unwrap();
         assert!(help.contains("Usage: "));
         assert!(help.contains("work next WORK"));
+        let recovery = scoped_help("work", &["return".to_owned()]).unwrap();
+        assert!(recovery.contains("--result-ref HELD_REFERENCE"));
     }
 
     #[test]

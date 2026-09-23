@@ -1988,14 +1988,14 @@ fn stale_assignment_and_unknown_outcome_refuse_before_artifact_or_ledger_mutatio
 }
 
 #[test]
-fn conservative_completion_refuses_before_artifact_or_append() {
+fn conservative_completion_holds_before_artifact_or_append() {
     let fixture = Fixture::new();
     let started = fixture.json(&[
         "work",
         "begin",
         "change",
         "--goal",
-        "conservative completion is a no-op",
+        "conservative completion keeps worker bytes without appending",
         "--check-command",
         "true",
     ]);
@@ -2029,8 +2029,10 @@ fn conservative_completion_refuses_before_artifact_or_append() {
     ));
     let before = fs::read(&ledger).unwrap();
     let artifacts_before = fixture.artifact_snapshot();
-    let refused = fixture.return_body(&work, &assignment, "completed", b"must not persist\n");
-    assert!(!refused.status.success());
+    let response = fixture.return_body(&work, &assignment, "completed", b"held worker result\n");
+    assert!(response.status.success(), "{response:?}");
+    let held = fixture.json(&["work", "next", &work]);
+    assert!(held["next"]["held"]["reference"].is_string());
     assert_eq!(fs::read(&ledger).unwrap(), before);
     assert_eq!(fixture.artifact_snapshot(), artifacts_before);
 }

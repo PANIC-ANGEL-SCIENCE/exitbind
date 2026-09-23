@@ -598,7 +598,11 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "return" => {
-            args::assert_options("work return", a, &["config", "outcome", "reason", "disposition"])?;
+            args::assert_options(
+                "work return",
+                a,
+                &["config", "outcome", "reason", "disposition", "result-ref"],
+            )?;
             args::assert_positionals("work return", a, 3)?;
             print_json(&crate::work::return_result(
                 l,
@@ -607,6 +611,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "outcome", "work return requires --outcome OUTCOME")?,
                 a.options.get("reason").map(String::as_str),
                 a.options.get("disposition").map(String::as_str),
+                a.options.get("result-ref").map(String::as_str),
             )?)
         }
         "check" => {

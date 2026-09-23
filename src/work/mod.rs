@@ -1,12 +1,13 @@
 //! Agent-facing work façade over the strict run protocol.
 
+mod held;
 mod mutation_response;
 pub(crate) mod packet;
 mod recovery;
 
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -358,6 +359,7 @@ pub(crate) fn return_result(
     outcome: &str,
     reason: Option<&str>,
     disposition: Option<&str>,
+    held_reference: Option<&str>,
 ) -> Result<Value, String> {
     if outcome.trim().is_empty() {
         return Err("work return requires --outcome OUTCOME".into());
@@ -392,10 +394,31 @@ pub(crate) fn return_result(
         .path
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
-    let mut bytes = Vec::new();
-    std::io::stdin()
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("work result could not be read: {error}"))?;
+    if held_reference.is_some() && (outcome != "completed" || action["role"] != "worker") {
+        return Err("--result-ref requires a pending worker completion".into());
+    }
+    let bytes = match held_reference {
+        Some(reference) => held::read(loaded, reference, work, assignment)?,
+        None => {
+            let mut bytes = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut bytes)
+                .map_err(|error| format!("work result could not be read: {error}"))?;
+            bytes
+        }
+    };
+    let held = if outcome == "completed" && action["role"] == "worker" {
+        Some(match held_reference {
+            Some(reference) => held::existing(loaded, reference, work, assignment)?,
+            None => held::store(loaded, work, assignment, &bytes)?,
+        })
+    } else {
+        None
+    };
+    let created_held = held.as_ref().is_some_and(|value| value.created);
+    let held_reference = held_reference
+        .map(str::to_owned)
+        .or_else(|| held.as_ref().map(|value| value.reference.clone()));
     let created_artifact = std::cell::RefCell::new(None);
     let mut recorded_protection = None;
     let submitted = run::submit_for_assignment(
@@ -417,6 +440,30 @@ pub(crate) fn return_result(
     let submitted = match submitted {
         Ok(value) => value,
         Err(submission_error) => {
+            if run::submission_refusal(&submission_error)
+                == Some(run::SubmissionRefusal::GovernorReplanOrEvidence)
+            {
+                let held = match held {
+                    Some(held) => held,
+                    None => held::store(loaded, work, assignment, &bytes)?,
+                };
+                let next = next_for(loaded, work, &ledger).unwrap_or_else(|error| {
+                    json!({"action": "unavailable", "held": held::response(&held), "error": error})
+                });
+                return Ok(json!({
+                    "work": work,
+                    "held": held::response(&held),
+                    "next": next,
+                    "reason": {"code": "governor_replan_or_evidence_required"},
+                    "effect": "held",
+                    "nextAction": {"type": "replan_then_resubmit", "safe": true, "reference": held.reference}
+                }));
+            }
+            if created_held {
+                let _ = held_reference
+                    .as_deref()
+                    .map(|reference| held::remove(loaded, reference));
+            }
             let cleanup_error = if let Some(path) = created_artifact.into_inner() {
                 let artifact = loaded.state_root.join(&path);
                 remove_created_artifact(&artifact)
@@ -451,6 +498,9 @@ pub(crate) fn return_result(
             return Err(submission_error);
         }
     };
+    let held_cleanup_warning = held_reference
+        .as_deref()
+        .and_then(|reference| held::remove(loaded, reference).err());
     // The append above is durable before this projection runs.  If projection
     // cannot read the new state, report that recorded fact with the exact
     // event/head reference.  Returning an ordinary error here would invite a
@@ -469,7 +519,11 @@ pub(crate) fn return_result(
             ));
         }
     };
-    Ok(json!({"work": work, "next": next, "presentation": presentation}))
+    let mut response = json!({"work": work, "next": next, "presentation": presentation});
+    if let Some(error) = held_cleanup_warning {
+        response["heldCleanupWarning"] = json!(error);
+    }
+    Ok(response)
 }
 
 fn remove_created_artifact(path: &Path) -> std::io::Result<()> {
@@ -1048,9 +1102,11 @@ fn next_and_residual_from_snapshot(
     resumed: bool,
     remember_presentation: bool,
 ) -> Result<(Value, Value, Value), String> {
-    let next = next_from(loaded, work, snapshot)?;
+    let mut next = next_from(loaded, work, snapshot)?;
+    if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
+        attach_held(loaded, work, &assignment, &mut next)?;
+    }
     let residual = crate::work::packet::project(work, snapshot, &next)?;
-    let mut next = next;
     next["resolvedActor"] = residual["humanHelp"]["nextAction"]["actor"].clone();
     // The fingerprint is computed only when a terminal acceptance has to be
     // compared with the tree; a running run already carries its own.
@@ -1080,7 +1136,26 @@ fn next_and_residual_from_snapshot(
 }
 
 fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    next_from(loaded, work, &run::RunSnapshot::capture(loaded, ledger)?)
+    let mut next = next_from(loaded, work, &run::RunSnapshot::capture(loaded, ledger)?)?;
+    if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
+        attach_held(loaded, work, &assignment, &mut next)?;
+    }
+    Ok(next)
+}
+
+fn attach_held(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    next: &mut Value,
+) -> Result<(), String> {
+    let held = held::discover(loaded, work, assignment)?;
+    match held.len() {
+        0 => {}
+        1 => next["held"] = held[0].clone(),
+        _ => next["heldResults"] = json!(held),
+    }
+    Ok(())
 }
 
 fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
@@ -1274,16 +1349,11 @@ fn write_artifact(
     bytes: &[u8],
 ) -> Result<String, String> {
     let directory = loaded.state_root.join(artifacts_dir());
-    crate::project::managed_files::ensure_managed_directory(&loaded.state_root, &directory)?;
+    crate::project::managed_files::ensure_state_directory(&loaded.state_root, &directory)?;
     let suffix = &hash::bytes(bytes)[..16];
     let name = format!("{work}-{assignment}-{suffix}.md");
     let path = directory.join(&name);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|error| error.to_string())?;
-    std::io::Write::write_all(&mut file, bytes).map_err(|error| error.to_string())?;
+    crate::project::managed_files::write_state_exclusive(&path, bytes)?;
     Ok(format!("{}/{}", artifacts_dir(), name))
 }
 

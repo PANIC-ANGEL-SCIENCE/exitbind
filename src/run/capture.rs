@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -320,7 +320,7 @@ fn child_stderr_stdio() -> Result<Stdio, String> {
 pub(crate) fn capture_observed_command(
     request: &ObservationRequest,
 ) -> Result<CapturedCheck, ObservationError> {
-    crate::project::managed_files::ensure_managed_directory(
+    crate::project::managed_files::ensure_state_directory(
         &request.state_root,
         &request.artifact_dir,
     )
@@ -413,11 +413,8 @@ fn capture_to_files(
 
         let started = Instant::now();
         let mut owned = OwnedPaths::new();
-        let stdout_file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(stdout_temp)
-            .map_err(|error| {
+        let stdout_file =
+            crate::project::managed_files::open_state_file(stdout_temp).map_err(|error| {
                 capture_failure(
                     format!("stdout capture could not be created: {error}"),
                     started,
@@ -427,11 +424,7 @@ fn capture_to_files(
                 )
             })?;
         owned.add(stdout_temp.to_owned());
-        let stderr_file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(stderr_temp)
-        {
+        let stderr_file = match crate::project::managed_files::open_state_file(stderr_temp) {
             Ok(file) => file,
             Err(error) => {
                 return Err(capture_failure(
