@@ -808,15 +808,16 @@ Removing Exitbind leaves the underlying host and project usable.
 
 From a cloned checkout, this creates a disposable one-file sample project,
 records the file as a run artifact, changes its bytes, and shows Exitbind
-refusing the next transition. It invokes no model, consumes no model tokens,
-touches no user project, and removes the temporary directory:
+warning about the drift while still presenting the pending assignment. It
+invokes no model, consumes no model tokens, touches no user project, and removes
+the temporary directory:
 
 ```sh
-EXITBIND_BIN=target/debug/exitbind ./scripts/demo-refusal.sh
+EXITBIND_BIN=target/debug/exitbind ./scripts/demo-drift-warning.sh
 ```
 
-The refusal proves only the artifact-drift check. The authority and
-non-guarantee contract is defined once in [SECURITY.md](SECURITY.md).
+This example proves only the drift warning and assignment presentation. The
+authority and non-guarantee contract is defined once in [SECURITY.md](SECURITY.md).
 
 ## Versioning and release contract
 

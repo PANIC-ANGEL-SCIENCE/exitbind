@@ -143,7 +143,7 @@ fn selected_proof_base<'a>(pr_base: &'a str, before: &'a str, head_parent: &'a s
 }
 
 #[test]
-fn current_proof_and_refusal_gates_use_the_exitbind_binary() {
+fn current_proof_and_drift_warning_gates_use_the_exitbind_binary() {
     let proof = matrix::matrix()["proof"].clone();
     for invocation in proof["invocations"].as_array().unwrap() {
         let path = invocation["path"].as_str().unwrap();

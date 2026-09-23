@@ -265,8 +265,8 @@
     {"id": "proof-claims", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
     {"id": "proof-ci", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
     {"id": "proof-release", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
-    {"id": "proof-ci-refusal", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
-    {"id": "proof-release-refusal", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-ci-drift-warning", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
+    {"id": "proof-release-drift-warning", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
     {"id": "proof-wsl", "kind": "proof", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "proof-binary-routing"},
     {"id": "release-assets-current", "kind": "release", "routeId": "current-canonical", "version": "v0.17.0", "expectedSurfaceId": "current-exitbind", "boundaryId": "release-asset-routing"}
   ],
@@ -298,8 +298,8 @@
     {"id": "proof-claims", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
     {"id": "proof-ci", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
     {"id": "proof-release", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
-    {"id": "proof-ci-refusal", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
-    {"id": "proof-release-refusal", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-ci-drift-warning", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
+    {"id": "proof-release-drift-warning", "field": "proof.invocations", "test": "tests/ci_policy.rs"},
     {"id": "proof-wsl", "field": "proof.invocations", "test": "tests/compatibility_matrix.rs"},
     {"id": "release-assets-current", "field": "releaseLines", "test": "tests/compatibility_matrix.rs"}
   ],
@@ -308,7 +308,7 @@
     {"id": "updater-semver-boundaries", "kind": "updater", "caseIds": ["updater-v01600-reject", "updater-build-reject", "updater-stable-ignore-prerelease", "updater-prerelease-order"]},
     {"id": "runtime-path-preservation", "kind": "runtime", "caseIds": ["runtime-current-defaults", "runtime-legacy-defaults", "runtime-explicit-legacy-paths"]},
     {"id": "persisted-producer-format", "kind": "producer", "caseIds": ["producer-historical-v1-v4", "producer-current-v5"]},
-    {"id": "proof-binary-routing", "kind": "proof", "caseIds": ["proof-claims", "proof-ci", "proof-release", "proof-ci-refusal", "proof-release-refusal", "proof-wsl"]},
+    {"id": "proof-binary-routing", "kind": "proof", "caseIds": ["proof-claims", "proof-ci", "proof-release", "proof-ci-drift-warning", "proof-release-drift-warning", "proof-wsl"]},
     {"id": "release-asset-routing", "kind": "release", "caseIds": ["release-assets-current"]}
   ],
   "proof": {
@@ -317,9 +317,9 @@
     "invocations": [
       {"id": "claims", "path": "proof/claims.json", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh", "occurrences": 1},
       {"id": "ci", "path": "scripts/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
-      {"id": "ci-refusal", "path": "scripts/ci-local.sh", "command": "run refusal ./scripts/demo-refusal.sh", "occurrences": 1},
+      {"id": "ci-drift-warning", "path": "scripts/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
       {"id": "release", "path": "scripts/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
-      {"id": "release-refusal", "path": "scripts/ci-local.sh", "command": "run refusal ./scripts/demo-refusal.sh", "occurrences": 1},
+      {"id": "release-drift-warning", "path": "scripts/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
       {"id": "wsl", "path": "scripts/ci-wsl.sh", "command": "EXITBIND_BIN=\"$install_root/bin/exitbind\" \"$checkout/scripts/run-value-proof-suite.sh\"", "occurrences": 1}
     ]
   }

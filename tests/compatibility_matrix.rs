@@ -585,8 +585,8 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         "proof-claims".into(),
         "proof-ci".into(),
         "proof-release".into(),
-        "proof-ci-refusal".into(),
-        "proof-release-refusal".into(),
+        "proof-ci-drift-warning".into(),
+        "proof-release-drift-warning".into(),
         "proof-wsl".into(),
         "release-assets-current".into(),
     ]);
@@ -731,9 +731,9 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         != BTreeSet::from([
             "claims".into(),
             "ci".into(),
-            "ci-refusal".into(),
+            "ci-drift-warning".into(),
             "release".into(),
-            "release-refusal".into(),
+            "release-drift-warning".into(),
             "wsl".into(),
         ])
     {
@@ -891,7 +891,7 @@ fn matrix_rows_bind_current_projection_sources() {
         let source = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();
         let occurrences = invocation["occurrences"].as_u64().unwrap() as usize;
         match invocation["id"].as_str().unwrap() {
-            "claims" | "ci" | "ci-refusal" | "release" | "release-refusal" => {
+            "claims" | "ci" | "ci-drift-warning" | "release" | "release-drift-warning" => {
                 assert_eq!(
                     source.matches(command).count(),
                     occurrences,

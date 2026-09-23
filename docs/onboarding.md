@@ -201,7 +201,8 @@ from source instead, run `cargo build --locked` and use
 observes refused acceptance, requests rework, retrieves the assignment in a
 fresh process, then repairs, checks, reviews, and accepts. Actor documents are
 scripted and its temporary project is removed. The focused
-[artifact-drift example](../scripts/demo-refusal.sh) remains available.
+[drift-warning example](../scripts/demo-drift-warning.sh) shows a pending
+assignment alongside the artifact drift warning.
 
 Next initialize a second disposable project and confirm the host sees the
 generated skill; discovery controls differ by host release. A pending
