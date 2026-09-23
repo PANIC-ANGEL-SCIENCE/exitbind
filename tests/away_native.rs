@@ -19,6 +19,15 @@ fn invoke(arguments: &[&str], codex: Option<&Path>) -> Output {
     command.output().unwrap()
 }
 
+fn invoke_with_tmux(arguments: &[&str], codex: &Path, tmux: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        .args(arguments)
+        .env("SOULMATE_AWAY_CODEX_BIN", codex)
+        .env("SOULMATE_AWAY_TMUX_BIN", tmux)
+        .output()
+        .unwrap()
+}
+
 fn text(output: &Output) -> String {
     format!(
         "{}{}",
@@ -138,6 +147,13 @@ fn required_harness_refuses_before_any_codex_launch() {
         None,
     );
     assert!(bound.status.success(), "{}", text(&bound));
+    let fake_tmux = root.join("fake-tmux");
+    fs::write(
+        &fake_tmux,
+        "#!/bin/sh\ncase \"$3\" in\n  has-session) exit 1 ;;\n  new-session) exit 0 ;;\n  *) exit 2 ;;\nesac\n",
+    )
+    .unwrap();
+    fs::set_permissions(&fake_tmux, fs::Permissions::from_mode(0o700)).unwrap();
     let config_bytes = fs::read(&config).unwrap();
     fs::OpenOptions::new()
         .append(true)
@@ -145,7 +161,7 @@ fn required_harness_refuses_before_any_codex_launch() {
         .unwrap()
         .write_all(b"\n")
         .unwrap();
-    let drifted_current = invoke(
+    let drifted_current = invoke_with_tmux(
         &[
             "away",
             "start",
@@ -155,7 +171,8 @@ fn required_harness_refuses_before_any_codex_launch() {
             "--config",
             &config,
         ],
-        Some(&fake),
+        &fake,
+        &fake_tmux,
     );
     assert!(
         drifted_current.status.success(),
@@ -181,7 +198,7 @@ fn required_harness_refuses_before_any_codex_launch() {
         serde_json::to_vec_pretty(&changed_manifest).unwrap(),
     )
     .unwrap();
-    let drifted_manifest = invoke(
+    let drifted_manifest = invoke_with_tmux(
         &[
             "away",
             "start",
@@ -191,7 +208,8 @@ fn required_harness_refuses_before_any_codex_launch() {
             "--config",
             &config,
         ],
-        Some(&fake),
+        &fake,
+        &fake_tmux,
     );
     assert!(
         drifted_manifest.status.success(),
