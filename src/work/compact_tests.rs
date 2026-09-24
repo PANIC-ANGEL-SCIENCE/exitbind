@@ -127,7 +127,7 @@ fn config_path_over_budget_keeps_explicit_same_config_route() {
         "next": {"action": "check", "assignment": "sma_assignment"},
     });
     let compact = project(&response, Path::new(&path), "next").unwrap();
-    assert!(serde_json::to_vec(&compact).unwrap().len() + 1 <= MAX_RESPONSE_BYTES);
+    assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
     assert_eq!(compact["fullCommandSameConfigRequired"], true);
     assert_eq!(compact["fullCommand"][2], "next");
     assert_eq!(

@@ -185,7 +185,7 @@ pub(crate) fn project(
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
-        if serialized_len(&minimal)? + 1 <= MAX_RESPONSE_BYTES {
+        if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
         // A pathological path or identifier must never make the bounded

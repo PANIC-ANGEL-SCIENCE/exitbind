@@ -110,9 +110,8 @@ pub(super) fn bounded(
             "action": response["held"]["action"],
         });
         value["reason"] = json!({"code": "governor_replan_or_evidence_required"});
-    } else if refused {
-        value["reason"] = json!({"code": "recorded_then_failed"});
-    } else if response["projectionError"].is_string()
+    } else if refused
+        || response["projectionError"].is_string()
         || response["cleanupError"].is_string()
         || response["heldCleanupWarning"].is_string()
     {
