@@ -14,7 +14,7 @@ thread_local! {
 
 #[cfg(test)]
 fn post_append_fault_is(code: u8) -> bool {
-    POST_APPEND_FAULT.with(|fault| fault.get() == code)
+    POST_APPEND_FAULT.with(|fault| fault.get() & code != 0)
 }
 
 #[cfg(not(test))]
@@ -288,6 +288,33 @@ fn with_cleanup_error(mut recorded: Value, cleanup: &str, capture_summary: &str)
     recorded
 }
 
+fn observed_capture_summary(capture: &CapturedCheck) -> String {
+    let status = observed_result(&capture.status)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| format!("{:?}", capture.status));
+    let stdout_bytes = capture
+        .stdout_artifact
+        .as_ref()
+        .and_then(|artifact| artifact["bytes"].as_u64())
+        .unwrap_or_default();
+    let stderr_bytes = capture
+        .stderr_artifact
+        .as_ref()
+        .and_then(|artifact| artifact["bytes"].as_u64())
+        .unwrap_or_default();
+    format!(
+        "observed check outcome: status={status}, durationMs={}, capture=complete(stdout={stdout_bytes}, stderr={stderr_bytes})",
+        capture.duration_ms
+    )
+}
+
+fn observed_storage_failure(capture: &CapturedCheck, error: String) -> String {
+    if error.contains("observed check outcome:") {
+        return error;
+    }
+    format!("{error}; {}", observed_capture_summary(capture))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{recorded_after_append, with_cleanup_error, POST_APPEND_FAULT};
@@ -320,7 +347,7 @@ mod tests {
         use crate::{config, run};
         use std::fs;
 
-        for fault in [1, 2] {
+        for fault in [1, 2, 3] {
             let root = std::env::temp_dir().join(format!(
                 "exitbind-post-append-{}-{fault}",
                 std::process::id()
@@ -397,12 +424,13 @@ mod tests {
                 1
             );
             assert_eq!(observed["event"]["result"]["code"], 0);
-            if fault == 1 {
+            if fault & 1 != 0 {
                 assert!(observed["projectionError"]
                     .as_str()
                     .unwrap()
                     .contains("injected"));
-            } else {
+            }
+            if fault & 2 != 0 {
                 assert!(observed["cleanupError"]
                     .as_str()
                     .unwrap()
@@ -411,31 +439,4 @@ mod tests {
             fs::remove_dir_all(root).unwrap();
         }
     }
-}
-
-fn observed_capture_summary(capture: &CapturedCheck) -> String {
-    let status = observed_result(&capture.status)
-        .map(|value| value.to_string())
-        .unwrap_or_else(|_| format!("{:?}", capture.status));
-    let stdout_bytes = capture
-        .stdout_artifact
-        .as_ref()
-        .and_then(|artifact| artifact["bytes"].as_u64())
-        .unwrap_or_default();
-    let stderr_bytes = capture
-        .stderr_artifact
-        .as_ref()
-        .and_then(|artifact| artifact["bytes"].as_u64())
-        .unwrap_or_default();
-    format!(
-        "observed check outcome: status={status}, durationMs={}, capture=complete(stdout={stdout_bytes}, stderr={stderr_bytes})",
-        capture.duration_ms
-    )
-}
-
-fn observed_storage_failure(capture: &CapturedCheck, error: String) -> String {
-    if error.contains("observed check outcome:") {
-        return error;
-    }
-    format!("{error}; {}", observed_capture_summary(capture))
 }

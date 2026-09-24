@@ -130,7 +130,7 @@ pub(crate) fn return_result(
                 None
             };
             if let Some(recorded) = recorded_protection {
-                let error = cleanup_error.map_or_else(
+                let error = cleanup_error.as_deref().map_or_else(
                     || submission_error.clone(),
                     |cleanup| format!("{submission_error}; {cleanup}"),
                 );
@@ -148,6 +148,9 @@ pub(crate) fn return_result(
                     reference,
                     config_path,
                 );
+                if let Some(cleanup_error) = cleanup_error {
+                    response["cleanupError"] = json!(cleanup_error);
+                }
                 response["requestedOutcome"] = json!(outcome);
                 return Ok(bounded_mutation(
                     &response,
@@ -174,7 +177,7 @@ pub(crate) fn return_result(
         Ok(value) => value,
         Err(projection_error) => {
             let reference = recorded_reference(loaded, &ledger, &submitted);
-            let response = recorded_projection_failure(
+            let mut response = recorded_projection_failure(
                 work,
                 &ledger,
                 &submitted,
@@ -182,6 +185,9 @@ pub(crate) fn return_result(
                 reference,
                 config_path,
             );
+            if let Some(error) = held_cleanup_warning {
+                response["heldCleanupWarning"] = json!(error);
+            }
             return Ok(bounded_mutation(
                 &response,
                 work,

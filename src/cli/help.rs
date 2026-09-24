@@ -33,7 +33,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["run", "observe-check"] => "run observe-check LEDGER --target EVENT_SHA",
         ["run", "status"] => "run status LEDGER",
-        ["run", "inspect"] => "run inspect LEDGER [--event EVENT_SHA]",
+        ["run", "inspect"] => "run inspect LEDGER [--event EVENT_SHA] [--json]",
         ["run", "report"] => "run report LEDGER [LEDGER ...]",
         ["run", "explain"] => "run explain LEDGER [--event EVENT_SHA]",
         ["run", "supersede"] => {

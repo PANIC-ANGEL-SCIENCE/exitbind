@@ -7,6 +7,13 @@ use std::{fs, io::Read, path::Path};
 
 const VERIFY_BUFFER_BYTES: usize = 64 * 1024;
 
+#[derive(PartialEq, Eq)]
+pub(crate) enum SubmissionEvidence {
+    Verified,
+    Missing,
+    Changed,
+}
+
 pub(crate) struct VerifiedArtifact {
     pub(crate) bytes: u64,
     pub(crate) sha256: String,
@@ -60,7 +67,7 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
 pub(crate) fn drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {
     let mut drift = None;
     for item in state["submissions"].as_array().unwrap_or(&Vec::new()) {
-        if !verify_submission(loaded, item)? {
+        if verify_submission(loaded, item)? != SubmissionEvidence::Verified {
             drift.get_or_insert(
                 item["artifact"]["path"]
                     .as_str()
@@ -91,7 +98,10 @@ pub(crate) fn drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Val
     }))
 }
 
-fn verify_submission(loaded: &Loaded, item: &Value) -> Result<bool, String> {
+pub(crate) fn verify_submission(
+    loaded: &Loaded,
+    item: &Value,
+) -> Result<SubmissionEvidence, String> {
     let root = match item["artifact"]["root"].as_str().unwrap_or("product") {
         "product" => &loaded.product_root,
         "state" => &loaded.state_root,
@@ -102,7 +112,9 @@ fn verify_submission(loaded: &Loaded, item: &Value) -> Result<bool, String> {
         .ok_or("artifact path is invalid")?;
     let path = match confined(root, requested) {
         Ok(path) => path,
-        Err(error) if error.starts_with("declared file does not exist") => return Ok(false),
+        Err(error) if error.starts_with("declared file does not exist") => {
+            return Ok(SubmissionEvidence::Missing)
+        }
         Err(error) => return Err(error),
     };
     let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
@@ -115,11 +127,19 @@ fn verify_submission(loaded: &Loaded, item: &Value) -> Result<bool, String> {
     }
     let verified = match verify_file(&real, 0) {
         Ok(verified) => verified,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(SubmissionEvidence::Missing)
+        }
         Err(error) => return Err(error.to_string()),
     };
     let bytes_match = artifact_bytes_match(&item["artifact"], verified.bytes)?;
-    Ok(bytes_match && item["artifact"]["sha256"] == verified.sha256)
+    Ok(
+        if bytes_match && item["artifact"]["sha256"] == verified.sha256 {
+            SubmissionEvidence::Verified
+        } else {
+            SubmissionEvidence::Changed
+        },
+    )
 }
 
 fn artifact_bytes_match(artifact: &Value, actual: u64) -> Result<bool, String> {
@@ -131,7 +151,7 @@ fn artifact_bytes_match(artifact: &Value, actual: u64) -> Result<bool, String> {
     }
 }
 
-fn is_missing(error: &str) -> bool {
+pub(crate) fn is_missing(error: &str) -> bool {
     error.contains("No such file or directory") || error.starts_with("declared file does not exist")
 }
 
@@ -148,7 +168,10 @@ pub(crate) fn read(
         .ok_or_else(|| format!("{label} artifact path is invalid"))?;
     let path = confined(&loaded.state_root, requested)?;
     let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if metadata.file_type().is_symlink() {
+        return Err(format!("{label} artifact must not be a symlink"));
+    }
+    if !metadata.is_file() {
         return Err(format!("{label} artifact is not a regular file"));
     }
     let real = config::file(&loaded.state_root, requested)?;
@@ -206,8 +229,12 @@ fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> 
     if !real_parent.starts_with(root) {
         return Err(format!("path escapes project root: {requested}"));
     }
-    if !path.exists() {
-        return Err(format!("declared file does not exist: {requested}"));
+    match fs::symlink_metadata(&path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!("declared file does not exist: {requested}"));
+        }
+        Err(error) => return Err(error.to_string()),
     }
     Ok(path)
 }

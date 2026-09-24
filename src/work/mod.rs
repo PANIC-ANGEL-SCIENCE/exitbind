@@ -5,6 +5,7 @@ mod held;
 mod mutation_response;
 pub(crate) mod packet;
 mod recovery;
+mod response_recovery;
 mod return_result_impl;
 
 use crate::{config::Loaded, evidence::hash, run};

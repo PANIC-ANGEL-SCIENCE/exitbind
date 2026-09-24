@@ -14,6 +14,7 @@ pub fn inspect_event(loaded: &Loaded, ledger: &str, event_sha256: &str) -> Resul
         .enumerate()
         .find(|(_, event)| event["eventSha256"].as_str() == Some(event_sha256))
         .ok_or("selected event is not in the recorded ledger")?;
+    let evidence = super::event_evidence::inspect(loaded, event)?;
     Ok(json!({
         "ledger": ledger,
         "event": event,
@@ -21,6 +22,7 @@ pub fn inspect_event(loaded: &Loaded, ledger: &str, event_sha256: &str) -> Resul
         "eventSha256": event_sha256,
         "currentHeadEventSha256": events.last().map(|head| &head["eventSha256"]),
         "historical": index + 1 != events.len(),
+        "evidence": evidence,
         "authorizesMutation": false,
     }))
 }

@@ -15,6 +15,8 @@ exitbind run inspect LEDGER --config CONFIG
 validated pending assignment. `inspect` checks recorded history; it does not
 establish that current files still match. The readable `--text` form requires
 the stable binary; older stable hosts can read the default JSON packet.
+For a named `work check` or `work return` event, use the read-only selector and
+response rules in [work mutation results](work-mutation-results.md).
 
 | What happened | Next action |
 | --- | --- |

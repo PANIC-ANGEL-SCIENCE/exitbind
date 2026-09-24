@@ -8,6 +8,8 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use super::response_recovery::recovery_command;
+
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 
 /// Project a validated full work response into the bounded default envelope.
@@ -22,6 +24,7 @@ pub(crate) fn project(
 ) -> Result<Value, String> {
     let mut references = BTreeMap::new();
     collect_references(response, &mut references);
+    let recovery = recovery_command(response, config_path, invoked, MAX_RESPONSE_BYTES - 2048);
 
     let mut result = Map::new();
     result.insert("compact".into(), json!(true));
@@ -59,13 +62,29 @@ pub(crate) fn project(
     );
     result.insert("omitted".into(), omitted_fields());
     result.insert("truncated".into(), json!(false));
-    result.insert(
-        "fullCommand".into(),
-        full_command(response, config_path, invoked),
-    );
+    result.insert("fullCommand".into(), recovery.argv.clone());
+    if recovery.same_config {
+        result.insert("fullCommandSameConfigRequired".into(), json!(true));
+    }
+    if recovery.same_executable {
+        result.insert("fullCommandSameExecutableRequired".into(), json!(true));
+    }
 
     let mut result = Value::Object(result);
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        // Full preservation constraints are still available through fullCommand.
+        // Both aliases must shrink together so neither can defeat the bound.
+        if let Some(assignment) = result.pointer_mut("/humanHelp/preservationAssignment") {
+            *assignment = preservation_summary(assignment);
+        }
+        if result
+            .pointer("/next/packet/preservationAssignment")
+            .is_some()
+        {
+            result["next"]["packet"] = Value::Null;
+            result["next"]["requiresExpansion"] = json!(true);
+            result["next"]["constraintsOmitted"] = json!(true);
+        }
         let all_references = result["references"].as_array().cloned().unwrap_or_default();
         let representative = representative_references(&all_references);
         result["references"] = Value::Array(representative);
@@ -136,11 +155,13 @@ pub(crate) fn project(
             },
             "nextAction": {"command": null, "summary": "Open the full response with fullCommand."},
             "humanHelp": {
-                "preservationAssignment": response["residual"]["humanHelp"]["preservationAssignment"],
+                "preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"]),
                 "checkInstruction": response["residual"]["humanHelp"]["checkInstruction"],
             },
             "presentation": {"terminal": response["presentation"]["terminal"]},
-            "fullCommand": full_command(response, config_path, invoked),
+            "fullCommand": recovery.argv.clone(),
+            "fullCommandSameConfigRequired": recovery.same_config,
+            "fullCommandSameExecutableRequired": recovery.same_executable,
             "omitted": ["large response detail; use fullCommand"],
             "truncated": true,
         });
@@ -151,19 +172,55 @@ pub(crate) fn project(
         let assignment = response["next"]["assignment"]
             .as_str()
             .filter(|value| value.len() <= 128);
-        return Ok(json!({
+        let minimal = json!({
             "compact": true,
             "status": "unresolved",
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "nextAction": {"command": null, "summary": "Open the full response."},
-            "humanHelp": {"preservationAssignment": response["residual"]["humanHelp"]["preservationAssignment"]},
-            "fullCommand": full_command(response, config_path, invoked),
+            "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},
+            "fullCommand": recovery.argv.clone(),
+            "fullCommandSameConfigRequired": recovery.same_config,
+            "fullCommandSameExecutableRequired": recovery.same_executable,
             "omitted": ["oversized response detail"],
             "truncated": true,
-        }));
+        });
+        if serialized_len(&minimal)? + 1 <= MAX_RESPONSE_BYTES {
+            return Ok(minimal);
+        }
+        // A pathological path or identifier must never make the bounded
+        // endpoint emit an unbounded response.  Keep an executable argv prefix
+        // and require the caller to supply the exact current config value.
+        let fallback = json!({
+            "compact": true,
+            "status": "unresolved",
+            "work": work,
+            "next": {"action": "inspect", "assignment": assignment},
+            "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},
+            "fullCommand": recovery.argv,
+            "fullCommandSameConfigRequired": recovery.same_config,
+            "fullCommandSameExecutableRequired": recovery.same_executable,
+            "omitted": ["oversized response detail; use the required current executable and config"],
+            "truncated": true,
+        });
+        if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
+            return Err("bounded recovery response exceeds the output budget".into());
+        }
+        return Ok(fallback);
     }
     Ok(result)
+}
+
+fn preservation_summary(assignment: &Value) -> Value {
+    if !assignment.is_object() {
+        return Value::Null;
+    }
+    json!({
+        "route": assignment["route"].as_str().filter(|value| value.len() <= 32),
+        "quality": assignment["quality"].as_str().filter(|value| value.len() <= 32),
+        "requirementsCount": assignment["requirements"].as_array().map_or(0, Vec::len),
+        "requiresExpansion": true,
+    })
 }
 
 fn serialized_len(value: &Value) -> Result<usize, String> {
@@ -300,27 +357,6 @@ fn omitted_fields() -> Value {
     ])
 }
 
-fn full_command(response: &Value, config_path: &Path, invoked: &str) -> Value {
-    let caller = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_owned))
-        .unwrap_or_else(|| crate::compatibility::profile().caller.to_owned());
-    let Some(config) = config_path.to_str() else {
-        return Value::Null;
-    };
-    if caller.len() + config.len() > MAX_RESPONSE_BYTES - 1024 {
-        return Value::Null;
-    }
-    if invoked == "next" {
-        let Some(work) = response.get("work").and_then(Value::as_str) else {
-            return Value::Null;
-        };
-        json!([caller, "work", "next", work, "--full", "--config", config])
-    } else {
-        json!([caller, "work", "resume", "--full", "--config", config])
-    }
-}
-
 fn representative_references(references: &[Value]) -> Vec<Value> {
     let mut result = Vec::new();
     for kind in ["ledger_history", "ledger_event", "check_log"] {
@@ -400,124 +436,5 @@ fn collect_references(value: &Value, references: &mut BTreeMap<String, Value>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{project, MAX_RESPONSE_BYTES};
-    use serde_json::json;
-    use std::path::Path;
-
-    #[test]
-    fn projection_keeps_decision_identity_subject_recorder_and_references() {
-        let reference = json!({
-            "id": "ref:history",
-            "kind": "ledger_history",
-            "work": "smw_work",
-            "sha256": "a".repeat(64),
-            "headEventSha256": "b".repeat(64),
-            "eventCount": 2,
-            "exact": true,
-        });
-        let response = json!({
-            "status": "resumed",
-            "work": "smw_work",
-            "next": {
-                "action": "spawn",
-                "assignment": "sma_assignment",
-                "role": "worker",
-                "agent": "worker",
-                "packet": {"context": {"expansions": [reference.clone()]}}
-            },
-            "residual": {
-                "currentSubject": {"sha256": "c".repeat(64)},
-                "context": {"expansions": [reference.clone()]},
-                "humanHelp": {
-                    "nextAction": {"actor": "worker", "command": ["work", "next"]},
-                    "preservationAssignment": {"route": "FORMAL", "quality": "FULL"}
-                },
-                "large": "x".repeat(60_000)
-            },
-            "recorder": {"name": "exitbind", "version": "0.25.0", "commit": null},
-            "ledgerProducer": {"name": "exitbind", "version": "0.25.0", "commit": null},
-        });
-        let compact = project(&response, Path::new("/tmp/exitbind.json"), "next").unwrap();
-        assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
-        assert_eq!(compact["next"]["action"], "spawn");
-        assert_eq!(compact["next"]["assignment"], "sma_assignment");
-        assert_eq!(compact["nextAction"]["actor"], "worker");
-        assert_eq!(
-            compact["humanHelp"]["preservationAssignment"]["route"],
-            "FORMAL"
-        );
-        assert_eq!(compact["currentSubject"]["sha256"], "c".repeat(64));
-        assert_eq!(compact["recorder"]["name"], "exitbind");
-        assert_eq!(compact["references"][0], reference);
-        assert_eq!(compact["truncated"], false);
-        assert!(compact["omitted"].as_array().unwrap().len() >= 2);
-    }
-
-    #[test]
-    fn oversized_exact_reference_set_keeps_representatives_and_counts_omissions() {
-        let references = (0..200)
-            .map(|index| {
-                json!({
-                    "id": format!("ref:{index}"),
-                    "kind": "ledger_event",
-                    "work": "smw_work",
-                    "sha256": "a".repeat(64),
-                    "headEventSha256": "b".repeat(64),
-                    "eventCount": index,
-                    "selector": "c".repeat(64),
-                    "exact": true,
-                })
-            })
-            .collect::<Vec<_>>();
-        let response = json!({"work": "smw_work", "next": {"action": "check"}, "residual": {"context": {"expansions": references}}});
-        let compact = project(&response, Path::new("/tmp/exitbind.json"), "next").unwrap();
-        assert_eq!(compact["truncated"], true);
-        assert_eq!(compact["referenceOmissions"], 199);
-        assert_eq!(compact["references"].as_array().unwrap().len(), 1);
-        assert_eq!(compact["references"][0]["kind"], "ledger_event");
-        assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
-    }
-
-    #[test]
-    fn oversized_held_set_names_all_omissions_and_exact_full_route() {
-        let held = (0..60)
-            .map(|index| json!({"reference": format!("hld_{index}"), "detail": "x".repeat(400)}))
-            .collect::<Vec<_>>();
-        let response = json!({
-            "work": "smw_work",
-            "next": {"action": "spawn", "assignment": "sma_assignment", "heldResults": held},
-            "residual": {"humanHelp": {"preservationAssignment": {"route": "FORMAL", "quality": "FULL"}}}
-        });
-        let compact = project(
-            &response,
-            Path::new("/tmp/other project/exitbind.json"),
-            "next",
-        )
-        .unwrap();
-        assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
-        assert_eq!(compact["truncated"], true);
-        assert_eq!(compact["next"]["heldResultsCount"], 60);
-        assert_eq!(compact["next"]["heldResultsOmissions"], 60);
-        assert!(compact["next"].get("heldResults").is_none());
-        assert_eq!(
-            compact["humanHelp"]["preservationAssignment"]["quality"],
-            "FULL"
-        );
-        assert_eq!(
-            compact["fullCommand"][6],
-            "/tmp/other project/exitbind.json"
-        );
-    }
-
-    #[test]
-    fn resume_recovery_keeps_verb_and_long_config_path() {
-        let path = format!("/tmp/{}/exitbind.json", "directory/".repeat(300));
-        let response =
-            json!({"status": "resumed", "work": "smw_work", "next": {"action": "check"}});
-        let compact = project(&response, Path::new(&path), "resume").unwrap();
-        assert_eq!(compact["fullCommand"][2], "resume");
-        assert_eq!(compact["fullCommand"][5], path);
-        assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
-    }
-}
+#[path = "compact_tests.rs"]
+mod tests;

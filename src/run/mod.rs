@@ -9,6 +9,7 @@ pub(crate) mod assignment;
 pub(crate) mod capture;
 pub(crate) mod error;
 mod event_detail;
+mod event_evidence;
 pub(crate) mod inputs;
 pub(crate) mod ledger;
 mod observed_check;

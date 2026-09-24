@@ -4,8 +4,9 @@
 //! `eventSha256` names this call's event. `next` is only a short hint and always
 //! requires a fresh `work next --full` before another mutation. The read-only
 //! `nextAction.command` inspects the named event even after the head advances.
-//! An argv prefix with `sameConfigRequired` needs the exact config argument
-//! from the current invocation before execution; it never defaults silently.
+//! An argv suffix/prefix marked `sameExecutableRequired` or
+//! `sameConfigRequired` needs the exact current executable or config argument
+//! before execution; neither is guessed silently.
 
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
@@ -27,29 +28,30 @@ pub(super) fn bounded(
     let held = response["effect"] == "held";
     let refused = event["action"] == "protect";
     let effect = if held { "held" } else { "recorded" };
-    let detail_command = if let Some(sha) = event_sha {
-        json!([
-            crate::compatibility::profile().caller,
-            "run",
-            "inspect",
-            ledger,
-            "--event",
-            sha,
-            "--json",
-            "--config",
-            config_path
-        ])
+    let detail_suffix = if let Some(sha) = event_sha {
+        vec![
+            "run".to_owned(),
+            "inspect".to_owned(),
+            ledger.to_owned(),
+            "--event".to_owned(),
+            sha.to_owned(),
+            "--json".to_owned(),
+            "--config".to_owned(),
+        ]
     } else {
-        json!([
-            crate::compatibility::profile().caller,
-            "work",
-            "next",
-            work,
-            "--full",
-            "--config",
-            config_path
-        ])
+        vec![
+            "work".to_owned(),
+            "next".to_owned(),
+            work.to_owned(),
+            "--full".to_owned(),
+            "--config".to_owned(),
+        ]
     };
+    let detail = super::response_recovery::bounded_argv(
+        detail_suffix.clone(),
+        Some(config_path),
+        crate::work::compact::MAX_RESPONSE_BYTES - 512,
+    );
     let mut value = json!({
         "compact": true,
         "work": work,
@@ -69,7 +71,7 @@ pub(super) fn bounded(
         } else {
             json!({"ledger": ledger, "eventSha256": event_sha})
         },
-        "nextAction": {"type": "inspect", "safe": true, "command": detail_command},
+        "nextAction": {"type": "inspect", "safe": true, "command": detail.argv},
         "next": {
             "action": response["next"]["action"],
             "assignment": response["next"]["assignment"],
@@ -80,6 +82,25 @@ pub(super) fn bounded(
         },
         "continuation": {"readOnly": true, "commandSuffix": ["work", "next", work, "--full"], "sameConfig": true},
     });
+    if detail.same_config {
+        value["nextAction"]["sameConfigRequired"] = json!(true);
+        value["nextAction"]["configArgument"] =
+            json!("reuse the exact --config value from this invocation");
+    }
+    if detail.same_executable {
+        value["nextAction"]["sameExecutableRequired"] = json!(true);
+        value["nextAction"]["executableArgument"] =
+            json!("prepend the exact executable used for this invocation");
+    }
+    if detail.same_config || detail.same_executable {
+        value["nextAction"]["commandKind"] =
+            json!(match (detail.same_executable, detail.same_config) {
+                (true, true) => "argv_suffix_requires_executable_and_config",
+                (true, false) => "argv_suffix_requires_executable",
+                (false, true) => "argv_prefix_requires_config_value",
+                (false, false) => unreachable!(),
+            });
+    }
     if held {
         value["nextAction"]["type"] = json!("inspect_held");
         value["held"] = json!({
@@ -91,13 +112,24 @@ pub(super) fn bounded(
         value["reason"] = json!({"code": "governor_replan_or_evidence_required"});
     } else if refused {
         value["reason"] = json!({"code": "recorded_then_failed"});
-        value["diagnostic"] = json!({"phase": "refusal"});
-    } else if response["projectionError"].is_string() {
+    } else if response["projectionError"].is_string()
+        || response["cleanupError"].is_string()
+        || response["heldCleanupWarning"].is_string()
+    {
         value["reason"] = json!({"code": "recorded_then_failed"});
-        value["diagnostic"] = json!({"phase": "projection"});
-    } else if response["cleanupError"].is_string() || response["heldCleanupWarning"].is_string() {
-        value["reason"] = json!({"code": "recorded_then_failed"});
-        value["diagnostic"] = json!({"phase": "cleanup"});
+    }
+    let mut phases = Vec::new();
+    if refused {
+        phases.push("refusal");
+    }
+    if response["projectionError"].is_string() {
+        phases.push("projection");
+    }
+    if response["cleanupError"].is_string() || response["heldCleanupWarning"].is_string() {
+        phases.push("cleanup");
+    }
+    if !phases.is_empty() {
+        value["diagnostic"] = json!({"phase": phases[0], "phases": phases});
     }
     if let Some(presentation) = response.get("presentation") {
         value["presentation"] = json!({
@@ -117,33 +149,16 @@ pub(super) fn bounded(
         value["event"] = Value::Null;
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
-        // The caller already supplied this exact configuration.  Keep the
-        // read route as an explicit argv prefix, never a guessed config.
-        value["nextAction"]["command"] = if let Some(sha) = event_sha {
-            json!([
-                crate::compatibility::profile().caller,
-                "run",
-                "inspect",
-                ledger,
-                "--event",
-                sha,
-                "--json",
-                "--config"
-            ])
-        } else {
-            json!([
-                crate::compatibility::profile().caller,
-                "work",
-                "next",
-                work,
-                "--full",
-                "--config"
-            ])
-        };
+        // The exact executable and config were supplied by this invocation.
+        // Require both explicitly rather than guessing either at the limit.
+        value["nextAction"]["command"] = json!(detail_suffix);
         value["nextAction"]["sameConfigRequired"] = json!(true);
-        value["nextAction"]["commandKind"] = json!("argv_prefix_requires_config_value");
+        value["nextAction"]["sameExecutableRequired"] = json!(true);
+        value["nextAction"]["commandKind"] = json!("argv_suffix_requires_executable_and_config");
         value["nextAction"]["configArgument"] =
             json!("reuse the exact --config value from this invocation");
+        value["nextAction"]["executableArgument"] =
+            json!("prepend the exact executable used for this invocation");
     }
     value
 }
@@ -317,5 +332,31 @@ mod tests {
             "argv_prefix_requires_config_value"
         );
         assert_eq!(compact["outcome"], "completed");
+    }
+
+    #[test]
+    fn simultaneous_projection_and_cleanup_faults_keep_both_phases() {
+        let sha = "a".repeat(64);
+        let response = json!({
+            "event": {"action": "submit", "eventSha256": sha, "outcome": "completed"},
+            "projectionError": "projection failed".repeat(10_000),
+            "heldCleanupWarning": "held cleanup failed".repeat(10_000),
+        });
+        let compact = bounded(
+            &response,
+            "smw_work",
+            Some("sma_assignment"),
+            "ledger.jsonl",
+            "/project/exitbind.json",
+        );
+        assert!(serialized_len(&compact) <= 8 * 1024);
+        assert_eq!(compact["eventSha256"], sha);
+        assert_eq!(compact["effect"], "recorded");
+        assert_eq!(compact["outcome"], "completed");
+        assert_eq!(
+            compact["diagnostic"]["phases"],
+            json!(["projection", "cleanup"])
+        );
+        assert_eq!(compact["nextAction"]["command"][2], "inspect");
     }
 }

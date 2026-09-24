@@ -86,6 +86,7 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
         "--json",
     ]);
     assert!(scope_output.stdout.len() <= 8192);
+    eprintln!("scope_return_bytes={}", scope_output.stdout.len());
     assert_eq!(scope["effect"], "recorded");
     assert_eq!(scope["outcome"], "scoped");
     assert!(scope["eventSha256"].as_str().is_some());
@@ -99,10 +100,12 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
         "completed",
     ]);
     assert!(return_output.stdout.len() <= 8192);
+    eprintln!("worker_return_bytes={}", return_output.stdout.len());
     assert_eq!(returned["outcome"], "completed");
     assert_eq!(returned["assignment"], worker["next"]["assignment"]);
     let (failed, failed_output) = fixture.call(&["work", "check", work]);
     assert!(failed_output.stdout.len() <= 8192);
+    eprintln!("failed_check_bytes={}", failed_output.stdout.len());
     assert_eq!(failed["effect"], "recorded");
     assert_eq!(failed["result"]["code"], 1);
     let first_sha = failed["eventSha256"].as_str().unwrap();
@@ -110,6 +113,7 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
     fs::write(&marker, b"pass").unwrap();
     let (passed, passed_output) = fixture.call(&["work", "check", work, "--json"]);
     assert!(passed_output.stdout.len() <= 8192);
+    eprintln!("passed_check_bytes={}", passed_output.stdout.len());
     assert_eq!(passed["result"]["code"], 0);
     assert_ne!(passed["eventSha256"], failed["eventSha256"]);
     let before = fs::read(fixture.root.join(&ledger)).unwrap();
