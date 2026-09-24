@@ -1,5 +1,6 @@
 //! Agent-facing work façade over the strict run protocol.
 
+pub(crate) mod compact;
 mod held;
 mod mutation_response;
 pub(crate) mod packet;

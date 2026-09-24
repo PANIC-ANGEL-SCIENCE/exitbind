@@ -222,6 +222,7 @@ impl Fixture {
             "work",
             "next",
             &format!("smw_{token}"),
+            "--full",
             "--config",
             "exitbind.json",
         ])

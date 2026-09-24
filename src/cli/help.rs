@@ -4,9 +4,11 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
-        ["work", "next"] => "work next WORK [--json]",
+        ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
-        ["work", "replan"] => "work replan WORK ASSIGNMENT [--hypothesis TEXT]",
+        ["work", "replan"] => {
+            "work replan WORK ASSIGNMENT [--hypothesis TEXT | --replan-file PATH|-]"
+        }
         ["work", "evidence"] => "work evidence WORK ASSIGNMENT --artifact PATH",
         ["work", "sensor-request"] => "work sensor-request WORK ASSIGNMENT",
         ["work", "sensor-result"] => {
@@ -18,7 +20,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "check"] => "work check WORK",
         ["work", "validate"] => "work validate WORK --packet FILE",
         ["work", "expand"] => "work expand WORK REFERENCE",
-        ["work", "resume"] => "work resume",
+        ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"
         }

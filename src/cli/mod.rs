@@ -14,6 +14,7 @@ use crate::{
 
 pub(crate) mod args;
 mod help;
+mod replan_input;
 
 use args::Arguments;
 
@@ -514,12 +515,18 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "next" => {
-            args::assert_options("work next", a, &["config", "json"])?;
+            args::assert_options("work next", a, &["config", "json", "full"])?;
             args::assert_positionals("work next", a, 2)?;
-            print_json(&crate::work::next(
+            let result = crate::work::next(
                 l,
                 positional(a, 1, "work next requires WORK")?,
-            )?)
+            )?;
+            let result = if a.flags.contains_key("full") {
+                result
+            } else {
+                crate::work::compact::project(&result, &l.path, "next")?
+            };
+            print_json(&result)
         }
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
@@ -542,17 +549,19 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "evidence-request",
                     "scope-decision",
                     "blocker",
+                    "replan-file",
                 ],
             )?;
             args::assert_positionals("work replan", a, 3)?;
+            let input = replan_input::ReplanInput::from_args(a)?;
             print_json(&crate::work::replan(
                 l,
                 positional(a, 1, "work replan requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work replan requires WORK ASSIGNMENT")?,
-                a.options.get("hypothesis").map(String::as_str),
-                a.options.get("evidence-request").map(String::as_str),
-                a.options.get("scope-decision").map(String::as_str),
-                a.options.get("blocker").map(String::as_str),
+                input.hypothesis.as_deref(),
+                input.evidence_request.as_deref(),
+                input.scope_decision.as_deref(),
+                input.blocker.as_deref(),
             )?)
         }
         "evidence" => {
@@ -645,9 +654,15 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "resume" => {
-            args::assert_options("work resume", a, &["config", "json"])?;
+            args::assert_options("work resume", a, &["config", "json", "full"])?;
             args::assert_positionals("work resume", a, 1)?;
-            print_json(&crate::work::resume(l)?)
+            let result = crate::work::resume(l)?;
+            let result = if a.flags.contains_key("full") || result["status"] != "resumed" {
+                result
+            } else {
+                crate::work::compact::project(&result, &l.path, "resume")?
+            };
+            print_json(&result)
         }
         _ => Err(
             "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume"

@@ -123,6 +123,9 @@ path.
 `work next` returns the resolved route and quality in
 `humanHelp.preservationAssignment`; carry that assignment to any child agent and
 refuse a packet that arrives with none or with conflicting ones.
+The default `work next` and single-candidate `work resume` views are bounded.
+Use their exact `fullCommand` to inspect omitted detail before handing off an
+assignment that needs it; `--full` returns the complete response.
 Before skipping work listed in a saved packet, run
 `exitbind work validate WORK --packet FILE`; skip only when it returns `usable`.
 

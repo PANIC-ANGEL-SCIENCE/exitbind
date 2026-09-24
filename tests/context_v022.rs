@@ -26,13 +26,12 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
-            .current_dir(&self.root)
-            .args(args)
-            .arg("--config")
-            .arg(&self.config)
-            .output()
-            .unwrap()
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command.current_dir(&self.root).args(args);
+        if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
+            command.arg("--full");
+        }
+        command.arg("--config").arg(&self.config).output().unwrap()
     }
 
     fn json(&self, args: &[&str]) -> Value {

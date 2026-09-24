@@ -230,6 +230,8 @@ recorded. The private result stays available in `work next` or `work resume` as
 `held` (one result) or `heldResults` (multiple results). Resolve the governor
 requirement first, then explicitly resubmit the chosen reference with `work
 return WORK ASSIGNMENT --outcome completed --result-ref HELD_REFERENCE`.
+If the bounded response reports `heldResultsOmissions`, run its `fullCommand`
+to retrieve every held reference before choosing one.
 
 Sensor input/output is versioned and bound to run, subject, attempt,
 checkpoint, and input digest, with at-most-once deduplication. Unavailable,

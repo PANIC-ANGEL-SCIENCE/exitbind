@@ -67,6 +67,9 @@ impl Fixture {
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
+            command.arg("--full");
+        }
         if !args.starts_with(&["init"]) && !args.starts_with(&["host"]) {
             command.arg("--config").arg(self.root.join("exitbind.json"));
         }

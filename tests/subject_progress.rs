@@ -52,9 +52,11 @@ impl Fixture {
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command.current_dir(&self.root).args(args);
+        if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
+            command.arg("--full");
+        }
         command
-            .current_dir(&self.root)
-            .args(args)
             .arg("--config")
             .arg(self.root.join("exitbind.json"))
             .stdout(Stdio::piped())
