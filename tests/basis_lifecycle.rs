@@ -1386,7 +1386,10 @@ fn successor_retains_a_real_governor_grant_and_owner_lineage() {
     );
     assert_eq!(after["next"]["role"], "worker");
     assert_eq!(after["next"]["resolvedActor"], "worker");
-    assert!(after["next"]["packet"]["context"].is_object());
+    assert_eq!(after["next"]["requiresExpansion"], true);
+    assert!(after["next"]["packet"].is_null());
+    let successor_packet = fixture.value(&["work", "next", &work, "--full"]);
+    assert!(successor_packet["next"]["packet"]["context"].is_object());
     let after_inspect = fixture.value(&["run", "inspect", &ledger]);
     assert_eq!(before["governor"]["enabled"], true);
     assert!(before["governor"]["spent"].as_u64().unwrap_or(0) > 0);

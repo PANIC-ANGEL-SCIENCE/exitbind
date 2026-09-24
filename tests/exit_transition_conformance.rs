@@ -564,7 +564,7 @@ fn stale_subject_recovery_is_visible_through_the_work_facade() {
     assert_eq!(action["action"], "check");
     let first_check = f.work_check(&work);
     assert!(first_check.status.success(), "{}", text(&first_check));
-    action = serde_json::from_slice::<Value>(&first_check.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["agent"], "worker_two", "{action}");
     action = f.work_return_ok(&work, &action, "completed", "worker-b")["next"].clone();
     assert_eq!(action["action"], "check");
@@ -577,12 +577,12 @@ fn stale_subject_recovery_is_visible_through_the_work_facade() {
     // The façade selects A's stale target first, then B's missing target.
     let repair_a = f.work_check(&work);
     assert!(repair_a.status.success(), "{}", text(&repair_a));
-    action = serde_json::from_slice::<Value>(&repair_a.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["action"], "check");
     assert_eq!(action["progress"]["state"], "BLOCKED");
     let repair_b = f.work_check(&work);
     assert!(repair_b.status.success(), "{}", text(&repair_b));
-    action = serde_json::from_slice::<Value>(&repair_b.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["role"], "reviewer");
     assert_eq!(action["progress"]["state"], "IN_PROGRESS");
     action = f.work_return_ok(&work, &action, "approved", "review")["next"].clone();
@@ -676,7 +676,8 @@ fn real_attempt_one_reviewer_assignment_is_rejected_on_attempt_two_by_work_facad
     let reviewer_one = serde_json::from_slice::<Value>(&checked.stdout).unwrap()["next"].clone();
     assert_eq!(reviewer_one["role"], "reviewer");
     let reworked = f.work_return_ok(&work, &reviewer_one, "rework", "rework");
-    action = reworked["next"].clone();
+    assert_eq!(reworked["next"]["requiresExpansion"], true);
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["packet"]["attempt"], 2);
     let _ = f.work_return_ok(&work, &action, "completed", "attempt-two");
     let checked = f.work_check(&work);
@@ -724,15 +725,16 @@ fn no_reviewer_configuration_reaches_canonical_missing_review_guard() {
     let checked = facade.work_check(&work);
     assert!(checked.status.success(), "{}", text(&checked));
     let checked_value: Value = serde_json::from_slice(&checked.stdout).unwrap();
-    let pending = checked_value["next"].clone();
+    assert_eq!(checked_value["next"]["requiresExpansion"], true);
+    let pending = facade.work_next(&work[4..])["next"].clone();
     assert_eq!(pending["action"], "lead_decision");
     assert_eq!(pending["progress"]["state"], "IN_PROGRESS");
     assert_eq!(
         pending["progress"]["reason"]["code"],
         "prerequisites_incomplete"
     );
-    let facade_next = facade.work_next(&work[4..]);
-    assert_eq!(facade_next["next"], pending);
+    assert_eq!(checked_value["next"]["assignment"], pending["assignment"]);
+    assert_eq!(checked_value["next"]["action"], pending["action"]);
     let facade_ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
     let facade_before = facade.events(&facade_ledger);
     let facade_missing = facade.work_return(&work, &pending, "accepted", "missing-review");
@@ -783,19 +785,21 @@ fn work_facade_drives_multi_worker_multi_reviewer_receipt() {
     fs::write(f.root.join("actual-product-check"), b"pass").unwrap();
     let first_check = f.work_check(&work);
     assert!(first_check.status.success(), "{}", text(&first_check));
-    action = serde_json::from_slice::<Value>(&first_check.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["agent"], "worker_two", "{action}");
     action = f.work_return_ok(&work, &action, "completed", "worker_two")["next"].clone();
     assert_eq!(action["action"], "check");
     let repair_first = f.work_check(&work);
     assert!(repair_first.status.success(), "{}", text(&repair_first));
-    action = serde_json::from_slice::<Value>(&repair_first.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["action"], "check");
     let second_check = f.work_check(&work);
     assert!(second_check.status.success(), "{}", text(&second_check));
-    action = serde_json::from_slice::<Value>(&second_check.stdout).unwrap()["next"].clone();
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["role"], "reviewer");
-    action = f.work_return_ok(&work, &action, "approved", "reviewer")["next"].clone();
+    let approved = f.work_return_ok(&work, &action, "approved", "reviewer");
+    assert_eq!(approved["next"]["requiresExpansion"], true);
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["agent"], "reviewer_two");
     action = f.work_return_ok(&work, &action, "approved", "reviewer_two")["next"].clone();
     let accepted = f.work_return_ok(&work, &action, "accepted", "acceptance");
@@ -866,7 +870,8 @@ fn failed_work_check_reaches_rework_then_only_fresh_attempt_reaches_ready() {
     assert_eq!(action["action"], "spawn");
     assert_eq!(action["role"], "reviewer");
     let rework = f.work_return_ok(&work, &action, "rework", "repair request");
-    action = rework["next"].clone();
+    assert_eq!(rework["next"]["requiresExpansion"], true);
+    action = f.work_next(&work[4..])["next"].clone();
     assert_eq!(action["action"], "spawn");
     assert_eq!(action["role"], "worker");
     assert_eq!(action["packet"]["attempt"], 2);
@@ -885,9 +890,10 @@ fn failed_work_check_reaches_rework_then_only_fresh_attempt_reaches_ready() {
     assert_eq!(action["action"], "lead_decision");
     let accepted = f.work_return_ok(&work, &action, "accepted", "lead acceptance");
     assert_eq!(accepted["next"]["action"], "done");
-    assert_eq!(accepted["next"]["status"], "accepted");
+    let accepted_next = f.work_next(&work[4..]);
+    assert_eq!(accepted_next["next"]["status"], "accepted");
     assert_eq!(accepted["next"]["progress"]["state"], "READY");
-    assert_eq!(accepted["next"]["progress"]["percent"], 100);
+    assert_eq!(accepted_next["next"]["progress"]["percent"], 100);
 }
 
 #[test]
@@ -1670,11 +1676,9 @@ fn accepted_historical_and_unchecked_states_project_through_work_next_without_re
     let checked_work_accepted =
         checked.work_return_ok(&checked_work, &checked_action, "accepted", "acceptance");
     assert_eq!(checked_work_accepted["next"]["progress"]["state"], "READY");
-    assert_eq!(
-        checked_work_accepted["next"]["progress"]["applicable"],
-        true
-    );
-    assert_eq!(checked_work_accepted["next"]["progress"]["percent"], 100);
+    let accepted_next = checked.work_next(&checked_work[4..]);
+    assert_eq!(accepted_next["next"]["progress"]["applicable"], true);
+    assert_eq!(accepted_next["next"]["progress"]["percent"], 100);
 }
 
 fn without(value: &Value, key: &str) -> Value {

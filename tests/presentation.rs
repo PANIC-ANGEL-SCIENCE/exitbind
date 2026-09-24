@@ -289,7 +289,8 @@ fn terminal_readiness_says_exit_ready_and_nothing_else() {
         Some(b"accept"),
     );
     assert_eq!(accepted["next"]["progress"]["state"], "READY");
-    assert_eq!(accepted["next"]["progress"]["percent"], 100);
+    let final_state = project.value(&["work", "next", &work], None);
+    assert_eq!(final_state["next"]["progress"]["percent"], 100);
     // The decision itself hands back the block to print, so nothing has to be
     // assembled from status and progress.
     assert_eq!(accepted["presentation"]["terminal"], "EXIT READY");

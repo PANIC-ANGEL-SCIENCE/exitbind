@@ -76,6 +76,7 @@ pub(super) fn bounded(
             "action": response["next"]["action"],
             "assignment": response["next"]["assignment"],
             "role": response["next"]["role"],
+            "resolvedActor": response["next"]["resolvedActor"],
             "check": {"kind": response["next"]["check"]["kind"], "requirementId": response["next"]["check"]["requirementId"]},
             "progress": {"state": response["next"]["progress"]["state"], "reason": {"code": response["next"]["progress"]["reason"]["code"]}},
             "requiresExpansion": true,

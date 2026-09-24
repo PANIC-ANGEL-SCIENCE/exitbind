@@ -184,8 +184,9 @@ impl Drop for Fixture {
     }
 }
 
-fn assert_progress(action: &Value) {
-    assert_eq!(action["progress"]["applicable"], true);
+fn assert_progress(fixture: &Fixture, work: &str) {
+    let current = fixture.value(&["work", "next", work], None);
+    assert_eq!(current["next"]["progress"]["applicable"], true);
 }
 
 /// 1. The required invariant: after substitution the packet carries the same
@@ -216,7 +217,7 @@ fn substitution_keeps_the_reviewer_contract_and_moves_only_the_runtime() {
         );
     }
 
-    let primary = checked["next"]["packet"].clone();
+    let primary = fixture.value(&["work", "next", &work], None)["next"]["packet"].clone();
     let unavailable = fixture.value(
         &[
             "work",
@@ -230,7 +231,8 @@ fn substitution_keeps_the_reviewer_contract_and_moves_only_the_runtime() {
         ],
         Some(b"provider quota exhausted"),
     );
-    let substitution = unavailable["next"]["packet"].clone();
+    assert_eq!(unavailable["next"]["requiresExpansion"], true);
+    let substitution = fixture.value(&["work", "next", &work], None)["next"]["packet"].clone();
 
     // Invariant across substitution: reviewer authority, profile, purpose,
     // declared boundary, and the stage/attempt the verdict belongs to.
@@ -321,7 +323,8 @@ fn a_weaker_profile_cannot_become_the_reviewer_contract() {
         ],
         Some(b"quota"),
     );
-    let substitution = unavailable["next"]["packet"].clone();
+    assert_eq!(unavailable["next"]["requiresExpansion"], true);
+    let substitution = fixture.value(&["work", "next", &work], None)["next"]["packet"].clone();
     assert_eq!(substitution["agent"], "reviewer");
     assert_ne!(substitution["profile"], json!(permissive_path));
     assert_ne!(
@@ -377,7 +380,7 @@ fn primary_unavailable_falls_back_and_still_requires_lead_acceptance() {
         ],
         Some(b"provider quota exhausted"),
     );
-    assert_progress(&unavailable["next"]);
+    assert_progress(&fixture, &work);
     // The unavailability is non-terminal: the run keeps running at the same
     // stage and attempt, and no stage advance happened.
     assert_eq!(unavailable["next"]["action"], "spawn");
@@ -398,8 +401,9 @@ fn primary_unavailable_falls_back_and_still_requires_lead_acceptance() {
     assert!(reported.get("inputsSha256").is_none());
 
     // The same reviewer contract is re-issued onto the alternate binding.
-    assert_eq!(unavailable["next"]["agent"], "reviewer");
-    assert_eq!(unavailable["next"]["packet"]["runtime"]["host"], "claude");
+    let substitution = fixture.value(&["work", "next", &work], None);
+    assert_eq!(substitution["next"]["agent"], "reviewer");
+    assert_eq!(substitution["next"]["packet"]["runtime"]["host"], "claude");
 
     // The substitution's approval alone does not accept the run.
     let approved = fixture.value(
@@ -413,7 +417,7 @@ fn primary_unavailable_falls_back_and_still_requires_lead_acceptance() {
         ],
         Some(b"review"),
     );
-    assert_progress(&approved["next"]);
+    assert_progress(&fixture, &work);
     assert_eq!(approved["next"]["action"], "lead_decision");
     assert_eq!(approved["next"]["role"], "lead");
 
@@ -481,7 +485,8 @@ fn an_unspecified_primary_binding_still_records_its_unavailability() {
         Some(b"quota"),
     );
     assert_eq!(unavailable["next"]["action"], "spawn");
-    assert_eq!(unavailable["next"]["packet"]["runtime"]["host"], "claude");
+    let substitution = fixture.value(&["work", "next", &work], None);
+    assert_eq!(substitution["next"]["packet"]["runtime"]["host"], "claude");
 
     let events = fixture.events(&ledger);
     let reported = events
@@ -517,11 +522,12 @@ fn primary_unavailable_without_a_fallback_stays_blocked() {
         ],
         Some(b"provider down"),
     );
-    assert_progress(&unavailable["next"]);
+    assert_progress(&fixture, &work);
     // With no authorized binding the reviewer cannot be re-issued, so the run
     // blocks instead of advancing on a review that never happened.
     assert_eq!(unavailable["next"]["action"], "done");
-    assert_eq!(unavailable["next"]["status"], "blocked");
+    let blocked = fixture.value(&["work", "next", &work], None);
+    assert_eq!(blocked["next"]["status"], "blocked");
 
     let events = fixture.events(&ledger);
     let reported = events
@@ -566,8 +572,9 @@ fn fallback_that_is_also_unavailable_blocks_without_retrying() {
         ],
         Some(b"rate limited"),
     );
-    assert_eq!(primary["next"]["agent"], "reviewer");
-    assert_eq!(primary["next"]["packet"]["runtime"]["host"], "claude");
+    let current = fixture.value(&["work", "next", &work], None);
+    assert_eq!(current["next"]["agent"], "reviewer");
+    assert_eq!(current["next"]["packet"]["runtime"]["host"], "claude");
 
     let substitute = fixture.value(
         &[
@@ -582,9 +589,10 @@ fn fallback_that_is_also_unavailable_blocks_without_retrying() {
         ],
         Some(b"also down"),
     );
-    assert_progress(&substitute["next"]);
+    assert_progress(&fixture, &work);
     assert_eq!(substitute["next"]["action"], "done");
-    assert_eq!(substitute["next"]["status"], "blocked");
+    let blocked = fixture.value(&["work", "next", &work], None);
+    assert_eq!(blocked["next"]["status"], "blocked");
 
     // Bounded attempts: exactly two operational failures, no third binding.
     let events = fixture.events(&ledger);
@@ -615,7 +623,8 @@ fn unavailable_is_rejected_after_a_rework_verdict() {
         ],
         Some(b"rework"),
     );
-    assert_progress(&rework["next"]);
+    assert_eq!(rework["next"]["requiresExpansion"], true);
+    assert_progress(&fixture, &work);
 
     // The reviewer is still bound to its primary on the next attempt; asking it
     // to report unavailability would be an escape from the adverse verdict.
@@ -670,7 +679,8 @@ fn unavailable_is_rejected_after_a_blocked_verdict() {
         ],
         Some(b"blocked"),
     );
-    assert_progress(&blocked["next"]);
+    assert_eq!(blocked["next"]["requiresExpansion"], true);
+    assert_progress(&fixture, &work);
 
     // The reviewer verdict of `blocked` is terminal for the run, so the run is
     // no longer running and the reducer refuses any further submission.
@@ -724,7 +734,7 @@ fn fallback_approval_goes_stale_with_its_subject() {
     fs::remove_file(fixture.root.join("pass-marker")).unwrap();
 
     let stale = fixture.value(&["work", "next", &work], None);
-    assert_progress(&stale["next"]);
+    assert_progress(&fixture, &work);
     assert_ne!(stale["next"]["action"], "lead_decision");
 
     let premature = fixture.call(

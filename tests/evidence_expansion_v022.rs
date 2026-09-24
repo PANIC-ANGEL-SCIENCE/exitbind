@@ -339,8 +339,9 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     let fixture = Fixture::new();
     let (_started, work, _ledger, _target) =
         fixture.start_worker("printf '\\001\\000X'; printf '\\377\\n' >&2; exit 7");
-    let checked = fixture.json(&["work", "check", &work]);
-    let context = &checked["next"]["packet"]["context"];
+    fixture.json(&["work", "check", &work]);
+    let current = fixture.json(&["work", "next", &work]);
+    let context = &current["next"]["packet"]["context"];
     let reference = context["evidence"]
         .as_array()
         .unwrap()
@@ -392,8 +393,9 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         use std::os::unix::fs::symlink;
         let symlink_fixture = Fixture::new();
         let (_started, symlink_work, _ledger, _target) = symlink_fixture.start_worker("printf ok");
-        let checked = symlink_fixture.json(&["work", "check", &symlink_work]);
-        let reference = checked["next"]["packet"]["context"]["evidence"]
+        symlink_fixture.json(&["work", "check", &symlink_work]);
+        let current = symlink_fixture.json(&["work", "next", &symlink_work]);
+        let reference = current["next"]["packet"]["context"]["evidence"]
             .as_array()
             .unwrap()
             .iter()
@@ -419,7 +421,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     let (_started, signal_work, _ledger, _target) = signal.start_worker("kill -TERM $$");
     let checked = signal.call(&["work", "check", &signal_work]);
     assert!(checked.status.success(), "{checked:?}");
-    let signal_next: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let signal_next = signal.json(&["work", "next", &signal_work]);
     let signal_ref = signal_next["next"]["packet"]["context"]["evidence"]
         .as_array()
         .unwrap()
@@ -710,8 +712,8 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
                 "5647f05ec18958947d32874eeb788fa396a05d0bab7c1b71f112ceb7e9b31eee"
             );
         }
-        let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
-        let log_ref = checked["next"]["packet"]["context"]["evidence"]
+        let current = exact.json(&["work", "next", &exact_work]);
+        let log_ref = current["next"]["packet"]["context"]["evidence"]
             .as_array()
             .unwrap()
             .iter()

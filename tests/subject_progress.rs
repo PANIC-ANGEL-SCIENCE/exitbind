@@ -1,7 +1,10 @@
 #![cfg(unix)]
 
+#[path = "support/opaque_work_surface.rs"]
+mod opaque_work_surface;
 mod support;
 
+use opaque_work_surface::{assert_opaque_envelope, assert_opaque_reference};
 use serde_json::Value;
 use std::{
     fs,
@@ -145,66 +148,17 @@ impl Drop for Fixture {
 }
 
 fn assert_progress(action: &Value) {
+    if action["requiresExpansion"] == true {
+        assert!(action["progress"]["state"].is_string());
+        assert!(action["progress"]["reason"]["code"].is_string());
+        return;
+    }
     assert_eq!(action["progress"]["applicable"], true);
     assert!(
         action["progress"]["percent"].is_number(),
         "missing progress: {action}"
     );
     assert!(action["progress"]["weights"]["worker"].is_number());
-}
-
-fn assert_opaque_reference(reference: &Value, expected: Value) {
-    assert_eq!(reference, &expected);
-    let serialized = reference.to_string();
-    assert!(!serialized.contains("ledger"));
-    assert!(!serialized.contains(".exitbind"));
-    assert!(!serialized.contains("runs/"));
-}
-
-fn assert_opaque_envelope(value: &Value) {
-    let serialized = value.to_string();
-    for marker in [".exitbind", "runs/", "artifacts/", "state/"] {
-        assert!(
-            !serialized.contains(marker),
-            "opaque envelope leaked {marker}: {value}"
-        );
-    }
-    fn visit(value: &Value) {
-        match value {
-            Value::Array(items) => items.iter().for_each(visit),
-            Value::Object(object) => {
-                for key in [
-                    "path",
-                    "root",
-                    "ledgerPath",
-                    "profilePath",
-                    "artifactPathHint",
-                    "sourcePath",
-                ] {
-                    assert!(
-                        !object.contains_key(key),
-                        "opaque envelope leaked {key}: {value}"
-                    );
-                }
-                if object.get("exact") == Some(&serde_json::json!(true)) {
-                    assert!(matches!(
-                        object.get("kind").and_then(Value::as_str),
-                        Some(
-                            "ledger_history"
-                                | "ledger_event"
-                                | "check_log"
-                                | "evidence"
-                                | "stdout"
-                                | "stderr",
-                        )
-                    ));
-                }
-                object.values().for_each(visit);
-            }
-            _ => {}
-        }
-    }
-    visit(value);
 }
 
 #[test]
@@ -259,7 +213,8 @@ fn successful_work_envelopes_are_opaque_and_expandable() {
     assert_opaque_envelope(&completed);
     let checked = fixture.value(&["work", "check", &work], None);
     assert_opaque_envelope(&checked);
-    let log_id = checked["next"]["packet"]["context"]["evidence"]
+    let current = fixture.value(&["work", "next", &work], None);
+    let log_id = current["next"]["packet"]["context"]["evidence"]
         .as_array()
         .unwrap()
         .iter()
@@ -1097,7 +1052,8 @@ fn work_facade_surfaces_stale_worker_and_recovers_to_ready() {
         Some(b"accept"),
     );
     assert_eq!(done["next"]["action"], "done");
-    assert_eq!(done["next"]["progress"]["percent"], 100);
+    let final_state = fixture.value(&["work", "next", &work], None);
+    assert_eq!(final_state["next"]["progress"]["percent"], 100);
     assert_eq!(done["next"]["progress"]["state"], "READY");
 }
 
@@ -1374,16 +1330,18 @@ fn failed_preservation_blocks_acceptance_without_claiming_functional_failure() {
     fs::write(fixture.root.join("preservation-fail"), b"weakened").unwrap();
     fixture.value(&["work", "check", &work], None);
     let failed = fixture.value(&["work", "check", &work], None);
+    assert_eq!(failed["next"]["requiresExpansion"], true);
+    let failed_next = fixture.value(&["work", "next", &work], None);
     assert_eq!(
-        failed["next"]["packet"]["checkEvidence"][0]["status"],
+        failed_next["next"]["packet"]["checkEvidence"][0]["status"],
         "passed"
     );
     assert_eq!(
-        failed["next"]["packet"]["checkEvidence"][1]["status"],
+        failed_next["next"]["packet"]["checkEvidence"][1]["status"],
         "failed"
     );
     assert_eq!(
-        failed["next"]["packet"]["checkEvidence"][1]["requirementId"],
+        failed_next["next"]["packet"]["checkEvidence"][1]["requirementId"],
         "precedence"
     );
 
@@ -1686,15 +1644,15 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
         failed_next["residual"]["humanHelp"]["nextAction"]["actor"]
     );
     assert_eq!(
-        failed["next"]["packet"]["context"]["next"]["owner"],
+        failed_next["next"]["packet"]["context"]["next"]["owner"],
         failed["next"]["resolvedActor"]
     );
     assert_eq!(
-        failed["next"]["packet"]["checkEvidence"][0]["status"],
+        failed_next["next"]["packet"]["checkEvidence"][0]["status"],
         "failed"
     );
     assert_eq!(
-        failed["next"]["packet"]["checkEvidence"]
+        failed_next["next"]["packet"]["checkEvidence"]
             .as_array()
             .unwrap()
             .len(),
@@ -1715,7 +1673,8 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
     );
     assert_eq!(reworked["next"]["action"], "spawn");
     assert_eq!(reworked["next"]["role"], "worker");
-    assert_eq!(reworked["next"]["packet"]["attempt"], 2);
+    let reworked_next = fixture.value(&["work", "next", &work], None);
+    assert_eq!(reworked_next["next"]["packet"]["attempt"], 2);
     let after_rework = fs::read(fixture.root.join(&ledger)).unwrap();
     assert!(after_rework.starts_with(&failed_ledger));
 
@@ -1735,8 +1694,9 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
     let fresh_check = fixture.value(&["work", "check", &work], None);
     assert_eq!(fresh_check["next"]["action"], "spawn");
     assert_eq!(fresh_check["next"]["role"], "reviewer");
+    let fresh_next = fixture.value(&["work", "next", &work], None);
     assert_eq!(
-        fresh_check["next"]["packet"]["checkEvidence"][0]["status"],
+        fresh_next["next"]["packet"]["checkEvidence"][0]["status"],
         "passed"
     );
 
@@ -1764,7 +1724,8 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
         Some(b"fresh acceptance"),
     );
     assert_eq!(done["next"]["action"], "done");
-    assert_eq!(done["next"]["progress"]["percent"], 100);
+    let final_state = fixture.value(&["work", "next", &work], None);
+    assert_eq!(final_state["next"]["progress"]["percent"], 100);
     assert_eq!(done["next"]["progress"]["state"], "READY");
 }
 

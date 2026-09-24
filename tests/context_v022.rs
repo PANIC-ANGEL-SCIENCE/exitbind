@@ -798,7 +798,9 @@ fn opaque_history_and_observed_check_log_expansions_are_exact_and_stale_bound() 
     );
     assert!(completed.status.success(), "{completed:?}");
     let checked = fixture.json(&["work", "check", &work]);
-    let context = &checked["next"]["packet"]["context"];
+    assert_eq!(checked["next"]["requiresExpansion"], true);
+    let next = fixture.json(&["work", "next", &work]);
+    let context = &next["next"]["packet"]["context"];
     let log_reference = context["evidence"]
         .as_array()
         .unwrap()
