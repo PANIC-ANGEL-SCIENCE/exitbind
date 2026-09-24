@@ -98,7 +98,7 @@ dependencies = [
 
 [[package]]
 name = "exitbind"
-version = "0.25.0-rc.1"
+version = "0.25.0-rc.2"
 dependencies = [
  "chrono",
  "libc",

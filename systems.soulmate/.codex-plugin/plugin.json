@@ -1,6 +1,6 @@
 {
   "name": "soulmate",
-  "version": "0.25.0-rc.1",
+  "version": "0.25.0-rc.2",
   "description": "It verifies what you asked an agent to do and what came back, in the same record. Use it as an opt-in, bounded project guidance surface; ordinary work remains unchanged. Plugin installation provides host guidance and does not install the separate soulmate CLI.",
   "author": { "name": "envy404", "url": "https://github.com/envy404" },
   "repository": "https://github.com/envy404/soulmate",

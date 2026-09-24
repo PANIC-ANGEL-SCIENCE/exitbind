@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.25.0-rc.2
+
+- Return bounded, exact-result responses from W1 work mutations and recovery
+  commands, including explicit refusals and next actions.
+- Preserve evidence for refused deliveries and verify recovery event identity,
+  route, and artifact integrity before resuming work.
+
 ## 0.25.0-rc.1
 
 - Let active human-directed runs continue with their recorded plan after

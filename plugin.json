@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "exitbind",
-  "version": "0.25.0-rc.1",
+  "version": "0.25.0-rc.2",
   "description": "Exitbind — No result exits unbound. Bind the evidence to the exact result before exit. For your existing Codex or Claude lead; this skills-only plugin installs guidance, not the separate Exitbind CLI.",
   "author": { "name": "envy404", "url": "https://github.com/envy404" },
   "repository": "https://github.com/envy404/exitbind",
