@@ -5,16 +5,11 @@
 The code can be current. The tests can have passed. The review can have
 approved. All three can still belong to different results.
 
-Exitbind is a local acceptance boundary for coding-agent work. Checks,
-independent review, and Lead acceptance count only for the exact result they
-were taken on. When that result changes, evidence that no longer belongs to it
-stays historical.
-
-**The map can be stale. The room cannot.**
-
-Packets, summaries, progress, and display are derived views. Recorded state and
-the current subject identity decide what still holds. A real check or review
-from another result remains historical evidence.
+Exitbind is a local acceptance boundary for coding-agent work. Its `work check`
+command runs the check fixed at the start of the task and records the outcome
+against the exact result. Checks, required independent review, and Lead
+acceptance must all belong to that result. Evidence taken on an earlier result
+stays historical; it never opens the current door.
 
 **No result exits unbound.**
 
@@ -27,7 +22,7 @@ Without Exitbind
 With Exitbind
   Agent: "Done. Tests pass."
   Exitbind: EXIT BLOCKED (check_missing): no passing check belongs to the current result.
-  Only a check, review, and lead acceptance bound to the current result reach EXIT READY.
+  Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
 Current prerelease: `v0.25.0-rc.2`. One local binary; it calls no model and runs
@@ -37,11 +32,59 @@ no daemon or cloud service.
 [![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## What it adds to “tests passed”
+
+| An agent says | Exitbind records instead |
+| --- | --- |
+| “Tests pass.” | The frozen check command, run by Exitbind itself on the current result, with its real exit code or signal, duration, and hashed output logs. A check a host reports is labelled `reported`; one Exitbind ran is labelled `observed`. |
+| “It's the latest code.” | A fingerprint of tracked and untracked, non-ignored project files, excluding Git metadata and Exitbind state, so uncommitted work is covered before anything is pushed. |
+| “Review approved it.” | Worker completion, check, review, and Lead acceptance as separate, attributed events. An omitted review is recorded as an omission, never as approval. |
+| “Nothing changed since.” | An append-only, hash-chained ledger: recorded artifact bytes equal disk bytes, or no new run event is written. |
+| “Done.” | `EXIT READY`, `EXIT REFUSED`, or `EXIT BLOCKED` with a reason code, plus a verifiable receipt for accepted checked runs. |
+
+Exitbind adds a local acceptance step to the agent loop, including uncommitted
+results before a push. CI and branch protection keep their existing roles.
+
+## Built for your coding agent
+
+The coding agent you already use operates the CLI inside your existing
+conversation. During a governed task it follows the recorded next action:
+
+```text
+exitbind work next WORK --full -> read the current assignment and constraints
+(do the work)
+exitbind work return WORK …    -> submit the assigned result
+exitbind work check WORK       -> run the frozen check when it is the next action
+```
+
+- **Check evidence is captured.** Exitbind executes the frozen command and
+  records its outcome and logs. Workers still report their results, and
+  reviewers still supply their judgments.
+- **Small, machine-readable replies.** `work check` and `work return` reply in at
+  most 8 KiB of JSON, with a read-only follow-up command as an argv array. Read
+  `work next WORK --full` with the same config before the next mutation.
+- **Inspect before retrying.** When either command records an event, its reply
+  names that exact event even if later response preparation or cleanup fails.
+  The detail lookup reads it without re-running the check or submitting a result.
+- **Hold a result while replanning.** When the iteration governor requires a
+  replan or new evidence, a completed worker result is retained by content hash
+  for later resubmission. Other refusals do not promise that retention.
+- **Resume, don't reconstruct.** `work resume` rebuilds the next step from recorded
+  state after a restart or context loss, keeps evidence that still belongs to
+  the same result, and names the recorder version that answered.
+- **Small work stays direct.** Reversible, low-consequence edits need no setup,
+  run, or review questions.
+
+See [work mutation results](docs/work-mutation-results.md) for the exact reply
+contract. A successful recording operation does not mean the check passed;
+the reply reports the check's exit code or signal separately.
+
 ## See a wrong door refused
 
 This page describes the opt-in release candidate `v0.25.0-rc.2` for Linux x86_64
-and macOS on Apple Silicon or Intel. The pinned installer places the executable under `$HOME/.local/bin` and
-verifies the archive checksum. Review the command and destination before
+and macOS on Apple Silicon or Intel. The pinned installer places the executable
+under `$HOME/.local/bin` and verifies the archive checksum; release archives
+also carry GitHub build attestations. Review the command and destination before
 approving installation.
 
 ```sh
@@ -49,17 +92,12 @@ curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.2/insta
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-That one command installs the binary and, for each coding host it detects on
-this machine, the managed guidance that lets the lead you already use find
-Exitbind: a small bootstrap skill and a session hook. It reports what it
-installed and what it could not install, and never overwrites a file it does
-not manage. Check it at any time with `exitbind host status`.
-
-Discovery is not activation. An installed bootstrap means your lead can find
-Exitbind and is told when to reach for it. Whether it selects Exitbind for a
-given task stays the host and model's judgement, and only a work handle,
-recorded check, review, or acceptance shows that governed work actually
-started.
+That command installs the binary and, for each coding host it detects on this
+machine, a small bootstrap skill and session hook so the lead you already use can
+find Exitbind. It reports what it installed and what it could not, and never
+overwrites a file it does not manage. Check it with `exitbind host status`.
+Discovery is not activation: only a work handle, recorded check, review, or
+acceptance shows that governed work actually started.
 
 Then run the local demonstration:
 
@@ -74,24 +112,6 @@ demonstration of the mechanism, not a claim about every agent, project, or
 quality outcome; use `exitbind benchmark --output NEW_DIRECTORY` and the
 [proof methodology](docs/value-proof-methodology.md) for inspectable records.
 
-## The wrong door
-
-Material agent work passes through doors before it can leave—implemented,
-checked, reviewed, accepted—and each door opens only for the result standing in
-front of it. Verify the passage, not just the endpoints: "code exists" and "tests
-passed" can both be true while the pass belongs to another version.
-
-A **wrong door** is evidence taken on a different result: a check from before the
-last worker result or before a covered project file changed, or a review of a
-result that was replaced. **Evidence is not a master key**, so Exitbind will not
-reuse it. The CLI does not print the words
-"wrong door"; it reports one of three exit states with a precise reason code:
-
-- `EXIT READY`: the current result earned every required step.
-- `EXIT REFUSED`: evidence shows it did not, for example `check_failed`.
-- `EXIT BLOCKED`: required evidence is missing or unresolved, for example
-  `check_missing`, so Exitbind will not guess.
-
 ## Give your lead one link
 
 You do not have to operate the protocol. Paste this into the Codex or Claude
@@ -105,15 +125,13 @@ On this URL-only path your lead inspects the project, explains the effect, and
 asks before installation, project writes, or permission changes. After you
 approve, it uses the local CLI plus project-local guidance:
 
-- **Small and reversible work** stays direct, without setup or review-policy
-  questions. The lead classifies actual effects; an instruction or configuration
-  filename alone does not require governance.
+- **Small and reversible work** stays direct. The lead classifies actual
+  effects; a filename alone does not require governance.
 - **Material or promotion-required work** binds its evidence to the exact result
-  before it can exit. Classification follows consequence and promotion, not
-  file count; read-only planning and disposable exploration can stay direct.
-- **Resumed work** keeps evidence that still belongs to the same result, so a
-  new session does not redo a valid check or review. A changed result needs fresh
-  evidence.
+  before it can exit.
+- **Resumed work** keeps evidence that still belongs to the same result, so a new
+  session does not redo a valid check or review. Before relying on a saved
+  packet, `work validate WORK --packet FILE` checks it against current state.
 
 A pasted URL is guidance, not proof that a host followed it.
 [See the complete onboarding path.](docs/onboarding.md)
@@ -125,91 +143,40 @@ one link -> classify -> exact-result check -> review decision
           -> applicable review -> lead acceptance -> verified receipt
 ```
 
-```text
-normal request
-  -> small and reversible: work directly
-  -> material: bind the requirements and exact result
-       -> implementation complete
-       -> exact-result check passed
-       -> review decision (Lead recommends; owner decides and may revise)
-       -> applicable review complete
-       -> lead accepted
-       -> EXIT READY, EXIT REFUSED, or EXIT BLOCKED
-```
+These doors stay separate: worker completion is not a passing check, a passing
+check is not reviewer approval, and reviewer approval is not lead acceptance.
 
-These doors stay separate:
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change.
 
-- Worker completion is not a passing check.
-- A passing check is not reviewer approval.
-- Reviewer approval is not lead acceptance.
+For important work, the Lead recommends independent review and the owner
+decides. Record that choice at a new governed entry with
+`--review-policy required` or `--review-policy omitted`; the owner can revise it
+while work continues. A run started without `--review-policy` is the unmarked
+historical path and keeps required-review semantics.
 
-For important work, the Lead recommends independent review and the owner decides
-whether it is required. The owner can revise that choice while work continues.
-An explicit omission is recorded as an omission; it is never called review
-approval. When review is required, current independent approval remains
-necessary. Checks, preservation obligations, currentness, and Lead acceptance
-remain separate gates in either policy.
-
-At a new governed entry, record that owner choice explicitly with
-`--review-policy required` or `--review-policy omitted`. To revise a choice on
-the marked running run, use the actual run interface, for example:
-
-```sh
-exitbind run review-policy lead .exitbind/runs/run.jsonl \
-  --decision omitted --reason "Owner selected no independent review" \
-  --config exitbind.json
-```
-
-A run started without `--review-policy` is the unmarked historical path. It
-keeps the historical required-review semantics and cannot later use
-`run review-policy`; a new run should choose its policy at entry.
-
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change. For an accepted checked run it can emit a
-verifiable receipt.
-
-Core invariant: **recorded artifact bytes equal disk bytes, or no new run event is written.** A receipt detects covered drift; it does not prove that the work is correct or replace the exit states. It covers recorded artifacts such as worker results, not every project file; see tested-input coverage under trust below.
-
-**Resume without restarting.** `work next` and `work resume` project a residual
-packet from recorded state, not from a chat summary: what is established, which
-evidence still opens its door, what remains, the next action, and which checks or
-reviews not to repeat. A session restart alone does not erase valid evidence.
-Before skipping work listed in a saved packet, `work validate WORK --packet FILE`
-rechecks it against current state and returns the canonical packet to act on. A
-finished run is history: its packet never authorizes skipping new work.
+Configuration or profile changes after a run starts are reported as warnings
+and the recorded plan continues; changed or substituted evidence bytes are
+refused. For an accepted checked run, `exitbind receipt` emits a receipt and
+`exitbind verify` checks it. A receipt covers recorded artifacts, not every
+project file, and does not prove the work is correct; see
+[receipts](REFERENCE.md#exit-path-receipt-and-verification).
 
 ## The Lead sets the Frame
 
-For work where structure matters, the Lead sets the Frame before workers move
-in. The Frame fixes the shared decisions that must not be silently
-reinterpreted: ownership, interfaces, stable identities, material state
-transitions, compatibility constraints, preserved behavior, decisive cases, and
-explicit non-goals.
+For work where structure matters, the Lead fixes the shared decisions workers
+must not silently reinterpret—ownership, interfaces, preserved behavior,
+decisive cases, non-goals—and workers choose details inside it. A contradiction
+goes back to the Lead. The independent reviewer can challenge the Frame itself.
 
-The Frame is not a full implementation plan or a transcript summary. Workers
-choose local implementation details inside its open zones. If implementation
-exposes a contradiction, the worker returns it to the Lead instead of silently
-choosing new meaning. The Frame is current authority, not eternal truth; the
-Lead can supersede it with a successor basis when evidence requires one.
-
-Workers share the Frame. The independent reviewer does not owe it agreement and
-can challenge the shared assumption, preservation, compatibility, authority,
-lifecycle, or evidence. A finding requires causal disposition and renewal of the
-affected evidence.
-
-For material work, the optional narration stays small:
+Optional progress narration is computed by Exitbind:
 
 ```text
 [Neuro] Exitbind progress: N%.
 ```
 
-Exitbind—not the character—computes weighted progress, and an accepted terminal
-run supplies the literal `terminal` display value `EXIT READY`. Hosts copy that
-value verbatim; they do not reconstruct it from progress or append a suffix.
-Alongside it, `work next` and `work resume` return a short line only when the
-state actually moved—a check that went stale, evidence that fits again, a
-decision that is yours—so the run is legible without a status report every
-turn. Neuro never replaces the host agent's native identity or authority, and
-removing it changes no semantics.
+It describes the current run and does not change the host agent's identity or
+authority. An accepted terminal run supplies the literal display value
+`EXIT READY`, which hosts copy verbatim.
 
 ## Set up a project when needed
 
@@ -219,95 +186,60 @@ After approving project writes, initialize a portable project from its root:
 exitbind init --mode portable --root .
 ```
 
-If your host already manages project skills, add `--skip-skills` to keep those
-paths untouched. This includes symlinked skill directories. Exitbind still
-creates configuration, role profiles, and private state; it does not claim
-that project guidance was installed or loaded. See [setup options](docs/onboarding.md).
-
-The default command creates `exitbind.json`, private ignored state under `.exitbind/`,
-reviewable role profiles, and project-local guidance for Codex and Claude. Setup
-installs no hook, launches no agent, and grants no host or OS permission. Review
-the generated boundaries and native worker/reviewer mapping before project work;
-empty starter boundaries are valid configuration, not permission. See
-[onboarding by environment](docs/onboarding.md) for local mode, host mapping,
-and recovery details.
-
-Codex and Claude are exercised setup paths. OpenCode uses the compatible
-`.agents/skills/exitbind/` projection path, but host execution is experimental
-until tested directly. Other hosts retain their own discovery, consent, and
-permission contracts.
-
-An explicit host plugin is optional and separate from CLI installation and
-project writes:
-
-```sh
-# Codex
-codex plugin marketplace add envy404/exitbind --ref v0.25.0-rc.2
-codex plugin add exitbind@exitbind-plugins
-
-# Claude Code
-claude plugin marketplace add envy404/exitbind
-claude plugin install exitbind@exitbind-plugins
-```
-
-The Codex command pins `v0.25.0-rc.2`; Claude Code follows the repository's current
-default branch. The plugin contains the Exitbind skill only: it installs no CLI,
-hook, MCP server, app, or model.
+This creates `exitbind.json`, private ignored state under `.exitbind/`,
+reviewable role profiles, and project-local guidance for Codex and Claude. Add
+`--skip-skills` if your host already manages project skills. Setup installs no
+hook, launches no agent, and grants no host or OS permission. Codex and Claude
+are exercised setup paths; OpenCode's compatible path is experimental. An
+optional host plugin carries the skill only—see [setup options](docs/onboarding.md).
+Review the generated boundaries and native worker/reviewer mapping before
+project work; empty starter boundaries are valid configuration, not permission.
 
 ## Trust, data, and compatibility
 
-Your existing host owns model execution, native subagents, tools, processes,
-permissions, and remote mutation. Exitbind owns its local lifecycle and
-exact-result exit rules. GitHub or another repository host remains merge
-authority. Exitbind is not a model, agent runtime, daemon, cloud service, or OS
-sandbox.
+Your host owns models, subagents, tools, processes, and permissions; your
+repository host owns merges. Exitbind owns its local lifecycle and exit rules.
+The [authority boundary](REFERENCE.md#authority-boundary) defines this once.
 
-Exitbind records requested configuration, selected profile bytes, artifacts,
-transitions, and declared or observed check evidence. It does not authenticate a
-model's self-report, inspect hidden reasoning, or withstand an attacker who can
-rewrite every local file. Checks, approvals, and acceptance are bound to the
-tested inputs of the project root: tracked and untracked, non-ignored files (or
-every file outside Git), excluding `.git` and Exitbind state. Ignored files, files
-outside the project, the environment, and remote or time-dependent conditions are
-not covered. Raw ledgers and artifacts can contain goals, commands, paths, and
-task results; keep them private and read [SECURITY.md](SECURITY.md) before real
-work.
+Exitbind does not authenticate a model's self-report or withstand an attacker who
+can rewrite every local file: its ledger is tamper-evident, not tamper-proof.
+Outside Git, the input fingerprint covers project files except Git metadata and
+Exitbind state. Neither mode covers files outside the project, the environment,
+or remote or time-dependent conditions; Git mode also excludes ignored files.
+Raw ledgers and artifacts can contain
+goals, commands, paths, and task results; keep them private and read
+[SECURITY.md](SECURITY.md) before real work.
 
-A project written by an earlier release keeps working: Exitbind reads historical
-run records under their original producer and schema meaning, and compatibility
-never relabels old evidence as new evidence. New installs create only Exitbind
-paths. See the [public format map](CHANGELOG.md#public-tags-and-format-readers)
-before choosing a rollback or release channel, and
-[legacy compatibility](docs/legacy-compatibility.md) if you are opening an old
+Historical run records are read under their original producer and schema
+meaning, and old evidence is never relabelled as new. Existing projects retain
+their historical paths. See the
+[public format map](CHANGELOG.md#public-tags-and-format-readers) before a
+rollback, and [legacy compatibility](docs/legacy-compatibility.md) for an old
 project.
 
 ## Update, recover, or leave
 
-Ask the same lead to update Exitbind, resume interrupted work, or remove it; the
-lead should explain and request any needed write before acting. Direct operators
-can use:
+Ask the same lead to update Exitbind, resume interrupted work, or remove it.
+Direct operators can use:
 
 ```sh
 exitbind update
 exitbind work resume
 ```
 
-Updating *from* an earlier release leaves that release's host guidance in place:
-its updater re-synchronises the bridge from its own copy after the new binary is
-installed. Run `exitbind host install` once afterwards, or install with the
-command above instead of updating. From this release on, the newly installed
-binary owns that step and `exitbind update` keeps the guidance current.
-
-Removing the default binary with `rm "$HOME/.local/bin/exitbind"` does not delete
-project ledgers, receipts, configuration, or projected skills. Remove optional
-hooks first and review the exact project paths you want to retain; see
-[update and removal](REFERENCE.md#removal) and
-[run recovery](docs/repair-a-run.md).
+After updating from an earlier release, run `exitbind host install` once so the
+host guidance matches the new binary. From this release on, `exitbind update`
+uses the new binary to refresh that guidance. Before removing the binary,
+remove optional hooks and review which project records to retain.
+`rm "$HOME/.local/bin/exitbind"` does not delete project ledgers, receipts,
+configuration, or projected skills; see [update and removal](REFERENCE.md#removal)
+and [run recovery](docs/repair-a-run.md).
 
 ## Read next
 
 - [Ask Codex or Claude to set it up](docs/onboarding.md)
 - [First checked run](docs/first-checked-run.md)
+- [Work mutation results](docs/work-mutation-results.md)
 - [Repair or resume a run](docs/repair-a-run.md)
 - [Command reference](REFERENCE.md)
 - [Terminology](docs/glossary.md)
