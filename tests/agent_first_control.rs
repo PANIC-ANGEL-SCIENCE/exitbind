@@ -1,5 +1,8 @@
+#[path = "support/agent_first_surface.rs"]
+mod agent_first_surface;
 mod support;
 
+use agent_first_surface::assert_no_raw_protocol_fields;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::fs;
@@ -9,38 +12,6 @@ use std::process::{Child, ChildStdin, Command, Output, Stdio};
 
 const EVALUATION_DOC: &str = include_str!("../docs/agent-first-evaluation.md");
 const BLOCKED_RESULT_BYTES: usize = 2 * 1024 * 1024;
-
-const FORBIDDEN_FACADE_FIELDS: &[&str] = &[
-    "ledger",
-    "eventSha256",
-    "targetEventSha256",
-    "artifactPathHint",
-    "artifactRootHint",
-    "checkCommand",
-    "exitCode",
-];
-
-fn assert_no_raw_protocol_fields(value: &Value) {
-    match value {
-        Value::Object(object) => {
-            for key in object.keys() {
-                assert!(
-                    !FORBIDDEN_FACADE_FIELDS.contains(&key.as_str()),
-                    "facade leaked forbidden field {key}: {value}"
-                );
-            }
-            for child in object.values() {
-                assert_no_raw_protocol_fields(child);
-            }
-        }
-        Value::Array(values) => {
-            for child in values {
-                assert_no_raw_protocol_fields(child);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-}
 
 struct Fixture {
     root: PathBuf,
@@ -419,7 +390,8 @@ fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
         Some(b"review requests rework"),
     );
     assert_eq!(reworked["next"]["action"], "spawn");
-    assert_eq!(reworked["next"]["packet"]["attempt"], 2);
+    assert_eq!(reworked["next"]["requiresExpansion"], true);
+    assert!(reworked["next"]["packet"].is_null());
 
     let artifact_dir = fixture.root.join(".soulmate/artifacts");
     let artifacts_before = fs::read_dir(&artifact_dir).unwrap().count();

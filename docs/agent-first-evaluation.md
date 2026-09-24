@@ -30,6 +30,10 @@ the low-level path. The façade owns those inputs internally. The task goal and
 authorized check are meaningful workflow inputs, so neither is counted as
 protocol bookkeeping.
 
+The current `work check`/`work return` result also exposes the exact recorded
+event selector and read-only detail route in its output. The counts above are
+for command inputs; they do not count or conceal those result references.
+
 This is a scripted local integration test, not a human or native-agent study.
 The zero error, retry, intervention, and human-transfer observations describe
 only these successful scripted runs. They do not establish lower token use,
