@@ -1,13 +1,13 @@
+use super::receipt_path::{is_relative_path, receipt_path, state_relative};
 use super::{harness, hash};
 use crate::config::{self, Loaded};
 use crate::{project::path as project_path, run::error as run_error};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Component, Path};
 
 pub(crate) enum ExitPathError {
     Failure(String),
@@ -113,7 +113,7 @@ pub fn write(
         .create_new(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(receipt_path(loaded, path)?)
+        .open(receipt_path(&loaded.state_root, path)?)
         .map_err(|error| error.to_string())?;
     let serialized = serde_json::to_string_pretty(&receipt).map_err(|error| error.to_string())?;
     file.write_all(format!("{serialized}\n").as_bytes())
@@ -333,7 +333,7 @@ pub(crate) fn exit_receipt_path(
     loaded: &Loaded,
     requested: &str,
 ) -> Result<std::path::PathBuf, String> {
-    let path = receipt_path(loaded, requested)?;
+    let path = receipt_path(&loaded.state_root, requested)?;
     if path.exists() {
         return Err("receipt output already exists; refusing to overwrite".into());
     }
@@ -715,42 +715,6 @@ fn read_state_bytes(loaded: &Loaded, requested: &str) -> Result<(String, Vec<u8>
     Ok((relative, source))
 }
 
-fn state_relative(root: &Path, requested: &str) -> Result<String, String> {
-    if requested.trim().is_empty() || requested.contains('\0') || requested.contains('\\') {
-        return Err("receipt path must remain beneath StateRoot".into());
-    }
-    let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
-    let path = Path::new(requested);
-    let relative = if path.is_absolute() {
-        path.strip_prefix(&root)
-            .map_err(|_| "receipt path must remain beneath StateRoot".to_owned())?
-    } else {
-        path
-    };
-    if relative
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err("receipt path must be a normalized relative path".into());
-    }
-    let rendered = relative.to_str().ok_or("receipt path must be UTF-8")?;
-    if !is_relative_path(rendered) {
-        return Err("receipt path must be a normalized relative path".into());
-    }
-    Ok(rendered.replace('\\', "/"))
-}
-
-fn is_relative_path(value: &str) -> bool {
-    let path = Path::new(value);
-    !value.trim().is_empty()
-        && !value.contains('\0')
-        && !value.contains('\\')
-        && !path.is_absolute()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-}
-
 fn is_sha_text(value: &str) -> bool {
     value.len() == 64
         && value
@@ -764,33 +728,4 @@ fn is_sha256(value: &Value) -> bool {
 
 fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-}
-
-fn receipt_path(loaded: &Loaded, requested: &str) -> Result<std::path::PathBuf, String> {
-    let path = Path::new(requested);
-    if path.is_absolute() {
-        let parent = path
-            .parent()
-            .ok_or("receipt path must remain beneath StateRoot")?;
-        let real_parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
-        let real_state = fs::canonicalize(&loaded.state_root).map_err(|error| error.to_string())?;
-        if !real_parent.starts_with(real_state) {
-            return Err("receipt path must remain beneath StateRoot".into());
-        }
-        return Ok(path.to_path_buf());
-    }
-    if requested.trim().is_empty()
-        || requested.contains('\0')
-        || path.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir
-                    | std::path::Component::RootDir
-                    | std::path::Component::Prefix(_)
-            )
-        })
-    {
-        return Err("receipt path must be relative to StateRoot".into());
-    }
-    Ok(loaded.state_root.join(path))
 }

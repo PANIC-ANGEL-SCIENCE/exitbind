@@ -584,21 +584,13 @@ fn help(
     if let Some(evidence) = preservation_evidence(targets) {
         help["preservationEvidence"] = json!(evidence);
     }
-    if targets
-        .iter()
-        .any(|target| target["kind"] == "preservation")
+    if let Some(preservation) = view["events"]
+        .as_array()
+        .and_then(|events| events.first())
+        .and_then(|start| start.get("preservation"))
     {
-        // A governed run carrying accepted preservation requirements is the
-        // formal route, and the accepted policy assigns FULL to every formal
-        // task. Resolve that here so the assignment travels with the
-        // assignment packet instead of being guessed downstream. Exitbind
-        // records the assignment; it cannot enforce a host's quality setting.
-        help["preservationAssignment"] = json!({
-            "route": "FORMAL",
-            "quality": "FULL",
-            "resolvedBy": "accepted_preservation_requirements",
-            "enforcement": "recorded_not_enforced",
-        });
+        help["preservationAssignment"] =
+            crate::run::preservation_assignment::from_policy(preservation, None);
     }
     help
 }

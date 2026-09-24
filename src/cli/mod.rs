@@ -610,7 +610,7 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_options(
                 "work return",
                 a,
-                &["config", "outcome", "reason", "disposition", "result-ref"],
+                &["config", "outcome", "reason", "disposition", "result-ref", "json"],
             )?;
             args::assert_positionals("work return", a, 3)?;
             print_json(&crate::work::return_result(
@@ -1072,7 +1072,7 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "review-policy",
         ][..],
         "next" => &["config", "json", "text"][..],
-        "inspect" => &["config", "json"][..],
+        "inspect" => &["config", "event", "json"][..],
         "submit" => &["config", "outcome", "artifact", "artifact-root", "reason", "disposition", "json", "event-id"][..],
         "review-policy" => &["config", "decision", "reason", "json"][..],
         "record-check" => &[
@@ -1189,7 +1189,11 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         }
         "inspect" => {
             args::assert_positionals("run inspect", a, 2)?;
-            run::inspect(l, positional(a, 1, "run inspect requires LEDGER")?)
+            let ledger = positional(a, 1, "run inspect requires LEDGER")?;
+            match a.options.get("event").map(String::as_str) {
+                Some(event) => run::inspect_event(l, ledger, event),
+                None => run::inspect(l, ledger),
+            }
         }
         "record-check" => {
             args::assert_positionals("run record-check", a, 2)?;

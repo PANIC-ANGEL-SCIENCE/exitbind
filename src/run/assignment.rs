@@ -232,16 +232,8 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         // Preserve the resolved requirement text and exact checker identity in
         // every role packet.  This is a projection of validated canonical
         // state, not a human-supplied prompt fragment.
-        assignment["preservationAssignment"] = json!({
-            "route": "FORMAL",
-            "quality": "FULL",
-            "resolvedBy": "accepted_preservation_requirements",
-            "enforcement": "recorded_not_enforced",
-            "version": preservation["version"],
-            "requirements": preservation["requirements"],
-            "nonGoals": state.get("nonGoals").cloned().unwrap_or_else(|| json!([])),
-            "source": "canonical_state",
-        });
+        assignment["preservationAssignment"] =
+            super::preservation_assignment::from_policy(preservation, state.get("nonGoals"));
     }
     if let Some(alternate) = agent
         .get("fallbackRuntime")

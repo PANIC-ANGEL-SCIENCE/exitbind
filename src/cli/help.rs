@@ -15,7 +15,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work sensor-result WORK ASSIGNMENT --assessment VALUE --input-digest HEX"
         }
         ["work", "return"] => {
-            "work return WORK ASSIGNMENT --outcome OUTCOME [--result-ref HELD_REFERENCE]"
+            "work return WORK ASSIGNMENT --outcome OUTCOME [--result-ref HELD_REFERENCE] [--json]"
         }
         ["work", "check"] => "work check WORK",
         ["work", "validate"] => "work validate WORK --packet FILE",
@@ -33,7 +33,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["run", "observe-check"] => "run observe-check LEDGER --target EVENT_SHA",
         ["run", "status"] => "run status LEDGER",
-        ["run", "inspect"] => "run inspect LEDGER",
+        ["run", "inspect"] => "run inspect LEDGER [--event EVENT_SHA]",
         ["run", "report"] => "run report LEDGER [LEDGER ...]",
         ["run", "explain"] => "run explain LEDGER [--event EVENT_SHA]",
         ["run", "supersede"] => {

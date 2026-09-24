@@ -1,7 +1,159 @@
+//! Default `work check` and `work return` JSON contract. `effect` records
+//! whether a ledger event was committed or a worker result was held. `result`
+//! is the checker's observed outcome; `outcome` is a role return or refusal.
+//! `eventSha256` names this call's event. `next` is only a short hint and always
+//! requires a fresh `work next --full` before another mutation. The read-only
+//! `nextAction.command` inspects the named event even after the head advances.
+//! An argv prefix with `sameConfigRequired` needs the exact config argument
+//! from the current invocation before execution; it never defaults silently.
+
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
 
 use super::recovery::inspect_command_for_config;
+
+/// Small result envelope shared by check and return.  The event selector comes
+/// from the append result, never from a later ledger head.  `next` is only a
+/// hint: its packet must be read afresh before another mutation.
+pub(super) fn bounded(
+    response: &Value,
+    work: &str,
+    assignment: Option<&str>,
+    ledger: &str,
+    config_path: &str,
+) -> Value {
+    let event = &response["event"];
+    let event_sha = event["eventSha256"].as_str();
+    let held = response["effect"] == "held";
+    let refused = event["action"] == "protect";
+    let effect = if held { "held" } else { "recorded" };
+    let detail_command = if let Some(sha) = event_sha {
+        json!([
+            crate::compatibility::profile().caller,
+            "run",
+            "inspect",
+            ledger,
+            "--event",
+            sha,
+            "--json",
+            "--config",
+            config_path
+        ])
+    } else {
+        json!([
+            crate::compatibility::profile().caller,
+            "work",
+            "next",
+            work,
+            "--full",
+            "--config",
+            config_path
+        ])
+    };
+    let mut value = json!({
+        "compact": true,
+        "work": work,
+        "assignment": assignment,
+        "status": if refused { "refused" } else { effect },
+        "effect": effect,
+        "eventSha256": event_sha,
+        "event": {"action": event["action"], "eventSha256": event_sha,
+            "result": event["result"], "outcome": event["outcome"],
+            "targetEventSha256": event["targetEventSha256"]},
+        "targetEventSha256": event["targetEventSha256"],
+        "result": event["result"],
+        "outcome": if refused { json!("refused") } else if held { json!("completed") } else { event["outcome"].clone() },
+        "requestedOutcome": response["requestedOutcome"],
+        "reference": if response["reference"].is_object() {
+            response["reference"].clone()
+        } else {
+            json!({"ledger": ledger, "eventSha256": event_sha})
+        },
+        "nextAction": {"type": "inspect", "safe": true, "command": detail_command},
+        "next": {
+            "action": response["next"]["action"],
+            "assignment": response["next"]["assignment"],
+            "role": response["next"]["role"],
+            "check": {"kind": response["next"]["check"]["kind"], "requirementId": response["next"]["check"]["requirementId"]},
+            "progress": {"state": response["next"]["progress"]["state"], "reason": {"code": response["next"]["progress"]["reason"]["code"]}},
+            "requiresExpansion": true,
+        },
+        "continuation": {"readOnly": true, "commandSuffix": ["work", "next", work, "--full"], "sameConfig": true},
+    });
+    if held {
+        value["nextAction"]["type"] = json!("inspect_held");
+        value["held"] = json!({
+            "reference": response["held"]["reference"],
+            "sha256": response["held"]["sha256"],
+            "bytes": response["held"]["bytes"],
+            "action": response["held"]["action"],
+        });
+        value["reason"] = json!({"code": "governor_replan_or_evidence_required"});
+    } else if refused {
+        value["reason"] = json!({"code": "recorded_then_failed"});
+        value["diagnostic"] = json!({"phase": "refusal"});
+    } else if response["projectionError"].is_string() {
+        value["reason"] = json!({"code": "recorded_then_failed"});
+        value["diagnostic"] = json!({"phase": "projection"});
+    } else if response["cleanupError"].is_string() || response["heldCleanupWarning"].is_string() {
+        value["reason"] = json!({"code": "recorded_then_failed"});
+        value["diagnostic"] = json!({"phase": "cleanup"});
+    }
+    if let Some(presentation) = response.get("presentation") {
+        value["presentation"] = json!({
+            "neuro": presentation["neuro"],
+            "phrase": presentation["phrase"],
+            "terminal": presentation["terminal"],
+        });
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        value.as_object_mut().unwrap().remove("presentation");
+        value["next"]["progress"] = Value::Null;
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        value.as_object_mut().unwrap().remove("continuation");
+        value["next"]["check"] = Value::Null;
+        value["next"]["role"] = Value::Null;
+        value["event"] = Value::Null;
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        // The caller already supplied this exact configuration.  Keep the
+        // read route as an explicit argv prefix, never a guessed config.
+        value["nextAction"]["command"] = if let Some(sha) = event_sha {
+            json!([
+                crate::compatibility::profile().caller,
+                "run",
+                "inspect",
+                ledger,
+                "--event",
+                sha,
+                "--json",
+                "--config"
+            ])
+        } else {
+            json!([
+                crate::compatibility::profile().caller,
+                "work",
+                "next",
+                work,
+                "--full",
+                "--config"
+            ])
+        };
+        value["nextAction"]["sameConfigRequired"] = json!(true);
+        value["nextAction"]["commandKind"] = json!("argv_prefix_requires_config_value");
+        value["nextAction"]["configArgument"] =
+            json!("reuse the exact --config value from this invocation");
+    }
+    value
+}
+
+fn serialized_len(value: &Value) -> usize {
+    serde_json::to_vec(value)
+        .expect("mutation result is serializable")
+        .len()
+        + 1
+}
 
 pub(super) fn recorded_reference(loaded: &Loaded, ledger: &str, submitted: &Value) -> Value {
     let event_sha256 = submitted["event"]["eventSha256"].clone();
@@ -65,7 +217,7 @@ pub(super) fn recorded_projection_failure(
 
 #[cfg(test)]
 mod tests {
-    use super::recorded_projection_failure;
+    use super::{bounded, recorded_projection_failure, serialized_len};
     use serde_json::json;
 
     #[test]
@@ -109,5 +261,61 @@ mod tests {
                 "/project/exitbind.json",
             ])
         );
+    }
+
+    #[test]
+    fn oversized_diagnostic_and_config_keep_exact_bounded_result() {
+        let sha = "a".repeat(64);
+        let work = format!("smw_{}", "b".repeat(64));
+        let ledger = format!(".exitbind/runs/work-{}.jsonl", "b".repeat(64));
+        let config = format!("/project/{}/exitbind.json", "p".repeat(7_000));
+        let response = json!({
+            "event": {"action": "check", "eventSha256": sha,
+                "targetEventSha256": "target", "result": {"kind": "exit", "code": 7}},
+            "projectionError": "diagnostic".repeat(8_000),
+            "next": {"action": "check", "assignment": "assignment", "heldResults": ["held".repeat(8_000)]},
+        });
+        let compact = bounded(&response, &work, None, &ledger, &config);
+        assert!(serialized_len(&compact) <= 8 * 1024);
+        assert_eq!(compact["eventSha256"], sha);
+        assert_eq!(compact["result"]["code"], 7);
+        assert_eq!(compact["effect"], "recorded");
+        assert_eq!(compact["diagnostic"]["phase"], "projection");
+        assert_eq!(compact["next"]["requiresExpansion"], true);
+        assert!(compact["nextAction"]["command"].is_array());
+        assert_eq!(
+            compact["nextAction"]["command"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap(),
+            &json!(config)
+        );
+    }
+
+    #[test]
+    fn path_exceeding_budget_keeps_read_only_same_config_argv() {
+        let sha = "a".repeat(64);
+        let response =
+            json!({"event": {"action": "submit", "eventSha256": sha, "outcome": "completed"}});
+        let compact = bounded(
+            &response,
+            "smw_work",
+            Some("assignment"),
+            "ledger.jsonl",
+            &format!("/project/{}/exitbind.json", "p".repeat(10_000)),
+        );
+        assert!(serialized_len(&compact) <= 8 * 1024);
+        assert_eq!(compact["nextAction"]["sameConfigRequired"], true);
+        let command = compact["nextAction"]["command"].as_array().unwrap();
+        assert_eq!(command[1], "run");
+        assert_eq!(command[2], "inspect");
+        assert_eq!(command[5], sha);
+        assert_eq!(command.last().unwrap(), "--config");
+        assert_eq!(
+            compact["nextAction"]["commandKind"],
+            "argv_prefix_requires_config_value"
+        );
+        assert_eq!(compact["outcome"], "completed");
     }
 }
