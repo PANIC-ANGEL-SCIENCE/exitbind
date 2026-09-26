@@ -237,15 +237,7 @@ fn has_managed_marker(bytes: &[u8]) -> bool {
 }
 
 fn selected_destinations(control: &Path, coffee: bool) -> Result<Vec<SkillDestination>, String> {
-    let exitbind = std::env::current_exe()
-        .ok()
-        .and_then(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name == "exitbind")
-        })
-        .unwrap_or(false);
-    if exitbind {
+    if crate::compatibility::is_exitbind() {
         let mut destinations = Vec::new();
         for base in [".agents/skills", ".claude/skills"] {
             // The delayed preservation detail ships with the skill so a project

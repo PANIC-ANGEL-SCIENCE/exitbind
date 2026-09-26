@@ -152,28 +152,30 @@ mod tests {
 
     #[test]
     fn shell_quote_renders_control_characters_as_data() {
+        let command = crate::compatibility::profile().caller;
         let quoted = super::shell_quote("line\n\u{1b}[31m");
         assert!(!quoted.bytes().any(|byte| byte < 0x20 || byte == 0x7f));
         assert!(quoted.contains("\\n"));
         assert!(quoted.contains("\\u{1b}"));
         assert_eq!(
             super::read_command("inspect", "config.json", "ledger.json"),
-            "soulmate run inspect --config='config.json' -- 'ledger.json'"
+            format!("{command} run inspect --config='config.json' -- 'ledger.json'")
         );
     }
 
     #[cfg(unix)]
     #[test]
     fn read_command_preserves_control_bytes_under_posix_sh() {
+        let command = crate::compatibility::profile().caller;
         let root = env::temp_dir().join(format!(
-            "soulmate-presentation-{}",
+            "{command}-presentation-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("clock should be after epoch")
                 .as_nanos()
         ));
         fs::create_dir(&root).expect("temporary directory should be created");
-        let binary = root.join("soulmate");
+        let binary = root.join(command);
         fs::write(
             &binary,
             "#!/bin/sh\nprintf '%s\\n' \"$#\" > \"$SM_OUTPUT\"\nfor arg in \"$@\"; do\n  printf '%s' \"$arg\" | od -An -tx1 -v | tr -d '[:space:]' >> \"$SM_OUTPUT\"\n  printf '\\n' >> \"$SM_OUTPUT\"\ndone\n",

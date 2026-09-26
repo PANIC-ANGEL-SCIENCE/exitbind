@@ -131,7 +131,7 @@ the record and digest; the agent need not compose JSON or copy revision
 counters. The older `work record` JSON surface remains available for expert
 continuation actions. The bundled skill describes the handoff and your host
 executes it. Exitbind
-`v0.25.0-rc.4` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.25.0-rc.5` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.

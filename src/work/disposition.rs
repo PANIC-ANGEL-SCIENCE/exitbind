@@ -95,8 +95,8 @@ pub(super) fn review_fact(next: &Value) -> Option<&'static str> {
 pub(super) fn lead_help(next: &Value) -> Option<(&'static str, &'static str)> {
     match review_fact(next)? {
         "finding_pending" => Some((
-            "An adverse finding is waiting for the Lead. It is evidence, not a requirement, and it starts no work until the Lead decides.",
-            "decide the finding: work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT",
+            "An adverse finding needs Lead disposition. For a clear defect inside the accepted task, record repair and continue without asking the owner again; ask the owner only when scope, authority, review choice, or an irreversible decision changes.",
+            "record the Lead decision: work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT",
         )),
         _ if next["action"] == "lead_decision" => Some((
             "Required checks are current. The review finding was resolved by Lead disposition, not approved.",

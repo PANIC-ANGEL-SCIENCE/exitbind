@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.25.0-rc.5
+
+- Keep an Exitbind executable's product identity when it is copied or renamed;
+  preserve the legacy `soulmate` command and separately built Soulmate executable.
+- Tell the Lead to repair clear in-scope defects without asking the owner again,
+  while retaining the required disposition record.
 - Route a reviewer `rework` in marked governed work to a Lead decision:
   `work disposition --decision repair|defer|reject|supersede` binds the
   pending finding cycle and basis. `defer` and `reject` start no work and

@@ -193,6 +193,11 @@ fn pending_lead(fixture: &Fixture, work: &str) -> Value {
         compact["presentation"]["state"]["review"],
         "finding_pending"
     );
+    assert_eq!(compact["humanHelp"]["ownerDecision"], "not_required");
+    assert!(compact["humanHelp"]["whatHappened"]
+        .as_str()
+        .unwrap()
+        .contains("continue without asking the owner again"));
     assert!(compact["humanHelp"]["nextAction"]["summary"]
         .as_str()
         .unwrap()

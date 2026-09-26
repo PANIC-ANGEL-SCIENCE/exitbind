@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const PROFILES: [(&str, &str); 3] = [
-    ("lead", "# Lead\n\nOwn the accepted goal, scope changes, verification, and final result.\n\nA reviewer finding is evidence, not a requirement, and a suggested fix is a proposal, not a decision. Classify each finding before any rework: repair it inside the task with your own repair boundary, defer it as valid but out of scope, reject it, or supersede the basis when the basis itself is wrong. Keep non-goals. When findings repeat, reconsider the basis, acceptance criteria, evidence, or reviewer scope before authorizing more work.\n"),
+    ("lead", "# Lead\n\nOwn the accepted goal, scope changes, verification, and final result.\n\nA reviewer finding is evidence, not a requirement, and a suggested fix is a proposal, not a decision. Classify each finding before any rework: repair it inside the task with your own repair boundary, defer it as valid but out of scope, reject it, or supersede the basis when the basis itself is wrong. For a clear defect inside the accepted task, record repair and proceed without asking the owner again; ask only if scope, authority, review choice, or an irreversible decision changes. Keep non-goals. When findings repeat, reconsider the basis, acceptance criteria, evidence, or reviewer scope before authorizing more work.\n"),
     ("worker", "# Worker\n\nImplement one bounded task and return changed files plus verification evidence.\n\nMake the smallest faithful change that satisfies the task and any Lead repair boundary. Do not treat reviewer speculation as a new commitment. If the repair boundary conflicts with the basis or is insufficient, return a contradiction or blocker instead of widening scope.\n"),
     ("reviewer", "# Reviewer\n\nReview the checked-out artifact and returned work, not their summary. Every finding needs a file:line reference, measured number, or short quote. Check guards, documented limitations, and deliberate decisions before reporting. For a whole-repository review, run the repository's mechanical inventory first and report adoption, long-term ownership, and agent-consumer findings separately. When a finding recurs, recommend the mechanical gate that would have caught it. Return role-scoped evidence; do not silently expand scope or claim the lead's final authority. A finding can be valid without being in the current scope; say which, and present any suggested implementation as a proposal, not an instruction.\n"),
 ];
@@ -332,16 +332,7 @@ fn dotagents_check(project_config: bool) -> Value {
     json!({"name":"dotagents","ok":false,"detail":format!("{detail}; host-specific caches and active-session reload were not inspected")})
 }
 fn config_name() -> &'static str {
-    let executable = std::env::current_exe().ok();
-    let name = executable
-        .as_deref()
-        .and_then(|path| path.file_name())
-        .and_then(|name| name.to_str());
-    if name == Some("exitbind") {
-        "exitbind.json"
-    } else {
-        "soulmate.json"
-    }
+    crate::compatibility::profile().config
 }
 fn absolute(path: &Path) -> Result<PathBuf, String> {
     if path.is_absolute() {

@@ -101,6 +101,9 @@ worker. A finding is evidence, not a requirement. Decide it with
 `--regression`, `supersede` takes an explicit `--successor-basis`, and `defer`
 or `reject` keep the finding without new work. A deferred or rejected finding
 is not an approval.
+For a clear defect inside the accepted task, record `repair` and proceed without
+asking the owner again. Ask only when the finding changes accepted scope,
+authority, review choice, or an irreversible decision.
 When the governed path is selected, inspect the bridge end to end: source,
 projected skill/config, fresh-session discovery, invocation, observed behavior,
 and outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as
