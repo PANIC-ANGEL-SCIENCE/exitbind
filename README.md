@@ -25,7 +25,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Candidate in this source: `v0.25.0-rc.4`. One local binary; it calls no model and runs
+Current prerelease: `v0.25.0-rc.4`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
