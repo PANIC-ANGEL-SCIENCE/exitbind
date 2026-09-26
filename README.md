@@ -25,7 +25,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current prerelease: `v0.25.0-rc.3`. One local binary; it calls no model and runs
+Candidate in this source: `v0.25.0-rc.4`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -44,6 +44,16 @@ no daemon or cloud service.
 
 Exitbind adds a local acceptance step to the agent loop, including uncommitted
 results before a push. CI and branch protection keep their existing roles.
+
+### When to use it
+
+| Job | Practical choice | What it establishes |
+| --- | --- | --- |
+| A small reversible edit, or a task whose native handoff and CI are sufficient | Keep the existing agent, Git and CI workflow. | The checks that workflow actually ran; no Exitbind setup is needed. |
+| A completion check without a continuing work record | A light gate such as [agent-done-or-not](https://github.com/mohamedzhioua/agent-done-or-not) may fit. | Its documented capture, assertion, policy and CI evidence; compare its current behavior for your task. |
+| Material work needing a recoverable same-work handoff and acceptance tied to the current result | Use Exitbind in the existing agent host. | Recorded work, applicable check evidence, the owner's review decision and Lead acceptance under [Exitbind's authority boundary](REFERENCE.md#authority-boundary). |
+
+[Proof-or-Stop](https://arxiv.org/abs/2607.14890) also studies evidence-gated lifecycle transitions. Its results do not evaluate Exitbind or prove that any gate establishes semantic correctness. Exitbind's current supported continuation keeps one work item across native hosts in a shared local workspace; enduring agents across new tasks, supported hosts and models, with project rules and memories, remain the product direction. Comparative task quality and operating cost are unmeasured here.
 
 ## Built for your coding agent
 
@@ -76,6 +86,10 @@ exitbind work check WORK       -> run the frozen check when it is the next actio
 - **Resume, don't reconstruct.** `work resume` rebuilds the next step from recorded
   state after a restart or context loss, keeps evidence that still belongs to
   the same result, and names the recorder version that answered.
+- **Record a native handoff without protocol bookkeeping.** A receiving host
+  uses the context token from `work next` with `work bind`, then records the
+  exact child return through `work child`. Exitbind builds the record and
+  digest; stale context is refused.
 
 See [work mutation results](docs/work-mutation-results.md) for the exact reply
 contract. A successful recording operation does not mean the check passed;
@@ -83,14 +97,14 @@ the reply reports the check's exit code or signal separately.
 
 ## See a wrong door refused
 
-This page describes the opt-in release candidate `v0.25.0-rc.3` for Linux x86_64
+This page describes the opt-in release candidate `v0.25.0-rc.4` for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.3/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.4/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

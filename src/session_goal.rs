@@ -7,7 +7,10 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 mod continuity;
-pub(crate) use continuity::{continuation_record, continuation_section, continuation_view};
+pub(crate) use continuity::{
+    continuation_bind, continuation_child, continuation_record, continuation_section,
+    continuation_view,
+};
 
 const FILE: &str = "session-goal.jsonl";
 const CATEGORIES: [&str; 5] = [

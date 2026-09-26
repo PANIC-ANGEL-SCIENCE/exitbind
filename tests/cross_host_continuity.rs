@@ -14,6 +14,180 @@ struct Fixture {
     work: String,
 }
 
+#[test]
+fn product_actions_use_emitted_context_and_preserve_child_bytes() {
+    let f = Fixture::new("w2ch-product-actions");
+    f.initialize();
+    f.ok(
+        json!({"action":"bind","expectedRevision":1,"expectedBindingRevision":0,
+        "host":"codex","session":"codex-session","hostVersion":"1"}),
+    );
+
+    let context = f.view()["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let before_refusals = f.history();
+    let mut invalid_context = context.clone();
+    invalid_context.pop();
+    invalid_context.push('0');
+    let refused = f.call(&[
+        "work",
+        "bind",
+        &f.work,
+        "--context",
+        &invalid_context,
+        "--host",
+        "claude",
+        "--session",
+        "claude-session",
+        "--host-version",
+        "2",
+    ]);
+    assert!(!refused.status.success());
+    let missing_session = f.call(&[
+        "work",
+        "bind",
+        &f.work,
+        "--context",
+        &context,
+        "--host",
+        "claude",
+        "--host-version",
+        "2",
+    ]);
+    assert!(!missing_session.status.success());
+    let unsupported_host = f.call(&[
+        "work",
+        "bind",
+        &f.work,
+        "--context",
+        &context,
+        "--host",
+        "unknown",
+        "--session",
+        "unknown-session",
+        "--host-version",
+        "2",
+    ]);
+    assert!(!unsupported_host.status.success());
+    assert_eq!(f.history(), before_refusals);
+
+    let rebound = f.call(&[
+        "work",
+        "bind",
+        &f.work,
+        "--context",
+        &context,
+        "--host",
+        "claude",
+        "--session",
+        "claude-session",
+        "--host-version",
+        "2",
+    ]);
+    assert!(rebound.status.success(), "{rebound:?}");
+    let rebound: Value = serde_json::from_slice(&rebound.stdout).unwrap();
+    assert_eq!(rebound["goalRevision"], 3);
+    let after_rebind = f.history();
+    let stale = f.call(&[
+        "work",
+        "bind",
+        &f.work,
+        "--context",
+        &context,
+        "--host",
+        "codex",
+        "--session",
+        "another-session",
+        "--host-version",
+        "2",
+    ]);
+    assert!(!stale.status.success());
+    assert_eq!(f.history(), after_rebind);
+
+    let context = f.view()["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let missing_child_id = f.call(&[
+        "work",
+        "child",
+        &f.work,
+        "inspect",
+        "--context",
+        &context,
+        "--result",
+        "exact child bytes\n",
+    ]);
+    assert!(!missing_child_id.status.success());
+    assert_eq!(f.history(), after_rebind);
+    let child = f.call_with_stdin(
+        &[
+            "work",
+            "child",
+            &f.work,
+            "inspect",
+            "--context",
+            &context,
+            "--native-child",
+            "claude-child",
+        ],
+        b"exact child bytes\n",
+    );
+    assert!(child.status.success(), "{child:?}");
+    let child: Value = serde_json::from_slice(&child.stdout).unwrap();
+    assert_eq!(child["goalRevision"], 4);
+    assert_eq!(f.view()["children"][0]["resultText"], "exact child bytes\n");
+
+    let retry = f.call(&[
+        "work",
+        "child",
+        &f.work,
+        "inspect",
+        "--context",
+        &context,
+        "--native-child",
+        "claude-child",
+        "--result",
+        "exact child bytes\n",
+    ]);
+    assert!(retry.status.success(), "{retry:?}");
+    let retry: Value = serde_json::from_slice(&retry.stdout).unwrap();
+    assert_eq!(retry["effect"], "unchanged");
+
+    let before_negative_child = f.history();
+    let conflict = f.call(&[
+        "work",
+        "child",
+        &f.work,
+        "inspect",
+        "--context",
+        &context,
+        "--native-child",
+        "claude-child",
+        "--result",
+        "changed child bytes",
+    ]);
+    assert!(!conflict.status.success());
+    let oversized = "x".repeat(8 * 1024 + 1);
+    let oversized = f.call(&[
+        "work",
+        "child",
+        &f.work,
+        "oversized",
+        "--context",
+        &context,
+        "--native-child",
+        "claude-oversized",
+        "--result",
+        &oversized,
+    ]);
+    assert!(!oversized.status.success());
+    assert!(String::from_utf8_lossy(&oversized.stderr).contains("assessed artifact route"));
+    assert_eq!(f.history(), before_negative_child);
+}
+
 impl Fixture {
     fn new(label: &str) -> Self {
         Self::with_preservation_command(label, "true")
@@ -60,6 +234,19 @@ impl Fixture {
             .args(["--config", "exitbind.json"])
             .output()
             .unwrap()
+    }
+    fn call_with_stdin(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(&self.root)
+            .args(args)
+            .args(["--config", "exitbind.json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        child.wait_with_output().unwrap()
     }
     fn record(&self, value: Value) -> Output {
         self.record_work(&self.work, value)

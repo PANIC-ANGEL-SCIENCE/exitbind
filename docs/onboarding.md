@@ -124,10 +124,14 @@ task list. Scope changes and decisions still follow the configured
 [authority boundary](../REFERENCE.md#authority-boundary); missing permission
 or an unavailable native agent requires a real resolution.
 
-This path also works with the historical JSON command surface when a compatible
-installed binary is required; it does not require building Rust locally. The
-bundled skill describes the handoff and your host executes it. Exitbind
-`v0.25.0-rc.3` includes optional `--event-id` and `--text` conveniences; they are not
+For a same-work handoff, give the receiving host the work locator. It reads
+`work next`, binds its actual native session with the emitted context token,
+and records the exact native child result through `work child`. Exitbind builds
+the record and digest; the agent need not compose JSON or copy revision
+counters. The older `work record` JSON surface remains available for expert
+continuation actions. The bundled skill describes the handoff and your host
+executes it. Exitbind
+`v0.25.0-rc.4` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.

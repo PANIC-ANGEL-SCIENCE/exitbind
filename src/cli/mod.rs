@@ -1,5 +1,5 @@
 use serde_json::json;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read};
 
 use crate::config::profile;
 use crate::{
@@ -32,6 +32,80 @@ fn option<'a>(a: &'a Arguments, name: &str, message: &str) -> Result<&'a str, St
         .get(name)
         .map(String::as_str)
         .ok_or_else(|| message.to_owned())
+}
+
+fn context_fence(a: &Arguments, work: &str) -> Result<(u64, u64), String> {
+    let context = a
+        .options
+        .get("context")
+        .ok_or("work bind/child requires the emitted --context TOKEN")?;
+    let parts = context.split(':').collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return Err("work context must be the emitted mutationContext token".into());
+    }
+    let context_work = parts[0];
+    let goal = parts[1]
+        .parse::<u64>()
+        .map_err(|_| "work context goal revision is invalid")?;
+    let binding = parts[2]
+        .parse::<u64>()
+        .map_err(|_| "work context binding revision is invalid")?;
+    let digest = parts[3];
+    if context_work != work {
+        return Err("work context belongs to another work locator".into());
+    }
+    let body = json!({"work":work,"goalRevision":goal,"bindingRevision":binding});
+    if crate::evidence::hash::value(&body) != digest {
+        return Err("work context token is invalid".into());
+    }
+    Ok((goal, binding))
+}
+
+fn bounded_cli<'a>(value: &'a str, field: &str, max: usize) -> Result<&'a str, String> {
+    if value.is_empty() || value.trim().is_empty() {
+        return Err(format!("work {field} is required"));
+    }
+    if value.len() > max {
+        let next = if field == "assignment" {
+            "use a short label and keep the full task in the recorded requirements"
+        } else {
+            "report the oversized native field; no record was written"
+        };
+        return Err(format!("work {field} exceeds {max} bytes; {next}"));
+    }
+    if value.contains('\0') {
+        return Err(format!("work {field} contains NUL"));
+    }
+    Ok(value)
+}
+
+fn child_result(a: &Arguments) -> Result<String, String> {
+    let inline = a.options.get("result").map(String::as_str);
+    let file = a.options.get("result-file");
+    if inline.is_some() && file.is_some() {
+        return Err("work child accepts only one of --result and --result-file".into());
+    }
+    let bytes = if let Some(value) = inline {
+        value.as_bytes().to_vec()
+    } else if let Some(path) = file {
+        std::fs::read(path).map_err(|error| format!("work child result file: {error}"))?
+    } else {
+        if std::io::stdin().is_terminal() {
+            return Err(
+                "work child requires --result, --result-file, or piped child result".into(),
+            );
+        }
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .take(8 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("work child result: {error}"))?;
+        bytes
+    };
+    if bytes.len() > 8 * 1024 {
+        return Err("work child result exceeds 8192 bytes; keep the exact result and report that an assessed artifact route is needed; no child record was written".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "work child result must be UTF-8".into())
 }
 
 pub fn run(argv: Vec<String>) -> Result<(), String> {
@@ -465,9 +539,82 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume",
+        "work requires begin, next, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume",
     )?;
     match action {
+        "bind" => {
+            args::assert_options(
+                "work bind",
+                a,
+                &[
+                    "config",
+                    "context",
+                    "host",
+                    "session",
+                    "host-version",
+                ],
+            )?;
+            args::assert_positionals("work bind", a, 2)?;
+            let work = positional(a, 1, "work bind requires WORK")?;
+            let (expected_revision, expected_binding_revision) = context_fence(a, work)?;
+            let host = bounded_cli(
+                option(a, "host", "work bind requires --host HOST")?,
+                "host",
+                32,
+            )?;
+            let session = bounded_cli(
+                option(a, "session", "work bind requires the actual native --session SESSION")?,
+                "session",
+                256,
+            )?;
+            let host_version = bounded_cli(
+                option(a, "host-version", "work bind requires --host-version VERSION")?,
+                "host-version",
+                64,
+            )?;
+            print_json(&crate::session_goal::continuation_bind(
+                l,
+                work,
+                expected_revision,
+                expected_binding_revision,
+                host,
+                session,
+                host_version,
+            )?)
+        }
+        "child" => {
+            args::assert_options(
+                "work child",
+                a,
+                &[
+                    "config",
+                    "context",
+                    "native-child",
+                    "result",
+                    "result-file",
+                ],
+            )?;
+            args::assert_positionals("work child", a, 3)?;
+            let work = positional(a, 1, "work child requires WORK ASSIGNMENT")?;
+            let assignment = positional(a, 2, "work child requires WORK ASSIGNMENT")?;
+            let assignment = bounded_cli(assignment, "assignment", 128)?;
+            let native_child = bounded_cli(
+                option(a, "native-child", "work child requires --native-child ID")?,
+                "native child",
+                256,
+            )?;
+            let result = child_result(a)?;
+            let (expected_revision, binding_revision) = context_fence(a, work)?;
+            print_json(&crate::session_goal::continuation_child(
+                l,
+                work,
+                expected_revision,
+                binding_revision,
+                assignment,
+                native_child,
+                &result,
+            )?)
+        }
         "continuation" => {
             args::assert_options(
                 "work continuation",

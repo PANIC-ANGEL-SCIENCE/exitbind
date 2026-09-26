@@ -8,6 +8,25 @@ fn route(loaded: &Loaded, work_id: &str, tail: Vec<String>) -> Value {
     crate::work::compact::continuation_route(&loaded.path, suffix)
 }
 
+fn mutation_context(work_id: &str, goal_revision: &Value, binding_revision: u64) -> Value {
+    let body = json!({
+        "work": work_id,
+        "goalRevision": goal_revision,
+        "bindingRevision": binding_revision,
+    });
+    json!({
+        "work": work_id,
+        "goalRevision": goal_revision,
+        "bindingRevision": binding_revision,
+        "token": format!(
+            "{work_id}:{}:{}:{}",
+            goal_revision.as_u64().unwrap_or_default(),
+            binding_revision,
+            hash::value(&body)
+        ),
+    })
+}
+
 pub(crate) fn has_unresolved(record: &Value) -> bool {
     let c = &record["continuation"];
     if c.is_null() {
@@ -89,6 +108,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
     }
     let c = &record["continuation"];
     let (current_inputs, current_conditions) = current_conditions(loaded)?;
+    let binding_revision = c["binding"]["revision"].as_u64().unwrap_or(0);
     let mut requirements = Vec::new();
     for requirement in c["requirements"]
         .as_array()
@@ -124,7 +144,9 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
         }
         requirements.push(json!({"requirement":requirement,"support":valid,"unresolved":valid.iter().all(|x| x["applicableCurrent"]!=true)}));
     }
-    let mut result = json!({"work":work_id,"goalRevision":record["revision"],"source":c["source"],
+    let mut result = json!({"work":work_id,"goalRevision":record["revision"],
+        "mutationContext":mutation_context(work_id, &record["revision"], binding_revision),
+        "source":c["source"],
         "requirements":requirements,"binding":c["binding"],"corrections":c["corrections"],
         "operations":c["operations"],"diagnoses":c["diagnoses"],"children":c["children"],
         "currentInputsSha256":current_inputs,"currentConditionsSha256":current_conditions,
@@ -172,13 +194,12 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
                 "sameExecutableRequired":route["sameExecutableRequired"]})
         })
         .collect::<Vec<_>>();
-    Ok(
-        json!({"work":work_id,"goalRevision":full["goalRevision"],"binding":full["binding"],
+    Ok(json!({"work":work_id,"goalRevision":full["goalRevision"],
+        "mutationContext":full["mutationContext"],"binding":full["binding"],
         "sourceSha256":full["source"]["sha256"],"currentInputsSha256":full["currentInputsSha256"],
         "currentConditionsSha256":full["currentConditionsSha256"],
         "wholeGoalReady":full["wholeGoalReady"],"readOnly":true,"requiresExpansion":true,
-        "sections":sections}),
-    )
+        "sections":sections}))
 }
 
 pub(crate) fn continuation_section(

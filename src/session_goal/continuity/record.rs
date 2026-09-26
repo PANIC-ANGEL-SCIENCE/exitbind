@@ -471,18 +471,12 @@ fn apply(loaded: &Loaded, work_id: &str, previous: &Value, input: &Value) -> Res
     Ok(sealed(record, Some(previous)))
 }
 
-pub(crate) fn continuation_record(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
+pub(crate) fn continuation_record_value(
+    loaded: &Loaded,
+    work_id: &str,
+    input: Value,
+) -> Result<Value, String> {
     verify_work(loaded, work_id)?;
-    let mut bytes = Vec::new();
-    std::io::stdin()
-        .take(MAX_INPUT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_INPUT {
-        return Err("continuation input exceeds 16 KiB".into());
-    }
-    let input: Value =
-        serde_json::from_slice(&bytes).map_err(|_| "continuation input is not JSON".to_owned())?;
     let action = field(&input, "action", 32)?;
     let (record, appended) = if action == "init" {
         init(loaded, work_id, &input)?
@@ -497,4 +491,66 @@ pub(crate) fn continuation_record(loaded: &Loaded, work_id: &str) -> Result<Valu
         (record, appended)
     };
     crate::work::compact::continuation_mutation(&record, work_id, action, appended, &loaded.path)
+}
+
+pub(crate) fn continuation_record(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
+    verify_work(loaded, work_id)?;
+    let mut bytes = Vec::new();
+    std::io::stdin()
+        .take(MAX_INPUT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_INPUT {
+        return Err("continuation input exceeds 16 KiB".into());
+    }
+    let input: Value =
+        serde_json::from_slice(&bytes).map_err(|_| "continuation input is not JSON".to_owned())?;
+    continuation_record_value(loaded, work_id, input)
+}
+
+pub(crate) fn continuation_bind(
+    loaded: &Loaded,
+    work_id: &str,
+    expected_revision: u64,
+    expected_binding_revision: u64,
+    host: &str,
+    session: &str,
+    host_version: &str,
+) -> Result<Value, String> {
+    continuation_record_value(
+        loaded,
+        work_id,
+        json!({
+            "action":"bind",
+            "expectedRevision":expected_revision,
+            "expectedBindingRevision":expected_binding_revision,
+            "host":host,
+            "session":session,
+            "hostVersion":host_version,
+        }),
+    )
+}
+
+pub(crate) fn continuation_child(
+    loaded: &Loaded,
+    work_id: &str,
+    expected_revision: u64,
+    binding_revision: u64,
+    assignment: &str,
+    native_child: &str,
+    result_text: &str,
+) -> Result<Value, String> {
+    continuation_record_value(
+        loaded,
+        work_id,
+        json!({
+            "action":"child",
+            "expectedRevision":expected_revision,
+            "bindingRevision":binding_revision,
+            "assignment":assignment,
+            "nativeChild":native_child,
+            "resultText":result_text,
+            "resultSha256":hash::text(result_text),
+        }),
+    )
 }

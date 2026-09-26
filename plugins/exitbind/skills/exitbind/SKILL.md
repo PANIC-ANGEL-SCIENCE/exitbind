@@ -36,32 +36,28 @@ required. If it returns `requiresExpansion`, follow the section and item
 commands it gives to read exact bounded facts. Do not inspect raw state files
 or infer a retry from a missing native process.
 
-When this receiving host must hand off an actual native child result, bind its
-current host and native session before recording the child. Never attach a
-Claude child under a binding left by Codex, or the reverse. Read the current
-`goalRevision` and `binding.revision` from `work continuation WORK`, then pipe
-one JSON object to `exitbind work record WORK --config CONFIG`:
+When handing off an actual native child result, first bind the receiving host
+and native session. Pass the `mutationContext.token` from `work next` or `work
+continuation` to the supported action:
 
-```json
-{"action":"bind","expectedRevision":7,"expectedBindingRevision":1,"host":"claude","session":"native-session-id","hostVersion":"2.1.280"}
+```sh
+exitbind work bind WORK --context TOKEN --host claude --session NATIVE_SESSION --host-version VERSION
 ```
 
-Use the actual revisions and host-reported session/version; the numbers and
-identity above only show the field names. A native launcher may expose its
-actual session ID as `EXITBIND_NATIVE_SESSION_ID`. If the native session
-identity is unavailable, report that limit instead of inventing one. Read the new
-`goalRevision` and `binding.revision`, then record the exact child report:
+Use only host-reported identity. A native launcher may expose its session ID as
+`EXITBIND_NATIVE_SESSION_ID`; if unavailable, report that limit instead of
+inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
+record the exact UTF-8 child result and native child ID:
 
-```json
-{"action":"child","expectedRevision":8,"bindingRevision":2,"assignment":"narrow task","nativeChild":"native child id","resultText":"exact UTF-8 child report","resultSha256":"SHA-256 of resultText"}
+```sh
+exitbind work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID < EXACT_RESULT_FILE
 ```
 
-Keep the actual report within 8 KiB. Compute the digest from its exact UTF-8
-bytes, and use a child ID from the native host. Follow the compact mutation
-reply's read-only `nextAction.command` to verify the stored result and origin.
-Use the same executable and configuration as the recovery view. This records
-host-reported authorship; it does not authenticate a provider session or make
-the child an independent review.
+The CLI constructs the record, computes the digest and enforces the saved
+context fence. Keep the exact result within 8 KiB; never truncate it. Follow
+the mutation reply's read-only `nextAction.command` with the same executable
+and configuration to verify the stored result and origin. A host-reported
+child is not a provider-authenticated identity or independent review.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.

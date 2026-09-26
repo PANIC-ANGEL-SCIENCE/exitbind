@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.0-rc.4
+
+- Add supported receiving-host bind and native-child result commands that build
+  canonical continuation records and exact content digests from a context token.
+- Keep stale-context and conflicting-result refusals while making the normal
+  handoff path independent of manual JSON, hash and revision bookkeeping.
+- Clarify the current same-work capability, environment-preserving setup and
+  evidence limits in installed guidance and public documentation.
+
 ## 0.25.0-rc.3
 
 - Attach continuation to an existing open goal for the same work without

@@ -24,10 +24,19 @@ fn evidence_verified(inspected: &Value) -> bool {
 }
 
 fn field<'a>(value: &'a Value, key: &str, max: usize) -> Result<&'a str, String> {
-    value[key]
-        .as_str()
-        .filter(|s| !s.trim().is_empty() && s.len() <= max && !s.contains('\0'))
-        .ok_or_else(|| format!("continuation requires bounded {key}"))
+    let Some(value) = value[key].as_str() else {
+        return Err(format!("continuation requires bounded {key}"));
+    };
+    if value.len() > max {
+        return Err(format!("continuation {key} exceeds {max} bytes"));
+    }
+    if value.contains('\0') {
+        return Err(format!("continuation {key} contains NUL"));
+    }
+    if value.trim().is_empty() {
+        return Err(format!("continuation requires bounded {key}"));
+    }
+    Ok(value)
 }
 
 fn revision(value: &Value, key: &str) -> Result<u64, String> {
@@ -206,5 +215,5 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
 
 mod record;
 mod view;
-pub(crate) use record::continuation_record;
+pub(crate) use record::{continuation_bind, continuation_child, continuation_record};
 pub(crate) use view::{continuation_section, continuation_view, has_unresolved, support_current};

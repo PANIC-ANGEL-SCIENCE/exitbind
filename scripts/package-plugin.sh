@@ -9,7 +9,7 @@ fail() {
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 package="$repo_root/plugins/exitbind"
-output=${1:-"$repo_root/dist/exitbind-0.25.0-rc.3-plugin.tar.gz"}
+output=${1:-"$repo_root/dist/exitbind-0.25.0-rc.4-plugin.tar.gz"}
 
 case "$output" in
   /*) ;;
@@ -40,4 +40,4 @@ python3 "$script_dir/package-plugin.py" "$package" "$gzip_file" \
 test -s "$gzip_file" || fail "archive is empty"
 mv -n "$gzip_file" "$output"
 test ! -e "$gzip_file" || fail "archive output appeared during packaging"
-printf '%s\n' "packaged plugin=exitbind version=0.25.0-rc.3 archive=$output"
+printf '%s\n' "packaged plugin=exitbind version=0.25.0-rc.4 archive=$output"

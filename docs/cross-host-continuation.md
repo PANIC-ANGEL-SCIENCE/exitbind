@@ -42,13 +42,14 @@ an explicit `cover` assertion against the source hash. That assertion is
 }
 ```
 
-`bind` records one current lead host/session and increments its binding
-revision. It requires the current goal revision and the previous binding
-revision. Repeating the identical bind has no effect; a stale or conflicting
-bind is refused. Subsequent records require both `expectedRevision` and
-`bindingRevision`. A `refine` increments only the named requirement revision
-and retains its prior text. Existing support remains recorded but no longer
-applies to the new revision.
+`work bind WORK --context TOKEN --host HOST --session SESSION --host-version
+VERSION` records the receiving host and native session. Take `TOKEN` from the
+read-only view's `mutationContext.token`; the CLI carries its goal and binding
+revisions. Repeating the identical bind has no effect; a stale or conflicting
+bind is refused without fetching a newer revision. The expert `work record`
+surface remains available for other continuation mutations. A `refine`
+increments only the named requirement revision and retains its prior text.
+Existing support remains recorded but no longer applies to the new revision.
 
 `work record` returns a bounded mutation outcome with its revision, append
 effect and exact record identity. Follow its read-only `nextAction.command` to
@@ -82,21 +83,15 @@ parameters are refused. `observe` records a status or native handle from the
 origin host. No missing process-list entry authorizes another dispatch.
 `diagnose` records the observation class, conditions and invalidation rule.
 
-`child` accepts the exact text returned through a native host child tool,
-with a digest, assignment and child ID scoped to its originating host and
-session. The result is
-marked `host_reported_native_child`: transporting bytes does not make it an
-independent review or a lead acceptance. The CLI accepts up to 8 KiB of child
-text in a 16 KiB input object; larger outputs need a separately assessed
-artifact path and cannot be silently shortened. The view is bounded at 64 KiB.
-Before recording a receiving host's child, bind that host's actual native
-session with `work record` using the current `goalRevision` and
-`binding.revision`; then refresh both revisions before the `child` record.
-Recording under the previous host's binding attributes the child to the wrong
-origin. Project guidance includes the two small JSON shapes, so the receiving
-agent need not reverse-engineer the mutation schema. Native identity remains
-host-reported, and an unavailable session ID must be reported rather than
-invented.
+`work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
+accepts exact UTF-8 text from standard input or `--result-file`; use the new
+token returned after `work bind`. The CLI constructs the existing record and
+SHA-256 digest. The child is scoped to the current receiving host and session
+and marked `host_reported_native_child`: transporting bytes does not make it
+an independent review or Lead acceptance. The result limit remains 8 KiB;
+larger outputs need a separately assessed artifact path and cannot be silently
+shortened. The view is bounded at 64 KiB. An unavailable native session or
+child ID must be reported rather than invented.
 When a complete view exceeds that bound, it returns section commands; an
 oversized section returns indexed item commands. For example,
 `work continuation WORK --section children --index 0` reads one exact result
