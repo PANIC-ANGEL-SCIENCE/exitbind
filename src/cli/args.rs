@@ -78,6 +78,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "task",
     "target",
     "host",
+    "agent-type",
     "session",
     "host-version",
     "native-child",

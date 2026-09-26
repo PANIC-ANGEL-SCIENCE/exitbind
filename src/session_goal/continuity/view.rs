@@ -214,10 +214,23 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
     ]
     .map(String::from)
     .to_vec();
+    let prepare = [
+        "work",
+        "child",
+        "prepare",
+        work_id,
+        "SHORT_ASSIGNMENT",
+        "--context",
+        "FRESH_TOKEN",
+    ]
+    .map(String::from)
+    .to_vec();
     let bind = crate::work::compact::continuation_route(&loaded.path, bind);
+    let prepare = crate::work::compact::continuation_route(&loaded.path, prepare);
     let child = crate::work::compact::continuation_route(&loaded.path, child);
     json!({
         "bind": bind["command"],
+        "prepareChild": prepare["command"],
         "child": child["command"],
         "sameConfigRequired": bind["sameConfigRequired"],
         "sameExecutableRequired": bind["sameExecutableRequired"],
@@ -226,6 +239,7 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
             "HOST_VERSION": "the host's reported version",
             "NATIVE_SESSION": "$EXITBIND_NATIVE_SESSION_ID; if unset, report that limit instead of inventing one",
             "FRESH_TOKEN": "mutationContext.token from the bind reply's nextAction.command",
+            "PREPARE": "run prepareChild before launching the native child; hosts with Exitbind's subagent hooks then record its ID and final message, and `child` is only for hosts without them",
             "SHORT_ASSIGNMENT": "a short description of the child's task",
             "CHILD_ID": "the host-reported native child ID; Claude Code shows a subagent's agentId when the subagent runs in the background, not in a foreground result. If none is visible, report that limit instead of inventing one",
         },
@@ -237,6 +251,10 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
     let mut full = complete_view(loaded, work_id)?;
     let receive = receive_routes(loaded, work_id, &full["mutationContext"]["token"]);
     full["receive"] = receive.clone();
+    let prepared = super::capture::summary(loaded, work_id);
+    if prepared.as_array().map_or(true, |items| !items.is_empty()) {
+        full["preparedChildren"] = prepared.clone();
+    }
     if bounded(&full)? {
         return Ok(full);
     }
@@ -254,7 +272,7 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
         "sourceSha256":full["source"]["sha256"],"currentInputsSha256":full["currentInputsSha256"],
         "currentConditionsSha256":full["currentConditionsSha256"],
         "wholeGoalReady":full["wholeGoalReady"],"readOnly":true,"requiresExpansion":true,
-        "sections":sections,"receive":receive}))
+        "sections":sections,"receive":receive,"preparedChildren":full["preparedChildren"]}))
 }
 
 pub(crate) fn continuation_section(

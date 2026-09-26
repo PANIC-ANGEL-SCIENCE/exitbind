@@ -8,8 +8,8 @@ use std::path::Path;
 
 mod continuity;
 pub(crate) use continuity::{
-    continuation_bind, continuation_child, continuation_record, continuation_section,
-    continuation_view,
+    claim_child, continuation_bind, continuation_child, continuation_record, continuation_section,
+    continuation_view, finalize_child, prepare_child,
 };
 
 const FILE: &str = "session-goal.jsonl";

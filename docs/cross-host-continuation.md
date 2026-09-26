@@ -99,6 +99,16 @@ parameters are refused. `observe` records a status or native handle from the
 origin host. No missing process-list entry authorizes another dispatch.
 `diagnose` records the observation class, conditions and invalidation rule.
 
+To keep a native child's result, run `work child prepare WORK SHORT_ASSIGNMENT
+--context FRESH_TOKEN` before launching it. In Claude Code, Exitbind's managed
+SubagentStart hook claims that prepared child for the bound parent session with
+the host-reported child ID, and SubagentStop records the host's final message
+exactly through the child record below; the parent relays neither. At most one
+prepared child waits per parent session, and an unprepared subagent is never
+recorded. `work continuation WORK` lists `preparedChildren`; a capture that
+cannot attach, such as an oversized message or a binding that changed before
+the child finished, stays there as `failed` with its reason.
+
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind
 reply's read-only `nextAction.command` to obtain a fresh token. The CLI

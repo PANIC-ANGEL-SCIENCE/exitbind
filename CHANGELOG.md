@@ -7,6 +7,9 @@
 - Start an explicit-locator handoff with `work continuation WORK`, whose
   `receive` block gives the bind and native-child commands; the managed
   SessionStart context names that route.
+- Capture a prepared native child from the host: `work child prepare` records
+  the intent, and the managed Claude Code SubagentStart and SubagentStop hooks
+  record the host-reported child ID and exact final message.
 - Keep a navigation-only current-work focus: `work begin` selects the new work,
   `work resume` returns it, older running work stays history
   (`work resume --history`), and `work focus WORK` repoints it.

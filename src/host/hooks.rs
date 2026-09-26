@@ -13,7 +13,17 @@ use std::path::{Path, PathBuf};
 pub const PROTOCOL: &str = "soulmate-hook-v1";
 pub const HOOK_COMMAND: &str = "command -v soulmate >/dev/null 2>&1 && soulmate hook-run || true";
 const MARKER: &str = "soulmate hook-run";
-const EVENTS: [&str; 2] = ["SessionStart", "SubagentStart"];
+const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
+
+/// Claude Code also delivers SubagentStop, which Exitbind uses to capture a
+/// prepared native child's final message; other hosts keep the first two.
+fn host_events(host: &str) -> &'static [&'static str] {
+    if host == "claude" {
+        &EVENTS
+    } else {
+        &EVENTS[..2]
+    }
+}
 const CODEX_CONTEXT_LIMIT: i64 = 4096;
 const HOOK_TIMEOUT_SECONDS: i64 = 5;
 
@@ -119,7 +129,7 @@ struct State {
     source: Option<String>,
     mode: Option<u32>,
     document: Value,
-    exact: [usize; 2],
+    exact: [usize; 3],
     conflicts: Vec<String>,
 }
 
@@ -164,9 +174,9 @@ fn inspect(
     document: &Value,
     host: &str,
     target: &Path,
-) -> Result<([usize; 2], Vec<String>), String> {
+) -> Result<([usize; 3], Vec<String>), String> {
     let hooks = match document.get("hooks") {
-        None => return Ok(([0, 0], Vec::new())),
+        None => return Ok(([0, 0, 0], Vec::new())),
         Some(value) => value.as_object().ok_or_else(|| {
             format!(
                 "unexpected hooks shape in {}: hooks must be an object",
@@ -178,9 +188,9 @@ fn inspect(
     let expected_object = expected
         .as_object()
         .ok_or("expected hook handler must be an object")?;
-    let mut exact = [0usize; 2];
+    let mut exact = [0usize; 3];
     let mut conflicts = Vec::new();
-    for (event_index, event) in EVENTS.iter().enumerate() {
+    for (event_index, event) in host_events(host).iter().enumerate() {
         let Some(groups) = hooks.get(*event) else {
             continue;
         };
@@ -256,11 +266,13 @@ fn retire_superseded(document: &mut Value, host: &str) -> usize {
 }
 
 fn stage(action: &str, state: &State) -> Result<Staged, String> {
+    let events = host_events(&state.host);
     let staged = settings::stage(
         action,
         &state.document,
         state.source.is_some(),
-        state.exact,
+        &state.exact[..events.len()],
+        events,
         &expected(&state.host),
     )?;
     let result_state = if staged.changed {
@@ -292,8 +304,10 @@ struct Staged {
     actions: Vec<String>,
 }
 fn result(action: &str, state: &State) -> Value {
-    let installed = state.exact.iter().all(|count| *count > 0);
-    let partial = state.exact.iter().any(|count| *count > 0);
+    let events = host_events(&state.host);
+    let applicable = &state.exact[..events.len()];
+    let installed = applicable.iter().all(|count| *count > 0);
+    let partial = applicable.iter().any(|count| *count > 0);
     let state_name = if !state.conflicts.is_empty() {
         "conflict"
     } else if installed {
@@ -315,7 +329,7 @@ fn result(action: &str, state: &State) -> Value {
                 }
             ));
         } else {
-            for (i, event) in EVENTS.iter().enumerate() {
+            for (i, event) in events.iter().enumerate() {
                 actions.push(if state.exact[i] > 0 {
                     format!("keep exact {event} handler")
                 } else {
@@ -331,7 +345,11 @@ fn result(action: &str, state: &State) -> Value {
             }
         }
     }
-    json!({"action":action,"host":state.host,"supported":true,"targetPath":state.target.display().to_string(),"settingsFileExists":state.source.is_some(),"state":state_name,"exactHandlers":{"SessionStart":state.exact[0],"SubagentStart":state.exact[1]},"conflicts":state.conflicts,"changed":false,"actions":actions})
+    let mut exact_handlers = Map::new();
+    for (i, event) in events.iter().enumerate() {
+        exact_handlers.insert((*event).to_owned(), json!(state.exact[i]));
+    }
+    json!({"action":action,"host":state.host,"supported":true,"targetPath":state.target.display().to_string(),"settingsFileExists":state.source.is_some(),"state":state_name,"exactHandlers":exact_handlers,"conflicts":state.conflicts,"changed":false,"actions":actions})
 }
 
 fn unsupported(action: &str, host: &str, root: &str) -> Result<Value, String> {

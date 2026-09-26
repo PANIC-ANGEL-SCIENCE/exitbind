@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
 const MAX_OUTPUT: usize = 16 * 1024;
-const EVENTS: [&str; 2] = ["SessionStart", "SubagentStart"];
+const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
 
 /// Classify activation from consequence and promotion requirements. A count of
 /// touched files is intentionally absent: harmless work can span many files,
@@ -228,6 +228,15 @@ pub fn run() -> Result<(), String> {
         }
         return Ok(());
     }
+    // Prepared child capture: claim at start, finalize at stop. Failures stay
+    // inside Exitbind's private state and never fail the host.
+    if event == "SubagentStart" {
+        let _ = retry_busy(|| crate::session_goal::claim_child(&loaded, object));
+    }
+    if event == "SubagentStop" {
+        let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object));
+        return Ok(());
+    }
     let text = if event == "SessionStart" {
         let mut text = session_summary(&loaded.config);
         if crate::producer::exitbind_surface() {
@@ -291,7 +300,19 @@ const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task
 const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
-const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work continuation WORK`; its `receive` block gives the bind and native-child commands. Do not read raw .exitbind state to recover it.";
+const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work continuation WORK`; its `receive` block gives the bind and child-prepare commands, and Exitbind's subagent hooks record a prepared child. Do not read raw .exitbind state to recover it.";
+
+fn retry_busy(action: impl Fn() -> Result<(), String>) -> Result<(), String> {
+    for _ in 0..20 {
+        match action() {
+            Err(error) if error.contains("busy") => {
+                std::thread::sleep(std::time::Duration::from_millis(100))
+            }
+            other => return other,
+        }
+    }
+    Err("child capture state stayed busy".into())
+}
 
 fn routing_text(event: &str, update: Option<&str>, routing: Routing) -> Option<String> {
     // The legacy Soulmate surface keeps its original silent contract; only the

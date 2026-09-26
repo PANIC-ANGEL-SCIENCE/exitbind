@@ -83,7 +83,8 @@ pub(crate) fn stage(
     action: &str,
     document: &Value,
     source_exists: bool,
-    exact: [usize; 2],
+    exact: &[usize],
+    events: &[&str],
     expected: &Value,
 ) -> Result<StagedSettings, String> {
     let mut next = document.clone();
@@ -103,7 +104,7 @@ pub(crate) fn stage(
             .get_mut("hooks")
             .and_then(Value::as_object_mut)
             .ok_or("hook settings hooks must be an object")?;
-        for (i, event) in ["SessionStart", "SubagentStart"].iter().enumerate() {
+        for (i, event) in events.iter().enumerate() {
             if exact[i] > 0 {
                 actions.push(format!("keep exact {event} handler"));
                 continue;
@@ -129,7 +130,7 @@ pub(crate) fn stage(
                 actions: vec!["no changes".into()],
             });
         };
-        for event in ["SessionStart", "SubagentStart"] {
+        for event in events.iter().copied() {
             let Some(groups) = hooks.get_mut(event).and_then(Value::as_array_mut) else {
                 continue;
             };

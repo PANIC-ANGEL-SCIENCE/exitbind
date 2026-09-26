@@ -48,23 +48,25 @@ exitbind work bind WORK --context TOKEN --host claude --session NATIVE_SESSION -
 ```
 
 Use only host-reported identity. In Claude Code, Exitbind's SessionStart hook
-exports the host's session ID as `EXITBIND_NATIVE_SESSION_ID`, and a native
-subagent's `agentId` is its child ID. Claude Code shows that `agentId` when the
-subagent runs in the background, not in a foreground result. Other launchers
-may set the same variable. If unavailable, report that limit instead of inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
-record the exact UTF-8 child result and native child ID:
+exports the host's session ID as `EXITBIND_NATIVE_SESSION_ID`; other launchers
+may set the same variable. If unavailable, report that limit instead of
+inventing one. Run the returned read-only `nextAction.command` for a fresh
+context token, then prepare the child before launching it:
 
 ```sh
-exitbind work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID < EXACT_RESULT_FILE
+exitbind work child prepare WORK SHORT_ASSIGNMENT --context FRESH_TOKEN
 ```
 
-The CLI constructs the record, computes the digest and enforces the saved
-context fence. Pass the child's final message exactly as the host delivered
-it; do not summarize, translate, or annotate it. Keep it within 8 KiB; never
-truncate it. Follow
-the mutation reply's read-only `nextAction.command` with the same executable
-and configuration to verify the stored result and origin. A host-reported
-child is not a provider-authenticated identity or independent review.
+Then launch the native child normally. In Claude Code, Exitbind's managed
+subagent hooks record the child's host-reported ID and its final message
+exactly as the host delivers it; do not copy either yourself. Read
+`exitbind work continuation WORK` afterwards: `preparedChildren` shows the
+capture state and `children` the recorded result. An unprepared subagent is
+never recorded. On a host without these hooks, record the exact final message
+yourself with `exitbind work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN
+--native-child CHILD_ID < EXACT_RESULT_FILE`, within 8 KiB and never truncated.
+A host-reported child is not a provider-authenticated identity or independent
+review.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.

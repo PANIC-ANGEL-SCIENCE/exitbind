@@ -581,6 +581,21 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 host_version,
             )?)
         }
+        "child" if a.positional.get(1).map(String::as_str) == Some("prepare") => {
+            args::assert_options("work child prepare", a, &["config", "context", "agent-type"])?;
+            args::assert_positionals("work child prepare", a, 4)?;
+            let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
+            let assignment = positional(a, 3, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
+            let (expected_revision, binding_revision) = context_fence(a, work)?;
+            print_json(&crate::session_goal::prepare_child(
+                l,
+                work,
+                expected_revision,
+                binding_revision,
+                assignment,
+                a.options.get("agent-type").map(String::as_str),
+            )?)
+        }
         "child" => {
             args::assert_options(
                 "work child",
