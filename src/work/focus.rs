@@ -19,6 +19,8 @@ const FILE: &str = "current-work.json";
 pub(crate) enum Focus {
     Absent,
     Work(String),
+    /// Present but unusable; navigation then selects nothing.
+    Unusable(String),
 }
 
 fn relative() -> String {
@@ -35,21 +37,23 @@ pub(crate) fn read(loaded: &Loaded) -> Result<Focus, String> {
             SecureBytesResult::Bytes(bytes) => bytes,
             SecureBytesResult::Absent(_) => return Ok(Focus::Absent),
             SecureBytesResult::Unsafe(error) | SecureBytesResult::Unreadable(error) => {
-                return Err(invalid(&error))
+                return Ok(Focus::Unusable(invalid(&error)))
             }
             #[cfg(not(unix))]
-            SecureBytesResult::Unsupported(error) => return Err(invalid(&error)),
+            SecureBytesResult::Unsupported(error) => return Ok(Focus::Unusable(invalid(&error))),
         };
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| invalid("focus is not JSON"))?;
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(Focus::Unusable(invalid("focus is not JSON")));
+    };
     match (value["version"].as_u64(), value["work"].as_str()) {
         (Some(1), Some(work)) if super::valid_work_handle(work) => Ok(Focus::Work(work.to_owned())),
-        _ => Err(invalid("focus has no valid work handle")),
+        _ => Ok(Focus::Unusable(invalid("focus has no valid work handle"))),
     }
 }
 
 fn invalid(detail: &str) -> String {
     format!(
-        "current-work focus is unusable ({detail}); run 'work focus WORK' with an explicit work locator to replace it"
+        "current-work focus is unusable ({detail}); list running work with 'work resume --history', then run 'work focus WORK' with an explicit work locator"
     )
 }
 
@@ -57,6 +61,12 @@ fn invalid(detail: &str) -> String {
 /// and every work ledger untouched.
 pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
     let target = path(loaded);
+    if fs::symlink_metadata(&target).is_ok_and(|metadata| !metadata.is_file()) {
+        return Err(format!(
+            "{} is not a regular file; remove it by hand, then run 'work focus WORK'",
+            relative()
+        ));
+    }
     let parent = target.parent().ok_or("focus path has no parent")?;
     let staged = parent.join(format!(".{FILE}.{}.tmp", std::process::id()));
     let body = json!({"version": 1, "work": work, "authority": "none"}).to_string();

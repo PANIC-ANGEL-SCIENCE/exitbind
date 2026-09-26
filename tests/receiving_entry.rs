@@ -128,6 +128,11 @@ fn receiver_binds_and_records_a_child_from_the_continuation_view_alone() {
     let recorded = run(&root, &child, "README lacks the flag.\n".as_bytes());
     assert!(recorded.status.success(), "{recorded:?}");
 
+    // The Lead's views keep their continuation copy without receiving routes.
+    let lead = exitbind(&root, &["work", "next", &work, "--full"], b"");
+    assert!(lead["continuation"].is_object());
+    assert!(lead["continuation"].get("receive").is_none());
+
     let readback = exitbind(&root, &["work", "continuation", &work], b"");
     assert_eq!(readback["binding"]["session"], "session-a");
     assert_eq!(readback["children"][0]["nativeChild"], "agent-1");

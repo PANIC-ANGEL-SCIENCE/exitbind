@@ -707,7 +707,17 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     // Running ledgers it does not name stay history; the newest is never
     // guessed. Without a focus, the legacy count-based behavior remains.
     if !history {
-        if let focus::Focus::Work(selected) = focus::read(loaded)? {
+        let focus = focus::read(loaded)?;
+        if let focus::Focus::Unusable(detail) = &focus {
+            let mut result = none_result(loaded, finished)?;
+            result["reason"] = json!({"code": "focus_unusable", "detail": detail});
+            result["next"]["reason"] = json!("focus_unusable");
+            if !candidates.is_empty() {
+                result["history"] = history_reference(loaded, candidates.len())?;
+            }
+            return Ok(result);
+        }
+        if let focus::Focus::Work(selected) = focus {
             let others = candidates.len();
             let Some(index) = candidates
                 .iter()

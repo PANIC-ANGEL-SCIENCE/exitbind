@@ -145,13 +145,19 @@ fn legacy_project_without_focus_keeps_count_based_resume() {
 }
 
 #[test]
-fn unusable_focus_is_refused_with_a_recovery_route() {
+fn unusable_focus_selects_nothing_and_names_the_recovery_route() {
     let root = project("focus-invalid");
     let work = begin(&root, "task")["work"].as_str().unwrap().to_owned();
     fs::write(focus_file(&root), "not json").unwrap();
-    let refused = call(&root, &["work", "resume"]);
-    assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("work focus WORK"));
+    let entry = ok(&root, &["work", "resume"]);
+    assert_eq!(entry["status"], "none");
+    assert_eq!(entry["reason"]["code"], "focus_unusable");
+    assert!(entry["reason"]["detail"]
+        .as_str()
+        .unwrap()
+        .contains("work resume --history"));
+    assert_eq!(entry["history"]["running"], 1);
+    assert!(entry.get("work").is_none());
     ok(&root, &["work", "focus", &work]);
     assert_eq!(ok(&root, &["work", "resume"])["work"], work.as_str());
     fs::remove_dir_all(&root).unwrap();
@@ -169,5 +175,17 @@ fn failed_focus_update_reports_the_committed_work_and_recovery() {
     assert_eq!(started["focus"]["command"][3], work);
     assert!(call(&root, &["work", "next", work]).status.success());
     assert_eq!(ledgers(&root).len(), 1);
+
+    // Resume selects nothing, and the recovery says why until the path is fixed.
+    assert_eq!(
+        ok(&root, &["work", "resume"])["reason"]["code"],
+        "focus_unusable"
+    );
+    let refused = call(&root, &["work", "focus", work]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("not a regular file"));
+    fs::remove_dir(focus_file(&root)).unwrap();
+    ok(&root, &["work", "focus", work]);
+    assert_eq!(ok(&root, &["work", "resume"])["work"], work);
     fs::remove_dir_all(&root).unwrap();
 }

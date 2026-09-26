@@ -22,13 +22,14 @@ carries a bounded copy of the view alongside the Lead's assignment.
 resume` returns the focused work when it is still running. Older running work
 stays history, listed by `work resume --history`, and is never promoted by age.
 If the focused work is no longer running, `work resume` reports
-`no_current_work`. `work focus WORK` points the focus at an explicit existing
+`no_current_work`; an unreadable focus reports `focus_unusable` and selects
+nothing. `work focus WORK` points the focus at an explicit existing
 work. The focus changes navigation only: it closes, accepts, authorizes, or
 checks nothing, and an explicit locator always overrides it. Projects without
 a focus keep the earlier behavior: no running work resumes nothing, one
 resumes, and several are ambiguous. `work
-resume` includes the same view only when discovery finds exactly one current
-work item. An ambiguous resume still requires an explicit locator.
+resume` includes the same view when it resumes one current work item. An
+ambiguous resume still requires an explicit locator.
 
 The coordinating lead initializes or attaches the continuation once by piping
 a JSON object to `exitbind work record WORK`. For an existing open canonical

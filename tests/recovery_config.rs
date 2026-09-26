@@ -103,10 +103,12 @@ fn emitted_recovery_commands_preserve_an_alternate_config() {
     let second_work = second["work"].as_str().unwrap();
     let second_ledger = fixture.ledger(second_work);
 
-    let resume = fixture.call(&["work", "resume", "--json"]);
+    // The second begin holds the current-work focus; the history listing
+    // emits a command for every running work.
+    let resume = fixture.call(&["work", "resume", "--history", "--json"]);
     assert!(resume.status.success(), "{resume:?}");
     let resume: Value = serde_json::from_slice(&resume.stdout).unwrap();
-    assert_eq!(resume["status"], "ambiguous");
+    assert_eq!(resume["status"], "history");
     let candidate = &resume["works"][0];
     let candidate_work = candidate["work"].as_str().unwrap();
     assert!(candidate_work == first_work || candidate_work == second_work);

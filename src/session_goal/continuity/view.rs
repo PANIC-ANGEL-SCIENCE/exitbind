@@ -183,7 +183,7 @@ fn bounded(value: &Value) -> Result<bool, String> {
 /// The supported receiving sequence, so a receiving host binds and records a
 /// native child from this read-only view without studying help or state.
 fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
-    let bound_context = token.as_str().unwrap_or("TOKEN").to_owned();
+    let bound_context = token.as_str().unwrap_or("TOKEN");
     let mut bind = vec![
         "work".into(),
         "bind".into(),
@@ -192,7 +192,7 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
     ];
     bind.extend(
         [
-            bound_context.as_str(),
+            bound_context,
             "--host",
             "HOST",
             "--session",
@@ -214,9 +214,13 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
     ]
     .map(String::from)
     .to_vec();
+    let bind = crate::work::compact::continuation_route(&loaded.path, bind);
+    let child = crate::work::compact::continuation_route(&loaded.path, child);
     json!({
-        "bind": crate::work::compact::continuation_route(&loaded.path, bind)["command"],
-        "child": crate::work::compact::continuation_route(&loaded.path, child)["command"],
+        "bind": bind["command"],
+        "child": child["command"],
+        "sameConfigRequired": bind["sameConfigRequired"],
+        "sameExecutableRequired": bind["sameExecutableRequired"],
         "placeholders": {
             "HOST": "the receiving host, such as claude or codex",
             "HOST_VERSION": "the host's reported version",
