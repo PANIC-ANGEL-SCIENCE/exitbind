@@ -268,6 +268,34 @@ fn resolved_then_accepted(decision: &str) {
     assert!(!events
         .iter()
         .any(|event| event["role"] == "reviewer" && event["outcome"] == "approved"));
+    reports_resolution(&fixture, &work, decision, disposition);
+}
+
+/// Run status and the Exit Path receipt name the Lead resolution, never an
+/// omission or approval, and the receipt verifies against the ledger.
+fn reports_resolution(fixture: &Fixture, work: &str, decision: &str, disposition: &Value) {
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let expected = |review: &Value| {
+        assert_eq!(review["status"], "resolved_by_lead_disposition", "{review}");
+        assert_eq!(review["decision"], decision, "{review}");
+        assert_eq!(
+            review["dispositionSha256"], disposition["disposition"]["sha256"],
+            "{review}"
+        );
+        assert!(review["dispositionSha256"].is_string(), "{review}");
+        assert!(review.get("source").is_none(), "{review}");
+    };
+    let status = fixture.ok(&["run", "status", &ledger, "--json"], b"");
+    assert_eq!(status["status"], "accepted");
+    expected(&status["review"]);
+    let receipt_path = ".exitbind/receipts/resolved.json";
+    let receipt = fixture.ok(
+        &["receipt", &ledger, "--output", receipt_path, "--json"],
+        b"",
+    );
+    expected(&receipt["review"]);
+    let verified = fixture.ok(&["verify", receipt_path], b"");
+    assert_eq!(verified["valid"], true, "{verified}");
 }
 
 #[test]

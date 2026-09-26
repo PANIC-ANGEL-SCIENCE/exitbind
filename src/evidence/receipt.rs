@@ -154,9 +154,12 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
     } else {
         None
     };
-    if kernel.review_required && reviewer.is_none() {
-        return Err("Exit Path receipt requires reviewer approval".into());
-    }
+    let review = super::review_report::receipt(
+        &state,
+        kernel.review_required,
+        kernel.review_decision_sha256.as_deref(),
+        reviewer,
+    )?;
     let acceptance = current
         .iter()
         .rev()
@@ -179,34 +182,6 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
         })
         .map(|event| event["artifact"].clone())
         .collect::<Vec<_>>();
-    let marked_policy = state.get("basisProtocol").is_some();
-    let review = reviewer.map_or_else(
-        || {
-            if marked_policy {
-                json!({
-                    "status": "omitted",
-                    "decisionSha256": kernel.review_decision_sha256,
-                    "source": "owner-reported",
-                })
-            } else {
-                json!({})
-            }
-        },
-        |reviewer| {
-            if marked_policy {
-                json!({
-                    "status": "approved",
-                    "eventSha256": reviewer["eventSha256"],
-                    "artifactSha256": reviewer["artifact"]["sha256"],
-                })
-            } else {
-                json!({
-                    "eventSha256": reviewer["eventSha256"],
-                    "artifactSha256": reviewer["artifact"]["sha256"],
-                })
-            }
-        },
-    );
     Ok(json!({
         "version": 1,
         "format": "exit-path-v1",

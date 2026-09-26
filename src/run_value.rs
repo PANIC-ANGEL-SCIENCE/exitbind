@@ -1961,25 +1961,7 @@ pub(crate) fn status(state: &Value, artifact_current: Option<bool>) -> Result<Va
                 .count()),
         );
     }
-    let review_value = if state["reviewPolicy"]["decision"] == "omitted" {
-        json!({
-            "status": "omitted",
-            "decisionSha256": state["reviewPolicy"]["sha256"],
-            "source": state["reviewPolicy"]["source"],
-            "reason": state["reviewPolicy"]["reason"],
-        })
-    } else {
-        review.map_or_else(
-            || json!({"status":"absent"}),
-            |submission| {
-                json!({
-                    "status": submission["outcome"],
-                    "eventSha256": submission["eventSha256"],
-                    "artifactSha256": submission["artifact"]["sha256"],
-                })
-            },
-        )
-    };
+    let review_value = crate::evidence::review_report::status(state, review);
     Ok(json!({
         "version": VALUE_REPORT_VERSION,
         "runId": state["runId"],
