@@ -25,8 +25,19 @@ pub(crate) fn export(payload: &Map<String, Value>, env_file: Option<&std::ffi::O
         return;
     }
     let line = format!("export {VARIABLE}={session}\n");
-    // The host names a file it expects the hook to create or extend.
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(env_file) {
+    // The host names a file it expects the hook to create or extend. Refuse a
+    // symlink, and never block on a FIFO, so a hook cannot hang or redirect.
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let Ok(mut file) = options.open(env_file) else {
+        return;
+    };
+    if file.metadata().is_ok_and(|metadata| metadata.is_file()) {
         let _ = file.write_all(line.as_bytes());
     }
 }
@@ -77,6 +88,14 @@ mod tests {
             std::fs::read_to_string(&fresh).unwrap(),
             "export EXITBIND_NATIVE_SESSION_ID=ok\n"
         );
+        #[cfg(unix)]
+        {
+            let target = root.join("target");
+            let link = root.join("link");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            export(&payload("ok"), Some(link.as_os_str()));
+            assert!(!target.exists());
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

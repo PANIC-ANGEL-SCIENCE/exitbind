@@ -580,7 +580,7 @@ pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
     ))
 }
 
-pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
+pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
@@ -677,38 +677,22 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
         add_identity(&mut result, &work_identity(loaded, None)?);
         return Ok(result);
     }
-    // Only the Lead's canonical session goal selects current work. Running
-    // ledgers it does not name stay history; the newest is never guessed.
-    let selection = current_selection(loaded)?;
-    if !history {
-        match &selection {
-            Selection::Open(work) => {
-                if let Some(index) = candidates.iter().position(|candidate| &candidate.0 == work) {
-                    let others = candidates.len() - 1;
-                    let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
-                    let mut result = resumed(loaded, &work, &ledger)?;
-                    result["selection"] = json!({"basis": "open_session_goal"});
-                    if others > 0 {
-                        result["history"] = history_reference(loaded, others)?;
-                    }
-                    return Ok(result);
-                }
-            }
-            Selection::Closed if !candidates.is_empty() => {
-                let mut result = none_result(loaded, finished)?;
-                result["reason"] = json!({"code": "no_current_work"});
-                result["next"]["reason"] = json!("no_current_work");
-                result["history"] = history_reference(loaded, candidates.len())?;
-                return Ok(result);
-            }
-            Selection::Closed | Selection::Unselected => {}
-        }
-    }
     match candidates.len() {
         0 => none_result(loaded, finished),
-        1 if !history => {
+        1 => {
             let (work, _, _, ledger, _, _) = candidates.pop().expect("one candidate exists");
-            resumed(loaded, &work, &ledger)
+            let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)
+                .map_err(|error| discovery_error(error, &work))?;
+            let mut result = json!({
+                "status": "resumed",
+                "work": work,
+                "next": next,
+                "residual": residual,
+                "presentation": presentation
+            });
+            add_identity(&mut result, &work_identity(loaded, Some(&ledger))?);
+            attach_continuation(loaded, &work, &mut result)?;
+            Ok(result)
         }
         _ => {
             let works = candidates
@@ -724,14 +708,9 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
                     }))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            let (status, reason) = if history {
-                ("history", "history_requested")
-            } else {
-                ("ambiguous", "ambiguous_candidates")
-            };
             let mut result = json!({
-            "status": status,
-            "reason": {"code": reason},
+            "status": "ambiguous",
+            "reason": {"code": "ambiguous_candidates"},
             "effect": "no-change",
             "compact": true,
             "omitted": ["candidate progress detail"],
@@ -743,51 +722,6 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             Ok(result)
         }
     }
-}
-
-enum Selection {
-    Open(String),
-    Closed,
-    Unselected,
-}
-
-fn current_selection(loaded: &Loaded) -> Result<Selection, String> {
-    let Some(goal) = crate::session_goal::read(&loaded.state_root)? else {
-        return Ok(Selection::Unselected);
-    };
-    if goal["closure"]["closed"] == true {
-        return Ok(Selection::Closed);
-    }
-    Ok(match goal["goalId"].as_str() {
-        Some(work) if work.starts_with(WORK_PREFIX) => Selection::Open(work.to_owned()),
-        _ => Selection::Unselected,
-    })
-}
-
-fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
-    let config = loaded
-        .path
-        .to_str()
-        .ok_or("configuration path is not valid UTF-8")?;
-    Ok(json!({
-        "running": running,
-        "command": [crate::compatibility::profile().caller, "work", "resume", "--history", "--config", config],
-    }))
-}
-
-fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    let (next, residual, presentation) = next_and_residual(loaded, work, ledger, true)
-        .map_err(|error| discovery_error(error, work))?;
-    let mut result = json!({
-        "status": "resumed",
-        "work": work,
-        "next": next,
-        "residual": residual,
-        "presentation": presentation
-    });
-    add_identity(&mut result, &work_identity(loaded, Some(ledger))?);
-    attach_continuation(loaded, work, &mut result)?;
-    Ok(result)
 }
 
 fn superseded_by_valid_claim(loaded: &Loaded, ledger: &str) -> Result<bool, String> {

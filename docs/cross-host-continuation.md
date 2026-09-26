@@ -16,10 +16,7 @@ The latter is read-only and includes the source requirements, current lead
 binding, corrections, result references, operations, diagnoses, children, and
 remaining requirements. It never launches or retries an operation. `work
 resume` includes the same view only when discovery finds exactly one current
-work item: the work an open canonical session goal names, or the only running
-work when no goal selects one. A closed goal reports `no_current_work`, and
-`work resume --history` lists running history without selecting it. An
-ambiguous resume still requires an explicit locator.
+work item. An ambiguous resume still requires an explicit locator.
 
 The coordinating lead initializes or attaches the continuation once by piping
 a JSON object to `exitbind work record WORK`. For an existing open canonical

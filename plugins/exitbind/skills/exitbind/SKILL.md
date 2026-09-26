@@ -21,10 +21,7 @@ Small reversible work stays direct: do not run Exitbind commands, initialize a p
 For already governed work, continue with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
 `--review-policy omitted` at entry. Follow the returned next action instead of asking
-the user for work handles, ledger paths, or event hashes. `work resume` reports
-`no_current_work` when the canonical session goal is closed: older running work
-is history, so begin the new task, and list that history with
-`work resume --history` only when needed. Report exact
+the user for work handles, ledger paths, or event hashes. Report exact
 progress, evidence, and any refusal. If the user gives only the Exitbind
 repository URL, inspect this project and your host capabilities first, and ask
 before installation, project writes, permission changes, or another
