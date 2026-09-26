@@ -4,7 +4,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work"] => {
-            "work next WORK | work continuation WORK | work resume | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON"
+            "work next WORK | work continuation WORK | work resume [--history] | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
         ["work", "next"] => "work next WORK [--json] [--full]",

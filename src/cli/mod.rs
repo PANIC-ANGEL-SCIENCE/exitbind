@@ -121,9 +121,13 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
     };
 
     if command == "version" || parsed.flags.contains_key("version") {
-        args::assert_options("version", &parsed, &["version", "help"])?;
+        args::assert_options("version", &parsed, &["version", "help", "json"])?;
         args::assert_positionals("version", &parsed, 0)?;
-        println!("{VERSION}");
+        if parsed.flags.contains_key("json") {
+            println!("{}", crate::producer::build_identity());
+        } else {
+            println!("{VERSION}");
+        }
         return Ok(());
     }
     if command == "help" {
@@ -824,9 +828,9 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "resume" => {
-            args::assert_options("work resume", a, &["config", "json", "full"])?;
+            args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;
-            let result = crate::work::resume(l)?;
+            let result = crate::work::resume(l, a.flags.contains_key("history"))?;
             let result = if a.flags.contains_key("full") || result["status"] != "resumed" {
                 result
             } else {
@@ -1691,6 +1695,7 @@ fn print_advanced_help() {
     println!("  Checked {} runs may use: {command} run observe-check LEDGER --target EVENT_SHA [--timeout-ms MS]", if crate::producer::exitbind_surface() { "v8" } else { "v4" });
     println!("  Local observation defaults to a 1,800,000 ms (30 minute) timeout; --timeout-ms must be positive.");
     println!("Run '{command} update' to explicitly install the newest allowed release.");
+    println!("Run '{command} version --json' for the build commit and executable SHA-256 to compare with release evidence.");
 }
 
 fn print_json(value: &serde_json::Value) -> Result<(), String> {

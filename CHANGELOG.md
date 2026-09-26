@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Export the host-reported Claude Code session ID to later shell commands as
+  `EXITBIND_NATIVE_SESSION_ID` from the managed SessionStart hook.
+- Resume only the work an open canonical session goal names; a closed goal
+  reports `no_current_work`, and `work resume --history` lists running history
+  without selecting it.
+- Add `exitbind version --json` with the embedded build commit and the running
+  executable's SHA-256 for comparison with release evidence.
+- Report missing memory scope arrays as configuration errors instead of
+  panicking.
+- Explain when to use Exitbind from its own behavior in the README.
+
 ## 0.25.0-rc.4
 
 - Add supported receiving-host bind and native-child result commands that build

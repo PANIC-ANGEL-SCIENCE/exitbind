@@ -132,6 +132,9 @@ pub fn run() -> Result<(), String> {
     if !EVENTS.contains(&event) {
         return Ok(());
     }
+    if event == "SessionStart" {
+        super::native_session::export(object, std::env::var_os("CLAUDE_ENV_FILE").as_deref());
+    }
     let update_context = if event == "SessionStart" {
         crate::distribution::update::session_context()
     } else {

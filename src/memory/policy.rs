@@ -58,7 +58,8 @@ pub(crate) fn validate(value: &Value, errors: &mut Vec<String>) {
             ));
         }
     }
-    if valid_scope_array(&memory["protocolScopes"]) && valid_scope_array(&memory["syntheticScopes"])
+    if memory.get("protocolScopes").is_some_and(valid_scope_array)
+        && memory.get("syntheticScopes").is_some_and(valid_scope_array)
     {
         let protocol = scopes(memory.get("protocolScopes"));
         let synthetic = scopes(memory.get("syntheticScopes"));
@@ -132,4 +133,21 @@ fn scopes(value: Option<&Value>) -> BTreeSet<String> {
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn missing_scope_arrays_are_reported_not_panicked() {
+        let mut errors = Vec::new();
+        validate(
+            &json!({"root":"memory","maxItems":4,"maxBytes":1024}),
+            &mut errors,
+        );
+        assert!(errors.contains(&"memory.protocolScopes must be an array of scopes".to_owned()));
+        assert!(errors.contains(&"memory.syntheticScopes must be an array of scopes".to_owned()));
+    }
 }

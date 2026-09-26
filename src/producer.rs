@@ -19,6 +19,29 @@ pub(crate) fn evidence_for_version(version: u64) -> Value {
     }
 }
 
+/// Machine-readable identity of the running executable for comparison with
+/// release evidence. The digest identifies local bytes; it authenticates
+/// nothing without a checksum or attestation from the release.
+pub(crate) fn build_identity() -> Value {
+    let executable = std::env::current_exe()
+        .map_err(|error| error.to_string())
+        .and_then(|path| crate::evidence::hash::file(&path));
+    let (digest, digest_error) = match executable {
+        Ok(digest) => (Value::String(digest), Value::Null),
+        Err(error) => (Value::Null, Value::String(error)),
+    };
+    json!({
+        "name": crate::compatibility::profile().producer,
+        "version": env!("CARGO_PKG_VERSION"),
+        "commit": option_env!("EXITBIND_BUILD_COMMIT").or(option_env!("SOULMATE_BUILD_COMMIT")),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "executableSha256": digest,
+        "executableSha256Error": digest_error,
+        "authentication": "none: compare executableSha256 with the release checksum or attestation",
+    })
+}
+
 pub(crate) fn exitbind_surface() -> bool {
     crate::compatibility::is_exitbind()
 }

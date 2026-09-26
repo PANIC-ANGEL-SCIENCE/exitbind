@@ -21,7 +21,10 @@ Small reversible work stays direct: do not run Exitbind commands, initialize a p
 For already governed work, continue with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
 `--review-policy omitted` at entry. Follow the returned next action instead of asking
-the user for work handles, ledger paths, or event hashes. Report exact
+the user for work handles, ledger paths, or event hashes. `work resume` reports
+`no_current_work` when the canonical session goal is closed: older running work
+is history, so begin the new task, and list that history with
+`work resume --history` only when needed. Report exact
 progress, evidence, and any refusal. If the user gives only the Exitbind
 repository URL, inspect this project and your host capabilities first, and ask
 before installation, project writes, permission changes, or another
@@ -44,9 +47,10 @@ continuation` to the supported action:
 exitbind work bind WORK --context TOKEN --host claude --session NATIVE_SESSION --host-version VERSION
 ```
 
-Use only host-reported identity. A native launcher may expose its session ID as
-`EXITBIND_NATIVE_SESSION_ID`; if unavailable, report that limit instead of
-inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
+Use only host-reported identity. In Claude Code, Exitbind's SessionStart hook
+exports the host's session ID as `EXITBIND_NATIVE_SESSION_ID`, and a native
+subagent's `agentId` is its child ID; other launchers may set the same
+variable. If unavailable, report that limit instead of inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
 record the exact UTF-8 child result and native child ID:
 
 ```sh

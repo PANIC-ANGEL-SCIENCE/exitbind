@@ -16,7 +16,10 @@ The latter is read-only and includes the source requirements, current lead
 binding, corrections, result references, operations, diagnoses, children, and
 remaining requirements. It never launches or retries an operation. `work
 resume` includes the same view only when discovery finds exactly one current
-work item. An ambiguous resume still requires an explicit locator.
+work item: the work an open canonical session goal names, or the only running
+work when no goal selects one. A closed goal reports `no_current_work`, and
+`work resume --history` lists running history without selecting it. An
+ambiguous resume still requires an explicit locator.
 
 The coordinating lead initializes or attaches the continuation once by piping
 a JSON object to `exitbind work record WORK`. For an existing open canonical
@@ -43,7 +46,10 @@ an explicit `cover` assertion against the source hash. That assertion is
 ```
 
 `work bind WORK --context TOKEN --host HOST --session SESSION --host-version
-VERSION` records the receiving host and native session. Take `TOKEN` from the
+VERSION` records the receiving host and native session. In Claude Code, the
+SessionStart hook that `exitbind host install` manages exports the host's
+session ID as `EXITBIND_NATIVE_SESSION_ID` for later shell commands; the value
+remains host-reported. Take `TOKEN` from the
 read-only view's `mutationContext.token`; the CLI carries its goal and binding
 revisions. Repeating the identical bind has no effect; a stale or conflicting
 bind is refused without fetching a newer revision. The expert `work record`

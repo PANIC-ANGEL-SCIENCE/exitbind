@@ -50,10 +50,10 @@ results before a push. CI and branch protection keep their existing roles.
 | Job | Practical choice | What it establishes |
 | --- | --- | --- |
 | A small reversible edit, or a task whose native handoff and CI are sufficient | Keep the existing agent, Git and CI workflow. | The checks that workflow actually ran; no Exitbind setup is needed. |
-| A completion check without a continuing work record | A light gate such as [agent-done-or-not](https://github.com/mohamedzhioua/agent-done-or-not) may fit. | Its documented capture, assertion, policy and CI evidence; compare its current behavior for your task. |
+| A one-off check with no work to hand off or resume | Run that check in the existing host or CI. | The command's own exit status; Exitbind adds no record. |
 | Material work needing a recoverable same-work handoff and acceptance tied to the current result | Use Exitbind in the existing agent host. | Recorded work, applicable check evidence, the owner's review decision and Lead acceptance under [Exitbind's authority boundary](REFERENCE.md#authority-boundary). |
 
-[Proof-or-Stop](https://arxiv.org/abs/2607.14890) also studies evidence-gated lifecycle transitions. Its results do not evaluate Exitbind or prove that any gate establishes semantic correctness. Exitbind's current supported continuation keeps one work item across native hosts in a shared local workspace; enduring agents across new tasks, supported hosts and models, with project rules and memories, remain the product direction. Comparative task quality and operating cost are unmeasured here.
+Exitbind's current supported continuation keeps one work item across native hosts in a shared local workspace. Carrying an owner-shaped agent's role, project rules, and corrections into a genuinely new work item is the product direction, not a current capability. Task quality and operating cost compared with other workflows are unmeasured.
 
 ## Built for your coding agent
 
