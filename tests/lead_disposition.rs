@@ -410,6 +410,72 @@ fn a_repeated_finding_surfaces_prior_cycles_to_the_lead() {
     );
 }
 
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            let fields = keys
+                .into_iter()
+                .map(|key| format!("{key:?}:{}", canonical(&object[key])))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{fields}}}")
+        }
+        Value::Array(values) => format!(
+            "[{}]",
+            values.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+#[test]
+fn a_reviewer_finding_refuses_an_undecided_protocol_v1_record() {
+    use sha2::{Digest, Sha256};
+    let fixture = Fixture::new("disposition-v1-live");
+    let (work, _) = fixture.begin(&["--review-policy", "required"]);
+    let lead = pending_lead(&fixture, &work);
+    let mut record = json!({
+        "category": "implementation_defect",
+        "findingSha256s": lead["packet"]["pendingDisposition"]["findingSha256s"],
+        "basisSha256": null,
+        "causalAssumption": "x",
+        "affectedPaths": ["a"],
+        "repairBoundary": "b",
+        "decisiveRegression": "c",
+        "invalidatedEvidence": [],
+        "successorBasis": null
+    });
+    record["sha256"] = json!(format!(
+        "{:x}",
+        Sha256::digest(canonical(&record).as_bytes())
+    ));
+    let artifact = ".exitbind/artifacts/v1-disposition.md";
+    fs::create_dir_all(fixture.root.join(".exitbind/artifacts")).unwrap();
+    fs::write(fixture.root.join(artifact), b"v1").unwrap();
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let output = fixture.call(
+        &[
+            "run",
+            "submit",
+            "lead",
+            &ledger,
+            "--outcome",
+            "disposition",
+            "--artifact",
+            artifact,
+            "--artifact-root",
+            "state",
+            "--disposition",
+            &record.to_string(),
+        ],
+        b"",
+    );
+    refused(&output, "needs a Lead decision");
+    assert_eq!(fixture.next(&work)["role"], "lead", "no worker started");
+}
+
 #[test]
 fn case_d_supersede_requires_an_explicit_successor_basis() {
     let fixture = Fixture::new("disposition-supersede");

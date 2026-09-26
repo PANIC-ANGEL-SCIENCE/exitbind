@@ -1369,6 +1369,9 @@ fn successor_retains_a_real_governor_grant_and_owner_lineage() {
         "decisiveRegression": "the next worker is bound to the successor",
         "invalidatedEvidence": [finding],
         "successorBasis": successor,
+        // A reviewer finding is decided with a named Lead decision.
+        "decision": "supersede",
+        "reason": "the review exposed a design correction",
     }));
     let lead_after_rework = rework["next"]["assignment"].as_str().unwrap();
     let after = fixture.value_with_input(

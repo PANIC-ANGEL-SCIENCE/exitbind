@@ -258,8 +258,8 @@ exitbind work resume
 exitbind version --json
 ```
 
-`version --json` reports the embedded build commit and the running executable's
-SHA-256 for comparison with release evidence.
+`version --json` reports the running executable's SHA-256 and, for release
+builds, the embedded build commit, for comparison with release evidence.
 
 After updating from an earlier release, run `exitbind host install` once so the
 host guidance matches the new binary. From this release on, `exitbind update`

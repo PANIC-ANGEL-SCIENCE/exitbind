@@ -60,6 +60,11 @@ pub(crate) fn submission(
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|error| format!("disposition is not valid JSON: {error}"))?;
     let parsed = parse_disposition(&parsed, "disposition")?;
+    // A reviewer finding is decided with a named decision, so a repair always
+    // carries the Lead's boundary to the next attempt.
+    if parsed.decision.is_none() && state["pendingDisposition"]["kind"] == "review_rework" {
+        return Err("a reviewer finding needs a Lead decision: exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT".into());
+    }
     validate(state, &parsed)?;
     Ok(Some(parsed))
 }
@@ -218,9 +223,14 @@ pub(crate) fn lead_view(state: &Value) -> Option<Value> {
         "rule": "a finding is evidence, not a requirement; the Lead decides its scope and any repair boundary",
         "priorCycles": prior,
     });
-    if !prior.is_empty() {
+    // Another finding after authorized repair work is the loop worth
+    // questioning; a deferred or rejected finding started no work.
+    let repaired = prior
+        .iter()
+        .any(|item| !matches!(item["decision"].as_str(), Some("defer" | "reject")));
+    if repaired {
         view["advice"] = json!(
-            "this run already had a Lead disposition; before another repair, reconsider the basis, acceptance criteria, evidence, or reviewer scope"
+            "a finding followed Lead-authorized work in this run; before another repair, reconsider the basis, acceptance criteria, evidence, or reviewer scope"
         );
     }
     Some(view)
