@@ -84,9 +84,10 @@ origin host. No missing process-list entry authorizes another dispatch.
 `diagnose` records the observation class, conditions and invalidation rule.
 
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
-accepts exact UTF-8 text from standard input or `--result-file`; use the new
-token returned after `work bind`. The CLI constructs the existing record and
-SHA-256 digest. The child is scoped to the current receiving host and session
+accepts exact UTF-8 text from standard input or `--result`; run the bind
+reply's read-only `nextAction.command` to obtain a fresh token. The CLI
+constructs the existing record and SHA-256 digest. The child is scoped to the
+current receiving host and session
 and marked `host_reported_native_child`: transporting bytes does not make it
 an independent review or Lead acceptance. The result limit remains 8 KiB;
 larger outputs need a separately assessed artifact path and cannot be silently

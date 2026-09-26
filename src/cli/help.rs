@@ -16,7 +16,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work bind WORK --context TOKEN --host HOST --session SESSION --host-version VERSION"
         }
         ["work", "child"] => {
-            "work child WORK ASSIGNMENT --context TOKEN --native-child ID [--result TEXT|--result-file PATH] < RESULT"
+            "work child WORK ASSIGNMENT --context TOKEN --native-child ID [--result TEXT] < RESULT"
         }
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
         ["work", "replan"] => {

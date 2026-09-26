@@ -82,7 +82,6 @@ const VALUE_OPTIONS: &[&str] = &[
     "host-version",
     "native-child",
     "result",
-    "result-file",
     "timeout-ms",
     "workflow",
 ];

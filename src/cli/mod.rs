@@ -81,19 +81,14 @@ fn bounded_cli<'a>(value: &'a str, field: &str, max: usize) -> Result<&'a str, S
 
 fn child_result(a: &Arguments) -> Result<String, String> {
     let inline = a.options.get("result").map(String::as_str);
-    let file = a.options.get("result-file");
-    if inline.is_some() && file.is_some() {
-        return Err("work child accepts only one of --result and --result-file".into());
-    }
     let bytes = if let Some(value) = inline {
+        if value.len() > 8 * 1024 {
+            return Err("work child result exceeds 8192 bytes; keep the exact result and report that an assessed artifact route is needed; no child record was written".into());
+        }
         value.as_bytes().to_vec()
-    } else if let Some(path) = file {
-        std::fs::read(path).map_err(|error| format!("work child result file: {error}"))?
     } else {
         if std::io::stdin().is_terminal() {
-            return Err(
-                "work child requires --result, --result-file, or piped child result".into(),
-            );
+            return Err("work child requires --result or piped child result".into());
         }
         let mut bytes = Vec::new();
         std::io::stdin()
@@ -591,7 +586,6 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "context",
                     "native-child",
                     "result",
-                    "result-file",
                 ],
             )?;
             args::assert_positionals("work child", a, 3)?;

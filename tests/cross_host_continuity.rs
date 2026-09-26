@@ -30,7 +30,8 @@ fn product_actions_use_emitted_context_and_preserve_child_bytes() {
     let before_refusals = f.history();
     let mut invalid_context = context.clone();
     invalid_context.pop();
-    invalid_context.push('0');
+    invalid_context.push(if context.ends_with('0') { '1' } else { '0' });
+    assert_ne!(invalid_context, context);
     let refused = f.call(&[
         "work",
         "bind",
