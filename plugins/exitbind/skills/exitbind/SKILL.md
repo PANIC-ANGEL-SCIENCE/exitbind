@@ -21,20 +21,23 @@ Small reversible work stays direct: do not run Exitbind commands, initialize a p
 For already governed work, continue with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
 `--review-policy omitted` at entry. Follow the returned next action instead of asking
-the user for work handles, ledger paths, or event hashes. Report exact
+the user for work handles, ledger paths, or event hashes. `work begin` makes
+the new work the project's current-work focus; `work resume` returns that work
+and reports older running work only as history (`work resume --history`). The
+focus is navigation, never authority. Report exact
 progress, evidence, and any refusal. If the user gives only the Exitbind
 repository URL, inspect this project and your host capabilities first, and ask
 before installation, project writes, permission changes, or another
 owner-controlled action.
 
-For an explicit work locator on a receiving host, use `exitbind work next WORK`
-to recover the current assignment. If its response includes `continuation`,
-read that bounded view for the original requirements, current corrections,
-exact result references, binding, and uncertain operations. Use
-`exitbind work continuation WORK` for the full read-only view when expansion is
-required. If it returns `requiresExpansion`, follow the section and item
-commands it gives to read exact bounded facts. Do not inspect raw state files
-or infer a retry from a missing native process.
+For an explicit work locator on a receiving host, first run
+`exitbind work continuation WORK`. This read-only view carries the original
+requirements, current corrections, exact result references, binding,
+uncertain operations, `mutationContext.token`, and a `receive` block with the
+bind and native-child commands. If it returns `requiresExpansion`, follow the
+section and item commands it gives to read exact bounded facts. Do not inspect
+raw state files or infer a retry from a missing native process. `work next`
+remains the Lead's assignment view.
 
 When handing off an actual native child result, first bind the receiving host
 and native session. Pass the `mutationContext.token` from `work next` or `work

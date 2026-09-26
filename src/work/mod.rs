@@ -1,6 +1,7 @@
 //! Agent-facing work façade over the strict run protocol.
 
 pub(crate) mod compact;
+pub(crate) mod focus;
 mod held;
 mod mutation_response;
 pub(crate) mod packet;
@@ -143,7 +144,26 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
     )?;
     let work = format!("{WORK_PREFIX}{token}");
     let next = next_for(loaded, &work, &ledger)?;
-    Ok(json!({"work": work, "next": next}))
+    // The work is committed; a focus failure is reported with its recovery
+    // route instead of hiding the created work.
+    let focus = match focus::write(loaded, &work) {
+        Ok(()) => json!({"updated": true, "authority": "none"}),
+        Err(error) => focus::recovery(loaded, &work, &error),
+    };
+    Ok(json!({"work": work, "next": next, "focus": focus}))
+}
+
+pub(crate) fn valid_work_handle(work: &str) -> bool {
+    work.strip_prefix(WORK_PREFIX).is_some_and(valid_token)
+}
+
+/// Point navigation at an explicit, existing work. This changes no ledger.
+pub(crate) fn set_focus(loaded: &Loaded, work: &str) -> Result<Value, String> {
+    resolve(loaded, work).map_err(|_| "work handle is stale or unknown; focus unchanged")?;
+    focus::write(loaded, work)?;
+    Ok(
+        json!({"work": work, "focus": {"updated": true, "authority": "none"}, "effect": "focus-only"}),
+    )
 }
 
 pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
@@ -205,7 +225,13 @@ fn attach_continuation(loaded: &Loaded, work: &str, response: &mut Value) -> Res
         return Ok(());
     };
     if goal["continuation"]["work"] == work {
-        response["continuation"] = crate::session_goal::continuation_view(loaded, work)?;
+        // Receiving routes belong to `work continuation`; the Lead's views keep
+        // their bounded continuation copy without them.
+        let mut view = crate::session_goal::continuation_view(loaded, work)?;
+        if let Some(view) = view.as_object_mut() {
+            view.remove("receive");
+        }
+        response["continuation"] = view;
     }
     Ok(())
 }
@@ -580,7 +606,7 @@ pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
     ))
 }
 
-pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
+pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
@@ -677,22 +703,39 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
         add_identity(&mut result, &work_identity(loaded, None)?);
         return Ok(result);
     }
+    // The navigation focus written by `work begin` selects current work.
+    // Running ledgers it does not name stay history; the newest is never
+    // guessed. Without a focus, the legacy count-based behavior remains.
+    if !history {
+        if let focus::Focus::Work(selected) = focus::read(loaded)? {
+            let others = candidates.len();
+            let Some(index) = candidates
+                .iter()
+                .position(|candidate| candidate.0 == selected)
+            else {
+                let mut result = none_result(loaded, finished)?;
+                result["reason"] = json!({"code": "no_current_work"});
+                result["next"]["reason"] = json!("no_current_work");
+                result["focus"] = json!({"work": selected, "resumable": false});
+                if others > 0 {
+                    result["history"] = history_reference(loaded, others)?;
+                }
+                return Ok(result);
+            };
+            let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
+            let mut result = resumed(loaded, &work, &ledger)?;
+            result["selection"] = json!({"basis": "current_work_focus", "authority": "none"});
+            if others > 1 {
+                result["history"] = history_reference(loaded, others - 1)?;
+            }
+            return Ok(result);
+        }
+    }
     match candidates.len() {
         0 => none_result(loaded, finished),
-        1 => {
+        1 if !history => {
             let (work, _, _, ledger, _, _) = candidates.pop().expect("one candidate exists");
-            let (next, residual, presentation) = next_and_residual(loaded, &work, &ledger, true)
-                .map_err(|error| discovery_error(error, &work))?;
-            let mut result = json!({
-                "status": "resumed",
-                "work": work,
-                "next": next,
-                "residual": residual,
-                "presentation": presentation
-            });
-            add_identity(&mut result, &work_identity(loaded, Some(&ledger))?);
-            attach_continuation(loaded, &work, &mut result)?;
-            Ok(result)
+            resumed(loaded, &work, &ledger)
         }
         _ => {
             let works = candidates
@@ -708,9 +751,14 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
                     }))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
+            let (status, reason) = if history {
+                ("history", "history_requested")
+            } else {
+                ("ambiguous", "ambiguous_candidates")
+            };
             let mut result = json!({
-            "status": "ambiguous",
-            "reason": {"code": "ambiguous_candidates"},
+            "status": status,
+            "reason": {"code": reason},
             "effect": "no-change",
             "compact": true,
             "omitted": ["candidate progress detail"],
@@ -722,6 +770,32 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
             Ok(result)
         }
     }
+}
+
+fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
+    let config = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    Ok(json!({
+        "running": running,
+        "command": [crate::compatibility::profile().caller, "work", "resume", "--history", "--config", config],
+    }))
+}
+
+fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
+    let (next, residual, presentation) = next_and_residual(loaded, work, ledger, true)
+        .map_err(|error| discovery_error(error, work))?;
+    let mut result = json!({
+        "status": "resumed",
+        "work": work,
+        "next": next,
+        "residual": residual,
+        "presentation": presentation
+    });
+    add_identity(&mut result, &work_identity(loaded, Some(ledger))?);
+    attach_continuation(loaded, work, &mut result)?;
+    Ok(result)
 }
 
 fn superseded_by_valid_claim(loaded: &Loaded, ledger: &str) -> Result<bool, String> {

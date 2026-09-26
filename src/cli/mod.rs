@@ -635,6 +635,14 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 print_json(&crate::session_goal::continuation_view(l, work)?)
             }
         }
+        "focus" => {
+            args::assert_options("work focus", a, &["config", "json"])?;
+            args::assert_positionals("work focus", a, 2)?;
+            print_json(&crate::work::set_focus(
+                l,
+                positional(a, 1, "work focus requires WORK")?,
+            )?)
+        }
         "record" => {
             args::assert_options("work record", a, &["config"])?;
             args::assert_positionals("work record", a, 2)?;
@@ -828,9 +836,9 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "resume" => {
-            args::assert_options("work resume", a, &["config", "json", "full"])?;
+            args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;
-            let result = crate::work::resume(l)?;
+            let result = crate::work::resume(l, a.flags.contains_key("history"))?;
             let result = if a.flags.contains_key("full") || result["status"] != "resumed" {
                 result
             } else {

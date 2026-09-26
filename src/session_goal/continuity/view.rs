@@ -180,8 +180,59 @@ fn bounded(value: &Value) -> Result<bool, String> {
         < 64 * 1024)
 }
 
+/// The supported receiving sequence, so a receiving host binds and records a
+/// native child from this read-only view without studying help or state.
+fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
+    let bound_context = token.as_str().unwrap_or("TOKEN").to_owned();
+    let mut bind = vec![
+        "work".into(),
+        "bind".into(),
+        work_id.into(),
+        "--context".into(),
+    ];
+    bind.extend(
+        [
+            bound_context.as_str(),
+            "--host",
+            "HOST",
+            "--session",
+            "NATIVE_SESSION",
+            "--host-version",
+            "HOST_VERSION",
+        ]
+        .map(String::from),
+    );
+    let child = [
+        "work",
+        "child",
+        work_id,
+        "SHORT_ASSIGNMENT",
+        "--context",
+        "FRESH_TOKEN",
+        "--native-child",
+        "CHILD_ID",
+    ]
+    .map(String::from)
+    .to_vec();
+    json!({
+        "bind": crate::work::compact::continuation_route(&loaded.path, bind)["command"],
+        "child": crate::work::compact::continuation_route(&loaded.path, child)["command"],
+        "placeholders": {
+            "HOST": "the receiving host, such as claude or codex",
+            "HOST_VERSION": "the host's reported version",
+            "NATIVE_SESSION": "$EXITBIND_NATIVE_SESSION_ID; if unset, report that limit instead of inventing one",
+            "FRESH_TOKEN": "mutationContext.token from the bind reply's nextAction.command",
+            "SHORT_ASSIGNMENT": "a short description of the child's task",
+            "CHILD_ID": "the host-reported native child ID, such as a Claude subagent agentId",
+        },
+        "childResult": "exact UTF-8 child result on standard input, at most 8 KiB",
+    })
+}
+
 pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
-    let full = complete_view(loaded, work_id)?;
+    let mut full = complete_view(loaded, work_id)?;
+    let receive = receive_routes(loaded, work_id, &full["mutationContext"]["token"]);
+    full["receive"] = receive.clone();
     if bounded(&full)? {
         return Ok(full);
     }
@@ -199,7 +250,7 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
         "sourceSha256":full["source"]["sha256"],"currentInputsSha256":full["currentInputsSha256"],
         "currentConditionsSha256":full["currentConditionsSha256"],
         "wholeGoalReady":full["wholeGoalReady"],"readOnly":true,"requiresExpansion":true,
-        "sections":sections}))
+        "sections":sections,"receive":receive}))
 }
 
 pub(crate) fn continuation_section(

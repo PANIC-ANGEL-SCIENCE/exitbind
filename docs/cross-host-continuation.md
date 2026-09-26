@@ -9,12 +9,24 @@ This local-workspace path assumes the same authorized operating-system
 principal on both hosts; a host name supplied to the CLI is an observation, not
 an authentication credential.
 
-Start from an explicit `smw_…` work locator. `exitbind work next WORK` includes a
-bounded `continuation` view when this work has been initialized. If that field
-says `requiresExpansion`, run `exitbind work continuation WORK` before acting.
-The latter is read-only and includes the source requirements, current lead
-binding, corrections, result references, operations, diagnoses, children, and
-remaining requirements. It never launches or retries an operation. `work
+Start from an explicit `smw_…` work locator with `exitbind work continuation
+WORK`. The view is read-only and includes the source requirements, current lead
+binding, corrections, result references, operations, diagnoses, children,
+remaining requirements, the current `mutationContext.token`, and a `receive`
+block with the bind and native-child commands. If it says `requiresExpansion`,
+the token and `receive` block remain present and section commands expand the
+rest. It never launches or retries an operation. `exitbind work next WORK`
+carries a bounded copy of the view alongside the Lead's assignment.
+
+`work begin` points the project's current-work focus at the new work, and `work
+resume` returns the focused work when it is still running. Older running work
+stays history, listed by `work resume --history`, and is never promoted by age.
+If the focused work is no longer running, `work resume` reports
+`no_current_work`. `work focus WORK` points the focus at an explicit existing
+work. The focus changes navigation only: it closes, accepts, authorizes, or
+checks nothing, and an explicit locator always overrides it. Projects without
+a focus keep the earlier behavior: no running work resumes nothing, one
+resumes, and several are ambiguous. `work
 resume` includes the same view only when discovery finds exactly one current
 work item. An ambiguous resume still requires an explicit locator.
 

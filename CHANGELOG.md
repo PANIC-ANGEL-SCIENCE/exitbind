@@ -4,6 +4,12 @@
 
 - Export the host-reported Claude Code session ID to later shell commands as
   `EXITBIND_NATIVE_SESSION_ID` from the managed SessionStart hook.
+- Start an explicit-locator handoff with `work continuation WORK`, whose
+  `receive` block gives the bind and native-child commands; the managed
+  SessionStart context names that route.
+- Keep a navigation-only current-work focus: `work begin` selects the new work,
+  `work resume` returns it, older running work stays history
+  (`work resume --history`), and `work focus WORK` repoints it.
 - Add `exitbind version --json` with the embedded build commit and the running
   executable's SHA-256 for comparison with release evidence.
 - Report missing memory scope arrays as configuration errors instead of

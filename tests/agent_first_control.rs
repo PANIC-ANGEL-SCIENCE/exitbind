@@ -330,6 +330,21 @@ fn resume_is_explicit_for_zero_and_multiple_active_work_items() {
         None,
     );
     assert_no_raw_protocol_fields(&second_begin);
+    // The focus written by the second begin selects it; the first stays
+    // history rather than making resume ambiguous.
+    let resumed = fixture.value(&["work", "resume"], None);
+    assert_no_raw_protocol_fields(&resumed);
+    assert_eq!(resumed["status"], "resumed");
+    assert_eq!(resumed["work"], second_begin["work"]);
+    assert_eq!(resumed["history"]["running"], 1);
+    // A legacy project without a focus keeps the explicit ambiguous answer.
+    let removed = [".exitbind", ".soulmate"]
+        .iter()
+        .filter(|state| {
+            std::fs::remove_file(fixture.root.join(state).join("current-work.json")).is_ok()
+        })
+        .count();
+    assert_eq!(removed, 1);
     let resumed = fixture.value(&["work", "resume"], None);
     assert_no_raw_protocol_fields(&resumed);
     assert_eq!(resumed["status"], "ambiguous");

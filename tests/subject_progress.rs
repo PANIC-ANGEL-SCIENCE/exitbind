@@ -516,6 +516,8 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                     "smw_0000000000000000000000000000000000000000000000000000000000000001",
                 );
                 let ledgers = [fixture.ledger(&first), fixture.ledger(&second)];
+                // Diagnose the legacy discovery path: no current-work focus.
+                fs::remove_file(fixture.root.join(".exitbind/current-work.json")).unwrap();
                 let before = ledgers
                     .iter()
                     .map(|ledger| fs::read(fixture.root.join(ledger)).unwrap())

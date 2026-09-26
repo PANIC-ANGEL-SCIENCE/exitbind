@@ -70,6 +70,9 @@ pub(crate) fn project(
         copy_if_present(response, &mut result, key);
     }
     copy_if_present(response, &mut result, "work");
+    for key in ["selection", "history", "focus"] {
+        copy_if_present(response, &mut result, key);
+    }
     if let Some(continuation) = response.get("continuation") {
         let bytes = serialized_len(continuation)?;
         if bytes <= 2_500 {
