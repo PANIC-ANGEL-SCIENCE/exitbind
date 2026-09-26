@@ -26,7 +26,8 @@ With Exitbind
 ```
 
 Current prerelease: `v0.25.0-rc.4`. One local binary; it calls no model and runs
-no daemon or cloud service.
+no daemon or cloud service. This page can describe behavior that is newer than
+that prerelease; the [changelog](CHANGELOG.md#unreleased) lists it.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
 [![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
@@ -39,6 +40,7 @@ no daemon or cloud service.
 | “Tests pass.” | The frozen check command, run by Exitbind itself on the current result, with its real exit code or signal, duration, and hashed output logs. A check a host reports is labelled `reported`; one Exitbind ran is labelled `observed`. |
 | “It's the latest code.” | A fingerprint of tracked and untracked, non-ignored project files, excluding Git metadata and Exitbind state, so uncommitted work is covered before anything is pushed. |
 | “Review approved it.” | Worker completion, check, review, and Lead acceptance as separate, attributed events. An omitted review is recorded as an omission, never as approval. |
+| “The reviewer asked for X, so I added it.” | In marked work, the finding as evidence and the Lead's recorded decision: `repair` inside a Lead-set boundary, `supersede` the basis, `defer`, or `reject`. Only the first two start another attempt; a deferred or rejected finding is never counted as approval. |
 | “Nothing changed since.” | An append-only, hash-chained ledger: recorded artifact bytes equal disk bytes, or no new run event is written. |
 | “Done.” | `EXIT READY`, `EXIT REFUSED`, or `EXIT BLOCKED` with a reason code, plus a verifiable receipt for accepted checked runs. |
 
@@ -52,8 +54,15 @@ results before a push. CI and branch protection keep their existing roles.
 | A small reversible edit, or a task whose native handoff and CI are sufficient | Keep the existing agent, Git and CI workflow. | The checks that workflow actually ran; no Exitbind setup is needed. |
 | A one-off check with no work to hand off or resume | Run that check in the existing host or CI. | The command's own exit status; Exitbind adds no record. |
 | Material work needing a recoverable same-work handoff and acceptance tied to the current result | Use Exitbind in the existing agent host. | Recorded work, applicable check evidence, the owner's review decision and Lead acceptance under [Exitbind's authority boundary](REFERENCE.md#authority-boundary). |
+| A series of material tasks in one project | Opt in to project memory and begin each task as new governed work. | The managed session hook gives each new session the Lead's role and currently accepted project rules; each work item still earns its own check, review, and acceptance. |
 
-Exitbind's current supported continuation keeps one work item across native hosts in a shared local workspace. Carrying an owner-shaped agent's role, project rules, and corrections into a genuinely new work item is the product direction, not a current capability. Task quality and operating cost compared with other workflows are unmeasured.
+Task quality and operating cost compared with other workflows are unmeasured.
+
+**As a default layer.** Exitbind can stay installed beside Codex or Claude
+Code. The host keeps its models, sessions, subagents, tools, and permissions;
+small reversible work stays direct; material work gains acceptance and
+continuity that outlive one conversation. The footprint is a short bootstrap
+skill, a session hook, and local files.
 
 ## Built for your coding agent
 
@@ -74,22 +83,25 @@ exitbind work check WORK       -> run the frozen check when it is the next actio
 - **Check evidence is captured.** Exitbind executes the frozen command and
   records its outcome and logs. Workers still report their results, and
   reviewers still supply their judgments.
-- **Small, machine-readable replies.** `work check` and `work return` reply in at
-  most 8 KiB of JSON, with a read-only follow-up command as an argv array. Read
-  `work next WORK --full` with the same config before the next mutation.
-- **Inspect before retrying.** When either command records an event, its reply
-  names that exact event even if later response preparation or cleanup fails.
-  The detail lookup reads it without re-running the check or submitting a result.
+- **Resume, don't reconstruct.** `work resume` rebuilds the next step from
+  recorded state after a restart or context loss and returns the work last
+  begun or focused; older running work stays history (`work resume --history`).
+  Evidence that still belongs to the same result is kept.
+- **Continue on another host.** `work continuation WORK` gives Codex or Claude
+  Code in the same local workspace the original requirements, corrections,
+  result references, and the bind and child commands; stale context is refused.
+  See [cross-host continuation](docs/cross-host-continuation.md).
+- **Capture subagent results from the host.** After `work child prepare`, the
+  managed Claude Code subagent hooks record the child's host-reported ID and
+  exact final message, so the parent never retypes it. Other hosts record the
+  return with `work child`.
+- **Small replies, safe to inspect.** `work check` and `work return` reply in
+  at most 8 KiB of JSON with a read-only follow-up command as an argv array.
+  When either records an event, the reply names it even if later cleanup fails,
+  so the lookup reads it without re-running the check or resubmitting.
 - **Hold a result while replanning.** When the iteration governor requires a
   replan or new evidence, a completed worker result is retained by content hash
   for later resubmission. Other refusals do not promise that retention.
-- **Resume, don't reconstruct.** `work resume` rebuilds the next step from recorded
-  state after a restart or context loss, keeps evidence that still belongs to
-  the same result, and names the recorder version that answered.
-- **Record a native handoff without protocol bookkeeping.** A receiving host
-  uses the context token from `work next` with `work bind`, then records the
-  exact child return through `work child`. Exitbind builds the record and
-  digest; stale context is refused.
 
 See [work mutation results](docs/work-mutation-results.md) for the exact reply
 contract. A successful recording operation does not mean the check passed;
@@ -161,7 +173,8 @@ one link -> classify -> exact-result check -> review decision
 ```
 
 These doors stay separate: worker completion is not a passing check, a passing
-check is not reviewer approval, and reviewer approval is not lead acceptance.
+check is not reviewer approval, reviewer approval is not lead acceptance, and
+a reviewer finding is not a requirement until the Lead decides it.
 
 In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change.
 
@@ -242,7 +255,11 @@ Direct operators can use:
 ```sh
 exitbind update
 exitbind work resume
+exitbind version --json
 ```
+
+`version --json` reports the embedded build commit and the running executable's
+SHA-256 for comparison with release evidence.
 
 After updating from an earlier release, run `exitbind host install` once so the
 host guidance matches the new binary. From this release on, `exitbind update`
@@ -258,6 +275,7 @@ and [run recovery](docs/repair-a-run.md).
 - [First checked run](docs/first-checked-run.md)
 - [Work mutation results](docs/work-mutation-results.md)
 - [Repair or resume a run](docs/repair-a-run.md)
+- [Continue one work item across hosts](docs/cross-host-continuation.md)
 - [Command reference](REFERENCE.md)
 - [Terminology](docs/glossary.md)
 - [Optional memory, hooks, and receipts](docs/optional-surfaces.md)
