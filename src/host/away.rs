@@ -987,6 +987,7 @@ mod tests {
         let loaded = Loaded {
             config: json!({}),
             agents: std::collections::BTreeMap::new(),
+            lead: None,
             path: root.join("soulmate.json"),
             control_root: root.clone(),
             product_root: root.clone(),

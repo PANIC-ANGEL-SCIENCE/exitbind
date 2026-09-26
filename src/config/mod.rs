@@ -12,6 +12,8 @@ pub use crate::project::path::{absolute, file, rel};
 pub struct Loaded {
     pub config: Value,
     pub agents: BTreeMap<String, crate::config::types::AgentConfig>,
+    /// The validated `orchestration.lead` agent name.
+    pub lead: Option<String>,
     pub path: PathBuf,
     pub control_root: PathBuf,
     pub product_root: PathBuf,
@@ -26,9 +28,8 @@ impl Loaded {
         self.agents.get(name)
     }
 
-    /// The validated `orchestration.lead` agent name.
     pub fn lead(&self) -> Option<&str> {
-        self.config["orchestration"]["lead"].as_str()
+        self.lead.as_deref()
     }
 }
 
@@ -91,9 +92,11 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
     let agents = crate::config::types::from_validated_agents(&config["agents"])
         .map_err(|error| format!("internal typed configuration projection failed: {error}"))?;
     let layout = crate::project::layout_types::resolve(&path, &config)?;
+    let lead = config["orchestration"]["lead"].as_str().map(str::to_owned);
     Ok(Loaded {
         config,
         agents,
+        lead,
         path,
         control_root: layout.control_root,
         product_root: layout.product_root,

@@ -9,7 +9,9 @@
   SessionStart context names that route.
 - Capture a prepared native child from the host: `work child prepare` records
   the intent, and the managed Claude Code SubagentStart and SubagentStop hooks
-  record the host-reported child ID and exact final message.
+  record the host-reported child ID and exact final message. `--replace`
+  supersedes a waiting intent, and `work child recover` records a retained
+  result that failed to attach.
 - Project the Lead's configured role and current accepted project memory into
   a new session's SessionStart context when memory is enabled; revoked,
   rejected, expired, changed, and other-project items are never projected.

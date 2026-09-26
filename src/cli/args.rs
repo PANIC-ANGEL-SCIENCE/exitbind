@@ -102,6 +102,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "require-harness-receipt",
     "session-closed",
     "history",
+    "replace",
 ];
 
 pub fn parse(values: &[String]) -> Result<Arguments, String> {

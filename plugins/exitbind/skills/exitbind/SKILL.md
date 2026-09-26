@@ -58,15 +58,18 @@ exitbind work child prepare WORK SHORT_ASSIGNMENT --context FRESH_TOKEN
 ```
 
 Then launch the native child normally. In Claude Code, Exitbind's managed
-subagent hooks record the child's host-reported ID and its final message
-exactly as the host delivers it; do not copy either yourself. Read
-`exitbind work continuation WORK` afterwards: `preparedChildren` shows the
-capture state and `children` the recorded result. An unprepared subagent is
-never recorded. On a host without these hooks, record the exact final message
-yourself with `exitbind work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN
---native-child CHILD_ID < EXACT_RESULT_FILE`, within 8 KiB and never truncated.
-A host-reported child is not a provider-authenticated identity or independent
-review.
+subagent hooks capture the next compatible subagent this session starts: they
+record its host-reported ID and its final message exactly as the host delivers
+it, so do not copy either yourself. Add `--agent-type TYPE` when other
+subagents may start first. A subagent started with no prepared intent is never
+recorded. Read `exitbind work continuation WORK` afterwards: `preparedChildren`
+shows the capture state and `children` the recorded result. If a finished
+child stays `prepared` or `claimed` (a host without these hooks), record its
+exact final message with `exitbind work child WORK SHORT_ASSIGNMENT --context
+FRESH_TOKEN --native-child CHILD_ID < EXACT_RESULT_FILE`, within 8 KiB and
+never truncated; if it is `failed` with a retained result, run the `recover`
+command it names. A host-reported child is not a provider-authenticated
+identity or independent review.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.

@@ -271,3 +271,143 @@ fn managed_claude_hooks_include_subagent_stop() {
     }
     let _ = fs::remove_dir_all(&home);
 }
+
+impl Fixture {
+    fn bind_host(&self, host: &str, session: &str) {
+        let token = self.token();
+        ok(
+            &self.root,
+            &[
+                "work",
+                "bind",
+                &self.work,
+                "--context",
+                &token,
+                "--host",
+                host,
+                "--session",
+                session,
+                "--host-version",
+                "1",
+            ],
+        );
+    }
+
+    fn prepare_with(&self, assignment: &str, extra: &[&str]) -> Output {
+        let token = self.token();
+        let mut args = vec![
+            "work",
+            "child",
+            "prepare",
+            &self.work,
+            assignment,
+            "--context",
+            &token,
+        ];
+        args.extend_from_slice(extra);
+        run(&self.root, &args, b"", true)
+    }
+}
+
+#[test]
+fn a_waiting_intent_is_replaced_explicitly_or_abandoned_by_a_rebind() {
+    let f = Fixture::new("capture-replace");
+    assert!(f.prepare("first child").status.success());
+    let refused = f.prepare("second child");
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--replace"));
+    let replaced = f.prepare_with("second child", &["--replace"]);
+    assert!(replaced.status.success(), "{replaced:?}");
+    let states = f.view()["preparedChildren"].clone();
+    assert_eq!(states[0]["state"], "superseded");
+    assert_eq!(states[1]["state"], "prepared");
+
+    f.bind("parent-1b");
+    assert!(f.prepare("third child").status.success());
+    let states = f.view()["preparedChildren"].clone();
+    assert_eq!(states[1]["state"], "abandoned");
+    assert_eq!(states[2]["state"], "prepared");
+}
+
+#[test]
+fn agent_type_narrows_the_claim_and_other_hosts_are_not_claimed() {
+    let f = Fixture::new("capture-agent-type");
+    assert!(f
+        .prepare_with("typed child", &["--agent-type", "general-purpose"])
+        .status
+        .success());
+    f.start("parent-1", "agent-explore");
+    assert_eq!(f.view()["preparedChildren"][0]["state"], "prepared");
+    f.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":"parent-1",
+        "agent_id":"agent-gp","agent_type":"general-purpose"}),
+    );
+    assert_eq!(f.view()["preparedChildren"][0]["nativeChild"], "agent-gp");
+
+    let g = Fixture::new("capture-codex");
+    g.bind_host("codex", "codex-1");
+    assert!(g.prepare("codex child").status.success());
+    g.start("codex-1", "agent-c");
+    g.stop("codex-1", "agent-c", RESULT);
+    let view = g.view();
+    assert_eq!(view["preparedChildren"][0]["state"], "prepared");
+    assert!(view["children"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_retained_result_is_recovered_and_a_messageless_repeat_changes_nothing() {
+    let f = Fixture::new("capture-recover");
+    assert!(f.prepare("check README docs").status.success());
+    f.start("parent-1", "agent-k");
+    f.bind("parent-2");
+    f.stop("parent-1", "agent-k", RESULT);
+    let failed = f.view()["preparedChildren"][0].clone();
+    assert_eq!(failed["state"], "failed");
+    assert_eq!(failed["retainedResultBytes"], RESULT.len());
+    let intent = failed["intent"].as_str().unwrap().to_owned();
+
+    // Recovery refuses another session's binding, then records under the
+    // child's own session without re-running it.
+    let token = f.token();
+    let refused = run(
+        &f.root,
+        &[
+            "work",
+            "child",
+            "recover",
+            &f.work,
+            &intent,
+            "--context",
+            &token,
+        ],
+        b"",
+        true,
+    );
+    assert!(!refused.status.success());
+    f.bind("parent-1");
+    let token = f.token();
+    let recovered = run(
+        &f.root,
+        &[
+            "work",
+            "child",
+            "recover",
+            &f.work,
+            &intent,
+            "--context",
+            &token,
+        ],
+        b"",
+        true,
+    );
+    assert!(recovered.status.success(), "{recovered:?}");
+    let view = f.view();
+    assert_eq!(view["children"][0]["resultText"], RESULT);
+    assert_eq!(view["children"][0]["nativeChild"], "agent-k");
+    assert_eq!(view["preparedChildren"][0]["state"], "recorded");
+
+    let before = f.history();
+    f.hook(json!({"hook_event_name":"SubagentStop","session_id":"parent-1","agent_id":"agent-k"}));
+    assert_eq!(f.history(), before);
+    assert_eq!(f.view()["preparedChildren"][0]["state"], "recorded");
+}

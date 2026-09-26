@@ -103,11 +103,16 @@ To keep a native child's result, run `work child prepare WORK SHORT_ASSIGNMENT
 --context FRESH_TOKEN` before launching it. In Claude Code, Exitbind's managed
 SubagentStart hook claims that prepared child for the bound parent session with
 the host-reported child ID, and SubagentStop records the host's final message
-exactly through the child record below; the parent relays neither. At most one
-prepared child waits per parent session, and an unprepared subagent is never
+exactly through the child record below; the parent relays neither. The claim
+goes to the next compatible subagent that session starts, so pass
+`--agent-type TYPE` when other subagents may start first. At most one prepared
+child waits per parent session; `--replace` supersedes it, and a binding
+change abandons it. A subagent started with no prepared intent is never
 recorded. `work continuation WORK` lists `preparedChildren`; a capture that
 cannot attach, such as an oversized message or a binding that changed before
-the child finished, stays there as `failed` with its reason.
+the child finished, stays there as `failed` with its reason. When a failed
+capture retained the result under the same session, `work child recover WORK
+INTENT --context TOKEN` records it without re-running the child.
 
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind

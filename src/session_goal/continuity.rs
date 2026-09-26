@@ -218,6 +218,7 @@ mod record;
 mod view;
 pub(crate) use capture::{
     claim as claim_child, finalize as finalize_child, prepare as prepare_child,
+    recover as recover_child,
 };
 pub(crate) use record::{continuation_bind, continuation_child, continuation_record};
 pub(crate) use view::{continuation_section, continuation_view, has_unresolved, support_current};

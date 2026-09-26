@@ -11,7 +11,8 @@
 use crate::config::Loaded;
 use crate::evidence::hash;
 
-const MAX_CONTENT: usize = 6 * 1024;
+/// Bytes for the whole memory block: inlined content and every item line.
+const MAX_BLOCK: usize = 6 * 1024;
 const MAX_ERROR: usize = 512;
 
 pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
@@ -27,7 +28,7 @@ pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
         );
     let mut text = format!(
         "Project role for this session: {lead} ({}), profile {} ({profile}).",
-        agent.purpose.trim(),
+        inline(agent.purpose.trim()),
         agent.profile
     );
     let references = match crate::memory::selection::resolve(loaded, lead) {
@@ -45,7 +46,7 @@ pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
         "\nAccepted project memory for the {lead} role: the owner's current project rules and permitted findings. Apply each only within its scope. It is not a check, approval, or permission, and revoked or expired items are excluded."
     ));
     let mut used = 0usize;
-    for reference in &references {
+    for (position, reference) in references.iter().enumerate() {
         let (Some(scope), Some(path), Some(sha)) = (
             reference["scope"].as_str(),
             reference["sourcePath"].as_str(),
@@ -57,13 +58,28 @@ pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
             .ok()
             .filter(|bytes| hash::bytes(bytes) == sha)
             .and_then(|bytes| String::from_utf8(bytes).ok());
-        match content {
-            Some(content) if used + content.len() <= MAX_CONTENT => {
-                used += content.len();
-                text.push_str(&format!("\n- [{scope}] {path}:\n{}", content.trim_end()));
+        let full = content.map(|content| format!("\n- [{scope}] {path}:\n{}", content.trim_end()));
+        let short = format!("\n- [{scope}] {path} (read this file)");
+        let line = match full {
+            Some(full) if used + full.len() <= MAX_BLOCK => full,
+            _ if used + short.len() <= MAX_BLOCK => short,
+            _ => {
+                text.push_str(&format!(
+                    "\n- {} more accepted items; list them with `exitbind memory resolve {lead} --json`.",
+                    references.len() - position
+                ));
+                break;
             }
-            _ => text.push_str(&format!("\n- [{scope}] {path} (read this file)")),
-        }
+        };
+        used += line.len();
+        text.push_str(&line);
     }
     Some(text)
+}
+
+fn inline(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
 }

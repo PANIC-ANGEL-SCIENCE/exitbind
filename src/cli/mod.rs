@@ -582,7 +582,11 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "child" if a.positional.get(1).map(String::as_str) == Some("prepare") => {
-            args::assert_options("work child prepare", a, &["config", "context", "agent-type"])?;
+            args::assert_options(
+                "work child prepare",
+                a,
+                &["config", "context", "agent-type", "replace"],
+            )?;
             args::assert_positionals("work child prepare", a, 4)?;
             let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
             let assignment = positional(a, 3, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
@@ -594,6 +598,21 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 binding_revision,
                 assignment,
                 a.options.get("agent-type").map(String::as_str),
+                a.flags.contains_key("replace"),
+            )?)
+        }
+        "child" if a.positional.get(1).map(String::as_str) == Some("recover") => {
+            args::assert_options("work child recover", a, &["config", "context"])?;
+            args::assert_positionals("work child recover", a, 4)?;
+            let work = positional(a, 2, "work child recover requires WORK INTENT")?;
+            let intent = positional(a, 3, "work child recover requires WORK INTENT")?;
+            let (expected_revision, binding_revision) = context_fence(a, work)?;
+            print_json(&crate::session_goal::recover_child(
+                l,
+                work,
+                intent,
+                expected_revision,
+                binding_revision,
             )?)
         }
         "child" => {

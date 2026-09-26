@@ -335,15 +335,31 @@ fn routing_text(event: &str, update: Option<&str>, routing: Routing) -> Option<S
     Some(bounded(text))
 }
 
+/// Emit within the host's output cap. An oversized context is shortened with
+/// a marker instead of being dropped, so the routing rules at its start stay.
 fn emit(event: &str, text: &str) -> Result<(), String> {
-    let output = serde_json::to_string(
-        &json!({"hookSpecificOutput":{"hookEventName":event,"additionalContext":text}}),
-    )
-    .map_err(|_| String::new())?;
-    if output.len() <= MAX_OUTPUT {
-        println!("{output}");
+    let mut text = text.to_owned();
+    loop {
+        let output = serde_json::to_string(
+            &json!({"hookSpecificOutput":{"hookEventName":event,"additionalContext":text}}),
+        )
+        .map_err(|_| String::new())?;
+        if output.len() <= MAX_OUTPUT {
+            println!("{output}");
+            return Ok(());
+        }
+        let keep = text.len() * 3 / 4;
+        if keep < 64 {
+            return Ok(());
+        }
+        let end = text
+            .char_indices()
+            .take_while(|(index, _)| *index < keep)
+            .map(|(index, _)| index)
+            .last()
+            .unwrap_or(0);
+        text = format!("{}\n[context truncated]", &text[..end]);
     }
-    Ok(())
 }
 
 fn exact_agent(payload: &serde_json::Map<String, Value>, config: &Value) -> Option<String> {

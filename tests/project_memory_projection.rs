@@ -343,3 +343,24 @@ fn a_passing_check_on_one_work_does_not_carry_into_the_next() {
     }
     fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn many_accepted_items_never_drop_the_session_context() {
+    let root = project("memory-many-items");
+    // Allow the policy maximum so the projection, not the budget, is tested.
+    let path = root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config["memory"]["maxItems"] = json!(256);
+    fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    for index in 0..200 {
+        let file = format!(
+            "rules/an-accepted-project-rule-with-a-long-descriptive-file-name-{index:03}.md"
+        );
+        let ledger = format!("memory/item-{index:03}.jsonl");
+        accept(&root, &file, "Rule: keep it.\n", "project-rules", &ledger);
+    }
+    let context = session_context(&root);
+    assert!(context.contains("first run `exitbind work continuation WORK`"));
+    assert!(context.contains("more accepted items; list them with"));
+    fs::remove_dir_all(&root).unwrap();
+}
