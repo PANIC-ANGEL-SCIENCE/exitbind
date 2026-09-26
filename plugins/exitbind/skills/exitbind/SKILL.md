@@ -94,6 +94,13 @@ retains required-review semantics and cannot later use `run review-policy`. On a
 marked running run, the actual revision command is `exitbind run review-policy
 lead LEDGER --decision omitted --reason "OWNER_REASON" --config CONFIG`; use
 `--decision required` when that is the owner's selected choice.
+In marked work, a reviewer `rework` waits for the Lead instead of starting a
+worker. A finding is evidence, not a requirement. Decide it with
+`exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede
+--reason TEXT`: `repair` also takes your own `--repair-boundary` and
+`--regression`, `supersede` takes an explicit `--successor-basis`, and `defer`
+or `reject` keep the finding without new work. A deferred or rejected finding
+is not an approval.
 When the governed path is selected, inspect the bridge end to end: source,
 projected skill/config, fresh-session discovery, invocation, observed behavior,
 and outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as

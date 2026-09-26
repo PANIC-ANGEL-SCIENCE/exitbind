@@ -83,6 +83,9 @@ small verification needed to prove behavior.
 ## Change discipline
 
 - Each file must have one explainable responsibility.
+- A production source listed in `tests/fixtures/architecture-budget.txt` may
+  not grow; any other stays under 32 KiB. Extract the responsibility you are
+  changing instead of adding policy to a large facade, reducer, or router.
 - Keep the CLI entry point as wiring and dispatch only.
 - `config::validate` owns configuration acceptance. New or modified code must
   use `Loaded::agent` and typed fields instead of indexing `Loaded.config`

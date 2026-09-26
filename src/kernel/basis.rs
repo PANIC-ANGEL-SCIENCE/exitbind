@@ -69,41 +69,6 @@ impl ReviewDecision {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Disposition {
-    pub(crate) category: String,
-    pub(crate) finding_sha256s: Vec<String>,
-    pub(crate) basis_sha256: Option<String>,
-    pub(crate) causal_assumption: String,
-    pub(crate) affected_paths: Vec<String>,
-    pub(crate) repair_boundary: String,
-    pub(crate) decisive_regression: String,
-    pub(crate) invalidated_evidence: Vec<String>,
-    pub(crate) successor_basis: Option<Basis>,
-    pub(crate) sha256: String,
-}
-
-impl Disposition {
-    pub(crate) fn value(&self) -> Value {
-        let mut value = json!({
-            "category": self.category,
-            "findingSha256s": self.finding_sha256s,
-            "basisSha256": self.basis_sha256,
-            "causalAssumption": self.causal_assumption,
-            "affectedPaths": self.affected_paths,
-            "repairBoundary": self.repair_boundary,
-            "decisiveRegression": self.decisive_regression,
-            "invalidatedEvidence": self.invalidated_evidence,
-        });
-        value["successorBasis"] = self
-            .successor_basis
-            .as_ref()
-            .map_or(Value::Null, Basis::value);
-        value["sha256"] = json!(self.sha256);
-        value
-    }
-}
-
 /// A successor basis may clarify or narrow the accepted meaning, but existing
 /// constraints and bound provenance must be preserved while open zones narrow.
 pub(crate) fn validate_successor(current: &Basis, successor: &Basis) -> Result<(), String> {
@@ -266,90 +231,6 @@ pub(crate) fn review_value_with_previous(
     Ok(review)
 }
 
-pub(crate) fn parse_disposition(value: &Value, label: &str) -> Result<Disposition, String> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| format!("{label} must be an object"))?;
-    reject_unknown(
-        object,
-        &[
-            "category",
-            "findingSha256s",
-            "basisSha256",
-            "causalAssumption",
-            "affectedPaths",
-            "repairBoundary",
-            "decisiveRegression",
-            "invalidatedEvidence",
-            "successorBasis",
-            "sha256",
-        ],
-        label,
-    )?;
-    let category = object
-        .get("category")
-        .and_then(Value::as_str)
-        .filter(|value| {
-            matches!(
-                *value,
-                "implementation_defect" | "contract_or_design_defect" | "evidence_gap"
-            )
-        })
-        .ok_or_else(|| format!("{label} category is invalid"))?
-        .to_owned();
-    let finding_sha256s = sha_array(object.get("findingSha256s"), "findingSha256s", label, true)?;
-    let basis_sha256 = optional_sha(object.get("basisSha256"), "basisSha256", label)?;
-    let causal_assumption = text(
-        object.get("causalAssumption"),
-        "causalAssumption",
-        label,
-        1024,
-    )?;
-    let affected_paths = strings(object.get("affectedPaths"), "affectedPaths", label, true)?;
-    let repair_boundary = text(object.get("repairBoundary"), "repairBoundary", label, 1024)?;
-    let decisive_regression = text(
-        object.get("decisiveRegression"),
-        "decisiveRegression",
-        label,
-        1024,
-    )?;
-    let invalidated_evidence = sha_array(
-        object.get("invalidatedEvidence"),
-        "invalidatedEvidence",
-        label,
-        false,
-    )?;
-    let successor_basis = object
-        .get("successorBasis")
-        .filter(|value| !value.is_null())
-        .map(|value| parse_basis(value, "successorBasis"))
-        .transpose()?;
-    if category == "contract_or_design_defect" && successor_basis.is_none() {
-        return Err(format!("{label} design defects require successorBasis"));
-    }
-    if category != "contract_or_design_defect" && successor_basis.is_some() {
-        return Err(format!("{label} successorBasis requires a design defect"));
-    }
-    let mut disposition = Disposition {
-        category,
-        finding_sha256s,
-        basis_sha256,
-        causal_assumption,
-        affected_paths,
-        repair_boundary,
-        decisive_regression,
-        invalidated_evidence,
-        successor_basis,
-        sha256: String::new(),
-    };
-    let expected = hash::value(&disposition_without_hash(&disposition));
-    if object.get("sha256").and_then(Value::as_str) != Some(expected.as_str()) {
-        return Err(format!("{label} hash is missing or invalid"));
-    }
-    disposition.sha256 = expected;
-    Ok(disposition)
-}
-
 fn basis_without_hash(basis: &Basis) -> Value {
     let mut value = basis.value();
     value.as_object_mut().unwrap().remove("sha256");
@@ -362,13 +243,7 @@ fn review_without_hash(review: &ReviewDecision) -> Value {
     value
 }
 
-fn disposition_without_hash(disposition: &Disposition) -> Value {
-    let mut value = disposition.value();
-    value.as_object_mut().unwrap().remove("sha256");
-    value
-}
-
-fn reject_unknown(
+pub(super) fn reject_unknown(
     object: &Map<String, Value>,
     allowed: &[&str],
     label: &str,
@@ -379,7 +254,12 @@ fn reject_unknown(
     Ok(())
 }
 
-fn text(value: Option<&Value>, field: &str, label: &str, max: usize) -> Result<String, String> {
+pub(super) fn text(
+    value: Option<&Value>,
+    field: &str,
+    label: &str,
+    max: usize,
+) -> Result<String, String> {
     let value = value
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty() && value.len() <= max && !value.contains('\0'))
@@ -387,7 +267,7 @@ fn text(value: Option<&Value>, field: &str, label: &str, max: usize) -> Result<S
     Ok(value.to_owned())
 }
 
-fn strings(
+pub(super) fn strings(
     value: Option<&Value>,
     field: &str,
     label: &str,
@@ -416,7 +296,7 @@ fn strings(
     Ok(result)
 }
 
-fn sha_array(
+pub(super) fn sha_array(
     value: Option<&Value>,
     field: &str,
     label: &str,
@@ -448,7 +328,11 @@ fn required_sha(value: Option<&Value>, field: &str, label: &str) -> Result<Strin
     Ok(value.to_owned())
 }
 
-fn optional_sha(value: Option<&Value>, field: &str, label: &str) -> Result<Option<String>, String> {
+pub(super) fn optional_sha(
+    value: Option<&Value>,
+    field: &str,
+    label: &str,
+) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(value) => required_sha(Some(value), field, label).map(Some),
@@ -507,7 +391,6 @@ mod tests {
             "review"
         )
         .is_err());
-        assert!(parse_disposition(&json!({"category":"evidence_gap"}), "disposition").is_err());
 
         let required = review_value("required", "owner choice").unwrap();
         let mut value = required.value();

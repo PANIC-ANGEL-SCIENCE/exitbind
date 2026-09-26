@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Route a reviewer `rework` in marked governed work to a Lead decision:
+  `work disposition --decision repair|defer|reject|supersede` binds the
+  pending finding cycle and basis. `defer` and `reject` start no work and
+  resolve review as `resolved_by_lead_disposition`, not approval; `repair` and
+  `supersede` carry the Lead's repair boundary to the next attempt. Repeated
+  findings show prior cycles to the Lead. Default role profiles now separate
+  findings from requirements.
 - Export the host-reported Claude Code session ID to later shell commands as
   `EXITBIND_NATIVE_SESSION_ID` from the managed SessionStart hook.
 - Start an explicit-locator handoff with `work continuation WORK`, whose

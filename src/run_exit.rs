@@ -267,6 +267,8 @@ pub(crate) struct ExitState {
     pub(crate) reviewer_completed: usize,
     pub(crate) review_required: bool,
     pub(crate) review_decision_sha256: Option<String>,
+    /// A reviewer finding cycle the Lead resolved by `defer` or `reject`.
+    pub(crate) review_resolution: Option<Value>,
     pub(crate) scope_completed: bool,
 }
 
@@ -294,6 +296,7 @@ impl ExitState {
                 reviewer_total: 0,
                 review_required: true,
                 review_decision_sha256: None,
+                review_resolution: None,
             });
         }
         let attempt = state["attempt"]
@@ -338,6 +341,7 @@ impl ExitState {
             reviewer_total,
             review_required,
             review_decision_sha256,
+            review_resolution: crate::run::disposition::current_resolution(state),
             assessment,
             current_submissions,
         })
@@ -392,6 +396,7 @@ impl ExitState {
             && self.assessment.policy.is_some()
             && self.review_required
             && !self.reviewer_approved()
+            && self.review_resolution.is_none()
         {
             return Err("canonical acceptance requires reviewer approval".into());
         }

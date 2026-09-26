@@ -11,6 +11,31 @@ pub(crate) fn return_result(
     disposition: Option<&str>,
     held_reference: Option<&str>,
 ) -> Result<Value, String> {
+    return_result_with(
+        loaded,
+        work,
+        assignment,
+        outcome,
+        reason,
+        disposition,
+        held_reference,
+        None,
+    )
+}
+
+/// Deliver a result whose bytes Exitbind composed itself instead of reading
+/// them from standard input.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn return_result_with(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    outcome: &str,
+    reason: Option<&str>,
+    disposition: Option<&str>,
+    held_reference: Option<&str>,
+    supplied: Option<Vec<u8>>,
+) -> Result<Value, String> {
     if outcome.trim().is_empty() {
         return Err("work return requires --outcome OUTCOME".into());
     }
@@ -35,6 +60,11 @@ pub(crate) fn return_result(
         || matches!(action["role"].as_str(), Some("worker" | "adviser"))
             && (["completed", "blocked"].contains(&outcome)
                 || action["role"] == "worker" && outcome == "contradiction");
+    if !allowed && action["packet"].get("pendingDisposition").is_some() {
+        return Err(format!(
+            "outcome '{outcome}' is not allowed while a finding waits for the Lead: exitbind work disposition {work} {assignment} --decision repair|defer|reject|supersede --reason TEXT"
+        ));
+    }
     if !allowed {
         return Err(format!(
             "outcome '{outcome}' is not allowed for this assignment"
@@ -47,9 +77,10 @@ pub(crate) fn return_result(
     if held_reference.is_some() && (outcome != "completed" || action["role"] != "worker") {
         return Err("--result-ref requires a pending worker completion".into());
     }
-    let bytes = match held_reference {
-        Some(reference) => held::read(loaded, reference, work, assignment)?,
-        None => {
+    let bytes = match (held_reference, supplied) {
+        (Some(reference), _) => held::read(loaded, reference, work, assignment)?,
+        (None, Some(bytes)) => bytes,
+        (None, None) => {
             let mut bytes = Vec::new();
             std::io::stdin()
                 .read_to_end(&mut bytes)

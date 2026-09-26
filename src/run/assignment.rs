@@ -25,6 +25,9 @@ pub(crate) fn pending(state: &Value) -> Vec<Value> {
         .filter(|event| {
             event["stage"] == state["currentStage"]
                 && event["attempt"] == state["attempt"]
+                // A disposition decides a finding cycle; it never completes
+                // the Lead's stage.
+                && event["outcome"] != "disposition"
                 && (event["role"] != "reviewer"
                     || state["reviewPolicy"]["decision"] != "required"
                     || event["reviewDecisionSha256"] == state["reviewPolicy"]["sha256"])
@@ -219,6 +222,16 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         state["attempt"]
     ));
     assignment["upstreamArtifactsImmutable"] = json!(true);
+    if agent["role"] == "lead" {
+        if let Some(pending) = super::disposition::lead_view(state) {
+            assignment["pendingDisposition"] = pending;
+        }
+        if let Some(resolution) = super::disposition::current_resolution(state) {
+            assignment["reviewResolution"] = resolution;
+        }
+    } else if let Some(repair) = super::disposition::repair_view(state) {
+        assignment["leadRepair"] = repair;
+    }
     if let Some(references) = agent.get("memoryReferences") {
         assignment["memoryReferences"] = references.clone();
     }
@@ -259,10 +272,16 @@ pub(crate) fn handle(work: &str, assignment: &Value) -> Result<String, String> {
         .ok_or("assignment agent is invalid")?;
     let basis = assignment["basisSha256"].as_str().unwrap_or("");
     let review = assignment["reviewDecisionSha256"].as_str().unwrap_or("");
-    let identity = if basis.is_empty() && review.is_empty() {
+    let mut identity = if basis.is_empty() && review.is_empty() {
         format!("{work}\n{stage}\n{attempt}\n{agent}")
     } else {
         format!("{work}\n{stage}\n{attempt}\n{agent}\n{basis}\n{review}")
     };
+    // A Lead that resolved a review cycle holds a new assignment at the same
+    // stage and attempt.
+    if let Some(resolution) = assignment["reviewResolution"]["dispositionSha256"].as_str() {
+        identity.push('\n');
+        identity.push_str(resolution);
+    }
     Ok(format!("sma_{}", crate::evidence::hash::text(&identity)))
 }

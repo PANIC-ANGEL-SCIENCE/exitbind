@@ -364,6 +364,8 @@ fn known(value: &str) -> Option<&'static str> {
         "current",
         "failed",
         "approved",
+        "finding_pending",
+        "resolved_by_lead_disposition",
         "active",
         "satisfied",
     ]

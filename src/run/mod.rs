@@ -7,6 +7,7 @@
 pub(crate) mod artifact;
 pub(crate) mod assignment;
 pub(crate) mod capture;
+pub(crate) mod disposition;
 pub(crate) mod error;
 mod event_detail;
 mod event_evidence;
@@ -1251,24 +1252,13 @@ where
                 );
             }
         }
-        if outcome == "disposition" && assignment["role"] != "lead" {
-            return Err("disposition requires the pending Lead assignment".into());
-        }
-        if outcome != "disposition" && disposition.is_some() {
-            return Err("--disposition requires --outcome disposition".into());
-        }
-        let parsed_disposition = if outcome == "disposition" {
-            let raw = disposition
-                .or(reason)
-                .ok_or("a disposition submission requires --disposition JSON")?;
-            let parsed: Value = serde_json::from_str(raw)
-                .map_err(|error| format!("disposition is not valid JSON: {error}"))?;
-            let parsed = crate::kernel::basis::parse_disposition(&parsed, "disposition")?;
-            run_state::validate_disposition(&state, &parsed)?;
-            Some(parsed)
-        } else {
-            None
-        };
+        let parsed_disposition = crate::run::disposition::submission(
+            &state,
+            &assignment["role"],
+            outcome,
+            disposition.or(reason),
+            disposition.is_some(),
+        )?;
         let mut grant_hashes = Vec::new();
         if state["governor"]["enabled"] == true
             && assignment["role"] == "worker"

@@ -48,19 +48,19 @@ pub(crate) fn project_kernel(kernel: &ExitState) -> Value {
     // required check is still missing.
     let check_total = kernel.worker_total * kernel.assessment.targets_per_worker;
     let check_earned = proportional(CHECK_WEIGHT, check_completed, check_total);
-    let review_earned = if kernel.review_required {
+    let review_earned = if !kernel.review_required || kernel.review_resolution.is_some() {
+        REVIEW_WEIGHT
+    } else {
         proportional(
             REVIEW_WEIGHT,
             kernel.reviewer_completed,
             kernel.reviewer_total,
         )
-    } else {
-        REVIEW_WEIGHT
     };
     let lead_completed = u64::from(kernel.lead_accepted());
     let lead_earned = lead_completed * LEAD_WEIGHT;
     let percent = scope_earned + worker_earned + check_earned + review_earned + lead_earned;
-    json!({
+    let mut view = json!({
         "applicable": true,
         "percent": percent,
         "state": state,
@@ -84,7 +84,13 @@ pub(crate) fn project_kernel(kernel: &ExitState) -> Value {
             },
             "lead": {"completed": lead_completed, "total": 1, "earned": lead_earned}
         }
-    })
+    });
+    // Approval and Lead resolution are different facts; only a resolved
+    // cycle carries this field.
+    if let Some(resolution) = &kernel.review_resolution {
+        view["components"]["review"]["resolution"] = resolution.clone();
+    }
+    view
 }
 
 fn proportional(weight: u64, completed: usize, total: usize) -> u64 {

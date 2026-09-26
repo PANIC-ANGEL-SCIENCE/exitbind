@@ -30,6 +30,9 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "return"] => {
             "work return WORK ASSIGNMENT --outcome OUTCOME [--result-ref HELD_REFERENCE] [--json]"
         }
+        ["work", "disposition"] => {
+            "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON]"
+        }
         ["work", "check"] => "work check WORK",
         ["work", "validate"] => "work validate WORK --packet FILE",
         ["work", "expand"] => "work expand WORK REFERENCE",

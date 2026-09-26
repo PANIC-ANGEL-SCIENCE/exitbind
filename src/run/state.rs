@@ -702,7 +702,7 @@ pub fn validate_submission(event: &Value, line: usize) -> Result<(), String> {
                 "invalid run ledger line {line}: disposition requires marked Lead basis identity"
             ));
         }
-        crate::kernel::basis::parse_disposition(
+        crate::kernel::disposition::parse_disposition(
             event
                 .get("disposition")
                 .ok_or_else(|| format!("invalid run ledger line {line}: disposition is missing"))?,
@@ -1236,86 +1236,6 @@ fn apply_protection(state: &mut Value, event: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn validate_disposition(
-    state: &Value,
-    disposition: &crate::kernel::basis::Disposition,
-) -> Result<(), String> {
-    let pending = state
-        .get("pendingDisposition")
-        .filter(|value| value.is_object())
-        .ok_or("Lead disposition is not currently pending")?;
-    if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str()
-        || pending["basisSha256"] != state["basis"]["sha256"]
-        || pending["owner"] != "lead"
-        || pending["findingSha256s"] != json!(disposition.finding_sha256s)
-    {
-        return Err("Lead disposition does not match the pending finding cycle".into());
-    }
-    if let Some(successor) = &disposition.successor_basis {
-        let current = crate::kernel::basis::parse_basis(&state["basis"], "current basis")
-            .map_err(|error| error.to_string())?;
-        crate::kernel::basis::validate_successor(&current, successor)?;
-    }
-    Ok(())
-}
-
-fn apply_disposition(state: &mut Value, event: &Value, _assignment: &Value) -> Result<(), String> {
-    let disposition = event
-        .get("disposition")
-        .ok_or("Lead disposition is missing")?;
-    let disposition = crate::kernel::basis::parse_disposition(disposition, "disposition")
-        .map_err(|error| error.to_string())?;
-    validate_disposition(state, &disposition)?;
-    let mut submission = json!({
-        "stage": event["stage"],
-        "attempt": event["attempt"],
-        "agent": event["agent"],
-        "role": event["role"],
-        "outcome": "disposition",
-        "artifact": event["artifact"],
-        "eventSha256": event["eventSha256"],
-        "disposition": disposition.value(),
-    });
-    if let Some(inputs) = event.get("inputsSha256") {
-        submission["inputsSha256"] = inputs.clone();
-        state["inputsSha256"] = inputs.clone();
-    }
-    for field in ["basisSha256", "reviewDecisionSha256"] {
-        if let Some(value) = event.get(field) {
-            submission[field] = value.clone();
-        }
-    }
-    state["submissions"]
-        .as_array_mut()
-        .ok_or("run state submissions are invalid")?
-        .push(submission);
-    state["dispositions"]
-        .as_array_mut()
-        .ok_or("run disposition history is invalid")?
-        .push(disposition.value());
-    let previous_basis = state["basis"].clone();
-    let disposition_sha = disposition.sha256.clone();
-    let finding_shas = disposition.finding_sha256s.clone();
-    if let Some(successor) = disposition.successor_basis.clone() {
-        state["basisHistory"]
-            .as_array_mut()
-            .ok_or("run basis history is invalid")?
-            .push(json!({
-                "basis": previous_basis,
-                "dispositionSha256": disposition_sha,
-                "triggeringFindingSha256s": finding_shas,
-            }));
-        state["basis"] = successor.value();
-        state["subject"] =
-            subject_for_basis_revision(state, &state["basis"]["sha256"], &disposition.sha256);
-    }
-    state["pendingDisposition"] = Value::Null;
-    state["currentStage"] = json!(worker_stage(state)?);
-    let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
-    state["attempt"] = json!(attempt + 1);
-    Ok(())
-}
-
 fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     if state["status"] != "running" {
         return Err("run has already reached a terminal state".into());
@@ -1387,7 +1307,7 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         if role != "lead" || state.get("basisProtocol").is_none() {
             return Err("disposition requires the marked Lead transition".into());
         }
-        return apply_disposition(state, event, &assignment);
+        return super::disposition::apply(state, event);
     }
     if role == "lead" && state["currentStage"] == 1 && !["scoped", "blocked"].contains(&outcome) {
         return Err(format!(
@@ -2036,17 +1956,17 @@ fn stage_for_role(state: &Value, role: &str, last: bool) -> Result<u64, String> 
     stage.ok_or_else(|| format!("run has no {role} stage"))
 }
 
-fn lead_stage(state: &Value) -> Result<u64, String> {
+pub(super) fn lead_stage(state: &Value) -> Result<u64, String> {
     stage_for_role(state, "lead", true)
 }
 fn reviewer_stage(state: &Value) -> Result<u64, String> {
     stage_for_role(state, "reviewer", false)
 }
-fn worker_stage(state: &Value) -> Result<u64, String> {
+pub(super) fn worker_stage(state: &Value) -> Result<u64, String> {
     stage_for_role(state, "worker", false)
 }
 
-fn subject_for_basis_revision(
+pub(super) fn subject_for_basis_revision(
     state: &Value,
     basis_sha256: &Value,
     disposition_sha256: &str,

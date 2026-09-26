@@ -169,6 +169,21 @@ exitbind run submit lead .exitbind/runs/run.jsonl \
 Submissions are role-scoped evidence, not votes; matching outcomes do not prove
 consensus.
 
+In a run marked with `--review-policy`, a reviewer `rework` routes to the Lead
+instead of a worker, and the Lead cannot accept until it decides the finding:
+
+```sh
+exitbind work disposition WORK ASSIGNMENT --decision defer --reason TEXT
+exitbind work disposition WORK ASSIGNMENT --decision repair --reason TEXT \
+  --repair-boundary TEXT --regression TEXT
+```
+
+`defer` and `reject` start no work and keep the finding; the review then reads
+`resolved_by_lead_disposition`, never `approved`. `repair` starts one attempt
+whose worker and reviewer see the Lead's repair boundary, and `supersede`
+additionally requires `--successor-basis JSON`. Both need a fresh check and
+review. Unmarked runs keep their historical rework routing.
+
 The owner can revise the policy only on a marked running run. Record the actual
 choice with the lead agent and ledger path:
 
