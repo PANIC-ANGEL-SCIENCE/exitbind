@@ -468,6 +468,35 @@ fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, check, validate, expand, or resume",
     )?;
     match action {
+        "continuation" => {
+            args::assert_options(
+                "work continuation",
+                a,
+                &["config", "section", "index", "history-index"],
+            )?;
+            args::assert_positionals("work continuation", a, 2)?;
+            let work = positional(a, 1, "work continuation requires WORK")?;
+            if let Some(section) = a.options.get("section") {
+                print_json(&crate::session_goal::continuation_section(
+                    l,
+                    work,
+                    section,
+                    a.options.get("index").map(String::as_str),
+                    a.options.get("history-index").map(String::as_str),
+                )?)
+            } else if a.options.contains_key("index") || a.options.contains_key("history-index") {
+                Err("--index and --history-index require --section".into())
+            } else {
+                print_json(&crate::session_goal::continuation_view(l, work)?)
+            }
+        }
+        "record" => {
+            args::assert_options("work record", a, &["config"])?;
+            args::assert_positionals("work record", a, 2)?;
+            print_json(&crate::session_goal::continuation_record(
+                l, positional(a, 1, "work record requires WORK")?,
+            )?)
+        }
         "begin" => {
             args::assert_options(
                 "work begin",

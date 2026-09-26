@@ -8,9 +8,47 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::response_recovery::recovery_command;
+use super::response_recovery::{bounded_argv, recovery_command};
 
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024;
+
+pub(crate) fn continuation_route(config_path: &Path, mut suffix: Vec<String>) -> Value {
+    suffix.push("--config".into());
+    let recovery = bounded_argv(suffix, config_path.to_str(), 1024);
+    json!({
+        "command": recovery.argv,
+        "sameConfigRequired": recovery.same_config,
+        "sameExecutableRequired": recovery.same_executable,
+    })
+}
+
+pub(crate) fn continuation_mutation(
+    record: &Value,
+    work: &str,
+    action: &str,
+    appended: bool,
+    config_path: &Path,
+) -> Result<Value, String> {
+    let route = continuation_route(
+        config_path,
+        vec!["work".into(), "continuation".into(), work.into()],
+    );
+    let result = json!({
+        "compact": true,
+        "work": work,
+        "action": action,
+        "goalRevision": record["revision"],
+        "effect": if appended { "appended" } else { "unchanged" },
+        "eventSha256": record["eventSha256"],
+        "nextAction": {"type":"read","safe":true,"command":route["command"],
+            "sameConfigRequired":route["sameConfigRequired"],
+            "sameExecutableRequired":route["sameExecutableRequired"]},
+    });
+    if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        return Err("continuation mutation response exceeds the output budget".into());
+    }
+    Ok(result)
+}
 
 /// Project a validated full work response into the bounded default envelope.
 ///
@@ -32,6 +70,33 @@ pub(crate) fn project(
         copy_if_present(response, &mut result, key);
     }
     copy_if_present(response, &mut result, "work");
+    if let Some(continuation) = response.get("continuation") {
+        let bytes = serialized_len(continuation)?;
+        if bytes <= 2_500 {
+            result.insert("continuation".into(), continuation.clone());
+        } else {
+            let route = continuation_route(
+                config_path,
+                vec![
+                    "work".into(),
+                    "continuation".into(),
+                    response["work"].as_str().unwrap_or("").into(),
+                ],
+            );
+            result.insert(
+                "continuation".into(),
+                json!({
+                    "work": continuation["work"],
+                    "goalRevision": continuation["goalRevision"],
+                    "binding": continuation["binding"],
+                    "requiresExpansion": true,
+                    "command": route["command"],
+                    "sameConfigRequired": route["sameConfigRequired"],
+                    "sameExecutableRequired": route["sameExecutableRequired"],
+                }),
+            );
+        }
+    }
     if let Some(next) = response.get("next") {
         result.insert("next".into(), compact_next(next));
     }

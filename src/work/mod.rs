@@ -182,6 +182,7 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
             "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
         });
         add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
+        attach_continuation(loaded, work, &mut response)?;
         return Ok(response);
     }
     let mut response = json!({
@@ -195,7 +196,18 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
         "nextAction": safe_action(if next["action"] == "done" { "none" } else { "continue" }),
     });
     add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
+    attach_continuation(loaded, work, &mut response)?;
     Ok(response)
+}
+
+fn attach_continuation(loaded: &Loaded, work: &str, response: &mut Value) -> Result<(), String> {
+    let Some(goal) = crate::session_goal::read(&loaded.state_root)? else {
+        return Ok(());
+    };
+    if goal["continuation"]["work"] == work {
+        response["continuation"] = crate::session_goal::continuation_view(loaded, work)?;
+    }
+    Ok(())
 }
 
 /// Atomically authorize and record one cooperative product-mutation unit for
@@ -679,6 +691,7 @@ pub(crate) fn resume(loaded: &Loaded) -> Result<Value, String> {
                 "presentation": presentation
             });
             add_identity(&mut result, &work_identity(loaded, Some(&ledger))?);
+            attach_continuation(loaded, &work, &mut result)?;
             Ok(result)
         }
         _ => {
@@ -1134,7 +1147,7 @@ fn check_summary(snapshot: &run::RunSnapshot) -> Result<Option<Value>, String> {
     )))
 }
 
-fn resolve(loaded: &Loaded, work: &str) -> Result<String, String> {
+pub(crate) fn resolve(loaded: &Loaded, work: &str) -> Result<String, String> {
     let token = work
         .strip_prefix(WORK_PREFIX)
         .filter(|token| valid_token(token))

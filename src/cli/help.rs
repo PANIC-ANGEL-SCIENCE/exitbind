@@ -3,8 +3,15 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .chain(positional.iter().map(String::as_str))
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
+        ["work"] => {
+            "work next WORK | work continuation WORK | work resume | work record WORK < JSON"
+        }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
         ["work", "next"] => "work next WORK [--json] [--full]",
+        ["work", "continuation"] => {
+            "work continuation WORK [--section NAME [--index N [--history-index N]]] [--config CONFIG]"
+        }
+        ["work", "record"] => "work record WORK [--config CONFIG] < JSON",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
         ["work", "replan"] => {
             "work replan WORK ASSIGNMENT [--hypothesis TEXT | --replan-file PATH|-]"

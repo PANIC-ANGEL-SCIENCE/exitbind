@@ -3,9 +3,10 @@
 Start in the existing Codex or Claude root conversation. Describe the work in
 ordinary language; when a reviewed project preference makes it appropriate, the
 root lead handles authorized Exitbind setup, selection, records, checks,
-recovery, and a concise report in that conversation. Classify by material
-consequence or promotion requirement, not file count: ordinary reversible work
-stays direct where its consequence permits it. The human owns the outcome,
+recovery, and a concise report in that conversation. Small reversible work
+stays direct; the protocol surfaces only for material or promotion-required
+work, resuming governed work, or explicit cross-host continuation. Classify by
+actual consequence, not file count. The human owns the outcome,
 preferences, permissions, and genuine decisions; silence is never approval. A
 preference is selective guidance, not a host permission grant or proof that
 native roles are usable.
@@ -126,7 +127,7 @@ or an unavailable native agent requires a real resolution.
 This path also works with the historical JSON command surface when a compatible
 installed binary is required; it does not require building Rust locally. The
 bundled skill describes the handoff and your host executes it. Exitbind
-`v0.25.0-rc.2` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.25.0-rc.3` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.

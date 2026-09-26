@@ -11,7 +11,7 @@ Exitbind is installed on this machine. It is a local CLI that decides whether a
 result has earned acceptance: checks, review, and lead acceptance count only for
 the exact result they were taken on.
 
-For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+Small reversible work stays direct: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. The protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
 
 ## Check applicability before setup
 
@@ -65,6 +65,14 @@ owner's selected choice.
 `work resume` and `work next` return the next action, what evidence is still
 valid, and what must not be repeated. Follow that returned action; do not ask
 the user for work handles, ledger paths, or event hashes.
+
+When a receiving task agent is given an explicit `smw_…` work locator in a
+configured project, run `exitbind work next WORK` first. Read its `continuation`
+view for current requirements, corrections, results and uncertain operations;
+if it says `requiresExpansion`, follow the emitted `work continuation` read
+route. Use the same executable and configuration indicated by each route.
+Do not search raw state files to reconstruct the handoff or retry an uncertain
+effect just because its native process is absent.
 
 If the repository is not configured yet, `exitbind work` reports that. Explain
 the single project write it needs and ask the owner before running:

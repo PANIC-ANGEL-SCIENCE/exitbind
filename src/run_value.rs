@@ -315,6 +315,8 @@ struct CheckObservationV4 {
     check_command_sha256: String,
     origin: ProofOrigin,
     acquisition: String,
+    #[serde(rename = "configSha256", default)]
+    config_sha256: Option<String>,
     result: CheckResult,
     #[serde(rename = "durationMs")]
     duration_ms: Option<u64>,
@@ -728,6 +730,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "runId",
         "subjectSha256",
         "inputsSha256",
+        "configSha256",
         "targetEventSha256",
         "requirementId",
         "checkCommand",
@@ -743,6 +746,16 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "eventSha256",
     ];
     reject_unknown(object, &allowed, line, "check")?;
+    if object.contains_key("configSha256")
+        && !record
+            .config_sha256
+            .as_deref()
+            .is_some_and(|hash| is_sha(Some(hash)))
+    {
+        return Err(format!(
+            "invalid run ledger line {line}: check configuration identity is invalid"
+        ));
+    }
     if event["version"].as_u64() >= Some(6) && !is_sha(event["inputsSha256"].as_str()) {
         return Err(format!(
             "invalid run ledger line {line}: check event requires tested input identity"

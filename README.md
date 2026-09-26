@@ -25,7 +25,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current prerelease: `v0.25.0-rc.2`. One local binary; it calls no model and runs
+Current prerelease: `v0.25.0-rc.3`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -46,6 +46,10 @@ Exitbind adds a local acceptance step to the agent loop, including uncommitted
 results before a push. CI and branch protection keep their existing roles.
 
 ## Built for your coding agent
+
+Small reversible work stays direct; the protocol surfaces only for material or
+promotion-required work, resuming governed work, or explicit cross-host
+continuation.
 
 The coding agent you already use operates the CLI inside your existing
 conversation. During a governed task it follows the recorded next action:
@@ -72,8 +76,6 @@ exitbind work check WORK       -> run the frozen check when it is the next actio
 - **Resume, don't reconstruct.** `work resume` rebuilds the next step from recorded
   state after a restart or context loss, keeps evidence that still belongs to
   the same result, and names the recorder version that answered.
-- **Small work stays direct.** Reversible, low-consequence edits need no setup,
-  run, or review questions.
 
 See [work mutation results](docs/work-mutation-results.md) for the exact reply
 contract. A successful recording operation does not mean the check passed;
@@ -81,14 +83,14 @@ the reply reports the check's exit code or signal separately.
 
 ## See a wrong door refused
 
-This page describes the opt-in release candidate `v0.25.0-rc.2` for Linux x86_64
+This page describes the opt-in release candidate `v0.25.0-rc.3` for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.2/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.3/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -125,8 +127,9 @@ On this URL-only path your lead inspects the project, explains the effect, and
 asks before installation, project writes, or permission changes. After you
 approve, it uses the local CLI plus project-local guidance:
 
-- **Small and reversible work** stays direct. The lead classifies actual
-  effects; a filename alone does not require governance.
+- **Classify the work first.** Follow the [entry rule](#built-for-your-coding-agent);
+  the lead classifies actual effects, and a filename alone does not require
+  governance.
 - **Material or promotion-required work** binds its evidence to the exact result
   before it can exit.
 - **Resumed work** keeps evidence that still belongs to the same result, so a new

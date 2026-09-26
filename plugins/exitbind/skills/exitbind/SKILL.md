@@ -16,9 +16,9 @@ that choice while work continues. Retained work gets useful exact-result checks
 proportionate to risk; promotion means applicable obligations require
 governance, not merely keeping a harmless local file.
 
-For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+Small reversible work stays direct: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. The protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
 
-Continue existing work with `exitbind work resume`; start new governed work
+For already governed work, continue with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
 `--review-policy omitted` at entry. Follow the returned next action instead of asking
 the user for work handles, ledger paths, or event hashes. Report exact
@@ -26,6 +26,42 @@ progress, evidence, and any refusal. If the user gives only the Exitbind
 repository URL, inspect this project and your host capabilities first, and ask
 before installation, project writes, permission changes, or another
 owner-controlled action.
+
+For an explicit work locator on a receiving host, use `exitbind work next WORK`
+to recover the current assignment. If its response includes `continuation`,
+read that bounded view for the original requirements, current corrections,
+exact result references, binding, and uncertain operations. Use
+`exitbind work continuation WORK` for the full read-only view when expansion is
+required. If it returns `requiresExpansion`, follow the section and item
+commands it gives to read exact bounded facts. Do not inspect raw state files
+or infer a retry from a missing native process.
+
+When this receiving host must hand off an actual native child result, bind its
+current host and native session before recording the child. Never attach a
+Claude child under a binding left by Codex, or the reverse. Read the current
+`goalRevision` and `binding.revision` from `work continuation WORK`, then pipe
+one JSON object to `exitbind work record WORK --config CONFIG`:
+
+```json
+{"action":"bind","expectedRevision":7,"expectedBindingRevision":1,"host":"claude","session":"native-session-id","hostVersion":"2.1.280"}
+```
+
+Use the actual revisions and host-reported session/version; the numbers and
+identity above only show the field names. A native launcher may expose its
+actual session ID as `EXITBIND_NATIVE_SESSION_ID`. If the native session
+identity is unavailable, report that limit instead of inventing one. Read the new
+`goalRevision` and `binding.revision`, then record the exact child report:
+
+```json
+{"action":"child","expectedRevision":8,"bindingRevision":2,"assignment":"narrow task","nativeChild":"native child id","resultText":"exact UTF-8 child report","resultSha256":"SHA-256 of resultText"}
+```
+
+Keep the actual report within 8 KiB. Compute the digest from its exact UTF-8
+bytes, and use a child ID from the native host. Follow the compact mutation
+reply's read-only `nextAction.command` to verify the stored result and origin.
+Use the same executable and configuration as the recovery view. This records
+host-reported authorship; it does not authenticate a provider session or make
+the child an independent review.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.

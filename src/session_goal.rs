@@ -6,6 +6,9 @@
 use serde_json::{json, Value};
 use std::path::Path;
 
+mod continuity;
+pub(crate) use continuity::{continuation_record, continuation_section, continuation_view};
+
 const FILE: &str = "session-goal.jsonl";
 const CATEGORIES: [&str; 5] = [
     "obligations",
@@ -172,7 +175,7 @@ fn history_ledger(root: &Path) -> Result<crate::run::ledger::LedgerPath, String>
     crate::run::ledger::ledger_path(root, &relative(), true)
 }
 
-fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
+pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())
         .map_or(Value::Null, |hash| json!(hash));
@@ -180,7 +183,7 @@ fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     value
 }
 
-fn mutate<F>(root: &Path, operation: F) -> Result<Value, String>
+pub(crate) fn mutate<F>(root: &Path, operation: F) -> Result<Value, String>
 where
     F: FnOnce(Option<&Value>) -> Result<Value, String>,
 {
@@ -190,6 +193,9 @@ where
         let history = records_from_raw(raw.as_deref())?;
         let previous = history.last();
         let record = operation(previous)?;
+        if previous == Some(&record) {
+            return Ok(record);
+        }
         crate::run::ledger::append(
             &ledger,
             &record,
@@ -524,7 +530,7 @@ pub(crate) fn incorporate(
         Ok(sealed(
             json!({
                 "kind": "lead_session_goal",
-                "version": 2,
+                "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
                 "goalId": goal_id,
                 "revision": revision,
                 "goal": goal,
@@ -538,6 +544,7 @@ pub(crate) fn incorporate(
                 "externalActions": external_actions,
                 "categories": category_state,
                 "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
+                "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
             }),
             previous,
         ))
@@ -631,7 +638,7 @@ pub(crate) fn direct_complete(
         Ok(sealed(
             json!({
                 "kind": "lead_session_goal",
-                "version": 2,
+                "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
                 "goalId": goal_id,
                 "revision": revision,
                 "goal": goal,
@@ -645,6 +652,7 @@ pub(crate) fn direct_complete(
                 "externalActions": external_actions,
                 "categories": category_state,
                 "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
+                "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
             }),
             previous,
         ))
@@ -679,6 +687,9 @@ fn category_resolved(record: &Value, key: &str) -> bool {
 }
 
 fn unresolved(record: &Value) -> bool {
+    if continuity::has_unresolved(record) {
+        return true;
+    }
     CATEGORIES
         .iter()
         .any(|category| !category_resolved(record, category))
@@ -774,6 +785,9 @@ pub(crate) fn close(
         if unresolved(previous) {
             return Err("session goal has unresolved or unconsidered obligations, findings, blockers, decisions, or external actions".into());
         }
+        if !continuity::support_current(loaded, previous)? {
+            return Err("continuation support is stale or incomplete".into());
+        }
         for category in CATEGORIES {
             if let Some(items) = previous[category].as_array() {
                 for item in items {
@@ -843,6 +857,9 @@ pub(crate) fn close_direct(
         }
         if unresolved(previous) {
             return Err("session goal has unresolved or unconsidered obligations, findings, blockers, decisions, or external actions".into());
+        }
+        if !continuity::support_current(loaded, previous)? {
+            return Err("continuation support is stale or incomplete".into());
         }
         let mut has_governed_evidence = false;
         for category in CATEGORIES {
@@ -1044,7 +1061,8 @@ pub(crate) fn presentation_for_loaded(
             rendered["explicitLeadClosure"] = Value::Bool(false);
             return Ok(rendered);
         };
-        if !governed_refs_current(loaded, record)? {
+        if !governed_refs_current(loaded, record)? || !continuity::support_current(loaded, record)?
+        {
             rendered["explicitLeadClosure"] = Value::Bool(false);
         }
     }

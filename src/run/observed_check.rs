@@ -179,6 +179,9 @@ pub fn observe_check_for_requirement(
         if current_state["version"].as_u64() >= Some(5) {
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
         }
+        if current_state["version"] == 8 {
+            event_value["configSha256"] = json!(hash::text(&loaded.source));
+        }
         if let Some(inputs) = &inputs {
             event_value["inputsSha256"] = inputs.clone();
             if let Some(id) = requirement_id {

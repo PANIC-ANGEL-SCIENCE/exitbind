@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.25.0-rc.3
+
+- Attach continuation to an existing open goal for the same work without
+  replacing its history; identical retries leave that history unchanged.
+- Keep continuation mutation replies bounded and emit exact read-only recovery
+  routes with their executable and configuration context.
+- Tie observed check support to the configuration recorded when the check ran.
+- Guide a receiving Codex or Claude host through explicit work recovery and
+  host-reported native child recording. Small reversible work stays direct.
+
 ## 0.25.0-rc.2
 
 - Return bounded, exact-result responses from W1 work mutations and recovery

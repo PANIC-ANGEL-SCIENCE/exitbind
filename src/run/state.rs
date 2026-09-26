@@ -1733,6 +1733,7 @@ fn reject_unknown(
                     "runId",
                     "subjectSha256",
                     "inputsSha256",
+                    "configSha256",
                     "targetEventSha256",
                     "requirementId",
                     "checkCommand",
