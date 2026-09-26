@@ -296,6 +296,20 @@ fn reports_resolution(fixture: &Fixture, work: &str, decision: &str, disposition
     expected(&receipt["review"]);
     let verified = fixture.ok(&["verify", receipt_path], b"");
     assert_eq!(verified["valid"], true, "{verified}");
+
+    // A receipt that claims a different Lead decision no longer verifies.
+    let path = fixture.root.join(receipt_path);
+    let mut tampered: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    tampered["review"]["decision"] = json!(if decision == "defer" {
+        "reject"
+    } else {
+        "defer"
+    });
+    fs::write(&path, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+    let refused = fixture.call(&["verify", receipt_path], b"");
+    assert!(!refused.status.success(), "tampered receipt verified");
+    let refused: Value = serde_json::from_slice(&refused.stdout).unwrap();
+    assert_eq!(refused["valid"], false, "{refused}");
 }
 
 #[test]
