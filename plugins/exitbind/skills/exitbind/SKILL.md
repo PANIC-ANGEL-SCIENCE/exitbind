@@ -58,7 +58,9 @@ exitbind work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child C
 ```
 
 The CLI constructs the record, computes the digest and enforces the saved
-context fence. Keep the exact result within 8 KiB; never truncate it. Follow
+context fence. Pass the child's final message exactly as the host delivered
+it; do not summarize, translate, or annotate it. Keep it within 8 KiB; never
+truncate it. Follow
 the mutation reply's read-only `nextAction.command` with the same executable
 and configuration to verify the stored result and origin. A host-reported
 child is not a provider-authenticated identity or independent review.

@@ -225,7 +225,7 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
             "SHORT_ASSIGNMENT": "a short description of the child's task",
             "CHILD_ID": "the host-reported native child ID, such as a Claude subagent agentId",
         },
-        "childResult": "exact UTF-8 child result on standard input, at most 8 KiB",
+        "childResult": "the child's final message exactly as the host delivered it, on standard input: no summary, translation, or added notes; at most 8 KiB",
     })
 }
 
