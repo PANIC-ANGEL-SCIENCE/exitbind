@@ -49,8 +49,9 @@ exitbind work bind WORK --context TOKEN --host claude --session NATIVE_SESSION -
 
 Use only host-reported identity. In Claude Code, Exitbind's SessionStart hook
 exports the host's session ID as `EXITBIND_NATIVE_SESSION_ID`, and a native
-subagent's `agentId` is its child ID; other launchers may set the same
-variable. If unavailable, report that limit instead of inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
+subagent's `agentId` is its child ID. Claude Code shows that `agentId` when the
+subagent runs in the background, not in a foreground result. Other launchers
+may set the same variable. If unavailable, report that limit instead of inventing one. Run the returned read-only `nextAction.command` for a fresh context token, then
 record the exact UTF-8 child result and native child ID:
 
 ```sh

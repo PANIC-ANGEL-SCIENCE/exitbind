@@ -223,7 +223,7 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
             "NATIVE_SESSION": "$EXITBIND_NATIVE_SESSION_ID; if unset, report that limit instead of inventing one",
             "FRESH_TOKEN": "mutationContext.token from the bind reply's nextAction.command",
             "SHORT_ASSIGNMENT": "a short description of the child's task",
-            "CHILD_ID": "the host-reported native child ID, such as a Claude subagent agentId",
+            "CHILD_ID": "the host-reported native child ID; Claude Code shows a subagent's agentId when the subagent runs in the background, not in a foreground result. If none is visible, report that limit instead of inventing one",
         },
         "childResult": "the child's final message exactly as the host delivered it, on standard input: no summary, translation, or added notes; at most 8 KiB",
     })
