@@ -25,6 +25,11 @@ impl Loaded {
     pub fn agent(&self, name: &str) -> Option<&crate::config::types::AgentConfig> {
         self.agents.get(name)
     }
+
+    /// The validated `orchestration.lead` agent name.
+    pub fn lead(&self) -> Option<&str> {
+        self.config["orchestration"]["lead"].as_str()
+    }
 }
 
 const STRING_ARRAY_FIELDS: &[&str] = &[

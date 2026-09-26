@@ -245,6 +245,10 @@ pub fn run() -> Result<(), String> {
             text.push('\n');
             text.push_str(RECEIVE_WORK);
         }
+        if let Some(memory) = super::project_memory::session_context(&loaded) {
+            text.push('\n');
+            text.push_str(&memory);
+        }
         if let Some(update) = update_context {
             text.push('\n');
             text.push_str(&update);

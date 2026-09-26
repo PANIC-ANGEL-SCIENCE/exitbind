@@ -10,6 +10,9 @@
 - Capture a prepared native child from the host: `work child prepare` records
   the intent, and the managed Claude Code SubagentStart and SubagentStop hooks
   record the host-reported child ID and exact final message.
+- Project the Lead's configured role and current accepted project memory into
+  a new session's SessionStart context when memory is enabled; revoked,
+  rejected, expired, changed, and other-project items are never projected.
 - Keep a navigation-only current-work focus: `work begin` selects the new work,
   `work resume` returns it, older running work stays history
   (`work resume --history`), and `work focus WORK` repoints it.

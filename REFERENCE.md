@@ -551,6 +551,12 @@ their exact sources. Semantic retrieval, embeddings, global memory, transcript
 capture, and implicit truncation remain out of scope. See
 [SECURITY.md](SECURITY.md) for path, expiry, concurrency, and erasure limits.
 
+When memory is enabled, the managed SessionStart context of a new session in
+the project names the Lead's configured role and profile hash and includes the
+content of the Lead's currently accepted items, labeled as context rather than
+a check, approval, or permission. A changed source or exceeded budget is
+reported there instead of projected.
+
 ## Run and recovery
 
 Run state is private operational data beneath StateRoot. Each assignment fixes
