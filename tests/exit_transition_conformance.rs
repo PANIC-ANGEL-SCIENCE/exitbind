@@ -913,6 +913,50 @@ fn failed_work_check_reaches_rework_then_only_fresh_attempt_reaches_ready() {
 }
 
 #[test]
+fn historical_check_input_change_replays_through_review_and_receipt() {
+    let f = Fixture::new("transition-check-input-replay");
+    let (work, action) = f.work_begin("historical check input replay");
+    let action = f.work_return_ok(&work, &action, "scoped", "scope")["next"].clone();
+    let action = f.work_return_ok(&work, &action, "completed", "worker result")["next"].clone();
+    assert_eq!(action["action"], "check");
+    let failed = f.work_check(&work);
+    assert!(!failed.status.success(), "{}", text(&failed));
+
+    fs::write(f.root.join("actual-product-check"), b"pass").unwrap();
+    let passed = f.work_check(&work);
+    assert!(passed.status.success(), "{}", text(&passed));
+
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let checks = f
+        .events(&ledger)
+        .into_iter()
+        .filter(|event| event["action"] == "check")
+        .collect::<Vec<_>>();
+    assert_eq!(checks.len(), 2);
+    assert_eq!(checks[0]["result"]["code"], 1);
+    assert_eq!(checks[1]["result"]["code"], 0);
+    assert_ne!(checks[0]["inputsSha256"], checks[1]["inputsSha256"]);
+
+    let inspected = f.json(&[
+        "run",
+        "inspect",
+        &ledger,
+        "--json",
+        "--config",
+        "exitbind.json",
+    ]);
+    assert_eq!(inspected["inputsSha256"], checks[1]["inputsSha256"]);
+    let action = f.work_next(&work[4..])["next"].clone();
+    assert_eq!(action["role"], "reviewer");
+    let action = f.work_return_ok(&work, &action, "approved", "current review")["next"].clone();
+    assert_eq!(action["role"], "lead");
+    let accepted = f.work_return_ok(&work, &action, "accepted", "acceptance");
+    assert_eq!(accepted["next"]["progress"]["state"], "READY");
+    let receipt = f.json(&["receipt", &ledger, "--json", "--config", "exitbind.json"]);
+    assert_eq!(receipt["outcome"], "READY");
+}
+
+#[test]
 fn missing_and_fabricated_review_calls_preserve_ledger_until_current_reviewer_controls() {
     let f = Fixture::new("transition-review-authority");
     let (work, mut action) = f.work_begin("review authority");

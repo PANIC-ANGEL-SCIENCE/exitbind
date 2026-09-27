@@ -275,7 +275,8 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     );
     assert!(profile.contains("Presented profile SHA-256:"));
     assert!(hook(&root, "worker").is_none());
-    assert!(hook(&root, "reviewer").is_none());
+    let reviewer_context = hook(&root, "reviewer").unwrap();
+    assert!(reviewer_context.contains("assignment context mismatch"));
     let conflict = json!({"hook_event_name":"SubagentStart", "cwd":root,
         "agent_name":"sonic", "agent_type":"worker"});
     let mut process = Command::new(env!("CARGO_BIN_EXE_exitbind"))
@@ -475,6 +476,99 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
         !mixed.contains(&format!("Current assignment: work {other_work}")),
         "{mixed}"
     );
+    call(&root, &["work", "focus", work]);
+    let token = call(&root, &["work", "continuation", work])["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let rebound = call(
+        &root,
+        &[
+            "work",
+            "child",
+            "prepare",
+            work,
+            "resource-observer-rebound",
+            "--context",
+            &token,
+            "--agent-type",
+            "sonic",
+            "--perspectives",
+            selected,
+        ],
+    );
+    assert_eq!(rebound["effect"], "prepared");
+    call(&root, &["work", "focus", &other_work]);
+    let rejected = child_hook(&root, "sonic", "parent-1", "native-child-rebound");
+    assert!(
+        rejected.contains("rejected the prepared child context before presentation"),
+        "{rejected}"
+    );
+    assert!(
+        !rejected.contains(&format!("Current assignment: work {other_work}")),
+        "{rejected}"
+    );
+    assert!(
+        !rejected.contains("unavailable resources separately from zero"),
+        "{rejected}"
+    );
+    let repeated = child_hook(&root, "sonic", "parent-1", "native-child-rebound");
+    assert!(
+        repeated.contains("rejected the prepared child context before presentation"),
+        "{repeated}"
+    );
+    assert!(
+        !repeated.contains(&format!("Current assignment: work {other_work}")),
+        "{repeated}"
+    );
+
+    call(&root, &["work", "focus", work]);
+    let token = call(&root, &["work", "continuation", work])["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let prepared_other = call(
+        &root,
+        &[
+            "work",
+            "child",
+            "prepare",
+            work,
+            "resource-observer-new-work",
+            "--context",
+            &token,
+            "--agent-type",
+            "sonic",
+            "--perspectives",
+            selected,
+        ],
+    );
+    assert_eq!(prepared_other["effect"], "prepared");
+    call(&root, &["work", "focus", &other_work]);
+    let repeated_with_new_intent = child_hook(&root, "sonic", "parent-1", "native-child-rebound");
+    assert!(
+        repeated_with_new_intent
+            .contains("rejected the prepared child context before presentation"),
+        "{repeated_with_new_intent}"
+    );
+    assert!(
+        !repeated_with_new_intent.contains(&format!("Current assignment: work {other_work}")),
+        "{repeated_with_new_intent}"
+    );
+    assert!(!repeated_with_new_intent.contains("unavailable resources separately from zero"));
+    let intents_lock = root.join(".exitbind/child-intents.json.lock");
+    fs::write(&intents_lock, "held by focused lock regression").unwrap();
+    let lock_error = child_hook(&root, "sonic", "parent-1", "native-child-lock");
+    fs::remove_file(&intents_lock).unwrap();
+    assert!(
+        lock_error.contains("could not verify the prepared child context"),
+        "{lock_error}"
+    );
+    assert!(
+        !lock_error.contains(&format!("Current assignment: work {other_work}")),
+        "{lock_error}"
+    );
+    assert!(!lock_error.contains("unavailable resources separately from zero"));
     call(&root, &["work", "focus", work]);
 
     fs::write(&qa, "changed perspective\n").unwrap();

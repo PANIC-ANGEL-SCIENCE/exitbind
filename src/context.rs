@@ -864,7 +864,11 @@ fn apply_evidence(state: &mut Value, event: &Value) -> Result<(), String> {
             return Err(format!("evidence event is missing {field}"));
         }
     }
-    bind_identity(state, event)?;
+    match event["identityTransition"].as_str() {
+        None => bind_identity(state, event)?,
+        Some("carried_mutation_v1") => bind_carried_identity(state, event, true)?,
+        Some(_) => return Err("evidence identity transition is unsupported".into()),
+    }
     let evidence = event["evidence"].clone();
     if record_evidence(state, event, evidence)? {
         let mut loop_state = loop_state(state)?;
@@ -886,10 +890,6 @@ fn apply_replan(state: &mut Value, event: &Value) -> Result<(), String> {
     if state["state"] != "replan_required" {
         return Err("re-plan is not currently required".into());
     }
-    // A completed worker mutation may carry the governor lineage into a new
-    // subject/attempt.  The following re-plan belongs to that fresh subject;
-    // requiring the pre-mutation identity here would make the governor
-    // impossible to recover after a legitimate reviewer/worker transition.
     bind_replan_identity(state, event)?;
     let semantic = replan_semantic(event)?;
     if state["currentReplan"] == semantic {
@@ -909,23 +909,43 @@ fn bind_replan_identity(state: &mut Value, event: &Value) -> Result<(), String> 
     } else if state["runId"] != event["runId"] {
         return Err("governor identity changed: runId".into());
     }
-    let current_mutation = state["currentMutation"].as_object();
     let identity_transition = event["identityTransition"].as_str();
     if identity_transition == Some("carried_mutation_v1") {
-        let current_mutation =
-            current_mutation.ok_or("re-plan requires a current carried mutation")?;
-        if current_mutation["carryLineage"] != true {
-            return Err("re-plan requires the current mutation to carry lineage".into());
-        }
-        if event["previousSha256"] != current_mutation["eventSha256"] {
-            return Err("re-plan is not immediately after the current mutation".into());
+        bind_carried_identity(state, event, false)?;
+    } else {
+        state["subjectSha256"] = event["subjectSha256"].clone();
+        state["attempt"] = event["attempt"].clone();
+    }
+    Ok(())
+}
+
+fn bind_carried_identity(
+    state: &mut Value,
+    event: &Value,
+    require_change: bool,
+) -> Result<(), String> {
+    let current_mutation = state["currentMutation"]
+        .as_object()
+        .ok_or("identity transition requires a carried mutation")?;
+    if current_mutation["carryLineage"] != true {
+        return Err("identity transition requires current mutation to carry lineage".into());
+    }
+    if event["previousSha256"] != current_mutation["eventSha256"] {
+        return Err("identity transition not after current mutation".into());
+    }
+    if let Some(lineage) = event["lineageSha256"].as_str() {
+        if state["lineageSha256"] != lineage {
+            return Err("identity transition changed lineage".into());
         }
     }
-    let prior_attempt = state["attempt"].as_u64();
-    let next_attempt = event["attempt"].as_u64();
-    if identity_transition == Some("carried_mutation_v1")
-        && state["subjectSha256"] != event["subjectSha256"]
-    {
+    let changed =
+        state["subjectSha256"] != event["subjectSha256"] || state["attempt"] != event["attempt"];
+    if require_change && !changed {
+        return Err("evidence identity transition is unnecessary".into());
+    }
+    if changed {
+        let prior_attempt = state["attempt"].as_u64();
+        let next_attempt = event["attempt"].as_u64();
         if prior_attempt
             .zip(next_attempt)
             .map_or(true, |(prior, next)| next != prior + 1)
@@ -937,14 +957,6 @@ fn bind_replan_identity(state: &mut Value, event: &Value) -> Result<(), String> 
         }
         state["subjectSha256"] = event["subjectSha256"].clone();
         state["attempt"] = event["attempt"].clone();
-    } else if identity_transition != Some("carried_mutation_v1") {
-        // Version-1 governor ledgers predate the explicit assignment binding.
-        // Keep their replay readable; new run ledgers reject this transition
-        // at the outer run reducer via replanBinding.
-        state["subjectSha256"] = event["subjectSha256"].clone();
-        state["attempt"] = event["attempt"].clone();
-    } else if state["attempt"] != event["attempt"] {
-        return Err("governor identity changed: attempt".into());
     }
     Ok(())
 }

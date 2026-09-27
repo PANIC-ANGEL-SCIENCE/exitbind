@@ -17,6 +17,9 @@ pub(super) fn apply_check(state: &mut Value, event: &Value) -> Result<(), String
         .as_array_mut()
         .ok_or("run state checks are invalid")?
         .push(event.clone());
+    if let Some(inputs) = event.get("inputsSha256") {
+        state["inputsSha256"] = inputs.clone();
+    }
     if check_failed(event) {
         state["currentStage"] = json!(lead_stage(state)?);
     } else if state["reviewPolicy"]["decision"] != "omitted"

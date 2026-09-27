@@ -1843,6 +1843,217 @@ fn failed_check_surfaces_rework_and_requires_fresh_acceptance_path() {
     assert_eq!(done["next"]["progress"]["state"], "READY");
 }
 
+#[test]
+fn evidence_after_failed_check_rework_carries_the_current_identity() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "evidence after failed check rework",
+            "--check-command",
+            "test -f pass-marker",
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    let mut next = fixture.value(&["work", "next", &work], None);
+    let first = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"first attempt"),
+    );
+    assert_eq!(first["next"]["action"], "check");
+    let failed = fixture.recorded_check_failure(&work);
+    let reworked = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            failed["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        Some(b"repair requested"),
+    );
+    assert_eq!(reworked["next"]["role"], "worker");
+    next = reworked;
+
+    fs::write(fixture.root.join("pass-marker"), b"ok").unwrap();
+    let second = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"second attempt"),
+    );
+    assert_eq!(second["next"]["action"], "check", "{second}");
+    let checked = fixture.value(&["work", "check", &work], None);
+    assert_eq!(checked["next"]["role"], "reviewer");
+    next = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            checked["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        Some(b"continue repair"),
+    );
+    assert_eq!(next["next"]["role"], "worker");
+    next = fixture.value(
+        &[
+            "work",
+            "replan",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--hypothesis",
+            "repair the next worker attempt",
+        ],
+        None,
+    );
+    assert_eq!(next["next"]["role"], "worker");
+    let third = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"third attempt"),
+    );
+    assert_eq!(third["next"]["action"], "check", "{third}");
+    let checked = fixture.value(&["work", "check", &work], None);
+    assert_eq!(checked["next"]["role"], "reviewer");
+    next = fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            checked["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        Some(b"continue repair"),
+    );
+    assert_eq!(next["next"]["role"], "worker");
+    fs::write(fixture.root.join("pass-marker"), b"updated after check").unwrap();
+
+    let ledger = fixture.ledger(&work);
+
+    let evidence = fixture.value(
+        &[
+            "work",
+            "evidence",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--artifact",
+            "pass-marker",
+        ],
+        None,
+    );
+    assert_eq!(
+        evidence["event"]["governorEvent"]["identityTransition"],
+        "carried_mutation_v1"
+    );
+    assert_eq!(evidence["next"]["action"], "spawn");
+
+    let mut events: Vec<Value> = fs::read_to_string(fixture.root.join(ledger.clone()))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let last = events.last_mut().unwrap();
+    let forged_subject = "f".repeat(64);
+    last["subjectSha256"] = serde_json::json!(forged_subject);
+    let governor = last["governorEvent"].as_object_mut().unwrap();
+    governor["subjectSha256"] = serde_json::json!(forged_subject);
+    governor["evidence"]["subjectSha256"] = serde_json::json!(forged_subject);
+    let governor = Value::Object(governor.clone());
+    last["governorEvent"] = rehash(governor);
+    let forged = rehash(last.clone());
+    *events.last_mut().unwrap() = forged;
+    let forged_ledger = ".exitbind/runs/forged-evidence-identity.jsonl";
+    fs::write(
+        fixture.root.join(forged_ledger),
+        events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let rejected = fixture.call(&["run", "inspect", forged_ledger, "--json"], None);
+    assert!(
+        !rejected.status.success(),
+        "forged evidence subject was accepted"
+    );
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&rejected.stdout),
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    assert!(
+        diagnostic.contains("stale run identity")
+            || diagnostic.contains("stale or mismatched for subjectSha256"),
+        "{diagnostic}"
+    );
+
+    let mut input_events: Vec<Value> = fs::read_to_string(fixture.root.join(&ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let input_last = input_events.last_mut().unwrap();
+    input_last["governorEvent"]["evidence"]["inputSha256"] = serde_json::json!("e".repeat(64));
+    let governor = Value::Object(input_last["governorEvent"].as_object().unwrap().clone());
+    input_last["governorEvent"] = rehash(governor);
+    *input_events.last_mut().unwrap() = rehash(input_last.clone());
+    let forged_input_ledger = ".exitbind/runs/forged-evidence-input.jsonl";
+    fs::write(
+        fixture.root.join(forged_input_ledger),
+        input_events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let rejected_input = fixture.call(&["run", "inspect", forged_input_ledger, "--json"], None);
+    assert!(
+        !rejected_input.status.success(),
+        "forged evidence input was accepted"
+    );
+}
+
 fn canonical(value: &Value) -> String {
     match value {
         Value::Object(map) => {

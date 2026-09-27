@@ -1071,6 +1071,9 @@ fn apply_govern(state: &mut Value, event: &Value) -> Result<(), String> {
     if state["status"] != "running" {
         return Err("governor action requires a running run".into());
     }
+    if event["governorEvent"]["action"] == "evidence" {
+        crate::run::validate_evidence_governor_identity(state, event)?;
+    }
     if event["governorEvent"]["action"] == "replan" {
         // v0.22/v0.24-rc.2 ledgers did not persist the assignment packet
         // binding and may transition identity in their markerless re-plan.

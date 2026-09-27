@@ -231,7 +231,25 @@ pub fn run() -> Result<(), String> {
     // Prepared child capture: claim at start, finalize at stop. Failures stay
     // inside Exitbind's private state and never fail the host.
     if event == "SubagentStart" {
-        let _ = retry_busy(|| crate::session_goal::claim_child(&loaded, object));
+        match retry_busy(|| crate::session_goal::claim_child(&loaded, object)) {
+            Ok(Some(reason)) => {
+                return emit(
+                    event,
+                    &format!(
+                        "Exitbind rejected the prepared child context before presentation: {reason}. The current assignment context was not presented. Native host child creation is host-controlled."
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return emit(
+                    event,
+                    &format!(
+                        "Exitbind could not verify the prepared child context; no assignment context was presented: {error}. Native host child creation is host-controlled."
+                    ),
+                );
+            }
+        }
     }
     if event == "SubagentStop" {
         let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object));
@@ -291,11 +309,24 @@ pub fn run() -> Result<(), String> {
             &agent,
             &crate::evidence::hash::text(&source),
         );
-        if matches!(&selected, super::assignment_context::Selection::Mismatch) {
+        if let super::assignment_context::Selection::Mismatch(reason) = &selected {
+            if event == "SubagentStart" {
+                return emit(
+                    event,
+                    &format!(
+                        "Exitbind could not present child context: assignment context mismatch: {reason}. Native host child creation is host-controlled."
+                    ),
+                );
+            }
             return Ok(());
         }
-        if matches!(&selected, super::assignment_context::Selection::Unavailable) {
-            return emit(event, "Exitbind could not verify the current assignment; profile acquisition is unavailable.");
+        if let super::assignment_context::Selection::Unavailable(reason) = &selected {
+            return emit(
+                event,
+                &format!(
+                    "Exitbind could not verify the current assignment; profile acquisition is unavailable: {reason}."
+                ),
+            );
         }
         let Some(mut context) = format_agent_context(
             &loaded.control_root,
@@ -309,15 +340,22 @@ pub fn run() -> Result<(), String> {
         };
         if event == "SubagentStart" {
             match crate::session_goal::claimed_child_context(&loaded, object) {
-                Ok(Some(child))
-                    if child["configuredAgent"] == agent
+                Ok(Some(child)) => {
+                    let matches = child["configuredAgent"] == agent
                         && matches!(
                             &selected,
                             super::assignment_context::Selection::Bound { work, assignment, .. }
                                 if child["work"] == work.as_str()
                                     && child["assignment"] == assignment.as_str()
-                        ) =>
-                {
+                        );
+                    if !matches {
+                        return emit(
+                            event,
+                            &format!(
+                                "Exitbind could not present child context: prepared child scope conflicts with the selected assignment (configured agent {agent}). Native host child creation is host-controlled."
+                            ),
+                        );
+                    }
                     context.push_str("\nSelected task perspectives for this assignment:");
                     for perspective in child["perspectives"].as_array().into_iter().flatten() {
                         context.push_str(&format!(
@@ -329,7 +367,7 @@ pub fn run() -> Result<(), String> {
                         ));
                     }
                 }
-                Ok(Some(_)) | Err(_) => {
+                Err(_) => {
                     return emit(event, "Exitbind could not verify the selected child context; assignment context is unavailable.");
                 }
                 Ok(None) => {}
@@ -362,7 +400,7 @@ const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work dir
 
 const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work continuation WORK`; its `receive` block gives the bind and child-prepare commands, and Exitbind's subagent hooks record a prepared child. Do not read raw .exitbind state to recover it.";
 
-fn retry_busy(action: impl Fn() -> Result<(), String>) -> Result<(), String> {
+fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {
         match action() {
             Err(error) if error.contains("busy") => {
@@ -516,11 +554,26 @@ fn format_agent_context(
             work,
             assignment,
             packet_digest,
+            provenance,
         } => {
             lines.push(format!(
                 "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
             ));
             lines.push("Base profile is associated with this current assignment; model use is not inferred.".into());
+            lines.push(format!(
+                "Assignment provenance: project {}, work {}, assignment {}, role {}, configured agent {}, native task {}, profile source SHA-256 {}, packet context SHA-256 {}, project rules projection SHA-256 {}, root scope {}.",
+                safe_inline(&provenance.project),
+                safe_inline(&provenance.work),
+                safe_inline(&provenance.assignment),
+                safe_inline(&provenance.role),
+                safe_inline(&provenance.agent),
+                safe_inline(&provenance.native),
+                safe_inline(&provenance.profile_sha256),
+                safe_inline(&provenance.packet_digest),
+                safe_inline(&provenance.rules_sha256),
+                safe_inline(&provenance.root_scope),
+            ));
+            lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
         }
         _ => lines.push("No current governed assignment was acquired for this profile.".into()),
     }

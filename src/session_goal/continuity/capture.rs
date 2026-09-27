@@ -290,25 +290,58 @@ fn claimable(intent: &Value, session: &str, agent_type: Option<&str>) -> bool {
             || agent_type.is_some_and(|kind| intent["agentType"] == kind))
 }
 
+fn rejected<'a>(
+    intents: &'a [Value],
+    session: &str,
+    child: &str,
+    agent_type: Option<&str>,
+) -> Option<&'a Value> {
+    intents.iter().rev().find(|intent| {
+        intent["state"] == "abandoned"
+            && intent["session"] == session
+            && intent["nativeChild"] == child
+            && (intent["agentType"].is_null()
+                || agent_type.is_some_and(|kind| intent["agentType"] == kind))
+    })
+}
+
+fn rejection_reason(intent: &Value) -> String {
+    intent["failure"]
+        .as_str()
+        .unwrap_or("prepared child context was rejected")
+        .to_owned()
+}
+
 /// SubagentStart: claim the single compatible prepared intent for the bound
 /// parent session, or record nothing.
 pub(crate) fn claim(
     loaded: &Loaded,
     payload: &serde_json::Map<String, Value>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
     else {
-        return Ok(());
+        return Ok(None);
     };
     let agent_type = text(payload, "agent_type");
     // Ordinary subagents without a prepared intent cost one read, no write.
-    if !load(loaded)?
+    let intents = load(loaded)?;
+    // A rejected child identity stays rejected even if another intent was
+    // prepared for the same receiving session before a duplicate hook event.
+    if let Some(intent) = rejected(&intents, session, child, agent_type) {
+        return Ok(Some(rejection_reason(intent)));
+    }
+    if !intents
         .iter()
         .any(|intent| claimable(intent, session, agent_type))
     {
-        return Ok(());
+        return Ok(None);
     }
     with_intents(loaded, |intents| {
+        // Re-read under the mutation lock. A concurrent callback may have
+        // abandoned this child after the preliminary load above.
+        if let Some(intent) = rejected(intents, session, child, agent_type) {
+            return Ok(Some(rejection_reason(intent)));
+        }
         let matches = intents
             .iter()
             .enumerate()
@@ -316,38 +349,39 @@ pub(crate) fn claim(
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         let [index] = matches[..] else {
-            return Ok(());
+            return Ok(None);
         };
         let work = intents[index]["work"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
+        intents[index]["nativeChild"] = json!(child);
+        intents[index]["observedAgentType"] = json!(agent_type);
         let (_, binding) = current_binding(loaded, &work)?;
         if binding["session"] != session || binding["revision"] != intents[index]["bindingRevision"]
         {
             intents[index]["state"] = json!("abandoned");
-            intents[index]["failure"] =
-                json!("the receiving binding changed before a child started");
-            return Ok(());
+            let reason = "the receiving binding changed before a child started";
+            intents[index]["failure"] = json!(reason);
+            return Ok(Some(reason.to_owned()));
         }
         if !selected_is_current(loaded, &work, &intents[index]["selected"]) {
             intents[index]["state"] = json!("abandoned");
-            intents[index]["failure"] =
-                json!("the selected assignment changed before a child started");
-            return Ok(());
+            let reason = "the selected assignment changed before a child started";
+            intents[index]["failure"] = json!(reason);
+            return Ok(Some(reason.to_owned()));
         }
         if !intents[index]["selected"].is_null() {
             let intent = intents[index]["id"].as_str().unwrap_or_default();
             if let Err(error) = context(loaded, &work, intent) {
                 intents[index]["state"] = json!("abandoned");
-                intents[index]["failure"] = json!(format!("child context unavailable: {error}"));
-                return Ok(());
+                let reason = format!("child context unavailable: {error}");
+                intents[index]["failure"] = json!(&reason);
+                return Ok(Some(reason));
             }
         }
         intents[index]["state"] = json!("claimed");
-        intents[index]["nativeChild"] = json!(child);
-        intents[index]["observedAgentType"] = json!(agent_type);
-        Ok(())
+        Ok(None)
     })
 }
 
@@ -531,4 +565,34 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejected_identity_wins_over_a_new_prepared_intent() {
+        let intents = vec![
+            json!({
+                "state": "abandoned",
+                "session": "parent",
+                "nativeChild": "child-a",
+                "agentType": "worker",
+                "failure": "the selected assignment changed before a child started"
+            }),
+            json!({
+                "state": "prepared",
+                "session": "parent",
+                "nativeChild": null,
+                "agentType": "worker"
+            }),
+        ];
+        let intent = rejected(&intents, "parent", "child-a", Some("worker"))
+            .expect("the prior rejected child identity must remain decisive");
+        assert_eq!(
+            rejection_reason(intent),
+            "the selected assignment changed before a child started"
+        );
+    }
 }

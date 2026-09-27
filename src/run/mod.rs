@@ -758,6 +758,58 @@ pub(crate) fn replan_for_assignment(
     })
 }
 
+pub(crate) fn validate_evidence_governor_identity(
+    state: &Value,
+    event: &Value,
+) -> Result<(), String> {
+    if !crate::run::assignment::pending(state)
+        .into_iter()
+        .any(|item| {
+            item["agent"] == event["agent"]
+                && item["role"] == "worker"
+                && item["role"] == event["role"]
+                && item["stage"] == event["stage"]
+                && item["attempt"] == event["attempt"]
+        })
+    {
+        return Err("evidence is not bound to the current worker assignment".into());
+    }
+    if event["subjectSha256"] != state["subject"]["sha256"]
+        || event["inputsSha256"] != event["governorEvent"]["inputSha256"]
+        || event["governorEvent"]["evidence"]["inputSha256"] != event["inputsSha256"]
+    {
+        return Err("evidence is bound to a stale run identity or input".into());
+    }
+    let governor = &state["governor"];
+    match event["governorEvent"]["identityTransition"].as_str() {
+        None => return Ok(()),
+        Some("carried_mutation_v1") => {}
+        Some(_) => return Err("evidence identity transition is unsupported".into()),
+    }
+    let current = governor["currentMutation"]
+        .as_object()
+        .ok_or("evidence identity transition requires a current mutation")?;
+    if current["subjectSha256"] == event["subjectSha256"] && current["attempt"] == event["attempt"]
+    {
+        return Err("evidence identity transition is unnecessary".into());
+    }
+    if current["carryLineage"] != true
+        || event["governorEvent"]["previousSha256"] != current["eventSha256"]
+        || event["governorEvent"]["lineageSha256"] != governor["lineageSha256"]
+    {
+        return Err("evidence identity transition is not bound to the current mutation".into());
+    }
+    let prior = current["attempt"].as_u64();
+    let next = event["attempt"].as_u64();
+    if prior
+        .zip(next)
+        .map_or(true, |(prior, next)| next != prior + 1)
+    {
+        return Err("evidence identity transition does not use the next attempt".into());
+    }
+    Ok(())
+}
+
 /// Bind one exact product/state artifact as new governor evidence under the
 /// same assignment lock used by mutation permission and completion.
 pub(crate) fn evidence_for_assignment(
@@ -827,17 +879,25 @@ pub(crate) fn evidence_for_assignment(
         let previous_governor = state["governor"]["headSha256"]
             .as_str()
             .map(|head| json!({"eventSha256": head}));
-        let governor_event = crate::context::event(
-            previous_governor.as_ref(),
-            json!({
-                "action": "evidence",
-                "runId": state["runId"],
-                "subjectSha256": state["subject"]["sha256"],
-                "attempt": state["attempt"],
-                "inputSha256": evidence["inputSha256"],
-                "evidence": evidence,
-            }),
-        );
+        let identity_changed = state["governor"]["currentMutation"].is_object()
+            && (state["governor"]["subjectSha256"] != state["subject"]["sha256"]
+                || state["governor"]["attempt"] != state["attempt"]);
+        let mut governor_payload = json!({
+            "action": "evidence",
+            "runId": state["runId"],
+            "subjectSha256": state["subject"]["sha256"],
+            "attempt": state["attempt"],
+            "inputSha256": evidence["inputSha256"],
+            "evidence": evidence,
+        });
+        if identity_changed {
+            state["governor"]["currentMutation"]
+                .as_object()
+                .ok_or("evidence identity transition requires a current mutation")?;
+            governor_payload["identityTransition"] = json!("carried_mutation_v1");
+            governor_payload["lineageSha256"] = state["governor"]["lineageSha256"].clone();
+        }
+        let governor_event = crate::context::event(previous_governor.as_ref(), governor_payload);
         let version = state["version"]
             .as_u64()
             .ok_or("run state has no version")?;
@@ -2075,6 +2135,7 @@ fn reduce_with_inputs(loaded: &Loaded, events: &[Value]) -> Result<(Value, Input
 pub(crate) struct RunSnapshot {
     events: Vec<Value>,
     state: Value,
+    work: Option<String>,
     inputs: InputContext,
     ledger_sha256: String,
     drift: Result<(), String>,
@@ -2084,8 +2145,11 @@ pub(crate) struct RunSnapshot {
 
 impl RunSnapshot {
     pub(crate) fn capture(loaded: &Loaded, ledger: &str) -> Result<Self, String> {
-        let (_, events, source) = load(loaded, ledger)?;
-        Self::from_events(loaded, &events, &source)
+        let (path, events, source) =
+            load_at(loaded, &ledger_path(&loaded.state_root, ledger, false)?)?;
+        let mut snapshot = Self::from_events(loaded, &events, &source)?;
+        snapshot.work = canonical_work_for_ledger(&path).ok();
+        Ok(snapshot)
     }
 
     pub(crate) fn from_events(
@@ -2109,6 +2173,7 @@ impl RunSnapshot {
         Ok(Self {
             events: events.to_vec(),
             state,
+            work: None,
             inputs,
             ledger_sha256: hash::bytes(source.as_bytes()),
             drift,
@@ -2131,6 +2196,7 @@ impl RunSnapshot {
             "valid": true,
             "runId": state["runId"],
             "workflow": state["workflow"],
+            "work": self.work,
             "status": state["status"],
             "currentStage": if state["status"] == "running" { state["currentStage"].clone() } else { Value::Null },
             "attempt": if state["status"] == "running" { state["attempt"].clone() } else { Value::Null },
@@ -2194,6 +2260,9 @@ impl RunSnapshot {
             "runId": state["runId"],
             "status": state["status"],
             "workflow": state["workflow"],
+            "work": self.work,
+            "configSha256": state["configSha256"],
+            "projectIdentity": crate::host::assignment_context::project_identity(loaded)?,
             "currentStage": if state["status"] == "running" {
                 state["currentStage"].clone()
             } else {
