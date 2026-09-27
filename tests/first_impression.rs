@@ -55,13 +55,8 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
     let before = git_status();
     let readme = include_str!("../README.md");
     assert!(readme.starts_with("# Exitbind\n"));
-    let channel = if env!("CARGO_PKG_VERSION").contains('-') {
-        "prerelease"
-    } else {
-        "stable release"
-    };
     assert!(readme.contains(&format!(
-        "Current {channel}: `v{}`",
+        "https://raw.githubusercontent.com/envy404/exitbind/v{}/install.sh",
         env!("CARGO_PKG_VERSION")
     )));
     assert!(readme.contains("https://github.com/envy404/exitbind"));
