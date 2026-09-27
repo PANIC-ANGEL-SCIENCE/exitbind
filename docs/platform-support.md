@@ -1,13 +1,14 @@
 # Install the binary for your platform
 
-The stable release `v0.25.0` targets Linux x86_64 and macOS on
+The planned stable release `v0.25.0` targets Linux x86_64 and macOS on
 Apple Silicon and Intel. The public release workflow is the authoritative path
 for validating native builds, packaged installation, and public asset
 installation; this source snapshot does not claim those checks have passed for
 this release. WSL uses the same Linux artifact inside Ubuntu. See the
 [public release workflow](https://github.com/envy404/exitbind/actions/workflows/release.yml).
 
-Use the pinned installer in the [README](../README.md#see-a-false-done-refused).
+After the tag and assets are published, use the pinned installer in the
+[README](../README.md#see-a-wrong-door-refused).
 It selects an archive from the operating system and architecture, checks its
 SHA-256, and installs one executable. No Rust, Python, Node.js, or model account
 is needed to run the installed binary or `exitbind benchmark`.

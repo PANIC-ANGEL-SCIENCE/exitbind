@@ -5,8 +5,8 @@ name; this document exists for the cases that do — an old project, an old
 ledger, an old executable, or a rollback.
 
 The rule behind every entry below: compatibility reads the old world, and never
-relabels its evidence as new evidence. Active Soulmate distribution ends with
-`v0.25.0`; historical releases and records remain available.
+relabels its evidence as new evidence. Active Soulmate distribution is planned
+to end with `v0.25.0`; historical releases and records remain available.
 
 ## Rename history
 
@@ -76,7 +76,7 @@ rendered as product identity anywhere in the interface.
 - An existing project keeps its historical paths; nothing is moved without an
   explicit migration command.
 - `exitbind` reads a historical project. An executable from a historical tag
-  retains its original layout; the current stable package does not ship it.
+  retains its original layout; the planned `v0.25.0` package does not ship it.
 - Old and new state never mix: a project answers to one configuration, and a new
   run records the current identity only.
 

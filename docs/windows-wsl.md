@@ -27,9 +27,9 @@ wsl.exe --list --verbose
 
 ## Install Exitbind inside Ubuntu
 
-Open the Ubuntu terminal. Keep projects under the Linux home directory, not
-under `/mnt/c`, so Linux path, permission, and filesystem behavior remain the
-ones Exitbind tests.
+After the `v0.25.0` tag and assets are published, open the Ubuntu terminal.
+Keep projects under the Linux home directory, not under `/mnt/c`, so Linux path,
+permission, and filesystem behavior remain the ones Exitbind tests.
 
 ```sh
 sudo apt-get update
@@ -59,8 +59,9 @@ from the Linux side.
 
 ## Evidence boundary
 
-CI builds the locked Linux stable release, transfers that exact workflow
-artifact to Ubuntu under WSL 2 on GitHub's `windows-2025` runner, and exercises
+The release CI is configured to build the locked Linux stable candidate,
+transfer that exact workflow artifact to Ubuntu under WSL 2 on GitHub's
+`windows-2025` runner, and exercise
 the installed release through `init`, `check`, `brief`, and `run` state
 creation/inspection. Existing Linux CI owns the deeper Rust and real-tmux
 coverage. This evidence does not claim native Windows filesystem, process,
