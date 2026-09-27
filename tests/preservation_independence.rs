@@ -133,7 +133,7 @@ impl Fixture {
     }
 
     /// Drive the façade until the acceptance decision is pending.
-    fn drive(&self, work: &str) -> Value {
+    fn drive(&self, work: &str, expect_preservation_failure: bool) -> Value {
         for _ in 0..16 {
             let seen = self.value(&["work", "next", work], None);
             let next = seen["next"].clone();
@@ -141,7 +141,27 @@ impl Fixture {
             match next["action"].as_str().unwrap() {
                 "lead_decision" if !scope_stage => return seen,
                 "check" => {
-                    self.value(&["work", "check", work], None);
+                    let output = self.call(&["work", "check", work], None);
+                    let is_preservation = next["check"]["kind"] == "preservation";
+                    if is_preservation && expect_preservation_failure {
+                        assert!(
+                            !output.status.success(),
+                            "preservation check unexpectedly succeeded"
+                        );
+                        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+                        assert_eq!(result["effect"], "recorded");
+                        assert_eq!(result["result"]["code"], 2);
+                        assert_eq!(result["next"]["action"], "lead_decision");
+                        assert_eq!(result["next"]["role"], "lead");
+                    } else {
+                        assert!(
+                            output.status.success(),
+                            "check failed unexpectedly: {}{}",
+                            String::from_utf8_lossy(&output.stdout),
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                        serde_json::from_slice::<Value>(&output.stdout).unwrap();
+                    }
                 }
                 "spawn" => {
                     let outcome = if next["role"] == "reviewer" {
@@ -257,7 +277,7 @@ fn preservation_guidance_ships_with_exitbind_and_needs_no_second_installation() 
 fn a_governed_run_resolves_its_own_route_and_quality() {
     let fixture = Fixture::new("preservation-assignment");
     let work = fixture.begin("sh check.sh");
-    let seen = fixture.drive(&work);
+    let seen = fixture.drive(&work, false);
 
     let assignment = &seen["residual"]["humanHelp"]["preservationAssignment"];
     assert_eq!(assignment["route"], "FORMAL");
@@ -297,7 +317,7 @@ fn a_broken_invariant_is_caught_while_the_functional_check_passes() {
     // The control: the same shape of run, with the requirement genuinely held.
     let preserved = Fixture::new("preservation-control");
     let held = preserved.begin("sh check.sh");
-    let pending = preserved.drive(&held);
+    let pending = preserved.drive(&held, false);
     assert_eq!(
         pending["presentation"]["state"]["preservation"],
         "satisfied"
@@ -313,7 +333,7 @@ fn a_broken_invariant_is_caught_while_the_functional_check_passes() {
         &broken.root.join("preservation.sh"),
         "#!/bin/sh\ngrep -q 'environment wins' precedence.md\n",
     );
-    let seen = broken.drive(&work);
+    let seen = broken.drive(&work, true);
     let presentation = &seen["presentation"];
     assert_ne!(presentation["exitState"], "READY");
     assert_eq!(presentation["state"]["preservation"], "failed");
@@ -431,7 +451,7 @@ fn an_unrelated_preservation_installation_is_neither_used_nor_disturbed() {
 
     // The replacement still works with the old installation gone.
     let work = fixture.begin("sh check.sh");
-    let pending = fixture.drive(&work);
+    let pending = fixture.drive(&work, false);
     let ready = fixture.accept(&work, &pending);
     assert_eq!(ready["presentation"]["exitState"], "READY");
 }

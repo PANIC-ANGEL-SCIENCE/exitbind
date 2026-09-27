@@ -13,7 +13,11 @@ const REVIEW_WEIGHT: u64 = 20;
 const LEAD_WEIGHT: u64 = 25;
 
 pub(crate) fn project(state: &Value) -> Value {
-    let Ok(kernel) = run_exit::reduce(state) else {
+    project_with_artifact(state, None)
+}
+
+pub(crate) fn project_with_artifact(state: &Value, artifact_current: Option<bool>) -> Value {
+    let Ok(kernel) = run_exit::ExitState::reduce_with_artifact(state, artifact_current) else {
         return json!({
             "valid": false,
             "error": {"code": "invalid_state", "detail": "validated run state is required"},
@@ -166,10 +170,14 @@ mod tests {
                 "submissions": [
                     {"stage":1,"attempt":1,"agent":"lead","role":"lead","outcome":"scoped","eventSha256":"d".repeat(64)},
                     {"stage":1,"attempt":1,"agent":"worker","role":"worker","outcome":"completed","eventSha256":"e".repeat(64)},
-                    {"stage":2,"attempt":1,"agent":"reviewer","role":"reviewer","outcome":"approved","inputsSha256":review_inputs,"eventSha256":"1".repeat(64)}
+                    {"stage":2,"attempt":1,"agent":"reviewer","role":"reviewer","outcome":"approved","subjectSha256":subject,"inputsSha256":review_inputs,"eventSha256":"1".repeat(64)}
                 ],
                 "checks": [
                     {"targetEventSha256":"e".repeat(64),"subjectSha256":subject,"inputsSha256":current_inputs,"result":{"kind":"exit","code":0},"eventSha256":"f".repeat(64)}
+                ],
+                "events": [
+                    {"action":"check","eventSha256":"f".repeat(64)},
+                    {"action":"submit","eventSha256":"1".repeat(64),"subjectSha256":subject,"inputsSha256":review_inputs}
                 ]
             })
         };

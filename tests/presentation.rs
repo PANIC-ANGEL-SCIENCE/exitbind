@@ -97,6 +97,26 @@ impl Project {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn recorded_check_failure(&self, work: &str) -> Value {
+        let output = self.call(&["work", "check", work], None);
+        assert!(
+            !output.status.success(),
+            "failed check unexpectedly succeeded"
+        );
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["effect"], "recorded", "{value}");
+        assert!(
+            value["result"]["signal"].is_number()
+                || value["result"]["code"]
+                    .as_i64()
+                    .is_some_and(|code| code != 0),
+            "recorded check did not report failure: {value}"
+        );
+        assert_eq!(value["next"]["action"], "lead_decision", "{value}");
+        assert_eq!(value["next"]["role"], "lead", "{value}");
+        value
+    }
+
     fn presentation(&self, work: &str) -> Value {
         self.value(&["work", "next", work], None)["presentation"].clone()
     }
@@ -489,7 +509,7 @@ fn only_the_accepted_decision_reaches_the_terminal_block() {
     let broken = begin(&failing, false);
     failing.drive_until(&broken, "check");
     fs::write(failing.root.join("source.txt"), b"nothing it looks for\n").unwrap();
-    failing.value(&["work", "check", &broken], None);
+    failing.recorded_check_failure(&broken);
     let refused = failing.presentation(&broken);
     assert!(refused["terminal"].is_null(), "{refused}");
     assert_eq!(refused["state"]["check"], "failed");

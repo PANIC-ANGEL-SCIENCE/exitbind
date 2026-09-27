@@ -975,14 +975,23 @@ fn request_id_replays_exact_permit_without_new_event_or_spent() {
     let first = fixture.call(&args);
     assert!(first.status.success(), "{first:?}");
     let first: Value = serde_json::from_slice(&first.stdout).unwrap();
-    assert_eq!(first["event"]["requestId"], "request-1");
+    assert_eq!(first["compact"], true);
+    assert_eq!(first["allowed"], true);
+    assert_eq!(first["effect"], "recorded");
+    assert_eq!(first["event"]["action"], "govern");
+    assert!(first["governor"]["spent"].is_null());
+    let event_sha = first["event"]["eventSha256"].as_str().unwrap().to_owned();
+    let detail = fixture.json(&["run", "inspect", &ledger, "--event", &event_sha]);
+    assert_eq!(detail["eventSha256"], event_sha);
+    assert_eq!(detail["event"]["requestId"], "request-1");
+    assert!(detail["event"]["requestDigest"].is_string());
     assert_eq!(
-        first["event"]["requestDigest"],
-        first["event"]["governorEvent"]["requestDigest"]
+        detail["event"]["requestDigest"],
+        detail["event"]["governorEvent"]["requestDigest"]
     );
     assert_eq!(
-        first["event"]["requestId"],
-        first["event"]["governorEvent"]["requestId"]
+        detail["event"]["requestId"],
+        detail["event"]["governorEvent"]["requestId"]
     );
     let before = fs::read(fixture.root.join(&ledger)).unwrap();
     let replay = fixture.call(&args);
@@ -1470,10 +1479,27 @@ fn legacy_permit_without_request_id_keeps_historical_event_shape() {
     ]);
     assert!(permit.status.success(), "{permit:?}");
     let value: Value = serde_json::from_slice(&permit.stdout).unwrap();
-    assert!(value["event"]["requestId"].is_null());
-    assert!(value["event"]["requestDigest"].is_null());
-    assert!(value["event"]["governorEvent"]["requestId"].is_null());
-    assert_eq!(value["governor"]["spent"], 1);
+    assert_eq!(value["compact"], true);
+    assert_eq!(value["allowed"], true);
+    assert_eq!(value["effect"], "recorded");
+    assert_eq!(value["event"]["action"], "govern");
+    assert!(value["event"]["eventSha256"].is_string());
+    assert!(value["governor"]["spent"].is_null());
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let event_sha = value["event"]["eventSha256"].as_str().unwrap();
+    let detail = fixture.json(&["run", "inspect", &ledger, "--event", event_sha]);
+    assert_eq!(detail["eventSha256"], event_sha);
+    assert!(detail["event"]["requestId"].is_null());
+    assert!(detail["event"]["requestDigest"].is_null());
+    assert!(detail["event"]["governorEvent"]["requestId"].is_null());
+    assert!(detail["event"]["governorEvent"]["requestDigest"].is_null());
+    assert_eq!(
+        fixture.json(&["run", "inspect", &ledger])["governor"]["spent"],
+        1
+    );
 }
 
 #[test]

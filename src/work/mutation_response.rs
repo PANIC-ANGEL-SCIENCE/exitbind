@@ -13,6 +13,10 @@ use serde_json::{json, Value};
 
 use super::recovery::inspect_command_for_config;
 
+pub(super) fn check_result_failed(result: &Value) -> bool {
+    result["signal"].is_number() || result["code"].as_i64().is_some_and(|code| code != 0)
+}
+
 /// Small result envelope shared by check and return.  The event selector comes
 /// from the append result, never from a later ledger head.  `next` is only a
 /// hint: its packet must be read afresh before another mutation.

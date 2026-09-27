@@ -85,6 +85,12 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn recorded_failure(&self, args: &[&str]) -> Value {
+        let output = self.call(args);
+        assert!(!output.status.success(), "{args:?}: {output:?}");
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
     fn ledger_path(&self, work: &str) -> PathBuf {
         self.root.join(ledger_reference(work))
     }
@@ -339,7 +345,8 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     let fixture = Fixture::new();
     let (_started, work, _ledger, _target) =
         fixture.start_worker("printf '\\001\\000X'; printf '\\377\\n' >&2; exit 7");
-    fixture.json(&["work", "check", &work]);
+    let failed = fixture.recorded_failure(&["work", "check", &work]);
+    assert_eq!(failed["result"]["code"], 7);
     let current = fixture.json(&["work", "next", &work]);
     let context = &current["next"]["packet"]["context"];
     let reference = context["evidence"]
@@ -420,7 +427,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     let signal = Fixture::new();
     let (_started, signal_work, _ledger, _target) = signal.start_worker("kill -TERM $$");
     let checked = signal.call(&["work", "check", &signal_work]);
-    assert!(checked.status.success(), "{checked:?}");
+    assert!(!checked.status.success(), "{checked:?}");
     let signal_next = signal.json(&["work", "next", &signal_work]);
     let signal_ref = signal_next["next"]["packet"]["context"]["evidence"]
         .as_array()
@@ -682,7 +689,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         let (_started, signal_work, signal_ledger, _signal_target) =
             signal.start_worker("kill -XFSZ $$");
         let checked = signal.call(&["work", "check", &signal_work]);
-        assert!(checked.status.success(), "{checked:?}");
+        assert!(!checked.status.success(), "{checked:?}");
         let signal_source = fs::read_to_string(signal.root.join(signal_ledger)).unwrap();
         let signal_event: Value =
             serde_json::from_str(signal_source.lines().last().unwrap()).unwrap();
@@ -743,7 +750,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
         let (_started, asymmetric_work, asymmetric_ledger, _asymmetric_target) = asymmetric
             .start_worker("printf e >&2; exec 2>&-; sleep 0.05; printf stdout-later; exit 7");
         let checked = asymmetric.call(&["work", "check", &asymmetric_work]);
-        assert!(checked.status.success(), "{checked:?}");
+        assert!(!checked.status.success(), "{checked:?}");
         let asymmetric_source =
             fs::read_to_string(asymmetric.root.join(asymmetric_ledger)).unwrap();
         let asymmetric_event: Value =

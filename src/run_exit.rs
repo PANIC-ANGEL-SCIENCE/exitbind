@@ -6,6 +6,7 @@
 
 use crate::run_value::{self, CheckPolicy, PreservationRequirement};
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CheckTargetStatus {
@@ -258,7 +259,6 @@ pub(crate) struct ExitState {
     pub(crate) attempt: u64,
     #[allow(dead_code)]
     pub(crate) subject_sha256: Option<String>,
-    pub(crate) inputs_sha256: Option<String>,
     pub(crate) assessment: CheckAssessment,
     pub(crate) current_submissions: Vec<Value>,
     pub(crate) worker_total: usize,
@@ -266,6 +266,8 @@ pub(crate) struct ExitState {
     pub(crate) worker_completed: usize,
     pub(crate) reviewer_completed: usize,
     pub(crate) review_required: bool,
+    pub(crate) review_current: bool,
+    pub(crate) current_reviews: BTreeSet<String>,
     pub(crate) review_decision_sha256: Option<String>,
     /// A reviewer finding cycle the Lead resolved by `defer` or `reject`.
     pub(crate) review_resolution: Option<Value>,
@@ -274,6 +276,13 @@ pub(crate) struct ExitState {
 
 impl ExitState {
     pub(crate) fn reduce(state: &Value) -> Result<Self, String> {
+        Self::reduce_with_artifact(state, None)
+    }
+
+    pub(crate) fn reduce_with_artifact(
+        state: &Value,
+        artifact_current: Option<bool>,
+    ) -> Result<Self, String> {
         let version = state["version"]
             .as_u64()
             .ok_or("run state version is invalid")?;
@@ -286,7 +295,6 @@ impl ExitState {
                 status: status.to_owned(),
                 attempt: state["attempt"].as_u64().unwrap_or_default(),
                 subject_sha256: state["subject"]["sha256"].as_str().map(str::to_owned),
-                inputs_sha256: state["inputsSha256"].as_str().map(str::to_owned),
                 assessment: CheckAssessment::unconfigured(),
                 current_submissions: Vec::new(),
                 worker_completed: 0,
@@ -295,6 +303,8 @@ impl ExitState {
                 worker_total: 0,
                 reviewer_total: 0,
                 review_required: true,
+                review_current: false,
+                current_reviews: BTreeSet::new(),
                 review_decision_sha256: None,
                 review_resolution: None,
             });
@@ -320,26 +330,32 @@ impl ExitState {
             0
         };
         let assessment = assess(state)?;
+        let review_current = current_submissions
+            .iter()
+            .any(|event| review_is_current(state, event, &assessment, artifact_current));
+        let current_reviews = current_submissions
+            .iter()
+            .filter(|event| review_is_current(state, event, &assessment, artifact_current))
+            .filter_map(|event| event["eventSha256"].as_str().map(str::to_owned))
+            .collect::<BTreeSet<_>>();
         Ok(Self {
             version,
             status: status.to_owned(),
             attempt,
             subject_sha256: state["subject"]["sha256"].as_str().map(str::to_owned),
-            inputs_sha256: state["inputsSha256"].as_str().map(str::to_owned),
             worker_completed: current_submissions
                 .iter()
                 .filter(|event| event["role"] == "worker" && event["outcome"] == "completed")
                 .count(),
-            reviewer_completed: current_submissions
-                .iter()
-                .filter(|event| approval_is_current(event, version, state["inputsSha256"].as_str()))
-                .count(),
+            reviewer_completed: current_reviews.len(),
             scope_completed: all_submissions
                 .iter()
                 .any(|event| event["role"] == "lead" && event["outcome"] == "scoped"),
             worker_total,
             reviewer_total,
             review_required,
+            review_current,
+            current_reviews,
             review_decision_sha256,
             review_resolution: crate::run::disposition::current_resolution(state),
             assessment,
@@ -376,9 +392,7 @@ impl ExitState {
     }
 
     pub(crate) fn reviewer_approved(&self) -> bool {
-        self.current_submissions
-            .iter()
-            .any(|event| approval_is_current(event, self.version, self.inputs_sha256.as_deref()))
+        self.review_current
     }
 
     pub(crate) fn lead_accepted(&self) -> bool {
@@ -419,6 +433,60 @@ fn approval_is_current(event: &Value, version: u64, inputs: Option<&str>) -> boo
     event["role"] == "reviewer"
         && event["outcome"] == "approved"
         && (version < 6 || event["inputsSha256"].as_str() == inputs)
+}
+
+/// A reviewer approval is admissible only when it still describes the exact
+/// current result.  Callers may omit artifact revalidation while reducing a
+/// ledger; a known drift always invalidates the approval.
+pub(crate) fn review_is_current(
+    state: &Value,
+    review: &Value,
+    assessment: &CheckAssessment,
+    artifact_current: Option<bool>,
+) -> bool {
+    if !approval_is_current(
+        review,
+        state["version"].as_u64().unwrap_or_default(),
+        state["inputsSha256"].as_str(),
+    ) || review["attempt"] != state["attempt"]
+        || artifact_current == Some(false)
+    {
+        return false;
+    }
+    let version = state["version"].as_u64().unwrap_or_default();
+    let subject = state["subject"]["sha256"].as_str();
+    let events = match state["events"].as_array() {
+        Some(events) => events,
+        None => return false,
+    };
+    let review_sha = match review["eventSha256"].as_str() {
+        Some(sha) => sha,
+        None => return false,
+    };
+    let review_index = match events
+        .iter()
+        .position(|event| event["eventSha256"].as_str() == Some(review_sha))
+    {
+        Some(index) => index,
+        None => return false,
+    };
+    let review_event = &events[review_index];
+    if version >= 5 && review_event["subjectSha256"].as_str() != subject {
+        return false;
+    }
+    if version >= 6 && review_event["inputsSha256"].as_str() != state["inputsSha256"].as_str() {
+        return false;
+    }
+    !assessment.incomplete
+        && assessment.targets.iter().all(|target| {
+            target.status == CheckTargetStatus::Passed
+                && target.check_event_sha256.as_deref().is_some_and(|sha| {
+                    events
+                        .iter()
+                        .position(|event| event["eventSha256"].as_str() == Some(sha))
+                        .is_some_and(|check_index| check_index < review_index)
+                })
+        })
 }
 
 pub(crate) fn reduce(state: &Value) -> Result<ExitState, String> {
@@ -579,7 +647,9 @@ fn planned_counts(state: &Value) -> Result<(usize, usize), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{reduce, ExitDecision};
+    use super::{
+        reduce, review_is_current, CheckAssessment, CheckTarget, CheckTargetStatus, ExitDecision,
+    };
     use serde_json::json;
 
     const SUBJECT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -690,5 +760,37 @@ mod tests {
         assert!(!accepted.subject_is_current(&json!(
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         )));
+    }
+
+    #[test]
+    fn review_cannot_admit_a_missing_check_event() {
+        let state = json!({
+            "version": 5,
+            "attempt": 1,
+            "subject": {"sha256": SUBJECT},
+            "events": [{"eventSha256": "review", "subjectSha256": SUBJECT}],
+        });
+        let review = json!({
+            "role": "reviewer",
+            "outcome": "approved",
+            "attempt": 1,
+            "eventSha256": "review",
+        });
+        let assessment = CheckAssessment {
+            policy: None,
+            targets: vec![CheckTarget {
+                target_event_sha256: WORKER.to_owned(),
+                requirement_id: None,
+                requirement_text: None,
+                status: CheckTargetStatus::Passed,
+                check_event_sha256: Some(CHECK.to_owned()),
+                exit_code: Some(0),
+                result: None,
+                acquisition: None,
+            }],
+            incomplete: false,
+            targets_per_worker: 1,
+        };
+        assert!(!review_is_current(&state, &review, &assessment, None));
     }
 }

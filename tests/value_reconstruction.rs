@@ -758,20 +758,20 @@ fn reconstruct_workflow(
     config: &[u8],
     fixtures: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(), String> {
-    if blocked.len() != 6
-        || final_events.len() != 11
+    if blocked.len() != 5
+        || final_events.len() != 10
         || blocked
             .iter()
             .map(|event| event["action"].as_str().unwrap_or(""))
             .collect::<Vec<_>>()
-            != ["start", "submit", "submit", "check", "submit", "protect"]
+            != ["start", "submit", "submit", "check", "protect"]
         || final_events
             .iter()
             .map(|event| event["action"].as_str().unwrap_or(""))
             .collect::<Vec<_>>()
             != [
-                "start", "submit", "submit", "check", "submit", "protect", "submit", "submit",
-                "check", "submit", "submit",
+                "start", "submit", "submit", "check", "protect", "submit", "submit", "check",
+                "submit", "submit",
             ]
     {
         return Err("ledgers do not contain the fixed synthetic workflow sequence".into());
@@ -792,10 +792,9 @@ fn reconstruct_workflow(
         .ok_or("start event has no check command")?;
     let worker_one = &blocked[2];
     let check_one = &blocked[3];
-    let protection = &blocked[5];
+    let protection = &blocked[4];
     assert_submission(worker_one, 2, 1, "worker", "worker", "completed")?;
     assert_submission(&blocked[1], 1, 1, "lead", "lead", "scoped")?;
-    assert_submission(&blocked[4], 3, 1, "reviewer", "reviewer", "approved")?;
     assert_check(check_one, worker_one, command, 1)?;
     if protection["checkEvidence"][0]["targetEventSha256"] != worker_one["eventSha256"]
         || protection["checkEvidence"][0]["checkEventSha256"] != check_one["eventSha256"]
@@ -805,16 +804,16 @@ fn reconstruct_workflow(
         return Err("failed-check protection did not leave a pending lead decision".into());
     }
 
-    let worker_two = &final_events[7];
-    let check_two = &final_events[8];
-    assert_submission(&final_events[6], 4, 1, "lead", "lead", "rework")?;
+    let worker_two = &final_events[6];
+    let check_two = &final_events[7];
+    assert_submission(&final_events[5], 4, 1, "lead", "lead", "rework")?;
     assert_submission(worker_two, 2, 2, "worker", "worker", "completed")?;
-    assert_submission(&final_events[9], 3, 2, "reviewer", "reviewer", "approved")?;
-    assert_submission(&final_events[10], 4, 2, "lead", "lead", "accepted")?;
+    assert_submission(&final_events[8], 3, 2, "reviewer", "reviewer", "approved")?;
+    assert_submission(&final_events[9], 4, 2, "lead", "lead", "accepted")?;
     assert_check(check_two, worker_two, command, 0)?;
-    if has_acceptance(&final_events[..10])
-        || final_events[10]["agent"] != "lead"
-        || final_events[10]["role"] != "lead"
+    if has_acceptance(&final_events[..9])
+        || final_events[9]["agent"] != "lead"
+        || final_events[9]["role"] != "lead"
     {
         return Err("canonical lead acceptance was not last after fresh review".into());
     }
@@ -915,9 +914,9 @@ fn verify_artifacts(events: &[Value], fixtures: &BTreeMap<String, Vec<u8>>) -> R
             ));
         }
     }
-    if artifacts.len() != 7 {
+    if artifacts.len() != 6 {
         return Err(format!(
-            "expected seven distinct protected submission artifacts, got {}",
+            "expected six distinct protected submission artifacts, got {}",
             artifacts.len()
         ));
     }

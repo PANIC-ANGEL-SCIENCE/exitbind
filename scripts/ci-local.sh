@@ -147,6 +147,7 @@ run value-proof ./scripts/run-value-proof-suite.sh
 if [ "$platform" = linux ]; then
   run drift-warning ./scripts/demo-drift-warning.sh
   run native-handoff "$CARGO" test --locked --features legacy-cli-test --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
+  ./scripts/assert-test-ran.sh real_tmux_child_presents_bound_evidence_without_persisting_the_prompt < "$run_dir/native-handoff.log" || fail 'native-handoff target did not execute and pass'
   run release-refs ./scripts/check-release-refs.sh
 fi
 

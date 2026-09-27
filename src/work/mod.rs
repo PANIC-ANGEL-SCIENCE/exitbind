@@ -6,6 +6,7 @@ pub(crate) mod focus;
 mod held;
 mod mutation_response;
 pub(crate) mod packet;
+mod permit_response;
 mod recovery;
 mod response_recovery;
 mod resume;
@@ -18,6 +19,7 @@ use std::io::Read;
 use std::path::Path;
 
 pub(crate) use disposition::{dispose, DispositionOptions};
+pub(crate) use permit_response::permit;
 pub(crate) use resume::resume;
 pub(crate) use return_result_impl::return_result;
 
@@ -238,42 +240,6 @@ fn attach_continuation(loaded: &Loaded, work: &str, response: &mut Value) -> Res
         response["continuation"] = view;
     }
     Ok(())
-}
-
-/// Atomically authorize and record one cooperative product-mutation unit for
-/// the exact current assignment.  Callers must perform their product edit
-/// only after this succeeds; the ledger lock and replay reducer own the
-/// refusal boundary.
-pub(crate) fn permit(
-    loaded: &Loaded,
-    work: &str,
-    assignment: &str,
-    operation: &str,
-    request_id: Option<&str>,
-) -> Result<Value, String> {
-    let ledger = resolve(loaded, work)?;
-    let action = next_for(loaded, work, &ledger)?;
-    if action["action"] != "spawn" || action["role"] != "worker" {
-        return Err("a worker assignment is required for a governed mutation".into());
-    }
-    if action["assignment"] != assignment {
-        return Err("assignment is not the current pending work action".into());
-    }
-    let expected = run::AssignmentIdentity::from_action(&action)?;
-    let permission = run::permit_for_assignment(
-        loaded, &ledger, work, assignment, expected, operation, request_id,
-    )?;
-    let mut response = json!({
-        "work": work,
-        "allowed": permission["allowed"],
-        "event": permission["event"],
-        "governor": permission["governor"],
-        "next": next_for(loaded, work, &ledger)?,
-    });
-    if let Some(idempotent) = permission.get("idempotent") {
-        response["idempotent"] = idempotent.clone();
-    }
-    Ok(agent_response(response))
 }
 
 pub(crate) fn replan(
@@ -601,13 +567,14 @@ pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
         Ok(next) => response["next"] = next,
         Err(error) => response["projectionError"] = json!(error),
     }
-    Ok(bounded_mutation(
-        &response,
-        work,
-        None,
-        &ledger,
-        config_path,
-    ))
+    let bounded = bounded_mutation(&response, work, None, &ledger, config_path);
+    if mutation_response::check_result_failed(&bounded["result"]) {
+        return Err(format!(
+            "EXITBIND_JSON:{}",
+            serde_json::to_string(&bounded).map_err(|error| error.to_string())?
+        ));
+    }
+    Ok(bounded)
 }
 
 fn reference(work: &str) -> Value {
@@ -908,29 +875,31 @@ impl PendingCheck {
 }
 
 fn current_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
-    check_target(snapshot, false)
-}
-
-fn retry_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
-    if let Some(target) = check_target(snapshot, false)? {
-        return Ok(Some(target));
-    }
-    check_target(snapshot, true)
-}
-
-fn check_target(
-    snapshot: &run::RunSnapshot,
-    include_failed: bool,
-) -> Result<Option<PendingCheck>, String> {
     if snapshot.status() != "running" {
         return Ok(None);
     }
     let status = snapshot.status_view()?;
     Ok(status["checks"]["targets"].as_array().and_then(|targets| {
         targets.iter().find_map(|item| {
-            let pending =
-                item["status"] == "missing" || (include_failed && item["status"] == "failed");
-            pending.then(|| PendingCheck {
+            (item["status"] == "missing").then(|| PendingCheck {
+                target_event_sha256: item["targetEventSha256"].as_str().unwrap_or("").to_owned(),
+                requirement_id: item["requirementId"].as_str().map(str::to_owned),
+            })
+        })
+    }))
+}
+
+fn retry_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingCheck>, String> {
+    if let Some(target) = current_check_target(snapshot)? {
+        return Ok(Some(target));
+    }
+    if snapshot.status() != "running" {
+        return Ok(None);
+    }
+    let status = snapshot.status_view()?;
+    Ok(status["checks"]["targets"].as_array().and_then(|targets| {
+        targets.iter().find_map(|item| {
+            (item["status"] == "failed").then(|| PendingCheck {
                 target_event_sha256: item["targetEventSha256"].as_str().unwrap_or("").to_owned(),
                 requirement_id: item["requirementId"].as_str().map(str::to_owned),
             })

@@ -138,7 +138,7 @@ pub fn render(value: &Value) -> Result<String, String> {
         return Err("benchmark result does not show the exercised recovery sequence".into());
     }
     Ok(format!(
-        "False-completion proof passed ({passed}/{} assertions).\n\nTask: repair an incomplete project configuration. Scripted actors; real local checks.\nAttempt 1:\n  Worker claim: completed.\n  Host-reported check: failed (exit 1); synthetic caller report.\n  Reviewer outcome: approved.\n  Lead decision: pending; protocol refusal recorded (not a lead rejection).\nRework: preserved the previous attempt for the next assignment.\nAttempt 2:\n  Worker claim: completed.\n  Host-reported check: passed (exit {repair_check_exit_code}); synthetic caller report.\nAfter the repair check, before final acceptance:\n  Current fresh reviewer assignment: pending.\n  Lead decision: pending.\n  A passing check alone did not accept the run.\nAfter review and lead acceptance:\n  Reviewer outcome: approved.\n  Lead decision: accepted.\nBenchmark driver ran the fixture check; run record-check only records the result.\n\nThe fixture ran without a model or setup in your project. To inspect the records, rerun with --output followed by a new directory path.\n\nSource: synthetic. CLI invocations: {invocations}. Automated elapsed time: {elapsed} ms. Human interaction time: unmeasured.\n",
+        "False-completion proof passed ({passed}/{} assertions).\n\nTask: repair an incomplete project configuration. Scripted actors; real local checks.\nAttempt 1:\n  Worker claim: completed.\n  Host-reported check: failed (exit 1); synthetic caller report.\n  Lead decision: pending; protocol refusal recorded (not a lead rejection).\nRework: preserved the previous attempt for the next assignment.\nAttempt 2:\n  Worker claim: completed.\n  Host-reported check: passed (exit {repair_check_exit_code}); synthetic caller report.\nAfter the repair check, before final acceptance:\n  Current fresh reviewer assignment: pending.\n  Lead decision: pending.\n  A passing check alone did not accept the run.\nAfter review and lead acceptance:\n  Reviewer outcome: approved.\n  Lead decision: accepted.\nBenchmark driver ran the fixture check; run record-check only records the result.\n\nThe fixture ran without a model or setup in your project. To inspect the records, rerun with --output followed by a new directory path.\n\nSource: synthetic. CLI invocations: {invocations}. Automated elapsed time: {elapsed} ms. Human interaction time: unmeasured.\n",
         assertions.len()
     ))
 }
@@ -480,37 +480,6 @@ fn execute_scenario(invoker: &mut Invoker, fixture: &Path) -> Result<ScenarioEvi
         return Err("failed check changed canonical run status before acceptance".into());
     }
 
-    let reviewer_one = next_assignment(
-        invoker,
-        fixture,
-        &protected_ledger,
-        "protected reviewer stage",
-    )?;
-    require_assignment(&reviewer_one, "reviewer", 3, 1, "protected reviewer stage")?;
-    let reviewer_one_path = write_state_artifact(
-        fixture,
-        "protected-reviewer-attempt-1.md",
-        b"synthetic reviewer approval attempt one\n",
-    )?;
-    let reviewer_one_submit = submit(
-        invoker,
-        fixture,
-        "reviewer",
-        &protected_ledger,
-        "approved",
-        &reviewer_one_path,
-        true,
-    )?;
-    let reviewer_one_event =
-        event_from_submit(&reviewer_one_submit, "protected reviewer attempt one")?;
-    require_submission_event(
-        &reviewer_one_event,
-        "reviewer",
-        "approved",
-        1,
-        "protected reviewer attempt one",
-    )?;
-
     let lead_accept_one_path = write_state_artifact(
         fixture,
         "protected-lead-accept-attempt-1.md",
@@ -819,10 +788,6 @@ fn execute_scenario(invoker: &mut Invoker, fixture: &Path) -> Result<ScenarioEvi
             &format!("{}/artifacts/protected-lead-scoped.md", state_namespace()),
             &format!(
                 "{}/artifacts/protected-worker-attempt-1.md",
-                state_namespace()
-            ),
-            &format!(
-                "{}/artifacts/protected-reviewer-attempt-1.md",
                 state_namespace()
             ),
             &format!(

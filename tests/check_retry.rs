@@ -42,6 +42,15 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn failed_value(&self, args: &[&str]) -> Value {
+        let output = self.call(args);
+        assert!(
+            !output.status.success(),
+            "failed check unexpectedly succeeded: {output:?}"
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
     fn ledger(&self, work: &str) -> PathBuf {
         self.root
             .join(".exitbind/runs")
@@ -121,7 +130,7 @@ fn failed_check_retry_selects_same_target_and_rotates_capture_paths() {
     ]);
 
     let ledger = fixture.ledger(&work);
-    let first = fixture.value(&["work", "check", &work]);
+    let first = fixture.failed_value(&["work", "check", &work]);
     assert_eq!(first["next"]["progress"]["reason"]["code"], "check_failed");
     let first_event = observed_checks(&ledger).pop().unwrap();
     assert_eq!(first_event["result"]["code"], 1);
@@ -213,7 +222,7 @@ fn failed_functional_check_waits_for_missing_preservation_before_retry() {
     let first_next = fixture.value(&["work", "next", &work]);
     assert_eq!(first_next["next"]["action"], "check");
     assert_eq!(first_next["next"]["check"]["kind"], "check");
-    let failed = fixture.value(&["work", "check", &work]);
+    let failed = fixture.failed_value(&["work", "check", &work]);
     assert_eq!(failed["next"]["action"], "check");
     assert_eq!(failed["next"]["check"]["kind"], "preservation");
     let checks = observed_checks(&ledger);
@@ -224,12 +233,14 @@ fn failed_functional_check_waits_for_missing_preservation_before_retry() {
     assert_eq!(failed_stdout, b"functional-fail");
 
     let preservation = fixture.value(&["work", "check", &work]);
-    assert_eq!(preservation["next"]["action"], "spawn");
+    assert_eq!(preservation["next"]["action"], "lead_decision");
+    assert_eq!(preservation["next"]["role"], "lead");
     let checks = observed_checks(&ledger);
     assert_eq!(checks.len(), 2);
     assert_eq!(checks[1]["requirementId"], "precedence");
     let after_preservation = fixture.value(&["work", "next", &work]);
-    assert_ne!(after_preservation["next"]["check"]["kind"], "preservation");
+    assert_eq!(after_preservation["next"]["action"], "lead_decision");
+    assert_eq!(after_preservation["next"]["role"], "lead");
 
     fs::write(&marker, b"pass").unwrap();
     let retried = fixture.value(&["work", "check", &work]);

@@ -40,6 +40,18 @@ impl Fixture {
         let value = serde_json::from_slice(&output.stdout).unwrap();
         (value, output)
     }
+    fn recorded_failure(&self, args: &[&str]) -> (Value, Output) {
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(&self.root)
+            .args(args)
+            .arg("--config")
+            .arg(&self.config)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{args:?}: {output:?}");
+        let value = serde_json::from_slice(&output.stdout).unwrap();
+        (value, output)
+    }
     fn ledger(&self, work: &str) -> String {
         format!(
             ".exitbind/runs/work-{}.jsonl",
@@ -103,7 +115,7 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
     eprintln!("worker_return_bytes={}", return_output.stdout.len());
     assert_eq!(returned["outcome"], "completed");
     assert_eq!(returned["assignment"], worker["next"]["assignment"]);
-    let (failed, failed_output) = fixture.call(&["work", "check", work]);
+    let (failed, failed_output) = fixture.recorded_failure(&["work", "check", work]);
     assert!(failed_output.stdout.len() <= 8192);
     eprintln!("failed_check_bytes={}", failed_output.stdout.len());
     assert_eq!(failed["effect"], "recorded");

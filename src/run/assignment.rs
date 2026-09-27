@@ -222,6 +222,14 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         state["attempt"]
     ));
     assignment["upstreamArtifactsImmutable"] = json!(true);
+    if agent["role"] == "reviewer"
+        && state["reviewPolicy"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.starts_with("diagnostic:"))
+    {
+        assignment["reviewPolicy"] = state["reviewPolicy"].clone();
+        assignment["reviewPurpose"] = json!("diagnostic");
+    }
     if agent["role"] == "lead" {
         if let Some(pending) = super::disposition::lead_view(state) {
             assignment["pendingDisposition"] = pending;

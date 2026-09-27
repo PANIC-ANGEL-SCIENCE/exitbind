@@ -542,14 +542,23 @@ fn stale_subject_check_is_missing_until_reobserved_at_current_subject() {
     let receipt = f.call(&["receipt", ledger, "--config", "exitbind.json"]);
     assert_receipt_matches_progress(&receipt, &next["progress"]);
 
-    // The same A target is valid again only when the new observation binds S2.
+    // The same A target is re-observed against S2, but the earlier review is
+    // still stale because it predates that check event.
     f.check_ok(ledger, &a_target, 0);
-    let accepted = f.submit("lead", ledger, "accepted", "accept-current-subject");
-    assert!(accepted.status.success(), "{}", text(&accepted));
-    assert_eq!(
-        serde_json::from_slice::<Value>(&accepted.stdout).unwrap()["status"],
-        "accepted"
+    let reobserved = f.status(ledger);
+    let targets = reobserved["checks"]["targets"].as_array().unwrap();
+    assert_eq!(targets[0]["status"], "passed");
+    assert_eq!(targets[1]["status"], "passed");
+    let stale_review = f.submit("lead", ledger, "accepted", "accept-current-subject");
+    assert_exit_1(&stale_review);
+    assert!(
+        text(&stale_review).contains("canonical acceptance requires reviewer approval"),
+        "{}",
+        text(&stale_review)
     );
+    let rework = f.json(&["run", "next", ledger, "--json", "--config", "exitbind.json"]);
+    assert_eq!(rework["assignments"][0]["role"], "lead");
+    assert_eq!(rework["progress"]["state"], "IN_PROGRESS");
 }
 
 #[test]
@@ -635,9 +644,9 @@ fn caller_reported_failed_check_reaches_rework_and_fresh_low_level_attempt() {
     assert_receipt_matches_progress(&receipt, &next["progress"]);
     assert_eq!(next["progress"]["state"], "REFUSED");
     assert_eq!(next["progress"]["reason"]["code"], "check_failed");
-    assert_eq!(next["assignments"][0]["role"], "reviewer");
+    assert_eq!(next["assignments"][0]["role"], "lead");
 
-    f.submit_ok("reviewer", ledger, "rework", "rework");
+    f.submit_ok("lead", ledger, "rework", "rework");
     let attempt_two = f.json(&["run", "next", ledger, "--json", "--config", "exitbind.json"]);
     assert_eq!(attempt_two["attempt"], 2);
     assert_eq!(attempt_two["progress"]["state"], "IN_PROGRESS");
@@ -857,8 +866,14 @@ fn failed_work_check_reaches_rework_then_only_fresh_attempt_reaches_ready() {
     action = f.work_return_ok(&work, &action, "completed", "attempt one")["next"].clone();
     assert_eq!(action["action"], "check");
     let checked = f.work_check(&work);
-    assert!(checked.status.success(), "{}", text(&checked));
+    assert!(
+        !checked.status.success(),
+        "failed check unexpectedly succeeded"
+    );
     let checked_value: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert_eq!(checked_value["compact"], true);
+    assert_eq!(checked_value["effect"], "recorded");
+    assert_eq!(checked_value["result"]["code"], 1);
     assert_eq!(checked_value["next"]["progress"]["state"], "REFUSED");
     assert_eq!(
         checked_value["next"]["progress"]["reason"]["code"],
@@ -868,8 +883,8 @@ fn failed_work_check_reaches_rework_then_only_fresh_attempt_reaches_ready() {
     let receipt = f.call(&["receipt", &ledger, "--config", "exitbind.json"]);
     assert_receipt_matches_progress(&receipt, &checked_value["next"]["progress"]);
     action = checked_value["next"].clone();
-    assert_eq!(action["action"], "spawn");
-    assert_eq!(action["role"], "reviewer");
+    assert_eq!(action["action"], "lead_decision");
+    assert_eq!(action["role"], "lead");
     let rework = f.work_return_ok(&work, &action, "rework", "repair request");
     assert_eq!(rework["next"]["requiresExpansion"], true);
     action = f.work_next(&work[4..])["next"].clone();

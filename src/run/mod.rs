@@ -2205,7 +2205,10 @@ impl RunSnapshot {
                 Value::Null
             },
             "assignments": crate::run::assignment::pending(state),
-            "progress": crate::run_progress::project(state),
+            "progress": crate::run_progress::project_with_artifact(
+                state,
+                Some(self.artifact_current.clone()?),
+            ),
             "warnings": self
                 .drift
                 .as_ref()

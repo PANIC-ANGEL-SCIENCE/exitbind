@@ -1,5 +1,24 @@
 use super::*;
 
+#[test]
+fn packet_review_uses_status_admissibility_after_check_rerun() {
+    let view = json!({
+        "attempt": 1,
+        "submissions": [{"attempt": 1, "role": "reviewer", "outcome": "approved",
+            "inputsSha256": "same-inputs"}],
+        "inputsSha256": "same-inputs",
+    });
+    assert_eq!(
+        review_state(&view, &json!({"review": {"status": "approved"}})),
+        ReviewState::Current
+    );
+    assert_eq!(
+        review_state(&view, &json!({"review": {"status": "stale"}})),
+        ReviewState::Stale
+    );
+    assert_eq!(review_state(&view, &Value::Null), ReviewState::Stale);
+}
+
 fn fresh() -> Value {
     let mut packet = json!({
         "version": 2, "work": "w", "workflow": "change", "goal": "g", "historical": false,

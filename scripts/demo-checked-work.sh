@@ -47,8 +47,6 @@ sh -c "$check_command" || check_exit=$?
 test "$check_exit" -ne 0
 sm run record-check "$ledger" --target "$target" \
   --check-command "$check_command" --exit-code "$check_exit" >/dev/null
-artifact review-1 'Scripted reviewer approves, despite the failed check report.'
-submit reviewer approved review-1 >/dev/null
 artifact acceptance-1 'Scripted lead attempts acceptance.'
 if refused=$(submit lead accepted acceptance-1 2>&1); then
   printf 'Demo failed: a failed check was accepted.\n' >&2

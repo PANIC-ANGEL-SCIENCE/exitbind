@@ -293,7 +293,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
         "Host-reported check: not observed; not executed by Soulmate",
         "Frozen command: soulmate check --config verification.json",
         "Review:",
-        "Reviewer outcome: reviewer (reviewer) stage 3 outcome=approved",
+        "Reviewer outcome: reviewer (reviewer) stage 3 pending",
         "Acceptance:",
         "Lead decision: pending",
         &worker_event,
@@ -368,7 +368,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     let passing = record_check(&root, ledger, &worker_event, "0");
     assert!(passing.status.success(), "{}", text(&passing));
     assert_eq!(json_output(&passing)["checks"]["status"], "passed");
-    let still_running = json_output(&invoke(
+    let stale = json_output(&invoke(
         &root,
         &[
             "run",
@@ -379,19 +379,22 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             "soulmate.json",
         ],
     ));
-    assert_eq!(still_running["status"], "running");
-    assert_eq!(still_running["checks"]["status"], "passed");
-    assert_eq!(still_running["checks"]["observedCount"], 1);
-    let accepted = submit(&root, "lead", ledger, "accepted", &lead_accept);
-    assert_eq!(accepted["status"], "accepted");
-    let terminal_human = invoke(
-        &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+    assert_eq!(stale["status"], "running");
+    assert_eq!(stale["checks"]["status"], "passed");
+    assert_eq!(stale["checks"]["observedCount"], 1);
+    assert_eq!(stale["review"]["status"], "stale");
+    let stale_events: Vec<Value> = fs::read_to_string(root.join(ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        stale_events
+            .iter()
+            .filter(|event| event["action"] == "submit" && event["role"] == "reviewer")
+            .count(),
+        1
     );
-    assert!(terminal_human.status.success(), "{}", text(&terminal_human));
-    let terminal_text = String::from_utf8_lossy(&terminal_human.stdout);
-    assert!(terminal_text.contains("Lead decision: accepted"));
-    assert!(terminal_text.contains("Host-reported check: passed; not executed by Soulmate"));
 
     let report = json_output(&invoke(
         &root,
@@ -410,6 +413,49 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     let serialized = serde_json::to_string(&report).unwrap();
     assert!(!serialized.contains(CHECK));
     assert!(!serialized.contains("checked test"));
+
+    let positive_ledger = ".soulmate/runs/checked-positive.jsonl";
+    checked_start(&root, positive_ledger, "local_report");
+    let positive_lead = state_artifact(&root, "guard-positive-lead.md", "lead scope\n");
+    submit(&root, "lead", positive_ledger, "scoped", &positive_lead);
+    let positive_worker = state_artifact(&root, "guard-positive-worker.md", "worker completion\n");
+    let positive_submission = submit(
+        &root,
+        "worker",
+        positive_ledger,
+        "completed",
+        &positive_worker,
+    );
+    let positive_target = event_hash(&positive_submission);
+    let positive_check = record_check(&root, positive_ledger, &positive_target, "0");
+    assert!(positive_check.status.success(), "{}", text(&positive_check));
+    let positive_reviewer =
+        state_artifact(&root, "guard-positive-reviewer.md", "reviewer approval\n");
+    let positive_review = submit(
+        &root,
+        "reviewer",
+        positive_ledger,
+        "approved",
+        &positive_reviewer,
+    );
+    assert_eq!(positive_review["status"], "running");
+    let positive_accept = state_artifact(&root, "guard-positive-accept.md", "lead acceptance\n");
+    let positive_accepted = submit(&root, "lead", positive_ledger, "accepted", &positive_accept);
+    assert_eq!(positive_accepted["status"], "accepted");
+    let terminal_human = invoke(
+        &root,
+        &[
+            "run",
+            "status",
+            positive_ledger,
+            "--config",
+            "soulmate.json",
+        ],
+    );
+    assert!(terminal_human.status.success(), "{}", text(&terminal_human));
+    let terminal_text = String::from_utf8_lossy(&terminal_human.stdout);
+    assert!(terminal_text.contains("Lead decision: accepted"));
+    assert!(terminal_text.contains("Host-reported check: passed; not executed by Soulmate"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -737,7 +783,6 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     let third_target = event_hash(&third);
 
     let reviewer = state_artifact(&root, "all-workers-reviewer.md", "reviewer\n");
-    submit(&root, "reviewer", ledger, "approved", &reviewer);
     let before_checks = json_output(&invoke(
         &root,
         &[
@@ -813,6 +858,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     assert!(record_check(&root, ledger, &third_target, "0")
         .status
         .success());
+    submit(&root, "reviewer", ledger, "approved", &reviewer);
     let complete = json_output(&invoke(
         &root,
         &[

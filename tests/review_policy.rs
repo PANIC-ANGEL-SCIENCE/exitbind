@@ -380,6 +380,73 @@ fn omitted_to_required_requires_fresh_review_and_retires_old_lead_handle() {
 }
 
 #[test]
+fn lead_can_explicitly_request_diagnostic_review_after_failed_check() {
+    let fixture = Fixture::new("review-policy-diagnostic-failure");
+    let begin = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "diagnose failed check",
+        "--check-command",
+        "false",
+        "--proof-origin",
+        "synthetic",
+        "--review-policy",
+        "required",
+        "--config",
+        "exitbind.json",
+    ]);
+    let work = begin["work"].as_str().unwrap();
+    let scoped = fixture.work_return_ok(work, &begin["next"], "scoped", "scope");
+    fixture.work_return_ok(work, &scoped["next"], "completed", "worker");
+    let failed = fixture.call(&["work", "check", work, "--config", "exitbind.json"]);
+    assert!(!failed.status.success(), "{}", text(&failed));
+    let failed: Value = serde_json::from_slice(&failed.stdout).unwrap();
+    assert_eq!(failed["result"]["code"], 1);
+    assert_eq!(failed["next"]["role"], "lead");
+
+    let ledger = Fixture::ledger_for(work);
+    let requested = fixture.call(&[
+        "run",
+        "review-policy",
+        "lead",
+        &ledger,
+        "--decision",
+        "required",
+        "--reason",
+        "diagnostic: failed required check",
+        "--config",
+        "exitbind.json",
+    ]);
+    assert!(requested.status.success(), "{}", text(&requested));
+    let next = fixture.json(&["work", "next", work, "--full", "--config", "exitbind.json"]);
+    assert_eq!(next["next"]["role"], "reviewer");
+    assert_eq!(
+        next["next"]["packet"]["reviewPolicy"]["reason"], "diagnostic: failed required check",
+        "{next}"
+    );
+    assert_eq!(next["next"]["packet"]["reviewPurpose"], "diagnostic");
+    let reviewed = fixture.work_return_ok(work, &next["next"], "approved", "diagnostic review");
+    assert_eq!(reviewed["next"]["role"], "lead");
+    let acceptance = fixture.work_return(work, &reviewed["next"], "accepted", "accept");
+    assert!(acceptance.status.success(), "{}", text(&acceptance));
+    let refusal: Value = serde_json::from_slice(&acceptance.stdout).unwrap();
+    assert_eq!(refusal["status"], "refused");
+    assert_eq!(refusal["event"]["action"], "protect");
+    let status = fixture.json(&[
+        "run",
+        "status",
+        &ledger,
+        "--json",
+        "--config",
+        "exitbind.json",
+    ]);
+    assert_eq!(status["checks"]["targets"][0]["status"], "failed");
+    assert_ne!(status["status"], "accepted");
+}
+
+#[test]
 fn omission_does_not_bypass_preservation_missing_or_stale_subject() {
     let preservation = Fixture::new("review-policy-preservation");
     let ledger = ".exitbind/runs/preservation.jsonl";

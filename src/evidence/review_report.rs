@@ -20,7 +20,11 @@ fn resolution(state: &Value) -> Option<Value> {
 
 /// The `review` value of `run status`, given the latest reviewer submission of
 /// the current attempt.
-pub(crate) fn status(state: &Value, review: Option<&Value>) -> Value {
+pub(crate) fn status(
+    state: &Value,
+    review: Option<&Value>,
+    artifact_current: Option<bool>,
+) -> Value {
     if state["reviewPolicy"]["decision"] == "omitted" {
         return json!({
             "status": "omitted",
@@ -29,7 +33,31 @@ pub(crate) fn status(state: &Value, review: Option<&Value>) -> Value {
             "reason": state["reviewPolicy"]["reason"],
         });
     }
-    let approved = review.filter(|submission| submission["outcome"] == "approved");
+    let approved = review.filter(|submission| {
+        submission["outcome"] == "approved"
+            && crate::run_exit::assess(state)
+                .ok()
+                .is_some_and(|assessment| {
+                    crate::run_exit::review_is_current(
+                        state,
+                        submission,
+                        &assessment,
+                        artifact_current,
+                    )
+                })
+    });
+    if review.is_some_and(|submission| submission["outcome"] == "approved") && approved.is_none() {
+        return review.map_or_else(
+            || json!({"status":"absent"}),
+            |submission| {
+                json!({
+                    "status": "stale",
+                    "eventSha256": submission["eventSha256"],
+                    "artifactSha256": submission["artifact"]["sha256"],
+                })
+            },
+        );
+    }
     if approved.is_none() {
         if let Some(resolved) = resolution(state) {
             return resolved;
@@ -71,6 +99,10 @@ pub(crate) fn receipt(
             json!({})
         });
     };
+    let assessment = crate::run_exit::assess(state)?;
+    if !crate::run_exit::review_is_current(state, reviewer, &assessment, None) {
+        return Err("Exit Path receipt requires current reviewer approval".into());
+    }
     Ok(if marked_policy {
         json!({
             "status": "approved",

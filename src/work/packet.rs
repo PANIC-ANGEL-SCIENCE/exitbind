@@ -163,7 +163,7 @@ fn facts_from(view: &Value, status: &Value, next: &Value) -> Value {
         "none"
     };
     let disposition = super::disposition::review_fact(next);
-    let review = match review_state(view) {
+    let review = match review_state(view, status) {
         _ if next["role"] == "reviewer" => "missing",
         _ if disposition.is_some() => disposition.unwrap_or("none"),
         ReviewState::Current if next["action"] == "lead_decision" => "approved",
@@ -245,7 +245,7 @@ fn project_from(
         .as_array()
         .cloned()
         .unwrap_or_default();
-    let review = review_state(view);
+    let review = review_state(view, status);
     // History stays inspectable in the ledger; it grants no continuation reuse.
     if !historical {
         if scope_recorded(view) {
@@ -376,9 +376,9 @@ enum ReviewState {
     Stale,
 }
 
-/// An approval in the current attempt is current only when (for v6) it was
-/// given on the tested inputs present now.
-fn review_state(view: &Value) -> ReviewState {
+/// Use the same artifact, subject, input, and check-order judgment as run
+/// status. An old approval remains historical even when its bytes still exist.
+fn review_state(view: &Value, status: &Value) -> ReviewState {
     let attempt = &view["attempt"];
     let approvals = view["submissions"]
         .as_array()
@@ -390,10 +390,8 @@ fn review_state(view: &Value) -> ReviewState {
                 && event["outcome"] == "approved"
         });
     let mut state = ReviewState::None;
-    for approval in approvals {
-        if approval.get("inputsSha256").is_none()
-            || approval["inputsSha256"] == view["inputsSha256"]
-        {
+    for _approval in approvals {
+        if status["review"]["status"] == "approved" {
             return ReviewState::Current;
         }
         state = ReviewState::Stale;

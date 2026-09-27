@@ -34,11 +34,17 @@ for host-managed tasks or upgrade the binary before trying this script.
 The [executable example](../scripts/demo-checked-work.sh) creates its own
 temporary project and always removes it on exit. It writes `message.txt` with
 `unfinished`, and the frozen shell check requires `ready`. The first actual
-check exits nonzero. A scripted reviewer approves anyway; attempted lead
-acceptance is refused. The lead requests rework, and another CLI process reads
-the assignment and earlier artifact references. The script repairs the input,
+check exits nonzero. Its recorded result routes the work to Lead diagnosis
+before ordinary review; attempted lead acceptance is refused. The Lead
+requests rework, and another CLI process reads the assignment and earlier
+artifact references. The script repairs the input,
 submits a fresh worker document, runs the check again, records a separate review
 and lead acceptance, and inspects the final ledger.
+
+For a marked run, the Lead can explicitly request a diagnostic review of a
+failed check with `run review-policy lead LEDGER --decision required --reason 'diagnostic: failed check'`.
+The reviewer packet carries that reason. Its approval does not make the failed
+check eligible for acceptance.
 
 Look for these lines, with the resumed assignment printed between attempts:
 

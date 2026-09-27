@@ -1,6 +1,8 @@
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
+mod check_stage;
+
 const SHA_LEN: usize = 64;
 const ROLES: &[&str] = &["lead", "adviser", "worker", "reviewer"];
 /// Bounded operational reasons a reviewer target may fail to execute. These are
@@ -1059,7 +1061,7 @@ fn apply_event(state: &mut Value, event: &Value) -> Result<(), String> {
         Some("submit") => apply_submission(state, event),
         Some("govern") => apply_govern(state, event),
         Some("review_policy") => apply_review_policy(state, event),
-        Some("check") => apply_check(state, event),
+        Some("check") => check_stage::apply_check(state, event),
         Some("protect") => apply_protection(state, event),
         _ => Err("run event action is invalid".into()),
     }
@@ -1190,22 +1192,6 @@ fn apply_review_policy(state: &mut Value, event: &Value) -> Result<(), String> {
             state["currentStage"] = json!(reviewer_stage(state)?);
         }
     }
-    Ok(())
-}
-
-fn apply_check(state: &mut Value, event: &Value) -> Result<(), String> {
-    if state["status"] != "running" {
-        return Err("run has already reached a terminal state".into());
-    }
-    crate::run_value::validate_check_against_state(state, event, 0)
-        .map_err(|error| error.replacen("line 0", "state", 1))?;
-    if !crate::run_exit::reduce(state)?.subject_is_current(&event["subjectSha256"]) {
-        return Err("check is bound to a stale subject".into());
-    }
-    state["checks"]
-        .as_array_mut()
-        .ok_or("run state checks are invalid")?
-        .push(event.clone());
     Ok(())
 }
 

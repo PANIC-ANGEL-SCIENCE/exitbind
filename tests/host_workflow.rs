@@ -511,8 +511,6 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
         .as_str()
         .unwrap()
         .to_owned();
-    let reviewer = assignment(&first_worker_response);
-    verify_packet(&fixture, &reviewer, "reviewer", "reviewer", 3, 1);
     assert_eq!(fixture.execute_check(&first_check_command), 1);
     let failed_check = fixture.record_check(&first_worker_event, &first_check_command, 1);
     assert_eq!(
@@ -520,13 +518,6 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
         first_worker_event
     );
     assert_eq!(failed_check["event"]["checkCommand"], first_check_command);
-    let reviewed = fixture.submit(&reviewer, "approved", "first review\n");
-    let accepting_lead = assignment(&reviewed);
-    verify_packet(&fixture, &accepting_lead, "lead", "lead", 4, 1);
-    let (failed_accept, _) =
-        fixture.submit_output_with_body(&accepting_lead, "accepted", "premature acceptance\n");
-    assert!(!failed_accept.status.success());
-    assert!(text(&failed_accept).contains("acceptance refused"));
 
     let before_reads = fs::read(fixture.root.join(&fixture.ledger)).unwrap();
     let fresh_next = fixture.fresh_next();
@@ -538,10 +529,20 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
     assert_eq!(fresh_next["status"], "running");
     let rework_lead = assignment(&fresh_next);
     verify_packet(&fixture, &rework_lead, "lead", "lead", 4, 1);
-    assert_eq!(fresh_status["status"], "running");
     assert_eq!(fresh_status["checks"]["status"], "blocked");
     assert_eq!(fresh_status["checks"]["failedCount"], 1);
-    assert_eq!(fresh_status["evidence"]["protectionCount"], 1);
+    assert_eq!(fresh_status["evidence"]["protectionCount"], 0);
+
+    let (failed_accept, _) =
+        fixture.submit_output_with_body(&rework_lead, "accepted", "premature acceptance\n");
+    assert!(!failed_accept.status.success());
+    assert!(text(&failed_accept).contains("acceptance refused"));
+
+    let protected_status = fixture.fresh_status();
+    assert_eq!(protected_status["status"], "running");
+    assert_eq!(protected_status["checks"]["status"], "blocked");
+    assert_eq!(protected_status["checks"]["failedCount"], 1);
+    assert_eq!(protected_status["evidence"]["protectionCount"], 1);
 
     let (rework_response, _) = fixture.submit_with_body(&rework_lead, "rework", "repair request\n");
     let worker_two = assignment(&rework_response);
@@ -602,8 +603,8 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
     assert_eq!(
         actions,
         [
-            "start", "submit", "submit", "check", "submit", "protect", "submit", "submit", "check",
-            "submit", "submit"
+            "start", "submit", "submit", "check", "protect", "submit", "submit", "check", "submit",
+            "submit"
         ]
     );
     let submissions: Vec<_> = events
@@ -622,7 +623,6 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
         [
             (1, "lead", "scoped"),
             (1, "worker", "completed"),
-            (1, "reviewer", "approved"),
             (1, "lead", "rework"),
             (2, "worker", "completed"),
             (2, "reviewer", "approved"),
@@ -637,9 +637,9 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
             "submit",
             "submit",
             "record-check",
-            "submit",
-            "submit",
             "next",
+            "status",
+            "submit",
             "status",
             "submit",
             "submit",
@@ -654,7 +654,6 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
         [
             ("lead".to_owned(), 1, 1),
             ("worker".to_owned(), 2, 1),
-            ("reviewer".to_owned(), 3, 1),
             ("lead".to_owned(), 4, 1),
             ("lead".to_owned(), 4, 1),
             ("worker".to_owned(), 2, 2),

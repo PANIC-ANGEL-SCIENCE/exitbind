@@ -468,7 +468,45 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             "soulmate.json",
         ],
     );
-    assert!(reviewer.status.success(), "{}", text(&reviewer));
+    assert!(
+        !reviewer.status.success(),
+        "reviewer approval bypassed failed check: {}",
+        text(&reviewer)
+    );
+    let pending = run(
+        &root,
+        &[
+            "run",
+            "status",
+            &ledger,
+            "--json",
+            "--config",
+            "soulmate.json",
+        ],
+    );
+    let next = run(
+        &root,
+        &[
+            "run",
+            "next",
+            &ledger,
+            "--json",
+            "--config",
+            "soulmate.json",
+        ],
+    );
+    assert_eq!(next["assignments"][0]["role"], "lead");
+    assert_eq!(next["currentStage"], pending["stage"]);
+    assert_eq!(pending["checks"]["status"], "blocked");
+    assert_eq!(pending["checks"]["targets"][0]["status"], "failed");
+    assert_eq!(pending["review"]["status"], "absent");
+    assert_eq!(pending["acceptance"]["status"], "absent");
+    let pending_human = call(
+        &root,
+        &["run", "status", &ledger, "--config", "soulmate.json"],
+    );
+    assert!(pending_human.status.success(), "{}", text(&pending_human));
+    assert!(text(&pending_human).contains("Lead decision: pending"));
     let acceptance = call(
         &root,
         &[
