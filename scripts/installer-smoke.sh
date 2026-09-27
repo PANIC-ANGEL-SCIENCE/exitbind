@@ -79,6 +79,10 @@ else
 fi
 
 test -x "$prefix/exitbind"
+test ! -e "$prefix/soulmate"
+home_dir="$root/home"
+test ! -e "$home_dir/.agents/skills/soulmate"
+test ! -e "$home_dir/.claude/skills/soulmate"
 cmp "$dist/$stem" "$prefix/exitbind"
 test "$("$prefix/exitbind" version)" = "$version"
 test "$(sed -n '1p' "$calls")" = "https://github.com/$repo/releases/download/$tag/$archive"

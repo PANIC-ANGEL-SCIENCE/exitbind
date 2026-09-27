@@ -1,15 +1,15 @@
 //! Canonical, Lead-owned evolving session goal state.
 //!
-//! The JSONL file is an append-only history. The last valid record is the
-//! current revision; every incorporation and closure appends a new record.
 
 use serde_json::{json, Value};
 use std::path::Path;
 
 mod continuity;
+mod current;
 pub(crate) use continuity::{
-    claim_child, continuation_bind, continuation_child, continuation_record, continuation_section,
-    continuation_view, finalize_child, prepare_child, recover_child,
+    child_context, claim_child, claimed_child_context, continuation_bind, continuation_child,
+    continuation_record, continuation_section, continuation_view, finalize_child, prepare_child,
+    recover_child,
 };
 
 const FILE: &str = "session-goal.jsonl";
@@ -737,16 +737,20 @@ fn close_result_ref(loaded: &crate::config::Loaded, reference: &str) -> Result<(
     Ok(())
 }
 
-fn warn_result_ref_drift(reference: &str, drift: Option<&Value>, inputs_current: bool) {
+fn warn_result_ref_drift(reference: &str, drift: Option<&Value>, inputs_current: Option<bool>) {
     if let Some(warning) = drift {
         let classification = warning["classification"].as_str().unwrap_or("input_drift");
         eprintln!(
             "warning: {classification} detected for accepted result {reference}; retaining its recorded evidence"
         );
     }
-    if !inputs_current {
+    if inputs_current == Some(false) {
         eprintln!(
             "warning: tested_inputs_drift detected for accepted result {reference}; retaining recorded tested-input identity"
+        );
+    } else if inputs_current.is_none() {
+        eprintln!(
+            "warning: tested_inputs_currentness unknown for historical result {reference}; retaining recorded evidence"
         );
     }
 }
@@ -761,17 +765,6 @@ fn warn_direct_completion_drift(
             "warning: tested_inputs_drift detected for {category}; retaining its recorded completion"
         );
     }
-}
-
-fn accepted_result_ref(loaded: &crate::config::Loaded, reference: &str) -> bool {
-    let Ok(Some(evidence)) = crate::run::result_ref_evidence(loaded, reference) else {
-        return false;
-    };
-    if !evidence.accepted || !evidence.artifact_current {
-        return false;
-    }
-    warn_result_ref_drift(reference, evidence.drift.as_ref(), evidence.inputs_current);
-    true
 }
 
 pub(crate) fn close(
@@ -994,81 +987,15 @@ fn pending_items(record: &Value, key: &str, label: &str) -> Vec<Value> {
     pending
 }
 
-fn governed_refs_current(loaded: &crate::config::Loaded, record: &Value) -> Result<bool, String> {
-    let Some(closure_refs) = record["closure"]["resultRefs"].as_array() else {
-        return Ok(false);
-    };
-    if record["closure"]["kind"] == "direct" {
-        let Some(recorded_inputs) = record["closure"]["inputsSha256"].as_str() else {
-            return Ok(false);
-        };
-        let current_inputs = current_inputs(loaded)?;
-        if recorded_inputs != current_inputs {
-            eprintln!(
-                "warning: tested_inputs_drift detected for direct session-goal closure; retaining its recorded closure"
-            );
-        }
-    } else if closure_refs.is_empty() {
-        return Ok(false);
-    }
-    for reference in closure_refs {
-        let Some(reference) = reference.as_str() else {
-            return Ok(false);
-        };
-        if !accepted_result_ref(loaded, reference) {
-            return Ok(false);
-        }
-    }
-    for category in CATEGORIES {
-        let Some(items) = record[category].as_array() else {
-            return Ok(false);
-        };
-        for item in items {
-            if item["disposition"].as_str() == Some("open") {
-                continue;
-            }
-            if item["disposition"].as_str() == Some("direct") {
-                let Some((recorded, current)) = direct_completion_inputs(loaded, record, item)?
-                else {
-                    return Ok(false);
-                };
-                warn_direct_completion_drift("direct session-goal item", &recorded, &current);
-                continue;
-            }
-            let Some(refs) = item["resultRefs"].as_array() else {
-                return Ok(false);
-            };
-            if refs.is_empty() {
-                return Ok(false);
-            }
-            for reference in refs {
-                let Some(reference) = reference.as_str() else {
-                    return Ok(false);
-                };
-                if !accepted_result_ref(loaded, reference) {
-                    return Ok(false);
-                }
-            }
-        }
-    }
-    Ok(true)
-}
-
 pub(crate) fn presentation_for_loaded(
     loaded: &crate::config::Loaded,
     value: Option<&Value>,
 ) -> Result<Value, String> {
     let mut rendered = presentation(value);
-    if rendered["explicitLeadClosure"] == true {
-        let Some(record) = value else {
-            rendered["explicitLeadClosure"] = Value::Bool(false);
-            return Ok(rendered);
-        };
-        if !governed_refs_current(loaded, record)? || !continuity::support_current(loaded, record)?
-        {
-            rendered["explicitLeadClosure"] = Value::Bool(false);
-        }
-    }
+    let readiness = current::evaluate(loaded, value);
+    rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
+    rendered["explicitLeadClosure"] = json!(readiness.is_current());
+    rendered["currentReadiness"] = readiness.value();
     Ok(rendered)
 }
 

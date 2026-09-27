@@ -53,7 +53,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_options(
                 "work child prepare",
                 a,
-                &["config", "context", "agent-type", "replace"],
+                &["config", "context", "agent-type", "perspectives", "replace"],
             )?;
             args::assert_positionals("work child prepare", a, 4)?;
             let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
@@ -66,8 +66,16 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 binding_revision,
                 assignment,
                 a.options.get("agent-type").map(String::as_str),
+                a.options.get("perspectives").map(String::as_str),
                 a.flags.contains_key("replace"),
             )?)
+        }
+        "child" if a.positional.get(1).map(String::as_str) == Some("context") => {
+            args::assert_options("work child context", a, &["config"])?;
+            args::assert_positionals("work child context", a, 4)?;
+            let work = positional(a, 2, "work child context requires WORK INTENT")?;
+            let intent = positional(a, 3, "work child context requires WORK INTENT")?;
+            print_json(&crate::session_goal::child_context(l, work, intent)?)
         }
         "child" if a.positional.get(1).map(String::as_str) == Some("recover") => {
             args::assert_options("work child recover", a, &["config", "context"])?;

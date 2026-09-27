@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 //! Owner-selectable review policy remains explicit, current, and orthogonal to
 //! basis, preservation, findings, and receipt integrity.
 #![cfg(unix)]

@@ -14,150 +14,12 @@ use std::path::{Path, PathBuf};
 
 /// A cache holds at most one small document; anything larger is not ours.
 const CACHE_LIMIT: u64 = 64 * 1024;
-
-#[allow(dead_code)]
-pub(crate) const SESSION_GOAL_CARD: &str =
-    "+------------------------------+\n| Nothing remains here.        |\n+------------------------------+\n\nEXIT READY";
-
-/// Render the explicit whole-session closure card from lead-owned facts. A
-/// ready run alone is insufficient: every requested category must be empty and
-/// closure must be explicitly recorded by the lead. This function is pure so
-/// interactive renderers can keep it out of structured protocol output.
-#[allow(dead_code)]
-pub(crate) fn session_goal_card(
-    packet: &Value,
-    progress: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let goal = &packet["humanHelp"]["sessionGoal"];
-    let empty = |key: &str| goal[key].as_array().is_some_and(|items| items.is_empty());
-    if !interactive
-        || closed_stdin
-        || !crate::run_exit::is_ready(progress["state"].as_str().unwrap_or(""))
-        || goal["explicitLeadClosure"] != true
-        || ![
-            "subgoals",
-            "findings",
-            "blockers",
-            "decisions",
-            "externalActions",
-        ]
-        .iter()
-        .all(|key| empty(key))
-    {
-        return None;
-    }
-    Some(SESSION_GOAL_CARD)
-}
-
-/// Once-only transition helper for a renderer's replaceable memo. A new
-/// request identity deliberately prevents reuse of an earlier closure.
-#[allow(dead_code)]
-pub(crate) fn session_goal_card_transition(
-    previous: Option<&Value>,
-    packet: &Value,
-    progress: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let card = session_goal_card(packet, progress, interactive, closed_stdin)?;
-    let request = packet["humanHelp"]["sessionGoal"]["requestId"].as_str()?;
-    if previous.is_some_and(|value| {
-        value["requestId"].as_str() == Some(request) && value["cardEmitted"] == true
-    }) {
-        None
-    } else {
-        Some(card)
-    }
-}
-
-/// Render a direct-only closure card from the validated session-goal
-/// projection. Direct completion has no run progress, so this path never
-/// fabricates a READY state or a governed result.
-pub(crate) fn session_goal_direct_card(
-    packet: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let goal = &packet["humanHelp"]["sessionGoal"];
-    let empty = |key: &str| goal[key].as_array().is_some_and(|items| items.is_empty());
-    if !interactive
-        || closed_stdin
-        || goal["completionMode"] != "direct"
-        || goal["explicitLeadClosure"] != true
-        || ![
-            "subgoals",
-            "findings",
-            "blockers",
-            "decisions",
-            "externalActions",
-        ]
-        .iter()
-        .all(|key| empty(key))
-    {
-        return None;
-    }
-    Some(SESSION_GOAL_CARD)
-}
-
-/// Once-only transition helper for a direct closure card. The same display
-/// memo as governed cards prevents repeat output without becoming authority.
-pub(crate) fn session_goal_direct_card_transition(
-    previous: Option<&Value>,
-    packet: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let card = session_goal_direct_card(packet, interactive, closed_stdin)?;
-    let request = packet["humanHelp"]["sessionGoal"]["requestId"].as_str()?;
-    if previous.is_some_and(|value| {
-        value["requestId"].as_str() == Some(request) && value["cardEmitted"] == true
-    }) {
-        None
-    } else {
-        Some(card)
-    }
-}
-
-/// Human-only bridge for the lead-owned session closure card. The memo is a
-/// replaceable display cache: loss or corruption can repeat an optional card,
-/// but never changes canonical state, acceptance, or evidence.
-pub(crate) fn session_goal_card_for_human(
-    state_root: &Path,
-    session_goal: &Value,
-    progress: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let packet = json!({"humanHelp": {"sessionGoal": session_goal}});
-    let previous = remembered_session_card(state_root);
-    let card = session_goal_card_transition(
-        previous.as_ref(),
-        &packet,
-        progress,
-        interactive,
-        closed_stdin,
-    )?;
-    remember_session_card(state_root, session_goal["requestId"].as_str()?);
-    Some(card)
-}
-
-/// Human-only bridge for a validated direct session-goal closure. It shares
-/// the governed card memo and remains silent for headless or machine output.
-pub(crate) fn session_goal_direct_card_for_human(
-    state_root: &Path,
-    session_goal: &Value,
-    interactive: bool,
-    closed_stdin: bool,
-) -> Option<&'static str> {
-    let packet = json!({"humanHelp": {"sessionGoal": session_goal}});
-    let previous = remembered_session_card(state_root);
-    let card =
-        session_goal_direct_card_transition(previous.as_ref(), &packet, interactive, closed_stdin)?;
-    remember_session_card(state_root, session_goal["requestId"].as_str()?);
-    Some(card)
-}
+mod room;
+#[cfg(test)]
+use room::{
+    session_goal_card, session_goal_card_transition, session_goal_direct_card, SESSION_GOAL_CARD,
+};
+pub(crate) use room::{session_goal_card_for_human, session_goal_direct_card_for_human};
 
 /// Record one optional human-only failure joke for a meaningful transition.
 /// The memo is display state only and is safe to lose or corrupt.
@@ -650,18 +512,19 @@ mod tests {
             "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
         }}});
         assert_eq!(
-            session_goal_card(&packet, &progress, true, false),
+            session_goal_card(&packet, &progress, true, false, true),
             Some(SESSION_GOAL_CARD)
         );
-        assert!(session_goal_card(&packet, &progress, false, false).is_none());
-        assert!(session_goal_card(&packet, &progress, true, true).is_none());
+        assert!(session_goal_card(&packet, &progress, false, false, true).is_none());
+        assert!(session_goal_card(&packet, &progress, true, true, true).is_none());
+        assert!(session_goal_card(&packet, &progress, true, false, false).is_none());
 
         let mut unresolved = packet.clone();
         unresolved["humanHelp"]["sessionGoal"]["findings"] = json!(["open"]);
-        assert!(session_goal_card(&unresolved, &progress, true, false).is_none());
+        assert!(session_goal_card(&unresolved, &progress, true, false, true).is_none());
         unresolved["humanHelp"]["sessionGoal"]["explicitLeadClosure"] = json!(false);
         unresolved["humanHelp"]["sessionGoal"]["findings"] = json!([]);
-        assert!(session_goal_card(&unresolved, &progress, true, false).is_none());
+        assert!(session_goal_card(&unresolved, &progress, true, false, true).is_none());
     }
 
     #[test]
@@ -673,14 +536,14 @@ mod tests {
             "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
         }}});
         assert_eq!(
-            session_goal_direct_card(&packet, true, false),
+            session_goal_direct_card(&packet, true, false, true),
             Some(SESSION_GOAL_CARD)
         );
-        assert!(session_goal_direct_card(&packet, false, false).is_none());
-        assert!(session_goal_direct_card(&packet, true, true).is_none());
+        assert!(session_goal_direct_card(&packet, false, false, true).is_none());
+        assert!(session_goal_direct_card(&packet, true, true, true).is_none());
         let mut governed = packet.clone();
         governed["humanHelp"]["sessionGoal"]["completionMode"] = json!("governed");
-        assert!(session_goal_direct_card(&governed, true, false).is_none());
+        assert!(session_goal_direct_card(&governed, true, false, true).is_none());
     }
 
     #[test]
@@ -691,10 +554,15 @@ mod tests {
             "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
         }}});
         let previous = json!({"requestId": "one", "cardEmitted": true});
-        assert!(
-            session_goal_card_transition(Some(&previous), &packet, &progress, true, false)
-                .is_none()
-        );
+        assert!(session_goal_card_transition(
+            Some(&previous),
+            &packet,
+            &progress,
+            true,
+            false,
+            true
+        )
+        .is_none());
 
         let mut new_request = packet.clone();
         new_request["humanHelp"]["sessionGoal"]["requestId"] = json!("two");
@@ -704,7 +572,8 @@ mod tests {
             &new_request,
             &progress,
             true,
-            false
+            false,
+            true
         )
         .is_none());
     }
@@ -726,21 +595,23 @@ mod tests {
         });
         let progress = json!({"state": "READY"});
         assert_eq!(
-            session_goal_card_for_human(&root, &goal, &progress, true, false),
+            session_goal_card_for_human(&root, &goal, &progress, true, false, true),
             Some(SESSION_GOAL_CARD)
         );
-        assert!(session_goal_card_for_human(&root, &goal, &progress, true, false).is_none());
+        assert!(session_goal_card_for_human(&root, &goal, &progress, true, false, true).is_none());
         let cache = root.join(session_card_relative());
         std::fs::write(cache, b"corrupt").unwrap();
         assert_eq!(
-            session_goal_card_for_human(&root, &goal, &progress, true, false),
+            session_goal_card_for_human(&root, &goal, &progress, true, false, true),
             Some(SESSION_GOAL_CARD)
         );
         let mut new_goal = goal.clone();
         new_goal["requestId"] = json!("two");
         new_goal["explicitLeadClosure"] = json!(false);
-        assert!(session_goal_card_for_human(&root, &new_goal, &progress, true, false).is_none());
-        assert!(session_goal_card_for_human(&root, &goal, &progress, true, true).is_none());
+        assert!(
+            session_goal_card_for_human(&root, &new_goal, &progress, true, false, true).is_none()
+        );
+        assert!(session_goal_card_for_human(&root, &goal, &progress, true, true, true).is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

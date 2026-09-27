@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
 
+use super::perspective::{self, Frozen};
+
 const FILE: &str = "child-intents.json";
 const MAX_ASSIGNMENT: usize = 128;
 const MAX_AGENT_TYPE: usize = 64;
@@ -105,7 +107,28 @@ fn current_binding(loaded: &Loaded, work: &str) -> Result<(Value, Value), String
     Ok((view["goalRevision"].clone(), view["binding"].clone()))
 }
 
+fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
+    if selected.is_null() {
+        return true;
+    }
+    if !matches!(crate::work::focus::read(loaded), Ok(crate::work::focus::Focus::Work(current)) if current == work)
+    {
+        return false;
+    }
+    let Ok(view) = crate::work::next(loaded, work) else {
+        return false;
+    };
+    let next = &view["next"];
+    next["action"] == "spawn"
+        && next["assignment"] == selected["assignment"]
+        && next["packet"]["agent"] == selected["agent"]
+        && next["packet"]["nativeTaskName"] == selected["nativeTaskName"]
+        && next["packet"]["profileSha256"] == selected["profileSha256"]
+}
+
 /// Record one expected native child for the current receiving binding.
+// This is the CLI boundary: keep the work fence, native identity, and overlay explicit.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare(
     loaded: &Loaded,
     work: &str,
@@ -113,12 +136,14 @@ pub(crate) fn prepare(
     binding_revision: u64,
     assignment: &str,
     agent_type: Option<&str>,
+    perspectives: Option<&str>,
     replace: bool,
 ) -> Result<Value, String> {
     let assignment = bounded(assignment, "assignment", MAX_ASSIGNMENT)?;
     let agent_type = agent_type
         .map(|value| bounded(value, "agent type", MAX_AGENT_TYPE))
         .transpose()?;
+    let perspectives = perspective::freeze(loaded, perspectives)?;
     with_intents(loaded, |intents| {
         let (goal, binding) = current_binding(loaded, work)?;
         if goal.as_u64() != Some(expected_revision)
@@ -129,6 +154,25 @@ pub(crate) fn prepare(
         let Some(session) = binding["session"].as_str().map(str::to_owned) else {
             return Err("bind the receiving session before preparing a child".into());
         };
+        let selected = if perspectives.is_empty() {
+            Value::Null
+        } else {
+            let view = crate::work::next(loaded, work)?;
+            let next = &view["next"];
+            if next["action"] != "spawn"
+                || agent_type != next["packet"]["nativeTaskName"].as_str()
+                || !next["assignment"].is_string()
+                || !next["packet"]["profileSha256"].is_string()
+            {
+                return Err(
+                    "selected perspectives require the current named native assignment".into(),
+                );
+            }
+            json!({"assignment":next["assignment"],
+                "agent":next["packet"]["agent"],
+                "nativeTaskName":next["packet"]["nativeTaskName"],
+                "profileSha256":next["packet"]["profileSha256"]})
+        };
         let intent = json!({
             "work": work,
             "session": session,
@@ -136,6 +180,8 @@ pub(crate) fn prepare(
             "bindingRevision": binding_revision,
             "assignment": assignment,
             "agentType": agent_type,
+            "selected": selected,
+            "perspectives": perspectives,
         });
         let id = hash::value(&intent);
         let mut effect = "prepared";
@@ -170,9 +216,66 @@ pub(crate) fn prepare(
             "assignment": assignment,
             "effect": effect,
             "superseded": superseded,
+            "selected": selected,
+            "perspectives": perspectives,
             "next": "Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `work continuation WORK`.",
         }))
     })
+}
+
+/// Current, complete, bounded bytes for one prepared named child. A saved
+/// selector is never enough: binding, assignment and source hashes are rechecked.
+pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
+    let intent = load(loaded)?
+        .into_iter()
+        .find(|item| item["id"] == intent_id && item["work"] == work)
+        .ok_or("prepared child intent is unknown")?;
+    if !matches!(intent["state"].as_str(), Some("prepared" | "claimed")) {
+        return Err("child context expired with its prepared assignment".into());
+    }
+    let (_, binding) = current_binding(loaded, work)?;
+    if binding["session"] != intent["session"] || binding["revision"] != intent["bindingRevision"] {
+        return Err("child context expired after binding change".into());
+    }
+    let selected = &intent["selected"];
+    if selected.is_null() {
+        return Err("no named assignment was frozen for this child".into());
+    }
+    if !selected_is_current(loaded, work, selected) {
+        return Err("child context expired after assignment or profile change".into());
+    }
+    let agent_id = selected["agent"].as_str().ok_or("invalid selected agent")?;
+    let agent = loaded
+        .agent(agent_id)
+        .ok_or("selected agent is unavailable")?;
+    let bytes =
+        crate::project::path::secure_bytes(&loaded.control_root, &agent.profile, "agent profile")?;
+    if hash::bytes(&bytes) != selected["profileSha256"] {
+        return Err("selected profile source changed".into());
+    }
+    let source = String::from_utf8(bytes).map_err(|_| "agent profile is not UTF-8")?;
+    let presented = crate::host::runtime::redact(&source);
+    let sources: Vec<Frozen> = serde_json::from_value(intent["perspectives"].clone())
+        .map_err(|_| "prepared perspectives are malformed")?;
+    let perspectives = perspective::current(loaded, &sources)?;
+    let result = json!({
+        "work":work,"intent":intent_id,"assignment":selected["assignment"],
+        "configuredAgent":agent_id,"nativeTaskName":selected["nativeTaskName"],
+        "bindingRevision":intent["bindingRevision"],
+        "profile":{"path":agent.profile,"sourceSha256":selected["profileSha256"],
+            "presentedSha256":hash::text(&presented),"content":presented,
+            "transformation":"path-redaction","coverage":"complete"},
+        "perspectives":perspectives,
+        "evidence":"product-presented-for-current-assignment; native launch and behavior separate",
+    });
+    if serde_json::to_vec(&result)
+        .map_err(|_| "child context serialization failed")?
+        .len()
+        > 16 * 1024
+    {
+        return Err("child context exceeds the complete 16 KiB envelope".into());
+    }
+    Ok(result)
 }
 
 fn text<'a>(payload: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
@@ -227,11 +330,47 @@ pub(crate) fn claim(
                 json!("the receiving binding changed before a child started");
             return Ok(());
         }
+        if !selected_is_current(loaded, &work, &intents[index]["selected"]) {
+            intents[index]["state"] = json!("abandoned");
+            intents[index]["failure"] =
+                json!("the selected assignment changed before a child started");
+            return Ok(());
+        }
+        if !intents[index]["selected"].is_null() {
+            let intent = intents[index]["id"].as_str().unwrap_or_default();
+            if let Err(error) = context(loaded, &work, intent) {
+                intents[index]["state"] = json!("abandoned");
+                intents[index]["failure"] = json!(format!("child context unavailable: {error}"));
+                return Ok(());
+            }
+        }
         intents[index]["state"] = json!("claimed");
         intents[index]["nativeChild"] = json!(child);
         intents[index]["observedAgentType"] = json!(agent_type);
         Ok(())
     })
+}
+
+pub(crate) fn claimed_context(
+    loaded: &Loaded,
+    payload: &serde_json::Map<String, Value>,
+) -> Result<Option<Value>, String> {
+    let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
+    else {
+        return Ok(None);
+    };
+    let Some(intent) = load(loaded)?.into_iter().find(|intent| {
+        intent["state"] == "claimed"
+            && intent["session"] == session
+            && intent["nativeChild"] == child
+            && !intent["selected"].is_null()
+    }) else {
+        return Ok(None);
+    };
+    let (Some(work), Some(id)) = (intent["work"].as_str(), intent["id"].as_str()) else {
+        return Err("claimed child identity is malformed".into());
+    };
+    context(loaded, work, id).map(Some)
 }
 
 fn is_busy(error: &str) -> bool {

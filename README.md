@@ -25,7 +25,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-Current prerelease: `v0.25.0-rc.5`. One local binary; it calls no model and runs
+Current stable release: `v0.25.0`. One local binary; it calls no model and runs
 no daemon or cloud service.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
@@ -94,6 +94,14 @@ exitbind work check WORK       -> run the frozen check when it is the next actio
   managed Claude Code subagent hooks record the child's host-reported ID and
   exact final message, so the parent never retypes it. Other hosts record the
   return with `work child`.
+- **Read current project context.** `project context --json` reports bounded
+  project, focus, rule, and eligible memory references. `project context memory
+  ITEM_ID` reads one still-eligible source on demand. `project agents --apply`
+  explicitly creates project-owned Codex and Claude agent files from configured
+  profiles and refuses conflicts with external files.
+- **Check the whole goal.** `goal status --json` distinguishes recorded closure
+  from current readiness. Add `--themed` to an interactive status command to
+  see the local room when the current named goal is complete.
 - **Small replies, safe to inspect.** `work check` and `work return` reply in
   at most 8 KiB of JSON with a read-only follow-up command as an argv array.
   When either records an event, the reply names it even if later cleanup fails,
@@ -108,14 +116,14 @@ the reply reports the check's exit code or signal separately.
 
 ## See a wrong door refused
 
-This page describes the opt-in release candidate `v0.25.0-rc.5` for Linux x86_64
+This page describes the opt-in stable release `v0.25.0` for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before
 approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.5/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

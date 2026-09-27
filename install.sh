@@ -20,9 +20,13 @@ fi
 if test "$legacy_bridge" = 1; then
   repo=envy404/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.25.0-rc.5}"
+version="${EXITBIND_VERSION:-v0.25.0}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
+fi
+if test "$surface" = soulmate && test "$version" = v0.25.0; then
+  echo 'exitbind: Soulmate distribution ended at v0.25.0; install Exitbind instead' >&2
+  exit 1
 fi
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)

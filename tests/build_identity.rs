@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::Path;

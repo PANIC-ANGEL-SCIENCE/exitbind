@@ -14,6 +14,7 @@ pub(crate) fn print_status(
     state_root: &Path,
     interactive: bool,
     closed_stdin: bool,
+    themed: bool,
 ) -> bool {
     println!(
         "Run {}: {} (stage {}, attempt {})",
@@ -49,6 +50,7 @@ pub(crate) fn print_status(
         &status.progress,
         interactive,
         closed_stdin,
+        themed,
     ) {
         println!("{card}");
         return true;
@@ -65,6 +67,7 @@ pub(crate) fn print_explain(
     state_root: &Path,
     interactive: bool,
     closed_stdin: bool,
+    themed: bool,
 ) -> bool {
     println!("Run {} explanation", inert(&explanation.status.run_id));
     println!(
@@ -99,6 +102,7 @@ pub(crate) fn print_explain(
         &explanation.status.progress,
         interactive,
         closed_stdin,
+        themed,
     ) {
         println!("{card}");
         return true;

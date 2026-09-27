@@ -114,6 +114,18 @@ the child finished, stays there as `failed` with its reason. When a failed
 capture retained the result under the same session, `work child recover WORK
 INTENT --context TOKEN` records it without re-running the child.
 
+For a current named assignment, `work child prepare` also accepts
+`--perspectives '[{"id":"qa","path":"exitbind/perspectives/qa.md"}]'`.
+Select one to three project control-root sources for this assignment only.
+`work child context WORK INTENT` returns the complete current base profile and
+selected perspectives with source and presented hashes; it refuses changed
+sources, a changed assignment, or a new binding. A compatible managed Claude
+SubagentStart hook presents those perspectives to the captured child before
+its first task turn. For other hosts, include the command's current output in
+the native child's task at launch. The file projection, a prepared intent, and
+the host's presentation are separate observations; none proves that the model
+used the instructions.
+
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind
 reply's read-only `nextAction.command` to obtain a fresh token. The CLI

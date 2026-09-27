@@ -50,6 +50,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "packet",
     "preservation-check-command",
     "preservation-proof-origin",
+    "perspectives",
     "proposal",
     "preserve-requirement",
     "proof-origin",
@@ -105,6 +106,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "refresh-skills",
     "require-harness-receipt",
     "session-closed",
+    "themed",
     "history",
     "replace",
 ];

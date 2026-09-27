@@ -240,30 +240,35 @@ pub fn run() -> Result<(), String> {
     let text = if event == "SessionStart" {
         let mut text = session_summary(&loaded.config);
         if crate::producer::exitbind_surface() {
+            let fixed = DIRECT_WORK.len() + RECEIVE_WORK.len() + 2;
+            if text.len() + fixed + 128 > 3072 {
+                text = "Exitbind plan-only project context. Preserve the existing root conversation and current user corrections. No model was selected or launched; declarations are not an OS sandbox.".into();
+            }
             text.push('\n');
             text.push_str(DIRECT_WORK);
             text.push('\n');
             text.push_str(RECEIVE_WORK);
-        }
-        if let Some(memory) = super::project_memory::session_context(&loaded) {
+            let budget = 3072usize.saturating_sub(text.len());
+            text.push_str(&crate::project::context::session_addendum(&loaded, budget));
+        } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
             text.push_str(&memory);
         }
         if let Some(update) = update_context {
-            text.push('\n');
-            text.push_str(&update);
+            if !crate::producer::exitbind_surface() || text.len() + update.len() < 3072 {
+                text.push('\n');
+                text.push_str(&update);
+            }
         }
         text
     } else {
-        let Some(agent) = exact_agent(object, &loaded.config) else {
+        let Some(agent) = exact_agent(object, &loaded.agents) else {
             return Ok(());
         };
-        let configured = &loaded.config["agents"][&agent];
-        let profile_requested = configured
-            .get("profile")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let profile = match crate::config::file(&loaded.control_root, profile_requested) {
+        let Some(configured) = loaded.agent(&agent) else {
+            return Ok(());
+        };
+        let profile = match crate::config::file(&loaded.control_root, &configured.profile) {
             Ok(path) => path,
             Err(_) => return Ok(()),
         };
@@ -281,12 +286,63 @@ pub fn run() -> Result<(), String> {
         if !contained_existing(&loaded.control_root, &profile) {
             return Ok(());
         }
-        let Some(context) =
-            format_agent_context(&loaded.control_root, &agent, configured, &profile, &source)
-        else {
+        let selected = super::assignment_context::selection(
+            &loaded,
+            &agent,
+            &crate::evidence::hash::text(&source),
+        );
+        if matches!(&selected, super::assignment_context::Selection::Mismatch) {
+            return Ok(());
+        }
+        if matches!(&selected, super::assignment_context::Selection::Unavailable) {
+            return emit(event, "Exitbind could not verify the current assignment; profile acquisition is unavailable.");
+        }
+        let Some(mut context) = format_agent_context(
+            &loaded.control_root,
+            &agent,
+            configured,
+            &profile,
+            &source,
+            &selected,
+        ) else {
             return Ok(());
         };
-        bounded(context)
+        if event == "SubagentStart" {
+            match crate::session_goal::claimed_child_context(&loaded, object) {
+                Ok(Some(child))
+                    if child["configuredAgent"] == agent
+                        && matches!(
+                            &selected,
+                            super::assignment_context::Selection::Bound { work, assignment, .. }
+                                if child["work"] == work.as_str()
+                                    && child["assignment"] == assignment.as_str()
+                        ) =>
+                {
+                    context.push_str("\nSelected task perspectives for this assignment:");
+                    for perspective in child["perspectives"].as_array().into_iter().flatten() {
+                        context.push_str(&format!(
+                            "\nPerspective {} (source SHA-256 {}, presented SHA-256 {}, complete):\n{}",
+                            perspective["id"].as_str().unwrap_or("?"),
+                            perspective["sourceSha256"].as_str().unwrap_or("?"),
+                            perspective["presentedSha256"].as_str().unwrap_or("?"),
+                            perspective["content"].as_str().unwrap_or("")
+                        ));
+                    }
+                }
+                Ok(Some(_)) | Err(_) => {
+                    return emit(event, "Exitbind could not verify the selected child context; assignment context is unavailable.");
+                }
+                Ok(None) => {}
+            }
+        }
+        let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
+            "hookEventName":event,"additionalContext":context}}))
+        .map_err(|_| String::new())?;
+        if serialized.len() > MAX_OUTPUT {
+            "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+        } else {
+            context
+        }
     };
     emit(event, &text)
 }
@@ -362,118 +418,140 @@ fn emit(event: &str, text: &str) -> Result<(), String> {
     }
 }
 
-fn exact_agent(payload: &serde_json::Map<String, Value>, config: &Value) -> Option<String> {
-    let mut found = Vec::new();
-    let agents = config["agents"].as_object()?;
+fn exact_agent(
+    payload: &serde_json::Map<String, Value>,
+    agents: &std::collections::BTreeMap<String, crate::config::types::AgentConfig>,
+) -> Option<String> {
+    let mut selected: Option<String> = None;
     for key in ["agent_name", "agent_type", "subagent_type"] {
         let Some(candidate) = payload.get(key).and_then(Value::as_str) else {
             continue;
         };
-        for (name, agent) in agents {
-            if (candidate == name || candidate == crate::config::native_name(name, agent))
-                && !found.contains(name)
-            {
-                found.push(name.clone());
-            }
+        let matches = agents
+            .iter()
+            .filter(|(name, agent)| {
+                candidate == agent.native_name(name)
+                    || (!crate::producer::exitbind_surface() && candidate == name.as_str())
+            })
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>();
+        let [name] = matches[..] else {
+            return None;
+        };
+        if selected
+            .as_deref()
+            .is_some_and(|previous| previous != name.as_str())
+        {
+            return None;
         }
+        selected = Some((*name).clone());
     }
-    (found.len() == 1).then(|| found.remove(0))
+    selected
 }
 
 fn format_agent_context(
     project: &Path,
     agent: &str,
-    config: &Value,
+    config: &crate::config::types::AgentConfig,
     path: &Path,
     source: &str,
+    selection: &super::assignment_context::Selection,
 ) -> Option<String> {
-    let list = |name: &str| {
-        config[name]
-            .as_array()
-            .map(|items| {
-                if items.is_empty() {
-                    "none".into()
-                } else {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(safe_inline)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                }
-            })
-            .unwrap_or_else(|| "none".into())
+    let list = |items: &[String]| {
+        if items.is_empty() {
+            "none".into()
+        } else {
+            items
+                .iter()
+                .map(|item| safe_inline(item))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
     };
     let relative = path
         .strip_prefix(project)
         .ok()?
         .to_str()?
         .replace('\\', "/");
-    let native = config["nativeName"]
-        .as_str()
-        .unwrap_or(agent)
-        .to_ascii_lowercase()
-        .replace('-', "_");
+    let native = config.native_name(agent);
     let product = if crate::producer::exitbind_surface() {
         "Exitbind"
     } else {
         "Soulmate"
     };
+    let presented = redact(source);
     let mut lines = vec![
-        format!("{product} plan-only context for {agent} (role selected by native host event)."),
+        format!("{product} plan-only context for {agent} (native event reported this agent)."),
         format!("Agent ID: {}", safe_inline(agent)),
         format!("Native task name: {}", safe_inline(&native)),
         format!("Profile selected/presented: {}", safe_inline(&relative)),
         format!("Profile SHA-256: {}", crate::evidence::hash::text(source)),
+        format!("Presented profile SHA-256: {} (after path redaction).", crate::evidence::hash::text(&presented)),
         "Evidence is selected/presented bytes; it does not prove a model read or followed the profile.".into(),
         "Declared boundary:".into(),
     ];
-    for key in [
-        "observe",
-        "write",
-        "commands",
-        "skills",
-        "memoryRead",
-        "memoryWrite",
-        "memoryReview",
-        "memoryPromote",
-        "memoryReject",
-        "memoryRevoke",
-        "memoryExpire",
-        "memoryForget",
+    for (key, values) in [
+        ("observe", &config.observe),
+        ("write", &config.write),
+        ("commands", &config.commands),
+        ("skills", &config.skills),
+        ("memoryRead", &config.memory_read),
+        ("memoryWrite", &config.memory_write),
+        ("memoryReview", &config.memory_review),
+        ("memoryPromote", &config.memory_promote),
+        ("memoryReject", &config.memory_reject),
+        ("memoryRevoke", &config.memory_revoke),
+        ("memoryExpire", &config.memory_expire),
+        ("memoryForget", &config.memory_forget),
     ] {
-        lines.push(format!("  {key}: {}", list(key)));
+        lines.push(format!("  {key}: {}", list(values)));
     }
-    lines.push(format!(
-        "  retention: {}",
-        safe_inline(config["retention"].as_str().unwrap_or(""))
-    ));
+    lines.push(format!("  retention: {}", safe_inline(&config.retention)));
     lines.push(format!(
         "  crossContext: {}",
-        safe_inline(config["crossContext"].as_str().unwrap_or(""))
+        safe_inline(&config.cross_context)
     ));
+    match selection {
+        super::assignment_context::Selection::Bound {
+            work,
+            assignment,
+            packet_digest,
+        } => {
+            lines.push(format!(
+                "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
+            ));
+            lines.push("Base profile is associated with this current assignment; model use is not inferred.".into());
+        }
+        _ => lines.push("No current governed assignment was acquired for this profile.".into()),
+    }
     lines.push("Profile bytes:".into());
-    lines.push(redact(source));
+    lines.push(presented);
     Some(lines.join("\n"))
 }
 
 fn session_summary(config: &Value) -> String {
-    let agents = config["agents"]
-        .as_object()
-        .map(|map| {
-            let mut names = map.keys().cloned().collect::<Vec<_>>();
-            names.sort();
+    let compact = crate::producer::exitbind_surface();
+    let names = |key: &str| {
+        let Some(map) = config[key].as_object() else {
+            return if compact { "none" } else { "" }.to_owned();
+        };
+        let mut names = map.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+        if compact && names.len() > 4 {
+            let omitted = names.len() - 4;
+            names.truncate(4);
+            format!(
+                "{}, +{omitted} more (see project agents --json)",
+                names.join(", ")
+            )
+        } else if names.is_empty() {
+            if compact { "none" } else { "" }.to_owned()
+        } else {
             names.join(", ")
-        })
-        .unwrap_or_default();
-    let workflows = config["workflows"]
-        .as_object()
-        .map(|map| {
-            let mut names = map.keys().cloned().collect::<Vec<_>>();
-            names.sort();
-            names.join(", ")
-        })
-        .unwrap_or_default();
+        }
+    };
+    let agents = names("agents");
+    let workflows = names("workflows");
     let product = if crate::producer::exitbind_surface() {
         "Exitbind"
     } else {
@@ -495,7 +573,7 @@ fn bounded(value: String) -> String {
         .unwrap_or(0);
     format!("{}\n[context truncated]", safe_multiline(&value[..end]))
 }
-fn redact(value: &str) -> String {
+pub(crate) fn redact(value: &str) -> String {
     let source = safe_multiline(value);
     let home_prefix = concat!("/", "home", "/");
     let user_prefix = concat!("/", "Users", "/");

@@ -219,6 +219,7 @@ fn absent_or_drifted_required_version_values_are_rejected() {
     let package = format!("version = \"{VERSION}\"");
     let lock = format!("name = \"exitbind\"\nversion = \"{VERSION}\"");
     let manifest = format!("\"version\": \"{VERSION}\",");
+    let historical_manifest = "\"version\": \"0.25.0-rc.5\",";
     let installer = format!("version=\"${{EXITBIND_VERSION:-v{VERSION}}}\"");
     let wsl = format!("test \"$(exitbind version)\" = \"{VERSION}\"");
     let changelog = format!("## {VERSION}\n");
@@ -228,11 +229,11 @@ fn absent_or_drifted_required_version_values_are_rejected() {
         ("plugin.json", manifest.as_str()),
         (
             "systems.soulmate/.codex-plugin/plugin.json",
-            manifest.as_str(),
+            historical_manifest,
         ),
         (
             "systems.soulmate/.claude-plugin/plugin.json",
-            manifest.as_str(),
+            historical_manifest,
         ),
         ("install.sh", installer.as_str()),
         ("scripts/ci-wsl.sh", wsl.as_str()),
@@ -323,14 +324,7 @@ fn plugin_manifests_keep_portable_openai_and_compatibility_presentation() {
         Some(legacy_presentation.as_str())
     );
     assert_eq!(codex["skills"].as_str(), Some("./skills/"));
-    // The historical extension key stays for consumers published before the
-    // rename, but it must read as legacy rather than as a current capability.
-    assert_eq!(
-        root["extensions"]["systems.soulmate"]["purpose"].as_str(),
-        Some(
-            "Legacy host-hook compatibility resources for plugin consumers published before the rename; not a current Exitbind capability, and host-specific activation is not implied."
-        )
-    );
+    assert!(root["extensions"].get("systems.soulmate").is_none());
     // Everything a current plugin consumer is shown is Exitbind only.
     for presented in [
         root["name"].clone(),

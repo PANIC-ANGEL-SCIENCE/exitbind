@@ -1,9 +1,12 @@
 use serde_json::{Map, Value};
+#[cfg(feature = "legacy-cli-test")]
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+#[cfg(feature = "legacy-cli-test")]
 use std::process::Command;
+#[cfg(feature = "legacy-cli-test")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MATRIX_PATH: &str = "compatibility/rename-matrix.json";
@@ -784,6 +787,7 @@ pub fn route(id: &str) -> Value {
     row("routes", id)
 }
 
+#[cfg(feature = "legacy-cli-test")]
 fn canonical(value: &Value) -> String {
     match value {
         Value::Object(map) => {
@@ -810,6 +814,7 @@ fn canonical(value: &Value) -> String {
     }
 }
 
+#[cfg(feature = "legacy-cli-test")]
 fn rehash_event(event: &mut Value) {
     event.as_object_mut().unwrap().remove("eventSha256");
     let digest = Sha256::digest(canonical(event).as_bytes());
@@ -936,6 +941,7 @@ fn current_and_legacy_runtime_paths_remain_explicit() {
 }
 
 #[test]
+#[cfg(feature = "legacy-cli-test")]
 fn runtime_path_cases_execute_current_legacy_and_explicit_legacy_surfaces() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1027,6 +1033,7 @@ fn runtime_path_cases_execute_current_legacy_and_explicit_legacy_surfaces() {
 }
 
 #[test]
+#[cfg(feature = "legacy-cli-test")]
 fn producer_cases_execute_persisted_identity_and_format_projections() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

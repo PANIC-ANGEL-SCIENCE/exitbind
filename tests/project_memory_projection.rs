@@ -1,5 +1,5 @@
 //! A new work item in the same project starts with the Lead's role and current
-//! accepted project memory. A correction replaces the revoked rule; rejected,
+//! accepted project memory references. A correction replaces the revoked rule; rejected,
 //! expired, and changed items never project; another project sees none of it;
 //! and one work's check never carries into the next.
 
@@ -124,6 +124,13 @@ fn accepted(root: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
+fn memory_content(root: &Path, item: &str) -> String {
+    ok(root, &["project", "context", "memory", item, "--json"])["content"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 /// Item IDs recorded in the new work's Lead assignment.
 fn lead_items(root: &Path, work: &str) -> Vec<String> {
     let next = ok(root, &["work", "next", work, "--full"]);
@@ -173,13 +180,15 @@ fn new_work_receives_role_and_current_memory_and_a_correction_replaces_the_old_r
         "memory/finding.jsonl",
     );
     let context = session_context(&root);
-    assert!(context.contains("Project role for this session: lead (Own the goal"));
-    assert!(context.contains("profile exitbind/agents/lead.md (sha256 "));
-    assert!(context.contains("not a check, approval, or permission"));
-    assert!(context.contains("Rule: document every CLI flag in README.md."));
-    assert!(context.contains("Finding: tests run with python3 -m unittest."));
+    assert!(context.contains("Lead profile: lead -> lead (sha256 "));
+    assert!(!context.contains("Rule: document every CLI flag in README.md."));
+    assert!(!context.contains("Finding: tests run with python3 -m unittest."));
 
     let before = accepted(&root);
+    for item in before.values() {
+        assert!(context.contains(item));
+    }
+    assert!(memory_content(&root, &before["rules/docs.md"]).contains("document every CLI flag"));
     let work_b = begin(&root, "Work B");
     let mut expected = before.values().cloned().collect::<Vec<_>>();
     expected.sort();
@@ -196,10 +205,14 @@ fn new_work_receives_role_and_current_memory_and_a_correction_replaces_the_old_r
         "memory/docs-v2.jsonl",
     );
     let context = session_context(&root);
-    assert!(context.contains("with an example."));
-    assert!(!context.contains("rules/docs.md:"));
+    assert!(!context.contains("with an example."));
+    assert!(!context.contains(&old));
     let after = accepted(&root);
     assert!(!after.values().any(|item| *item == old));
+    assert!(memory_content(&root, &after["rules/docs-v2.md"]).contains("with an example."));
+    assert!(!call(&root, &["project", "context", "memory", &old], b"")
+        .status
+        .success());
     let work_c = begin(&root, "Work C");
     let mut expected = after.values().cloned().collect::<Vec<_>>();
     expected.sort();
@@ -263,12 +276,17 @@ fn rejected_expired_and_changed_items_never_project() {
         "project-rules",
         "memory/live.jsonl",
     );
-    assert!(session_context(&root).contains("live text"));
+    let item = accepted(&root)["rules/live.md"].clone();
+    assert!(session_context(&root).contains(&item));
+    assert!(memory_content(&root, &item).contains("live text"));
     fs::write(root.join("rules/live.md"), "Rule: edited text.\n").unwrap();
     let context = session_context(&root);
-    assert!(context.contains("could not be projected"));
+    assert!(context.contains("Project memory unavailable"));
     assert!(!context.contains("edited text"));
     assert!(!context.contains("live text"));
+    assert!(!call(&root, &["project", "context", "memory", &item], b"")
+        .status
+        .success());
     fs::remove_dir_all(&root).unwrap();
 }
 
@@ -283,10 +301,15 @@ fn another_project_with_the_same_agent_label_sees_none_of_it() {
         "project-rules",
         "memory/private.jsonl",
     );
-    assert!(session_context(&first).contains("project A only"));
+    let item = accepted(&first)["rules/private.md"].clone();
+    assert!(session_context(&first).contains(&item));
     let context = session_context(&second);
-    assert!(!context.contains("project A only"));
-    assert!(!context.contains("Accepted project memory"));
+    assert!(!context.contains(&item));
+    assert!(
+        !call(&second, &["project", "context", "memory", &item], b"")
+            .status
+            .success()
+    );
     assert!(accepted(&second).is_empty());
     let work = begin(&second, "Project B work");
     assert!(lead_items(&second, &work).is_empty());
@@ -361,6 +384,7 @@ fn many_accepted_items_never_drop_the_session_context() {
     }
     let context = session_context(&root);
     assert!(context.contains("first run `exitbind work continuation WORK`"));
-    assert!(context.contains("more accepted items; list them with"));
+    assert!(context.len() <= 3072);
+    assert!(context.contains("more references; run `exitbind project context --json`"));
     fs::remove_dir_all(&root).unwrap();
 }

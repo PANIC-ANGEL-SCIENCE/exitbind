@@ -44,7 +44,7 @@ Install the supported release as a single Rust binary. Node.js, npm, Python,
 and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.5/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
 exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --review-policy required --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -58,7 +58,7 @@ The stable release includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The v0.25.0-rc.5 release candidate targets Linux x86_64 and native macOS on Apple
+The v0.25.0 stable release targets Linux x86_64 and native macOS on Apple
 Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -224,7 +224,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in the `v0.25.0-rc.5` release candidate use run-event format 8. The
+New checked runs in `v0.25.0` use run-event format 8. The
 reader retains historical v1–v7 ledgers, including their original producer
 values and guarantees. Current v8 records bind an Accepted Subject, tested-input
 identity, and the v0.24 basis/review-policy extension to each applicable result
@@ -340,7 +340,7 @@ files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.5/install.sh | EXITBIND_VERSION=v0.25.0-rc.5 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/install.sh | EXITBIND_VERSION=v0.25.0 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -566,11 +566,13 @@ their exact sources. Semantic retrieval, embeddings, global memory, transcript
 capture, and implicit truncation remain out of scope. See
 [SECURITY.md](SECURITY.md) for path, expiry, concurrency, and erasure limits.
 
-When memory is enabled, the managed SessionStart context of a new session in
-the project names the Lead's configured role and profile hash and includes the
-content of the Lead's currently accepted items, labeled as context rather than
-a check, approval, or permission. A changed source or exceeded budget is
-reported there instead of projected.
+When memory is enabled, managed SessionStart context names the Lead's role and
+profile hash and lists bounded references to currently eligible items. Read
+one item with `exitbind project context memory ITEM_ID`; the command checks
+eligibility and source bytes again. `exitbind project context --json` reports
+the current project, focus, rule, memory, and optional resource observations.
+These are context, not a check, approval, or permission. A changed source or
+unavailable observation is reported as unavailable, not projected as current.
 
 ## Run and recovery
 
@@ -600,6 +602,15 @@ retains all attempts; it checks recorded history without revalidating current
 artifact or governing-input bytes. Keep these outputs private. Your project CI
 remains the executor and enforcement point for its own checks; a local report
 binding does not authenticate CI execution or replace branch protection.
+
+`goal status --json` keeps the recorded `closure` as history and adds
+`currentReadiness` (`current`, `stale`, or `unknown`). A historical closure can
+remain recorded after its tested inputs or required support change. Ordinary
+status stays plain. Add `--themed` to interactive `goal status`, `run status`,
+or `run explain` to show the three-line whole-goal room only when the current
+named goal is ready; machine and noninteractive output never include it. The
+room is local display, not completion evidence, and its replaceable display
+memo does not affect tested inputs.
 
 Use an exact run boundary to narrow configured maxima without editing config.
 This example uses the separate advanced fixture `examples/exitbind.json`; it
@@ -709,14 +720,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.25.0-rc.5
+dotagents --project add envy404/exitbind --ref v0.25.0
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.25.0-rc.5
+dotagents --project add envy404/exitbind --ref v0.25.0
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -745,8 +756,11 @@ exitbind hooks remove --hosts codex,claude --root PATH
 They write only `.codex/hooks.json` and `.claude/settings.json`, preserve
 unrelated settings, refuse malformed/conflicting/symlinked targets, and require
 the expected `exitbind hook-run` protocol on `PATH`. Session context is a
-bounded project summary; subagent context presents the exact selected profile
-and declared boundary. Hook execution/presentation is not activation or model
+bounded project reference summary; subagent context presents the selected
+profile and declared boundary. `exitbind project agents --apply` is a separate,
+explicit operation that projects configured profiles into project-owned
+`.codex/agents/` and `.claude/agents/` files; it refuses external file conflicts.
+Hook execution/presentation is not activation or model
 compliance proof. POSIX behavior is CI-tested on Linux and macOS; Windows
 mutation is refused. See [SECURITY.md](SECURITY.md) for race and transaction
 limits.
@@ -885,7 +899,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.5/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

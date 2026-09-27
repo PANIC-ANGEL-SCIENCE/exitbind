@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.25.0
+
+- Deliver bounded install-owned project and host facts with current rules and
+  exact read routes, plus explicit named-agent and task perspective acquisition.
+- Distinguish a named whole goal's current readiness from its historical
+  closure. The optional local terminal room appears only at current completion.
+- Keep current Exitbind work mutations bounded with exact event recovery and
+  product-derived next actions.
+- End active Soulmate binary and skill distribution. Default builds and
+  installs ship Exitbind alone; historical state readers and a feature-gated
+  legacy CLI test fixture remain.
+
 ## 0.25.0-rc.5
 
 - Keep an Exitbind executable's product identity when it is copied or renamed;

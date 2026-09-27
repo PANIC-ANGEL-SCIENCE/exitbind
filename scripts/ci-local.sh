@@ -142,10 +142,11 @@ if [ "$platform" = linux ]; then
   run clippy "$CARGO" clippy --locked --all-targets -- -D warnings
 fi
 run tests "$CARGO" test --locked
+run legacy-compat "$CARGO" test --locked --features legacy-cli-test
 run value-proof ./scripts/run-value-proof-suite.sh
 if [ "$platform" = linux ]; then
   run drift-warning ./scripts/demo-drift-warning.sh
-  run native-handoff "$CARGO" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
+  run native-handoff "$CARGO" test --locked --features legacy-cli-test --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
   run release-refs ./scripts/check-release-refs.sh
 fi
 

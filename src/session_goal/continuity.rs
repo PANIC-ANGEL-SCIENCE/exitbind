@@ -214,11 +214,12 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
 }
 
 mod capture;
+mod perspective;
 mod record;
 mod view;
 pub(crate) use capture::{
-    claim as claim_child, finalize as finalize_child, prepare as prepare_child,
-    recover as recover_child,
+    claim as claim_child, claimed_context as claimed_child_context, context as child_context,
+    finalize as finalize_child, prepare as prepare_child, recover as recover_child,
 };
 pub(crate) use record::{continuation_bind, continuation_child, continuation_record};
 pub(crate) use view::{continuation_section, continuation_view, has_unresolved, support_current};

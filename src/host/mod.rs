@@ -1,7 +1,9 @@
+pub(crate) mod assignment_context;
 pub(crate) mod away;
 pub(crate) mod bridge;
 pub(crate) mod hooks;
 pub(crate) mod native_session;
 pub(crate) mod project_memory;
+pub(crate) mod project_resources;
 pub(crate) mod runtime;
 pub(crate) mod settings;

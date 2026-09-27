@@ -14,7 +14,7 @@ use std::{
 };
 
 const SESSION_GOAL_CARD_TEST: &str =
-    "+------------------------------+\n| Nothing remains here.        |\n+------------------------------+\n\nEXIT READY";
+    "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
 fn canonical(value: &Value) -> String {
     match value {
@@ -1245,7 +1245,7 @@ fn resolved_goal_facts_are_not_projected_as_pending_card_items() {
     );
     let ledger = format!(".exitbind/runs/work-{}.jsonl", &work["smw_".len()..]);
     let command = format!(
-        "{} run status {} --config {} --session-closed",
+        "{} run status {} --themed --config {} --session-closed",
         env!("CARGO_BIN_EXE_exitbind"),
         ledger,
         project.root.join("exitbind.json").display()
@@ -1342,7 +1342,7 @@ fn all_five_resolved_categories_emit_then_new_open_item_suppresses_card() {
     );
     let ledger = format!(".exitbind/runs/work-{}.jsonl", &work["smw_".len()..]);
     let command = format!(
-        "{} run status {} --config {} --session-closed",
+        "{} run status {} --themed --config {} --session-closed",
         env!("CARGO_BIN_EXE_exitbind"),
         ledger,
         project.root.join("exitbind.json").display()
@@ -1411,12 +1411,15 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     );
     let ledger = format!(".exitbind/runs/work-{}.jsonl", &work["smw_".len()..]);
     let command = format!(
-        "{} run status {} --config {} --session-closed",
+        "{} run status {} --themed --config {} --session-closed",
         env!("CARGO_BIN_EXE_exitbind"),
         ledger,
         project.root.join("exitbind.json").display()
     );
     fs::write(project.root.join("source.txt"), b"drifted\n").unwrap();
+    let stale_goal = project.value(&["goal", "status", "--json"], None);
+    assert_eq!(stale_goal["closure"]["closed"], true);
+    assert_eq!(stale_goal["currentReadiness"]["state"], "stale");
     let first = support::pty(&command)
         .current_dir(&project.root)
         .output()
@@ -1424,12 +1427,13 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let first_text = String::from_utf8_lossy(&first.stdout).replace('\r', "");
     assert_eq!(
         first_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        1,
+        0,
         "{first_text}"
     );
     let cache = project
         .root
         .join(".exitbind/presentation/session-goal.json");
+    fs::create_dir_all(cache.parent().unwrap()).unwrap();
     fs::write(&cache, b"corrupt cache").unwrap();
     let corrupt_stale = support::pty(&command)
         .current_dir(&project.root)
@@ -1438,7 +1442,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let corrupt_stale_text = String::from_utf8_lossy(&corrupt_stale.stdout).replace('\r', "");
     assert_eq!(
         corrupt_stale_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        1,
+        0,
         "{corrupt_stale_text}"
     );
     fs::write(project.root.join("source.txt"), b"env-first\n").unwrap();
@@ -1449,7 +1453,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let current_text = String::from_utf8_lossy(&current.stdout).replace('\r', "");
     assert_eq!(
         current_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        0,
+        1,
         "{current_text}"
     );
     fs::write(project.root.join("source.txt"), b"drifted\n").unwrap();
@@ -1461,7 +1465,7 @@ fn stale_closure_is_suppressed_before_and_after_display_cache_loss() {
     let second_text = String::from_utf8_lossy(&second.stdout).replace('\r', "");
     assert_eq!(
         second_text.matches(SESSION_GOAL_CARD_TEST).count(),
-        1,
+        0,
         "{second_text}"
     );
     fs::remove_dir_all(project.root).unwrap();
@@ -1509,7 +1513,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
     );
     let ledger = format!(".exitbind/runs/work-{}.jsonl", &work["smw_".len()..]);
     let command = format!(
-        "{} run status {} --config {} --session-closed",
+        "{} run status {} --themed --config {} --session-closed",
         env!("CARGO_BIN_EXE_exitbind"),
         ledger,
         project.root.join("exitbind.json").display()
@@ -1521,7 +1525,7 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
         .output()
         .unwrap();
     let before_goal_text = String::from_utf8_lossy(&before_goal.stdout).replace('\r', "");
-    let card = "+------------------------------+\n| Nothing remains here.        |\n+------------------------------+\n\nEXIT READY";
+    let card = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
     assert_eq!(
         before_goal_text.matches(card).count(),
         0,
@@ -1554,6 +1558,12 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
         ],
         None,
     );
+    let plain_command = command.replace(" --themed", "");
+    let plain = support::pty(&plain_command)
+        .current_dir(&project.root)
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&plain.stdout).contains(card));
     let first = support::pty(&command)
         .current_dir(&project.root)
         .output()
@@ -1561,7 +1571,10 @@ fn interactive_session_closure_card_is_final_once_only_and_machine_silent() {
     assert!(first.status.success(), "{first:?}");
     let first_text = String::from_utf8_lossy(&first.stdout).replace('\r', "");
     assert_eq!(first_text.matches(card).count(), 1, "{first_text}");
-    assert_eq!(first_text.lines().last(), Some("EXIT READY"));
+    assert_eq!(
+        first_text.lines().last(),
+        Some("+----------------------------+")
+    );
     let second = support::pty(&command)
         .current_dir(&project.root)
         .output()

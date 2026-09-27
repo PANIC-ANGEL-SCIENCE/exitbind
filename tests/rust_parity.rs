@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 use serde_json::Value;
 mod support;
 use std::{

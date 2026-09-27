@@ -14,7 +14,9 @@ use crate::{
 
 pub(crate) mod args;
 mod help;
+mod project;
 mod replan_input;
+mod status;
 mod work;
 
 use args::Arguments;
@@ -215,8 +217,6 @@ fn hooks_command(a: &Arguments) -> Result<(), String> {
     Ok(())
 }
 
-/// User-level host bridge: one install makes Exitbind discoverable in every
-/// repository, separately from project configuration and hooks.
 fn host_command(a: &Arguments) -> Result<(), String> {
     args::assert_options("host", a, &["hosts", "all", "json"])?;
     args::assert_positionals("host", a, 1)?;
@@ -307,6 +307,7 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
             | "migrate"
             | "work"
             | "receipt"
+            | "project"
     ) {
         return Err(format!("unknown command '{command}'"));
     }
@@ -327,6 +328,7 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
         "away" => away_command(&loaded, a),
         "migrate" => migrate_command(&loaded, a),
         "work" => work::work_command(&loaded, a),
+        "project" => project::command(&loaded, a),
         _ => Err(format!("unknown command '{command}'")),
     }
 }
@@ -511,26 +513,7 @@ fn goal_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             };
             print_json(&value)
         }
-        "status" => {
-            args::assert_options("goal status", a, &["config", "json"])?;
-            args::assert_positionals("goal status", a, 1)?;
-            let record = crate::session_goal::read(&l.state_root)?;
-            let value = record.clone().unwrap_or_else(|| json!({"closed": false}));
-            print_json(&value)?;
-            if !a.flags.contains_key("json") {
-                let presentation =
-                    crate::session_goal::presentation_for_loaded(l, record.as_ref())?;
-                if let Some(card) = crate::presentation_events::session_goal_direct_card_for_human(
-                    &l.state_root,
-                    &presentation,
-                    std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
-                    !std::io::stdin().is_terminal(),
-                ) {
-                    println!("{card}");
-                }
-            }
-            Ok(())
-        }
+        "status" => status::goal_status(l, a),
         _ => Err("goal requires incorporate, close, or status".into()),
     }
 }
@@ -949,8 +932,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "json",
         ][..],
         "observe-check" => &["config", "target", "requirement", "timeout-ms", "json"][..],
-        "status" => &["config", "json", "session-closed"][..],
-        "explain" => &["config", "event", "json", "session-closed"][..],
+        "status" => &["config", "json", "session-closed", "themed"][..],
+        "explain" => &["config", "event", "json", "session-closed", "themed"][..],
         "report" => &["config", "json"][..],
         "supersede" => &[
             "config",
@@ -1047,7 +1030,11 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 l,
                 positional(a, 1, "run review-policy requires AGENT")?,
                 positional(a, 2, "run review-policy requires LEDGER")?,
-                option(a, "decision", "run review-policy requires --decision required|omitted")?,
+                option(
+                    a,
+                    "decision",
+                    "run review-policy requires --decision required|omitted",
+                )?,
                 a.options.get("reason").map(String::as_str),
             )
         }
@@ -1095,102 +1082,8 @@ fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 run::observe_check(l, ledger, target, timeout_ms)
             }
         }
-        "status" => {
-            args::assert_positionals("run status", a, 2)?;
-            let ledger = positional(a, 1, "run status requires LEDGER")?;
-            let json_output = a.flags.contains_key("json");
-            if json_output {
-                let mut value = run::status(l, ledger)
-                    .map_err(|error| map_run_error(error, true))?;
-                if let Some(terminal) = run::terminal_display(l, ledger) {
-                    value["terminal"] = json!(terminal);
-                }
-                print_json(&value)?;
-                return Ok(());
-            }
-            let config = a.options.get("config").map(String::as_str).map_or_else(
-                || l.path.to_str().ok_or("configuration path is not valid UTF-8"),
-                Ok,
-            )?;
-            let value = run::human_status(l, ledger).map_err(|error| {
-                if run::inspect(l, ledger).is_ok() {
-                    eprintln!(
-                        "Inspect: {}",
-                        crate::presentation::read_command("inspect", config, ledger)
-                    );
-                }
-                map_run_error(error, false)
-            })?;
-            let current_goal = crate::session_goal::read(&l.state_root)?;
-            let session_goal = crate::session_goal::presentation_for_loaded(
-                l,
-                current_goal.as_ref(),
-            )?;
-            let card_emitted = crate::run_presentation::print_status(
-                &value,
-                &session_goal,
-                &l.state_root,
-                std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
-                !std::io::stdin().is_terminal(),
-            );
-            if !card_emitted {
-                if value.status != "running" || value.artifact_status != "current" {
-                    println!("Inspect: {}", crate::presentation::read_command("inspect", config, ledger));
-                } else {
-                    match run::next(l, ledger) {
-                        Ok(next) if next["status"] == "running" => println!(
-                            "Next: {}",
-                            crate::presentation::read_command("next", config, ledger)
-                        ),
-                        _ => {
-                            println!("Guidance: no validated pending progression is available; inspect the run before recovery.");
-                            println!("Inspect: {}", crate::presentation::read_command("inspect", config, ledger));
-                        }
-                    }
-                }
-            }
-            // The same block the work facade offers, last, so a reader who
-            // drilled down to the run surface still has the product's own
-            // wording instead of composing a sentence from the report above.
-            if !card_emitted {
-                if let Some(terminal) = run::terminal_display(l, ledger) {
-                    println!("{terminal}");
-                }
-            }
-            return Ok(());
-        }
-        "explain" => {
-            args::assert_positionals("run explain", a, 2)?;
-            if a.flags.contains_key("json") {
-                let machine = run::explain(
-                    l,
-                    positional(a, 1, "run explain requires LEDGER")?,
-                    a.options.get("event").map(String::as_str),
-                )
-                .map_err(|error| map_run_error(error, true))?;
-                print_json(&machine)?;
-            } else {
-                let value = run::human_explain(
-                    l,
-                    positional(a, 1, "run explain requires LEDGER")?,
-                    a.options.get("event").map(String::as_str),
-                )
-                .map_err(|error| map_run_error(error, false))?;
-                let current_goal = crate::session_goal::read(&l.state_root)?;
-                let session_goal = crate::session_goal::presentation_for_loaded(
-                    l,
-                    current_goal.as_ref(),
-                )?;
-                crate::run_presentation::print_explain(
-                    &value,
-                    &session_goal,
-                    &l.state_root,
-                    std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
-                    !std::io::stdin().is_terminal(),
-                );
-            }
-            return Ok(());
-        }
+        "status" => return status::run_status(l, a),
+        "explain" => return status::run_explain(l, a),
         "report" => {
             if a.positional.len() < 2 {
                 return Err("run report requires at least one LEDGER".into());

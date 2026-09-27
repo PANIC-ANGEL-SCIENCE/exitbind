@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::{

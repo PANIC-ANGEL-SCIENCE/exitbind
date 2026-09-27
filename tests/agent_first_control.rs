@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 #[path = "support/agent_first_surface.rs"]
 mod agent_first_surface;
 mod support;

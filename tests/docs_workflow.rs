@@ -224,7 +224,7 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     assert!(first.contains("historical v3 procedure"));
     assert!(methodology.contains("v3 `run record-check` is caller-reported-only"));
     assert!(methodology.contains(&format!(
-        "`v{}` release candidate writes v8 records",
+        "`v{}` writes v8 records",
         env!("CARGO_PKG_VERSION")
     )));
     assert!(glossary.contains("Exitbind progress"));

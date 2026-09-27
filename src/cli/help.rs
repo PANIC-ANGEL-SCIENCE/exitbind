@@ -18,6 +18,11 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "child"] => {
             "work child WORK ASSIGNMENT --context TOKEN --native-child ID [--result TEXT] < RESULT"
         }
+        ["work", "child", "prepare"] => {
+            "work child prepare WORK SHORT_ASSIGNMENT --context TOKEN [--agent-type NAME] [--perspectives JSON]"
+        }
+        ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
+        ["project"] => "project context [memory ITEM_ID] [--json] | project agents [--apply] [--json]",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
         ["work", "replan"] => {
             "work replan WORK ASSIGNMENT [--hypothesis TEXT | --replan-file PATH|-]"
@@ -48,16 +53,16 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE"
         }
         ["run", "observe-check"] => "run observe-check LEDGER --target EVENT_SHA",
-        ["run", "status"] => "run status LEDGER",
+        ["run", "status"] => "run status LEDGER [--themed]",
         ["run", "inspect"] => "run inspect LEDGER [--event EVENT_SHA] [--json]",
         ["run", "report"] => "run report LEDGER [LEDGER ...]",
-        ["run", "explain"] => "run explain LEDGER [--event EVENT_SHA]",
+        ["run", "explain"] => "run explain LEDGER [--event EVENT_SHA] [--themed]",
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER"
         }
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
         ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
-        ["goal", "status"] => "goal status",
+        ["goal", "status"] => "goal status [--themed]",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",
         ["context", "sensor-request"] => "context sensor-request --state FILE",

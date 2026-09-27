@@ -34,7 +34,7 @@ ones Exitbind tests.
 ```sh
 sudo apt-get update
 sudo apt-get install -y curl git tmux
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0-rc.5/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
 mkdir -p "$HOME/projects"

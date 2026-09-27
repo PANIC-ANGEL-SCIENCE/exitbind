@@ -64,13 +64,16 @@ equal_version install.sh "$installer_version" "$current"
 changelog_version=$(awk '/^## [0-9]/ { print $2; exit }' CHANGELOG.md)
 equal_version CHANGELOG.md "$changelog_version" "$plain"
 
+for manifest in plugin.json; do
+  version=$(sed -n 's/^[[:space:]]*"version": "\([0-9][^"]*\)",*$/\1/p' "$manifest")
+  equal_version "$manifest" "$version" "$plain"
+done
 for manifest in \
-  plugin.json \
   systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json
 do
   version=$(sed -n 's/^[[:space:]]*"version": "\([0-9][^"]*\)",*$/\1/p' "$manifest")
-  equal_version "$manifest" "$version" "$plain"
+  equal_version "$manifest" "$version" '0.25.0-rc.5'
 done
 
 wsl_version=$(sed -n 's/^test "$(exitbind version)" = "\([0-9][^"]*\)"$/\1/p' scripts/ci-wsl.sh)

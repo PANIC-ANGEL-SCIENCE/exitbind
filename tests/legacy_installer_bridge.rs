@@ -14,6 +14,37 @@ mod matrix {
 }
 
 const TARGET: &str = "x86_64-unknown-linux-gnu";
+
+#[test]
+fn stable_installer_refuses_legacy_command_before_fetch() {
+    let root = std::env::temp_dir().join(format!(
+        "exitbind-stable-legacy-refusal-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let output = Command::new("sh")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
+        .env("HOME", &root)
+        .env("SOULMATE_VERSION", "v0.25.0")
+        .env("SOULMATE_INSTALL_PREFIX", root.join("bin"))
+        .env_remove("EXITBIND_VERSION")
+        .env_remove("EXITBIND_REPOSITORY")
+        .env_remove("EXITBIND_INSTALL_PREFIX")
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Soulmate distribution ended"),
+        "{output:?}"
+    );
+    assert!(!root.join("bin").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
 struct Fixture {
     root: PathBuf,
     archive: PathBuf,

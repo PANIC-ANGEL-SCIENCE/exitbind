@@ -1,3 +1,4 @@
+#![cfg(feature = "legacy-cli-test")]
 mod support;
 
 mod matrix {

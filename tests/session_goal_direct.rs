@@ -10,7 +10,7 @@ use std::{
 };
 
 const CARD: &str =
-    "+------------------------------+\n| Nothing remains here.        |\n+------------------------------+\n\nEXIT READY";
+    "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
 struct Project {
     root: std::path::PathBuf,
@@ -67,7 +67,7 @@ fn establish_direct_goal(project: &Project) {
 
 fn pty_status(project: &Project) -> String {
     let command = format!(
-        "{} goal status --config {}",
+        "{} goal status --themed --config {}",
         env!("CARGO_BIN_EXE_exitbind"),
         project.root.join("exitbind.json").display()
     );
@@ -91,9 +91,24 @@ fn direct_goal_closes_and_emits_exact_card_without_a_run() {
     project.value(&["goal", "close", "--direct", "--goal-id", "direct"]);
     assert_no_run_files(&project);
 
+    let plain_command = format!(
+        "{} goal status --config {}",
+        env!("CARGO_BIN_EXE_exitbind"),
+        project.root.join("exitbind.json").display()
+    );
+    let plain = support::pty(&plain_command)
+        .current_dir(&project.root)
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&plain.stdout).contains(CARD));
+    assert_eq!(
+        project.value(&["goal", "status", "--json"])["currentReadiness"]["state"],
+        "current"
+    );
+
     let first = pty_status(&project);
     assert_eq!(first.matches(CARD).count(), 1, "{first}");
-    assert_eq!(first.lines().last(), Some("EXIT READY"));
+    assert_eq!(first.lines().last(), Some("+----------------------------+"));
     let second = pty_status(&project);
     assert_eq!(second.matches(CARD).count(), 0, "{second}");
     assert_no_run_files(&project);
@@ -177,7 +192,7 @@ fn mixed_direct_closure_cannot_bypass_missing_governed_evidence() {
 }
 
 #[test]
-fn direct_close_and_card_continue_with_input_drift_and_corrupt_or_missing_memo() {
+fn direct_close_keeps_history_but_suppresses_current_room_after_input_drift() {
     let project = Project::new("direct-goal-drift");
     establish_direct_goal(&project);
     project.value(&[
@@ -202,18 +217,31 @@ fn direct_close_and_card_continue_with_input_drift_and_corrupt_or_missing_memo()
     assert!(String::from_utf8_lossy(&closed.stderr).contains("tested_inputs_drift"));
     let closed: Value = serde_json::from_slice(&closed.stdout).unwrap();
     assert_eq!(closed["closure"]["closed"], true);
-    assert_eq!(pty_status(&project).matches(CARD).count(), 1);
+    assert_eq!(pty_status(&project).matches(CARD).count(), 0);
+    let status = project.value(&["goal", "status", "--json"]);
+    assert_eq!(status["closure"]["closed"], true);
+    assert_eq!(status["currentReadiness"]["state"], "stale");
     assert_no_run_files(&project);
+    fs::remove_dir_all(project.root).unwrap();
+}
 
+#[test]
+fn current_direct_room_survives_corrupt_or_missing_display_memo() {
+    let project = Project::new("direct-goal-memo");
+    establish_direct_goal(&project);
+    project.value(&["goal", "close", "--direct", "--goal-id", "direct"]);
+    assert_eq!(pty_status(&project).matches(CARD).count(), 1);
     let cache = project
         .root
         .join(".exitbind/presentation/session-goal.json");
     fs::write(&cache, b"corrupt cache").unwrap();
-    let corrupt = pty_status(&project);
-    assert_eq!(corrupt.matches(CARD).count(), 1, "{corrupt}");
+    assert_eq!(pty_status(&project).matches(CARD).count(), 1);
     fs::remove_file(&cache).unwrap();
-    let missing = pty_status(&project);
-    assert_eq!(missing.matches(CARD).count(), 1, "{missing}");
+    assert_eq!(pty_status(&project).matches(CARD).count(), 1);
+    assert_eq!(
+        project.value(&["goal", "status", "--json"])["currentReadiness"]["state"],
+        "current"
+    );
     fs::remove_dir_all(project.root).unwrap();
 }
 
