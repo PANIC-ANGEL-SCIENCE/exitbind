@@ -40,7 +40,7 @@ new install.
 
 ## Quick start
 
-After `v0.25.0` is published, install it as a single Rust binary. Node.js,
+When the `v0.25.0` tag and assets are available, install it as a single Rust binary. Node.js,
 npm, Python, and Cargo are not required after installation:
 
 ```sh
@@ -54,11 +54,11 @@ exitbind check --config exitbind.json
 Replace `YOUR_TEST_COMMAND` with your actual project check. These commands
 prepare the run; the [complete first checked run](docs/first-checked-run.md)
 continues through real result documents, check execution, review, and acceptance.
-The `v0.25.0` candidate includes the `--event-id`/`--text` forms below. Older
+`v0.25.0` includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The planned v0.25.0 stable release targets Linux x86_64 and native macOS on
+The v0.25.0 release targets Linux x86_64 and native macOS on
 Apple Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -334,7 +334,7 @@ For a project outside the current directory, pass `--root PATH` to `init` and
 use the printed `--config` path with later commands. A checkout can also be run
 directly with a release binary from GitHub.
 
-After `v0.25.0` is published, update project skill copies after upgrading the
+After installing `v0.25.0`, update project skill copies after upgrading the
 CLI with the explicit refresh path. It requires an existing valid `exitbind.json` and only updates
 files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:

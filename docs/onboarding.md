@@ -200,7 +200,7 @@ For the longer one-file product example, use the matching source checkout:
 EXITBIND_BIN=exitbind ./scripts/demo-checked-work.sh
 ```
 
-The `v0.25.0` candidate includes the `--event-id` and `--text` options used
+`v0.25.0` includes the `--event-id` and `--text` options used
 here. To build from source instead, run `cargo build --locked` and use
 `EXITBIND_BIN=target/debug/exitbind`. The script records a failing product check,
 observes refused acceptance, requests rework, retrieves the assignment in a
@@ -228,7 +228,7 @@ After a binary update, explicitly refresh only owned project skill copies:
 exitbind init --refresh-skills --root PATH
 ```
 
-In the `v0.25.0` candidate, `check` reports the invoking binary version and hashes of
+In `v0.25.0`, `check` reports the invoking binary version and hashes of
 its bundled and installed skill copies. A managed difference produces an
 actionable warning, including on stderr with `check --json`; the JSON result
 still describes configuration validity. Missing optional copies or a
