@@ -99,6 +99,14 @@ fn classify_requires_both_explicit_typed_facts() {
 #[test]
 fn classify_reports_governance_available_after_initialization() {
     let root = support::temp("activation-classify-configured");
+    let worktree = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
+        .status()
+        .unwrap();
+    assert!(
+        worktree.success(),
+        "temporary worktree initialization failed"
+    );
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{init:?}");
     let direct = classify(&root, false, false, true);
