@@ -1,8 +1,8 @@
 # v0.25.1 follow-up: reviewer handoff and R14 closeout
 
 Author: GPT-6-Astra-Pro_ChatGPT  
-Date: 2026-09-28 09:50 UTC
-Revision: 4
+Date: 2026-09-28 10:06 UTC
+Revision: 5
 Status: v0.25.1 patch candidate; recommendation remains on hold while required host validation is unverified
 
 ## Start here
@@ -72,7 +72,7 @@ normal SessionStart context or distributed end-user skills.
 Recommendation: `HOLD v0.25.1: normal non-publishing WSL validation remains
 unverified.` This remains a patch candidate; no tag or release was published.
 The post-fetch source base was `785304c97a19379f8f83789c0aad706d020814e5`.
-The branch head before this status update was `17f6a69`. Resolve the commit
+The branch head before this status update was `d6e6a45`. Resolve the commit
 containing this report and inspect its own exact-SHA checks; this text does not
 substitute for a result attached to that commit.
 
@@ -103,6 +103,11 @@ substitute for a result attached to that commit.
   Linux returned `ETXTBSY` while the test launched its freshly copied binary.
   The fixture now stages executables atomically and uses the existing
   ETXTBSY-only bounded runner. The focused `host_bridge` suite passed 11/11.
+- Full local CI on `d6e6a45` passed the main tests, legacy compatibility,
+  value proof, and drift warning, then failed at the real-tmux native-handoff
+  check because tmux could not start the controlled child. A task-isolated
+  tmux probe could not open its Unix socket in this execution environment.
+  Treat native handoff as unverified locally; check the exact hosted result.
 - The re-review covered the evidence-route budget repair at `a1448e1`. The
   later changes through `3c5e1ed` add isolated test Git roots and make the
   benchmark's internal initialization mode explicit. Review did not claim
