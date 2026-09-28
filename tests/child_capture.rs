@@ -55,6 +55,10 @@ impl Fixture {
                 "Capture",
                 "--check-command",
                 "true",
+                "--preserve-requirement",
+                "docs:Check docs.",
+                "--preservation-check-command",
+                "true",
             ],
         );
         let work = begun["work"].as_str().unwrap().to_owned();
