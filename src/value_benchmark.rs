@@ -313,7 +313,7 @@ fn execute_scenario(invoker: &mut Invoker, fixture: &Path) -> Result<ScenarioEvi
     expect_success(
         invoker,
         fixture,
-        args(["init", "--root", "."]),
+        args(["init", "--mode", "portable", "--root", "."]),
         "portable fixture initialization",
     )?;
     let config_bytes = read_file(fixture.join(config_name()), "generated fixture config")?;
