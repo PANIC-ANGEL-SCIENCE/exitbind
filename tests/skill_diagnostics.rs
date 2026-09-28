@@ -77,6 +77,15 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&product, &control, &state, &bindings] {
         fs::create_dir(path).unwrap();
     }
+    let product_repository = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&product)
+        .status()
+        .unwrap();
+    assert!(
+        product_repository.success(),
+        "local fixture requires its own Git root"
+    );
     let initialized = invoke(
         &[
             "init",
@@ -95,8 +104,9 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     );
     assert!(
         initialized.status.success(),
-        "{}",
-        text(&initialized.stdout)
+        "local init failed: stdout={} stderr={}",
+        text(&initialized.stdout),
+        text(&initialized.stderr)
     );
     (base, product, control, bindings)
 }
