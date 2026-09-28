@@ -31,6 +31,15 @@ impl Fixture {
         } else {
             product.clone()
         };
+        if mode == "local" {
+            let git = Command::new("git")
+                .arg("-C")
+                .arg(&product)
+                .args(["init", "--quiet"])
+                .status()
+                .unwrap();
+            assert!(git.success(), "local fixture requires its own Git root");
+        }
         let mut init = Command::new(env!("CARGO_BIN_EXE_soulmate"));
         init.env("SOULMATE_BINDINGS_DIR", &bindings)
             .args(["init", "--mode", mode, "--root"])
