@@ -51,6 +51,14 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
         fs::create_dir(path).unwrap();
     }
     fs::write(product.join("requirements.txt"), "First requirement.\n").unwrap();
+    let worktree = Command::new("git")
+        .args(["-C", product.to_str().unwrap(), "init", "--quiet"])
+        .status()
+        .unwrap();
+    assert!(
+        worktree.success(),
+        "temporary worktree initialization failed"
+    );
     let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", &bindings)
         .args([
