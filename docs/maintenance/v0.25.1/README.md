@@ -112,9 +112,9 @@ a result attached to that commit.
   environment. Treat native handoff as unverified locally; check the exact
   hosted result.
 - Running the release-reference stage separately exposed false positives for
-  preserved `v0.25.0` compatibility facts and the `v0.25.1-hardening` branch
-  identifier. The checker now exempts only those exact documented cases and
-  excludes its own policy source; arbitrary stale references remain checked.
+  preserved historical compatibility facts and the branch identifier. The
+  checker now exempts only those exact documented cases and excludes its own
+  policy source; arbitrary stale references remain checked.
   Consult the exact result for the commit containing this report.
 - The re-review covered the evidence-route budget repair at `a1448e1`. The
   later changes through `3c5e1ed` add isolated test Git roots and make the
