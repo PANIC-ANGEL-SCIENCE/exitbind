@@ -215,8 +215,7 @@ fn the_installer_installs_the_bridge_so_one_installation_is_enough() {
     fs::create_dir_all(&prefix).unwrap();
     let target = target_triple();
     let staged = release.join(format!("exitbind-{target}"));
-    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &staged).unwrap();
-    fs::set_permissions(&staged, fs::Permissions::from_mode(0o755)).unwrap();
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &staged);
     let archive = format!("exitbind-{target}.tar.gz");
     assert!(Command::new("tar")
         .current_dir(&release)
@@ -570,16 +569,16 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
     let prefix = home.join("bin");
     fs::create_dir_all(&prefix).unwrap();
     let installed = prefix.join("exitbind");
-    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &installed).unwrap();
-    fs::set_permissions(&installed, fs::Permissions::from_mode(0o755)).unwrap();
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &installed);
 
-    let without_path = Command::new(&installed)
+    let mut without_path_command = Command::new(&installed);
+    without_path_command
         .args(["host", "install", "--json"])
         .env("HOME", &home)
         .env("PATH", "/usr/bin:/bin")
-        .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .output()
-        .unwrap();
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    let without_path = support::run(&mut without_path_command);
+    assert!(without_path.status.success(), "{without_path:?}");
     let value: serde_json::Value = serde_json::from_slice(&without_path.stdout).unwrap();
     for host in value["hosts"].as_array().unwrap() {
         assert_eq!(host["action"], "installed");
@@ -589,13 +588,14 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
             .unwrap()
             .contains("PATH"));
     }
-    let status = Command::new(&installed)
+    let mut status_command = Command::new(&installed);
+    status_command
         .args(["host", "status", "--json"])
         .env("HOME", &home)
         .env("PATH", "/usr/bin:/bin")
-        .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .output()
-        .unwrap();
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    let status = support::run(&mut status_command);
+    assert!(status.status.success(), "{status:?}");
     let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
     for host in status["hosts"].as_array().unwrap() {
         assert_eq!(host["bootstrapSkill"], "current");
@@ -603,13 +603,14 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
     }
 
     // Once the CLI resolves on PATH, the same command completes the bridge.
-    let with_path = Command::new(&installed)
+    let mut with_path_command = Command::new(&installed);
+    with_path_command
         .args(["host", "install", "--json"])
         .env("HOME", &home)
         .env("PATH", format!("{}:/usr/bin:/bin", prefix.display()))
-        .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .output()
-        .unwrap();
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    let with_path = support::run(&mut with_path_command);
+    assert!(with_path.status.success(), "{with_path:?}");
     let value: serde_json::Value = serde_json::from_slice(&with_path.stdout).unwrap();
     for host in value["hosts"].as_array().unwrap() {
         assert_eq!(host["activationHook"]["state"], "installed");

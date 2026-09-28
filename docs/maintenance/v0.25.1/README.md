@@ -1,8 +1,8 @@
 # v0.25.1 follow-up: reviewer handoff and R14 closeout
 
 Author: GPT-6-Astra-Pro_ChatGPT  
-Date: 2026-09-28 09:43 UTC
-Revision: 3
+Date: 2026-09-28 09:50 UTC
+Revision: 4
 Status: v0.25.1 patch candidate; recommendation remains on hold while required host validation is unverified
 
 ## Start here
@@ -72,9 +72,9 @@ normal SessionStart context or distributed end-user skills.
 Recommendation: `HOLD v0.25.1: normal non-publishing WSL validation remains
 unverified.` This remains a patch candidate; no tag or release was published.
 The post-fetch source base was `785304c97a19379f8f83789c0aad706d020814e5`.
-The implementation head before this status update was `3c5e1ed`. Resolve the
-commit containing this report and inspect its own exact-SHA checks; this text
-does not substitute for a result attached to that commit.
+The branch head before this status update was `17f6a69`. Resolve the commit
+containing this report and inspect its own exact-SHA checks; this text does not
+substitute for a result attached to that commit.
 
 | Card | Status | Result and decisive evidence |
 | --- | --- | --- |
@@ -99,6 +99,10 @@ does not substitute for a result attached to that commit.
   benchmark omitted the required mode. That cause was repaired in
   `3c5e1ed`. Earlier fixture failures were repaired in `a1448e1` and
   `f7b2003`; those failed SHAs remain historical failures.
+- The next full run on `17f6a69` stopped before a `host_bridge` child started:
+  Linux returned `ETXTBSY` while the test launched its freshly copied binary.
+  The fixture now stages executables atomically and uses the existing
+  ETXTBSY-only bounded runner. The focused `host_bridge` suite passed 11/11.
 - The re-review covered the evidence-route budget repair at `a1448e1`. The
   later changes through `3c5e1ed` add isolated test Git roots and make the
   benchmark's internal initialization mode explicit. Review did not claim
