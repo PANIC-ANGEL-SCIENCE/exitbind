@@ -52,7 +52,7 @@ impl Fixture {
                 std::env::var("PATH").unwrap_or_default()
             ),
         };
-        let init = fixture.call(&["init", "--root", "."], None);
+        let init = fixture.call(&["init", "--mode", "portable", "--root", "."], None);
         assert!(init.status.success(), "{init:?}");
         fixture
     }
