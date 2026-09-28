@@ -39,7 +39,16 @@ fn text(output: &Output) -> String {
 
 fn project() -> (PathBuf, String) {
     let root = support::temp("away-native");
-    let initialized = invoke(&["init", "--root", root.to_str().unwrap()], None);
+    let initialized = invoke(
+        &[
+            "init",
+            "--root",
+            root.to_str().unwrap(),
+            "--mode",
+            "portable",
+        ],
+        None,
+    );
     assert!(initialized.status.success(), "{}", text(&initialized));
     let config = root.join("soulmate.json");
     let mut value: Value = serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
