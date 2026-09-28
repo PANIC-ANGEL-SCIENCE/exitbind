@@ -9,7 +9,13 @@ use std::{
 
 fn project() -> PathBuf {
     let root = support::temp("harness-test");
-    let output = invoke(&["init", "--root", root.to_str().unwrap()]);
+    let output = invoke(&[
+        "init",
+        "--root",
+        root.to_str().unwrap(),
+        "--mode",
+        "portable",
+    ]);
     assert!(output.status.success(), "{:?}", output);
     root
 }
@@ -522,6 +528,12 @@ fn local_mode_manifest_cannot_claim_a_different_project() {
     for path in [&product, &control, &state] {
         fs::create_dir_all(path).unwrap();
     }
+    let product_repository = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&product)
+        .status()
+        .unwrap();
+    assert!(product_repository.success());
     let root = fs::canonicalize(&root).unwrap();
     let product = fs::canonicalize(product).unwrap();
     let control = fs::canonicalize(control).unwrap();
