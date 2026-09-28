@@ -1,9 +1,9 @@
 # v0.25.1 follow-up: reviewer handoff and R14 closeout
 
 Author: GPT-6-Astra-Pro_ChatGPT  
-Date: 2026-09-28 13:29 KST (UTC+09:00)  
-Revision: 2
-Status: Local v0.25.1 candidate; exact-candidate validation and publication pending
+Date: 2026-09-28 09:43 UTC
+Revision: 3
+Status: v0.25.1 patch candidate; recommendation remains on hold while required host validation is unverified
 
 ## Start here
 
@@ -69,10 +69,12 @@ normal SessionStart context or distributed end-user skills.
 
 ## Current status report
 
-Recommendation: `HOLD v0.25.1: exact-candidate full CI and exact-SHA hosted CI
-are incomplete.` This remains a patch candidate; no tag or release was
-published. The post-fetch source base was
-`785304c97a19379f8f83789c0aad706d020814e5`.
+Recommendation: `HOLD v0.25.1: normal non-publishing WSL validation remains
+unverified.` This remains a patch candidate; no tag or release was published.
+The post-fetch source base was `785304c97a19379f8f83789c0aad706d020814e5`.
+The implementation head before this status update was `3c5e1ed`. Resolve the
+commit containing this report and inspect its own exact-SHA checks; this text
+does not substitute for a result attached to that commit.
 
 | Card | Status | Result and decisive evidence |
 | --- | --- | --- |
@@ -83,17 +85,29 @@ published. The post-fetch source base was
 | E | `IMPLEMENTED` | Carried-mutation identity validation moved to `src/run/evidence_identity.rs`; event and error semantics are unchanged. `src/run/mod.rs` is 103,614 bytes, down from 105,548 at `c2091b9`; `src/run/state.rs` is unchanged at 85,905 bytes. The checked architecture budget is tightened to 103,614 bytes. |
 | F | `COVERAGE RETAINED` | Existing R13/R14 replay, currentness, preservation, and changed-subject regressions remain in the focused suite; no broader campaign or unrelated agent-catalog work was added. |
 | G | `ADAPTER HANDOFF` | The updater revision handoff belongs to its separate environment adapter. No updater repository or host integration was changed in this assignment. |
-| H | `REVIEW FINDINGS ADDRESSED; RE-VERIFICATION PENDING` | A bounded source review identified an evidence-route budget edge. The code now refuses silent route loss, and the adjacent shortened-preview boundary retains its notice and full packet route when those fit; the newest regression has not been executed or independently re-reviewed. |
-| I | `PENDING` | The required full local CI has not passed on the current candidate, and exact-SHA hosted CI is absent. Version metadata is updated in this branch; no tag or release was created. |
+| H | `INDEPENDENTLY RE-REVIEWED` | The budget-edge finding is closed in source. The re-review confirmed that `shortened_notice_and_route_survive_when_header_does_not_fit` fixes the prior boundary and that an unavailable route is surfaced explicitly; it found no remaining issue in that scope. |
+| I | `UNVERIFIED` | Read full local and hosted CI results on the exact commit containing this report. Normal non-publishing WSL validation remains unverified, so the release recommendation stays on hold. Version metadata is updated; no tag or release was created. |
 
 ### Validation and evidence limits
 
-- Focused local results on predecessor `6d1fba5`: `cargo test --bin exitbind --test reviewer_evidence_handoff --test cross_host_continuity --test subject_progress` — 132 unit, 4 reviewer-handoff, 18 cross-host, and 26 subject-progress tests passed. These results do not cover later fixes.
-- `scripts/ci-local.sh` failed on `6d1fba5` at Clippy because a helper followed the test module. That ordering was fixed in `d4b8bfd`; Clippy passed there, but six `child_capture` cases then failed because their fixture lacked the named preservation policy. The fixture was configured in `adb6824`.
-- Subsequent evidence-budget changes, including the route-retention regression in the current candidate, have not been run through the focused suite or full local CI. `cargo fmt -- --check` and `git diff --check` passed on the current local diff. The package-metadata check passed on a predecessor candidate, so it is not exact-candidate CI evidence.
-- Exact-SHA hosted CI is absent. The final branch head must pass the repository's required local and hosted checks before release recommendation changes.
-- Native evidence class: synthetic hook/CLI behavior only. No new paid session was selected. A source-level independent review does not establish native Claude or Codex behavior; unobserved host behavior remains unverified.
-- The currently supported one-preservation-requirement-per-Work route is the boundary of this patch. A supported multi-requirement binding route needs a separate product decision.
-
-Source implementation commit: `8937132`. The current branch head still lacks
-exact-candidate full CI and exact-SHA hosted CI results.
+- `native_continuity` passed 7/7 after its local-mode fixture began creating
+  its own Git root. `skill_diagnostics` passed 9/9 after the same fixture
+  boundary was made explicit. The legacy suite exposed a missing mode in the
+  benchmark's own synthetic `init`; `value_benchmark` passed 6/6 after that
+  command selected `--mode portable`.
+- The previous full run on `f7b2003` stopped at `value_benchmark` because the
+  benchmark omitted the required mode. That cause was repaired in
+  `3c5e1ed`. Earlier fixture failures were repaired in `a1448e1` and
+  `f7b2003`; those failed SHAs remain historical failures.
+- The re-review covered the evidence-route budget repair at `a1448e1`. The
+  later changes through `3c5e1ed` add isolated test Git roots and make the
+  benchmark's internal initialization mode explicit. Review did not claim
+  native host behavior.
+- For the commit containing this report, consult the exact result of
+  [`scripts/ci-local.sh`](../../../scripts/ci-local.sh) and the hosted
+  [CI workflow](../../../.github/workflows/ci.yml). This report alone is not a
+  passing check. WSL was not observed; synthetic hook/CLI evidence does not
+  establish native Claude or Codex behavior. No new paid session was selected.
+- The currently supported one-preservation-requirement-per-Work route is the
+  boundary of this patch. A supported multi-requirement binding route needs a
+  separate product decision.
