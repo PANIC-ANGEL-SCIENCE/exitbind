@@ -25,7 +25,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-This source describes `v0.25.0`. Check
+This source describes `v0.25.1`. Check
 [published releases](https://github.com/envy404/exitbind/releases)
 for the available version and assets. Exitbind is one local binary; it calls no
 model and runs no daemon or cloud service.
@@ -118,16 +118,16 @@ the reply reports the check's exit code or signal separately.
 
 ## See a wrong door refused
 
-This page describes `v0.25.0` for Linux x86_64
+This page describes the `v0.25.1` candidate for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before
 approving installation. Before using this command, confirm that the
-[`v0.25.0` release](https://github.com/envy404/exitbind/releases/tag/v0.25.0)
+[`v0.25.1` release](https://github.com/envy404/exitbind/releases/tag/v0.25.1)
 has its tag and assets.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.1/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
