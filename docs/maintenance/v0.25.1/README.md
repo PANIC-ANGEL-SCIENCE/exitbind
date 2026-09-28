@@ -2,7 +2,7 @@
 
 Author: GPT-6-Astra-Pro_ChatGPT  
 Date: 2026-09-28 10:06 UTC
-Revision: 5
+Revision: 6
 Status: v0.25.1 patch candidate; recommendation remains on hold while required host validation is unverified
 
 ## Start here
@@ -72,9 +72,10 @@ normal SessionStart context or distributed end-user skills.
 Recommendation: `HOLD v0.25.1: normal non-publishing WSL validation remains
 unverified.` This remains a patch candidate; no tag or release was published.
 The post-fetch source base was `785304c97a19379f8f83789c0aad706d020814e5`.
-The branch head before this status update was `d6e6a45`. Resolve the commit
-containing this report and inspect its own exact-SHA checks; this text does not
-substitute for a result attached to that commit.
+The branch head before this status update was
+`7ea99431f0cc8d5a129d73a025ed098d5960fea3`. Resolve the commit containing this
+report and inspect its own exact-SHA checks; this text does not substitute for
+a result attached to that commit.
 
 | Card | Status | Result and decisive evidence |
 | --- | --- | --- |
@@ -105,9 +106,16 @@ substitute for a result attached to that commit.
   ETXTBSY-only bounded runner. The focused `host_bridge` suite passed 11/11.
 - Full local CI on `d6e6a45` passed the main tests, legacy compatibility,
   value proof, and drift warning, then failed at the real-tmux native-handoff
-  check because tmux could not start the controlled child. A task-isolated
-  tmux probe could not open its Unix socket in this execution environment.
-  Treat native handoff as unverified locally; check the exact hosted result.
+  check because tmux could not start the controlled child. The exact full run
+  on `7ea99431f0cc8d5a129d73a025ed098d5960fea3` reached the same boundary; a
+  task-isolated tmux probe could not open its Unix socket in this execution
+  environment. Treat native handoff as unverified locally; check the exact
+  hosted result.
+- Running the release-reference stage separately exposed false positives for
+  preserved `v0.25.0` compatibility facts and the `v0.25.1-hardening` branch
+  identifier. The checker now exempts only those exact documented cases and
+  excludes its own policy source; arbitrary stale references remain checked.
+  Consult the exact result for the commit containing this report.
 - The re-review covered the evidence-route budget repair at `a1448e1`. The
   later changes through `3c5e1ed` add isolated test Git roots and make the
   benchmark's internal initialization mode explicit. Review did not claim

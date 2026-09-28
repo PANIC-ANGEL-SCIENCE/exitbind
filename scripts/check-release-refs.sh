@@ -85,10 +85,12 @@ set -- README.md REFERENCE.md install.sh docs examples schema scripts src
 # links. Validate and scan these explicit paths, preserving the .git exclusion.
 # These three schema files are immutable Soulmate compatibility artifacts. Their
 # historical repository/version IDs are intentionally not current release refs.
+# The checker is excluded because its policy necessarily names historical refs.
 refs=$(find -L "$@" \
   \( -path "schema/harness-manifest.schema.json" \
      -o -path "schema/soulmate.schema.json" \
-     -o -path "schema/run-boundary.schema.json" \) -prune \
+     -o -path "schema/run-boundary.schema.json" \
+     -o -path "scripts/check-release-refs.sh" \) -prune \
   -o -type d -name .git -prune -o -exec sh -c '
   for source do
     if ! test -r "$source" || { test -d "$source" && ! test -x "$source"; }; then
@@ -105,6 +107,7 @@ refs=$(find -L "$@" \
   done
 ' sh {} +) || fail 'release-source traversal or reference scan failed'
 printf '%s\n' "$refs" | awk -v current="$current" '
+  BEGIN { legacy = "v0.25.0" }
   {
     line = $0
     # These two literals are the immutable cutoff for the historical Soulmate
@@ -113,6 +116,19 @@ printf '%s\n' "$refs" | awk -v current="$current" '
     if ($0 ~ /^install\.sh:[0-9]+:if test "\$surface" = soulmate && test "\$version" = v0\.25\.0; then$/ ||
         ($0 ~ /^install\.sh:[0-9]+:  echo/ && index($0, "Soulmate distribution ended at v0.25.0; install Exitbind instead") > 0)) {
       gsub(/v0\.25\.0/, current, line)
+    }
+    # These exact references describe retained compatibility facts.
+    if ($0 ~ /^docs\/legacy-compatibility\.md:[0-9]+:/ &&
+        (index($0, "`" legacy "`; historical releases and records remain available.") > 0 ||
+         index($0, "Not built or installed by default at `" legacy "`;") > 0 ||
+         index($0, "the `" legacy "` installer refuses a Soulmate install") > 0 ||
+         index($0, "the `" legacy "` package does not ship it") > 0)) {
+      gsub(legacy, current, line)
+    }
+    # The release branch name is an identifier, not a prerelease version.
+    if ($0 ~ /^docs\/maintenance\/v0\.25\.1\/README\.md:[0-9]+:/ &&
+        index($0, "- branch: `fix/r13-" current "-hardening`;") > 0) {
+      sub(/-hardening/, "", line)
     }
     while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?([+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?/)) {
       version = substr(line, RSTART, RLENGTH)
