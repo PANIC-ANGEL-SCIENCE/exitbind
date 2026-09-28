@@ -9,7 +9,13 @@ use std::{
 
 fn project() -> (PathBuf, String) {
     let root = support::temp("harness-run");
-    let initialized = invoke(&["init", "--root", root.to_str().unwrap()]);
+    let initialized = invoke(&[
+        "init",
+        "--root",
+        root.to_str().unwrap(),
+        "--mode",
+        "portable",
+    ]);
     assert!(initialized.status.success(), "{}", text(&initialized));
     let config = root.join("soulmate.json").to_string_lossy().into_owned();
     (root, config)
