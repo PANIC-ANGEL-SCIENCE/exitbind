@@ -57,33 +57,6 @@ pub(crate) fn assess(start: &Value, requirements: &[Value]) -> Value {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn requirement_text_must_match_the_frozen_work_policy_exactly() {
-        let start = json!({
-            "checkPolicy":{"command":"cargo test"},
-            "preservation":{"requirements":[{
-                "id":"api",
-                "text":"Keep the API compatible.",
-            }]},
-        });
-        let requirements = vec![json!({
-            "id":"api",
-            "text":"Keep the API stable.",
-        })];
-        let assessment = assess(&start, &requirements);
-        assert_eq!(assessment["compatible"], false);
-        assert_eq!(assessment["missingRequirements"][0]["id"], "api");
-        assert!(assessment["nextAction"]
-            .as_str()
-            .unwrap()
-            .contains("--preserve-requirement ID:TEXT"));
-    }
-}
-
 pub(crate) fn init_error(assessment: &Value) -> String {
     let ids = assessment["missingRequirements"]
         .as_array()
@@ -112,4 +85,31 @@ pub(crate) fn init_error(assessment: &Value) -> String {
         prerequisites.join(" and "),
         assessment["nextAction"].as_str().unwrap_or("start a new checked Work with matching preservation requirements")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requirement_text_must_match_the_frozen_work_policy_exactly() {
+        let start = json!({
+            "checkPolicy":{"command":"cargo test"},
+            "preservation":{"requirements":[{
+                "id":"api",
+                "text":"Keep the API compatible.",
+            }]},
+        });
+        let requirements = vec![json!({
+            "id":"api",
+            "text":"Keep the API stable.",
+        })];
+        let assessment = assess(&start, &requirements);
+        assert_eq!(assessment["compatible"], false);
+        assert_eq!(assessment["missingRequirements"][0]["id"], "api");
+        assert!(assessment["nextAction"]
+            .as_str()
+            .unwrap()
+            .contains("--preserve-requirement ID:TEXT"));
+    }
 }
