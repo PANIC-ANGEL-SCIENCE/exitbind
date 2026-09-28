@@ -53,6 +53,12 @@ fn project(label: &str, requirements: Value, source: &str) -> (PathBuf, String) 
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
+    let requirement = requirements.as_array().unwrap().first().unwrap();
+    let preserve_requirement = format!(
+        "{}:{}",
+        requirement["id"].as_str().unwrap(),
+        requirement["text"].as_str().unwrap()
+    );
     let begun = exitbind(
         &root,
         &[
@@ -63,6 +69,10 @@ fn project(label: &str, requirements: Value, source: &str) -> (PathBuf, String) 
             "Receive work",
             "--check-command",
             "true",
+            "--preservation-check-command",
+            "true",
+            "--preserve-requirement",
+            &preserve_requirement,
         ],
         b"",
     );
