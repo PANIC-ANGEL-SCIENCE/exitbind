@@ -356,6 +356,14 @@ mod tests {
                 std::process::id()
             ));
             fs::create_dir(&root).unwrap();
+            let git_init = std::process::Command::new("git")
+                .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
+                .status()
+                .unwrap();
+            assert!(
+                git_init.success(),
+                "temporary worktree initialization failed"
+            );
             let config_path = init_with_options(InitOptions {
                 product_root: root.to_str().unwrap(),
                 coffee: false,

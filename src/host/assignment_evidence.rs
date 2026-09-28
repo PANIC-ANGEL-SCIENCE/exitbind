@@ -335,11 +335,8 @@ mod tests {
         }
         assert!(fits(&base, event, &route_only));
 
-        let lines = vec![
-            "Evidence for this assignment.".to_owned(),
-            "optional evidence detail".to_owned(),
-            route,
-        ];
+        let detail = "d".repeat(512);
+        let lines = vec!["Evidence for this assignment.".to_owned(), detail, route];
         assert!(append_within_budget(&base, event, &lines).is_none());
     }
 
@@ -352,6 +349,7 @@ mod tests {
         let header_notice_and_route =
             vec![header.clone(), PREVIEW_SHORTENED.to_owned(), route.clone()];
         let notice_and_route = vec![PREVIEW_SHORTENED.to_owned(), route.clone()];
+        let detail = "d".repeat(512);
         let mut base = String::new();
         while fits(&base, event, &header_notice_and_route) || !fits(&base, event, &notice_and_route)
         {
@@ -360,8 +358,13 @@ mod tests {
         assert!(fits(&base, event, &header_and_route));
         assert!(!fits(&base, event, &header_notice_and_route));
         assert!(fits(&base, event, &notice_and_route));
+        assert!(!fits(
+            &base,
+            event,
+            &[header.clone(), detail.clone(), route.clone()]
+        ));
 
-        let lines = vec![header, "optional evidence detail".to_owned(), route.clone()];
+        let lines = vec![header, detail, route.clone()];
         let context = append_within_budget(&base, event, &lines).unwrap();
 
         assert!(context.contains(PREVIEW_SHORTENED));
