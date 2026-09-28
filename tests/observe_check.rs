@@ -45,7 +45,7 @@ fn run(root: &Path, args: &[&str]) -> Value {
 
 fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
     let root = support::temp(label);
-    let init = call(&root, &["init", "--root", "."]);
+    let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     let ledger = format!(".soulmate/runs/{label}.jsonl");
     let output = call(
@@ -115,7 +115,7 @@ fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, S
     let root = support::temp(label);
     let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
-        .args(["init", "--root", "."])
+        .args(["init", "--mode", "portable", "--root", "."])
         .output()
         .unwrap();
     assert!(init.status.success(), "{}", text(&init));
@@ -226,7 +226,7 @@ fn process_exists(pid: i32) -> bool {
 fn observes_frozen_command_in_product_root_and_records_provenance() {
     let root = support::temp("observe-check");
     let config = root.join("soulmate.json");
-    let init = call(&root, &["init", "--root", "."]);
+    let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     let ledger = ".soulmate/runs/observed.jsonl";
     run(
@@ -359,7 +359,7 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
 #[test]
 fn records_signal_without_fabricating_exit_code() {
     let root = support::temp("observe-signal");
-    let init = call(&root, &["init", "--root", "."]);
+    let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     let ledger = ".soulmate/runs/signal.jsonl";
     run(
@@ -628,7 +628,7 @@ fn passing_observation_does_not_auto_review_or_accept() {
 #[test]
 fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
     let root = support::temp("observe-mixed");
-    let init = call(&root, &["init", "--root", "."]);
+    let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     configure_workers(&root, &["worker", "worker_two"]);
     let ledger = ".soulmate/runs/mixed.jsonl";

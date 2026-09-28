@@ -10,7 +10,13 @@ use std::{
 
 fn project() -> PathBuf {
     let path = support::temp("rust-test");
-    let output = invoke(&["init", "--root", path.to_str().unwrap()]);
+    let output = invoke(&[
+        "init",
+        "--mode",
+        "portable",
+        "--root",
+        path.to_str().unwrap(),
+    ]);
     assert!(
         output.status.success(),
         "{}",

@@ -11,14 +11,14 @@ const CHECK: &str = "soulmate check --config verification.json";
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let output = invoke_soulmate(&root, &["init", "--root", "."]);
+    let output = invoke_soulmate(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
 }
 
 fn exitbind_project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let output = invoke_exitbind(&root, &["init", "--root", "."]);
+    let output = invoke_exitbind(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
 }

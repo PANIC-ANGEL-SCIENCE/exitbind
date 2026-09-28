@@ -15,7 +15,13 @@ fn invoke(arguments: &[&str]) -> Output {
 
 fn project(label: &str) -> (PathBuf, String) {
     let root = support::temp(&format!("path-compat-{label}"));
-    let output = invoke(&["init", "--root", root.to_str().unwrap()]);
+    let output = invoke(&[
+        "init",
+        "--mode",
+        "portable",
+        "--root",
+        root.to_str().unwrap(),
+    ]);
     assert!(output.status.success(), "{}", text(&output));
     let config = root.join("soulmate.json").to_string_lossy().into_owned();
     (root, config)

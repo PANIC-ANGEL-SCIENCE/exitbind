@@ -14,7 +14,13 @@ fn invoke(arguments: &[&str]) -> Output {
 
 fn legacy_project(label: &str) -> (PathBuf, String, Vec<u8>) {
     let root = support::temp(&format!("layout-migration-{label}"));
-    let initialized = invoke(&["init", "--root", root.to_str().unwrap()]);
+    let initialized = invoke(&[
+        "init",
+        "--root",
+        root.to_str().unwrap(),
+        "--mode",
+        "portable",
+    ]);
     assert!(
         initialized.status.success(),
         "{}",

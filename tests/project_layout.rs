@@ -452,7 +452,16 @@ fn empty_starter_is_valid_but_warns_before_project_scoped_work() {
     fs::create_dir(&root).unwrap();
     fs::create_dir(&bindings).unwrap();
 
-    let initialized = invoke(&["init", "--root", root.to_str().unwrap()], &bindings);
+    let initialized = invoke(
+        &[
+            "init",
+            "--mode",
+            "portable",
+            "--root",
+            root.to_str().unwrap(),
+        ],
+        &bindings,
+    );
     assert!(
         initialized.status.success(),
         "{}",
@@ -526,6 +535,7 @@ fn migrations_preserve_local_mode_and_historical_ledger_bytes() {
     for path in [&product, &control, &state, &bindings] {
         fs::create_dir(path).unwrap();
     }
+    assert!(git(&product, &["init", "-q"]).status.success());
     let initialized = invoke(
         &[
             "init",

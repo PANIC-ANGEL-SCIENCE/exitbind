@@ -12,7 +12,7 @@ const CHECK: &str = "soulmate check --config verification.json";
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let output = invoke(&root, &["init", "--root", "."]);
+    let output = invoke(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
 }

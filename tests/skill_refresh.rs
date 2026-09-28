@@ -46,6 +46,12 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&product, &control, &state, &bindings] {
         fs::create_dir(path).unwrap();
     }
+    let product_repository = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&product)
+        .status()
+        .unwrap();
+    assert!(product_repository.success());
     let initialized = invoke(
         &[
             "init",
@@ -401,7 +407,7 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
 fn refresh_accepts_the_current_managed_marker() {
     let root = support::temp("refresh-current-marker");
     let initialized = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
-        .args(["init", "--root"])
+        .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
