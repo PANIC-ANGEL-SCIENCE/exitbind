@@ -82,6 +82,12 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&root, &control, &state, &bindings] {
         fs::create_dir_all(path).unwrap();
     }
+    let product_repository = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert!(product_repository.success());
     let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", &bindings)
         .args([
