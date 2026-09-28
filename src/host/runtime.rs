@@ -383,15 +383,18 @@ pub fn run() -> Result<(), String> {
                 super::assignment_context::Selection::Bound { evidence, .. } => evidence.as_slice(),
                 _ => &[],
             };
-            let context =
-                super::assignment_evidence::append_within_budget(&context, event, evidence);
-            let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
-                "hookEventName":event,"additionalContext":context}}))
-            .map_err(|_| String::new())?;
-            if serialized.len() <= MAX_OUTPUT {
-                context
-            } else {
-                "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+            match super::assignment_evidence::append_within_budget(&context, event, evidence) {
+                Some(context) => {
+                    let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
+                        "hookEventName":event,"additionalContext":context}}))
+                    .map_err(|_| String::new())?;
+                    if serialized.len() <= MAX_OUTPUT {
+                        context
+                    } else {
+                        "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+                    }
+                }
+                None => "Evidence route or shortened-preview notice cannot fit beside the required profile and perspectives; assignment context is unavailable.".to_owned(),
             }
         }
     };

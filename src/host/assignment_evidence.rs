@@ -213,21 +213,25 @@ fn text(value: &Value) -> String {
     clean
 }
 
-pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) -> String {
+const PREVIEW_SHORTENED: &str =
+    "Evidence preview shortened to fit; use the full assignment packet route.";
+
+pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) -> Option<String> {
     if lines.len() < 2 {
-        return base.to_owned();
+        return Some(base.to_owned());
     }
     let header = &lines[0];
     let route = lines.last().expect("at least two evidence lines");
     let mut selected = vec![header.clone(), route.clone()];
+    let mut shortened = false;
     if !fits(base, event, &selected) {
         selected = vec![route.clone()];
+        shortened = true;
         if !fits(base, event, &selected) {
-            return base.to_owned();
+            return None;
         }
     }
 
-    let mut shortened = false;
     for line in lines.iter().skip(1).take(lines.len().saturating_sub(2)) {
         let mut candidate = selected.clone();
         candidate.insert(candidate.len() - 1, line.clone());
@@ -238,14 +242,15 @@ pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) ->
         }
     }
     if shortened {
-        let note = "Evidence preview shortened to fit; use the full assignment packet route.";
         let mut candidate = selected.clone();
-        candidate.insert(candidate.len() - 1, note.into());
+        candidate.insert(candidate.len() - 1, PREVIEW_SHORTENED.into());
         if fits(base, event, &candidate) {
             selected = candidate;
+        } else {
+            return None;
         }
     }
-    append(base, &selected)
+    Some(append(base, &selected))
 }
 
 fn fits(base: &str, event: &str, suffix: &[String]) -> bool {
@@ -292,13 +297,47 @@ mod tests {
             route.to_owned(),
         ];
 
-        let context = append_within_budget(&base, "SubagentStart", &lines);
+        let context = append_within_budget(&base, "SubagentStart", &lines).unwrap();
 
         assert!(context.contains("PROFILE_END"));
         assert!(context.contains("PERSPECTIVE_END"));
         assert!(context.contains(route));
-        assert!(context.contains("Evidence preview shortened to fit"));
+        assert!(context.contains(PREVIEW_SHORTENED));
         assert!(serialized_len("SubagentStart", &context) <= MAX_CONTEXT_OUTPUT);
+    }
+
+    #[test]
+    fn full_packet_route_that_cannot_fit_returns_unavailable() {
+        let event = "SubagentStart";
+        let route = "Full assignment packet route: exact-route".to_owned();
+        let mut base = String::new();
+        while serialized_len(event, &base) < MAX_CONTEXT_OUTPUT - 1 {
+            base.push('p');
+        }
+        assert_eq!(serialized_len(event, &base), MAX_CONTEXT_OUTPUT - 1);
+        let lines = vec!["Evidence for this assignment.".to_owned(), route];
+
+        assert!(append_within_budget(&base, event, &lines).is_none());
+    }
+
+    #[test]
+    fn omitted_preview_details_require_a_fitting_shortened_notice() {
+        let event = "SubagentStart";
+        let route = "Full assignment packet route: exact-route".to_owned();
+        let route_only = vec![route.clone()];
+        let notice_and_route = vec![PREVIEW_SHORTENED.to_owned(), route.clone()];
+        let mut base = String::new();
+        while fits(&base, event, &notice_and_route) {
+            base.push('p');
+        }
+        assert!(fits(&base, event, &route_only));
+
+        let lines = vec![
+            "Evidence for this assignment.".to_owned(),
+            "optional evidence detail".to_owned(),
+            route,
+        ];
+        assert!(append_within_budget(&base, event, &lines).is_none());
     }
 
     #[test]
