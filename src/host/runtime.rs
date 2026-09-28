@@ -555,6 +555,7 @@ fn format_agent_context(
             assignment,
             packet_digest,
             provenance,
+            evidence,
         } => {
             lines.push(format!(
                 "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
@@ -574,6 +575,7 @@ fn format_agent_context(
                 safe_inline(&provenance.root_scope),
             ));
             lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
+            lines.extend(evidence.iter().map(|line| safe_multiline(line)));
         }
         _ => lines.push("No current governed assignment was acquired for this profile.".into()),
     }

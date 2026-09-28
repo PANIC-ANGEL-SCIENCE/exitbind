@@ -94,6 +94,9 @@ retains required-review semantics and cannot later use `run review-policy`. On a
 marked running run, the actual revision command is `exitbind run review-policy
 lead LEDGER --decision omitted --reason "OWNER_REASON" --config CONFIG`; use
 `--decision required` when that is the owner's selected choice.
+A reviewer's launch context names the current check records and logs with the
+`work expand` commands that read them; hand the reviewer its assignment, not a
+summary of the checks.
 In marked work, a reviewer `rework` waits for the Lead instead of starting a
 worker. A finding is evidence, not a requirement. Decide it with
 `exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede

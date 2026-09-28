@@ -1,4 +1,5 @@
 pub(crate) mod assignment_context;
+pub(crate) mod assignment_evidence;
 pub(crate) mod away;
 pub(crate) mod bridge;
 pub(crate) mod hooks;

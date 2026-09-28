@@ -24,6 +24,8 @@ pub(crate) enum Selection {
         assignment: String,
         packet_digest: String,
         provenance: Box<Provenance>,
+        /// Read routes for the evidence this assignment's packet covers.
+        evidence: Vec<String>,
     },
     Mismatch(String),
     Unavailable(String),
@@ -104,11 +106,13 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
             .unwrap_or("unavailable")
             .to_owned(),
     };
+    let evidence = super::assignment_evidence::lines(&work, context);
     Selection::Bound {
         work,
         assignment: assignment.to_owned(),
         packet_digest: packet_digest.to_owned(),
         provenance: Box::new(provenance),
+        evidence,
     }
 }
 
