@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
-const MAX_OUTPUT: usize = 16 * 1024;
+const MAX_OUTPUT: usize = super::assignment_evidence::MAX_CONTEXT_OUTPUT;
 const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
 
 /// Classify activation from consequence and promotion requirements. A count of
@@ -373,13 +373,26 @@ pub fn run() -> Result<(), String> {
                 Ok(None) => {}
             }
         }
-        let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
+        let core_serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
             "hookEventName":event,"additionalContext":context}}))
         .map_err(|_| String::new())?;
-        if serialized.len() > MAX_OUTPUT {
+        if core_serialized.len() > MAX_OUTPUT {
             "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
         } else {
-            context
+            let evidence = match &selected {
+                super::assignment_context::Selection::Bound { evidence, .. } => evidence.as_slice(),
+                _ => &[],
+            };
+            let context =
+                super::assignment_evidence::append_within_budget(&context, event, evidence);
+            let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
+                "hookEventName":event,"additionalContext":context}}))
+            .map_err(|_| String::new())?;
+            if serialized.len() <= MAX_OUTPUT {
+                context
+            } else {
+                "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+            }
         }
     };
     emit(event, &text)
@@ -555,7 +568,7 @@ fn format_agent_context(
             assignment,
             packet_digest,
             provenance,
-            evidence,
+            ..
         } => {
             lines.push(format!(
                 "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
@@ -575,7 +588,6 @@ fn format_agent_context(
                 safe_inline(&provenance.root_scope),
             ));
             lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
-            lines.extend(evidence.iter().map(|line| safe_multiline(line)));
         }
         _ => lines.push("No current governed assignment was acquired for this profile.".into()),
     }

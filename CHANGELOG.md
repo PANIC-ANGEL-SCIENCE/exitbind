@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.25.1
+
+- Deliver reviewer evidence with executable, configuration, and working
+  directory context; include requirement-bound check records and logs while
+  keeping required profile and perspective context inside the host budget.
+- Refuse to initialize named continuation requirements unless the Work's
+  frozen checked preservation policy supports their exact IDs and text, and
+  report compatibility without changing historical evidence. Explain that
+  the current CLI supports one preservation requirement per Work and surface
+  the design boundary when a continuation names several.
+- Move carried-mutation evidence identity validation into its owned run module
+  without changing event or error semantics.
+
 ## 0.25.0
 
 - Deliver bounded install-owned project and host facts with current rules and

@@ -62,11 +62,16 @@ pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, S
         loaded,
         c["work"].as_str().ok_or("continuation work missing")?,
     )?;
-    let (inputs, conditions) = current_conditions(loaded)?;
-    for requirement in c["requirements"]
+    let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let start = events.first().ok_or("work ledger has no start event")?;
+    let requirements = c["requirements"]
         .as_array()
-        .ok_or("requirements malformed")?
-    {
+        .ok_or("requirements malformed")?;
+    if super::requirements::assess(start, requirements)["compatible"] != true {
+        return Ok(false);
+    }
+    let (inputs, conditions) = current_conditions(loaded)?;
+    for requirement in requirements {
         let mut applicable = false;
         for support in c["supports"]
             .as_array()
@@ -107,13 +112,16 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
         return Err("current goal belongs to another work".into());
     }
     let c = &record["continuation"];
+    let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let start = events.first().ok_or("work ledger has no start event")?;
+    let goal_requirements = c["requirements"]
+        .as_array()
+        .ok_or("requirements malformed")?;
+    let work_support = super::requirements::assess(start, goal_requirements);
     let (current_inputs, current_conditions) = current_conditions(loaded)?;
     let binding_revision = c["binding"]["revision"].as_u64().unwrap_or(0);
     let mut requirements = Vec::new();
-    for requirement in c["requirements"]
-        .as_array()
-        .ok_or("requirements malformed")?
-    {
+    for requirement in goal_requirements {
         let supports = c["supports"].as_array().ok_or("supports malformed")?;
         let mut valid = Vec::new();
         for support in supports.iter().filter(|x| {
@@ -147,12 +155,14 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
     let mut result = json!({"work":work_id,"goalRevision":record["revision"],
         "mutationContext":mutation_context(work_id, &record["revision"], binding_revision),
         "source":c["source"],
+        "workSupport":work_support,
         "requirements":requirements,"binding":c["binding"],"corrections":c["corrections"],
         "operations":c["operations"],"diagnoses":c["diagnoses"],"children":c["children"],
         "currentInputsSha256":current_inputs,"currentConditionsSha256":current_conditions,
         "wholeGoalReady":false,"readOnly":true});
     result["wholeGoalReady"] = json!(
         c["source"]["coverageConfirmed"] == true
+            && result["workSupport"]["compatible"] == true
             && result["requirements"]
                 .as_array()
                 .is_some_and(|xs| xs.iter().all(|x| x["unresolved"] == false))

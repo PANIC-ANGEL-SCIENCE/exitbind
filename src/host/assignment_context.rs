@@ -106,7 +106,7 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
             .unwrap_or("unavailable")
             .to_owned(),
     };
-    let evidence = super::assignment_evidence::lines(&work, context);
+    let evidence = super::assignment_evidence::lines(loaded, &work, context);
     Selection::Bound {
         work,
         assignment: assignment.to_owned(),

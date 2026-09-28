@@ -1,73 +1,206 @@
 //! Evidence read routes presented to a native child with its assignment.
 //!
-//! The child receives references it can resolve itself through `work expand`,
+//! The child receives references it can resolve itself through work expand,
 //! never evidence content or a Lead's summary of it. References come from the
 //! same validated assignment context the packet digest covers, so a stale or
 //! foreign reference is never offered as current evidence.
 
-use serde_json::Value;
+use crate::config::Loaded;
+use serde_json::{json, Value};
+use std::path::Path;
 
-/// Entries presented at most; the full packet names the rest.
+pub(crate) const MAX_CONTEXT_OUTPUT: usize = 16 * 1024;
 const MAX_ENTRIES: usize = 8;
 
-pub(crate) fn lines(work: &str, context: &Value) -> Vec<String> {
-    let caller = crate::compatibility::profile().caller;
-    let expand = |reference: &Value| {
-        reference["id"]
-            .as_str()
-            .filter(|id| {
-                id.starts_with("ref:") && id.len() <= 80 && id.bytes().all(|b| b.is_ascii_graphic())
-            })
-            .map(|id| format!("`{caller} work expand {work} {id}`"))
-    };
+pub(crate) fn lines(loaded: &Loaded, work: &str, context: &Value) -> Vec<String> {
     let entries = context["evidence"].as_array().cloned().unwrap_or_default();
+    let indices = preview_indices(&entries);
     let mut lines = vec![format!(
-        "Evidence for this assignment (current subject SHA-256 {}). Resolve each reference yourself; a summary from the Lead is not evidence:",
-        context["subject"]["sha256"].as_str().unwrap_or("unavailable")
+        "Evidence for this assignment (current subject SHA-256 {}). Resolve each reference yourself; a summary from the Lead is not evidence. A passing check is evidence to consider, not an approval:",
+        text(&context["subject"]["sha256"])
     )];
-    let mut checks = 0usize;
-    for entry in entries.iter().take(MAX_ENTRIES) {
-        if entry["kind"] == "check" {
-            checks += 1;
-            let mut line = format!(
-                "- check {} ({}), checker `{}`, event {}",
+    let has_checks = entries.iter().any(is_check);
+
+    for index in &indices {
+        let entry = &entries[*index];
+        let kind = entry["kind"].as_str().unwrap_or("event");
+        if is_check(entry) {
+            let label = if kind == "preservation" {
+                "preservation check"
+            } else {
+                "check"
+            };
+            let requirement = entry["requirementId"]
+                .as_str()
+                .map(|id| format!(", requirement {id}"))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- {label} {} ({}{}), checker {} (SHA-256 {}), acquisition {}, origin {}, event {}",
                 text(&entry["status"]),
                 text(&entry["freshness"]),
+                requirement,
                 text(&entry["checker"]),
+                text(&entry["checkerSha256"]),
+                text(&entry["acquisition"]),
+                text(&entry["origin"]),
                 text(&entry["checkEventSha256"]),
-            );
-            if let Some(command) = expand(&entry["checkEventRef"]) {
-                line.push_str(&format!(": record {command}"));
+            ));
+            lines.push(read_route_line(
+                loaded,
+                work,
+                &entry["rawEventRef"],
+                &format!("{label} target event"),
+            ));
+            lines.push(read_route_line(
+                loaded,
+                work,
+                &entry["checkEventRef"],
+                &format!("{label} record"),
+            ));
+            if entry["checkLogRef"].is_object() {
+                lines.push(read_route_line(
+                    loaded,
+                    work,
+                    &entry["checkLogRef"],
+                    &format!("{label} log"),
+                ));
+            } else {
+                lines.push(format!(
+                    "  {label} log route unavailable (log status {}).",
+                    text(&entry["logStatus"])
+                ));
             }
-            if let Some(command) = expand(&entry["checkLogRef"]) {
-                line.push_str(&format!(", log {command}"));
-            }
-            lines.push(line);
-        } else if let Some(command) = expand(&entry["rawEventRef"]) {
-            lines.push(format!("- {} event: {command}", text(&entry["kind"])));
+        } else {
+            lines.push(read_route_line(
+                loaded,
+                work,
+                &entry["rawEventRef"],
+                &format!("{kind} event"),
+            ));
         }
     }
-    if entries.len() > MAX_ENTRIES {
+
+    if entries.len() > indices.len() {
         lines.push(format!(
-            "- {} more entries are in the full packet.",
-            entries.len() - MAX_ENTRIES
+            "- {} evidence entries are not shown in this preview; use the full assignment packet route.",
+            entries.len() - indices.len()
         ));
     }
-    if checks == 0 {
+    if !has_checks {
         lines.push("- No check record belongs to this assignment yet.".into());
     }
-    lines.push(format!(
-        "Full assignment packet: `{caller} work next {work} --full`. A passing check is evidence for your own verdict, not an approval."
-    ));
+    let packet_route = exact_route(
+        loaded,
+        vec!["work".into(), "next".into(), work.into(), "--full".into()],
+    );
+    lines.push(match packet_route {
+        Some(route) => format!("Full assignment packet route: {route}"),
+        None => "Full assignment packet route unavailable: executable or configuration path cannot be represented exactly.".into(),
+    });
     lines
 }
 
-/// One line of display text: printable, bounded, no line breaks.
+fn preview_indices(entries: &[Value]) -> Vec<usize> {
+    let mut prioritized = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry["kind"] == "preservation")
+        .map(|(index, _)| index)
+        .chain(
+            entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| entry["kind"] == "check")
+                .map(|(index, _)| index),
+        )
+        .chain(
+            entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| !is_check(entry))
+                .map(|(index, _)| index),
+        )
+        .take(MAX_ENTRIES)
+        .collect::<Vec<_>>();
+    prioritized.sort_unstable();
+    prioritized
+}
+
+fn is_check(entry: &Value) -> bool {
+    matches!(entry["kind"].as_str(), Some("check" | "preservation"))
+}
+
+fn read_route_line(loaded: &Loaded, work: &str, reference: &Value, label: &str) -> String {
+    let Some(id) = reference["id"].as_str().filter(|id| {
+        id.starts_with("ref:") && id.len() <= 80 && id.bytes().all(|byte| byte.is_ascii_graphic())
+    }) else {
+        return format!("  {label} route unavailable.");
+    };
+    let route = exact_route(
+        loaded,
+        vec!["work".into(), "expand".into(), work.into(), id.to_owned()],
+    );
+    match route {
+        Some(route) => format!("  {label} route: {route}"),
+        None => format!("  {label} route unavailable: executable or configuration path cannot be represented exactly."),
+    }
+}
+
+fn exact_route(loaded: &Loaded, suffix: Vec<String>) -> Option<String> {
+    let route = crate::work::compact::continuation_route(&loaded.path, suffix);
+    if route["sameConfigRequired"] != false || route["sameExecutableRequired"] != false {
+        return None;
+    }
+    let argv = route["command"].as_array()?;
+    let executable = argv.first()?.as_str()?;
+    if !Path::new(executable).is_absolute() {
+        return None;
+    }
+    let config = loaded.path.to_str()?;
+    if !argv
+        .windows(2)
+        .any(|pair| pair[0].as_str() == Some("--config") && pair[1].as_str() == Some(config))
+    {
+        return None;
+    }
+    let cwd = loaded.product_root.to_str()?;
+    let mut invocation = json!({"argv": route["command"], "cwd": cwd});
+    let mut environment = serde_json::Map::new();
+    if loaded.mode == crate::project::layout_types::Mode::Local {
+        for name in [
+            "EXITBIND_BINDINGS_DIR",
+            "SOULMATE_BINDINGS_DIR",
+            "XDG_STATE_HOME",
+            "HOME",
+        ] {
+            if let Some(value) = std::env::var_os(name) {
+                environment.insert(name.into(), json!(value.to_str()?));
+            }
+        }
+    }
+    if !environment.is_empty() {
+        invocation["env"] = Value::Object(environment);
+    }
+    serde_json::to_string(&invocation).ok()
+}
+
 fn text(value: &Value) -> String {
-    let raw = value.as_str().unwrap_or("unavailable");
+    let raw = value.as_str().map(str::to_owned).unwrap_or_else(|| {
+        if value.is_null() {
+            "unavailable".to_owned()
+        } else {
+            serde_json::to_string(value).unwrap_or_else(|_| "unavailable".to_owned())
+        }
+    });
     let mut clean = raw
         .chars()
-        .map(|c| if c.is_control() || c == '`' { ' ' } else { c })
+        .map(|character| {
+            if character.is_control() || character as u32 == 96 {
+                ' '
+            } else {
+                character
+            }
+        })
         .collect::<String>();
     if clean.len() > 160 {
         let mut end = 157;
@@ -78,4 +211,106 @@ fn text(value: &Value) -> String {
         clean.push_str("...");
     }
     clean
+}
+
+pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) -> String {
+    if lines.len() < 2 {
+        return base.to_owned();
+    }
+    let header = &lines[0];
+    let route = lines.last().expect("at least two evidence lines");
+    let mut selected = vec![header.clone(), route.clone()];
+    if !fits(base, event, &selected) {
+        selected = vec![route.clone()];
+        if !fits(base, event, &selected) {
+            return base.to_owned();
+        }
+    }
+
+    let mut shortened = false;
+    for line in lines.iter().skip(1).take(lines.len().saturating_sub(2)) {
+        let mut candidate = selected.clone();
+        candidate.insert(candidate.len() - 1, line.clone());
+        if fits(base, event, &candidate) {
+            selected = candidate;
+        } else {
+            shortened = true;
+        }
+    }
+    if shortened {
+        let note = "Evidence preview shortened to fit; use the full assignment packet route.";
+        let mut candidate = selected.clone();
+        candidate.insert(candidate.len() - 1, note.into());
+        if fits(base, event, &candidate) {
+            selected = candidate;
+        }
+    }
+    append(base, &selected)
+}
+
+fn fits(base: &str, event: &str, suffix: &[String]) -> bool {
+    let candidate = append(base, suffix);
+    serde_json::to_vec(&json!({"hookSpecificOutput":{
+        "hookEventName":event,"additionalContext":candidate
+    }}))
+    .is_ok_and(|bytes| bytes.len() <= MAX_CONTEXT_OUTPUT)
+}
+
+fn append(base: &str, suffix: &[String]) -> String {
+    if suffix.is_empty() {
+        return base.to_owned();
+    }
+    format!("{base}\n{}", suffix.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn serialized_len(event: &str, context: &str) -> usize {
+        serde_json::to_vec(&json!({"hookSpecificOutput":{
+            "hookEventName":event,"additionalContext":context
+        }}))
+        .unwrap()
+        .len()
+    }
+
+    #[test]
+    fn near_limit_profile_and_perspective_keep_the_full_packet_route() {
+        let profile = "p".repeat(11_500);
+        let perspective = "x".repeat(3_400);
+        let base = format!(
+            "Profile bytes:\n{profile}\nSelected task perspectives:\n{perspective}\nPROFILE_END\nPERSPECTIVE_END"
+        );
+        assert!(serialized_len("SubagentStart", &base) < MAX_CONTEXT_OUTPUT);
+        let route = r#"Full assignment packet route: {"argv":["/tmp/exitbind","work","next","smw_test","--full","--config","/tmp/config.json"],"cwd":"/tmp/project"}"#;
+        let lines = vec![
+            "Evidence for this assignment.".to_owned(),
+            format!("{} preview detail one", "e".repeat(700)),
+            format!("{} preview detail two", "e".repeat(700)),
+            format!("{} preview detail three", "e".repeat(700)),
+            route.to_owned(),
+        ];
+
+        let context = append_within_budget(&base, "SubagentStart", &lines);
+
+        assert!(context.contains("PROFILE_END"));
+        assert!(context.contains("PERSPECTIVE_END"));
+        assert!(context.contains(route));
+        assert!(context.contains("Evidence preview shortened to fit"));
+        assert!(serialized_len("SubagentStart", &context) <= MAX_CONTEXT_OUTPUT);
+    }
+
+    #[test]
+    fn preservation_checks_keep_preview_slots_after_ordinary_checks() {
+        let mut entries = (0..10).map(|_| json!({"kind":"check"})).collect::<Vec<_>>();
+        entries.push(json!({"kind":"preservation"}));
+
+        let shown = preview_indices(&entries);
+
+        assert_eq!(shown.len(), MAX_ENTRIES);
+        assert!(shown.contains(&10));
+        assert_eq!(shown, [0, 1, 2, 3, 4, 5, 6, 10]);
+        assert!(entries.iter().any(is_check));
+    }
 }

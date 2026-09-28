@@ -228,6 +228,36 @@ impl Fixture {
             .to_owned();
         Self { root, work }
     }
+    fn without_preservation(label: &str) -> Self {
+        let root = support::temp(label);
+        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .args(["init", "--mode", "portable", "--root"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        assert!(init.status.success(), "{init:?}");
+        let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(&root)
+            .args([
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "Work without preservation support",
+                "--check-command",
+                "true",
+                "--config",
+                "exitbind.json",
+            ])
+            .output()
+            .unwrap();
+        assert!(started.status.success(), "{started:?}");
+        let work = serde_json::from_slice::<Value>(&started.stdout).unwrap()["work"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        Self { root, work }
+    }
     fn call(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
@@ -284,9 +314,11 @@ impl Fixture {
         fs::read(self.root.join(".exitbind/session-goal.jsonl")).unwrap()
     }
     fn initialize(&self) {
-        self.ok(json!({"action":"init","sourceRef":"fixture:requirements-v1",
-            "sourceText":"First requirement. Second requirement.",
-            "requirements":[{"id":"first","text":"First requirement."},{"id":"second","text":"Second requirement."}]}));
+        self.ok(
+            json!({"action":"init","sourceRef":"fixture:requirements-v1",
+            "sourceText":"First requirement.",
+            "requirements":[{"id":"first","text":"First requirement."}]}),
+        );
     }
     fn return_stage(&self, outcome: &str, body: &str) -> Value {
         let next = self.call(&["work", "next", &self.work, "--full"]);
@@ -331,6 +363,36 @@ fn sha(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap(),
+                        canonical(&object[key])
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+fn reseal_goal_record(record: &mut Value) {
+    record.as_object_mut().unwrap().remove("eventSha256");
+    record["eventSha256"] = json!(sha(&canonical(record)));
+}
+
 #[test]
 fn continuation_attaches_to_existing_goal_without_replacing_its_history() {
     let f = Fixture::new("w2ch-existing-goal-attach");
@@ -348,9 +410,8 @@ fn continuation_attaches_to_existing_goal_without_replacing_its_history() {
     let before = f.history();
     let input = json!({"action":"init","expectedRevision":1,
         "sourceRef":"fixture:requirements-v1",
-        "sourceText":"First requirement. Second requirement.",
-        "requirements":[{"id":"first","text":"First requirement."},
-            {"id":"second","text":"Second requirement."}]});
+        "sourceText":"First requirement.",
+        "requirements":[{"id":"first","text":"First requirement."}]});
     let attached = f.ok(input.clone());
     assert_eq!(attached["goalRevision"], 2);
     assert_eq!(attached["effect"], "appended");
@@ -440,6 +501,10 @@ fn explicitly_incorporated_successor_keeps_predecessor_history() {
         "Successor work",
         "--check-command",
         "true",
+        "--preserve-requirement",
+        "successor:Successor requirement.",
+        "--preservation-check-command",
+        "true",
         "--review-policy",
         "required",
     ]);
@@ -479,6 +544,87 @@ fn explicitly_incorporated_successor_keeps_predecessor_history() {
 }
 
 #[test]
+fn unsupported_named_requirements_are_refused_before_canonical_state_write() {
+    let f = Fixture::without_preservation("w2ch-unsupported-work-support");
+    let initialized = f.record(json!({
+        "action":"init",
+        "sourceRef":"fixture:unsupported-requirement",
+        "sourceText":"Named requirement.",
+        "requirements":[{"id":"named","text":"Named requirement."}]
+    }));
+    assert!(!initialized.status.success(), "{initialized:?}");
+    let error = String::from_utf8_lossy(&initialized.stderr);
+    assert!(error.contains("named requirements unsupported"), "{error}");
+    assert!(error.contains("named"), "{error}");
+    assert!(error.contains("--preserve-requirement"), "{error}");
+    assert!(
+        error.contains("no canonical goal state was written"),
+        "{error}"
+    );
+    assert!(!f.root.join(".exitbind/session-goal.jsonl").exists());
+}
+
+#[test]
+fn multiple_requirements_report_the_current_one_per_work_limit() {
+    let f = Fixture::new("w2ch-multiple-work-support-limit");
+    let initialized = f.record(json!({
+        "action":"init",
+        "sourceRef":"fixture:multiple-requirements",
+        "sourceText":"First requirement. Second requirement.",
+        "requirements":[
+            {"id":"first","text":"First requirement."},
+            {"id":"second","text":"Second requirement."}
+        ]
+    }));
+    assert!(!initialized.status.success(), "{initialized:?}");
+    let error = String::from_utf8_lossy(&initialized.stderr);
+    assert!(error.contains("second"), "{error}");
+    assert!(
+        error.contains("one preservation requirement per Work"),
+        "{error}"
+    );
+    assert!(
+        error.contains("no canonical goal state was written"),
+        "{error}"
+    );
+    assert!(!f.root.join(".exitbind/session-goal.jsonl").exists());
+}
+
+#[test]
+fn legacy_incompatible_continuation_view_explains_the_limit_without_mutating_history() {
+    let f = Fixture::new("w2ch-legacy-incompatible-view");
+    f.ok(json!({"action":"init","sourceRef":"fixture:legacy-goal",
+        "sourceText":"First requirement. Second requirement.",
+        "requirements":[{"id":"first","text":"First requirement."}]}));
+    let path = f.root.join(".exitbind/session-goal.jsonl");
+    let bytes = fs::read(&path).unwrap();
+    let mut record: Value =
+        serde_json::from_slice(bytes.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
+    record["continuation"]["requirements"][0]["id"] = json!("second");
+    record["continuation"]["requirements"][0]["text"] = json!("Second requirement.");
+    reseal_goal_record(&mut record);
+    let mut legacy = serde_json::to_vec(&record).unwrap();
+    legacy.push(b'\n');
+    fs::write(&path, &legacy).unwrap();
+
+    let view = f.call(&["work", "continuation", &f.work]);
+    assert!(view.status.success(), "{view:?}");
+    let view: Value = serde_json::from_slice(&view.stdout).unwrap();
+    assert_eq!(view["readOnly"], true);
+    assert_eq!(view["workSupport"]["compatible"], false);
+    assert_eq!(
+        view["workSupport"]["missingRequirements"][0]["id"],
+        "second"
+    );
+    assert!(view["workSupport"]["nextAction"]
+        .as_str()
+        .unwrap()
+        .contains("goal incorporate"));
+    assert_eq!(view["wholeGoalReady"], false);
+    assert_eq!(fs::read(&path).unwrap(), legacy);
+}
+
+#[test]
 fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     let f = Fixture::new("w2ch-binding");
     f.initialize();
@@ -496,7 +642,7 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     }
     let view = f.view();
     assert_eq!(view["source"]["coverageConfirmed"], false);
-    assert_eq!(view["requirements"].as_array().unwrap().len(), 2);
+    assert_eq!(view["requirements"].as_array().unwrap().len(), 1);
     assert_eq!(view["wholeGoalReady"], false);
 
     let first = f.ok(
@@ -590,7 +736,7 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
 }
 
 #[test]
-fn exact_check_supports_one_revision_without_closing_other_requirements() {
+fn exact_check_supports_one_revision_without_closing_the_whole_goal() {
     let f = Fixture::new("w2ch-support");
     f.initialize();
     f.ok(
@@ -645,7 +791,6 @@ fn exact_check_supports_one_revision_without_closing_other_requirements() {
     );
     let view = f.view();
     assert_eq!(view["requirements"][0]["unresolved"], false);
-    assert_eq!(view["requirements"][1]["unresolved"], true);
     assert_eq!(view["wholeGoalReady"], false);
     let before = f.history();
     let exact_again = f.call(&[
@@ -669,10 +814,7 @@ fn exact_check_supports_one_revision_without_closing_other_requirements() {
     let revised = f.view();
     assert_eq!(revised["requirements"][0]["requirement"]["revision"], 2);
     assert_eq!(revised["requirements"][0]["unresolved"], true);
-    assert_eq!(
-        revised["source"]["text"],
-        "First requirement. Second requirement."
-    );
+    assert_eq!(revised["source"]["text"], "First requirement.");
     let before = f.history();
     let refusal = f.record(
         json!({"action":"support","expectedRevision":4,"bindingRevision":1,

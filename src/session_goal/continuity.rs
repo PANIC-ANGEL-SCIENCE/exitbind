@@ -164,6 +164,11 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
             .push(json!({"id":id,"text":text,"revision":1,"sourceSha256":hash::text(source)}));
     }
     let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let start = events.first().ok_or("work ledger has no start event")?;
+    let compatibility = requirements::assess(start, &normalized);
+    if compatibility["compatible"] != true {
+        return Err(requirements::init_error(&compatibility));
+    }
     let goal = events[0]["goal"].as_str().ok_or("work start has no goal")?;
     let continuation = json!({
         "version":1,"work":work_id,
@@ -216,6 +221,7 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
 mod capture;
 mod perspective;
 mod record;
+mod requirements;
 mod view;
 pub(crate) use capture::{
     claim as claim_child, claimed_context as claimed_child_context, context as child_context,
