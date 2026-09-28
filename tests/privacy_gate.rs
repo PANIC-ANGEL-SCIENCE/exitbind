@@ -370,8 +370,8 @@ fn scan_metadata(bytes: &[u8], ignored_commit: Option<&[u8]>, findings: &mut Fin
             let name = String::from_utf8_lossy(name);
             let email = String::from_utf8_lossy(email).trim().to_ascii_lowercase();
             let canonical = name.trim() == ALLOWED_NAME && email == ALLOWED_EMAIL;
-            let account_alias = name.trim() == ALLOWED_ACCOUNT_ALIAS_NAME
-                && email == ALLOWED_ACCOUNT_ALIAS_EMAIL;
+            let account_alias =
+                name.trim() == ALLOWED_ACCOUNT_ALIAS_NAME && email == ALLOWED_ACCOUNT_ALIAS_EMAIL;
             let github_committer = committer
                 && name.trim() == GITHUB_COMMITTER_NAME
                 && email == GITHUB_COMMITTER_EMAIL;
@@ -435,10 +435,7 @@ fn git(root: &Path, arguments: &[&str]) -> Option<Vec<u8>> {
         .arg("-C")
         .arg(root)
         .args(arguments)
-        .env(
-            "GIT_CEILING_DIRECTORIES",
-            root.parent().unwrap_or(root),
-        )
+        .env("GIT_CEILING_DIRECTORIES", root.parent().unwrap_or(root))
         .output()
         .ok()?;
     output.status.success().then_some(output.stdout)
