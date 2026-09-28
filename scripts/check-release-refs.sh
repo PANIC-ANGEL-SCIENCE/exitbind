@@ -107,6 +107,13 @@ refs=$(find -L "$@" \
 printf '%s\n' "$refs" | awk -v current="$current" '
   {
     line = $0
+    # These two literals are the immutable cutoff for the historical Soulmate
+    # installer route. Ignore only the exact guard/message; all other release
+    # references in install.sh remain subject to the current-version scan.
+    if ($0 ~ /^install\.sh:[0-9]+:if test "\$surface" = soulmate && test "\$version" = v0\.25\.0; then$/ ||
+        ($0 ~ /^install\.sh:[0-9]+:  echo/ && index($0, "Soulmate distribution ended at v0.25.0; install Exitbind instead") > 0)) {
+      gsub(/v0\.25\.0/, current, line)
+    }
     while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?([+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?/)) {
       version = substr(line, RSTART, RLENGTH)
       if (version != current) {

@@ -174,7 +174,7 @@ fn complete_reference_tokens_reject_prefix_collisions_and_other_majors() {
 }
 
 #[test]
-fn release_refs_skip_only_immutable_legacy_schema_ids() {
+fn release_refs_skip_only_immutable_legacy_artifacts() {
     let fixture = Fixture::release();
     for name in [
         "schema/harness-manifest.schema.json",
@@ -189,6 +189,29 @@ fn release_refs_skip_only_immutable_legacy_schema_ids() {
     }
     expect_success(gate("check-release-refs.sh", &fixture.0));
 
+    let fixture = Fixture::release();
+    fixture.replace(
+        "install.sh",
+        "if test \"$surface\" = soulmate && test \"$version\" = v0.25.0; then",
+        "if test \"$surface\" = soulmate && test \"$version\" = v0.16.0; then",
+    );
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "changed legacy installer cutoff",
+    );
+
+    let fixture = Fixture::release();
+    fixture.replace(
+        "install.sh",
+        "Soulmate distribution ended at v0.25.0; install Exitbind instead",
+        "Soulmate distribution ended at v0.16.0; install Exitbind instead",
+    );
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "changed legacy installer notice",
+    );
+
+    let fixture = Fixture::release();
     fs::write(
         fixture.0.join("schema/unrelated.schema.json"),
         "stale v0.16.0-rc.1 reference\n",
@@ -239,7 +262,12 @@ fn absent_or_drifted_required_version_values_are_rejected() {
         ("scripts/ci-wsl.sh", wsl.as_str()),
         ("CHANGELOG.md", changelog.as_str()),
     ] {
-        for replacement in [String::new(), marker.replace(VERSION, "1.2.3")] {
+        let malformed = if file.starts_with("systems.soulmate/") {
+            marker.replace("0.25.0-rc.5", "1.2.3")
+        } else {
+            marker.replace(VERSION, "1.2.3")
+        };
+        for replacement in [String::new(), malformed] {
             let fixture = Fixture::release();
             fixture.replace(file, marker, &replacement);
             expect_failure(gate("check-release-refs.sh", &fixture.0), file);
