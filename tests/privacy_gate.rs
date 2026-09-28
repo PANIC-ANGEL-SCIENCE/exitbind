@@ -8,6 +8,8 @@ use std::process::Command;
 const IGNORED: &[&str] = &[".git", "node_modules", ".cache", "coverage", "target"];
 const ALLOWED_NAME: &str = "envy404";
 const ALLOWED_EMAIL: &str = "legacy-operator@users.noreply.github.com";
+const ALLOWED_ACCOUNT_ALIAS_NAME: &str = "envy404";
+const ALLOWED_ACCOUNT_ALIAS_EMAIL: &str = "287204764+envy404@users.noreply.github.com";
 const GITHUB_COMMITTER_NAME: &str = "GitHub";
 const GITHUB_COMMITTER_EMAIL: &str = "noreply@github.com";
 
@@ -368,10 +370,12 @@ fn scan_metadata(bytes: &[u8], ignored_commit: Option<&[u8]>, findings: &mut Fin
             let name = String::from_utf8_lossy(name);
             let email = String::from_utf8_lossy(email).trim().to_ascii_lowercase();
             let canonical = name.trim() == ALLOWED_NAME && email == ALLOWED_EMAIL;
+            let account_alias = name.trim() == ALLOWED_ACCOUNT_ALIAS_NAME
+                && email == ALLOWED_ACCOUNT_ALIAS_EMAIL;
             let github_committer = committer
                 && name.trim() == GITHUB_COMMITTER_NAME
                 && email == GITHUB_COMMITTER_EMAIL;
-            if !canonical && !github_committer {
+            if !canonical && !account_alias && !github_committer {
                 if name.trim() != ALLOWED_NAME {
                     add(
                         findings,
@@ -431,6 +435,10 @@ fn git(root: &Path, arguments: &[&str]) -> Option<Vec<u8>> {
         .arg("-C")
         .arg(root)
         .args(arguments)
+        .env(
+            "GIT_CEILING_DIRECTORIES",
+            root.parent().unwrap_or(root),
+        )
         .output()
         .ok()?;
     output.status.success().then_some(output.stdout)
