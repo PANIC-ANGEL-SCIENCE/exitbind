@@ -16,7 +16,7 @@ that choice while work continues. Retained work gets useful exact-result checks
 proportionate to risk; promotion means applicable obligations require
 governance, not merely keeping a harmless local file.
 
-Small reversible work stays direct: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. The protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+Small reversible work stays direct: do not initialize a project or ask workflow or review-policy questions for it. In an already configured project, an explicit request for lightweight direct Codex recording may use `exitbind activity codex < PROMPT_FILE`; its private observation is unjudged, not governed acceptance. The governed protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
 
 For already governed work, continue with `exitbind work resume`; start new governed work
 with `exitbind work begin` and record `--review-policy required` or
@@ -30,6 +30,17 @@ repository URL, inspect this project and your host capabilities first, and ask
 before installation, project writes, permission changes, or another
 owner-controlled action.
 
+For a configured Codex worker or reviewer on the selected product-managed
+path, use `exitbind work act WORK` for one pending `work next` assignment. It
+delivers the current packet and profile, executes Codex, and records the native
+result without manual bind, child preparation, or result copying. Use
+`--resume` only for a recorded resumable worker turn; an uncertain running
+journal is not proof that a retry is safe. Continue with the recorded next
+action: a later `work act WORK` or `work check WORK` runs the frozen check,
+and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
+its distinct decision. The commands below govern host-managed child handoffs,
+not this product-managed Codex route.
+
 For an explicit work locator on a receiving host, first run
 `exitbind work continuation WORK`. This read-only view carries the original
 requirements, current corrections, exact result references, binding,
@@ -39,7 +50,7 @@ section and item commands it gives to read exact bounded facts. Do not inspect
 raw state files or infer a retry from a missing native process. `work next`
 remains the Lead's assignment view.
 
-When handing off an actual native child result, first bind the receiving host
+When handing off a host-managed native child result, first bind the receiving host
 and native session. Pass the `mutationContext.token` from `work next` or `work
 continuation` to the supported action:
 
@@ -188,8 +199,10 @@ Before skipping work listed in a saved packet, run
 
 Operational path (keep low-level details delayed): initialize with
 `exitbind init`, validate with `exitbind check`, then use `exitbind work begin`
-and follow the returned handle through `work next`, `work permit`, `work return`,
-`work check`, and `work resume`. Before a pending worker edits product files,
+and follow the returned handle. The product-managed Codex route uses `work act`
+as described above. The host-managed child route uses `work next`, `work permit`,
+`work return`, `work check`, and `work resume`. Before a pending host-managed
+worker edits product files,
 issue `exitbind work permit WORK ASSIGNMENT --operation OPERATION` and edit
 only after it returns `allowed: true`. Lead and reviewer returns follow their
 own `work next` actions; they do not use a worker permit. For a current accepted
