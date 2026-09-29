@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 mod apply;
 mod check_stage;
+mod governor_validation;
 mod historical_review;
 mod reviewer_transition;
 mod validation;
@@ -10,7 +11,7 @@ mod validation;
 use apply::apply_event;
 #[cfg(test)]
 use apply::{apply_govern, apply_submission, apply_unavailable};
-use validation::validate_grant_acknowledgement;
+use governor_validation::validate_grant_acknowledgement;
 #[cfg(test)]
 use validation::validate_submission;
 pub use validation::{validate_event, validate_start};
