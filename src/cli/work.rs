@@ -6,7 +6,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
     let action = positional(
         a,
         0,
-        "work requires begin, next, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
+        "work requires begin, next, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
         "bind" => {
@@ -221,6 +221,39 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             };
             print_json(&result)
         }
+        "act" => {
+            args::assert_options(
+                "work act",
+                a,
+                &[
+                    "config",
+                    "json",
+                    "outcome",
+                    "reason",
+                    "codex-bin",
+                    "model",
+                    "reasoning-effort",
+                    "sandbox-mode",
+                    "timeout-ms",
+                    "resume",
+                ],
+            )?;
+            args::assert_positionals("work act", a, 2)?;
+            print_json(&crate::work::act(
+                l,
+                positional(a, 1, "work act requires WORK")?,
+                crate::work::ActOptions {
+                    outcome: a.options.get("outcome").map(String::as_str),
+                    reason: a.options.get("reason").map(String::as_str),
+                    codex_bin: a.options.get("codex-bin").map(String::as_str),
+                    model: a.options.get("model").map(String::as_str),
+                    reasoning_effort: a.options.get("reasoning-effort").map(String::as_str),
+                    sandbox_mode: a.options.get("sandbox-mode").map(String::as_str),
+                    timeout_ms: a.options.get("timeout-ms").map(String::as_str),
+                    resume: a.flags.contains_key("resume"),
+                },
+            )?)
+        }
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
             args::assert_positionals("work permit", a, 3)?;
@@ -393,7 +426,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             print_json(&result)
         }
         _ => Err(
-            "work requires begin, next, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
+            "work requires begin, next, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
                 .into(),
         ),
     }

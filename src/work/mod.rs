@@ -1,5 +1,6 @@
 //! Agent-facing work façade over the strict run protocol.
 
+mod action;
 pub(crate) mod compact;
 mod disposition;
 pub(crate) mod focus;
@@ -18,6 +19,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+pub(crate) use action::{act, ActOptions};
 pub(crate) use disposition::{dispose, DispositionOptions};
 pub(crate) use permit_response::permit;
 pub(crate) use resume::resume;

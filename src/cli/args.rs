@@ -41,6 +41,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "blocker",
     "ledger",
     "mode",
+    "model",
     "material-consequence",
     "name",
     "none-applicable",
@@ -60,6 +61,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "project-id",
     "request-id",
     "reason",
+    "reasoning-effort",
     "receipt",
     "replan-file",
     "requirement",
@@ -78,6 +80,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "category",
     "successor-basis",
     "sandbox-mode",
+    "codex-bin",
     "state-root",
     "state",
     "task",
@@ -109,6 +112,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "themed",
     "history",
     "replace",
+    "resume",
 ];
 
 pub fn parse(values: &[String]) -> Result<Arguments, String> {

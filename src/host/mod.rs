@@ -2,6 +2,8 @@ pub(crate) mod assignment_context;
 pub(crate) mod assignment_evidence;
 pub(crate) mod away;
 pub(crate) mod bridge;
+pub(crate) mod change_snapshot;
+pub(crate) mod codex_exec;
 pub(crate) mod hooks;
 pub(crate) mod native_session;
 pub(crate) mod project_memory;

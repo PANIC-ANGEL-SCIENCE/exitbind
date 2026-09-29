@@ -281,6 +281,14 @@ pub(super) fn apply_submission(state: &mut Value, event: &Value) -> Result<(), S
         .ok_or("run state submissions are invalid")?
         .push(submission);
     if historical.is_some() {
+        if outcome == "rework" {
+            if historical_review::old_rework_to_lead(state, event)
+                && reviewer_transition::apply(state, event)?
+            {
+                return Ok(());
+            }
+            return rework_to_worker(state);
+        }
         historical_review::complete(state, outcome);
         return Ok(());
     }
@@ -292,21 +300,7 @@ pub(super) fn apply_submission(state: &mut Value, event: &Value) -> Result<(), S
         if reviewer_transition::apply(state, event)? {
             return Ok(());
         }
-        let stages = state["plan"]["stages"]
-            .as_array()
-            .ok_or("run state plan stages are invalid")?;
-        let worker = stages
-            .iter()
-            .find(|s| {
-                s["agents"]
-                    .as_array()
-                    .is_some_and(|agents| agents.iter().any(|a| a["role"] == "worker"))
-            })
-            .ok_or("rework requires a worker stage")?;
-        state["currentStage"] = worker["stage"].clone();
-        let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
-        state["attempt"] = json!(attempt + 1);
-        return Ok(());
+        return rework_to_worker(state);
     }
     if outcome == "contradiction" {
         state["pendingDisposition"] = json!({
@@ -358,6 +352,24 @@ pub(super) fn apply_submission(state: &mut Value, event: &Value) -> Result<(), S
             state["currentStage"] = json!(lead_stage(state)?);
         }
     }
+    Ok(())
+}
+
+fn rework_to_worker(state: &mut Value) -> Result<(), String> {
+    let stages = state["plan"]["stages"]
+        .as_array()
+        .ok_or("run state plan stages are invalid")?;
+    let worker = stages
+        .iter()
+        .find(|stage| {
+            stage["agents"]
+                .as_array()
+                .is_some_and(|agents| agents.iter().any(|agent| agent["role"] == "worker"))
+        })
+        .ok_or("rework requires a worker stage")?;
+    state["currentStage"] = worker["stage"].clone();
+    let attempt = state["attempt"].as_u64().ok_or("run attempt is invalid")?;
+    state["attempt"] = json!(attempt + 1);
     Ok(())
 }
 

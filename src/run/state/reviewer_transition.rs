@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn historical_review_reducer_preserves_block_and_old_lead_rework() {
+    fn historical_review_reducer_preserves_old_lead_and_worker_retries() {
         let mut blocked = state();
         apply_submission(&mut blocked, &event("blocked", "0.24.0-rc.1")).unwrap();
         assert_eq!(blocked["status"], "blocked");
@@ -69,6 +69,19 @@ mod tests {
         assert_eq!(rework["attempt"], 1);
         assert!(rework["pendingDisposition"].is_null());
         assert_eq!(rework["submissions"][1]["outcome"], "rework");
+
+        let mut newer = state();
+        apply_submission(&mut newer, &event("rework", "0.25.0-rc.1")).unwrap();
+        assert_eq!(newer["currentStage"], 2);
+        assert_eq!(newer["attempt"], 2);
+        assert!(newer["pendingDisposition"].is_null());
+
+        let mut earlier = state();
+        earlier.as_object_mut().unwrap().remove("basisProtocol");
+        earlier.as_object_mut().unwrap().remove("basis");
+        apply_submission(&mut earlier, &event("rework", "0.21.0")).unwrap();
+        assert_eq!(earlier["currentStage"], 2);
+        assert_eq!(earlier["attempt"], 2);
 
         let mut after_passing_check = state();
         after_passing_check["currentStage"] = json!(3);

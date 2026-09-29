@@ -4,6 +4,18 @@
 
 ## 0.25.1
 
+- Run a bounded native Codex worker or reviewer from the current Work assignment
+  with `work act`, structured command and usage observations, packet-bound
+  reviewer evidence, explicit checks, and Lead decisions. Preserve failed turns
+  in private journals and allow a worker to resume the same native session.
+- Record a small direct Codex activity with `activity codex`, including command
+  exits and a bounded before-and-after changed-file reference. Label its task
+  outcome unjudged rather than treating the activity as governed acceptance.
+- Preserve historical reviewer rework transitions when replaying older ledgers.
+  Keep fallback reviewer journals separate and bound native timeout cleanup to
+  the process group and output readers.
+- Split oversized run, value, and CLI modules by responsibility while keeping
+  their existing behavior and compatibility paths.
 - Deliver reviewer evidence with executable, configuration, and working
   directory context; include requirement-bound check records and logs while
   keeping required profile and perspective context inside the host budget.

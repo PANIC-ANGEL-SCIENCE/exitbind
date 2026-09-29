@@ -7,6 +7,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work next WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
+        ["work", "act"] => "work act WORK [--model MODEL] [--reasoning-effort EFFORT] [--resume]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
             "work continuation WORK [--section NAME [--index N [--history-index N]]] [--config CONFIG]"
@@ -45,6 +46,10 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"
         }
+        ["activity", "codex"] => {
+            "activity codex [--model MODEL] [--reasoning-effort EFFORT] < PROMPT"
+        }
+        ["activity", "show"] => "activity show ACTIVITY_ID",
         ["run", "start"] => "run start WORKFLOW --goal GOAL --ledger LEDGER",
         ["run", "next"] => "run next LEDGER [--text]",
         ["run", "submit"] => "run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT",
