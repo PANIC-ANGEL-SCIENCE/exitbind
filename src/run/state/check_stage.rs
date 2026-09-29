@@ -42,7 +42,7 @@ fn has_current_attempt_review(state: &Value) -> bool {
     })
 }
 
-fn check_failed(event: &Value) -> bool {
+pub(super) fn check_failed(event: &Value) -> bool {
     event["result"]["signal"].is_number()
         || event["result"]["code"]
             .as_i64()

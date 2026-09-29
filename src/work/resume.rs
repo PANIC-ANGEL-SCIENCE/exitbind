@@ -17,6 +17,7 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let mut candidates = Vec::new();
     let mut unreadable = Vec::new();
     let mut finished: Vec<(String, String, String)> = Vec::new();
+    let mut claimed_predecessors = std::collections::BTreeSet::new();
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let info = entry.file_type().map_err(|error| error.to_string())?;
@@ -36,23 +37,27 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
         }
         let ledger = format!("{}/{}", runs_dir(), name);
         let work = format!("{WORK_PREFIX}{token}");
-        let discovered = (|| -> Result<Option<Candidate>, String> {
-            if superseded_by_valid_claim(loaded, &ledger)? {
-                return Ok(None);
+        let discovered = (|| -> Result<(Option<Candidate>, bool), String> {
+            let (has_claim, superseded) = supersession_status(loaded, &ledger)?;
+            if superseded {
+                return Ok((None, has_claim));
             }
             let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
             let view = snapshot.inspect_view();
             if view["status"] == "running" {
                 let progress = snapshot.next_view(loaded)?["progress"].clone();
                 let identity = work_identity(loaded, Some(&ledger))?;
-                return Ok(Some((
-                    work.clone(),
-                    view["workflow"].clone(),
-                    view["events"][0]["goal"].clone(),
-                    ledger.clone(),
-                    progress,
-                    identity,
-                )));
+                return Ok((
+                    Some((
+                        work.clone(),
+                        view["workflow"].clone(),
+                        view["events"][0]["goal"].clone(),
+                        ledger.clone(),
+                        progress,
+                        identity,
+                    )),
+                    has_claim,
+                ));
             }
             if let Some(at) = view["events"]
                 .as_array()
@@ -61,11 +66,17 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             {
                 finished.push((at.to_owned(), work.clone(), ledger.clone()));
             }
-            Ok(None)
+            Ok((None, has_claim))
         })();
         match discovered {
-            Ok(Some(candidate)) => candidates.push(candidate),
-            Ok(None) => {}
+            Ok((candidate, has_claim)) => {
+                if has_claim {
+                    claimed_predecessors.insert(work.clone());
+                }
+                if let Some(candidate) = candidate {
+                    candidates.push(candidate);
+                }
+            }
             Err(error) => unreadable.push(unreadable_candidate(loaded, &work, &ledger, &error)?),
         }
     }
@@ -77,18 +88,20 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
         // the damaged or ambiguous records.
         if !history {
             if let focus::Focus::Work(selected) = focus::read(loaded)? {
-                if let Some(index) = candidates
-                    .iter()
-                    .position(|candidate| candidate.0 == selected)
-                {
-                    let works = candidate_values(loaded, &candidates, Some(index))?;
-                    let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
-                    let mut result = resumed(loaded, &work, &ledger)?;
-                    result["selection"] =
-                        json!({"basis": "current_work_focus", "authority": "none"});
-                    result["works"] = json!(works);
-                    result["unreadable"] = json!(unreadable);
-                    return Ok(result);
+                if !claimed_predecessors.contains(&selected) {
+                    if let Some(index) = candidates
+                        .iter()
+                        .position(|candidate| candidate.0 == selected)
+                    {
+                        let works = candidate_values(loaded, &candidates, Some(index))?;
+                        let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
+                        let mut result = resumed(loaded, &work, &ledger)?;
+                        result["selection"] =
+                            json!({"basis": "current_work_focus", "authority": "none"});
+                        result["works"] = json!(works);
+                        result["unreadable"] = json!(unreadable);
+                        return Ok(result);
+                    }
                 }
             }
         }
@@ -104,7 +117,11 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             "effect": "no-change",
             "compact": true,
             "omitted": ["candidate progress detail"],
-            "nextAction": safe_action("inspect_candidates"),
+            "nextAction": {
+                "type": "inspect_candidates",
+                "safe": true,
+                "summary": "Run the read-only command shown for each unreadable candidate from its workingDirectory."
+            },
             "works": works,
             "unreadable": unreadable,
         });
@@ -226,41 +243,42 @@ fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
     Ok(result)
 }
 
-fn superseded_by_valid_claim(loaded: &Loaded, ledger: &str) -> Result<bool, String> {
+fn supersession_status(loaded: &Loaded, ledger: &str) -> Result<(bool, bool), String> {
     let claim_path = loaded.state_root.join(format!("{ledger}.supersede"));
     let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
-        return Ok(false);
+        return Ok((false, false));
     };
     if claim["oldLedgerPath"] != ledger {
-        return Ok(false);
+        return Ok((true, false));
     }
     let (_, old_events, old_source) = crate::run::ledger::load(loaded, ledger)?;
     let Some(old_head) = old_events.last() else {
-        return Ok(false);
+        return Ok((true, false));
     };
     if claim["oldLedgerSha256"] != hash::bytes(old_source.as_bytes())
         || claim["oldRunId"] != old_events[0]["runId"]
         || claim["oldHeadEventSha256"] != old_head["eventSha256"]
         || claim["oldConfigSha256"] != old_events[0]["configSha256"]
     {
-        return Ok(false);
+        return Ok((true, false));
     }
     let successor = claim["newLedgerPath"].as_str().unwrap_or_default();
     let (_, successor_events, _) = match crate::run::ledger::load(loaded, successor) {
         Ok(value) => value,
-        Err(_) => return Ok(false),
+        Err(_) => return Ok((true, false)),
     };
     let Some(start) = successor_events.first() else {
-        return Ok(false);
+        return Ok((true, false));
     };
     let link = &start["supersedes"];
-    Ok(start["runId"] == claim["newRunId"]
+    let verified = start["runId"] == claim["newRunId"]
         && start["workflow"] == claim["workflow"]
         && link["ledgerPath"] == claim["oldLedgerPath"]
         && link["ledgerSha256"] == claim["oldLedgerSha256"]
         && link["runId"] == claim["oldRunId"]
         && link["headEventSha256"] == claim["oldHeadEventSha256"]
-        && link["configSha256"] == claim["oldConfigSha256"])
+        && link["configSha256"] == claim["oldConfigSha256"];
+    Ok((true, verified))
 }
 
 /// No work is active. The most recently finished run is still reported, with

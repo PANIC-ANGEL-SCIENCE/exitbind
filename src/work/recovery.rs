@@ -37,12 +37,17 @@ pub(super) fn unreadable_candidate(
     ledger: &str,
     error: &str,
 ) -> Result<Value, String> {
+    let working_directory = loaded
+        .product_root
+        .to_str()
+        .ok_or("project directory is not valid UTF-8")?;
     Ok(json!({
         "work": work,
         "ledger": ledger,
         "reason": classify_discovery_error(error),
         "error": error,
         "command": inspect_command(loaded, ledger)?,
+        "workingDirectory": working_directory,
     }))
 }
 

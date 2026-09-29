@@ -192,6 +192,153 @@ fn replayed_forged_acceptance_requires_passing_check() {
 }
 
 #[test]
+fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
+    let (root, ledger, _without_check, worker_target) =
+        prepare_checked_project("value-replay-historical-review");
+    record_check(&root, &ledger, &worker_target, "1");
+
+    let mut events = read_events(&root, &ledger);
+    let reviewer_index = events
+        .iter()
+        .position(|event| event["role"] == "reviewer")
+        .expect("reviewer event");
+    let reviewer = events.remove(reviewer_index);
+    let check_index = action_index(&events, "check");
+    let mut reviewer = reviewer;
+    let producer_name = reviewer["producer"]["name"].clone();
+    let old_versions = [
+        "0.20.0",
+        "0.21.0",
+        "0.23.1-rc.2",
+        "0.24.0-rc.1",
+        "0.24.0-rc.7",
+        "0.25.0-rc.1",
+    ];
+    reviewer["timestamp"] = events[check_index]["timestamp"].clone();
+    events.insert(check_index + 1, reviewer);
+    for event in &mut events {
+        event["producer"] = json!({
+            "name": producer_name.clone(),
+            "version": old_versions[0],
+            "commit": null,
+        });
+    }
+    rehash_chain_with_current_worker_target(&mut events);
+    let historical_ledger = ".soulmate/runs/replay-historical-review.jsonl";
+    write_events(&root, historical_ledger, &events);
+
+    let inspected = inspect(&root, historical_ledger);
+    assert!(inspected.status.success(), "{}", text(&inspected));
+    let value = json_output(&inspected);
+    assert_eq!(
+        value["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["role"] == "reviewer")
+            .count(),
+        1
+    );
+
+    let status = invoke(
+        &root,
+        &[
+            "run",
+            "status",
+            historical_ledger,
+            "--json",
+            "--config",
+            "soulmate.json",
+        ],
+    );
+    assert!(status.status.success(), "{}", text(&status));
+    let status = json_output(&status);
+    assert_eq!(status["checks"]["status"], "blocked");
+    assert_eq!(status["review"]["status"], "stale");
+    assert_eq!(status["acceptance"]["status"], "absent");
+
+    for producer_version in old_versions.iter().skip(1) {
+        let mut historical = events.clone();
+        for event in &mut historical {
+            event["producer"]["version"] = json!(producer_version);
+        }
+        rehash_chain_with_current_worker_target(&mut historical);
+        let historical_ledger =
+            format!(".soulmate/runs/replay-historical-review-{producer_version}.jsonl");
+        write_events(&root, &historical_ledger, &historical);
+        let inspected = inspect(&root, &historical_ledger);
+        assert!(inspected.status.success(), "{}", text(&inspected));
+        let historical_status = invoke(
+            &root,
+            &[
+                "run",
+                "status",
+                &historical_ledger,
+                "--json",
+                "--config",
+                "soulmate.json",
+            ],
+        );
+        assert!(
+            historical_status.status.success(),
+            "{}",
+            text(&historical_status)
+        );
+        let historical_status = json_output(&historical_status);
+        assert_eq!(historical_status["checks"]["status"], "blocked");
+        assert_eq!(historical_status["review"]["status"], "stale");
+        assert_eq!(historical_status["acceptance"]["status"], "absent");
+    }
+
+    for producer_version in ["0.25.1", "0.26.0", "0.24.1", "not-a-release"] {
+        let mut rejected = events.clone();
+        for event in &mut rejected {
+            event["producer"]["version"] = json!(producer_version);
+        }
+        rehash_chain_with_current_worker_target(&mut rejected);
+        let rejected_ledger = format!(".soulmate/runs/replay-reviewer-{producer_version}.jsonl");
+        write_events(&root, &rejected_ledger, &rejected);
+        let rejected = inspect(&root, &rejected_ledger);
+        assert!(!rejected.status.success(), "{}", text(&rejected));
+        assert_contains_all(&rejected, &["not currently pending"]);
+    }
+
+    for forged_field in ["agent", "stage", "attempt"] {
+        let mut forged = events.clone();
+        let reviewer = forged
+            .iter_mut()
+            .find(|event| event["role"] == "reviewer")
+            .expect("reviewer event");
+        match forged_field {
+            "agent" => reviewer["agent"] = json!("unplanned_reviewer"),
+            "stage" => reviewer["stage"] = json!(reviewer["stage"].as_u64().unwrap() + 1),
+            "attempt" => reviewer["attempt"] = json!(reviewer["attempt"].as_u64().unwrap() + 1),
+            _ => unreachable!(),
+        }
+        rehash_chain_with_current_worker_target(&mut forged);
+        let forged_ledger = format!(".soulmate/runs/replay-reviewer-forged-{forged_field}.jsonl");
+        write_events(&root, &forged_ledger, &forged);
+        let rejected = inspect(&root, &forged_ledger);
+        assert!(!rejected.status.success(), "{}", text(&rejected));
+        assert_contains_all(&rejected, &["not currently pending"]);
+    }
+
+    let mut corrupt_hash = events.clone();
+    let reviewer = corrupt_hash
+        .iter_mut()
+        .find(|event| event["role"] == "reviewer")
+        .expect("reviewer event");
+    reviewer["agent"] = json!("unplanned_reviewer");
+    let corrupt_ledger = ".soulmate/runs/replay-reviewer-corrupt-hash.jsonl";
+    write_events(&root, corrupt_ledger, &corrupt_hash);
+    let rejected = inspect(&root, corrupt_ledger);
+    assert!(!rejected.status.success(), "{}", text(&rejected));
+    assert_contains_all(&rejected, &["hash mismatch"]);
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn replayed_check_after_terminal_state_is_rejected() {
     let (root, _ledger, without_check, worker_target) =
         prepare_checked_project("value-replay-terminal-check");
@@ -553,6 +700,23 @@ fn rehash_chain(events: &mut [Value]) {
         event["eventSha256"] = json!(event_hash.clone());
         previous = json!(event_hash);
     }
+}
+
+fn rehash_chain_with_current_worker_target(events: &mut [Value]) {
+    rehash_chain(events);
+    let worker_target = events
+        .iter()
+        .find(|event| event["action"] == "submit" && event["role"] == "worker")
+        .and_then(|event| event["eventSha256"].as_str())
+        .expect("worker event hash")
+        .to_owned();
+    for event in events
+        .iter_mut()
+        .filter(|event| event["action"] == "check" && event.get("requirementId").is_none())
+    {
+        event["targetEventSha256"] = json!(worker_target);
+    }
+    rehash_chain(events);
 }
 
 fn assert_chain(events: &[Value]) {

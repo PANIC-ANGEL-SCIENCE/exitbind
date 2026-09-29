@@ -2,6 +2,7 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
 mod check_stage;
+mod historical_review;
 
 const SHA_LEN: usize = 64;
 const ROLES: &[&str] = &["lead", "adviser", "worker", "reviewer"];
@@ -1232,7 +1233,12 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
     let candidate = crate::run::assignment::pending(state)
         .into_iter()
         .find(|x| x["agent"] == event["agent"]);
-    let Some(assignment) = candidate else {
+    let historical = candidate
+        .is_none()
+        .then(|| historical_review::reviewer_assignment(state, event))
+        .flatten();
+    let assignment = candidate.or(historical.clone());
+    let Some(assignment) = assignment else {
         return Err(format!(
             "agent '{}' is not currently pending",
             event["agent"]
@@ -1329,6 +1335,9 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         .as_array_mut()
         .ok_or("run state submissions are invalid")?
         .push(submission);
+    if historical.is_some() {
+        return Ok(());
+    }
     if ["accepted", "rejected", "blocked"].contains(&outcome) {
         state["status"] = json!(outcome);
         return Ok(());

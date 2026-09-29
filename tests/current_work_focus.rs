@@ -194,6 +194,40 @@ fn default_resume_keeps_focused_result_and_unreadable_history_in_compact_json() 
 }
 
 #[test]
+fn default_resume_unreadable_result_has_exact_read_only_candidate_route() {
+    let root = project("unreadable-candidate-route");
+    let started = begin(&root, "unreadable current candidate");
+    let work = started["work"].as_str().unwrap();
+    let ledger = root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()));
+    fs::write(ledger, b"not-json\n").unwrap();
+    fs::remove_file(focus_file(&root)).unwrap();
+
+    let output = call(&root, &["work", "resume"]);
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "unresolved");
+    assert_eq!(value["reason"]["code"], "unreadable_candidate");
+    assert!(value["nextAction"]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("read-only command shown for each unreadable candidate"));
+
+    let candidate = &value["unreadable"][0];
+    assert_eq!(candidate["workingDirectory"], root.to_str().unwrap());
+    assert_eq!(candidate["reason"], "corrupt_ledger");
+    let command = candidate["command"].as_array().unwrap();
+    assert_eq!(command[0], "exitbind");
+    assert_eq!(command[1], "run");
+    assert_eq!(command[2], "inspect");
+    assert_eq!(command[4], "--json");
+    assert_eq!(command[5], "--config");
+    assert_eq!(command[6], root.join("exitbind.json").to_str().unwrap());
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn failed_focus_update_reports_the_committed_work_and_recovery() {
     let root = project("focus-write-failure");
     fs::create_dir(focus_file(&root)).unwrap();

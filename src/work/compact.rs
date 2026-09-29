@@ -73,6 +73,9 @@ pub(crate) fn project(
     for key in ["selection", "history", "focus"] {
         copy_if_present(response, &mut result, key);
     }
+    if response["reason"]["code"] == "unreadable_candidate" {
+        copy_if_present(response, &mut result, "nextAction");
+    }
     for key in ["works", "unreadable"] {
         copy_if_present(response, &mut result, key);
     }
