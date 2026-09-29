@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 mod check_stage;
 mod historical_review;
+mod reviewer_transition;
 
 const SHA_LEN: usize = 64;
 const ROLES: &[&str] = &["lead", "adviser", "worker", "reviewer"];
@@ -1336,6 +1337,7 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         .ok_or("run state submissions are invalid")?
         .push(submission);
     if historical.is_some() {
+        historical_review::complete(state, outcome);
         return Ok(());
     }
     if ["accepted", "rejected", "blocked"].contains(&outcome) {
@@ -1343,15 +1345,7 @@ fn apply_submission(state: &mut Value, event: &Value) -> Result<(), String> {
         return Ok(());
     }
     if outcome == "rework" {
-        if role == "reviewer" && state.get("basisProtocol").is_some() {
-            state["pendingDisposition"] = json!({
-                "owner": "lead",
-                "triggerEventSha256": event["eventSha256"],
-                "basisSha256": state["basis"]["sha256"],
-                "kind": "review_rework",
-                "findingSha256s": [event["eventSha256"]]
-            });
-            state["currentStage"] = json!(lead_stage(state)?);
+        if reviewer_transition::apply(state, event)? {
             return Ok(());
         }
         let stages = state["plan"]["stages"]

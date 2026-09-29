@@ -84,10 +84,20 @@ fn begin_selects_new_work_and_older_running_work_stays_history() {
     assert_eq!(resumed["work"], current.as_str());
     assert_eq!(resumed["selection"]["basis"], "current_work_focus");
     assert_eq!(resumed["history"]["running"], 1);
+    assert_eq!(
+        resumed["history"]["command"][0],
+        env!("CARGO_BIN_EXE_exitbind")
+    );
+    assert_eq!(resumed["history"]["sameExecutableRequired"], false);
+    assert_eq!(resumed["history"]["sameConfigRequired"], false);
     assert_eq!(resumed["history"]["command"][3], "--history");
 
     let history = ok(&root, &["work", "resume", "--history"]);
     assert_eq!(history["status"], "history");
+    assert_eq!(
+        history["works"][0]["command"][0],
+        env!("CARGO_BIN_EXE_exitbind")
+    );
     let mut listed = history["works"]
         .as_array()
         .unwrap()
@@ -218,7 +228,9 @@ fn default_resume_unreadable_result_has_exact_read_only_candidate_route() {
     assert_eq!(candidate["workingDirectory"], root.to_str().unwrap());
     assert_eq!(candidate["reason"], "corrupt_ledger");
     let command = candidate["command"].as_array().unwrap();
-    assert_eq!(command[0], "exitbind");
+    assert_eq!(command[0], env!("CARGO_BIN_EXE_exitbind"));
+    assert_eq!(candidate["sameExecutableRequired"], false);
+    assert_eq!(candidate["sameConfigRequired"], false);
     assert_eq!(command[1], "run");
     assert_eq!(command[2], "inspect");
     assert_eq!(command[4], "--json");

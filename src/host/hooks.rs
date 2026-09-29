@@ -15,10 +15,10 @@ pub const HOOK_COMMAND: &str = "command -v soulmate >/dev/null 2>&1 && soulmate 
 const MARKER: &str = "soulmate hook-run";
 const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
 
-/// Claude Code also delivers SubagentStop, which Exitbind uses to capture a
-/// prepared native child's final message; other hosts keep the first two.
+/// Claude Code and Codex deliver SubagentStop, which Exitbind uses to capture
+/// a prepared native child's final message; other hosts keep the first two.
 fn host_events(host: &str) -> &'static [&'static str] {
-    if host == "claude" {
+    if matches!(host, "claude" | "codex") {
         &EVENTS
     } else {
         &EVENTS[..2]
@@ -354,8 +354,12 @@ fn result(action: &str, state: &State) -> Value {
 
 fn unsupported(action: &str, host: &str, root: &str) -> Result<Value, String> {
     let target = settings::target_path(host, root)?;
+    let exact_handlers = host_events(host)
+        .iter()
+        .map(|event| ((*event).to_owned(), Value::from(0)))
+        .collect::<Map<_, _>>();
     Ok(
-        json!({"action":action,"host":host,"supported":false,"targetPath":target.display().to_string(),"settingsFileExists":false,"state":"unsupported","exactHandlers":{"SessionStart":0,"SubagentStart":0},"conflicts":[],"changed":false,"actions":["unsupported on windows; no file changed"],"reason":"project-local hook mutation is unsupported on win32"}),
+        json!({"action":action,"host":host,"supported":false,"targetPath":target.display().to_string(),"settingsFileExists":false,"state":"unsupported","exactHandlers":exact_handlers,"conflicts":[],"changed":false,"actions":["unsupported on windows; no file changed"],"reason":"project-local hook mutation is unsupported on win32"}),
     )
 }
 

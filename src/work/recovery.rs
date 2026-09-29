@@ -1,9 +1,13 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+use super::response_recovery::{bounded_argv, RecoveryCommand};
+
+const RECOVERY_ARGV_BUDGET: usize = 2048;
+
 pub(super) type Candidate = (String, Value, Value, String, Value, Value);
 
-pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<Value, String> {
+pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<RecoveryCommand, String> {
     let config = loaded
         .path
         .to_str()
@@ -11,16 +15,18 @@ pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<Value, St
     Ok(candidate_command_for_config(config, work))
 }
 
-fn candidate_command_for_config(config: &str, work: &str) -> Value {
-    json!([
-        crate::compatibility::profile().caller,
-        "work",
-        "next",
-        work,
-        "--json",
-        "--config",
-        config,
-    ])
+fn candidate_command_for_config(config: &str, work: &str) -> RecoveryCommand {
+    bounded_argv(
+        vec![
+            "work".into(),
+            "next".into(),
+            work.into(),
+            "--json".into(),
+            "--config".into(),
+        ],
+        Some(config),
+        RECOVERY_ARGV_BUDGET,
+    )
 }
 
 pub(super) fn compact_progress(progress: &Value) -> Value {
@@ -41,17 +47,20 @@ pub(super) fn unreadable_candidate(
         .product_root
         .to_str()
         .ok_or("project directory is not valid UTF-8")?;
+    let route = inspect_command(loaded, ledger)?;
     Ok(json!({
         "work": work,
         "ledger": ledger,
         "reason": classify_discovery_error(error),
         "error": error,
-        "command": inspect_command(loaded, ledger)?,
+        "command": route.argv,
+        "sameConfigRequired": route.same_config,
+        "sameExecutableRequired": route.same_executable,
         "workingDirectory": working_directory,
     }))
 }
 
-pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
+pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<RecoveryCommand, String> {
     let config = loaded
         .path
         .to_str()
@@ -59,16 +68,18 @@ pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<Value, St
     Ok(inspect_command_for_config(config, ledger))
 }
 
-pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> Value {
-    json!([
-        crate::compatibility::profile().caller,
-        "run",
-        "inspect",
-        ledger,
-        "--json",
-        "--config",
-        config,
-    ])
+pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> RecoveryCommand {
+    bounded_argv(
+        vec![
+            "run".into(),
+            "inspect".into(),
+            ledger.into(),
+            "--json".into(),
+            "--config".into(),
+        ],
+        Some(config),
+        RECOVERY_ARGV_BUDGET,
+    )
 }
 
 fn classify_discovery_error(error: &str) -> &'static str {
@@ -150,10 +161,12 @@ mod tests {
 
     #[test]
     fn ambiguous_candidate_command_is_executable_argv() {
+        let route = candidate_command_for_config("/project/exitbind.json", "smw_abc");
+        let executable = std::env::current_exe().unwrap();
         assert_eq!(
-            candidate_command_for_config("/project/exitbind.json", "smw_abc"),
+            route.argv,
             json!([
-                crate::compatibility::profile().caller,
+                executable.to_str().unwrap(),
                 "work",
                 "next",
                 "smw_abc",
@@ -162,6 +175,8 @@ mod tests {
                 "/project/exitbind.json",
             ])
         );
+        assert!(!route.same_config);
+        assert!(!route.same_executable);
     }
 
     #[test]

@@ -242,9 +242,10 @@ fn oversized_or_rebound_results_stay_inspectable_without_a_record() {
 }
 
 #[test]
-fn managed_claude_hooks_include_subagent_stop() {
+fn managed_claude_and_codex_hooks_include_subagent_stop() {
     let home = support::temp("capture-host-install");
     fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::create_dir_all(home.join(".codex")).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["host", "install", "--json"])
         .env("HOME", &home)
@@ -267,6 +268,17 @@ fn managed_claude_hooks_include_subagent_stop() {
     for event in ["SessionStart", "SubagentStart", "SubagentStop"] {
         assert!(
             settings["hooks"][event][0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap()
+                .contains("exitbind hook-run"),
+            "{event}"
+        );
+    }
+    let codex: Value =
+        serde_json::from_slice(&fs::read(home.join(".codex/hooks.json")).unwrap()).unwrap();
+    for event in ["SessionStart", "SubagentStart", "SubagentStop"] {
+        assert!(
+            codex["hooks"][event][0]["hooks"][0]["command"]
                 .as_str()
                 .unwrap()
                 .contains("exitbind hook-run"),
@@ -334,7 +346,7 @@ fn a_waiting_intent_is_replaced_explicitly_or_abandoned_by_a_rebind() {
 }
 
 #[test]
-fn agent_type_narrows_the_claim_and_other_hosts_are_not_claimed() {
+fn agent_type_narrows_claim_and_codex_capture_uses_stop() {
     let f = Fixture::new("capture-agent-type");
     assert!(f
         .prepare_with("typed child", &["--agent-type", "general-purpose"])
@@ -350,12 +362,29 @@ fn agent_type_narrows_the_claim_and_other_hosts_are_not_claimed() {
 
     let g = Fixture::new("capture-codex");
     g.bind_host("codex", "codex-1");
+    g.start("codex-1", "agent-free");
+    g.stop("codex-1", "agent-free", RESULT);
+    assert!(g.view()["children"].as_array().unwrap().is_empty());
+
     assert!(g.prepare("codex child").status.success());
     g.start("codex-1", "agent-c");
+    // A stop from the same session and child with a rebound agent type is not
+    // allowed to finalize a claimed child before the valid stop arrives.
+    let before = g.history();
+    g.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":"codex-1",
+        "agent_id":"agent-c","agent_type":"different","last_assistant_message":"changed"}),
+    );
+    assert_eq!(g.history(), before);
+    assert_eq!(g.view()["preparedChildren"][0]["state"], "claimed");
+    assert!(g.view()["children"].as_array().unwrap().is_empty());
+
     g.stop("codex-1", "agent-c", RESULT);
     let view = g.view();
-    assert_eq!(view["preparedChildren"][0]["state"], "prepared");
-    assert!(view["children"].as_array().unwrap().is_empty());
+    assert_eq!(view["preparedChildren"][0]["state"], "recorded");
+    assert_eq!(view["children"][0]["nativeChild"], "agent-c");
+    assert_eq!(view["children"][0]["resultText"], RESULT);
+    assert!(view["preparedChildren"][0]["conflict"].is_null());
 }
 
 #[test]

@@ -226,12 +226,15 @@ fn candidate_values(
         .enumerate()
         .filter(|(index, _)| Some(*index) != omit)
         .map(|(_, (work, workflow, goal, _, progress, identity))| {
+            let route = candidate_command(loaded, work)?;
             Ok(json!({
                 "work": work,
                 "workflow": workflow,
                 "goal": goal,
                 "progress": compact_progress(progress),
-                "command": candidate_command(loaded, work)?,
+                "command": route.argv,
+                "sameConfigRequired": route.same_config,
+                "sameExecutableRequired": route.same_executable,
                 "ledgerProducer": identity["ledgerProducer"],
             }))
         })
@@ -243,9 +246,21 @@ fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
         .path
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
+    let route = super::response_recovery::bounded_argv(
+        vec![
+            "work".into(),
+            "resume".into(),
+            "--history".into(),
+            "--config".into(),
+        ],
+        Some(config),
+        2048,
+    );
     Ok(json!({
         "running": running,
-        "command": [crate::compatibility::profile().caller, "work", "resume", "--history", "--config", config],
+        "command": route.argv,
+        "sameConfigRequired": route.same_config,
+        "sameExecutableRequired": route.same_executable,
     }))
 }
 

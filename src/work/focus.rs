@@ -93,15 +93,17 @@ pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
 /// Recovery route when `work begin` committed a work but could not point the
 /// focus at it.
 pub(crate) fn recovery(loaded: &Loaded, work: &str, error: &str) -> Value {
-    let command = loaded.path.to_str().map(|config| {
-        json!([
-            crate::compatibility::profile().caller,
-            "work",
-            "focus",
-            work,
-            "--config",
-            config
-        ])
-    });
-    json!({"updated": false, "error": error, "command": command})
+    let route = super::response_recovery::bounded_argv(
+        vec![
+            "work".into(),
+            "focus".into(),
+            work.into(),
+            "--config".into(),
+        ],
+        loaded.path.to_str(),
+        2048,
+    );
+    json!({"updated": false, "error": error, "command": route.argv,
+        "sameConfigRequired": route.same_config,
+        "sameExecutableRequired": route.same_executable})
 }

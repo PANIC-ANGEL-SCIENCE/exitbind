@@ -1,12 +1,12 @@
 //! Host-owned native child capture for a prepared delegation.
 //!
 //! A receiving parent prepares one child intent with `work child prepare`.
-//! Claude Code's SubagentStart hook then claims it for the next compatible
-//! subagent the same bound parent session starts, and SubagentStop finalizes
-//! it from the host's final assistant message through the existing child
-//! record. The parent model never relays the child ID or result. A subagent
-//! started while no intent is prepared is never recorded. Host fields stay
-//! host-reported; nothing here authenticates them or grants acceptance,
+//! Claude Code and Codex SubagentStart hooks then claim it for the next
+//! compatible subagent the same bound parent session starts, and SubagentStop
+//! finalizes it from the host's final assistant message through the existing
+//! child record. The parent model never relays the child ID or result. A
+//! subagent started while no intent is prepared is never recorded. Host fields
+//! stay host-reported; nothing here authenticates them or grants acceptance,
 //! review, or permission. A capture that cannot attach stays inspectable here,
 //! and `work child recover` records a retained result without re-running it.
 
@@ -23,9 +23,6 @@ const MAX_AGENT_TYPE: usize = 64;
 const MAX_RESULT: usize = 8 * 1024;
 const MAX_KEPT: usize = 32;
 const TERMINAL: [&str; 4] = ["recorded", "failed", "abandoned", "superseded"];
-/// The initial supported capture path is Claude Code's subagent lifecycle.
-const CAPTURE_HOST: &str = "claude";
-
 fn relative() -> String {
     format!("{}/{FILE}", crate::project::layout_types::state_namespace())
 }
@@ -284,10 +281,14 @@ fn text<'a>(payload: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'
 
 fn claimable(intent: &Value, session: &str, agent_type: Option<&str>) -> bool {
     intent["state"] == "prepared"
-        && intent["host"] == CAPTURE_HOST
+        && matches!(intent["host"].as_str(), Some("claude" | "codex"))
         && intent["session"] == session
         && (intent["agentType"].is_null()
             || agent_type.is_some_and(|kind| intent["agentType"] == kind))
+}
+
+fn same_observed_agent_type(intent: &Value, agent_type: Option<&str>) -> bool {
+    intent["observedAgentType"].as_str() == agent_type
 }
 
 fn rejected<'a>(
@@ -420,9 +421,11 @@ pub(crate) fn finalize(
     else {
         return Ok(());
     };
+    let agent_type = text(payload, "agent_type");
     let owned = |intent: &Value| {
         intent["session"] == session
             && intent["nativeChild"] == child
+            && same_observed_agent_type(intent, agent_type)
             && matches!(intent["state"].as_str(), Some("claimed" | "recorded"))
     };
     if !load(loaded)?.iter().any(owned) {

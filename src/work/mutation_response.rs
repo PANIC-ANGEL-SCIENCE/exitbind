@@ -218,6 +218,7 @@ pub(super) fn recorded_projection_failure(
     reference: Value,
     config_path: &str,
 ) -> Value {
+    let route = inspect_command_for_config(config_path, ledger);
     json!({
         "work": work,
         "effect": "recorded",
@@ -229,7 +230,9 @@ pub(super) fn recorded_projection_failure(
         "nextAction": {
             "type": "inspect",
             "safe": true,
-            "command": inspect_command_for_config(config_path, ledger),
+            "command": route.argv,
+            "sameConfigRequired": route.same_config,
+            "sameExecutableRequired": route.same_executable,
         },
     })
 }
@@ -267,11 +270,13 @@ mod tests {
         assert_eq!(response["projectionError"], "projection failed");
         assert_eq!(response["nextAction"]["type"], "inspect");
         assert_eq!(response["nextAction"]["safe"], true);
+        assert_eq!(response["nextAction"]["sameConfigRequired"], false);
+        assert_eq!(response["nextAction"]["sameExecutableRequired"], false);
         assert!(response.get("next").is_none());
         assert_eq!(
             response["nextAction"]["command"],
             json!([
-                crate::compatibility::profile().caller,
+                std::env::current_exe().unwrap().to_str().unwrap(),
                 "run",
                 "inspect",
                 ".exitbind/runs/work-work.jsonl",
