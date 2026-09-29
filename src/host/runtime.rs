@@ -414,7 +414,7 @@ const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task
 const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
-const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work continuation WORK`; its `receive` block gives the bind and child-prepare commands, and Exitbind's subagent hooks record a prepared child. Do not read raw .exitbind state to recover it.";
+const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work next WORK --json --full` for the current action. Use `exitbind work continuation WORK` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and continue through `work next`. Do not read raw .exitbind state to recover it.";
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {

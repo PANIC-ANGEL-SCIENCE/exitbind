@@ -214,7 +214,7 @@ fn expanded_view_keeps_the_token_and_receive_routes() {
 }
 
 #[test]
-fn governed_session_start_routes_explicit_locators_to_continuation() {
+fn governed_session_start_routes_explicit_locators_to_work_next() {
     let (root, _work) = project(
         "receiving-hook",
         json!([{"id":"docs","text":"Document the flag."}]),
@@ -235,6 +235,7 @@ fn governed_session_start_routes_explicit_locators_to_continuation() {
     let context = value["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
-    assert!(context.contains("first run `exitbind work continuation WORK`"));
+    assert!(context.contains("first run `exitbind work next WORK --json --full`"));
+    assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     std::fs::remove_dir_all(&root).unwrap();
 }

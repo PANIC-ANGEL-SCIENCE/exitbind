@@ -383,7 +383,7 @@ fn many_accepted_items_never_drop_the_session_context() {
         accept(&root, &file, "Rule: keep it.\n", "project-rules", &ledger);
     }
     let context = session_context(&root);
-    assert!(context.contains("first run `exitbind work continuation WORK`"));
+    assert!(context.contains("first run `exitbind work next WORK --json --full`"));
     assert!(context.len() <= 3072);
     assert!(context.contains("more references; run `exitbind project context --json`"));
     fs::remove_dir_all(&root).unwrap();
