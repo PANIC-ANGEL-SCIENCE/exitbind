@@ -102,6 +102,8 @@ current worker result -> declared check -> applicable reviewer judgment
                       -> explicit Lead acceptance -> EXIT READY
 ```
 
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
+
 A worker's completion is not a passing check. A passing check is not reviewer
 approval, and reviewer approval is not Lead acceptance. A reviewer finding
 needs a recorded Lead decision before it can change the task. Exitbind refuses
