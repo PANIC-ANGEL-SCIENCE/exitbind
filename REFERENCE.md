@@ -57,7 +57,7 @@ continues through real result documents, check execution, review, and acceptance
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-The v0.25.1 candidate targets Linux x86_64 and native macOS on
+v0.25.1 targets Linux x86_64 and native macOS on
 Apple Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and

@@ -23,7 +23,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-This source describes the `v0.25.1` candidate. Check
+This source describes `v0.25.1`. Check
 [published releases](https://github.com/envy404/exitbind/releases)
 for the available version and assets. The local benchmark needs no model;
 the optional `activity codex` and `work act` paths launch your installed Codex
@@ -45,7 +45,6 @@ handle and evidence. The host still owns models, permissions, tools, and merges.
 | One-off check in your host or CI | Run it there. | Its own exit status. That check creates no Exitbind activity record unless you separately choose an Exitbind command. |
 | Material change needing a checked result | Let the lead begin governed Work. For a configured Codex worker or reviewer, `work act` runs the pending assignment. | A result tied to its check, applicable review, and explicit Lead decision. |
 
-No general quality or token-cost advantage over the native host is claimed.
 For repeated material work, optional project memory can carry accepted rules;
 each new Work still needs its own evidence.
 
@@ -119,7 +118,7 @@ covers recorded artifacts rather than proving the code correct. See
 
 ## Install and set up
 
-This page describes the `v0.25.1` candidate for Linux x86_64
+This page describes `v0.25.1` for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before

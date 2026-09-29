@@ -61,7 +61,8 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
     )));
     assert!(readme.contains("https://github.com/envy404/exitbind"));
     assert!(readme.contains("URL-only"));
-    assert!(readme.contains("Exitbind progress"));
+    assert!(readme.contains("A reported “done” is not an accepted result."));
+    assert!(readme.contains("Check, review, and acceptance stay separate"));
     let init = "exitbind init --mode portable --root .";
     let output = run_readme(init, &project, &bin, &temporary);
     assert!(git_status().len() > before.len());
