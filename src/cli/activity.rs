@@ -263,13 +263,10 @@ fn projection(observation: &codex_exec::Observation) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn direct_projection_preserves_failed_command_without_acceptance() {
         let observation = codex_exec::Observation {
-            executable: PathBuf::from("/bin/codex"),
-            cwd: PathBuf::from("/project"),
             ephemeral: true,
             process: codex_exec::ProcessOutcome {
                 code: Some(0),
