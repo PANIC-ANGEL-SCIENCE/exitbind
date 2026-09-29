@@ -182,10 +182,9 @@ pub(crate) fn resolve_codex(explicit: Option<&Path>) -> Result<PathBuf, RunError
             }
         }
     }
-    Err(RunError::InvalidRequestDetail(format!(
-        "executable '{}' was not found in PATH",
-        requested.to_string_lossy()
-    )))
+    Err(RunError::InvalidRequest(
+        "executable 'codex' was not found in PATH",
+    ))
 }
 
 fn checked_executable(path: &Path) -> Result<PathBuf, RunError> {
