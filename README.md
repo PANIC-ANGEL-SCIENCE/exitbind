@@ -5,11 +5,9 @@
 The code can be current. The tests can have passed. The review can have
 approved. All three can still belong to different results.
 
-Exitbind is a local acceptance boundary for coding-agent work. Its `work check`
-command runs the check fixed at the start of the task and records the outcome
-against the exact result. Checks, required independent review, and Lead
-acceptance must all belong to that result. Evidence taken on an earlier result
-stays historical; it never opens the current door.
+Exitbind helps a coding agent keep checks, review, and Lead acceptance attached
+to the result they actually evaluated. Earlier evidence stays historical when
+the result changes. It runs locally in your existing project and agent host.
 
 **No result exits unbound.**
 
@@ -25,98 +23,101 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-This source describes `v0.25.1`. Check
+This source describes the `v0.25.1` candidate. Check
 [published releases](https://github.com/envy404/exitbind/releases)
-for the available version and assets. Exitbind is one local binary; it calls no
-model and runs no daemon or cloud service.
+for the available version and assets. The local benchmark needs no model;
+the optional `activity codex` and `work act` paths launch your installed Codex
+CLI. Exitbind runs no daemon or cloud service of its own.
 
 [![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
 [![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## What it adds to “tests passed”
+## Who it helps and when
 
-| An agent says | Exitbind records instead |
-| --- | --- |
-| “Tests pass.” | The frozen check command, run by Exitbind itself on the current result, with its real exit code or signal, duration, and hashed output logs. A check a host reports is labelled `reported`; one Exitbind ran is labelled `observed`. |
-| “It's the latest code.” | A fingerprint of tracked and untracked, non-ignored project files, excluding Git metadata and Exitbind state, so uncommitted work is covered before anything is pushed. |
-| “Review approved it.” | Worker completion, check, review, and Lead acceptance as separate, attributed events. An omitted review is recorded as an omission, never as approval. |
-| “The reviewer asked for X, so I added it.” | In marked work, the finding as evidence and the Lead's recorded decision: `repair` inside a Lead-set boundary, `supersede` the basis, `defer`, or `reject`. Only the first two start another attempt; a deferred or rejected finding is never counted as approval. |
-| “Nothing changed since.” | An append-only, hash-chained ledger: recorded artifact bytes equal disk bytes, or no new run event is written. |
-| “Done.” | `EXIT READY`, `EXIT REFUSED`, or `EXIT BLOCKED` with a reason code, plus a verifiable receipt for accepted checked runs. |
+Use Exitbind when a coding task needs a recoverable handoff and a decision about
+the **current** result. Your existing Codex or Claude lead handles its work
+handle and evidence. The host still owns models, permissions, tools, and merges.
 
-Exitbind adds a local acceptance step to the agent loop, including uncommitted
-results before a push. CI and branch protection keep their existing roles.
-
-### When to use it
-
-| Job | Practical choice | What it establishes |
+| Task | Route | What you get |
 | --- | --- | --- |
-| A small reversible edit, or a task whose native handoff and CI are sufficient | Keep the existing agent, Git and CI workflow. | The checks that workflow actually ran; no Exitbind setup is needed. |
-| A one-off check with no work to hand off or resume | Run that check in the existing host or CI. | The command's own exit status; Exitbind adds no record. |
-| Material work needing a recoverable same-work handoff and acceptance tied to the current result | Use Exitbind in the existing agent host. | Recorded work, applicable check evidence, the owner's review decision and Lead acceptance under [Exitbind's authority boundary](REFERENCE.md#authority-boundary). |
-| A series of material tasks in one project | Opt in to project memory and begin each task as new governed work. | The managed session hook gives each new session the Lead's role and currently accepted project rules; each work item still earns its own check, review, and acceptance. |
+| Small reversible edit | Keep your usual agent and Git workflow. In an already configured project, `activity codex` can optionally run and privately record one direct Codex task. | The direct record is **unjudged**; it is not governed acceptance. |
+| One-off check in your host or CI | Run it there. | Its own exit status. That check creates no Exitbind activity record unless you separately choose an Exitbind command. |
+| Material change needing a checked result | Let the lead begin governed Work. For a configured Codex worker or reviewer, `work act` runs the pending assignment. | A result tied to its check, applicable review, and explicit Lead decision. |
 
-Task quality and operating cost compared with other workflows are unmeasured.
+No general quality or token-cost advantage over the native host is claimed.
+For repeated material work, optional project memory can carry accepted rules;
+each new Work still needs its own evidence.
 
-**As a default layer.** Exitbind can stay installed beside Codex or Claude
-Code. The host keeps its models, sessions, subagents, tools, and permissions;
-small reversible work stays direct; material work gains acceptance and
-continuity that outlive one conversation. The footprint is a short bootstrap
-skill, a session hook, and local files.
+## Give your lead one link
 
-## Built for your coding agent
-
-Small reversible work stays direct; the protocol surfaces only for material or
-promotion-required work, resuming governed work, or explicit cross-host
-continuation.
-
-The coding agent you already use operates the CLI inside your existing
-conversation. During a governed task it follows the recorded next action:
+Paste this into the Codex or Claude conversation you already use, then describe
+your task in ordinary language:
 
 ```text
-exitbind work next WORK --full -> read the current assignment and constraints
-(do the work)
-exitbind work return WORK …    -> submit the assigned result
-exitbind work check WORK       -> run the frozen check when it is the next action
+https://github.com/envy404/exitbind
 ```
 
-- **Check evidence is captured.** Exitbind executes the frozen command and
-  records its outcome and logs. Workers still report their results, and
-  reviewers still supply their judgments.
-- **Resume, don't reconstruct.** `work resume` rebuilds the next step from
-  recorded state after a restart or context loss and returns the work last
-  begun or focused; older running work stays history (`work resume --history`).
-  Evidence that still belongs to the same result is kept.
-- **Continue on another host.** `work continuation WORK` gives Codex or Claude
-  Code in the same local workspace the original requirements, corrections,
-  result references, and the bind and child commands; stale context is refused.
-  See [cross-host continuation](docs/cross-host-continuation.md).
-- **Capture subagent results from the host.** After `work child prepare`, the
-  managed Claude Code subagent hooks record the child's host-reported ID and
-  exact final message, so the parent never retypes it. Other hosts record the
-  return with `work child`.
-- **Read current project context.** `project context --json` reports bounded
-  project, focus, rule, and eligible memory references. `project context memory
-  ITEM_ID` reads one still-eligible source on demand. `project agents --apply`
-  explicitly creates project-owned Codex and Claude agent files from configured
-  profiles and refuses conflicts with external files.
-- **Check the whole goal.** `goal status --json` distinguishes recorded closure
-  from current readiness. Add `--themed` to an interactive status command to
-  see the local room when the current named goal is complete.
-- **Small replies, safe to inspect.** `work check` and `work return` reply in
-  at most 8 KiB of JSON with a read-only follow-up command as an argv array.
-  When either records an event, the reply names it even if later cleanup fails,
-  so the lookup reads it without re-running the check or resubmitting.
-- **Hold a result while replanning.** When the iteration governor requires a
-  replan or new evidence, a completed worker result is retained by content hash
-  for later resubmission. Other refusals do not promise that retention.
+Your lead can inspect the project and classify the task. On a URL-only first
+contact, it asks before installation, project writes, or permission changes.
+You do not need to pass work handles, hashes, or ledger paths between turns.
+A pasted link is guidance, not proof that a host followed it. See
+[onboarding](docs/onboarding.md) for setup and recovery.
 
-See [work mutation results](docs/work-mutation-results.md) for the exact reply
-contract. A successful recording operation does not mean the check passed;
-the reply reports the check's exit code or signal separately.
+For a model-free look at the exact-result rule, run this **after installing**:
 
-## See a wrong door refused
+```sh
+exitbind benchmark
+```
+
+It creates a disposable Git project, shows a failed exact check refused, and
+lets only a fresh checked result reach acceptance. It does not run an agent or
+touch your project. `exitbind benchmark --output NEW_DIRECTORY` keeps
+inspectable records; see the [proof method](docs/value-proof-methodology.md).
+
+## Two Codex paths in v0.25.1
+
+Both paths require an initialized Exitbind project and an available Codex CLI
+with its own model access. The lead handles setup and the current assignment.
+
+- **Direct small task:** `exitbind activity codex < TASK_FILE` runs one Codex
+  task and privately records command outcomes and a bounded changed-file
+  reference. Its result remains `unjudged`; there is no Work review or Lead
+  acceptance. The default Codex sandbox for this command is `workspace-write`.
+- **Governed Codex task:** `exitbind work act WORK` runs **one current** worker
+  or reviewer assignment, delivers the verified packet and profile, and
+  records its native result. On later calls, `work act` can run the separate
+  frozen check step or record a Lead decision with an explicit outcome and
+  reason; `work check` is also available for the check. None is inferred from
+  worker completion or reviewer approval.
+  Worker rework can resume its native session when the recorded state allows it.
+
+`work act` is the product-managed Codex route. Manual child binding and result
+returns remain available for host-managed handoffs; see
+[onboarding](docs/onboarding.md) and the [command reference](REFERENCE.md#run-and-recovery).
+
+## Check, review, and acceptance stay separate
+
+```text
+current worker result -> declared check -> applicable reviewer judgment
+                      -> explicit Lead acceptance -> EXIT READY
+```
+
+A worker's completion is not a passing check. A passing check is not reviewer
+approval, and reviewer approval is not Lead acceptance. A reviewer finding
+needs a recorded Lead decision before it can change the task. Exitbind refuses
+older evidence when a new worker result replaces it or covered project files
+change. CI and branch protection keep their own roles.
+
+Exitbind records the frozen check command, its real exit code or signal and
+hashed output logs, a fingerprint including non-ignored uncommitted files, and
+separate worker, review, and Lead events. A host-reported check is labelled
+`reported`; a check Exitbind ran is `observed`. An omitted review stays an
+omission. An accepted checked run can produce a verifiable receipt, which
+covers recorded artifacts rather than proving the code correct. See
+[receipt limits](REFERENCE.md#exit-path-receipt-and-verification).
+
+## Install and set up
 
 This page describes the `v0.25.1` candidate for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
@@ -131,95 +132,12 @@ curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.1/install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-That command installs the binary and, for each coding host it detects on this
-machine, a small bootstrap skill and session hook so the lead you already use can
-find Exitbind. It reports what it installed and what it could not, and never
-overwrites a file it does not manage. Check it with `exitbind host status`.
-Discovery is not activation: only a work handle, recorded check, review, or
-acceptance shows that governed work actually started.
+That command installs the binary and, for each detected coding host, a small
+bootstrap skill and session hook. It reports what it installed and never
+overwrites files it does not manage. `exitbind host status` checks the managed
+host setup. Discovery alone does not prove that governed work started.
 
-Then run the local demonstration:
-
-```sh
-exitbind benchmark
-```
-
-It creates a disposable Git project, shows a failed exact check refused, keeps
-that failed attempt on record, and lets only a fresh checked result reach
-acceptance. No model runs and your project is untouched. It is a synthetic
-demonstration of the mechanism, not a claim about every agent, project, or
-quality outcome; use `exitbind benchmark --output NEW_DIRECTORY` and the
-[proof methodology](docs/value-proof-methodology.md) for inspectable records.
-
-## Give your lead one link
-
-You do not have to operate the protocol. Paste this into the Codex or Claude
-conversation you already use, then describe the work in ordinary language:
-
-```text
-https://github.com/envy404/exitbind
-```
-
-On this URL-only path your lead inspects the project, explains the effect, and
-asks before installation, project writes, or permission changes. After you
-approve, it uses the local CLI plus project-local guidance:
-
-- **Classify the work first.** Follow the [entry rule](#built-for-your-coding-agent);
-  the lead classifies actual effects, and a filename alone does not require
-  governance.
-- **Material or promotion-required work** binds its evidence to the exact result
-  before it can exit.
-- **Resumed work** keeps evidence that still belongs to the same result, so a new
-  session does not redo a valid check or review. Before relying on a saved
-  packet, `work validate WORK --packet FILE` checks it against current state.
-
-A pasted URL is guidance, not proof that a host followed it.
-[See the complete onboarding path.](docs/onboarding.md)
-
-## How material work exits
-
-```text
-one link -> classify -> exact-result check -> review decision
-          -> applicable review -> lead acceptance -> verified receipt
-```
-
-These doors stay separate: worker completion is not a passing check, a passing
-check is not reviewer approval, reviewer approval is not lead acceptance, and
-a reviewer finding is not a requirement until the Lead decides it.
-
-In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact. It rejects older evidence when a new worker result replaces it or covered project files change.
-
-For important work, the Lead recommends independent review and the owner
-decides. Record that choice at a new governed entry with
-`--review-policy required` or `--review-policy omitted`; the owner can revise it
-while work continues. A run started without `--review-policy` is the unmarked
-historical path and keeps required-review semantics.
-
-Configuration or profile changes after a run starts are reported as warnings
-and the recorded plan continues; changed or substituted evidence bytes are
-refused. For an accepted checked run, `exitbind receipt` emits a receipt and
-`exitbind verify` checks it. A receipt covers recorded artifacts, not every
-project file, and does not prove the work is correct; see
-[receipts](REFERENCE.md#exit-path-receipt-and-verification).
-
-## The Lead sets the Frame
-
-For work where structure matters, the Lead fixes the shared decisions workers
-must not silently reinterpret—ownership, interfaces, preserved behavior,
-decisive cases, non-goals—and workers choose details inside it. A contradiction
-goes back to the Lead. The independent reviewer can challenge the Frame itself.
-
-Optional progress narration is computed by Exitbind:
-
-```text
-[Neuro] Exitbind progress: N%.
-```
-
-It describes the current run and does not change the host agent's identity or
-authority. An accepted terminal run supplies the literal display value
-`EXIT READY`, which hosts copy verbatim.
-
-## Set up a project when needed
+### Configure a project when needed
 
 After approving project writes, initialize a portable project from its root:
 
@@ -235,6 +153,9 @@ are exercised setup paths; OpenCode's compatible path is experimental. An
 optional host plugin carries the skill only—see [setup options](docs/onboarding.md).
 Review the generated boundaries and native worker/reviewer mapping before
 project work; empty starter boundaries are valid configuration, not permission.
+The Lead records the owner's review choice for important work at governed
+entry. Missing project access or model credentials remain host problems to
+resolve before executing a Codex task.
 
 ## Trust, data, and compatibility
 

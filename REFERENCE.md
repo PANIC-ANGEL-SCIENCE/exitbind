@@ -25,12 +25,11 @@ reasons remain available. The packaged reference
 policy, the accepted-meaning and read-back templates, and the evidence labels;
 a project needs no separate preservation install.
 
-Exitbind is a provider-free local protocol for bounded coding-agent handoffs.
-It records task envelopes, hashes, run transitions, and memory-lifecycle
-evidence. Native hosts such as Codex and Claude Code still own models,
-permissions, execution, and subagents. Exitbind is not an operating system or
-process sandbox; only the optional `exitbind away` convenience launches one
-pending Codex assignment.
+Exitbind's ledger and benchmark are local and model-free. It records task
+envelopes, hashes, run transitions, and memory-lifecycle evidence. The optional
+`activity codex`, `work act`, and `away` commands launch an installed Codex CLI;
+Codex still owns model access and tool execution. Exitbind is not an operating
+system or process sandbox, and host permissions remain with the host.
 
 New setup uses `exitbind`, `exitbind.json`, `.exitbind/`, and `exitbind/`. A
 project written by an earlier release keeps working under its own paths and
@@ -581,6 +580,35 @@ the selected profile, requested runtime, declared skills/boundary, memory
 references, upstream artifact hashes, and producer evidence. These are
 selection/presentation records, not proof that a host or model complied.
 
+### Direct activity and native Codex Work
+
+In an initialized project, `exitbind activity codex < TASK_FILE` runs one
+direct Codex task from standard input and writes a private activity record.
+`exitbind activity show ACTIVITY_ID` reads it. The observation includes
+structured command outcomes and a bounded before/after changed-file reference;
+the task outcome remains `unjudged` and acceptance is not applicable. The
+default sandbox request is `workspace-write`. A check run separately by the
+host or CI creates no Exitbind activity record.
+
+For governed Work, the lead uses `exitbind work act WORK [--model MODEL]
+[--reasoning-effort EFFORT]` on the current action from `work next WORK
+--full`. A worker or reviewer action launches Codex with the checked packet
+and profile and records one structured native result. The reviewer receives
+the packet-bound current worker result. A later check action runs the frozen
+check (`work check WORK` is also available); a later Lead action requires an
+explicit `--outcome` and `--reason`. These are separate calls and neither
+check success nor acceptance is inferred from a provider result. A recorded
+resumable worker turn may use `work act WORK --resume`; an uncertain running
+journal is a stop, not permission to start another provider process.
+
+The lower-level `work next`, `work bind`, `work child prepare`, and `work child`
+route remains for host-managed child handoffs and cross-host continuation;
+see [onboarding](docs/onboarding.md) and
+[cross-host continuation](docs/cross-host-continuation.md). `project context
+--json` provides bounded current project facts and `goal status --json`
+separates recorded closure from current readiness. Neither output is a
+substitute for executing and checking the selected path.
+
 For a readable current assignment with the stable binary:
 
 ```sh
@@ -632,18 +660,13 @@ memory, boundary-content, and semantic harness drift is reported as a warning;
 the active human-directed operation continues with its recorded plan. Use
 explicit supersession only when you want a new run bound to changed inputs.
 
-During an attended active session, every implementation worker and reviewer
-uses the host's native subagent spawn with the assignment's exact
-`nativeTaskName`. If native spawn is unavailable, stop and return the pending
-assignment to the operator; do not fall back to shell `codex exec` or
-`exitbind away`. This temporary quarantine tracks
-[openai/codex#31894](https://github.com/openai/codex/issues/31894), a strong
-external symptom match for affected `codex exec` no-result runs, not a proven
-root cause. Until a later repository change retires the rule after the upstream
-resolution is independently verified on a supported CLI, exclude affected
-`codex exec` no-result samples from provider-native completion and
-token-efficiency baselines. Historical evidence remains in place; quarantine
-does not delete or rewrite it.
+For a host-managed attended assignment, use the host's native subagent spawn
+with the exact `nativeTaskName`; unavailable spawn leaves that route pending.
+The separate product-managed Codex route is `work act`, which consumes
+structured Codex completion events and refuses missing results. An ad hoc
+shell `codex exec` does not bind a Work result. Preserve earlier no-result
+samples as failures rather than counting them as completed native work or
+silently replacing them in a cost comparison.
 
 When the operator explicitly disconnects during one already-authorized Codex
 assignment, `exitbind away` uses a task-specific/private tmux socket and

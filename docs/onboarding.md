@@ -95,20 +95,21 @@ configuration, profiles, and declarations; **it does not run project tests**.
 A declaration is not a host permission grant or proof that all edits stayed
 inside it. Leave memory rights empty for this first task.
 
-Before `run start`, the coordinating context must verify that the actual host
-session exposes the native worker and reviewer spawn tools required by the
-selected workflow. A profile, task name, or plan-only brief is not native capability
-evidence. If either tool is unavailable, return the limitation and pending work
-to the existing lead or operator without starting a substitute executor. Do
-not repeat a diagnostic brief, use shell `codex exec` or `exitbind away`, rename
-the task, impersonate a role, or add a new permission. This is host guidance;
-Exitbind does not detect or mechanically enforce this preflight.
+Before starting governed Work, select the actual execution path. For native
+host-managed subagents, verify that this session exposes the worker and reviewer
+spawn tools and that their native names are usable. A profile or plan-only
+brief is not capability evidence. For Exitbind-managed Codex execution with
+`work act`, verify an available Codex CLI, model access, and a current assignment
+whose `runtime.host` is `codex`; this route does not require the host's subagent
+spawn tools. If the selected path is unavailable, report that layer and keep
+the pending work with the lead. An ad hoc shell `codex exec` is not a substitute
+for either route, and no declaration grants host permissions.
 
-Native names must be usable in the current host session. If the host keeps used
-task names, resolve that before freezing a new run; see
+If the host-managed route keeps used task names, resolve that before freezing a
+new run; see
 [resuming with an existing host](repair-a-run.md). This setup should reuse the
 roles you already trust. It does not require a new agent host or a model account
-for Exitbind.
+for the model-free benchmark; Codex execution uses your host's model access.
 
 ### Give the host the change
 
@@ -124,7 +125,16 @@ task list. Scope changes and decisions still follow the configured
 [authority boundary](../REFERENCE.md#authority-boundary); missing permission
 or an unavailable native agent requires a real resolution.
 
-For a same-work handoff, give the receiving host the work locator. It reads
+For the product-managed Codex route, the lead begins Work and uses `work act
+WORK` for each current worker or reviewer assignment. Exitbind supplies the
+current packet and verified worker evidence to the reviewer. A subsequent
+`work act WORK` or `work check WORK` runs the distinct check step; the Lead's
+acceptance requires a further explicit outcome and reason. A small
+direct Codex task can instead use `activity codex` in an already configured
+project; its private activity is unjudged and creates no Work acceptance. See
+[the command reference](../REFERENCE.md#run-and-recovery).
+
+For a host-managed same-work child handoff, give the receiving host the work locator. It reads
 `work next`, binds its actual native session with the emitted context token,
 and records the exact native child result through `work child`. Exitbind builds
 the record and digest; the agent need not compose JSON or copy revision
