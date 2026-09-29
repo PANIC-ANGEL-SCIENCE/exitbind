@@ -1,5 +1,6 @@
 use super::*;
 
+#[allow(clippy::too_many_arguments)]
 pub fn submit(
     loaded: &Loaded,
     agent: &str,

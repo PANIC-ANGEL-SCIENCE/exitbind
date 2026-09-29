@@ -37,8 +37,8 @@ pub(super) fn validate_final_result<'a>(role: &str, result: &'a Value) -> Result
         .as_object()
         .ok_or_else(|| format!("native {role} result must be an object"))?;
     if object.keys().any(|key| {
-        !matches!(key.as_str(), "outcome" | "summary" | "reason")
-            && !(role == "reviewer" && key == "evidenceReferences")
+        !(matches!(key.as_str(), "outcome" | "summary" | "reason")
+            || (role == "reviewer" && key == "evidenceReferences"))
     }) {
         return Err(format!("native {role} result contains an undeclared field"));
     }

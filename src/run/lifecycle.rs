@@ -27,6 +27,7 @@ pub fn start(
 
 /// Start a run with the optional, caller-reported deterministic check policy.
 /// Supplying no policy preserves the v1/v2 start API and persisted shape.
+#[allow(clippy::too_many_arguments)]
 pub fn start_with_policy(
     loaded: &Loaded,
     workflow: &str,

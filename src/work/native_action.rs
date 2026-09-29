@@ -646,6 +646,7 @@ fn outcome_from_bytes(bytes: &[u8]) -> Result<(String, Option<String>), String> 
     Ok((outcome, reason))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_request(
     loaded: &Loaded,
     options: Options<'_>,
@@ -705,9 +706,7 @@ fn build_request(
     } else if role == "reviewer" {
         return Err("reviewer evidence route is unavailable".into());
     } else {
-        format!(
-            "Use the packet's declared evidence routes when checking the assignment. Do not copy upstream artifacts into the prompt or reconstruct them from git."
-        )
+        "Use the packet's declared evidence routes when checking the assignment. Do not copy upstream artifacts into the prompt or reconstruct them from git.".to_owned()
     };
     let prompt = format!(
         "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. {evidence_route} Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES:\n{profile}\n\nCURRENT ASSIGNMENT DELIVERY PROJECTION (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; omitted recovery goal/scope/subject/current/missing/loop/next fields equal context goal/scope/subject/evidence/obligations/loop/next respectively):\n{packet}\n",
@@ -765,7 +764,13 @@ fn timestamp() -> u128 {
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(DIGITS[(byte >> 4) as usize] as char);
+        encoded.push(DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }
 
 fn hex_decode(value: &str) -> Result<Vec<u8>, String> {

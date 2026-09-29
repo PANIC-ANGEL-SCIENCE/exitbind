@@ -531,15 +531,12 @@ fn parse_stream(
                                 Some(id.to_owned())
                             }
                         };
-                        let invocation_sha256 = if let Some(host_item_id) = host_item_id.as_deref()
-                        {
-                            Some(crate::evidence::hash::value(&json!({
+                        let invocation_sha256 = host_item_id.as_deref().map(|host_item_id| {
+                            crate::evidence::hash::value(&json!({
                                 "threadId": thread_id.as_deref(),
                                 "hostItemId": host_item_id,
-                            })))
-                        } else {
-                            None
-                        };
+                            }))
+                        });
                         command_outcomes.push(CommandOutcome {
                             status: status.to_owned(),
                             exit_code,
