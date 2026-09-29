@@ -102,13 +102,10 @@ fn attended_work_uses_native_spawn_without_away_fallback() {
 
     for document in [AWAY_GUIDE, REFERENCE] {
         let document = normalize(document);
-        assert!(document.contains("openai/codex#31894"));
-        assert!(document.contains("a strong external symptom match"));
-        assert!(document.contains("not a proven root cause"));
-        assert!(document.contains("exclude affected `codex exec` no-result samples from provider-native completion and token-efficiency baselines"));
-        assert!(document.contains(
-            "Historical evidence remains in place; quarantine does not delete or rewrite it"
-        ));
+        assert!(document.contains("nativeTaskName"));
+        assert!(document.contains("work act"));
+        assert!(document.contains("ad hoc shell `codex exec`"));
+        assert!(!document.contains("token-efficiency baselines"));
         assert!(
             document.contains("exitbind away start implementation_worker")
                 || document.contains("soulmate away start implementation_worker")

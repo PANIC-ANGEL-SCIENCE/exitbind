@@ -664,9 +664,7 @@ For a host-managed attended assignment, use the host's native subagent spawn
 with the exact `nativeTaskName`; unavailable spawn leaves that route pending.
 The separate product-managed Codex route is `work act`, which consumes
 structured Codex completion events and refuses missing results. An ad hoc
-shell `codex exec` does not bind a Work result. Preserve earlier no-result
-samples as failures rather than counting them as completed native work or
-silently replacing them in a cost comparison.
+shell `codex exec` does not bind a Work result.
 
 When the operator explicitly disconnects during one already-authorized Codex
 assignment, `exitbind away` uses a task-specific/private tmux socket and

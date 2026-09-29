@@ -4,22 +4,16 @@ Exitbind's optional reference adapter keeps one already-authorized pending
 Codex assignment alive when the operator explicitly disconnects. Exitbind
 still owns assignment and artifact evidence; tmux owns only process lifetime.
 
-## Attended sessions use native spawn
+## Attended sessions use the selected Work path
 
 Do not select this adapter during an attended active session. Every
-implementation worker and reviewer instead uses the host's native subagent
-spawn with the assignment's exact `nativeTaskName`. If native spawn is
-unavailable, stop and return the pending assignment to the operator; do not
-fall back to shell `codex exec` or `exitbind away`. The explicit
+host-managed implementation worker and reviewer uses the host's native
+subagent spawn with the assignment's exact `nativeTaskName`. The separate
+product-managed Codex route uses `work act` with a current Work assignment.
+If the selected route is unavailable, leave that assignment pending and
+report the unavailable capability. An ad hoc shell `codex exec` or `exitbind
+away` does not replace the selected attended route. The explicit
 operator-away/disconnect handoff below remains available.
-
-[openai/codex#31894](https://github.com/openai/codex/issues/31894) is a strong
-external symptom match for affected `codex exec` no-result runs, not a proven
-root cause. Until a later repository change retires this temporary rule after
-the upstream resolution is independently verified on a supported CLI, exclude
-affected `codex exec` no-result samples from provider-native completion and
-token-efficiency baselines. Historical evidence remains in place; quarantine
-does not delete or rewrite it.
 
 ## Contract
 
