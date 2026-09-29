@@ -142,16 +142,36 @@ fn file_input_preserves_quoted_replan_fields_and_rejects_unsafe_inputs() {
     ]);
     assert!(!linked.status.success());
     assert_eq!(fs::read(fixture.ledger()).unwrap(), before);
-    let result = fixture.json(&[
+    let unknown = fixture.call(&[
         "work",
         "replan",
         &fixture.work,
         &fixture.assignment,
         "--replan-file",
         file,
+        "--unrecognized",
     ]);
+    assert!(!unknown.status.success(), "{unknown:?}");
+    assert_eq!(fs::read(fixture.ledger()).unwrap(), before);
+
+    let output = fixture.call(&[
+        "work",
+        "replan",
+        &fixture.work,
+        &fixture.assignment,
+        "--replan-file",
+        file,
+        "--json",
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["event"]["governorEvent"]["hypothesis"], hypothesis);
     assert_eq!(result["event"]["governorEvent"]["evidenceRequest"], request);
+    let after = fs::read(fixture.ledger()).unwrap();
+    assert_eq!(
+        after.iter().filter(|byte| **byte == b'\n').count(),
+        before.iter().filter(|byte| **byte == b'\n').count() + 1
+    );
 }
 
 #[test]

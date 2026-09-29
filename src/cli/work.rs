@@ -176,6 +176,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "preservation-proof-origin",
                     "basis",
                     "review-policy",
+                    "json",
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
@@ -242,6 +243,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "scope-decision",
                     "blocker",
                     "replan-file",
+                    "json",
                 ],
             )?;
             args::assert_positionals("work replan", a, 3)?;
@@ -257,7 +259,11 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             )?)
         }
         "evidence" => {
-            args::assert_options("work evidence", a, &["config", "artifact", "artifact-root"])?;
+            args::assert_options(
+                "work evidence",
+                a,
+                &["config", "artifact", "artifact-root", "json"],
+            )?;
             args::assert_positionals("work evidence", a, 3)?;
             print_json(&crate::work::evidence(
                 l,

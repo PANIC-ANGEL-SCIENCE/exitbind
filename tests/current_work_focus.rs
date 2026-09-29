@@ -164,6 +164,36 @@ fn unusable_focus_selects_nothing_and_names_the_recovery_route() {
 }
 
 #[test]
+fn default_resume_keeps_focused_result_and_unreadable_history_in_compact_json() {
+    let root = project("focus-unreadable-compact");
+    let focused = begin(&root, "current work");
+    let corrupt = begin(&root, "unreadable older history");
+    let focused_work = focused["work"].as_str().unwrap();
+    ok(&root, &["work", "focus", focused_work]);
+    let corrupt_work = corrupt["work"].as_str().unwrap();
+    let ledger = root.join(".exitbind/runs").join(format!(
+        "work-{}.jsonl",
+        corrupt_work.strip_prefix("smw_").unwrap()
+    ));
+    fs::write(ledger, b"not-json\n").unwrap();
+
+    // This uses the ordinary CLI path without --full, so compaction is part of
+    // the user-visible contract under test.
+    let output = call(&root, &["work", "resume"]);
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "resumed");
+    assert_eq!(value["work"], focused_work);
+    assert_eq!(value["works"].as_array().unwrap().len(), 0);
+    assert_eq!(value["unreadable"].as_array().unwrap().len(), 1);
+    assert_eq!(value["unreadable"][0]["work"], corrupt_work);
+    assert_eq!(value["unreadable"][0]["reason"], "corrupt_ledger");
+    assert_eq!(value["unreadable"][0]["command"][2], "inspect");
+    assert_eq!(value["fullCommand"][2], "resume");
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn failed_focus_update_reports_the_committed_work_and_recovery() {
     let root = project("focus-write-failure");
     fs::create_dir(focus_file(&root)).unwrap();
@@ -187,5 +217,48 @@ fn failed_focus_update_reports_the_committed_work_and_recovery() {
     fs::remove_dir(focus_file(&root)).unwrap();
     ok(&root, &["work", "focus", work]);
     assert_eq!(ok(&root, &["work", "resume"])["work"], work);
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn begin_accepts_redundant_json_and_rejects_unknown_options_before_mutation() {
+    let root = project("begin-json-option");
+    let started = call(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "JSON-compatible begin",
+            "--check-command",
+            "true",
+            "--json",
+        ],
+    );
+    assert!(started.status.success(), "{started:?}");
+    let value: Value = serde_json::from_slice(&started.stdout).unwrap();
+    assert!(value["work"].as_str().is_some());
+    let before = ledgers(&root);
+    assert_eq!(before.len(), 1);
+    let focus_before = fs::read(focus_file(&root)).unwrap();
+
+    let rejected = call(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "must not begin",
+            "--check-command",
+            "true",
+            "--unrecognized",
+        ],
+    );
+    assert!(!rejected.status.success(), "{rejected:?}");
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("--unrecognized"));
+    assert_eq!(ledgers(&root), before);
+    assert_eq!(fs::read(focus_file(&root)).unwrap(), focus_before);
     fs::remove_dir_all(&root).unwrap();
 }

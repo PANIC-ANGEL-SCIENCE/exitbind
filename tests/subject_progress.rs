@@ -698,6 +698,54 @@ fn resume_lists_healthy_and_corrupt_candidates_without_selecting_one() {
 }
 
 #[test]
+fn resume_uses_valid_focus_while_preserving_unreadable_history() {
+    let fixture = Fixture::new_single();
+    let focused = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "focused current work",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let corrupt = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "unreadable older history",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let focused_work = focused["work"].as_str().unwrap();
+    fixture.value(&["work", "focus", focused_work], None);
+    let corrupt_work = corrupt["work"].as_str().unwrap();
+    fs::write(
+        fixture.root.join(fixture.ledger(corrupt_work)),
+        b"not-json\n",
+    )
+    .unwrap();
+
+    let value = fixture.value(&["work", "resume"], None);
+    assert_eq!(value["status"], "resumed");
+    assert_eq!(value["work"], focused_work);
+    assert_eq!(value["selection"]["basis"], "current_work_focus");
+    assert_eq!(value["works"].as_array().unwrap().len(), 0);
+    assert_eq!(value["unreadable"].as_array().unwrap().len(), 1);
+    assert_eq!(value["unreadable"][0]["work"], corrupt_work);
+    assert_eq!(value["unreadable"][0]["reason"], "corrupt_ledger");
+    assert_eq!(value["unreadable"][0]["command"][1], "run");
+    assert_eq!(value["unreadable"][0]["command"][2], "inspect");
+}
+
+#[test]
 fn resume_with_only_corrupt_candidate_stays_unresolved() {
     let fixture = Fixture::new_single();
     let begin = fixture.value(

@@ -195,6 +195,21 @@ fn refused_completion_is_private_idempotent_and_resubmittable() {
     );
 
     fs::write(fixture.root.join(".exitbind/evidence.txt"), b"new evidence").unwrap();
+    let before_evidence = fs::read(fixture.ledger(&work)).unwrap();
+    let unknown = fixture.call(&[
+        "work",
+        "evidence",
+        &work,
+        &assignment,
+        "--artifact",
+        ".exitbind/evidence.txt",
+        "--artifact-root",
+        "state",
+        "--unrecognized",
+    ]);
+    assert!(!unknown.status.success(), "{unknown:?}");
+    assert_eq!(before_evidence, fs::read(fixture.ledger(&work)).unwrap());
+
     let evidence = fixture.call(&[
         "work",
         "evidence",
@@ -204,8 +219,21 @@ fn refused_completion_is_private_idempotent_and_resubmittable() {
         ".exitbind/evidence.txt",
         "--artifact-root",
         "state",
+        "--json",
     ]);
     assert!(evidence.status.success(), "{evidence:?}");
+    let evidence: Value = serde_json::from_slice(&evidence.stdout).unwrap();
+    assert_eq!(evidence["work"], work);
+    assert!(evidence["event"].is_object());
+    let after_evidence = fs::read(fixture.ledger(&work)).unwrap();
+    assert_eq!(
+        after_evidence.iter().filter(|byte| **byte == b'\n').count(),
+        before_evidence
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count()
+            + 1
+    );
     let output = fixture.call(&[
         "work",
         "return",

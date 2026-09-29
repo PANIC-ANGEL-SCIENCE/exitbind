@@ -71,24 +71,33 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     }
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
     if !unreadable.is_empty() {
+        // An explicit, validated focus is enough to resume that work even when
+        // unrelated history cannot be replayed. Keep both the readable history
+        // and every unreadable candidate in the response so this does not hide
+        // the damaged or ambiguous records.
+        if !history {
+            if let focus::Focus::Work(selected) = focus::read(loaded)? {
+                if let Some(index) = candidates
+                    .iter()
+                    .position(|candidate| candidate.0 == selected)
+                {
+                    let works = candidate_values(loaded, &candidates, Some(index))?;
+                    let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
+                    let mut result = resumed(loaded, &work, &ledger)?;
+                    result["selection"] =
+                        json!({"basis": "current_work_focus", "authority": "none"});
+                    result["works"] = json!(works);
+                    result["unreadable"] = json!(unreadable);
+                    return Ok(result);
+                }
+            }
+        }
         let status = if candidates.is_empty() {
             "unresolved"
         } else {
             "ambiguous"
         };
-        let works = candidates
-            .iter()
-            .map(|(work, workflow, goal, _, progress, identity)| {
-                Ok(json!({
-                    "work": work,
-                    "workflow": workflow,
-                    "goal": goal,
-                    "progress": compact_progress(progress),
-                    "command": candidate_command(loaded, work)?,
-                    "ledgerProducer": identity["ledgerProducer"],
-                }))
-            })
-            .collect::<Result<Vec<_>, String>>()?;
+        let works = candidate_values(loaded, &candidates, None)?;
         let mut result = json!({
             "status": status,
             "reason": {"code": "unreadable_candidate"},
@@ -147,19 +156,7 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             resumed(loaded, &work, &ledger)
         }
         _ => {
-            let works = candidates
-                .iter()
-                .map(|(work, workflow, goal, _, progress, identity)| {
-                    Ok(json!({
-                        "work": work.clone(),
-                        "workflow": workflow,
-                        "goal": goal,
-                        "progress": compact_progress(progress),
-                        "command": candidate_command(loaded, work)?,
-                        "ledgerProducer": identity["ledgerProducer"],
-                    }))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
+            let works = candidate_values(loaded, &candidates, None)?;
             let (status, reason) = if history {
                 ("history", "history_requested")
             } else {
@@ -179,6 +176,28 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             Ok(result)
         }
     }
+}
+
+fn candidate_values(
+    loaded: &Loaded,
+    candidates: &[Candidate],
+    omit: Option<usize>,
+) -> Result<Vec<Value>, String> {
+    candidates
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| Some(*index) != omit)
+        .map(|(_, (work, workflow, goal, _, progress, identity))| {
+            Ok(json!({
+                "work": work,
+                "workflow": workflow,
+                "goal": goal,
+                "progress": compact_progress(progress),
+                "command": candidate_command(loaded, work)?,
+                "ledgerProducer": identity["ledgerProducer"],
+            }))
+        })
+        .collect()
 }
 
 fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {

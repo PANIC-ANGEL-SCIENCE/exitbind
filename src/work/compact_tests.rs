@@ -54,6 +54,70 @@ fn projection_keeps_decision_identity_subject_recorder_and_references() {
 }
 
 #[test]
+fn compact_resume_keeps_other_candidates_and_unreadable_recovery_routes() {
+    let works = json!([{
+        "work": "smw_other",
+        "progress": {"state": "running", "percent": 10},
+        "command": ["exitbind", "work", "next", "smw_other", "--json"],
+    }]);
+    let unreadable = json!([{
+        "work": "smw_old",
+        "reason": "candidate_unreadable",
+        "error": "historical replay is incomplete",
+        "command": ["exitbind", "run", "inspect", ".exitbind/runs/work-old.jsonl", "--json"],
+    }]);
+    let response = json!({
+        "status": "resumed",
+        "work": "smw_focus",
+        "works": works,
+        "unreadable": unreadable,
+        "next": {"action": "check"},
+    });
+
+    let compact = project(&response, Path::new("/tmp/exitbind.json"), "resume").unwrap();
+    assert_eq!(compact["works"], works);
+    assert_eq!(compact["unreadable"], unreadable);
+    assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
+}
+
+#[test]
+fn oversized_candidate_details_keep_counts_and_a_full_resume_route() {
+    let works = (0..100)
+        .map(|index| {
+            json!({
+                "work": format!("smw_{index}"),
+                "command": ["exitbind", "work", "next", format!("smw_{index}")],
+                "detail": "x".repeat(400),
+            })
+        })
+        .collect::<Vec<_>>();
+    let unreadable = (0..100)
+        .map(|index| {
+            json!({
+                "work": format!("smw_bad_{index}"),
+                "reason": "candidate_unreadable",
+                "command": ["exitbind", "run", "inspect", format!(".exitbind/runs/{index}.jsonl")],
+                "error": "x".repeat(400),
+            })
+        })
+        .collect::<Vec<_>>();
+    let response = json!({
+        "status": "resumed",
+        "work": "smw_focus",
+        "works": works,
+        "unreadable": unreadable,
+        "next": {"action": "check", "assignment": "sma_assignment"},
+    });
+
+    let compact = project(&response, Path::new("/tmp/exitbind.json"), "resume").unwrap();
+    assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
+    assert_eq!(compact["candidateCounts"]["works"], 100);
+    assert_eq!(compact["candidateCounts"]["unreadable"], 100);
+    assert_eq!(compact["omitted"][0], "candidate details; use fullCommand");
+    assert_eq!(compact["fullCommand"][2], "resume");
+}
+
+#[test]
 fn oversized_exact_reference_set_keeps_representatives_and_counts_omissions() {
     let references = (0..200)
         .map(|index| {

@@ -73,6 +73,9 @@ pub(crate) fn project(
     for key in ["selection", "history", "focus"] {
         copy_if_present(response, &mut result, key);
     }
+    for key in ["works", "unreadable"] {
+        copy_if_present(response, &mut result, key);
+    }
     if let Some(continuation) = response.get("continuation") {
         let bytes = serialized_len(continuation)?;
         if bytes <= 2_500 {
@@ -212,7 +215,7 @@ pub(crate) fn project(
         result["truncated"] = json!(true);
     }
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
-        let emergency = json!({
+        let mut emergency = json!({
             "compact": true,
             "status": response["status"],
             "work": response["work"],
@@ -233,6 +236,16 @@ pub(crate) fn project(
             "omitted": ["large response detail; use fullCommand"],
             "truncated": true,
         });
+        for key in ["works", "unreadable"] {
+            copy_if_present(
+                response,
+                emergency.as_object_mut().expect("compact object"),
+                key,
+            );
+        }
+        if let Some(counts) = candidate_counts(response) {
+            emergency["candidateCounts"] = counts;
+        }
         if serialized_len(&emergency)? < MAX_RESPONSE_BYTES {
             return Ok(emergency);
         }
@@ -240,7 +253,7 @@ pub(crate) fn project(
         let assignment = response["next"]["assignment"]
             .as_str()
             .filter(|value| value.len() <= 128);
-        let minimal = json!({
+        let mut minimal = json!({
             "compact": true,
             "status": "unresolved",
             "work": work,
@@ -253,13 +266,17 @@ pub(crate) fn project(
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
+        if let Some(counts) = candidate_counts(response) {
+            minimal["candidateCounts"] = counts;
+            minimal["omitted"] = json!(["candidate details; use fullCommand"]);
+        }
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
         // A pathological path or identifier must never make the bounded
         // endpoint emit an unbounded response.  Keep an executable argv prefix
         // and require the caller to supply the exact current config value.
-        let fallback = json!({
+        let mut fallback = json!({
             "compact": true,
             "status": "unresolved",
             "work": work,
@@ -271,6 +288,11 @@ pub(crate) fn project(
             "omitted": ["oversized response detail; use the required current executable and config"],
             "truncated": true,
         });
+        if let Some(counts) = candidate_counts(response) {
+            fallback["candidateCounts"] = counts;
+            fallback["omitted"] =
+                json!(["candidate details; use the required current executable and config"]);
+        }
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }
@@ -415,6 +437,16 @@ fn compact_obligations(response: &Value) -> Option<Value> {
         }
     }
     Some(Value::Object(value))
+}
+
+fn candidate_counts(response: &Value) -> Option<Value> {
+    if response.get("works").is_none() && response.get("unreadable").is_none() {
+        return None;
+    }
+    Some(json!({
+        "works": response.get("works").and_then(Value::as_array).map_or(0, Vec::len),
+        "unreadable": response.get("unreadable").and_then(Value::as_array).map_or(0, Vec::len),
+    }))
 }
 
 fn omitted_fields() -> Value {
