@@ -5,6 +5,18 @@
 
 use super::*;
 
+struct UnverifiedSuccessor {
+    work: String,
+    ledger: String,
+    error: String,
+}
+
+struct SupersessionStatus {
+    has_claim: bool,
+    verified: bool,
+    unverified_successor: Option<UnverifiedSuccessor>,
+}
+
 pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
@@ -37,10 +49,10 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
         }
         let ledger = format!("{}/{}", runs_dir(), name);
         let work = format!("{WORK_PREFIX}{token}");
-        let discovered = (|| -> Result<(Option<Candidate>, bool), String> {
-            let (has_claim, superseded) = supersession_status(loaded, &ledger)?;
-            if superseded {
-                return Ok((None, has_claim));
+        let discovered = (|| -> Result<(Option<Candidate>, SupersessionStatus), String> {
+            let supersession = supersession_status(loaded, &ledger)?;
+            if supersession.verified {
+                return Ok((None, supersession));
             }
             let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
             let view = snapshot.inspect_view();
@@ -56,7 +68,7 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
                         progress,
                         identity,
                     )),
-                    has_claim,
+                    supersession,
                 ));
             }
             if let Some(at) = view["events"]
@@ -66,18 +78,27 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             {
                 finished.push((at.to_owned(), work.clone(), ledger.clone()));
             }
-            Ok((None, has_claim))
+            Ok((None, supersession))
         })();
         match discovered {
-            Ok((candidate, has_claim)) => {
-                if has_claim {
+            Ok((candidate, supersession)) => {
+                if supersession.has_claim {
                     claimed_predecessors.insert(work.clone());
+                }
+                if let Some(successor) = supersession.unverified_successor {
+                    push_unreadable(
+                        loaded,
+                        &mut unreadable,
+                        &successor.work,
+                        &successor.ledger,
+                        &successor.error,
+                    )?;
                 }
                 if let Some(candidate) = candidate {
                     candidates.push(candidate);
                 }
             }
-            Err(error) => unreadable.push(unreadable_candidate(loaded, &work, &ledger, &error)?),
+            Err(error) => push_unreadable(loaded, &mut unreadable, &work, &ledger, &error)?,
         }
     }
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
@@ -243,32 +264,55 @@ fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
     Ok(result)
 }
 
-fn supersession_status(loaded: &Loaded, ledger: &str) -> Result<(bool, bool), String> {
+fn supersession_status(loaded: &Loaded, ledger: &str) -> Result<SupersessionStatus, String> {
     let claim_path = loaded.state_root.join(format!("{ledger}.supersede"));
     let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
-        return Ok((false, false));
+        return Ok(SupersessionStatus {
+            has_claim: false,
+            verified: false,
+            unverified_successor: None,
+        });
+    };
+    let successor = claim["newLedgerPath"]
+        .as_str()
+        .ok_or("supersession successor path is invalid")?;
+    let issue = |error: String| SupersessionStatus {
+        has_claim: true,
+        verified: false,
+        unverified_successor: Some(UnverifiedSuccessor {
+            work: successor_work(successor),
+            ledger: successor.to_owned(),
+            error,
+        }),
     };
     if claim["oldLedgerPath"] != ledger {
-        return Ok((true, false));
+        return Ok(issue(
+            "supersession claim does not match the predecessor ledger path".into(),
+        ));
     }
     let (_, old_events, old_source) = crate::run::ledger::load(loaded, ledger)?;
     let Some(old_head) = old_events.last() else {
-        return Ok((true, false));
+        return Ok(issue("predecessor ledger is empty".into()));
     };
     if claim["oldLedgerSha256"] != hash::bytes(old_source.as_bytes())
         || claim["oldRunId"] != old_events[0]["runId"]
         || claim["oldHeadEventSha256"] != old_head["eventSha256"]
         || claim["oldConfigSha256"] != old_events[0]["configSha256"]
     {
-        return Ok((true, false));
+        return Ok(issue(
+            "supersession claim does not match predecessor provenance".into(),
+        ));
     }
-    let successor = claim["newLedgerPath"].as_str().unwrap_or_default();
     let (_, successor_events, _) = match crate::run::ledger::load(loaded, successor) {
         Ok(value) => value,
-        Err(_) => return Ok((true, false)),
+        Err(error) => {
+            return Ok(issue(format!(
+                "successor ledger could not be verified: {error}"
+            )))
+        }
     };
     let Some(start) = successor_events.first() else {
-        return Ok((true, false));
+        return Ok(issue("successor ledger is empty".into()));
     };
     let link = &start["supersedes"];
     let verified = start["runId"] == claim["newRunId"]
@@ -278,7 +322,45 @@ fn supersession_status(loaded: &Loaded, ledger: &str) -> Result<(bool, bool), St
         && link["runId"] == claim["oldRunId"]
         && link["headEventSha256"] == claim["oldHeadEventSha256"]
         && link["configSha256"] == claim["oldConfigSha256"];
-    Ok((true, verified))
+    if verified {
+        Ok(SupersessionStatus {
+            has_claim: true,
+            verified: true,
+            unverified_successor: None,
+        })
+    } else {
+        Ok(issue(
+            "successor provenance does not match the supersession claim".into(),
+        ))
+    }
+}
+
+fn successor_work(ledger: &str) -> String {
+    let work = std::path::Path::new(ledger)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("work-"))
+        .and_then(|name| name.strip_suffix(".jsonl"))
+        .filter(|token| valid_token(token))
+        .map(|token| format!("{WORK_PREFIX}{token}"));
+    work.unwrap_or_else(|| "unverified_successor".into())
+}
+
+fn push_unreadable(
+    loaded: &Loaded,
+    unreadable: &mut Vec<Value>,
+    work: &str,
+    ledger: &str,
+    error: &str,
+) -> Result<(), String> {
+    if unreadable
+        .iter()
+        .any(|candidate| candidate["ledger"] == ledger)
+    {
+        return Ok(());
+    }
+    unreadable.push(unreadable_candidate(loaded, work, ledger, error)?);
+    Ok(())
 }
 
 /// No work is active. The most recently finished run is still reported, with

@@ -817,6 +817,91 @@ fn resume_refuses_focused_superseded_work_with_unreadable_successor() {
 }
 
 #[test]
+fn resume_refuses_predecessor_when_successor_ledger_is_missing() {
+    let fixture = Fixture::new_single();
+    let predecessor = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "missing successor predecessor",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let predecessor_work = predecessor["work"].as_str().unwrap();
+    let predecessor_ledger = fixture.ledger(predecessor_work);
+    let successor_work = "smw_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    let successor_ledger = fixture.ledger(successor_work);
+    fixture.value(
+        &[
+            "run",
+            "supersede",
+            &predecessor_ledger,
+            "--workflow",
+            "change",
+            "--goal",
+            "missing successor",
+            "--ledger",
+            &successor_ledger,
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+
+    let predecessor_path = fixture.root.join(&predecessor_ledger);
+    let successor_path = fixture.root.join(&successor_ledger);
+    fs::remove_file(&successor_path).unwrap();
+    let claim_path = fixture.root.join(format!("{predecessor_ledger}.supersede"));
+    let focus_path = fixture.root.join(".exitbind/current-work.json");
+    let predecessor_before = fs::read(&predecessor_path).unwrap();
+    let claim_before = fs::read(&claim_path).unwrap();
+
+    for focused in [true, false] {
+        if !focused {
+            fs::remove_file(&focus_path).unwrap();
+        }
+        let focus_before = fs::read(&focus_path).ok();
+        for _ in 0..2 {
+            let output = fixture.call(&["work", "resume"], None);
+            assert!(output.status.success(), "{output:?}");
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["status"], "ambiguous");
+            assert_eq!(value["reason"]["code"], "unreadable_candidate");
+            assert_ne!(
+                value.get("work").and_then(Value::as_str),
+                Some(predecessor_work)
+            );
+            let unreadable = value["unreadable"].as_array().unwrap();
+            let successor = unreadable
+                .iter()
+                .find(|candidate| candidate["ledger"] == successor_ledger)
+                .expect("missing successor must be reported as unreadable");
+            assert_eq!(successor["work"], successor_work);
+            assert_eq!(
+                successor["workingDirectory"],
+                fixture.root.to_str().unwrap()
+            );
+            assert_eq!(successor["command"][1], "run");
+            assert_eq!(successor["command"][2], "inspect");
+            assert_eq!(successor["command"][4], "--json");
+            assert_eq!(successor["command"][5], "--config");
+            assert_eq!(
+                successor["command"][6],
+                fixture.root.join("exitbind.json").to_str().unwrap()
+            );
+            assert_eq!(fs::read(&predecessor_path).unwrap(), predecessor_before);
+            assert_eq!(fs::read(&claim_path).unwrap(), claim_before);
+            assert!(!successor_path.exists());
+            assert_eq!(fs::read(&focus_path).ok(), focus_before);
+        }
+    }
+}
+
+#[test]
 fn resume_refuses_focused_predecessor_with_invalid_successor_lineage() {
     let fixture = Fixture::new_single();
     let predecessor = fixture.value(
