@@ -50,6 +50,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "activity codex [--model MODEL] [--reasoning-effort EFFORT] < PROMPT"
         }
         ["activity", "show"] => "activity show ACTIVITY_ID",
+        ["retrospective", "inspect"] => "retrospective inspect --repo PATH --source PATH --since RFC3339 --until RFC3339 [--json]",
+        ["retrospective", "expand"] => "retrospective expand REF --repo PATH --source PATH --since RFC3339 --until RFC3339 [--json]",
         ["run", "start"] => "run start WORKFLOW --goal GOAL --ledger LEDGER",
         ["run", "next"] => "run next LEDGER [--text]",
         ["run", "submit"] => "run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT",

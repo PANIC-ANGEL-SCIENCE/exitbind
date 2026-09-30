@@ -91,6 +91,10 @@ const VALUE_OPTIONS: &[&str] = &[
     "host-version",
     "native-child",
     "result",
+    "repo",
+    "source",
+    "since",
+    "until",
     "timeout-ms",
     "workflow",
 ];

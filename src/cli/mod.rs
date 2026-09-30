@@ -17,6 +17,7 @@ pub(crate) mod args;
 mod help;
 mod project;
 mod replan_input;
+mod retrospective;
 mod run_cli;
 mod status;
 mod work;
@@ -160,6 +161,9 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         args::assert_options(command, &parsed, &[])?;
         args::assert_positionals(command, &parsed, 0)?;
         return update::explicit_update();
+    }
+    if command == "retrospective" {
+        return retrospective::command(&parsed);
     }
     match command {
         "hook-protocol" => {

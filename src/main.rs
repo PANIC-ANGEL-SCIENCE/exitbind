@@ -12,6 +12,7 @@ mod presentation;
 mod presentation_events;
 mod producer;
 mod project;
+mod retrospective;
 mod run;
 mod run_exit;
 mod run_human;

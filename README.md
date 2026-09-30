@@ -180,6 +180,27 @@ their historical paths. See the
 rollback, and [legacy compatibility](docs/legacy-compatibility.md) for an old
 project.
 
+## Optional after-done retrospective
+
+When a task was completed before Exitbind was installed, an operator may opt
+into a bounded, read-only retrospective over one repository, an explicit
+RFC3339 interval, and one Codex 0.159.2 JSONL export. It does not scan a home
+directory, contact a model, execute transcript content, or create memory or
+Work records:
+
+```sh
+exitbind retrospective inspect --repo PATH --source PATH \
+  --since RFC3339 --until RFC3339
+exitbind retrospective expand REF --repo PATH --source PATH \
+  --since RFC3339 --until RFC3339 --json
+```
+
+Results separate completion claims, later repair/review activity, and the last
+supported outcome. Coverage is labelled `complete`, `partial`, or
+`unsupported`; an opaque digest-bound reference is required to expand evidence.
+A finding is a historical observation, not Exitbind acceptance or proof that
+an agent was deceptive.
+
 ## Update, recover, or leave
 
 Ask the same lead to update Exitbind, resume interrupted work, or remove it.

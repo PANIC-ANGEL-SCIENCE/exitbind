@@ -575,6 +575,29 @@ unavailable observation is reported as unavailable, not projected as current.
 
 ## Run and recovery
 
+### After-done retrospective
+
+The opt-in retrospective reads one explicitly selected Codex 0.159.2 JSONL
+file or directory and one Git repository without changing either input:
+
+```text
+exitbind retrospective inspect --repo PATH --source PATH --since RFC3339 --until RFC3339 [--json]
+exitbind retrospective expand REF --repo PATH --source PATH --since RFC3339 --until RFC3339 [--json]
+```
+
+The adapter accepts `session_meta` and `response_item` records, associates a
+session to the repository only through canonical metadata and explicit
+lineage, and ignores hidden reasoning and embedded commands. Default output
+does not print absolute source paths or raw transcript text (only bounded,
+scrubbed claim labels). `expand` validates an
+opaque digest-bound reference against the same selected source and interval.
+Malformed, truncated, or version-changed input is reported as partial or
+unsupported coverage; findings are historical observations, not Work, review,
+acceptance, or repair events.
+The machine result always reports `usage.status=unavailable`: this adapter does
+not attribute token counters or claim savings. Repeated exports and cumulative
+usage-shaped records are not counted as executions.
+
 Run state is private operational data beneath StateRoot. Each assignment fixes
 the selected profile, requested runtime, declared skills/boundary, memory
 references, upstream artifact hashes, and producer evidence. These are
