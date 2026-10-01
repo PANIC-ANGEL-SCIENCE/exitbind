@@ -41,8 +41,11 @@ and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
 its distinct decision. The commands below govern host-managed child handoffs,
 not this product-managed Codex route.
 
-For an explicit work locator on a receiving host, first run
-`exitbind work continuation WORK`. This read-only view carries the original
+For an explicit work locator, first run `exitbind work next WORK --json --full`
+to recover the current action. Use `exitbind work continuation WORK` for an
+initialized same-Work cross-host handoff; follow its `receive` block for binding
+and child preparation. If another goal owns the continuation sidecar, preserve
+it and continue through `work next`. This read-only continuation view carries the original
 requirements, current corrections, exact result references, binding,
 uncertain operations, `mutationContext.token`, and a `receive` block with the
 bind and native-child commands. If it returns `requiresExpansion`, follow the
@@ -86,6 +89,17 @@ Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.
 Never overwrite the host agent's native identity or claim that projected
 guidance proves discovery, activation, compliance, or isolation.
+
+One assignment can contain several required outcomes. Retain their dependencies,
+evidence, failure and return conditions in the existing plan; a completed part
+does not close the whole goal. Use useful granularity without requiring an agent
+or Work for every part. Treat causal explanations and impact maps as provisional:
+investigate plausible wider links within read authority, return basis or repair
+boundary contradictions to the Lead, and revise affected assignments and evidence
+through this protocol before dependent implementation. Preserve scoped recipient
+and visibility restrictions in relevant handoffs. Personal profiles and lenses
+augment judgment while Exitbind owns its state and acceptance routes. Adapt
+reasoning to the task without a fixed thinking sequence or model choice.
 
 For a material task, the lead first classifies the goal, dependencies, useful
 context, tools, roles, role boundary, actual check command, and the consequence

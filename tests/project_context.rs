@@ -232,6 +232,15 @@ fn native_projection_refuses_external_profile_before_any_write() {
 #[test]
 fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     let root = project("project-context-assignment");
+    // A fresh product project carries the generic responsibilities without a
+    // personal context pack; this checks delivery, not model compliance.
+    let lead_profile = fs::read_to_string(root.join("exitbind/agents/lead.md")).unwrap();
+    assert!(lead_profile.contains("completing one part does not complete the whole"));
+    assert!(lead_profile.contains("impact map as provisional"));
+    assert!(lead_profile.contains("no fixed thinking sequence or model choice"));
+    let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
+    assert!(skill.contains("first run `exitbind work next WORK --json --full`"));
+    assert!(skill.contains("initialized same-Work cross-host handoff"));
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["agents"]["worker"]["nativeName"] = json!("sonic");
@@ -274,6 +283,8 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
         "{profile}"
     );
     assert!(profile.contains("Presented profile SHA-256:"));
+    assert!(profile.contains("Account for every required outcome"));
+    assert!(profile.contains("investigation does not expand write authority"));
     assert!(hook(&root, "worker").is_none());
     let reviewer_context = hook(&root, "reviewer").unwrap();
     assert!(reviewer_context.contains("assignment context mismatch"));
