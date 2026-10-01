@@ -144,6 +144,7 @@ pub(super) fn projection(observation: &Observation) -> Value {
 
 pub(super) fn request_projection(request: &Request) -> Value {
     json!({
+        "executable": request.executable,
         "model": request.model,
         "reasoningEffort": request.effort,
         "sandbox": request.sandbox,

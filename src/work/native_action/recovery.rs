@@ -19,6 +19,11 @@ pub(super) fn recover(
     operation: Option<&str>,
     overrides: bool,
 ) -> Result<Option<Value>, String> {
+    // With a pending native assignment, bare --resume continues that current
+    // operation. A historical replay needs its explicit operation selector.
+    if current["action"] == "spawn" && operation.is_none() {
+        return Ok(None);
+    }
     let Some(candidate) = find_candidate(loaded, work, current, operation)? else {
         return Ok(None);
     };
@@ -49,6 +54,40 @@ pub(super) fn recover(
         )),
         _ => Err("native recovery journal has an invalid status".into()),
     }
+}
+
+pub(super) fn validate_overrides(
+    journal: &Value,
+    options: &super::Options<'_>,
+) -> Result<(), String> {
+    let request = &journal["request"];
+    let conflict = options.model.is_some_and(|value| request["model"] != value)
+        || options
+            .reasoning_effort
+            .is_some_and(|value| request["reasoningEffort"] != value)
+        || options
+            .sandbox_mode
+            .is_some_and(|value| request["sandbox"] != value)
+        || options.timeout_ms.is_some_and(|value| {
+            value
+                .parse::<u64>()
+                .ok()
+                .map_or(true, |parsed| request["timeoutMs"] != parsed)
+        });
+    let executable_conflict = if let Some(value) = options.codex_bin {
+        let selected =
+            codex_exec::resolve_codex(Some(Path::new(value))).map_err(|error| error.to_string())?;
+        request["executable"].as_str() != selected.to_str()
+    } else {
+        false
+    };
+    if conflict || executable_conflict {
+        return Err(
+            "native recovery refuses changed execution parameters for the recorded operation"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 struct Candidate {

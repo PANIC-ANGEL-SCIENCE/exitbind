@@ -80,6 +80,7 @@ pub(crate) fn execute(
 
     if let Some(journal) = existing.as_ref() {
         verify_journal(journal, work, &identity, role, agent)?;
+        recovery::validate_overrides(journal, &options)?;
         match journal["status"].as_str() {
             Some("completed") => {
                 let bytes = journal_result(journal)?;

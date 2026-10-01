@@ -317,6 +317,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn identity_classification_is_conservative_and_pid_reuse_safe() {
         let current = identity(std::process::id());
         assert_eq!(liveness(&current), ProcessLiveness::Alive);
@@ -328,6 +329,15 @@ mod tests {
         let mut unverifiable = current;
         unverifiable.start_time_ticks = None;
         assert_eq!(liveness(&unverifiable), ProcessLiveness::Uncertain);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn unverifiable_process_start_remains_uncertain() {
+        assert_eq!(
+            liveness(&identity(std::process::id())),
+            ProcessLiveness::Uncertain
+        );
     }
 
     #[test]

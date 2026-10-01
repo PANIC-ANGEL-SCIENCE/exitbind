@@ -143,6 +143,30 @@ fn completed_but_unsubmitted_result_returns_through_the_same_work() {
     let fixture = Fixture::new("save-return-held");
     let (work, body) = fixture.worker_journal_with_submission(false);
     let marker = fixture.marker();
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let assignment = path.file_stem().unwrap().to_str().unwrap();
+    let retained = fs::read(&path).unwrap();
+    let conflict = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--operation",
+            assignment,
+            "--model",
+            "different-model",
+        ],
+        b"",
+    );
+    assert!(!conflict.status.success());
+    assert!(text(&conflict).contains("changed execution parameters"));
+    assert_eq!(fs::read(&path).unwrap(), retained);
     let response = fixture.value(&["work", "act", &work, "--resume"], b"");
     assert_eq!(response["recoveryEvent"]["kind"], "native_saved_return");
     assert_eq!(response["recoveryEvent"]["cue"], "same_door");
@@ -341,6 +365,8 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     )
     .unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    journal["request"] = json!({"executable": fs::canonicalize(&executable).unwrap()});
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
     let output = fixture.call(
         &[
             "work",
@@ -361,6 +387,7 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn alive_worker_keeps_its_existing_execution_without_another_spawn() {
     let fixture = Fixture::new("save-return-alive");
     let (work, _) = fixture.worker_journal_with_submission(false);
@@ -390,6 +417,9 @@ fn alive_worker_keeps_its_existing_execution_without_another_spawn() {
     });
     fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
     let marker = fixture.marker();
+    journal["request"] =
+        json!({"executable": fs::canonicalize(fixture.root.join("fake-codex")).unwrap()});
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
     let output = fixture.call(
         &[
             "work",
@@ -404,4 +434,95 @@ fn alive_worker_keeps_its_existing_execution_without_another_spawn() {
     assert!(!output.status.success());
     assert!(text(&output).contains("provider is alive"));
     assert!(!marker.exists());
+}
+
+#[test]
+fn repair_assignment_resumes_current_thread_and_explicit_old_replay_stays_idempotent() {
+    let fixture = Fixture::new("save-return-repair-resume");
+    let (work, _) = fixture.worker_journal();
+    let old_path = fs::read_dir(fixture.root.join(".exitbind/native-actions").join(&work))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let old_operation = old_path.file_stem().unwrap().to_str().unwrap();
+    fixture.value(&["work", "check", &work], b"");
+    let reviewer = fixture.value(&["work", "next", &work, "--full"], b"")["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &work,
+            &reviewer,
+            "--outcome",
+            "rework",
+            "--reason",
+            "review_finding",
+        ],
+        b"one exact repair",
+    );
+    let lead = fixture.value(&["work", "next", &work, "--full"], b"")["next"]["assignment"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fixture.value(
+        &[
+            "work",
+            "disposition",
+            &work,
+            &lead,
+            "--decision",
+            "repair",
+            "--reason",
+            "one exact repair",
+            "--repair-boundary",
+            "the note only",
+            "--regression",
+            "run the frozen check",
+        ],
+        b"",
+    );
+    let pending = fixture.value(&["work", "next", &work, "--full"], b"");
+    assert_eq!(pending["next"]["role"], "worker");
+    assert_eq!(pending["next"]["packet"]["attempt"], 2);
+    let marker = fixture.root.join("repair-resumed");
+    let executable = fixture.root.join("fake-repair-codex");
+    fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\nprintf x >> '{}'\nprintf '%s\\n' \\\n'{{\"type\":\"thread.started\",\"thread_id\":\"thread-r18\"}}' \\\n'{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"repaired\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' \\\n'{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let resumed = fixture.value(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert_eq!(resumed["next"]["action"], "check");
+    assert_eq!(fs::read(&marker).unwrap(), b"x");
+    let replay = fixture.value(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--operation",
+            old_operation,
+        ],
+        b"",
+    );
+    assert_eq!(replay["idempotent"], true);
+    assert_eq!(fs::read(&marker).unwrap(), b"x");
 }
