@@ -165,10 +165,6 @@ fn supersede_preserves_explicit_basis_and_review_policy_options() {
         "original goal",
         "--ledger",
         fixture.ledger(),
-        "--check-command",
-        "true",
-        "--proof-origin",
-        "local_report",
         "--basis",
         &serde_json::to_string(&original_basis).unwrap(),
         "--review-policy",
@@ -217,6 +213,7 @@ fn supersede_preserves_explicit_basis_and_review_policy_options() {
     assert_eq!(event["basis"], successor_basis);
     assert_eq!(event["reviewPolicy"]["decision"], "omitted");
     assert_eq!(event["subject"]["basisSha256"], successor_basis["sha256"]);
+    assert!(event.get("recoveryProtocol").is_none());
     let next = fixture.value(&["run", "next", ".exitbind/runs/successor.jsonl"]);
     assert_eq!(
         next["assignments"][0]["basisSha256"],
@@ -469,6 +466,7 @@ fn supersede_review_policy_only_creates_marked_basisless_successor_assignment() 
     let event = ledger_events_at(&fixture, ".exitbind/runs/review-only.jsonl")[0].clone();
     assert_eq!(event["reviewPolicy"]["decision"], "omitted");
     assert!(event["basisProtocol"].is_number());
+    assert!(event["recoveryProtocol"].is_number());
     assert!(event.get("basis").is_none());
     assert!(event["subject"].get("basisSha256").is_none());
     let next = fixture.value(&["run", "next", ".exitbind/runs/review-only.jsonl"]);
@@ -811,10 +809,10 @@ fn implementation_correction_is_a_basis_noop_and_restarts_worker() {
         "--review-policy",
         "omitted",
     ]);
-    let original_basis = ledger_events(&fixture)[0]["basis"]["sha256"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let events = ledger_events(&fixture);
+    let start = &events[0];
+    assert!(start.get("recoveryProtocol").is_none());
+    let original_basis = start["basis"]["sha256"].as_str().unwrap().to_owned();
     fixture.value_with_input(
         &[
             "run",
@@ -1320,6 +1318,15 @@ fn successor_retains_a_real_governor_grant_and_owner_lineage() {
             "completed",
         ],
         b"worker evidence",
+    );
+    let after_grant = fixture.value(&[
+        "run",
+        "inspect",
+        &format!(".exitbind/runs/work-{}.jsonl", &work[4..]),
+    ]);
+    assert_eq!(
+        after_grant["governor"]["currentMutation"]["eventSha256"],
+        after_grant["governor"]["headSha256"]
     );
     fixture.value(&["work", "check", &work]);
     let reviewer = fixture.value(&["work", "next", &work])["next"].clone();

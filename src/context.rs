@@ -702,6 +702,7 @@ fn apply_mutation(state: &mut Value, event: &Value) -> Result<(), String> {
             .as_array_mut()
             .unwrap()
             .extend(grants.iter().cloned());
+        state["currentMutation"] = current_mutation(event);
         return Ok(());
     }
     let carry_lineage = event["carryLineage"] == true;
@@ -760,7 +761,12 @@ fn apply_mutation(state: &mut Value, event: &Value) -> Result<(), String> {
         new_evidence: has_new_evidence,
     })?;
     sync_loop(state, loop_state);
-    state["currentMutation"] = json!({
+    state["currentMutation"] = current_mutation(event);
+    Ok(())
+}
+
+fn current_mutation(event: &Value) -> Value {
+    json!({
         "runId": event["runId"],
         "eventSha256": event["eventSha256"],
         "carryLineage": event["carryLineage"],
@@ -768,8 +774,7 @@ fn apply_mutation(state: &mut Value, event: &Value) -> Result<(), String> {
         "attempt": event["attempt"],
         "checkpoint": event["checkpoint"],
         "inputSha256": event["inputSha256"],
-    });
-    Ok(())
+    })
 }
 
 fn mutation_identity(event: &Value) -> Value {
