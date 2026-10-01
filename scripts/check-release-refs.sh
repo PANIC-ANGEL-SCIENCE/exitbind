@@ -11,7 +11,7 @@ equal_version() {
     fail "$1 version is '$2'; expected '$3'"
 }
 
-for source in Cargo.toml Cargo.lock README.md REFERENCE.md CHANGELOG.md install.sh \
+for source in Cargo.toml Cargo.lock README.md REFERENCE.md SECURITY.md CHANGELOG.md install.sh \
   plugin.json systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json scripts/ci-wsl.sh \
   docs examples schema scripts src
@@ -80,7 +80,7 @@ wsl_version=$(sed -n 's/^test "$(exitbind version)" = "\([0-9][^"]*\)"$/\1/p' sc
 equal_version scripts/ci-wsl.sh "$wsl_version" "$plain"
 
 # Historical CHANGELOG entries are deliberately outside the current-reference scan.
-set -- README.md REFERENCE.md install.sh docs examples schema scripts src
+set -- README.md REFERENCE.md SECURITY.md install.sh docs examples schema scripts src
 # Enumerate with find: recursive grep differs across hosts in whether it follows
 # links. Validate and scan these explicit paths, preserving the .git exclusion.
 # These three schema files are immutable Soulmate compatibility artifacts. Their

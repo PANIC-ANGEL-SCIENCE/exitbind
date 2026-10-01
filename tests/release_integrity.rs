@@ -14,6 +14,7 @@ const RELEASE_FILES: &[&str] = &[
     "Cargo.lock",
     "README.md",
     "REFERENCE.md",
+    "SECURITY.md",
     "CHANGELOG.md",
     "install.sh",
     "plugin.json",
@@ -134,6 +135,16 @@ fn closed_maintenance_packet_preserves_only_its_historical_release() {
     expect_failure(
         gate("check-release-refs.sh", &fixture.0),
         "unselected file in a historical directory",
+    );
+}
+
+#[test]
+fn stale_security_release_references_are_rejected() {
+    let fixture = Fixture::release();
+    fixture.replace("SECURITY.md", &format!("v{VERSION}"), "v0.10.0");
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "stale current security contract",
     );
 }
 
