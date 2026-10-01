@@ -144,7 +144,7 @@ fn completed_but_unsubmitted_result_returns_through_the_same_work() {
     let (work, body) = fixture.worker_journal_with_submission(false);
     let marker = fixture.marker();
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
-    let path = fs::read_dir(&directory)
+    let path = fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
@@ -275,7 +275,12 @@ fn canonical(value: &Value) -> String {
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write;
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut encoded, "{byte:02x}").unwrap();
+    }
+    encoded
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -317,7 +322,7 @@ fn uncertain_native_journal_refuses_without_provider_spawn() {
     let fixture = Fixture::new("save-return-uncertain");
     let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
-    let journal_path = fs::read_dir(&directory)
+    let journal_path = fs::read_dir(directory)
         .unwrap()
         .find_map(|entry| {
             let path = entry.unwrap().path();
@@ -358,7 +363,7 @@ fn multiple_saved_operations_require_an_exact_selector() {
         .map(|entry| entry.unwrap().path())
         .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
         .unwrap();
-    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let original: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     let assignment = original["assignment"].as_str().unwrap();
     let mut other = original.clone();
     other["assignment"] = json!("sma_other_saved_operation");
@@ -397,7 +402,7 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     let fixture = Fixture::new("save-return-ended");
     let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
-    let path = fs::read_dir(&directory)
+    let path = fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
@@ -584,7 +589,7 @@ fn provisional_with_possible_external_effects_or_prior_retry_refuses_automatic_r
     let fixture = Fixture::new("save-return-effects");
     let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
-    let path = fs::read_dir(&directory)
+    let path = fs::read_dir(directory)
         .unwrap()
         .map(|item| item.unwrap().path())
         .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
@@ -653,7 +658,7 @@ fn alive_worker_keeps_its_existing_execution_without_another_spawn() {
     let fixture = Fixture::new("save-return-alive");
     let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
-    let path = fs::read_dir(&directory)
+    let path = fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))

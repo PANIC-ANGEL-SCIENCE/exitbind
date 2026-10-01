@@ -72,6 +72,9 @@ pub(crate) struct StreamObservation {
     pub(crate) final_result: Option<Value>,
 }
 
+type ProcessObserver<'a> = dyn FnMut(&ProcessIdentity) -> Result<(), String> + 'a;
+type StreamObserver<'a> = dyn FnMut(&StreamObservation) -> Result<(), String> + 'a;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CommandOutcome {
     pub(crate) status: String,
@@ -255,8 +258,8 @@ where
 
 fn run_inner(
     request: &Request,
-    mut observer: Option<&mut dyn FnMut(&ProcessIdentity) -> Result<(), String>>,
-    mut stream_observer: Option<&mut dyn FnMut(&StreamObservation) -> Result<(), String>>,
+    mut observer: Option<&mut ProcessObserver<'_>>,
+    mut stream_observer: Option<&mut StreamObserver<'_>>,
 ) -> Result<Observation, RunError> {
     validate_request(request)?;
     let executable = checked_executable(&request.executable)?;

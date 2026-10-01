@@ -240,12 +240,12 @@ pub(super) fn validate_provisional_observation(journal: &Value) -> Result<(), St
         .get("usage")
         .and_then(Value::as_object)
         .ok_or("native provisional result has no usage observation")?;
-    if !usage.get("inputTokens").and_then(Value::as_u64).is_some()
-        || !usage
+    if usage.get("inputTokens").and_then(Value::as_u64).is_none()
+        || usage
             .get("cachedInputTokens")
             .and_then(Value::as_u64)
-            .is_some()
-        || !usage.get("outputTokens").and_then(Value::as_u64).is_some()
+            .is_none()
+        || usage.get("outputTokens").and_then(Value::as_u64).is_none()
     {
         return Err(
             "native provisional result has incomplete usage observation; retry is refused".into(),
@@ -352,7 +352,7 @@ fn find_candidate(
         }
     }
 
-    let entries = match fs::read_dir(&directory) {
+    let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),

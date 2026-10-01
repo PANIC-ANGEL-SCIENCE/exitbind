@@ -139,7 +139,7 @@ pub(super) fn capture_with_lines<R: Read>(
 pub(super) fn drain_stream_lines(
     lines: &mpsc::Receiver<Vec<u8>>,
     want_final: bool,
-    observer: &mut Option<&mut dyn FnMut(&super::StreamObservation) -> Result<(), String>>,
+    observer: &mut Option<&mut super::StreamObserver<'_>>,
 ) -> Result<(), RunError> {
     while let Ok(line) = lines.try_recv() {
         notify_stream_observer(&line, want_final, observer)?;
@@ -150,7 +150,7 @@ pub(super) fn drain_stream_lines(
 pub(super) fn drain_stream_lines_until_closed(
     lines: &mpsc::Receiver<Vec<u8>>,
     want_final: bool,
-    observer: &mut Option<&mut dyn FnMut(&super::StreamObservation) -> Result<(), String>>,
+    observer: &mut Option<&mut super::StreamObserver<'_>>,
     grace: Duration,
 ) -> Result<(), RunError> {
     loop {
@@ -169,7 +169,7 @@ pub(super) fn drain_stream_lines_until_closed(
 fn notify_stream_observer(
     line: &[u8],
     want_final: bool,
-    observer: &mut Option<&mut dyn FnMut(&super::StreamObservation) -> Result<(), String>>,
+    observer: &mut Option<&mut super::StreamObserver<'_>>,
 ) -> Result<(), RunError> {
     let Some(update) = early_stream_update(line, want_final) else {
         return Ok(());
