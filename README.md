@@ -23,7 +23,7 @@ With Exitbind
   Only a check, required review, and lead acceptance bound to the current result reach EXIT READY.
 ```
 
-This source describes `v0.26.0`. Check
+This source describes `v0.25.2`. Check
 [published releases](https://github.com/envy404/exitbind/releases)
 for the available version and assets. The local benchmark needs no model;
 the optional `activity codex` and `work act` paths launch your installed Codex
@@ -74,7 +74,7 @@ lets only a fresh checked result reach acceptance. It does not run an agent or
 touch your project. `exitbind benchmark --output NEW_DIRECTORY` keeps
 inspectable records; see the [proof method](docs/value-proof-methodology.md).
 
-## Two Codex paths in v0.26.0
+## Two Codex paths in v0.25.2
 
 Both paths require an initialized Exitbind project and an available Codex CLI
 with its own model access. The lead handles setup and the current assignment.
@@ -120,16 +120,16 @@ covers recorded artifacts rather than proving the code correct. See
 
 ## Install and set up
 
-This page describes `v0.26.0` for Linux x86_64
+This page describes `v0.25.2` for Linux x86_64
 and macOS on Apple Silicon or Intel. The pinned installer places the executable
 under `$HOME/.local/bin` and verifies the archive checksum; release archives
 also carry GitHub build attestations. Review the command and destination before
 approving installation. Before using this command, confirm that the
-[`v0.26.0` release](https://github.com/envy404/exitbind/releases/tag/v0.26.0)
+[`v0.25.2` release](https://github.com/envy404/exitbind/releases/tag/v0.25.2)
 has its tag and assets.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.26.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.2/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

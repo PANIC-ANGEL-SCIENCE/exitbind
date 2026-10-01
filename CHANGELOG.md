@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.26.0
+## 0.25.2
 
 - Recover a saved native result through the same Work, verify its recorded
   assignment and process identity, and replay an already recorded return without
