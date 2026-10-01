@@ -6,6 +6,8 @@ mod prompt;
 mod reconcile;
 #[path = "native_action/recovery.rs"]
 mod recovery;
+#[path = "native_action/request.rs"]
+mod request;
 #[path = "native_action/result.rs"]
 mod result;
 
@@ -20,18 +22,16 @@ use result::{
 
 use crate::config::Loaded;
 use crate::evidence::hash;
-use crate::host::codex_exec::{self, ProcessLiveness, Request, TurnStatus};
-use crate::project::{managed_files, path as project_path};
+use crate::host::codex_exec::{self, ProcessLiveness, TurnStatus};
+use crate::project::managed_files;
 use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_TIMEOUT_MS: u64 = 1_800_000;
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 256 * 1024;
-const MAX_PROFILE_BYTES: usize = 64 * 1024;
 const MAX_PACKET_BYTES: usize = 64 * 1024;
 
 pub(crate) struct Options<'a> {
@@ -161,7 +161,7 @@ pub(crate) fn execute(
         MAX_PACKET_BYTES,
         "native delivery packet",
     )?;
-    let profile = profile_bytes(loaded, agent, assignment)?;
+    let profile = request::profile_bytes(loaded, agent, assignment)?;
     let review_evidence = verified_worker_results(loaded, work, role, assignment)?;
     let mut schema: Value =
         serde_json::from_str(role_schema(role)?).map_err(|_| "native role schema is invalid")?;
@@ -186,11 +186,12 @@ pub(crate) fn execute(
         );
     }
     let resuming = options.resume;
-    let request = build_request(
+    let request = request::build(
         loaded,
         options,
         role,
         work,
+        current,
         assignment,
         packet,
         profile,
@@ -632,117 +633,6 @@ fn outcome_from_bytes(bytes: &[u8]) -> Result<(String, Option<String>), String> 
         })
         .transpose()?;
     Ok((outcome, reason))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_request(
-    loaded: &Loaded,
-    options: Options<'_>,
-    role: &str,
-    work: &str,
-    assignment: &Value,
-    packet: String,
-    profile: String,
-    review_evidence: Option<&Vec<ReviewEvidence>>,
-    schema_path: &Path,
-    thread_id: Option<&str>,
-) -> Result<Request, String> {
-    if assignment["runtime"]["host"]
-        .as_str()
-        .is_some_and(|host| host != "codex")
-    {
-        return Err("native Codex action requires runtime.host=codex".into());
-    }
-    let model = options
-        .model
-        .map(str::to_owned)
-        .or_else(|| assignment["runtime"]["model"].as_str().map(str::to_owned));
-    let effort = options.reasoning_effort.map(str::to_owned).or_else(|| {
-        assignment["runtime"]["reasoningEffort"]
-            .as_str()
-            .map(str::to_owned)
-    });
-    let timeout = options
-        .timeout_ms
-        .map(|value| {
-            value
-                .parse::<u64>()
-                .map_err(|_| "timeout must be an integer".to_owned())
-        })
-        .transpose()?
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
-    if timeout == 0 {
-        return Err("timeout must be positive".into());
-    }
-    let executable = codex_exec::resolve_codex(options.codex_bin.map(Path::new))
-        .map_err(|error| error.to_string())?;
-    if thread_id.is_some() && options.sandbox_mode.is_some() {
-        return Err(
-            "native resume cannot apply --sandbox; omit --sandbox for the persisted session or start a fresh assignment"
-                .into(),
-        );
-    }
-    let evidence_route = if let Some(evidence) = review_evidence {
-        let mut route = format!("Use every verified current worker result below. The evidenceReferences array must contain every listed ref token in order; put file lines and check observations in summary. Use exitbind work expand {work} REFERENCE for surrounding ledger events. Do not reconstruct upstream artifacts from git or summaries. For unavailable, reason must be provider_quota, rate_limit, or provider_unavailable; for rework use review_finding; for blocked use blocked; for approved use an empty reason.\n");
-        for item in evidence {
-            route.push_str(&format!(
-                "\nVERIFIED WORKER RESULT (reference {}, sha256 {}):\n{}\n",
-                item.reference, item.sha256, item.content
-            ));
-        }
-        route
-    } else if role == "reviewer" {
-        return Err("reviewer evidence route is unavailable".into());
-    } else {
-        "Use the packet's declared evidence routes when checking the assignment. Do not copy upstream artifacts into the prompt or reconstruct them from git.".to_owned()
-    };
-    let prompt = format!(
-        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. {evidence_route} Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES:\n{profile}\n\nCURRENT ASSIGNMENT DELIVERY PROJECTION (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; omitted recovery goal/scope/subject/current/missing/loop/next fields equal context goal/scope/subject/evidence/obligations/loop/next respectively):\n{packet}\n",
-        canonical_sha = hash::value(assignment),
-    );
-    let sandbox = if thread_id.is_some() {
-        None
-    } else {
-        Some(
-            options
-                .sandbox_mode
-                .map(str::to_owned)
-                .unwrap_or_else(|| match role {
-                    "worker" => "workspace-write".to_owned(),
-                    _ => "read-only".to_owned(),
-                }),
-        )
-    };
-    Ok(Request {
-        executable,
-        cwd: loaded.product_root.clone(),
-        prompt,
-        model,
-        effort,
-        sandbox,
-        output_schema: Some(schema_path.to_path_buf()),
-        resume_thread_id: thread_id.map(str::to_owned),
-        persist_session: true,
-        timeout: Duration::from_millis(timeout),
-    })
-}
-
-fn profile_bytes(loaded: &Loaded, agent: &str, assignment: &Value) -> Result<String, String> {
-    let configured = loaded
-        .agent(agent)
-        .ok_or_else(|| format!("configured agent '{agent}' is unavailable"))?;
-    let bytes = project_path::secure_bytes(&loaded.control_root, &configured.profile, "profile")?;
-    if bytes.len() > MAX_PROFILE_BYTES {
-        return Err("native profile exceeds its bound".into());
-    }
-    let expected = assignment["profile"]["sha256"]
-        .as_str()
-        .ok_or("native assignment profile hash is unavailable")?;
-    let current = hash::bytes(&bytes);
-    if current != expected {
-        return Err("native assignment profile drifted before launch".into());
-    }
-    String::from_utf8(bytes).map_err(|_| "native profile is not UTF-8".into())
 }
 
 fn timestamp() -> u128 {

@@ -479,9 +479,21 @@ fn completed_same_work_journal_is_replayed_without_provider_spawn() {
     .unwrap()
     .lines()
     .count();
-    let output = fixture.call(&["work", "act", &work, "--resume"], b"");
+    let output = fixture.call(&["work", "act", &work, "--resume", "--themed"], b"");
     assert!(output.status.success(), "{}", text(&output));
     assert!(text(&output).contains("completed"));
+    let themed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(themed["world"]["motifs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["name"] == "passing_black_cat" && m["active"] == true));
+    let later = fixture.value(&["work", "world", &work, "--json"], b"");
+    assert!(later["motifs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["name"] == "passing_black_cat" && m["active"] == false));
     assert!(!marker.exists());
     let after = fs::read_to_string(
         fixture

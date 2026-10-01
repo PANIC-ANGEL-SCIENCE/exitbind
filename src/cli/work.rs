@@ -9,6 +9,34 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "work requires begin, next, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
+        "world" => {
+            args::assert_options("work world", a,
+                &["config", "json", "plain", "reduced-motion", "export"])?;
+            args::assert_positionals("work world", a, 2)?;
+            let work = positional(a, 1, "work world requires WORK")?;
+            let response = crate::work::next(l, work)?;
+            let world = crate::presentation_events::world::project(l, work, &response);
+            let world = if a.flags.contains_key("export") {
+                crate::presentation_events::world::export(&world)
+            } else { world };
+            if a.flags.contains_key("json") { print_json(&world) } else {
+                print!("{}", crate::presentation_events::world::render(&world,
+                    a.flags.contains_key("plain")));
+                Ok(())
+            }
+        }
+        "write" => {
+            args::assert_options("work write", a,
+                &["config", "operation", "expected-sha256", "json"])?;
+            args::assert_positionals("work write", a, 4)?;
+            print_json(&crate::work::file_effect::write(l, crate::work::file_effect::WriteRequest {
+                work: positional(a, 1, "work write requires WORK ASSIGNMENT PATH")?,
+                assignment: positional(a, 2, "work write requires WORK ASSIGNMENT PATH")?,
+                path: positional(a, 3, "work write requires WORK ASSIGNMENT PATH")?,
+                operation: option(a, "operation", "work write requires --operation ID")?,
+                expected: option(a, "expected-sha256", "work write requires --expected-sha256 SHA or absent")?,
+            })?)
+        }
         "bind" => {
             args::assert_options(
                 "work bind",
@@ -208,17 +236,22 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             )?)
         }
         "next" => {
-            args::assert_options("work next", a, &["config", "json", "full"])?;
+            args::assert_options("work next", a, &["config", "json", "full", "themed"])?;
             args::assert_positionals("work next", a, 2)?;
             let result = crate::work::next(
                 l,
                 positional(a, 1, "work next requires WORK")?,
             )?;
-            let result = if a.flags.contains_key("full") {
+            let mut result = if a.flags.contains_key("full") {
                 result
             } else {
                 crate::work::compact::project(&result, &l.path, "next")?
             };
+            if a.flags.contains_key("themed") {
+                let world = crate::presentation_events::world::project(l,
+                    positional(a, 1, "work next requires WORK")?, &result);
+                result["world"] = world;
+            }
             print_json(&result)
         }
         "act" => {
@@ -238,10 +271,11 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "resume",
                     "operation",
                     "inspect",
+                    "themed",
                 ],
             )?;
             args::assert_positionals("work act", a, 2)?;
-            print_json(&crate::work::act(
+            let mut result = crate::work::act(
                 l,
                 positional(a, 1, "work act requires WORK")?,
                 crate::work::ActOptions {
@@ -256,7 +290,13 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     operation: a.options.get("operation").map(String::as_str),
                     inspect: a.flags.contains_key("inspect"),
                 },
-            )?)
+            )?;
+            if a.flags.contains_key("themed") {
+                let world = crate::presentation_events::world::project(l,
+                    positional(a, 1, "work act requires WORK")?, &result);
+                result["world"] = world;
+            }
+            print_json(&result)
         }
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;

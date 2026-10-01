@@ -233,7 +233,7 @@ fn assert_narrowed(
     Ok(())
 }
 
-fn maximum_contains(maximum: &str, path: &str) -> bool {
+pub(crate) fn maximum_contains(maximum: &str, path: &str) -> bool {
     if maximum == "**" {
         return true;
     }

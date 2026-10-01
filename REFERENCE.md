@@ -601,6 +601,23 @@ check success nor acceptance is inferred from a provider result. A recorded
 resumable worker turn may use `work act WORK --resume`; an uncertain running
 journal is a stop, not permission to start another provider process.
 
+Native actions receive complete current project rules and eligible opted-in
+role memory alongside the checked profile and packet. Oversized sources refuse
+launch instead of being truncated. The current worker can use `work write WORK
+ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` with complete
+UTF-8 content on stdin for a product-mediated replacement. The route requires
+the current mutation grant and checks declared paths, protected control files,
+file preconditions and stable operation identity; it does not intercept other
+native tools or remote effects.
+
+`work world WORK [--plain --reduced-motion]` reads six canonical event motifs.
+`--export --json` omits private task markers and source text. `work next
+--themed` and `work act --themed` add the same projection to their JSON replies.
+An explicit finding `reuse` record needs a later current passing observed
+check; retrieval alone never lights the signpost. See
+[current context and the quiet hall](docs/continuing-native-work.md) for the
+commands, bounds, state meanings and recovery limits.
+
 The lower-level `work next`, `work bind`, `work child prepare`, and `work child`
 route remains for host-managed child handoffs and cross-host continuation;
 see [onboarding](docs/onboarding.md) and

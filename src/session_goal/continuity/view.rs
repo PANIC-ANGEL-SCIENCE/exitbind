@@ -158,6 +158,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
         "workSupport":work_support,
         "requirements":requirements,"binding":c["binding"],"corrections":c["corrections"],
         "operations":c["operations"],"diagnoses":c["diagnoses"],"children":c["children"],
+        "reuses":super::reuse::project(loaded, work_id, c)?,
         "currentInputsSha256":current_inputs,"currentConditionsSha256":current_conditions,
         "wholeGoalReady":false,"readOnly":true});
     result["wholeGoalReady"] = json!(
@@ -173,7 +174,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
     Ok(result)
 }
 
-const SECTIONS: [&str; 7] = [
+const SECTIONS: [&str; 8] = [
     "source",
     "requirements",
     "binding",
@@ -181,6 +182,7 @@ const SECTIONS: [&str; 7] = [
     "operations",
     "diagnoses",
     "children",
+    "reuses",
 ];
 
 fn bounded(value: &Value) -> Result<bool, String> {

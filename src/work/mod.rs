@@ -1,8 +1,9 @@
-//! Agent-facing work façade over the strict run protocol.
+//! Governed work façade.
 
 mod action;
 pub(crate) mod compact;
 mod disposition;
+pub(crate) mod file_effect;
 pub(crate) mod focus;
 mod held;
 mod mutation_response;

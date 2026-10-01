@@ -21,6 +21,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "control-root",
     "duration-ms",
     "events",
+    "expected-sha256",
     "event",
     "external-scope",
     "expires-at",
@@ -114,6 +115,9 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "replace",
     "resume",
     "inspect",
+    "plain",
+    "reduced-motion",
+    "export",
 ];
 
 pub fn parse(values: &[String]) -> Result<Arguments, String> {

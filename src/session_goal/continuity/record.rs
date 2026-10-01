@@ -48,6 +48,11 @@ fn apply(loaded: &Loaded, work_id: &str, previous: &Value, input: &Value) -> Res
     let mut record = next_record(previous, work_id)?;
     let new_revision = record["revision"].clone();
     match action {
+        "reuse" => {
+            require_current(previous, input)?;
+            binding(previous, input)?;
+            super::reuse::apply(loaded, work_id, previous, &mut record, input)?;
+        }
         "bind" => {
             shape(
                 input,

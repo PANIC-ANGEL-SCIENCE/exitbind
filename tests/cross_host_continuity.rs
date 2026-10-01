@@ -14,6 +14,10 @@ struct Fixture {
     work: String,
 }
 
+#[path = "cross_host_continuity/world_projection.rs"]
+mod world_projection;
+use world_projection::{motif_active, world};
+
 #[test]
 fn product_actions_use_emitted_context_and_preserve_child_bytes() {
     let f = Fixture::new("w2ch-product-actions");
@@ -723,6 +727,8 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     let view = f.view();
     assert_eq!(view["corrections"][0]["id"], "no-publication");
     assert_eq!(view["operations"][0]["status"], "uncertain");
+    assert!(motif_active(&world(&f), "low_resolution_poster"));
+    assert!(!motif_active(&world(&f), "distant_payphone"));
     assert_eq!(view["children"][0]["nativeChild"], "claude-child-1");
     assert_eq!(view["binding"]["revision"], 3);
     assert_eq!(view["wholeGoalReady"], false);
@@ -983,7 +989,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     assert_eq!(item["item"]["resultText"], text);
     let view = f.view();
     assert_eq!(view["requiresExpansion"], true);
-    assert_eq!(view["sections"].as_array().unwrap().len(), 7);
+    assert_eq!(view["sections"].as_array().unwrap().len(), 8);
     assert!(f.call(&["work", "next", &f.work]).status.success());
     assert!(f.call(&["work", "resume"]).status.success());
     let section = f.call(&["work", "continuation", &f.work, "--section", "children"]);
@@ -1177,9 +1183,11 @@ fn missing_accepted_result_artifact_invalidates_whole_goal_readiness() {
     ]);
     assert!(closed.status.success(), "{closed:?}");
     assert_eq!(f.view()["wholeGoalReady"], true);
+    assert!(motif_active(&world(&f), "exit_sign"));
     let before = f.history();
     fs::remove_file(f.root.join(artifact)).unwrap();
     assert_eq!(f.view()["wholeGoalReady"], false);
+    assert!(!motif_active(&world(&f), "exit_sign"));
     assert_eq!(f.history(), before);
 }
 

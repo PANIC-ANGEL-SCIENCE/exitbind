@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 /// A cache holds at most one small document; anything larger is not ours.
 const CACHE_LIMIT: u64 = 64 * 1024;
 mod room;
+pub(crate) mod world;
 #[cfg(test)]
 use room::{
     session_goal_card, session_goal_card_transition, session_goal_direct_card, SESSION_GOAL_CARD,

@@ -222,6 +222,7 @@ mod capture;
 mod perspective;
 mod record;
 mod requirements;
+mod reuse;
 mod view;
 pub(crate) use capture::{
     claim as claim_child, claimed_context as claimed_child_context, context as child_context,
