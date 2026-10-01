@@ -141,7 +141,7 @@ the record and digest; the agent need not compose JSON or copy revision
 counters. The older `work record` JSON surface remains available for expert
 continuation actions. The bundled skill describes the handoff and your host
 executes it. Exitbind
-`v0.25.1` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.26.0` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.
@@ -210,7 +210,7 @@ For the longer one-file product example, use the matching source checkout:
 EXITBIND_BIN=exitbind ./scripts/demo-checked-work.sh
 ```
 
-`v0.25.1` includes the `--event-id` and `--text` options used
+`v0.26.0` includes the `--event-id` and `--text` options used
 here. To build from source instead, run `cargo build --locked` and use
 `EXITBIND_BIN=target/debug/exitbind`. The script records a failing product check,
 observes refused acceptance, requests rework, retrieves the assignment in a
@@ -238,7 +238,7 @@ After a binary update, explicitly refresh only owned project skill copies:
 exitbind init --refresh-skills --root PATH
 ```
 
-In `v0.25.1`, `check` reports the invoking binary version and hashes of
+In `v0.26.0`, `check` reports the invoking binary version and hashes of
 its bundled and installed skill copies. A managed difference produces an
 actionable warning, including on stderr with `check --json`; the JSON result
 still describes configuration validity. Missing optional copies or a

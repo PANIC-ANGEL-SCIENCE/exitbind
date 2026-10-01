@@ -125,10 +125,13 @@ printf '%s\n' "$refs" | awk -v current="$current" '
          index($0, "the `" legacy "` package does not ship it") > 0)) {
       gsub(legacy, current, line)
     }
-    # The release branch name is an identifier, not a prerelease version.
-    if ($0 ~ /^docs\/maintenance\/v0\.25\.1\/README\.md:[0-9]+:/ &&
-        index($0, "- branch: `fix/r13-" current "-hardening`;") > 0) {
-      sub(/-hardening/, "", line)
+    # This closed maintenance packet records its historical release and branch.
+    # Other versions and files remain subject to the current-reference check.
+    if ($0 ~ /^docs\/maintenance\/v0\.25\.1\/(README|01_REVIEWER_HANDOFF|02_R14_CLOSEOUT|03_VALIDATION_AND_ADAPTER)\.md:[0-9]+:/) {
+      gsub(/v0\.25\.1/, current, line)
+      if (index($0, "- branch: `fix/r13-v0.25.1-hardening`;") > 0) {
+        sub(/-hardening/, "", line)
+      }
     }
     while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?([+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?/)) {
       version = substr(line, RSTART, RLENGTH)

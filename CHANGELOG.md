@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.26.0
+
+- Recover a saved native result through the same Work, verify its recorded
+  assignment and process identity, and replay an already recorded return without
+  starting another provider process.
+- Refuse automatic resume when execution is uncertain, an earlier bounded retry
+  was spent, or recorded activity could have external effects. Preserve the
+  failed operation and expose its current inspection and recovery route.
+- Carry reviewer repair decisions into the next assignment while keeping
+  current checks, reviewer evidence, and Lead acceptance separate. Existing
+  run-event v8 records retain their identity and remain inspectable.
+- Deliver composite-task closure and provisional causal-investigation guidance
+  through the default Lead and Worker profiles and the managed skill. Preserve
+  customized profiles, native authority, and the host's model choice.
+
 ## 0.25.1
 
 - Run a bounded native Codex worker or reviewer from the current Work assignment

@@ -39,11 +39,11 @@ new install.
 
 ## Quick start
 
-When the `v0.25.1` tag and assets are available, install it as a single Rust binary. Node.js,
+When the `v0.26.0` tag and assets are available, install it as a single Rust binary. Node.js,
 npm, Python, and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.1/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.26.0/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
 exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --review-policy required --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -53,11 +53,11 @@ exitbind check --config exitbind.json
 Replace `YOUR_TEST_COMMAND` with your actual project check. These commands
 prepare the run; the [complete first checked run](docs/first-checked-run.md)
 continues through real result documents, check execution, review, and acceptance.
-`v0.25.1` includes the `--event-id`/`--text` forms below. Older
+`v0.26.0` includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-v0.25.1 targets Linux x86_64 and native macOS on
+v0.26.0 targets Linux x86_64 and native macOS on
 Apple Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -223,7 +223,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in `v0.25.1` use run-event format 8. The
+New checked runs in `v0.26.0` use run-event format 8. The
 reader retains historical v1–v7 ledgers, including their original producer
 values and guarantees. Current v8 records bind an Accepted Subject, tested-input
 identity, and the v0.24 basis/review-policy extension to each applicable result
@@ -333,13 +333,13 @@ For a project outside the current directory, pass `--root PATH` to `init` and
 use the printed `--config` path with later commands. A checkout can also be run
 directly with a release binary from GitHub.
 
-After installing `v0.25.1`, update project skill copies after upgrading the
+After installing `v0.26.0`, update project skill copies after upgrading the
 CLI with the explicit refresh path. It requires an existing valid `exitbind.json` and only updates
 files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.1/install.sh | EXITBIND_VERSION=v0.25.1 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.26.0/install.sh | EXITBIND_VERSION=v0.26.0 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -741,14 +741,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.25.1
+dotagents --project add envy404/exitbind --ref v0.26.0
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.25.1
+dotagents --project add envy404/exitbind --ref v0.26.0
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -896,6 +896,13 @@ of commits—to choose a version while it remains in `0.x`:
   contracts are stable, recoverable, and supportable. It is not a completeness
   label and is never selected only because the feature list looks substantial.
 
+`0.26.0` adds bounded same-Work recovery for saved native results. It refuses
+an automatic resume when recorded execution is uncertain or could have external
+effects, and replaying an already recorded result does not start another provider
+process. This changes the recovery invariant and therefore uses a new minor
+line. Existing run-event v8 records retain their identity and remain inspectable;
+no rewrite of historical records is required.
+
 `0.9.3` is a patch release because it removes an unsupported experimental
 observation path from the product binary and corrects local-mode hook discovery
 without changing the supported CLI or any receipt, run-event, memory,
@@ -920,7 +927,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.25.1/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.26.0/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

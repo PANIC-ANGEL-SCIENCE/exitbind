@@ -109,6 +109,35 @@ fn current_release_and_historical_changelog_pass_with_installer_overrides() {
 }
 
 #[test]
+fn closed_maintenance_packet_preserves_only_its_historical_release() {
+    let fixture = Fixture::release();
+    let directory = fixture.0.join("docs/maintenance/v0.25.1");
+    fs::create_dir_all(&directory).unwrap();
+    let report = directory.join("README.md");
+    let history = "# v0.25.1 follow-up\n- branch: `fix/r13-v0.25.1-hardening`;\n";
+    fs::write(&report, history).unwrap();
+    expect_success(gate("check-release-refs.sh", &fixture.0));
+    assert_eq!(fs::read_to_string(&report).unwrap(), history);
+
+    fs::write(
+        &report,
+        format!("{history}\nstale v0.10.0 install reference\n"),
+    )
+    .unwrap();
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "unrelated stale version in a historical packet",
+    );
+
+    fs::write(&report, history).unwrap();
+    fs::write(directory.join("active.md"), "stale v0.25.1 reference\n").unwrap();
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "unselected file in a historical directory",
+    );
+}
+
+#[test]
 fn stale_and_malformed_readme_install_commands_are_rejected() {
     let current = format!("curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v{VERSION}/install.sh | sh");
     for replacement in [
