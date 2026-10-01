@@ -310,3 +310,98 @@ fn multiple_saved_operations_require_an_exact_selector() {
     assert!(!conflict.status.success());
     assert!(text(&conflict).contains("changed execution parameters"));
 }
+
+#[test]
+fn ended_worker_resumes_the_same_work_once_after_identity_check() {
+    let fixture = Fixture::new("save-return-ended");
+    let (work, _) = fixture.worker_journal_with_submission(false);
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let mut journal: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    journal["status"] = json!("running");
+    journal.as_object_mut().unwrap().remove("result");
+    journal["processIdentity"] = json!({
+        "pid": 2147483647u32,
+        "processGroup": 2147483647i32,
+        "startTimeTicks": 1,
+    });
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let marker = fixture.root.join("resumed-once");
+    let executable = fixture.root.join("fake-resume-codex");
+    fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\nprintf x >> '{}'\nprintf '%s\\n' \\\n'{{\"type\":\"thread.started\",\"thread_id\":\"thread-r18\"}}' \\\n'{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"resumed\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' \\\n'{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    assert_eq!(fs::read(&marker).unwrap(), b"x");
+    assert_eq!(
+        fixture.value(&["work", "next", &work], b"")["next"]["action"],
+        "check"
+    );
+}
+
+#[test]
+fn alive_worker_keeps_its_existing_execution_without_another_spawn() {
+    let fixture = Fixture::new("save-return-alive");
+    let (work, _) = fixture.worker_journal_with_submission(false);
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let mut journal: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    journal["status"] = json!("running");
+    journal.as_object_mut().unwrap().remove("result");
+    let stat = fs::read_to_string("/proc/self/stat").unwrap();
+    let start_time: u64 = stat
+        .rsplit_once(") ")
+        .unwrap()
+        .1
+        .split_whitespace()
+        .nth(19)
+        .unwrap()
+        .parse()
+        .unwrap();
+    journal["processIdentity"] = json!({
+        "pid": std::process::id(),
+        "processGroup": std::process::id(),
+        "startTimeTicks": start_time,
+    });
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let marker = fixture.marker();
+    let output = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--codex-bin",
+            fixture.root.join("fake-codex").to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(!output.status.success());
+    assert!(text(&output).contains("provider is alive"));
+    assert!(!marker.exists());
+}

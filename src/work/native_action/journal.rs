@@ -62,6 +62,17 @@ pub(super) fn write_journal(path: &Path, value: &Value, exclusive: bool) -> Resu
 }
 
 fn atomic_publish(path: &Path, bytes: &[u8], exclusive: bool) -> Result<(), String> {
+    atomic_publish_with(path, bytes, exclusive, |file, bytes| {
+        file.write_all(bytes).map_err(|error| error.to_string())
+    })
+}
+
+fn atomic_publish_with(
+    path: &Path,
+    bytes: &[u8],
+    exclusive: bool,
+    write: impl FnOnce(&mut File, &[u8]) -> Result<(), String>,
+) -> Result<(), String> {
     let parent = path.parent().ok_or("native journal has no parent")?;
     let name = path
         .file_name()
@@ -83,7 +94,7 @@ fn atomic_publish(path: &Path, bytes: &[u8], exclusive: bool) -> Result<(), Stri
         .open(&temporary)
         .map_err(|error| error.to_string())?;
     let result = (|| {
-        file.write_all(bytes).map_err(|error| error.to_string())?;
+        write(&mut file, bytes)?;
         file.sync_all().map_err(|error| error.to_string())?;
         if exclusive {
             fs::hard_link(&temporary, path).map_err(|error| error.to_string())?;
@@ -165,6 +176,29 @@ mod tests {
         assert_eq!(read_journal(&path).unwrap().unwrap()["status"], "started");
         write_journal(&path, &json!({"status":"completed"}), false).unwrap();
         assert_eq!(read_journal(&path).unwrap().unwrap()["status"], "completed");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn short_write_never_publishes_or_overwrites_a_complete_journal() {
+        let directory = std::env::temp_dir().join(format!(
+            "exitbind-journal-fault-{}-{}",
+            std::process::id(),
+            timestamp()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("one.json");
+        let short = |file: &mut File, bytes: &[u8]| {
+            file.write_all(&bytes[..3]).unwrap();
+            Err("injected short write".to_owned())
+        };
+        assert!(atomic_publish_with(&path, b"complete", true, short).is_err());
+        assert!(!path.exists());
+        write_journal(&path, &json!({"status":"completed"}), true).unwrap();
+        let before = fs::read(&path).unwrap();
+        assert!(atomic_publish_with(&path, b"replacement", false, short).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
     }
 }
