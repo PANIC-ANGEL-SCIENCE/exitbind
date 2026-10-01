@@ -290,7 +290,7 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
         .join(".exitbind/native-actions")
         .join(&work)
         .join(format!("{assignment}.json"));
-    let journal_bytes = fs::read(&journal_path).unwrap();
+    let journal_bytes = fs::read(journal_path).unwrap();
     let journal: Value = serde_json::from_slice(&journal_bytes).unwrap();
     assert_eq!(journal["status"], "started");
     assert_eq!(journal["observation"]["process"]["code"], 1);
