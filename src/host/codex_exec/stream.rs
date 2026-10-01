@@ -6,6 +6,7 @@ pub(super) fn parse_stream(
     bytes: &[u8],
     want_final: bool,
     process: ProcessOutcome,
+    stderr: &[u8],
 ) -> Result<Observation, RunError> {
     let text = std::str::from_utf8(bytes).map_err(|_| RunError::MalformedStream { line: 1 })?;
     let mut thread_id = None;
@@ -15,6 +16,7 @@ pub(super) fn parse_stream(
     let mut unobserved_item_count = 0u64;
     let mut usage = None;
     let mut final_text = None;
+    let mut diagnostic_codes = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let line_number = index + 1;
         if line.trim().is_empty() {
@@ -124,13 +126,23 @@ pub(super) fn parse_stream(
                 unobserved_item_count = unobserved_item_count.saturating_add(1);
             }
             Some("turn.completed") => {
-                turn = Some(turn_status(object.get("status"), line_number)?);
+                let status = turn_status(object.get("status"), line_number)?;
+                if status == TurnStatus::Failed {
+                    push_diagnostic(&mut diagnostic_codes, DiagnosticCode::TurnFailed);
+                }
+                turn = Some(status);
                 if let Some(raw_usage) = object.get("usage") {
                     usage = Some(parse_usage(raw_usage, line_number)?);
                 }
             }
-            Some("turn.failed") => turn = Some(TurnStatus::Failed),
-            Some("error") => turn = Some(TurnStatus::Failed),
+            Some("turn.failed") => {
+                push_diagnostic(&mut diagnostic_codes, DiagnosticCode::TurnFailed);
+                turn = Some(TurnStatus::Failed);
+            }
+            Some("error") => {
+                push_diagnostic(&mut diagnostic_codes, DiagnosticCode::ProviderError);
+                turn = Some(TurnStatus::Failed);
+            }
             _ => {}
         }
     }
@@ -175,6 +187,18 @@ pub(super) fn parse_stream(
     if want_final && final_result.is_none() {
         coverage_gap.push(CoverageGap::MissingFinalResult);
     }
+    if bytes.is_empty() {
+        push_diagnostic(&mut diagnostic_codes, DiagnosticCode::NoStdout);
+    }
+    if !stderr.is_empty() {
+        push_diagnostic(&mut diagnostic_codes, DiagnosticCode::StderrNonempty);
+        if stderr
+            .windows(GIT_PRECONDITION.len())
+            .any(|window| window == GIT_PRECONDITION)
+        {
+            push_diagnostic(&mut diagnostic_codes, DiagnosticCode::GitPrecondition);
+        }
+    }
     Ok(Observation {
         ephemeral: false,
         process: process.clone(),
@@ -190,9 +214,24 @@ pub(super) fn parse_stream(
         usage,
         thread_id,
         final_result,
+        diagnostic: DiagnosticEnvelope {
+            status: DiagnosticStatus::Observed,
+            codes: diagnostic_codes,
+            stdout_bytes: bytes.len(),
+            stderr_bytes: stderr.len(),
+        },
         coverage_gap,
         interrupted: process.timed_out || process.signal.is_some(),
     })
+}
+
+const GIT_PRECONDITION: &[u8] =
+    b"Not inside a trusted directory and --skip-git-repo-check was not specified.";
+
+fn push_diagnostic(codes: &mut Vec<DiagnosticCode>, code: DiagnosticCode) {
+    if !codes.contains(&code) {
+        codes.push(code);
+    }
 }
 
 fn turn_status(value: Option<&Value>, line: usize) -> Result<TurnStatus, RunError> {

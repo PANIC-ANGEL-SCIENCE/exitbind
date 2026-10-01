@@ -75,6 +75,43 @@ pub(crate) struct StreamObservation {
     pub(crate) final_result: Option<Value>,
 }
 
+/// Privacy-safe, allowlisted execution facts. Provider text is deliberately
+/// not represented here; callers can persist this envelope without retaining
+/// stderr, event messages, or request material.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DiagnosticEnvelope {
+    pub(crate) status: DiagnosticStatus,
+    pub(crate) codes: Vec<DiagnosticCode>,
+    pub(crate) stdout_bytes: usize,
+    pub(crate) stderr_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DiagnosticStatus {
+    Observed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DiagnosticCode {
+    NoStdout,
+    StderrNonempty,
+    GitPrecondition,
+    TurnFailed,
+    ProviderError,
+}
+
+impl DiagnosticCode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::NoStdout => "no_stdout",
+            Self::StderrNonempty => "stderr_nonempty",
+            Self::GitPrecondition => "git_precondition",
+            Self::TurnFailed => "turn_failed",
+            Self::ProviderError => "provider_error",
+        }
+    }
+}
+
 type ProcessObserver<'a> = dyn FnMut(&ProcessIdentity) -> Result<(), String> + 'a;
 type StreamObserver<'a> = dyn FnMut(&StreamObservation) -> Result<(), String> + 'a;
 
@@ -112,7 +149,10 @@ impl TurnStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Interrupted => "interrupted",
-            Self::Unknown(value) => value,
+            // Provider status text is not an Exitbind contract and may carry
+            // arbitrary message material. Keep the distinction without
+            // exposing the provider value in journals or inspection output.
+            Self::Unknown(_) => "unknown",
         }
     }
 }
@@ -157,6 +197,7 @@ pub(crate) struct Observation {
     pub(crate) usage: Option<Usage>,
     pub(crate) thread_id: Option<String>,
     pub(crate) final_result: Option<Value>,
+    pub(crate) diagnostic: DiagnosticEnvelope,
     pub(crate) coverage_gap: Vec<CoverageGap>,
     pub(crate) interrupted: bool,
 }
@@ -326,7 +367,7 @@ fn run_inner(
     let prompt_delivery_failed =
         bounded_receive(&prompt_rx, reader_grace, &mut child, "prompt writer")?;
     let stdout = bounded_receive(&stdout_rx, reader_grace, &mut child, "stdout reader")?;
-    let _stderr = bounded_receive(&stderr_rx, reader_grace, &mut child, "stderr reader")?;
+    let stderr = bounded_receive(&stderr_rx, reader_grace, &mut child, "stderr reader")?;
     if stream_enabled {
         if let Err(error) = process::drain_stream_lines_until_closed(
             &stream_rx,
@@ -343,12 +384,17 @@ fn run_inner(
     if stdout.oversized {
         return Err(RunError::StreamTooLarge("stdout"));
     }
-    if _stderr.oversized {
+    if stderr.oversized {
         return Err(RunError::StreamTooLarge("stderr"));
     }
 
     let process = process_outcome(status, timed_out);
-    let mut observation = parse_stream(&stdout.bytes, request.output_schema.is_some(), process)?;
+    let mut observation = parse_stream(
+        &stdout.bytes,
+        request.output_schema.is_some(),
+        process,
+        &stderr.bytes,
+    )?;
     observation.ephemeral = !request.persist_session;
     observation.interrupted = timed_out || observation.process.signal.is_some();
     if prompt_delivery_failed {
@@ -585,6 +631,7 @@ mod tests {
                 success: true,
                 timed_out: false,
             },
+            b"",
         )
         .unwrap();
         assert_eq!(observation.thread_id.as_deref(), Some("thread-1"));
@@ -599,6 +646,10 @@ mod tests {
         assert_eq!(observation.final_result, Some(json!({"ok": true})));
         assert!(observation.coverage_gap.is_empty());
         assert_eq!(observation.unobserved_item_count, 0);
+        assert_eq!(observation.diagnostic.status, DiagnosticStatus::Observed);
+        assert!(observation.diagnostic.codes.is_empty());
+        assert_eq!(observation.diagnostic.stdout_bytes, source.len());
+        assert_eq!(observation.diagnostic.stderr_bytes, 0);
     }
 
     #[test]
@@ -617,10 +668,92 @@ mod tests {
                 success: false,
                 timed_out: false,
             },
+            b"",
         )
         .unwrap();
         assert_eq!(observation.unobserved_item_count, 2);
         assert!(observation.command_outcomes.is_empty());
+    }
+
+    #[test]
+    fn failure_diagnostics_keep_only_allowlisted_codes_and_sizes() {
+        let source = concat!(
+            r#"{"type":"turn.failed","message":"private message"}"#,
+            "\n",
+            r#"{"type":"error","body":"private body","path":"/private/path","token":"secret"}"#,
+        );
+        let observation = parse_stream(
+            source.as_bytes(),
+            false,
+            ProcessOutcome {
+                code: Some(1),
+                signal: None,
+                success: false,
+                timed_out: false,
+            },
+            b"private stderr text",
+        )
+        .unwrap();
+        assert_eq!(observation.turn, TurnStatus::Failed);
+        assert_eq!(observation.diagnostic.stdout_bytes, source.len());
+        assert_eq!(
+            observation.diagnostic.stderr_bytes,
+            b"private stderr text".len()
+        );
+        assert_eq!(
+            observation.diagnostic.codes,
+            vec![
+                DiagnosticCode::TurnFailed,
+                DiagnosticCode::ProviderError,
+                DiagnosticCode::StderrNonempty,
+            ]
+        );
+        let rendered = serde_json::to_string(&json!({
+            "codes": observation.diagnostic.codes.iter().map(|code| code.as_str()).collect::<Vec<_>>(),
+            "stdoutBytes": observation.diagnostic.stdout_bytes,
+            "stderrBytes": observation.diagnostic.stderr_bytes,
+        }))
+        .unwrap();
+        assert!(!rendered.contains("private"));
+        assert!(!rendered.contains("/private/path"));
+        assert!(!rendered.contains("secret"));
+    }
+
+    #[test]
+    fn unknown_provider_status_is_redacted_to_unknown() {
+        let observation = parse_stream(
+            br#"{"type":"turn.completed","status":"private-message"}"#,
+            false,
+            ProcessOutcome {
+                code: Some(0),
+                signal: None,
+                success: true,
+                timed_out: false,
+            },
+            b"",
+        )
+        .unwrap();
+        assert_eq!(observation.turn.as_str(), "unknown");
+    }
+
+    #[test]
+    fn trusted_directory_stderr_becomes_a_safe_category() {
+        let observation = parse_stream(
+            b"",
+            false,
+            ProcessOutcome {
+                code: Some(1),
+                signal: None,
+                success: false,
+                timed_out: false,
+            },
+            b"Not inside a trusted directory and --skip-git-repo-check was not specified.\nprivate path",
+        )
+        .unwrap();
+        assert!(observation
+            .diagnostic
+            .codes
+            .contains(&DiagnosticCode::GitPrecondition));
     }
 
     #[test]
@@ -634,6 +767,7 @@ mod tests {
                 success: false,
                 timed_out: false,
             },
+            b"",
         )
         .unwrap_err();
         assert!(matches!(error, RunError::MalformedStream { line: 1 }));
@@ -651,6 +785,7 @@ mod tests {
                 success: true,
                 timed_out: false,
             },
+            b"",
         )
         .unwrap();
         assert!(observation.process.success);
@@ -674,6 +809,7 @@ mod tests {
                 success: true,
                 timed_out: false,
             },
+            b"",
         )
         .unwrap();
         assert!(observation
@@ -683,5 +819,13 @@ mod tests {
             .coverage_gap
             .contains(&CoverageGap::MissingCommandIdentity));
         assert_eq!(observation.command_outcomes[0].invocation_sha256, None);
+    }
+
+    #[test]
+    fn oversized_capture_is_truncated_and_marked_for_fail_closed_handling() {
+        let source = vec![b'x'; MAX_STREAM_BYTES + 1];
+        let captured = capture(std::io::Cursor::new(source), MAX_STREAM_BYTES);
+        assert!(captured.oversized);
+        assert_eq!(captured.bytes.len(), MAX_STREAM_BYTES);
     }
 }

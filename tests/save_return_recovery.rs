@@ -53,6 +53,34 @@ impl Fixture {
         self.worker_journal_with_submission(true)
     }
 
+    fn pending_worker(&self, goal: &str) -> (String, Value) {
+        let started = self.value(
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                goal,
+                "--check-command",
+                "true",
+                "--proof-origin",
+                "synthetic",
+                "--review-policy",
+                "required",
+            ],
+            b"",
+        );
+        let work = started["work"].as_str().unwrap().to_owned();
+        let lead = started["next"]["assignment"].as_str().unwrap().to_owned();
+        let scoped = self.call(
+            &["work", "return", &work, &lead, "--outcome", "scoped"],
+            b"scope",
+        );
+        assert!(scoped.status.success(), "{}", text(&scoped));
+        let worker = self.value(&["work", "next", &work, "--full"], b"")["next"].clone();
+        (work, worker)
+    }
+
     fn worker_journal_with_submission(&self, submit: bool) -> (String, Vec<u8>) {
         let started = self.value(
             &[
@@ -228,6 +256,156 @@ fn inspect_does_not_create_journal_or_report_unsubmitted_result_as_recorded() {
     let inspected = fixture.value(&["work", "act", &other_work, "--inspect"], b"");
     assert_eq!(inspected["result"]["state"], "retained_pending_submission");
     assert_eq!(fs::read_dir(&directory).unwrap().count(), before);
+}
+
+#[test]
+fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
+    let fixture = Fixture::new("native-diagnostic-git-precondition");
+    let (work, worker) = fixture.pending_worker("native diagnostic failure");
+    let assignment = worker["assignment"].as_str().unwrap();
+    let executable = fixture.root.join("fake-diagnostic-failure-codex");
+    fs::write(
+        &executable,
+        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' 'Not inside a trusted directory and --skip-git-repo-check was not specified.' 'private stderr body' >&2\nexit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let failed = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(!failed.status.success(), "{}", text(&failed));
+    assert!(!text(&failed).contains("Not inside a trusted directory"));
+    assert!(!text(&failed).contains("private stderr body"));
+
+    let journal_path = fixture
+        .root
+        .join(".exitbind/native-actions")
+        .join(&work)
+        .join(format!("{assignment}.json"));
+    let journal_bytes = fs::read(&journal_path).unwrap();
+    let journal: Value = serde_json::from_slice(&journal_bytes).unwrap();
+    assert_eq!(journal["status"], "started");
+    assert_eq!(journal["observation"]["process"]["code"], 1);
+    assert_eq!(journal["observation"]["diagnostic"]["stdoutBytes"], 0);
+    assert!(journal["observation"]["diagnostic"]["codes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|code| code == "git_precondition"));
+    let journal_text = String::from_utf8_lossy(&journal_bytes);
+    assert!(!journal_text.contains("Not inside a trusted directory"));
+    assert!(!journal_text.contains("private stderr body"));
+
+    let inspected = fixture.call(&["work", "act", &work, "--inspect"], b"");
+    assert!(inspected.status.success(), "{}", text(&inspected));
+    let inspected_value: Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(inspected_value["assignment"], assignment);
+    assert_eq!(inspected_value["process"]["exitCode"], 1);
+    assert_eq!(inspected_value["nextAction"]["safe"], false);
+    assert!(inspected_value["observation"]["diagnostic"]["codes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|code| code == "git_precondition"));
+    assert!(!text(&inspected).contains("Not inside a trusted directory"));
+    assert!(!text(&inspected).contains("private stderr body"));
+    assert_eq!(
+        fixture.value(&["work", "next", &work], b"")["next"]["assignment"],
+        assignment
+    );
+}
+
+#[test]
+fn structured_native_failure_is_inspectable_without_event_payloads() {
+    let fixture = Fixture::new("native-diagnostic-structured-failure");
+    let (work, worker) = fixture.pending_worker("native structured failure");
+    let assignment = worker["assignment"].as_str().unwrap();
+    let executable = fixture.root.join("fake-structured-failure-codex");
+    fs::write(
+        &executable,
+        r##"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"turn.failed","message":"private turn message"}' '{"type":"error","body":"private error body","path":"/private/path"}'
+exit 1
+"##,
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let failed = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(!failed.status.success(), "{}", text(&failed));
+    let inspected = fixture.call(&["work", "act", &work, "--inspect"], b"");
+    assert!(inspected.status.success(), "{}", text(&inspected));
+    let value: Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(value["assignment"], assignment);
+    assert_eq!(value["process"]["exitCode"], 1);
+    assert_eq!(
+        value["observation"]["diagnostic"]["codes"],
+        json!(["turn_failed", "provider_error"])
+    );
+    assert!(!text(&inspected).contains("private turn message"));
+    assert!(!text(&inspected).contains("private error body"));
+    assert!(!text(&inspected).contains("/private/path"));
+}
+
+#[test]
+fn successful_native_typed_result_retains_observed_success_diagnostic() {
+    let fixture = Fixture::new("native-diagnostic-success");
+    let (work, worker) = fixture.pending_worker("native diagnostic success");
+    let assignment = worker["assignment"].as_str().unwrap();
+    let executable = fixture.root.join("fake-diagnostic-success-codex");
+    fs::write(
+        &executable,
+        r##"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"thread.started","thread_id":"thread-diagnostic-success"}'
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{\"outcome\":\"completed\",\"summary\":\"typed success\",\"reason\":\"\"}"}}'
+printf '%s\n' '{"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+"##,
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let succeeded = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(succeeded.status.success(), "{}", text(&succeeded));
+    let journal_path = fixture
+        .root
+        .join(".exitbind/native-actions")
+        .join(&work)
+        .join(format!("{assignment}.json"));
+    let journal: Value = serde_json::from_slice(&fs::read(journal_path).unwrap()).unwrap();
+    assert_eq!(journal["status"], "completed");
+    assert_eq!(journal["observation"]["diagnostic"]["status"], "observed");
+    assert_eq!(journal["observation"]["diagnostic"]["codes"], json!([]));
+    assert!(journal["observation"]["diagnostic"]["stdoutBytes"]
+        .as_u64()
+        .is_some_and(|bytes| bytes > 0));
 }
 
 impl Drop for Fixture {

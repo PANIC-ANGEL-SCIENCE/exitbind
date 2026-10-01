@@ -255,6 +255,17 @@ fn projection(observation: &codex_exec::Observation) -> Value {
         "turn": observation.turn.as_str(),
         "commands": commands,
         "usage": usage,
+        "diagnostic": {
+            "status": "observed",
+            "codes": observation
+                .diagnostic
+                .codes
+                .iter()
+                .map(|code| code.as_str())
+                .collect::<Vec<_>>(),
+            "stdoutBytes": observation.diagnostic.stdout_bytes,
+            "stderrBytes": observation.diagnostic.stderr_bytes,
+        },
         "coverageGap": observation.coverage_gap.iter().map(|gap| gap.as_str()).collect::<Vec<_>>(),
         "changedResult": "not_observed_by_native_event_stream",
     })
@@ -286,6 +297,12 @@ mod tests {
             usage: None,
             thread_id: Some("thread-1".into()),
             final_result: None,
+            diagnostic: codex_exec::DiagnosticEnvelope {
+                status: codex_exec::DiagnosticStatus::Observed,
+                codes: Vec::new(),
+                stdout_bytes: 0,
+                stderr_bytes: 0,
+            },
             coverage_gap: vec![codex_exec::CoverageGap::MissingUsage],
             interrupted: false,
         };

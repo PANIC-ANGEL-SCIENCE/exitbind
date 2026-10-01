@@ -1,6 +1,6 @@
 //! Native role schemas, verdict validation, and bounded observation projection.
 
-use crate::host::codex_exec::{CoverageGap, Observation, Request};
+use crate::host::codex_exec::{CoverageGap, DiagnosticStatus, Observation, Request};
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 
@@ -138,8 +138,21 @@ pub(super) fn projection(observation: &Observation) -> Value {
             "outputTokens": usage.output_tokens,
         })),
         "threadId": observation.thread_id,
+        "diagnostic": diagnostic_projection(observation),
         "coverageGaps": observation.coverage_gap.iter().map(CoverageGap::as_str).collect::<Vec<_>>(),
         "interrupted": observation.interrupted,
+    })
+}
+
+fn diagnostic_projection(observation: &Observation) -> Value {
+    let diagnostic = &observation.diagnostic;
+    json!({
+        "status": match diagnostic.status {
+            DiagnosticStatus::Observed => "observed",
+        },
+        "codes": diagnostic.codes.iter().map(|code| code.as_str()).collect::<Vec<_>>(),
+        "stdoutBytes": diagnostic.stdout_bytes,
+        "stderrBytes": diagnostic.stderr_bytes,
     })
 }
 
