@@ -133,6 +133,7 @@ pub fn start_with_policy(
         }
         if let Some(extension) = &extension {
             value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+            value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
             if let Some(basis) = &extension.basis {
                 value["basis"] = basis.value();
             }

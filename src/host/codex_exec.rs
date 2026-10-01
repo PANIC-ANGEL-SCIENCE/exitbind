@@ -47,6 +47,31 @@ pub(crate) struct ProcessOutcome {
     pub(crate) timed_out: bool,
 }
 
+/// The provider process identity captured immediately after spawn. The
+/// optional start time prevents a reused PID from being mistaken for the
+/// original execution on Linux.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProcessIdentity {
+    pub(crate) pid: u32,
+    pub(crate) process_group: Option<i32>,
+    pub(crate) start_time_ticks: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProcessLiveness {
+    Alive,
+    Ended,
+    Uncertain,
+}
+
+/// The bounded provider fields that were successfully parsed from the native
+/// JSONL stream before the execution result is returned to its caller.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct StreamObservation {
+    pub(crate) thread_id: Option<String>,
+    pub(crate) final_result: Option<Value>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CommandOutcome {
     pub(crate) status: String,
@@ -137,6 +162,7 @@ pub(crate) enum RunError {
     MalformedStream { line: usize },
     MalformedFinalResult,
     FinalResultTooLarge,
+    Observer(String),
 }
 
 impl fmt::Display for RunError {
@@ -156,6 +182,9 @@ impl fmt::Display for RunError {
             Self::MalformedFinalResult => write!(formatter, "Codex final result is not valid JSON"),
             Self::FinalResultTooLarge => {
                 write!(formatter, "Codex final result exceeded the output limit")
+            }
+            Self::Observer(reason) => {
+                write!(formatter, "Codex process observation failed: {reason}")
             }
         }
     }
@@ -201,11 +230,45 @@ fn checked_executable(path: &Path) -> Result<PathBuf, RunError> {
 }
 
 pub(crate) fn run(request: &Request) -> Result<Observation, RunError> {
+    run_inner(request, None, None)
+}
+
+/// Observe process identity and bounded stream fields as they arrive. Stream
+/// fields are provisional until the complete stream passes `parse_stream`.
+pub(crate) fn run_with_observers<P, S>(
+    request: &Request,
+    mut process_observer: P,
+    mut stream_observer: S,
+) -> Result<Observation, RunError>
+where
+    P: FnMut(&ProcessIdentity) -> Result<(), String>,
+    S: FnMut(&StreamObservation) -> Result<(), String>,
+{
+    run_inner(
+        request,
+        Some(&mut process_observer),
+        Some(&mut stream_observer),
+    )
+}
+
+fn run_inner(
+    request: &Request,
+    mut observer: Option<&mut dyn FnMut(&ProcessIdentity) -> Result<(), String>>,
+    mut stream_observer: Option<&mut dyn FnMut(&StreamObservation) -> Result<(), String>>,
+) -> Result<Observation, RunError> {
     validate_request(request)?;
     let executable = checked_executable(&request.executable)?;
     let cwd = checked_directory(&request.cwd)?;
     let mut command = command_line(request, &executable, &cwd)?;
     let mut child = command.spawn().map_err(RunError::Launch)?;
+    let identity = process::identity(child.id());
+    if let Some(observer) = observer.as_mut() {
+        if let Err(error) = observer(&identity) {
+            process::terminate_group(&mut child);
+            let _ = child.wait();
+            return Err(RunError::Observer(error));
+        }
+    }
     let stdout = child
         .stdout
         .take()
@@ -216,8 +279,15 @@ pub(crate) fn run(request: &Request) -> Result<Observation, RunError> {
         .ok_or(RunError::InvalidRequest("Codex stderr is unavailable"))?;
     let (stdout_tx, stdout_rx) = mpsc::channel();
     let (stderr_tx, stderr_rx) = mpsc::channel();
+    let stream_enabled = stream_observer.is_some();
+    let (stream_tx, stream_rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = stdout_tx.send(capture(stdout, MAX_STREAM_BYTES));
+        let captured = if stream_enabled {
+            process::capture_with_lines(stdout, MAX_STREAM_BYTES, stream_tx)
+        } else {
+            capture(stdout, MAX_STREAM_BYTES)
+        };
+        let _ = stdout_tx.send(captured);
     });
     thread::spawn(move || {
         let _ = stderr_tx.send(capture(stderr, MAX_STREAM_BYTES));
@@ -236,12 +306,32 @@ pub(crate) fn run(request: &Request) -> Result<Observation, RunError> {
         let _ = prompt_tx.send(stdin.write_all(prompt.as_bytes()).is_err());
     });
 
-    let (status, timed_out) = process::wait_with_timeout(&mut child, request.timeout)?;
+    let want_final = request.output_schema.is_some();
+    let (status, timed_out) = process::wait_with_timeout_poll(&mut child, request.timeout, || {
+        if stream_enabled {
+            process::drain_stream_lines(&stream_rx, want_final, &mut stream_observer)
+        } else {
+            Ok(())
+        }
+    })?;
     let reader_grace = Duration::from_secs(2);
     let prompt_delivery_failed =
         bounded_receive(&prompt_rx, reader_grace, &mut child, "prompt writer")?;
     let stdout = bounded_receive(&stdout_rx, reader_grace, &mut child, "stdout reader")?;
     let _stderr = bounded_receive(&stderr_rx, reader_grace, &mut child, "stderr reader")?;
+    if stream_enabled {
+        if let Err(error) = process::drain_stream_lines_until_closed(
+            &stream_rx,
+            want_final,
+            &mut stream_observer,
+            reader_grace,
+        ) {
+            // wait_with_timeout has already observed process exit. Reap again
+            // defensively so a callback failure cannot leave owned state live.
+            let _ = child.wait();
+            return Err(error);
+        }
+    }
     if stdout.oversized {
         return Err(RunError::StreamTooLarge("stdout"));
     }
@@ -259,6 +349,13 @@ pub(crate) fn run(request: &Request) -> Result<Observation, RunError> {
             .push(CoverageGap::PromptDeliveryFailed);
     }
     Ok(observation)
+}
+
+/// Classify a previously observed provider process. An inaccessible or
+/// unverifiable process is never treated as ended, so callers cannot
+/// accidentally launch a duplicate operation.
+pub(crate) fn process_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
+    process::liveness(identity)
 }
 
 pub(crate) fn validate_request(request: &Request) -> Result<(), RunError> {

@@ -236,6 +236,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "sandbox-mode",
                     "timeout-ms",
                     "resume",
+                    "operation",
                 ],
             )?;
             args::assert_positionals("work act", a, 2)?;
@@ -251,6 +252,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     sandbox_mode: a.options.get("sandbox-mode").map(String::as_str),
                     timeout_ms: a.options.get("timeout-ms").map(String::as_str),
                     resume: a.flags.contains_key("resume"),
+                    operation: a.options.get("operation").map(String::as_str),
                 },
             )?)
         }

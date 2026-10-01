@@ -217,6 +217,18 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     if let Some(link) = event.get("supersedes") {
         validate_supersession(link, line)?;
     }
+    if let Some(marker) = event.get("recoveryProtocol") {
+        if version != 8
+            || marker.as_u64() != Some(RECOVERY_PROTOCOL_VERSION)
+            || event.get("basisProtocol").is_none()
+            || event.get("governor").is_none()
+            || event.get("checkPolicy").is_none()
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: recovery protocol requires a checked, governed v8 basis"
+            ));
+        }
+    }
     if version == 2 {
         validate_harness_receipt(event.get("harnessReceipt"), line)?;
     } else if event.get("harnessReceipt").is_some() {

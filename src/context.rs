@@ -13,6 +13,8 @@ pub(crate) use crate::kernel::governor::{
 use serde_json::{json, Map, Value};
 use std::fs;
 
+mod recovery_observation;
+
 pub(crate) const CONTEXT_VERSION: u64 = 2;
 pub(crate) const OPAQUE_CONTEXT_VERSION: u64 = 3;
 pub(crate) const GOVERNOR_VERSION: u64 = crate::kernel::governor::VERSION;
@@ -590,6 +592,7 @@ pub(crate) fn reduce_governor(events: &[Value]) -> Result<Value, String> {
             "checkpoint" => apply_checkpoint(&mut state, event)?,
             "replan" => apply_replan(&mut state, event)?,
             "evidence" => apply_evidence(&mut state, event)?,
+            "observation" => recovery_observation::apply(&mut state, event)?,
             "sensor_request" => apply_sensor_request(&mut state, event)?,
             "sensor" => apply_sensor(&mut state, event)?,
             "blocked" => apply_blocked(&mut state, event)?,
@@ -781,17 +784,7 @@ fn mutation_identity(event: &Value) -> Value {
     })
 }
 
-fn mutation_evidence(event: &Value) -> Result<Option<Value>, String> {
-    if let Some(value) = event.get("newEvidence") {
-        if value.is_null() {
-            return Ok(None);
-        }
-        return Ok(Some(value.clone()));
-    }
-    // `newEvidenceSha256` is retained as legacy telemetry only. Current v8
-    // reset authority belongs to an exact, separately resolved evidence event.
-    Ok(None)
-}
+use recovery_observation::mutation_evidence;
 
 fn record_evidence(state: &mut Value, event: &Value, evidence: Value) -> Result<bool, String> {
     validate_evidence(event, &evidence)?;

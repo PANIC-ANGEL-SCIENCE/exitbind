@@ -14,11 +14,27 @@ pub(crate) struct ActOptions<'a> {
     pub(crate) sandbox_mode: Option<&'a str>,
     pub(crate) timeout_ms: Option<&'a str>,
     pub(crate) resume: bool,
+    pub(crate) operation: Option<&'a str>,
 }
 
 pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
     let current = next_for(loaded, work, &ledger)?;
+    if options.operation.is_some() && !options.resume {
+        return Err("--operation requires --resume".into());
+    }
+    if options.resume {
+        let overrides = options.codex_bin.is_some()
+            || options.model.is_some()
+            || options.reasoning_effort.is_some()
+            || options.sandbox_mode.is_some()
+            || options.timeout_ms.is_some();
+        if let Some(recovered) =
+            native_action::recover(loaded, work, &current, options.operation, overrides)?
+        {
+            return Ok(recovered);
+        }
+    }
     match current["action"].as_str() {
         Some("check") => {
             if options.resume {

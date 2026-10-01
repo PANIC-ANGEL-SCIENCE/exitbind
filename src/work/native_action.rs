@@ -1,8 +1,16 @@
+#[path = "native_action/journal.rs"]
+mod journal;
 #[path = "native_action/prompt.rs"]
 mod prompt;
+#[path = "native_action/recovery.rs"]
+mod recovery;
 #[path = "native_action/result.rs"]
 mod result;
 
+use journal::{
+    claim_started, journal_result, read_journal, record_error, update_started, verify_journal,
+    write_completed, write_journal,
+};
 use result::{
     bounded_json, projected_result, projection, request_projection, role_schema,
     validate_final_result,
@@ -10,7 +18,7 @@ use result::{
 
 use crate::config::Loaded;
 use crate::evidence::hash;
-use crate::host::codex_exec::{self, Request, TurnStatus};
+use crate::host::codex_exec::{self, ProcessLiveness, Request, TurnStatus};
 use crate::project::{managed_files, path as project_path};
 use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
@@ -31,6 +39,16 @@ pub(crate) struct Options<'a> {
     pub(crate) sandbox_mode: Option<&'a str>,
     pub(crate) timeout_ms: Option<&'a str>,
     pub(crate) resume: bool,
+}
+
+pub(crate) fn recover(
+    loaded: &Loaded,
+    work: &str,
+    current: &Value,
+    operation: Option<&str>,
+    overrides: bool,
+) -> Result<Option<Value>, String> {
+    recovery::recover(loaded, work, current, operation, overrides)
 }
 
 pub(crate) fn execute(
@@ -65,7 +83,12 @@ pub(crate) fn execute(
         match journal["status"].as_str() {
             Some("completed") => {
                 let bytes = journal_result(journal)?;
-                return submit_saved(loaded, work, &identity.assignment, bytes);
+                let response = submit_saved(loaded, work, &identity.assignment, bytes)?;
+                return Ok(recovery::mark_same_work_return(
+                    response,
+                    work,
+                    &identity.assignment,
+                ));
             }
             Some("started" | "running") if !options.resume => {
                 return Err(format!(
@@ -77,12 +100,26 @@ pub(crate) fn execute(
                     "reviewer resume is refused; a reviewer must use a fresh native session".into(),
                 );
             }
+            Some("started") if journal.get("provisionalFinalResult").is_some() => {
+                return Err("native assignment retains a provisional result; reconcile it before a new provider turn".into());
+            }
             Some("started") => {}
             Some("running") => {
-                return Err(
-                    "native assignment journal is in an uncertain running state; safe resume cannot prove the prior provider process ended"
-                        .into(),
-                );
+                match recovery::liveness(journal) {
+                    ProcessLiveness::Alive => {
+                        return Err("native assignment provider is alive; keep the existing execution handle".into());
+                    }
+                    ProcessLiveness::Uncertain => {
+                        return Err("native assignment execution is uncertain; no duplicate provider run is admitted".into());
+                    }
+                    ProcessLiveness::Ended if role == "reviewer" => {
+                        return Err("reviewer resume is refused; a reviewer needs a fresh independent session".into());
+                    }
+                    ProcessLiveness::Ended if journal.get("provisionalFinalResult").is_some() => {
+                        return Err("ended native execution retains a provisional result; reconcile it before a new provider turn".into());
+                    }
+                    ProcessLiveness::Ended => {}
+                }
             }
             Some(_) | None => return Err("native assignment journal has an invalid status".into()),
         }
@@ -158,7 +195,11 @@ pub(crate) fn execute(
     }
 
     claim_started(&paths.journal)?;
-    let observation = match codex_exec::run(&request) {
+    let observation = match codex_exec::run_with_observers(
+        &request,
+        |identity| recovery::persist_identity(&paths.journal, identity),
+        |stream| recovery::persist_stream(&paths.journal, stream),
+    ) {
         Ok(observation) => observation,
         Err(error) => {
             record_error(&paths.journal, &error.to_string())?;
@@ -465,146 +506,6 @@ fn ensure_schema(path: &Path, expected: &str) -> Result<(), String> {
         }
         Err(error) => Err(error.to_string()),
     }
-}
-
-fn read_journal(path: &Path) -> Result<Option<Value>, String> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err("native assignment journal is not a regular file".into());
-    }
-    if metadata.len() > MAX_JOURNAL_BYTES {
-        return Err("native assignment journal exceeds its bound".into());
-    }
-    let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|error| format!("native assignment journal is invalid: {error}"))
-}
-
-fn verify_journal(
-    journal: &Value,
-    work: &str,
-    identity: &Identity,
-    role: &str,
-    agent: &str,
-) -> Result<(), String> {
-    if journal["version"] != 1
-        || journal["work"] != work
-        || journal["assignment"] != identity.assignment
-        || journal["assignmentSha256"] != identity.packet_sha256
-        || journal["role"] != role
-        || journal["agent"] != agent
-    {
-        return Err("native assignment journal does not match the current assignment".into());
-    }
-    Ok(())
-}
-
-fn journal_result(journal: &Value) -> Result<Vec<u8>, String> {
-    let encoded = journal["result"]
-        .as_str()
-        .ok_or("completed native journal has no result")?;
-    if encoded.len() > MAX_RESULT_BYTES * 2 {
-        return Err("completed native journal result exceeds its bound".into());
-    }
-    let bytes = hex_decode(encoded)?;
-    if bytes.len() > MAX_RESULT_BYTES {
-        return Err("completed native journal result exceeds its bound".into());
-    }
-    Ok(bytes)
-}
-
-fn write_journal(path: &Path, value: &Value, exclusive: bool) -> Result<(), String> {
-    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_JOURNAL_BYTES as usize {
-        return Err("native assignment journal exceeds its bound".into());
-    }
-    if !exclusive {
-        return atomic_replace(path, &bytes);
-    }
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut file = options.open(path).map_err(|error| error.to_string())?;
-    file.write_all(&bytes).map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| error.to_string())
-}
-
-fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let parent = path.parent().ok_or("native journal has no parent")?;
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("native journal has an invalid name")?;
-    let temporary = parent.join(format!(
-        ".{name}.{}.{}.tmp",
-        std::process::id(),
-        timestamp()
-    ));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    let result = (|| {
-        file.write_all(bytes).map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
-        fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-        Ok::<(), String>(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-fn claim_started(path: &Path) -> Result<(), String> {
-    let mut journal = read_journal(path)?.ok_or("native assignment journal disappeared")?;
-    match journal["status"].as_str() {
-        Some("started") => {}
-        Some("running") => return Ok(()),
-        _ => return Err("native assignment journal cannot be claimed".into()),
-    }
-    journal["status"] = json!("running");
-    write_journal(path, &journal, false)
-}
-
-fn record_error(path: &Path, error: &str) -> Result<(), String> {
-    let mut journal = read_journal(path)?.ok_or("native assignment journal disappeared")?;
-    journal["status"] = json!("started");
-    journal["error"] = json!(error.chars().take(1024).collect::<String>());
-    write_journal(path, &journal, false)
-}
-
-fn update_started(path: &Path, observation: &Value) -> Result<(), String> {
-    let mut journal = read_journal(path)?.ok_or("native assignment journal disappeared")?;
-    journal["status"] = json!("started");
-    journal["observation"] = observation.clone();
-    journal["threadId"] = observation["threadId"].clone();
-    write_journal(path, &journal, false)
-}
-
-fn write_completed(path: &Path, observation: &Value, result: &[u8]) -> Result<(), String> {
-    let mut journal = read_journal(path)?.ok_or("native assignment journal disappeared")?;
-    journal["status"] = json!("completed");
-    journal["completedAt"] = json!(timestamp());
-    journal["observation"] = observation.clone();
-    journal["threadId"] = observation["threadId"].clone();
-    journal["result"] = json!(hex_encode(result));
-    write_journal(path, &journal, false)
 }
 
 fn submit_saved(

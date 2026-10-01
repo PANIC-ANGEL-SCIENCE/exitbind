@@ -136,12 +136,28 @@ pub(crate) fn decide(
         "basisSha256": basis_sha256,
     });
     if !resolving {
-        let boundary = terms
-            .repair_boundary
-            .ok_or("--decision repair and supersede require --repair-boundary TEXT")?;
-        let regression = terms
-            .decisive_regression
-            .ok_or("--decision repair and supersede require --regression TEXT")?;
+        let missing = [
+            terms
+                .repair_boundary
+                .is_none()
+                .then_some("--repair-boundary TEXT"),
+            terms
+                .decisive_regression
+                .is_none()
+                .then_some("--regression TEXT"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(format!(
+                "--decision {} requires {}; supported form: --repair-boundary TEXT --regression TEXT",
+                terms.decision.as_str(),
+                missing.join(" and ")
+            ));
+        }
+        let boundary = terms.repair_boundary.expect("checked above");
+        let regression = terms.decisive_regression.expect("checked above");
         let category = match terms.decision {
             Decision::Supersede => "contract_or_design_defect",
             _ => terms.category.unwrap_or("implementation_defect"),

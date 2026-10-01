@@ -319,6 +319,7 @@ pub fn supersede_with_policy(
         }
         if let Some(extension) = &extension {
             event_value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+            event_value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
             if let Some(basis) = &extension.basis {
                 event_value["basis"] = basis.value();
             }
@@ -358,6 +359,7 @@ pub fn supersede_with_policy(
                 "basisProtocol",
                 "basis",
                 "reviewPolicy",
+                "recoveryProtocol",
                 "governor",
                 "supersedes",
             ];

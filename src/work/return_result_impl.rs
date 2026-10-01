@@ -2,6 +2,69 @@
 
 use super::*;
 
+/// Return the already committed outcome of one native operation. This path
+/// only reads a validated ledger event and its exact immutable artifact; it
+/// never submits the old assignment again or advances the current action.
+pub(crate) fn replay_recorded_native(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    journal: &Value,
+    bytes: &[u8],
+) -> Result<Value, String> {
+    let ledger = resolve(loaded, work)?;
+    let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let submitted: Value =
+        serde_json::from_slice(bytes).map_err(|_| "completed native result is not valid JSON")?;
+    let expected = hash::text(assignment);
+    let matches = events
+        .iter()
+        .filter(|event| {
+            event["action"] == "submit"
+                && event["assignmentSha256"] == expected
+                && event["role"] == journal["role"]
+                && event["agent"] == journal["agent"]
+                && event["stage"] == journal["stage"]
+                && event["attempt"] == journal["attempt"]
+        })
+        .collect::<Vec<_>>();
+    let [event] = matches.as_slice() else {
+        return Err("native replay has no unique committed result for this assignment".into());
+    };
+    if submitted["outcome"] != event["outcome"] {
+        return Err("native replay outcome conflicts with the committed result".into());
+    }
+    let artifact = run::artifact::read(loaded, &event["artifact"], "native replay")?;
+    if artifact.bytes != bytes.len() as u64 || artifact.preview != bytes {
+        return Err("native replay bytes differ from the committed result".into());
+    }
+    let (next, _, presentation) = next_and_residual(loaded, work, &ledger, false)?;
+    let response = json!({
+        "work": work,
+        "event": event,
+        "next": next,
+        "presentation": presentation,
+    });
+    let config_path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    let mut result = bounded_mutation(&response, work, Some(assignment), &ledger, config_path);
+    result["idempotent"] = json!(true);
+    result["recoveryEvent"] = json!({
+        "kind": "native_return_replay",
+        "cue": "passing_black_cat",
+        "work": work,
+        "assignment": assignment,
+        "eventSha256": event["eventSha256"],
+        "resultSha256": artifact.sha256,
+        "providerExecuted": false,
+        "nextObligation": result["next"]["action"],
+    });
+    Ok(result)
+}
+use crate::kernel::result_contract::{self, Role};
+
 pub(crate) fn return_result(
     loaded: &Loaded,
     work: &str,
@@ -50,24 +113,33 @@ pub(crate) fn return_result_with(
     let expected = run::AssignmentIdentity::from_action(&action)?;
     // `unavailable` is admissible only for a reviewer, and only to report that
     // the target could not execute — never to escape an adverse verdict, which
-    // the reducer refuses independently.
-    let allowed = action["role"] == "lead"
-        && action["outcomes"]
-            .as_array()
-            .is_some_and(|outcomes| outcomes.iter().any(|item| item == outcome))
-        || action["role"] == "reviewer"
-            && ["approved", "rework", "blocked", "unavailable"].contains(&outcome)
-        || matches!(action["role"].as_str(), Some("worker" | "adviser"))
-            && (["completed", "blocked"].contains(&outcome)
-                || action["role"] == "worker" && outcome == "contradiction");
+    // the reducer refuses independently.  The role vocabulary is shared with
+    // native result validation; only Lead's current stage adds a restriction.
+    let role = action["role"]
+        .as_str()
+        .ok_or("current assignment has no role")?;
+    let role = Role::parse(role).ok_or("current assignment has an unsupported role")?;
+    let requested = result_contract::validate(role.as_str(), outcome).ok();
+    let allowed = requested.is_some_and(|requested| {
+        role.permits(requested)
+            && (role != Role::Lead
+                || action["outcomes"].as_array().is_some_and(|outcomes| {
+                    outcomes
+                        .iter()
+                        .any(|item| item.as_str() == Some(requested.as_str()))
+                }))
+    });
     if !allowed && action["packet"].get("pendingDisposition").is_some() {
         return Err(format!(
-            "outcome '{outcome}' is not allowed while a finding waits for the Lead: exitbind work disposition {work} {assignment} --decision repair|defer|reject|supersede --reason TEXT"
+            "outcome '{outcome}' is not allowed while a finding waits for the Lead; permitted outcomes: {}. Use exitbind work disposition {work} {assignment} --decision repair|defer|reject|supersede --reason TEXT",
+            return_outcomes(&action, role)
         ));
     }
     if !allowed {
         return Err(format!(
-            "outcome '{outcome}' is not allowed for this assignment"
+            "outcome '{outcome}' is not allowed for {} assignment; permitted outcomes: {}",
+            role.as_str(),
+            return_outcomes(&action, role)
         ));
     }
     let config_path = loaded
@@ -239,6 +311,22 @@ pub(crate) fn return_result_with(
         &ledger,
         config_path,
     ))
+}
+
+fn return_outcomes(action: &Value, role: Role) -> String {
+    if role == Role::Lead {
+        return action["outcomes"]
+            .as_array()
+            .map(|outcomes| {
+                outcomes
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+    }
+    result_contract::permitted_text(role)
 }
 
 fn remove_created_artifact(path: &Path) -> std::io::Result<()> {

@@ -1,0 +1,312 @@
+//! Focused R18 checks for same-Work native return recovery.
+#![cfg(unix)]
+
+mod support;
+
+use serde_json::{json, Value};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::{Command, Output},
+};
+
+struct Fixture {
+    root: PathBuf,
+}
+
+impl Fixture {
+    fn new(label: &str) -> Self {
+        let root = support::temp(label);
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            .args(["init", "--mode", "portable", "--root"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", text(&output));
+        Self { root }
+    }
+
+    fn call(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .current_dir(&self.root)
+            .args(args)
+            .args(["--config", "exitbind.json"])
+            .env("EXITBIND_NATIVE_RECOVERY_TEST", "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        use std::io::Write;
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        child.wait_with_output().unwrap()
+    }
+
+    fn value(&self, args: &[&str], input: &[u8]) -> Value {
+        let output = self.call(args, input);
+        assert!(output.status.success(), "{}", text(&output));
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    fn worker_journal(&self) -> (String, Vec<u8>) {
+        self.worker_journal_with_submission(true)
+    }
+
+    fn worker_journal_with_submission(&self, submit: bool) -> (String, Vec<u8>) {
+        let started = self.value(
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "same Work native return",
+                "--check-command",
+                "true",
+                "--proof-origin",
+                "synthetic",
+                "--review-policy",
+                "required",
+            ],
+            b"",
+        );
+        let work = started["work"].as_str().unwrap().to_owned();
+        let lead = started["next"].clone();
+        let lead_return = self.call(
+            &[
+                "work",
+                "return",
+                &work,
+                lead["assignment"].as_str().unwrap(),
+                "--outcome",
+                "scoped",
+            ],
+            b"scope",
+        );
+        assert!(lead_return.status.success(), "{}", text(&lead_return));
+        let worker = self.value(&["work", "next", &work, "--full"], b"")["next"].clone();
+        let body = br#"{"outcome":"completed","summary":"recorded","reason":""}"#.to_vec();
+        if submit {
+            let worker_return = self.call(
+                &[
+                    "work",
+                    "return",
+                    &work,
+                    worker["assignment"].as_str().unwrap(),
+                    "--outcome",
+                    "completed",
+                ],
+                &body,
+            );
+            assert!(worker_return.status.success(), "{}", text(&worker_return));
+        }
+        let packet = worker["packet"].clone();
+        let assignment = worker["assignment"].as_str().unwrap().to_owned();
+        let directory = self.root.join(".exitbind/native-actions").join(&work);
+        fs::create_dir_all(&directory).unwrap();
+        let journal = json!({
+            "version": 1,
+            "status": "completed",
+            "work": work,
+            "assignment": assignment,
+            "assignmentSha256": canonical_sha(&packet),
+            "role": "worker",
+            "agent": "worker",
+            "stage": packet["stage"],
+            "attempt": packet["attempt"],
+            "threadId": "thread-r18",
+            "result": hex_encode(&body),
+        });
+        fs::write(
+            directory.join(format!("{assignment}.json")),
+            serde_json::to_vec(&journal).unwrap(),
+        )
+        .unwrap();
+        (work, body)
+    }
+
+    fn marker(&self) -> PathBuf {
+        let marker = self.root.join("provider-spawned");
+        let executable = self.root.join("fake-codex");
+        fs::write(
+            &executable,
+            format!("#!/bin/sh\nprintf spawned > '{}'\n", marker.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        marker
+    }
+}
+
+#[test]
+fn completed_but_unsubmitted_result_returns_through_the_same_work() {
+    let fixture = Fixture::new("save-return-held");
+    let (work, body) = fixture.worker_journal_with_submission(false);
+    let marker = fixture.marker();
+    let response = fixture.value(&["work", "act", &work, "--resume"], b"");
+    assert_eq!(response["recoveryEvent"]["kind"], "native_saved_return");
+    assert_eq!(response["recoveryEvent"]["cue"], "same_door");
+    assert_eq!(response["recoveryEvent"]["providerExecuted"], false);
+    assert!(!marker.exists());
+    let events = fs::read_to_string(
+        fixture
+            .root
+            .join(format!(".exitbind/runs/work-{}.jsonl", &work[4..])),
+    )
+    .unwrap();
+    let submitted = events
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["action"] == "submit" && event["role"] == "worker")
+        .collect::<Vec<_>>();
+    assert_eq!(submitted.len(), 1);
+    assert_eq!(submitted[0]["artifact"]["sha256"], sha256(&body));
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn text(output: &Output) -> String {
+    format!(
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+fn canonical_sha(value: &Value) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(canonical(value).as_bytes()))
+}
+
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap(),
+                        canonical(&object[key])
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Value::Array(values) => format!(
+            "[{}]",
+            values.iter().map(canonical).collect::<Vec<_>>().join(",")
+        ),
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[test]
+fn completed_same_work_journal_is_replayed_without_provider_spawn() {
+    let fixture = Fixture::new("save-return-recovery");
+    let (work, body) = fixture.worker_journal();
+    let marker = fixture.marker();
+    let before = fs::read_to_string(
+        fixture
+            .root
+            .join(format!(".exitbind/runs/work-{}.jsonl", &work[4..])),
+    )
+    .unwrap()
+    .lines()
+    .count();
+    let output = fixture.call(&["work", "act", &work, "--resume"], b"");
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(text(&output).contains("completed"));
+    assert!(!marker.exists());
+    let after = fs::read_to_string(
+        fixture
+            .root
+            .join(format!(".exitbind/runs/work-{}.jsonl", &work[4..])),
+    )
+    .unwrap()
+    .lines()
+    .count();
+    assert_eq!(after, before);
+    assert!(text(&output).contains(&sha256(&body)));
+}
+
+#[test]
+fn uncertain_native_journal_refuses_without_provider_spawn() {
+    let fixture = Fixture::new("save-return-uncertain");
+    let (work, _) = fixture.worker_journal();
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let journal_path = fs::read_dir(&directory)
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension().and_then(|value| value.to_str()) == Some("json")).then_some(path)
+        })
+        .unwrap();
+    let mut journal: Value = serde_json::from_slice(&fs::read(&journal_path).unwrap()).unwrap();
+    journal["status"] = json!("running");
+    fs::write(&journal_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let marker = fixture.marker();
+    let output = fixture.call(&["work", "act", &work, "--resume"], b"");
+    assert!(!output.status.success());
+    assert!(text(&output).contains("uncertain provider execution"));
+    assert!(!marker.exists());
+}
+
+#[test]
+fn multiple_saved_operations_require_an_exact_selector() {
+    let fixture = Fixture::new("save-return-select");
+    let (work, _) = fixture.worker_journal();
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let assignment = original["assignment"].as_str().unwrap();
+    let mut other = original.clone();
+    other["assignment"] = json!("sma_other_saved_operation");
+    fs::write(
+        directory.join("sma_other_saved_operation.json"),
+        serde_json::to_vec(&other).unwrap(),
+    )
+    .unwrap();
+    let ambiguous = fixture.call(&["work", "act", &work, "--resume"], b"");
+    assert!(!ambiguous.status.success());
+    assert!(text(&ambiguous).contains("--operation"));
+    let selected = fixture.call(
+        &["work", "act", &work, "--resume", "--operation", assignment],
+        b"",
+    );
+    assert!(selected.status.success(), "{}", text(&selected));
+    let conflict = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--operation",
+            assignment,
+            "--model",
+            "different-model",
+        ],
+        b"",
+    );
+    assert!(!conflict.status.success());
+    assert!(text(&conflict).contains("changed execution parameters"));
+}

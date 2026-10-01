@@ -2,34 +2,35 @@
 
 use crate::host::codex_exec::{CoverageGap, Observation, Request};
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 
 pub(super) fn role_schema(role: &str) -> Result<&'static str, String> {
-    match role {
-        "worker" => Ok(
-            r#"{"type":"object","additionalProperties":false,"required":["outcome","summary","reason"],"properties":{"outcome":{"enum":["completed","blocked","contradiction"]},"summary":{"type":"string","minLength":1,"maxLength":8192},"reason":{"type":"string","maxLength":8192}}}"#,
-        ),
-        "reviewer" => Ok(
-            r#"{"type":"object","additionalProperties":false,"required":["outcome","summary","reason","evidenceReferences"],"properties":{"outcome":{"enum":["approved","rework","blocked","unavailable"]},"summary":{"type":"string","minLength":1,"maxLength":8192},"reason":{"enum":["","review_finding","blocked","provider_quota","rate_limit","provider_unavailable"]},"evidenceReferences":{"type":"array","items":{"type":"string"}}}}"#,
-        ),
-        "adviser" => Ok(
-            r#"{"type":"object","additionalProperties":false,"required":["outcome","summary","reason"],"properties":{"outcome":{"enum":["completed","blocked"]},"summary":{"type":"string","minLength":1,"maxLength":8192},"reason":{"type":"string","maxLength":8192}}}"#,
-        ),
-        _ => Err("native Codex action has an unsupported role".into()),
-    }
+    static WORKER: OnceLock<String> = OnceLock::new();
+    static REVIEWER: OnceLock<String> = OnceLock::new();
+    static ADVISER: OnceLock<String> = OnceLock::new();
+    let schema = match role {
+        "worker" => WORKER.get_or_init(|| schema_text("worker")),
+        "reviewer" => REVIEWER.get_or_init(|| schema_text("reviewer")),
+        "adviser" => ADVISER.get_or_init(|| schema_text("adviser")),
+        _ => return Err("native Codex action has an unsupported role".into()),
+    };
+    Ok(schema.as_str())
+}
+
+fn schema_text(role: &str) -> String {
+    crate::kernel::result_contract::native_schema_text(role)
+        .expect("known native role must have a schema")
 }
 
 pub(super) fn allowed_outcome<'a>(role: &str, outcome: &'a str) -> Result<&'a str, String> {
-    let allowed: &[&str] = match role {
-        "worker" => &["completed", "blocked", "contradiction"],
-        "reviewer" => &["approved", "rework", "blocked", "unavailable"],
-        "adviser" => &["completed", "blocked"],
-        _ => &[],
-    };
-    if allowed.contains(&outcome) {
-        Ok(outcome)
-    } else {
-        Err(format!("native {role} result has an invalid outcome"))
+    if !crate::kernel::result_contract::Role::parse(role)
+        .is_some_and(|role| role != crate::kernel::result_contract::Role::Lead)
+    {
+        return Err(format!("native {role} result has an invalid outcome"));
     }
+    crate::kernel::result_contract::validate(role, outcome)
+        .map(|_| outcome)
+        .map_err(|_| format!("native {role} result has an invalid outcome"))
 }
 
 pub(super) fn validate_final_result<'a>(role: &str, result: &'a Value) -> Result<&'a str, String> {

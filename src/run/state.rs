@@ -5,6 +5,7 @@ mod apply;
 mod check_stage;
 mod governor_validation;
 mod historical_review;
+mod recovery;
 mod reviewer_transition;
 mod validation;
 
@@ -18,6 +19,7 @@ pub use validation::{validate_event, validate_start};
 
 const SHA_LEN: usize = 64;
 const ROLES: &[&str] = &["lead", "adviser", "worker", "reviewer"];
+pub(crate) const RECOVERY_PROTOCOL_VERSION: u64 = 1;
 /// Bounded operational reasons a reviewer target may fail to execute. These are
 /// the only admissible causes for `unavailable`; vendor prose is never parsed.
 pub(crate) const FALLBACK_REASONS: &[&str] =
@@ -55,6 +57,9 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
             state["reviewPolicy"] = review.clone();
             state["reviewDecisions"] = json!([review]);
         }
+    }
+    if let Some(marker) = first.get("recoveryProtocol") {
+        state["recoveryProtocol"] = marker.clone();
     }
     let governor_enabled = first
         .get("governor")
@@ -142,20 +147,10 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
             {
                 validate_grant_acknowledgement(&state, &events[..index], event, governor_event)?;
             }
-            let mut governor_events = state["governorEvents"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            governor_events.push(governor_event.clone());
-            let grant_protocol = state["governor"]["grantProtocol"].clone();
-            state["governor"] = crate::context::reduce_governor(&governor_events)?;
-            state["governor"]["enabled"] = json!(true);
-            if !grant_protocol.is_null() {
-                state["governor"]["grantProtocol"] = grant_protocol;
-            }
-            state["governorEvents"] = Value::Array(governor_events);
+            recovery::append_governor(&mut state, governor_event.clone())?;
         }
         apply_event(&mut state, event)?;
+        recovery::after_event(&mut state, event)?;
     }
     state["assignments"] = json!(crate::run::assignment::pending(&state));
     Ok(state)
@@ -203,6 +198,7 @@ fn reject_unknown(
             allowed.push("basisProtocol");
             allowed.push("basis");
             allowed.push("reviewPolicy");
+            allowed.push("recoveryProtocol");
         }
         return object
             .keys()
