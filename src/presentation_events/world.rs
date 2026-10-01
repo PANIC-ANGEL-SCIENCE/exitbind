@@ -95,6 +95,9 @@ pub(crate) fn render(world: &Value, plain: bool) -> String {
         "Status: {}\n",
         world["status"].as_str().unwrap_or("UNKNOWN")
     ));
+    if let Some(work) = world["work"].as_str() {
+        text.push_str(&format!("Work: {work}\n"));
+    }
     for (label, motif) in labels
         .iter()
         .zip(world["motifs"].as_array().into_iter().flatten())
@@ -125,5 +128,7 @@ mod tests {
         assert_eq!(artifact["motifs"], world["motifs"]);
         assert!(render(&artifact, true).contains("Status: BLOCKED"));
         assert!(render(&artifact, false).contains("Status: BLOCKED"));
+        assert!(render(&world, true).contains("Work: private-marker"));
+        assert!(!render(&artifact, true).contains("Work:"));
     }
 }

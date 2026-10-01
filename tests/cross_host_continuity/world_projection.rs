@@ -46,12 +46,18 @@ fn world_needs_receiving_execution_and_export_excludes_private_markers() {
     assert!(!motif_active(&resumed, "exit_sign"));
     assert_eq!(world(&f), resumed);
     assert_eq!(f.history(), before);
+    let local = f.call(&["work", "world", &f.work, "--plain"]);
+    assert!(String::from_utf8(local.stdout).unwrap().contains(&f.work));
     let exported = f.call(&["work", "world", &f.work, "--export", "--json"]);
     assert!(exported.status.success());
     let text = String::from_utf8(exported.stdout).unwrap();
     assert!(!text.contains(&f.work));
     assert!(!text.contains("private"));
     assert!(!text.contains("host-delivered"));
+    let exported_text = f.call(&["work", "world", &f.work, "--export", "--plain"]);
+    assert!(!String::from_utf8(exported_text.stdout)
+        .unwrap()
+        .contains(&f.work));
     let plain = f.call(&["work", "world", &f.work, "--plain", "--reduced-motion"]);
     assert!(plain.status.success());
     assert!(String::from_utf8(plain.stdout)

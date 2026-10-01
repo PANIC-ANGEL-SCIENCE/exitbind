@@ -267,7 +267,17 @@ fn scope_protected_paths_wrong_file_state_and_old_assignment_are_fenced() {
         ".exitbind/evidence.txt",
         "exitbind/agents/worker.md",
         ".claude/settings.json",
+        "src/AGENTS.md",
+        "src/CLAUDE.md",
+        "src/.claude/settings.json",
+        "src/.codex/config.toml",
+        "src/.git/config",
+        "src/.exitbind/events.jsonl",
+        "src/agents.md",
+        "src/.CoDeX/config.toml",
+        "ExitBind.json",
     ] {
+        let before = fs::read(root.join(file)).ok();
         assert!(
             !write(
                 &root,
@@ -282,8 +292,32 @@ fn scope_protected_paths_wrong_file_state_and_old_assignment_are_fenced() {
             .success(),
             "{file}"
         );
+        assert_eq!(
+            fs::read(root.join(file)).ok(),
+            before,
+            "protected path changed: {file}"
+        );
     }
     assert_eq!(fs::read(root.join("exitbind.json")).unwrap(), config);
+    #[cfg(unix)]
+    {
+        use sha2::{Digest, Sha256};
+        let alias = root.join("src/config-alias.json");
+        fs::hard_link(root.join("exitbind.json"), &alias).unwrap();
+        let expected = format!("{:x}", Sha256::digest(&config));
+        assert!(!write(
+            &root,
+            &work,
+            &assignment,
+            "src/config-alias.json",
+            "control-alias",
+            &expected,
+            b"forbidden"
+        )
+        .status
+        .success());
+        assert_eq!(fs::read(&alias).unwrap(), config);
+    }
     fs::remove_dir_all(root).unwrap();
 }
 

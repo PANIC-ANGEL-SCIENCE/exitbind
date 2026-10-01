@@ -207,8 +207,12 @@ fn validate_path(value: &str) -> Result<(), String> {
         || p.is_absolute()
         || p.components().any(|c| !matches!(c, Component::Normal(_)))
         || p.components()
-            .map(|c| c.as_os_str().to_str().unwrap_or(""))
-            .collect::<Vec<_>>()
+            .map(|c| {
+                c.as_os_str()
+                    .to_str()
+                    .ok_or("file path component is not UTF-8")
+            })
+            .collect::<Result<Vec<_>, _>>()?
             .join("/")
             != value
     {
@@ -219,19 +223,20 @@ fn validate_path(value: &str) -> Result<(), String> {
 
 fn protect(loaded: &Loaded, target: &std::path::Path, relative: &str) -> Result<(), String> {
     let first = relative.split('/').next().unwrap_or_default();
-    if matches!(
-        first,
-        ".git"
-            | ".exitbind"
-            | ".soulmate"
-            | "exitbind"
-            | "soulmate"
-            | ".agents"
-            | ".claude"
-            | ".codex"
-            | "AGENTS.md"
-            | "CLAUDE.md"
-    ) || target == loaded.path
+    if relative.split('/').any(|component| {
+        matches!(
+            component.to_ascii_lowercase().as_str(),
+            ".git"
+                | ".exitbind"
+                | ".soulmate"
+                | ".agents"
+                | ".claude"
+                | ".codex"
+                | "agents.md"
+                | "claude.md"
+        )
+    }) || matches!(first.to_ascii_lowercase().as_str(), "exitbind" | "soulmate")
+        || same_control_file(target, &loaded.path)
         || target.starts_with(
             loaded
                 .state_root
@@ -240,9 +245,33 @@ fn protect(loaded: &Loaded, target: &std::path::Path, relative: &str) -> Result<
         || loaded
             .agents
             .values()
-            .any(|a| target == loaded.control_root.join(&a.profile))
+            .any(|a| same_control_file(target, &loaded.control_root.join(&a.profile)))
     {
         return Err("file effect cannot replace authority, evidence or host-control files".into());
     }
     Ok(())
+}
+
+fn same_control_file(target: &std::path::Path, control: &std::path::Path) -> bool {
+    if target == control
+        || target
+            .to_str()
+            .zip(control.to_str())
+            .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
+    {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(a), Ok(b)) = (
+            std::fs::symlink_metadata(target),
+            std::fs::symlink_metadata(control),
+        ) {
+            // Detect the same configured control file on case-insensitive
+            // filesystems and through hard-link aliases, without lossy paths.
+            return a.dev() == b.dev() && a.ino() == b.ino();
+        }
+    }
+    false
 }

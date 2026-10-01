@@ -42,7 +42,8 @@ For an existing file, replace `absent` with the SHA-256 of its current bytes.
 Standard input is the complete UTF-8 replacement, at most 256 KiB. The command
 refuses a different file state, a stale or completed assignment, a missing
 current grant, an out-of-scope path, symlinks, and protected configuration,
-profile, evidence and host-control paths. It replaces the name atomically and
+profile, evidence and host-control paths, including nested `AGENTS.md`,
+`CLAUDE.md` and native control directories. It replaces the name atomically and
 preserves ordinary Unix permission bits of an existing file, excluding set-id
 bits. A task ledger lock fences assignment transitions during the replacement.
 
@@ -70,7 +71,8 @@ exitbind work world WORK --export --json > world.json
 The static terminal renderer uses six motifs. Each active marker comes from
 the corresponding current record, without changing the records that decide
 checks or acceptance. `--plain` has the same status and markers; all rendering
-is static, so reduced motion requires no alternate animation. Export includes
+is static, so reduced motion requires no alternate animation. The local text
+view includes the canonical Work marker to distinguish tasks. Export includes
 renderer status and motif state only, excluding local Work/session markers,
 paths, source text and logs.
 
