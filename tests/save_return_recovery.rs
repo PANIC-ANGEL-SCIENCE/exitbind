@@ -187,6 +187,49 @@ fn completed_but_unsubmitted_result_returns_through_the_same_work() {
     assert_eq!(submitted[0]["artifact"]["sha256"], sha256(&body));
 }
 
+#[test]
+fn inspect_does_not_create_journal_or_report_unsubmitted_result_as_recorded() {
+    let fixture = Fixture::new("save-return-inspect-readonly");
+    let begun = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "inspect read only",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = begun["work"].as_str().unwrap();
+    let lead = begun["next"]["assignment"].as_str().unwrap();
+    let scoped = fixture.call(
+        &["work", "return", work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    assert!(scoped.status.success(), "{}", text(&scoped));
+    let directory = fixture.root.join(".exitbind/native-actions").join(work);
+    assert!(!directory.exists());
+    let empty = fixture.value(&["work", "act", work, "--inspect"], b"");
+    assert_eq!(empty["reconciliation"], "no_record");
+    assert!(!directory.exists());
+
+    let (other_work, _) = fixture.worker_journal_with_submission(false);
+    let directory = fixture
+        .root
+        .join(".exitbind/native-actions")
+        .join(&other_work);
+    let before = fs::read_dir(&directory).unwrap().count();
+    let inspected = fixture.value(&["work", "act", &other_work, "--inspect"], b"");
+    assert_eq!(inspected["result"]["state"], "retained_pending_submission");
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), before);
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
@@ -272,7 +315,7 @@ fn completed_same_work_journal_is_replayed_without_provider_spawn() {
 #[test]
 fn uncertain_native_journal_refuses_without_provider_spawn() {
     let fixture = Fixture::new("save-return-uncertain");
-    let (work, _) = fixture.worker_journal();
+    let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
     let journal_path = fs::read_dir(&directory)
         .unwrap()
@@ -283,11 +326,25 @@ fn uncertain_native_journal_refuses_without_provider_spawn() {
         .unwrap();
     let mut journal: Value = serde_json::from_slice(&fs::read(&journal_path).unwrap()).unwrap();
     journal["status"] = json!("running");
+    let provisional = json!({"outcome":"completed","summary":"held","reason":""});
+    journal["provisionalFinalResultBytes"] =
+        json!(hex_encode(&serde_json::to_vec(&provisional).unwrap()));
+    journal["provisionalFinalResult"] = provisional;
     fs::write(&journal_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let before = fs::read(&journal_path).unwrap();
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    assert_eq!(inspected["effect"], "no-change");
+    assert_eq!(inspected["reconciliation"], "inspection_required");
+    assert_eq!(inspected["nextAction"]["safe"], false);
+    assert_eq!(fs::read(&journal_path).unwrap(), before);
     let marker = fixture.marker();
     let output = fixture.call(&["work", "act", &work, "--resume"], b"");
     assert!(!output.status.success());
-    assert!(text(&output).contains("uncertain provider execution"));
+    assert!(
+        text(&output).contains("execution is uncertain"),
+        "{}",
+        text(&output)
+    );
     assert!(!marker.exists());
 }
 
@@ -348,6 +405,14 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     let mut journal: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     journal["status"] = json!("running");
     journal.as_object_mut().unwrap().remove("result");
+    journal
+        .as_object_mut()
+        .unwrap()
+        .remove("provisionalFinalResult");
+    journal
+        .as_object_mut()
+        .unwrap()
+        .remove("provisionalFinalResultBytes");
     journal["processIdentity"] = json!({
         "pid": 2147483647u32,
         "processGroup": 2147483647i32,
@@ -365,7 +430,13 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     )
     .unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    journal["request"] = json!({"executable": fs::canonicalize(&executable).unwrap()});
+    journal["request"] = json!({
+        "executable": fs::canonicalize(&executable).unwrap(),
+        "model": null,
+        "reasoningEffort": null,
+        "timeoutMs": 1800000,
+        "persistSession": true
+    });
     fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
     let output = fixture.call(
         &[
@@ -384,6 +455,196 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
         fixture.value(&["work", "next", &work], b"")["next"]["action"],
         "check"
     );
+}
+
+#[test]
+fn ended_provisional_worker_is_reconciled_as_a_new_operation() {
+    let fixture = Fixture::new("save-return-provisional");
+    let (work, _) = fixture.worker_journal_with_submission(false);
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let mut journal: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let provisional = json!({
+        "outcome": "completed",
+        "summary": "provider emitted a result before failing",
+        "reason": ""
+    });
+    let provisional_bytes = serde_json::to_vec(&provisional).unwrap();
+    journal["operationId"] = json!("old-native-operation");
+    let old_operation = journal["operationId"].clone();
+    journal["status"] = json!("started");
+    journal["provisionalFinalResult"] = provisional;
+    journal["provisionalFinalResultBytes"] = json!(hex_encode(&provisional_bytes));
+    journal["observation"] = json!({
+        "process": {"code": 1, "signal": null, "success": false, "timedOut": false},
+        "turn": "failed",
+        "commands": [],
+        "usage": {"source": "provider", "inputTokens": 1, "cachedInputTokens": 0, "outputTokens": 1},
+        "threadId": "thread-r18",
+        "coverageGaps": [],
+        "unobservedItemCount": 0,
+        "interrupted": false
+    });
+    journal["processIdentity"] = json!({
+        "pid": 2147483647u32,
+        "processGroup": 2147483647i32,
+        "startTimeTicks": 1,
+    });
+    let marker = fixture.root.join("provisional-retry");
+    let executable = fixture.root.join("fake-provisional-retry-codex");
+    fs::write(
+        &executable,
+        format!(
+            r#"#!/bin/sh
+cat >/dev/null
+printf x >> '{}'
+printf '%s\n' '{{"type":"thread.started","thread_id":"thread-r18"}}'
+printf '%s\n' '{{"type":"item.completed","item":{{"type":"agent_message","text":"{{\"outcome\":\"completed\",\"summary\":\"retried\",\"reason\":\"\"}}"}}}}'
+printf '%s\n' '{{"type":"turn.completed","status":"completed","usage":{{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}}}'
+"#,
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    journal["request"] = json!({
+        "executable": fs::canonicalize(&executable).unwrap(),
+        "model": null,
+        "reasoningEffort": null,
+        "timeoutMs": 1800000,
+        "persistSession": true,
+        "resumed": true,
+    });
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let before = fs::read(&path).unwrap();
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    assert_eq!(inspected["effect"], "no-change");
+    assert_eq!(inspected["result"]["state"], "provisional");
+    assert_eq!(inspected["reconciliation"], "resume_ready");
+    assert_eq!(inspected["nextAction"]["type"], "resume_current");
+    assert_eq!(fs::read(&path).unwrap(), before);
+
+    let conflict = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--codex-bin",
+            executable.to_str().unwrap(),
+            "--model",
+            "different-model",
+        ],
+        b"",
+    );
+    assert!(!conflict.status.success());
+    assert!(text(&conflict).contains("changed execution parameters"));
+    assert!(!fs::read_dir(&directory).unwrap().any(|entry| entry
+        .unwrap()
+        .path()
+        .to_string_lossy()
+        .contains(".provisional.")));
+
+    let output = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--resume",
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    assert_eq!(fs::read(&marker).unwrap(), b"x");
+
+    let current: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(current["status"], "completed");
+    assert_ne!(current["operationId"], old_operation);
+    assert_eq!(current["resumedFromOperation"], old_operation);
+    assert_eq!(current["priorFailure"]["status"], "started");
+    assert_eq!(
+        current["priorFailure"]["provisionalFinalResultBytes"],
+        json!(hex_encode(&provisional_bytes))
+    );
+    assert!(fs::read_dir(&directory).unwrap().any(|entry| entry
+        .unwrap()
+        .path()
+        .to_string_lossy()
+        .contains(".provisional.")));
+}
+
+#[test]
+fn provisional_with_possible_external_effects_or_prior_retry_refuses_automatic_resume() {
+    let fixture = Fixture::new("save-return-effects");
+    let (work, _) = fixture.worker_journal_with_submission(false);
+    let directory = fixture.root.join(".exitbind/native-actions").join(&work);
+    let path = fs::read_dir(&directory)
+        .unwrap()
+        .map(|item| item.unwrap().path())
+        .find(|path| path.extension().and_then(|part| part.to_str()) == Some("json"))
+        .unwrap();
+    let mut journal: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let provisional = json!({"outcome":"completed","summary":"held","reason":""});
+    journal["status"] = json!("running");
+    journal["operationId"] = json!("effectful-operation");
+    journal["provisionalFinalResultBytes"] =
+        json!(hex_encode(&serde_json::to_vec(&provisional).unwrap()));
+    journal["provisionalFinalResult"] = provisional;
+    journal["processIdentity"] =
+        json!({"pid":2147483647u32,"processGroup":2147483647i32,"startTimeTicks":1});
+    journal["observation"] = json!({
+        "process":{"code":1,"signal":null,"success":false,"timedOut":false},
+        "turn":"failed","commands":[],"unobservedItemCount":1,
+        "usage":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1},
+        "threadId":"thread-r18","coverageGaps":[],"interrupted":false
+    });
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    assert_eq!(inspected["nextAction"]["safe"], false);
+    assert!(
+        text(&fixture.call(&["work", "act", &work, "--resume"], b"")).contains("external effects")
+    );
+
+    journal["observation"]["unobservedItemCount"] = json!(0);
+    journal["observation"]["commands"] =
+        json!([{"status":"completed","exitCode":0,"invocationSha256":"command-id"}]);
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    assert_eq!(
+        fixture.value(&["work", "act", &work, "--inspect"], b"")["nextAction"]["safe"],
+        false
+    );
+
+    journal["observation"]["commands"] = json!([]);
+    journal["priorFailure"] = json!({"operation":"earlier"});
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    assert_eq!(
+        fixture.value(&["work", "act", &work, "--inspect"], b"")["nextAction"]["safe"],
+        false
+    );
+
+    journal
+        .as_object_mut()
+        .unwrap()
+        .remove("provisionalFinalResult");
+    journal
+        .as_object_mut()
+        .unwrap()
+        .remove("provisionalFinalResultBytes");
+    journal["status"] = json!("started");
+    fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+    let before = fs::read(&path).unwrap();
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    assert_eq!(inspected["nextAction"]["safe"], false);
+    let refused = fixture.call(&["work", "act", &work, "--resume"], b"");
+    assert!(!refused.status.success());
+    assert!(text(&refused).contains("bounded provider retry"));
+    assert_eq!(fs::read(&path).unwrap(), before);
 }
 
 #[test]

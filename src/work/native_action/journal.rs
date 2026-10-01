@@ -53,6 +53,38 @@ pub(super) fn journal_result(journal: &Value) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// A completed journal is replayable only when the durable observation proves
+/// that the provider turn completed successfully. Older journals may not have
+/// an observation, so they retain the historical replay behavior.
+pub(super) fn validate_completed_observation(journal: &Value) -> Result<(), String> {
+    let Some(observation) = journal.get("observation") else {
+        return if journal.get("operationId").is_none() {
+            Ok(())
+        } else {
+            Err("completed native journal has no process observation".into())
+        };
+    };
+    let process = observation
+        .get("process")
+        .ok_or("completed native journal has no process observation")?;
+    if process["success"] != true
+        || process["code"] != 0
+        || process["timedOut"] != false
+        || !process["signal"].is_null()
+        || observation["turn"] != "completed"
+        || observation["interrupted"] != false
+        || !observation
+            .get("coverageGaps")
+            .and_then(Value::as_array)
+            .is_some_and(|gaps| gaps.is_empty())
+    {
+        return Err(
+            "completed native journal does not contain a complete successful observation".into(),
+        );
+    }
+    Ok(())
+}
+
 pub(super) fn write_journal(path: &Path, value: &Value, exclusive: bool) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
     if bytes.len() > MAX_JOURNAL_BYTES as usize {
@@ -125,11 +157,23 @@ pub(super) fn record_error(path: &Path, error: &str) -> Result<(), String> {
     write_journal(path, &journal, false)
 }
 
-pub(super) fn update_started(path: &Path, observation: &Value) -> Result<(), String> {
+pub(super) fn update_started(
+    path: &Path,
+    observation: &Value,
+    final_result: Option<&Value>,
+) -> Result<(), String> {
     let mut journal = read_journal(path)?.ok_or("native assignment journal disappeared")?;
     journal["status"] = json!("started");
     journal["observation"] = observation.clone();
     journal["threadId"] = observation["threadId"].clone();
+    if let Some(result) = final_result {
+        let bytes = serde_json::to_vec(result).map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_RESULT_BYTES {
+            return Err("native provisional result exceeds the journal bound".into());
+        }
+        journal["provisionalFinalResult"] = result.clone();
+        journal["provisionalFinalResultBytes"] = json!(hex_encode(&bytes));
+    }
     write_journal(path, &journal, false)
 }
 

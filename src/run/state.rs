@@ -13,6 +13,7 @@ use apply::apply_event;
 #[cfg(test)]
 use apply::{apply_govern, apply_submission, apply_unavailable};
 use governor_validation::validate_grant_acknowledgement;
+pub(crate) use recovery::forward_repair_candidate;
 #[cfg(test)]
 use validation::validate_submission;
 pub use validation::{validate_event, validate_start};
@@ -147,6 +148,7 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
             {
                 validate_grant_acknowledgement(&state, &events[..index], event, governor_event)?;
             }
+            recovery::validate_forward_repair(&state, &events[..index], event)?;
             recovery::append_governor(&mut state, governor_event.clone())?;
         }
         apply_event(&mut state, event)?;

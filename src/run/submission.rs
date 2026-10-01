@@ -60,6 +60,19 @@ where
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let agent = expected.agent.clone();
     let assignment_sha256 = crate::evidence::hash::text(assignment_handle);
+    if expected.role == "worker" && outcome == "completed" {
+        // A current Lead repair can precede the mutation permit that exhausts
+        // the no-information streak. Record that decision's one forward
+        // governor transition before admitting the worker's retained result.
+        // Both steps revalidate under the ledger lock; an interrupted call
+        // leaves a replayable repair event, never a fabricated submission.
+        super::repair_recovery::before_worker_completion(
+            loaded,
+            &path,
+            assignment_handle,
+            &expected,
+        )?;
+    }
     submit_locked(
         loaded,
         &path,

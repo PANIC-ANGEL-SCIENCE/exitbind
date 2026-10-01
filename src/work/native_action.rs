@@ -2,14 +2,16 @@
 mod journal;
 #[path = "native_action/prompt.rs"]
 mod prompt;
+#[path = "native_action/reconcile.rs"]
+mod reconcile;
 #[path = "native_action/recovery.rs"]
 mod recovery;
 #[path = "native_action/result.rs"]
 mod result;
 
 use journal::{
-    claim_started, journal_result, read_journal, record_error, update_started, verify_journal,
-    write_completed, write_journal,
+    claim_started, journal_result, read_journal, record_error, update_started,
+    validate_completed_observation, verify_journal, write_completed, write_journal,
 };
 use result::{
     bounded_json, projected_result, projection, request_projection, role_schema,
@@ -51,6 +53,10 @@ pub(crate) fn recover(
     recovery::recover(loaded, work, current, operation, overrides)
 }
 
+pub(crate) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Value, String> {
+    reconcile::inspect(loaded, work, current)
+}
+
 pub(crate) fn execute(
     loaded: &Loaded,
     work: &str,
@@ -71,25 +77,36 @@ pub(crate) fn execute(
         current["packet"]["substitution"].is_object(),
     )?;
     let _lock = acquire_lock(&paths.lock)?;
-    let existing = read_journal(&paths.journal)?;
+    let mut existing = read_journal(&paths.journal)?;
+    let recorded_request = existing.as_ref().map(|journal| journal["request"].clone());
     let inherited = if existing.is_none() && options.resume {
         find_resume_source(&paths, role, agent, current["packet"]["attempt"].as_u64())?
     } else {
         None
     };
+    let mut retry_thread_id = None;
+    let mut prior_failure = None;
 
-    if let Some(journal) = existing.as_ref() {
-        verify_journal(journal, work, &identity, role, agent)?;
-        recovery::validate_overrides(journal, &options)?;
+    if let Some(journal) = existing.clone() {
+        verify_journal(&journal, work, &identity, role, agent)?;
+        recovery::validate_overrides(&journal, &options)?;
         match journal["status"].as_str() {
             Some("completed") => {
-                let bytes = journal_result(journal)?;
+                validate_completed_observation(&journal)?;
+                let bytes = journal_result(&journal)?;
                 let response = submit_saved(loaded, work, &identity.assignment, bytes)?;
                 return Ok(recovery::mark_same_work_return(
                     response,
                     work,
                     &identity.assignment,
                 ));
+            }
+            Some("started" | "running")
+                if journal
+                    .get("priorFailure")
+                    .is_some_and(|value| !value.is_null()) =>
+            {
+                return Err("native assignment already used its bounded provider retry; further execution is refused".into());
             }
             Some("started" | "running") if !options.resume => {
                 return Err(format!(
@@ -102,11 +119,17 @@ pub(crate) fn execute(
                 );
             }
             Some("started") if journal.get("provisionalFinalResult").is_some() => {
-                return Err("native assignment retains a provisional result; reconcile it before a new provider turn".into());
+                if !options.resume {
+                    return Err("native assignment retains a provisional result; use --resume to reconcile the ended worker operation".into());
+                }
+                let retry = recovery::prepare_provisional_retry(&paths, &journal, role)?;
+                retry_thread_id = retry.thread_id;
+                prior_failure = Some(retry.prior_failure);
+                existing = None;
             }
             Some("started") => {}
             Some("running") => {
-                match recovery::liveness(journal) {
+                match recovery::liveness(&journal) {
                     ProcessLiveness::Alive => {
                         return Err("native assignment provider is alive; keep the existing execution handle".into());
                     }
@@ -117,7 +140,10 @@ pub(crate) fn execute(
                         return Err("reviewer resume is refused; a reviewer needs a fresh independent session".into());
                     }
                     ProcessLiveness::Ended if journal.get("provisionalFinalResult").is_some() => {
-                        return Err("ended native execution retains a provisional result; reconcile it before a new provider turn".into());
+                        let retry = recovery::prepare_provisional_retry(&paths, &journal, role)?;
+                        retry_thread_id = retry.thread_id;
+                        prior_failure = Some(retry.prior_failure);
+                        existing = None;
                     }
                     ProcessLiveness::Ended => {}
                 }
@@ -151,6 +177,7 @@ pub(crate) fn execute(
     let thread_id = existing
         .as_ref()
         .and_then(|journal| journal["threadId"].as_str())
+        .or(retry_thread_id.as_deref())
         .or_else(|| inherited.as_ref().map(|source| source.thread_id.as_str()));
     if options.resume && thread_id.is_none() {
         return Err(
@@ -158,6 +185,7 @@ pub(crate) fn execute(
                 .into(),
         );
     }
+    let resuming = options.resume;
     let request = build_request(
         loaded,
         options,
@@ -170,8 +198,23 @@ pub(crate) fn execute(
         &schema_path,
         thread_id,
     )?;
+    if resuming {
+        if let Some(recorded) = recorded_request.as_ref() {
+            recovery::validate_rebuilt_request(&json!({"request": recorded}), &request)?;
+        }
+    }
     codex_exec::validate_request(&request).map_err(|error| error.to_string())?;
     if existing.is_none() {
+        let operation_id = prior_failure
+            .as_ref()
+            .and_then(|failure| failure["operation"].as_str())
+            .map(|operation| format!("native-retry-{operation}-{}", timestamp()))
+            .unwrap_or_else(|| format!("native-{}-{}", std::process::id(), timestamp()));
+        let resumed_from_operation = prior_failure
+            .as_ref()
+            .map(|failure| failure["operation"].clone())
+            .unwrap_or(Value::Null);
+        let exclusive = prior_failure.is_none();
         write_journal(
             &paths.journal,
             &json!({
@@ -184,14 +227,17 @@ pub(crate) fn execute(
                 "agent": agent,
                 "stage": current["packet"]["stage"],
                 "attempt": current["packet"]["attempt"],
+                "operationId": operation_id,
+                "resumedFromOperation": resumed_from_operation,
                 "threadId": thread_id.map_or(Value::Null, |value| json!(value)),
                 "resumedFromAssignment": inherited
                     .as_ref()
                     .map_or(Value::Null, |source| json!(source.assignment)),
+                "priorFailure": prior_failure.unwrap_or(Value::Null),
                 "startedAt": timestamp(),
                 "request": request_projection(&request),
             }),
-            true,
+            exclusive,
         )?;
     }
 
@@ -218,7 +264,11 @@ pub(crate) fn execute(
             }))
             .collect::<Vec<_>>());
     }
-    update_started(&paths.journal, &observation_value)?;
+    update_started(
+        &paths.journal,
+        &observation_value,
+        observation.final_result.as_ref(),
+    )?;
     let final_result = observation
         .final_result
         .as_ref()
@@ -372,6 +422,42 @@ fn journal_paths(
         schema: root.join(format!("{key}.schema.json")),
         lock: root.join(format!("{key}.lock")),
     })
+}
+
+/// Locate an existing journal without creating the state directory or lock.
+fn journal_paths_readonly(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    substituted: bool,
+) -> Result<Option<Paths>, String> {
+    if !super::super::valid_work_handle(work) {
+        return Err("native action work handle is invalid".into());
+    }
+    let root = loaded
+        .state_root
+        .join(crate::project::layout_types::state_namespace())
+        .join("native-actions")
+        .join(work);
+    let relative = root
+        .strip_prefix(&loaded.state_root)
+        .map_err(|_| "native journal path escapes project root")?;
+    let mut cursor = loaded.state_root.clone();
+    for component in relative.components() {
+        cursor.push(component);
+        match fs::symlink_metadata(&cursor) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => return Err("native journal directory is not a regular directory".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let key = journal_key(assignment, substituted);
+    Ok(Some(Paths {
+        journal: root.join(format!("{key}.json")),
+        schema: root.join(format!("{key}.schema.json")),
+        lock: root.join(format!("{key}.lock")),
+    }))
 }
 
 fn journal_key(assignment: &str, substituted: bool) -> String {

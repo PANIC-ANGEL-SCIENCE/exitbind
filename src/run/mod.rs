@@ -19,6 +19,7 @@ mod lifecycle;
 mod observed_check;
 pub(crate) mod preservation_assignment;
 mod reducer;
+mod repair_recovery;
 mod result_reference;
 pub(crate) mod state;
 mod submission;

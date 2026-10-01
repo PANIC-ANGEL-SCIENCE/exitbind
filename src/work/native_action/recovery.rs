@@ -4,12 +4,15 @@
 //! normal result boundary decide whether the recorded assignment is still
 //! admissible. It never starts a provider process.
 
-use super::{acquire_lock, journal_paths, journal_result, read_journal, JournalLock};
+use super::{
+    acquire_lock, journal_paths, journal_result, read_journal, timestamp, JournalLock, Paths,
+};
 use crate::config::Loaded;
 use crate::host::codex_exec::{self, ProcessIdentity, ProcessLiveness, StreamObservation};
 use crate::project::layout_types::state_namespace;
 use serde_json::{json, Value};
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 
 pub(super) fn recover(
@@ -34,6 +37,7 @@ pub(super) fn recover(
 
     match candidate.status.as_str() {
         "completed" => {
+            super::validate_completed_observation(&candidate.journal)?;
             let bytes = journal_result(&candidate.journal)?;
             super::super::super::return_result_impl::replay_recorded_native(
                 loaded, work, &candidate.assignment, &candidate.journal, &bytes,
@@ -88,6 +92,218 @@ pub(super) fn validate_overrides(
         );
     }
     Ok(())
+}
+
+pub(super) struct RetryContext {
+    pub(super) thread_id: Option<String>,
+    pub(super) prior_failure: Value,
+}
+
+/// Preserve a provider failure before admitting a new current worker turn.
+///
+/// The old journal is copied to a private non-journal suffix and the caller
+/// atomically replaces the live journal with a new operation record. This
+/// keeps the provisional result inspectable while giving the retry a distinct
+/// operation identity. A reviewer never uses this route.
+pub(super) fn prepare_provisional_retry(
+    paths: &Paths,
+    journal: &Value,
+    role: &str,
+) -> Result<RetryContext, String> {
+    if role != "worker" {
+        return Err(
+            "native provisional result can be retried only for the current worker assignment"
+                .into(),
+        );
+    }
+    match liveness(journal) {
+        ProcessLiveness::Alive => {
+            return Err(
+                "native assignment provider is alive; keep the existing execution handle".into(),
+            )
+        }
+        ProcessLiveness::Uncertain => {
+            return Err(
+                "native assignment execution is uncertain; no duplicate provider run is admitted"
+                    .into(),
+            )
+        }
+        ProcessLiveness::Ended => {}
+    }
+
+    validate_provisional_observation(journal)?;
+
+    let name = paths
+        .journal
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("native assignment journal has an invalid name")?;
+    let archive = paths.journal.with_file_name(format!(
+        ".{name}.provisional.{}.{}",
+        std::process::id(),
+        timestamp()
+    ));
+    archive_journal(&paths.journal, &archive)?;
+    let prior_failure = json!({
+        "operation": journal["operationId"].as_str().unwrap_or(name),
+        "status": journal["status"],
+        "observation": journal["observation"],
+        "provisionalFinalResult": journal["provisionalFinalResult"],
+        "provisionalFinalResultBytes": journal["provisionalFinalResultBytes"],
+        "error": journal["error"],
+        "archive": archive.file_name().and_then(|value| value.to_str()),
+    });
+    Ok(RetryContext {
+        thread_id: journal["threadId"].as_str().map(str::to_owned),
+        prior_failure,
+    })
+}
+
+pub(super) fn validate_provisional_observation(journal: &Value) -> Result<(), String> {
+    if journal
+        .get("priorFailure")
+        .is_some_and(|value| !value.is_null())
+    {
+        return Err("native provisional result has already used its bounded retry".into());
+    }
+    let result = journal
+        .get("provisionalFinalResult")
+        .filter(|value| !value.is_null())
+        .ok_or("native provisional result is unavailable for reconciliation")?;
+    super::result::validate_final_result("worker", result)?;
+    let bytes = serde_json::to_vec(result).map_err(|error| error.to_string())?;
+    if bytes.len() > super::MAX_RESULT_BYTES {
+        return Err("native provisional result exceeds the journal bound".into());
+    }
+    let encoded = super::hex_encode(&bytes);
+    if journal["provisionalFinalResultBytes"].as_str() != Some(encoded.as_str()) {
+        return Err("native provisional result bytes do not match the retained result".into());
+    }
+
+    let observation = journal
+        .get("observation")
+        .and_then(Value::as_object)
+        .ok_or("native provisional result has no bounded prior observation")?;
+    let process = observation
+        .get("process")
+        .and_then(Value::as_object)
+        .ok_or("native provisional result has no process observation")?;
+    let exit_code = process.get("code").and_then(Value::as_i64);
+    if process.get("success") != Some(&Value::Bool(false))
+        || !exit_code.is_some_and(|code| code != 0)
+        || process.get("signal").is_some_and(|value| !value.is_null())
+        || process.get("timedOut") != Some(&Value::Bool(false))
+        || observation.get("interrupted") != Some(&Value::Bool(false))
+        || !matches!(
+            observation.get("turn").and_then(Value::as_str),
+            Some("completed" | "failed")
+        )
+        || observation
+            .get("threadId")
+            .and_then(Value::as_str)
+            .is_none()
+        || !observation
+            .get("coverageGaps")
+            .and_then(Value::as_array)
+            .is_some_and(|gaps| gaps.is_empty())
+    {
+        return Err(
+            "native provisional result has no complete safe process observation; retry is refused"
+                .into(),
+        );
+    }
+    let commands = observation
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or("native provisional result has no command observation")?;
+    if !commands.is_empty() || observation.get("unobservedItemCount") != Some(&json!(0)) {
+        return Err(
+            "native provisional result may have external effects; automatic retry is refused"
+                .into(),
+        );
+    }
+    for command in commands {
+        if command.get("status").and_then(Value::as_str).is_none()
+            || command.get("exitCode").and_then(Value::as_i64).is_none()
+            || command
+                .get("invocationSha256")
+                .and_then(Value::as_str)
+                .is_none()
+        {
+            return Err(
+                "native provisional result has incomplete command outcomes; retry is refused"
+                    .into(),
+            );
+        }
+    }
+    let usage = observation
+        .get("usage")
+        .and_then(Value::as_object)
+        .ok_or("native provisional result has no usage observation")?;
+    if !usage.get("inputTokens").and_then(Value::as_u64).is_some()
+        || !usage
+            .get("cachedInputTokens")
+            .and_then(Value::as_u64)
+            .is_some()
+        || !usage.get("outputTokens").and_then(Value::as_u64).is_some()
+    {
+        return Err(
+            "native provisional result has incomplete usage observation; retry is refused".into(),
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn validate_rebuilt_request(
+    journal: &Value,
+    request: &codex_exec::Request,
+) -> Result<(), String> {
+    let old = &journal["request"];
+    let new = super::result::request_projection(request);
+    if old["executable"] != new["executable"]
+        || old["model"] != new["model"]
+        || old["reasoningEffort"] != new["reasoningEffort"]
+        || old["timeoutMs"] != new["timeoutMs"]
+        || old["persistSession"] != new["persistSession"]
+    {
+        return Err("native recovery refuses a changed executable or execution parameters".into());
+    }
+    Ok(())
+}
+
+fn archive_journal(source: &Path, archive: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("native assignment journal is not a regular file".into());
+    }
+    let bytes = fs::read(source).map_err(|error| error.to_string())?;
+    if bytes.len() > super::MAX_JOURNAL_BYTES as usize {
+        return Err("native assignment journal exceeds its bound".into());
+    }
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(archive).map_err(|error| error.to_string())?;
+    let result = (|| {
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        if let Some(parent) = archive.parent() {
+            #[cfg(unix)]
+            File::open(parent)
+                .map_err(|error| error.to_string())?
+                .sync_all()
+                .map_err(|error| error.to_string())?;
+        }
+        Ok::<(), String>(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(archive);
+    }
+    result
 }
 
 struct Candidate {
@@ -279,14 +495,12 @@ pub(super) fn persist_stream(path: &Path, stream: &StreamObservation) -> Result<
         journal["threadId"] = json!(thread_id);
     }
     if let Some(result) = stream.final_result.as_ref() {
-        if serde_json::to_vec(result)
-            .map_err(|error| error.to_string())?
-            .len()
-            > super::MAX_RESULT_BYTES
-        {
+        let bytes = serde_json::to_vec(result).map_err(|error| error.to_string())?;
+        if bytes.len() > super::MAX_RESULT_BYTES {
             return Err("native provisional result exceeds the journal bound".into());
         }
         journal["provisionalFinalResult"] = result.clone();
+        journal["provisionalFinalResultBytes"] = json!(super::hex_encode(&bytes));
     }
     super::write_journal(path, &journal, false)
 }

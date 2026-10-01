@@ -71,6 +71,26 @@ impl Fixture {
         )
     }
 
+    fn begin_without_recovery_marker(&self, extra: &[&str]) -> (String, Value) {
+        use sha2::{Digest, Sha256};
+        let (work, _) = self.begin(extra);
+        let path = self
+            .root
+            .join(format!(".exitbind/runs/work-{}.jsonl", &work[4..]));
+        let mut events = self.events(&work);
+        assert_eq!(events.len(), 1);
+        let mut start = events.remove(0);
+        start.as_object_mut().unwrap().remove("recoveryProtocol");
+        start.as_object_mut().unwrap().remove("eventSha256");
+        start["eventSha256"] = json!(format!(
+            "{:x}",
+            Sha256::digest(canonical(&start).as_bytes())
+        ));
+        fs::write(path, format!("{start}\n")).unwrap();
+        let next = self.next(&work);
+        (work, next)
+    }
+
     fn give(&self, work: &str, action: &Value, outcome: &str, body: &str) -> Output {
         self.call(
             &[
@@ -374,6 +394,70 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
         .is_none());
     let done = fixture.give_ok(&work, &lead, "accepted", "accepted");
     assert_eq!(done["next"]["action"], "done");
+}
+
+#[test]
+fn markerless_repair_then_permit_replans_forward_once_before_completion() {
+    let fixture = Fixture::new("disposition-forward-repair");
+    let (work, _) = fixture.begin_without_recovery_marker(&["--review-policy", "required"]);
+    let lead = pending_lead(&fixture, &work);
+    let decided = fixture.dispose(
+        &work,
+        &lead,
+        "repair",
+        &[
+            "--repair-boundary",
+            "Only correct the parser's line endings",
+            "--regression",
+            "Run the focused CRLF case",
+        ],
+    );
+    assert!(decided.status.success(), "{}", text(&decided));
+    let worker = fixture.next(&work);
+    let permit = fixture.ok(
+        &[
+            "work",
+            "permit",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--operation",
+            "repair_parser",
+            "--request-id",
+            "repair_parser_once",
+        ],
+        b"",
+    );
+    assert_eq!(permit["allowed"], true, "{permit}");
+    let pending = fixture.next(&work);
+    assert_eq!(
+        pending["packet"]["context"]["loop"]["state"],
+        "replan_required"
+    );
+    assert_eq!(pending["packet"]["context"]["loop"]["spent"], 2);
+    let before = fixture.events(&work);
+    let completed = fixture.give_ok(&work, &pending, "completed", "CRLF repair");
+    assert_eq!(completed["effect"], "recorded", "{completed}");
+    let after = fixture.events(&work);
+    assert_eq!(after.len(), before.len() + 2, "one recovery and one result");
+    assert_eq!(
+        after[before.len()]["operation"],
+        "authorized_repair_recovery_v1"
+    );
+    assert_eq!(
+        after[before.len()]["governorEvent"]["repairRecoveryProtocol"],
+        1
+    );
+    assert_eq!(after[before.len()]["governorEvent"]["checkpoint"], 2);
+    assert_eq!(after[before.len() + 1]["role"], "worker");
+    assert_eq!(after[before.len() + 1]["outcome"], "completed");
+    let replay = fixture.give(&work, &pending, "completed", "CRLF repair");
+    assert!(!replay.status.success(), "{}", text(&replay));
+    assert_eq!(fixture.events(&work).len(), after.len());
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let inspected = fixture.ok(&["run", "inspect", &ledger, "--json"], b"");
+    let loop_state = &inspected["governor"];
+    assert_eq!(loop_state["spent"], 2, "{loop_state}");
+    assert_eq!(loop_state["replanCount"], 1, "{loop_state}");
 }
 
 #[test]

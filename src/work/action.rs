@@ -15,11 +15,30 @@ pub(crate) struct ActOptions<'a> {
     pub(crate) timeout_ms: Option<&'a str>,
     pub(crate) resume: bool,
     pub(crate) operation: Option<&'a str>,
+    pub(crate) inspect: bool,
 }
 
 pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Result<Value, String> {
     let ledger = resolve(loaded, work)?;
     let current = next_for(loaded, work, &ledger)?;
+    if options.inspect {
+        if options.resume
+            || options.operation.is_some()
+            || options.outcome.is_some()
+            || options.reason.is_some()
+            || options.codex_bin.is_some()
+            || options.model.is_some()
+            || options.reasoning_effort.is_some()
+            || options.sandbox_mode.is_some()
+            || options.timeout_ms.is_some()
+        {
+            return Err("--inspect is read-only and takes no execution or decision options".into());
+        }
+        if current["action"] != "spawn" {
+            return Err("--inspect requires a current native assignment".into());
+        }
+        return native_action::inspect(loaded, work, &current);
+    }
     if options.operation.is_some() && !options.resume {
         return Err("--operation requires --resume".into());
     }

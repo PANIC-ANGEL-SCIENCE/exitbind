@@ -146,6 +146,8 @@ pub(crate) struct Observation {
     pub(crate) process: ProcessOutcome,
     pub(crate) turn: TurnStatus,
     pub(crate) command_outcomes: Vec<CommandOutcome>,
+    /// Item kinds outside the command/message projection may have effects.
+    pub(crate) unobserved_item_count: u64,
     pub(crate) usage: Option<Usage>,
     pub(crate) thread_id: Option<String>,
     pub(crate) final_result: Option<Value>,
@@ -562,6 +564,7 @@ fn parse_stream(
     let mut turn = None;
     let mut command_outcomes = Vec::new();
     let mut started_commands = 0usize;
+    let mut unobserved_item_count = 0u64;
     let mut usage = None;
     let mut final_text = None;
     for (index, line) in text.lines().enumerate() {
@@ -652,7 +655,8 @@ fn parse_stream(
                         }
                         final_text = Some(text.to_owned());
                     }
-                    _ => {}
+                    Some("agent_message") => {}
+                    _ => unobserved_item_count = unobserved_item_count.saturating_add(1),
                 }
             }
             Some("item.started") => {
@@ -660,9 +664,16 @@ fn parse_stream(
                     .get("item")
                     .and_then(Value::as_object)
                     .ok_or(RunError::MalformedStream { line: line_number })?;
-                if item.get("type").and_then(Value::as_str) == Some("command_execution") {
-                    started_commands = started_commands.saturating_add(1);
+                match item.get("type").and_then(Value::as_str) {
+                    Some("command_execution") => {
+                        started_commands = started_commands.saturating_add(1);
+                    }
+                    Some("agent_message") => {}
+                    _ => unobserved_item_count = unobserved_item_count.saturating_add(1),
                 }
+            }
+            Some(kind) if kind.starts_with("item.") => {
+                unobserved_item_count = unobserved_item_count.saturating_add(1);
             }
             Some("turn.completed") => {
                 turn = Some(turn_status(object.get("status"), line_number)?);
@@ -727,6 +738,7 @@ fn parse_stream(
             }
         }),
         command_outcomes,
+        unobserved_item_count,
         usage,
         thread_id,
         final_result,
@@ -805,6 +817,29 @@ mod tests {
         assert_eq!(observation.usage.as_ref().unwrap().input_tokens, Some(12));
         assert_eq!(observation.final_result, Some(json!({"ok": true})));
         assert!(observation.coverage_gap.is_empty());
+        assert_eq!(observation.unobserved_item_count, 0);
+    }
+
+    #[test]
+    fn unknown_tool_items_are_counted_without_retaining_content() {
+        let source = concat!(
+            r#"{"type":"item.started","item":{"type":"mcp_tool_call","secret":"private"}}"#,
+            "\n",
+            r#"{"type":"item.completed","item":{"type":"mcp_tool_call","secret":"private"}}"#,
+        );
+        let observation = parse_stream(
+            source.as_bytes(),
+            false,
+            ProcessOutcome {
+                code: Some(1),
+                signal: None,
+                success: false,
+                timed_out: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(observation.unobserved_item_count, 2);
+        assert!(observation.command_outcomes.is_empty());
     }
 
     #[test]

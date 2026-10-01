@@ -130,6 +130,7 @@ pub(super) fn projection(observation: &Observation) -> Value {
             "invocationSha256": command.invocation_sha256,
             "hostItemId": command.host_item_id,
         })).collect::<Vec<_>>(),
+        "unobservedItemCount": observation.unobserved_item_count,
         "usage": observation.usage.as_ref().map(|usage| json!({
             "source": usage.source,
             "inputTokens": usage.input_tokens,

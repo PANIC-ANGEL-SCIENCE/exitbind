@@ -113,6 +113,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "history",
     "replace",
     "resume",
+    "inspect",
 ];
 
 pub fn parse(values: &[String]) -> Result<Arguments, String> {

@@ -282,6 +282,7 @@ mod tests {
                 invocation_sha256: Some("id".into()),
                 host_item_id: Some("item-1".into()),
             }],
+            unobserved_item_count: 0,
             usage: None,
             thread_id: Some("thread-1".into()),
             final_result: None,

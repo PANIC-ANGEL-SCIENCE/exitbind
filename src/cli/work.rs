@@ -237,6 +237,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "timeout-ms",
                     "resume",
                     "operation",
+                    "inspect",
                 ],
             )?;
             args::assert_positionals("work act", a, 2)?;
@@ -253,6 +254,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     timeout_ms: a.options.get("timeout-ms").map(String::as_str),
                     resume: a.flags.contains_key("resume"),
                     operation: a.options.get("operation").map(String::as_str),
+                    inspect: a.flags.contains_key("inspect"),
                 },
             )?)
         }
