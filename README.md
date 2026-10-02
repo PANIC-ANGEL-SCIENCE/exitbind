@@ -123,6 +123,8 @@ failure for the current worker artifact. Earlier evidence remains historical
 when the result or covered inputs change. The owner chooses whether review is
 required; an omission remains an omission.
 
+In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
+
 Exitbind records the frozen command, its actual outcome and hashed logs, a
 fingerprint of covered project files, and separate work/review/lead decisions.
 A host-reported check is labelled `reported`; one Exitbind ran is `observed`.
