@@ -90,6 +90,21 @@ pub(super) fn observe(
     }
 }
 
+pub(super) fn observe_file(loaded: &Loaded, name: &str) -> Result<Option<Vec<u8>>, String> {
+    match path::secure_bytes_observation_single_link_bounded(
+        &loaded.product_root,
+        name,
+        "managed file",
+        super::file_effect::MAX_BYTES,
+    ) {
+        path::SecureBytesResult::Bytes(bytes) => Ok(Some(bytes)),
+        path::SecureBytesResult::Absent(_) => Ok(None),
+        path::SecureBytesResult::Unsafe(_) =>
+            Err("managed file is unsafe; only single-link regular files are supported, without hard-link or symlink aliases".into()),
+        _ => Err("managed file is unreadable or exceeds its bound; no read admitted".into()),
+    }
+}
+
 pub(super) fn binding(loaded: &Loaded, work: &str, assignment: &str) -> Result<Binding, String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let executable = std::fs::canonicalize(executable).map_err(|e| e.to_string())?;

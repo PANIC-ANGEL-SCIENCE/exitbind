@@ -370,6 +370,68 @@ fn managed_reads_enforce_observe_scope_utf8_bounds_and_control_aliases() {
 }
 
 #[test]
+fn managed_observations_refuse_other_work_evidence_and_source_hardlinks() {
+    let f = Fixture::new(false, false);
+    f.permit();
+    let other = f.ok(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "other private evidence",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "omitted",
+        ],
+        b"",
+    );
+    let private = b"OTHER_WORK_PRIVATE_EVIDENCE";
+    f.ok(
+        &[
+            "work",
+            "return",
+            other["work"].as_str().unwrap(),
+            other["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        private,
+    );
+    let artifact = fs::read_dir(f.root.join(".exitbind/artifacts"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.is_file() && fs::read(path).unwrap() == private)
+        .unwrap();
+    fs::hard_link(&artifact, f.root.join("src/evidence-alias.txt")).unwrap();
+    let original = fs::read(f.reads_path()).unwrap();
+    for action in ["read", "refresh", "inspect"] {
+        let output = f.edit(action, "src/evidence-alias.txt", b"");
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("OTHER_WORK_PRIVATE_EVIDENCE"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("OTHER_WORK_PRIVATE_EVIDENCE"));
+        refused(output, "single-link");
+        assert_eq!(fs::read(f.reads_path()).unwrap(), original);
+    }
+    assert_eq!(fs::read(artifact).unwrap(), private);
+    fs::write(f.root.join("src/ordinary.txt"), "ordinary").unwrap();
+    f.edit_ok("read", "src/ordinary.txt", b"");
+    fs::hard_link(
+        f.root.join("src/ordinary.txt"),
+        f.root.join("src/source-alias.txt"),
+    )
+    .unwrap();
+    for name in ["src/ordinary.txt", "src/source-alias.txt"] {
+        refused(f.edit("read", name, b""), "single-link");
+    }
+    fs::remove_file(f.root.join("src/source-alias.txt")).unwrap();
+    assert_eq!(
+        f.edit_ok("read", "src/ordinary.txt", b"")["content"],
+        "ordinary"
+    );
+}
+
+#[test]
 fn lost_reply_and_uncertain_or_missing_effects_never_start_new_request() {
     let f = Fixture::new(false, false);
     f.permit();

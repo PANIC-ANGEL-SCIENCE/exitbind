@@ -612,7 +612,10 @@ PATH` only for a deliberate new edit after the prior request is resolved.
 It requires the current mutation grant and reuses declared paths, protected
 controls, file preconditions and atomic replacement. Existing expert `work write
 WORK ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` remains
-compatible. Neither route intercepts other native tools or remote effects.
+compatible. Managed read/refresh/inspect requires a single-link regular file,
+checked on its actual descriptor before reading and before returning content.
+Hard links, including ordinary source aliases, refuse without disclosure.
+Neither route intercepts other native tools or remote effects.
 Preparation has an immutable, synced record beside the Work ledger; missing
 session state refuses reconstruction. Preserve private StateRoot integrity:
 joint loss of both preparation record and session is indistinguishable from

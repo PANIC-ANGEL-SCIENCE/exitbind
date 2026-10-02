@@ -142,6 +142,7 @@ pub(crate) fn interact(
             return inspect(loaded, session, file, reads.files.get(file));
         }
         if matches!(action, "read" | "refresh") {
+            let observed = state::observe_file(loaded, file)?;
             let old = reads.files.get(file);
             if action == "refresh" {
                 if let Some(old) = old {
@@ -154,7 +155,7 @@ pub(crate) fn interact(
                         .checked_add(1)
                         .ok_or("managed read generation exhausted")
                 })?;
-                let content = state::observe(&loaded.product_root, file, file_effect::MAX_BYTES)?
+                let content = observed
                     .map(String::from_utf8)
                     .transpose()
                     .map_err(|_| "managed file must be UTF-8")?;
@@ -354,7 +355,7 @@ fn inspect(
     baseline: Option<&Baseline>,
 ) -> Result<Value, String> {
     let binding = state::load_binding(loaded, session)?;
-    let current = state::observe(&loaded.product_root, file, file_effect::MAX_BYTES)?;
+    let current = state::observe_file(loaded, file)?;
     let observed = current
         .as_deref()
         .map(hash::bytes)

@@ -92,7 +92,7 @@ impl SecureBytesResult {
 
 /// Read one project-relative regular file through no-follow directory handles.
 pub fn secure_bytes(root: &Path, requested: &str, label: &str) -> Result<Vec<u8>, String> {
-    secure_bytes_result(root, requested, label, true, None).into_result()
+    secure_bytes_result(root, requested, label, true, None, false).into_result()
 }
 
 /// Read one project-relative regular file and retain the descriptor-level
@@ -102,7 +102,7 @@ pub(crate) fn secure_bytes_observation(
     requested: &str,
     label: &str,
 ) -> SecureBytesResult {
-    secure_bytes_result(root, requested, label, false, None)
+    secure_bytes_result(root, requested, label, false, None, false)
 }
 
 /// The same no-follow observation with a bound on both descriptor reads.
@@ -112,7 +112,18 @@ pub(crate) fn secure_bytes_observation_bounded(
     label: &str,
     max_bytes: u64,
 ) -> SecureBytesResult {
-    secure_bytes_result(root, requested, label, false, Some(max_bytes))
+    secure_bytes_result(root, requested, label, false, Some(max_bytes), false)
+}
+
+/// Managed product content must not alias protected private state. Check the
+/// actual opened descriptor before reading and again before returning bytes.
+pub(crate) fn secure_bytes_observation_single_link_bounded(
+    root: &Path,
+    requested: &str,
+    label: &str,
+    max_bytes: u64,
+) -> SecureBytesResult {
+    secure_bytes_result(root, requested, label, false, Some(max_bytes), true)
 }
 
 #[cfg(unix)]
@@ -122,11 +133,12 @@ fn secure_bytes_result(
     label: &str,
     canonicalize_root: bool,
     max_bytes: Option<u64>,
+    single_link: bool,
 ) -> SecureBytesResult {
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
     use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     use std::os::unix::io::{AsRawFd, FromRawFd};
 
     if requested.trim().is_empty() || requested.contains('\0') || Path::new(requested).is_absolute()
@@ -211,7 +223,7 @@ fn secure_bytes_result(
     }
     let mut file = unsafe { File::from_raw_fd(descriptor) };
     match file.metadata() {
-        Ok(info) if info.is_file() => {}
+        Ok(info) if info.is_file() && (!single_link || info.nlink() == 1) => {}
         Ok(_) => return SecureBytesResult::Unsafe(format!("{label} must be a regular file")),
         Err(error) => return classify_io_error(error, label),
     }
@@ -240,6 +252,13 @@ fn secure_bytes_result(
     if bytes != confirmation {
         return SecureBytesResult::Unreadable(format!("{label} changed while reading"));
     }
+    if single_link {
+        match file.metadata() {
+            Ok(info) if info.is_file() && info.nlink() == 1 => {}
+            Ok(_) => return SecureBytesResult::Unsafe(format!("{label} must remain single-link")),
+            Err(error) => return classify_io_error(error, label),
+        }
+    }
     SecureBytesResult::Bytes(bytes)
 }
 
@@ -250,6 +269,7 @@ fn secure_bytes_result(
     label: &str,
     _: bool,
     _: Option<u64>,
+    _: bool,
 ) -> SecureBytesResult {
     SecureBytesResult::Unsupported(format!(
         "{label} secure reading requires Unix no-follow support"

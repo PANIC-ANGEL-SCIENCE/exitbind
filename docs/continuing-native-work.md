@@ -70,8 +70,15 @@ also refuses an intact session. Simultaneous loss of both that record and the
 session cannot be distinguished from first use; preserve private StateRoot
 integrity rather than deleting selected task records to recover an edit.
 
-Files and replacements are limited to 256 KiB. Private read storage is bounded
-to 64 paths and 2 MiB per assignment, including serialized content. Records live
+Files and replacements are limited to 256 KiB. Managed product observations
+require a single-link regular file: hard links,
+including ordinary source aliases and aliases of private evidence, refuse
+read, refresh and inspect without returning or storing their content. The
+actual no-follow descriptor is checked before reading and before returning.
+The existing expert command keeps its contract.
+
+Private read storage is bounded to 64 paths and 2 MiB per assignment, including
+serialized content. Records live
 under the existing private state namespace, outside tested product inputs;
 they retain file baselines until that task's state is removed. Direct small
 work does not require this tool. Reads performed through unrelated native tools
