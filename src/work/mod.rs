@@ -1,6 +1,7 @@
 //! Governed work façade.
 
-mod action;
+pub(crate) mod action;
+pub(crate) mod action_forms;
 pub(crate) mod compact;
 pub(crate) mod details;
 mod disposition;
@@ -11,6 +12,7 @@ pub(crate) mod managed_edit;
 mod mutation_response;
 pub(crate) mod packet;
 mod permit_response;
+pub(crate) mod readable;
 mod recovery;
 mod response_recovery;
 mod resume;
@@ -392,6 +394,9 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
     let ledger = resolve(loaded, work)?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
+    if readable::is_grouped(reference) {
+        return readable::expand(loaded, work, &snapshot, &next, reference);
+    }
     if details::is_section(reference) {
         return details::expand(loaded, work, &snapshot, &next, reference);
     }

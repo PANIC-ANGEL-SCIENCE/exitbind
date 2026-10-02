@@ -5,6 +5,10 @@ use super::*;
 #[path = "native_action.rs"]
 mod native_action;
 
+pub(crate) fn delivery_packet(assignment: &Value) -> Value {
+    native_action::delivery_packet(assignment)
+}
+
 pub(crate) struct ActOptions<'a> {
     pub(crate) outcome: Option<&'a str>,
     pub(crate) reason: Option<&'a str>,
@@ -103,6 +107,7 @@ fn lead_decision(
         None,
         None,
         Some(result.to_string().into_bytes()),
+        None,
     )
 }
 

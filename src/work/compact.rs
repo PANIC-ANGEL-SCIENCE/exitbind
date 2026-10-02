@@ -12,6 +12,21 @@ use super::response_recovery::{bounded_argv, recovery_command};
 
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 
+pub(crate) fn minimal_current(current: &Value) -> Value {
+    if !current.is_object() {
+        return current.clone();
+    }
+    let mut value = current.clone();
+    value["actionForm"] = json!({"version": current["actionForm"]["version"],
+        "state": current["actionForm"]["state"], "binding": current["binding"],
+        "leadChoiceRequired": current["actionForm"]["leadChoiceRequired"],
+        "detail": "current.details.grouped", "requiresDetail": true});
+    if value["repair"].is_object() {
+        value["repair"].as_object_mut().unwrap().remove("reason");
+    }
+    value
+}
+
 pub(crate) fn continuation_route(config_path: &Path, mut suffix: Vec<String>) -> Value {
     suffix.push("--config".into());
     let recovery = bounded_argv(suffix, config_path.to_str(), 1024);
@@ -248,7 +263,7 @@ pub(crate) fn project(
         let mut emergency = json!({
             "compact": true,
             "continuation": result["continuation"],
-            "current": response["next"]["current"],
+            "current": minimal_current(&response["next"]["current"]),
             "status": response["status"],
             "work": response["work"],
             "next": minimal_next(&result["next"]),
@@ -289,7 +304,7 @@ pub(crate) fn project(
             "compact": true,
             "continuation": result["continuation"],
             "status": "unresolved",
-            "current": response["next"]["current"],
+            "current": minimal_current(&response["next"]["current"]),
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "nextAction": {"command": null, "summary": "Open the full response."},
@@ -315,7 +330,7 @@ pub(crate) fn project(
             "compact": true,
             "continuation": result["continuation"],
             "status": "unresolved",
-            "current": response["next"]["current"],
+            "current": minimal_current(&response["next"]["current"]),
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},

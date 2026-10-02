@@ -448,3 +448,148 @@ fn text(output: &Output) -> String {
         String::from_utf8_lossy(&output.stderr)
     )
 }
+
+#[test]
+fn native_resolves_readable_scope_and_tasks_before_provider_launch() {
+    for (index, scope) in [
+        "é".repeat(20000).into_bytes(),
+        vec![0xff, 0],
+        vec![b'x'; 65537],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let fixture = Fixture::new("native-resolved-detail");
+        let started = fixture.value(
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "complete coherent assignment",
+                "--check-command",
+                "true",
+                "--review-policy",
+                "required",
+                "--proof-origin",
+                "synthetic",
+            ],
+            b"",
+        );
+        let work = started["work"].as_str().unwrap();
+        fixture.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                work,
+                "--goal",
+                "whole outcome",
+                "--obligation",
+                "companion consumer stays coherent",
+            ],
+            b"",
+        );
+        fixture.value(
+            &[
+                "work",
+                "return",
+                work,
+                started["next"]["assignment"].as_str().unwrap(),
+                "--outcome",
+                "scoped",
+            ],
+            &scope,
+        );
+        let capture = fixture.root.join("resolved-prompt");
+        let executable = fixture.fake_codex(&capture);
+        let output = fixture.call(
+            &[
+                "work",
+                "act",
+                work,
+                "--codex-bin",
+                executable.to_str().unwrap(),
+            ],
+            b"",
+        );
+        if index == 0 {
+            assert!(output.status.success(), "{}", text(&output));
+            let prompt = fs::read_to_string(capture).unwrap();
+            assert!(prompt.contains(&String::from_utf8(scope).unwrap()));
+            assert!(prompt.contains("companion consumer stays coherent"));
+            assert!(prompt.contains("CURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS"));
+            assert!(!prompt.contains("contentHex"));
+        } else {
+            assert!(
+                !output.status.success(),
+                "unreadable required evidence launched provider"
+            );
+            assert!(
+                text(&output).contains("not completely readable"),
+                "{}",
+                text(&output)
+            );
+            assert!(!capture.exists());
+        }
+    }
+}
+
+#[test]
+fn native_corrupt_or_missing_scope_never_launches_provider() {
+    for missing in [false, true] {
+        let fixture = Fixture::new("native-invalid-detail");
+        let started = fixture.value(
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "valid required scope",
+                "--check-command",
+                "true",
+                "--review-policy",
+                "required",
+                "--proof-origin",
+                "synthetic",
+            ],
+            b"",
+        );
+        let work = started["work"].as_str().unwrap();
+        fixture.value(
+            &[
+                "work",
+                "return",
+                work,
+                started["next"]["assignment"].as_str().unwrap(),
+                "--outcome",
+                "scoped",
+            ],
+            b"exact scope",
+        );
+        let artifact = fs::read_dir(fixture.root.join(".exitbind/artifacts"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.is_file())
+            .unwrap();
+        if missing {
+            fs::remove_file(artifact).unwrap();
+        } else {
+            fs::write(artifact, b"corrupt scope").unwrap();
+        }
+        let capture = fixture.root.join("never-launched");
+        let executable = fixture.fake_codex(&capture);
+        let output = fixture.call(
+            &[
+                "work",
+                "act",
+                work,
+                "--codex-bin",
+                executable.to_str().unwrap(),
+            ],
+            b"",
+        );
+        assert!(!output.status.success(), "invalid scope launched provider");
+        assert!(!capture.exists());
+    }
+}

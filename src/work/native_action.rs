@@ -30,6 +30,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(crate) fn delivery_packet(assignment: &Value) -> Value {
+    prompt::delivery_packet(assignment)
+}
+
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 256 * 1024;
 const MAX_PACKET_BYTES: usize = 64 * 1024;
@@ -155,15 +159,30 @@ pub(crate) fn execute(
     }
 
     let selected = crate::work::details::required_assignment(loaded, work, current)?;
-    let assignment = &selected;
+    let assignment = &selected["canonicalAssignment"];
     let _canonical_packet = bounded_json(assignment, MAX_PACKET_BYTES, "assignment packet")?;
     let packet = bounded_json(
-        &prompt::delivery_packet(assignment),
-        MAX_PACKET_BYTES,
-        "native delivery packet",
+        &selected["sections"],
+        crate::work::readable::MAX_GROUPED_BYTES,
+        "native readable delivery",
     )?;
     let profile = request::profile_bytes(loaded, agent, assignment)?;
     let review_evidence = verified_worker_results(loaded, work, role, assignment)?;
+    if let Some(evidence) = &review_evidence {
+        for item in evidence {
+            if !selected["sections"]["evidence"]["items"]
+                .as_array()
+                .is_some_and(|items| {
+                    items.iter().any(|entry| {
+                        entry["artifact"]["sha256"] == item.sha256
+                            && entry["artifact"]["content"] == item.content
+                    })
+                })
+            {
+                return Err("required reviewer result is missing from readable delivery; refresh with work next".into());
+            }
+        }
+    }
     let mut schema: Value =
         serde_json::from_str(role_schema(role)?).map_err(|_| "native role schema is invalid")?;
     if let Some(evidence) = review_evidence.as_ref() {
@@ -613,6 +632,7 @@ fn submit_saved(
         None,
         None,
         Some(bytes),
+        None,
     )
 }
 

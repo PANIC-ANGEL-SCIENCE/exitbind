@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.26.0
+
+- Give the current assigned outcome and related goal obligations a readable,
+  verified evidence path. Preserve exact originals, recipient scope and
+  currentness while retaining expert and historical readers.
+- Provide state-specific action forms for failed checks and pending review
+  findings. Mechanical identities come from current state; repair, deferral,
+  rejection and their reasons remain explicit Lead decisions.
+- Align ordinary and native context delivery, default role responsibilities,
+  packaged guidance and help. Explain the whole workflow in the README, from
+  applicable goals and context through execution, return and trusted completion.
+- Deliver current native project/role context and retry-safe managed worker
+  reads and edits. Refuse private-evidence aliases and unsafe reconstruction
+  after managed state loss; preserve recorded result replay and native authority.
+- Show canonical goal and task status separately from current-result readiness.
+  Emit the supported English status outside provider prompts and retain scoped
+  bounded detail, current receipt routing and host child help.
+- Include the optional static event-derived work view. Its motifs carry no
+  authority and do not imply image exploration or autonomous memory ingestion.
+
 ## 0.25.2
 
 - Recover a saved native result through the same Work, verify its recorded

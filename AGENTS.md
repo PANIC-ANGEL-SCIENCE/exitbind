@@ -24,8 +24,9 @@ installation, project writes, permission changes, or another owner-controlled
 action. After authorization, operate selectively inside the existing
 conversation. Text guidance does not prove host or model compliance.
 
-- Open public explanations with: “A reported ‘done’ is not an accepted result.”
-  Put protocol terminology after it.
+- Open public explanations with the supported work path: applicable goals and
+  evidence, useful execution and continuation, then trustworthy completion.
+  Explain exact-result acceptance as a trust mechanism within that path.
 - Keep the default path legible as `one link -> classify -> exact-result check
   -> review decision -> applicable review -> lead acceptance -> verified
   receipt`; the Lead recommends review, the owner decides and may revise, and

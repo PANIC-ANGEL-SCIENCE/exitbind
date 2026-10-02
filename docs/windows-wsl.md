@@ -27,14 +27,14 @@ wsl.exe --list --verbose
 
 ## Install Exitbind inside Ubuntu
 
-When the `v0.25.2` tag and assets are available, open the Ubuntu terminal.
+When the `v0.26.0` tag and assets are available, open the Ubuntu terminal.
 Keep projects under the Linux home directory, not under `/mnt/c`, so Linux path,
 permission, and filesystem behavior remain the ones Exitbind tests.
 
 ```sh
 sudo apt-get update
 sudo apt-get install -y curl git tmux
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.25.2/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.26.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
 mkdir -p "$HOME/projects"

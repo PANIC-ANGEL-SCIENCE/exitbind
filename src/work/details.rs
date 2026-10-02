@@ -11,7 +11,7 @@ pub(crate) const MAX_DETAIL_BYTES: usize = 64 * 1024;
 const PREFIX: &str = "ref:work-section:";
 const SECTIONS: [&str; 3] = ["assignment", "evidence", "tasks"];
 
-fn identity(
+pub(crate) fn binding(
     loaded: &Loaded,
     work: &str,
     snapshot: &RunSnapshot,
@@ -33,6 +33,41 @@ fn identity(
         "goalRevision": crate::session_goal::read(&loaded.state_root)?
             .map(|value| hash::value(&value)),
     })))
+}
+
+pub(crate) fn ensure_current_config(loaded: &Loaded) -> Result<(), String> {
+    let path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    let fresh = crate::config::load(Some(path))?;
+    if fresh.source != loaded.source
+        || fresh.product_root != loaded.product_root
+        || fresh.state_root != loaded.state_root
+        || fresh.control_root != loaded.control_root
+        || fresh.project_id != loaded.project_id
+    {
+        return Err(
+            "configuration changed during work detail consumption; refresh with work next".into(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_action_binding(
+    loaded: &Loaded,
+    work: &str,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    ensure_current_config(loaded)?;
+    let next = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
+    if next["current"]["binding"] != expected {
+        return Err(format!("current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped"));
+    }
+    Ok(())
 }
 
 fn token(identity: &str, section: &str, page: usize) -> String {
@@ -58,6 +93,10 @@ fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
         "readOnly": true})
 }
 
+pub(crate) fn legacy_evidence_route(loaded: &Loaded, work: &str, binding: &str) -> Value {
+    route(loaded, work, &token(binding, "evidence", 0))
+}
+
 pub(super) fn attach(
     loaded: &Loaded,
     work: &str,
@@ -72,7 +111,7 @@ pub(super) fn attach(
     } else {
         view["subject"].clone()
     };
-    let binding = identity(loaded, work, snapshot, next)?;
+    let binding = binding(loaded, work, snapshot, next)?;
     let mut routes = json!({});
     for section in SECTIONS {
         routes[section] = route(loaded, work, &token(&binding, section, 0));
@@ -134,10 +173,13 @@ pub(super) fn attach(
             "evidence": "requires_detail", "tasks": "requires_detail"},
         "details": routes,
     });
+    crate::work::readable::attach(loaded, work, &binding, &mut next["current"]);
+    next["current"]["actionForm"] =
+        crate::work::action_forms::project(loaded, work, next, &binding);
     Ok(())
 }
 
-fn section(
+pub(crate) fn section_value(
     loaded: &Loaded,
     work: &str,
     snapshot: &RunSnapshot,
@@ -149,21 +191,54 @@ fn section(
             "assignment": next["packet"], "outcomes": next["outcomes"],
             "residual": super::packet::project(work, snapshot, next)?})),
         "tasks" => crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"]),
-        "evidence" => evidence(loaded, snapshot, next),
+        "evidence" => evidence(loaded, snapshot, next, false),
         _ => Err("unknown work section".into()),
     }
 }
 
-fn verified(loaded: &Loaded, artifact: &Value, label: &str) -> Result<Value, String> {
+fn verified(
+    loaded: &Loaded,
+    artifact: &Value,
+    label: &str,
+    readable: bool,
+) -> Result<Value, String> {
     let read = crate::run::artifact::read(loaded, artifact, label)?;
-    if read.bytes as usize != read.preview.len() {
-        return Err(format!("{label} exceeds the existing verified artifact bound; complete evidence is unavailable"));
+    let complete = read.bytes as usize == read.preview.len();
+    if !readable {
+        if !complete {
+            return Err(format!("{label} exceeds the existing verified artifact bound; complete evidence is unavailable"));
+        }
+        return Ok(json!({"sha256": read.sha256, "bytes": read.bytes,
+            "encoding": "hex", "contentHex": hex(&read.preview), "complete": true}));
     }
-    Ok(json!({"sha256": read.sha256, "bytes": read.bytes,
-        "encoding": "hex", "contentHex": hex(&read.preview), "complete": true}))
+    let mut value = json!({"sha256": read.sha256, "bytes": read.bytes,
+        "verified": true, "complete": complete, "exact": complete, "readable": false});
+    if !complete {
+        value["reason"] = json!("oversized");
+    } else if let Ok(text) = std::str::from_utf8(&read.preview) {
+        value["readable"] = json!(true);
+        value["encoding"] = json!("utf-8");
+        value["content"] = json!(text);
+    } else {
+        value["reason"] = json!("non_utf8");
+    }
+    Ok(value)
 }
 
-fn evidence(loaded: &Loaded, snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
+pub(crate) fn readable_evidence(
+    loaded: &Loaded,
+    snapshot: &RunSnapshot,
+    next: &Value,
+) -> Result<Value, String> {
+    evidence(loaded, snapshot, next, true)
+}
+
+fn evidence(
+    loaded: &Loaded,
+    snapshot: &RunSnapshot,
+    next: &Value,
+    readable: bool,
+) -> Result<Value, String> {
     let view = snapshot.inspect_view();
     let events = view["events"]
         .as_array()
@@ -247,11 +322,12 @@ fn evidence(loaded: &Loaded, snapshot: &RunSnapshot, next: &Value) -> Result<Val
             "kind": item["kind"], "eventSha256": event["eventSha256"],
             "historical": historical || (event["attempt"].is_number() && event["attempt"] != view["attempt"])});
         if event["artifact"].is_object() {
-            detail["artifact"] = verified(loaded, &event["artifact"], "assignment evidence")?;
+            detail["artifact"] =
+                verified(loaded, &event["artifact"], "assignment evidence", readable)?;
         }
         for stream in ["stdout", "stderr"] {
             if event[stream].is_object() {
-                detail[stream] = verified(loaded, &event[stream], "check evidence")?;
+                detail[stream] = verified(loaded, &event[stream], "check evidence", readable)?;
             }
         }
         detail["result"] = event["result"].clone();
@@ -271,6 +347,7 @@ pub(super) fn expand(
     next: &Value,
     requested: &str,
 ) -> Result<Value, String> {
+    ensure_current_config(loaded)?;
     let suffix = requested
         .strip_prefix(PREFIX)
         .ok_or("not a work section reference")?;
@@ -284,18 +361,18 @@ pub(super) fn expand(
         .as_object_mut()
         .ok_or("current action unavailable")?
         .remove("current");
-    let binding = identity(loaded, work, snapshot, &canonical)?;
-    if parts[0] != binding || requested != token(&binding, parts[1], page) {
+    let expected_binding = binding(loaded, work, snapshot, &canonical)?;
+    if parts[0] != expected_binding || requested != token(&expected_binding, parts[1], page) {
         return Err("work section reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
     }
-    let value = section(loaded, work, snapshot, &canonical, parts[1])?;
+    let value = section_value(loaded, work, snapshot, &canonical, parts[1])?;
     let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
     let mut fresh = super::next_from(loaded, work, &fresh_snapshot)?;
     fresh
         .as_object_mut()
         .ok_or("current action unavailable")?
         .remove("current");
-    if identity(loaded, work, &fresh_snapshot, &fresh)? != binding {
+    if binding(loaded, work, &fresh_snapshot, &fresh)? != expected_binding {
         return Err("work section changed during expansion; refresh with work next".into());
     }
     let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
@@ -308,11 +385,11 @@ pub(super) fn expand(
     let end = bytes.len().min(start.saturating_add(PAGE_BYTES));
     let more = end < bytes.len();
     let response = json!({"valid": true, "kind": "work_section", "reference": requested,
-        "work": work, "binding": binding, "section": parts[1],
+        "work": work, "binding": expected_binding, "section": parts[1],
         "encoding": "hex", "sectionSha256": hash::bytes(&bytes), "totalBytes": bytes.len(),
         "offset": start, "bytes": end-start, "contentHex": hex(&bytes[start..end]),
         "complete": !more && page == 0, "pageComplete": true,
-        "next": if more { route(loaded, work, &token(&binding, parts[1], page+1)) } else { Value::Null },
+        "next": if more { route(loaded, work, &token(&expected_binding, parts[1], page+1)) } else { Value::Null },
     });
     if serde_json::to_vec(&response)
         .map_err(|error| error.to_string())?
@@ -342,7 +419,36 @@ pub(crate) fn required_assignment(
     if current["current"]["binding"] != fresh["current"]["binding"] {
         return Err("native current binding changed; refresh before execution".into());
     }
-    Ok(section(loaded, work, &snapshot, &fresh, "assignment")?["assignment"].clone())
+    let detail = super::readable::read(loaded, work, &snapshot, &fresh)?;
+    if detail["complete"] != true {
+        let item = detail["sections"]["evidence"]["items"]
+            .as_array()
+            .and_then(|items| {
+                items.iter().find_map(|item| {
+                    ["artifact", "stdout", "stderr"].iter().find_map(|key| {
+                        (item[*key].is_object() && item[*key]["readable"] != true).then(|| {
+                            format!(
+                                "{} {} ({})",
+                                item["eventSha256"].as_str().unwrap_or("unknown event"),
+                                key,
+                                item[*key]["reason"].as_str().unwrap_or("unavailable")
+                            )
+                        })
+                    })
+                })
+            })
+            .unwrap_or_else(|| "required evidence".into());
+        return Err(format!("native required evidence {item} is not completely readable; use work detail {work} --json with the same executable/config before provider launch"));
+    }
+    let mut sections = detail["sections"].clone();
+    if let Some(tasks) = sections["tasks"].as_object_mut() {
+        tasks.remove("systemText");
+    }
+    Ok(json!({
+        "canonicalAssignment": fresh["packet"],
+        "sections": sections,
+        "binding": detail["binding"],
+    }))
 }
 
 fn hex(bytes: &[u8]) -> String {

@@ -91,6 +91,13 @@ Add the smallest focused test that proves changed behavior. Documentation links
 and public wording contracts belong in the existing documentation tests. Do not
 add a dependency when the standard library or an existing dependency is enough.
 
+For a changed Work consumer, check the ordinary readable route and native
+delivery together, including compact fallback, historical/held results,
+cross-host corrections, and current goal status. Keep help, command reference,
+generated profiles, and the packaged skill aligned with the canonical source.
+Run the affected fixtures before the full sequence; a provisional impact map
+does not justify omitting a consumer discovered during implementation.
+
 For vulnerabilities or sensitive reports, follow [SECURITY.md](SECURITY.md)
 instead of opening a public issue. For ordinary bugs and proposals, include the
 affected workflow, expected result, observed result, and the narrowest useful

@@ -104,6 +104,16 @@ and visibility restrictions in relevant handoffs. Personal profiles and lenses
 augment judgment while Exitbind owns its state and acceptance routes. Adapt
 reasoning to the task without a fixed thinking sequence or model choice.
 
+Before first implementation, carry the applicable goal, tasks and evidence,
+required outcomes and their failure or return conditions, constraints and
+non-goals, current source/result/recipient/operation identity, known decisive
+positive and negative cases, and corrections or open questions. Map the relevant
+consumer, help and packaged mirror surfaces that the source identifies and check
+their focused positive and negative fixtures. Keep that map bounded and
+source-supported; it is not a universal dependency graph or a readiness score.
+Missing required detail remains explicit and follows the current supported read
+route.
+
 For a material task, the lead first classifies the goal, dependencies, useful
 context, tools, roles, role boundary, actual check command, and the consequence
 that may require promotion into a governed run: authority, trust, security,

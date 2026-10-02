@@ -15,6 +15,7 @@ pub(crate) struct DispositionOptions<'a> {
     pub(crate) regression: Option<&'a str>,
     pub(crate) category: Option<&'a str>,
     pub(crate) successor_basis: Option<&'a str>,
+    pub(crate) current_binding: Option<&'a str>,
 }
 
 pub(crate) fn dispose(
@@ -23,6 +24,7 @@ pub(crate) fn dispose(
     assignment: &str,
     options: DispositionOptions<'_>,
 ) -> Result<Value, String> {
+    details::ensure_action_binding(loaded, work, options.current_binding)?;
     let decision = Decision::parse(options.decision)
         .ok_or("--decision must be repair, defer, reject, or supersede")?;
     let ledger = resolve(loaded, work)?;
@@ -73,6 +75,7 @@ pub(crate) fn dispose(
         Some(&text),
         None,
         Some(render(&value).into_bytes()),
+        options.current_binding,
     )
 }
 

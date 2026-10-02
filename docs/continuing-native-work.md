@@ -26,8 +26,9 @@ responses and exact result, review, acceptance, and receipt semantics remain
 unchanged; this is a derived read-only view.
 
 These additions extend the existing Work path. Start with `work next WORK`
-for the bounded current view, follow the exact argv in `current.details` when complete grouped
-assignment, evidence or task detail is needed, and follow the returned assignment
+for the bounded current view. Follow `current.details.grouped` for one
+product-owned readable assignment/evidence/tasks delivery, or use the three
+section routes when an expert needs legacy paging, and follow the returned assignment
 with `work act WORK`. Checks, independent review and explicit Lead acceptance
 still have their own results. Normal `work act`, `work check`, and `work
 return` executions emit the same product-owned goal line on bounded stderr;
@@ -43,7 +44,11 @@ missing prerequisites, and any recorded rework event. A result that does not
 exist is distinct from an unavailable identity. Historical acceptance remains
 historical when current inputs have changed.
 
-Use the argv arrays in `current.details.assignment`, `.evidence` and `.tasks`.
+Use the exact argv in `current.details.grouped` for ordinary readable
+consumption. `work detail WORK --json` is the equivalent current read when a
+caller has the Work handle. Use the argv arrays in
+`current.details.assignment`, `.evidence` and `.tasks` for the legacy expert
+routes.
 They pin this executable and configuration even from another directory or a
 hostile PATH. A route marked `sameExecutableRequired` or `sameConfigRequired`
 requires that exact invoking value before execution. These read-only routes
@@ -58,17 +63,41 @@ section hash and parse the decoded JSON. `pageComplete` applies to one page;
 name the same binding and section hash. Refresh on any mismatch or refusal;
 do not combine old and new sections.
 
+The versioned grouped route (`ref:work-detail:v1:<binding>`) returns
+`kind: work_detail`, `version: 1`, the current recipient and binding, and
+`sections.assignment`, `.evidence`, and `.tasks`. Verified UTF-8 artifact bytes
+appear as `content` with `encoding: utf-8`, their original `bytes` and `sha256`,
+and `readable: true`; the product performs decoding and currentness checks. The
+grouped response is bounded at 256 KiB and has no model-authored paging.
+Non-UTF-8 or bytes beyond the verified preview bound remain exact metadata with
+`readable: false`, a reason, and an instruction to use the current scoped
+evidence metadata route; oversized evidence has no complete text fallback. They are never replaced by lossy text. `complete` is false
+whenever a required readable artifact is unavailable.
+
 The assignment section groups the complete assignment and residual rules;
 the evidence section supplies the actual verified submission and check-log
-bytes; the tasks section contains every Lead-divided task state. Missing or
-oversized verified evidence refuses rather than becoming a summary. References
+bytes; the tasks section contains every Lead-divided task state. Legacy
+section expansion refuses missing or oversized verified evidence rather than
+becoming a summary; grouped expansion reports an explicit unreadable limitation
+with its current fallback route. References
 expire on changes to the project, configuration, Work, current recipient,
 assignment, ledger, host execution conditions or relevant task conditions. A reference grants no access
 to another Work or private role. `--full` remains available for expert inspection.
-Native delivery uses the same canonical assignment section and still supplies
-all mandatory rules and required reviewer artifacts before launch. Automatic
-progress presentation stays on the host; its display payload is omitted from
-the provider assignment.
+Native delivery uses the same validated grouped consumer before launch, then
+supplies the canonical assignment, all mandatory rules and required reviewer
+artifacts. The prompt carries the exact current grouped argv for any follow-up
+read; a native consumer does not implement hex decoding, page loops or checksum
+validation. Automatic progress presentation stays on the host; its display
+payload is omitted from the provider assignment.
+
+The current view also exposes a versioned `actionForm` for Lead states. A
+failed check offers assignment-bound `work return WORK ASSIGNMENT --outcome
+rework|blocked --reason <REASON>` descriptors. A pending review finding offers
+only the decisions present in its current disposition cycle, with the required
+repair or successor fields. Lead acceptance exposes bound accept, rework and
+blocked choices. Placeholders are explicit Lead inputs. Forms include `--current-binding` so a
+changed goal or ledger also refuses an old form even if its assignment ID is unchanged.
+Legacy calls retain their existing assignment fence.
 
 ## What a native assignment receives
 

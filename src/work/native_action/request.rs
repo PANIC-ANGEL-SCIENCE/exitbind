@@ -84,18 +84,18 @@ pub(super) fn build(
         },
     )?;
     let evidence_route = if let Some(evidence) = review_evidence {
-        let mut route = String::from("Use every verified current worker result below. The evidenceReferences array must contain every listed ref token in order; put file lines and check observations in summary. Use the exact argv in CURRENT SCOPED READ ROUTES for grouped evidence and instructions; surrounding ledger references use that same executable/config with work expand. Do not reconstruct upstream artifacts from git or summaries. For unavailable, reason must be provider_quota, rate_limit, or provider_unavailable; for rework use review_finding; for blocked use blocked; for approved use an empty reason.\n");
+        let mut route = String::from("Use every verified current worker result below. The evidenceReferences array must contain every listed ref token in order; put file lines and check observations in summary. The exact originals are already included in CURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS; use CURRENT SCOPED READ ROUTES only for a later refresh; surrounding ledger references use that same executable/config with work expand. Do not reconstruct upstream artifacts from git or summaries. For unavailable, reason must be provider_quota, rate_limit, or provider_unavailable; for rework use review_finding; for blocked use blocked; for approved use an empty reason.\n");
         for item in evidence {
             route.push_str(&format!(
                 "\nVERIFIED WORKER RESULT (reference {}, sha256 {}):\n{}\n",
-                item.reference, item.sha256, item.content
+                item.reference, item.sha256, "included in readable evidence below"
             ));
         }
         route
     } else if role == "reviewer" {
         return Err("reviewer evidence route is unavailable".into());
     } else {
-        "Use the packet's declared evidence routes when checking the assignment. Do not copy upstream artifacts into the prompt or reconstruct them from git.".to_owned()
+        "Use the exact declared upstream evidence included below. Do not reconstruct it from git or summaries.".to_owned()
     };
     let mediator_route = if role == "worker" {
         let current_assignment = current["assignment"]
@@ -114,7 +114,7 @@ pub(super) fn build(
         String::new()
     };
     let prompt = format!(
-        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. {evidence_route}{mediator_route} Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES:\n{profile}\n\nCURRENT ASSIGNMENT DELIVERY PROJECTION (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; omitted recovery goal/scope/subject/current/missing/loop/next fields equal context goal/scope/subject/evidence/obligations/loop/next respectively):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n\nCURRENT NATIVE PROJECT CONTEXT (verified immediately before launch):\n{context}\n",
+        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. {evidence_route}{mediator_route} Required assignment, evidence and goal/task conditions are resolved and verified below before this launch. No paging, hex decoding, checksum or JSON-join code is needed. Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES:\n{profile}\n\nCURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; equal aliases are described by projection):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n\nCURRENT NATIVE PROJECT CONTEXT (verified immediately before launch):\n{context}\n",
         canonical_sha = hash::value(assignment),
         current_binding = current["current"],
     );

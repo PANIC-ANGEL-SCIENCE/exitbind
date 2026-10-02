@@ -1,7 +1,7 @@
 //! Scoped current views reject mixed Work/recipient evidence and preserve all
 //! large instructions and task states through the existing read route.
 mod support;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
@@ -93,6 +93,11 @@ impl Fixture {
         let _: Value = serde_json::from_slice(&output.stdout).unwrap();
     }
     fn detail(&self, next: &Value, section: &str) -> (Value, usize) {
+        let (value, calls, _) = self.detail_metrics(next, section);
+        (value, calls)
+    }
+    fn detail_metrics(&self, next: &Value, section: &str) -> (Value, usize, usize) {
+        let mut transport_bytes = 0;
         let mut route = next["current"]["details"][section].clone();
         let mut bytes = Vec::new();
         let mut calls = 0;
@@ -115,6 +120,7 @@ impl Fixture {
                 .unwrap();
             assert!(output.status.success(), "{output:?}");
             assert!(output.stdout.len() <= 64 * 1024);
+            transport_bytes += output.stdout.len();
             let page: Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(page["offset"], bytes.len());
             assert_eq!(page["binding"], next["current"]["binding"]);
@@ -139,7 +145,11 @@ impl Fixture {
         }
         use sha2::{Digest, Sha256};
         assert_eq!(sha.unwrap(), format!("{:x}", Sha256::digest(&bytes)));
-        (serde_json::from_slice(&bytes).unwrap(), calls)
+        (
+            serde_json::from_slice(&bytes).unwrap(),
+            calls,
+            transport_bytes,
+        )
     }
     fn ledgers(&self) -> Vec<(PathBuf, Vec<u8>)> {
         let mut files = fs::read_dir(self.root.join(".exitbind/runs"))
@@ -313,4 +323,240 @@ fn large_sections_and_all_tasks_are_reachable_with_scoped_refusals() {
         None,
     );
     assert!(!unsafe_ref.status.success());
+}
+
+#[test]
+fn grouped_detail_is_readable_and_keeps_the_current_fence() {
+    let fixture = Fixture::new();
+    let work = fixture.begin();
+    fixture.return_result(&work, "scoped", "scope\n".as_bytes());
+    let worker = fixture.json(&["work", "next", &work]);
+    fixture.return_result(&work, "completed", "résumé exact\n".as_bytes());
+    let current = fixture.json(&["work", "next", &work]);
+    let output = fixture.call(&["work", "detail", &work], None);
+    assert!(output.status.success(), "{output:?}");
+    let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(detail["kind"], "work_detail");
+    assert_eq!(detail["version"], 1);
+    assert_eq!(detail["binding"], current["current"]["binding"]);
+    assert!(detail["sections"]["assignment"].is_object());
+    assert!(detail["sections"]["tasks"].is_object());
+    let evidence = &detail["sections"]["evidence"];
+    let artifact = evidence["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|item| item.get("artifact"))
+        .unwrap();
+    assert_eq!(artifact["readable"], true);
+    assert_eq!(artifact["content"], "résumé exact\n");
+    assert!(!detail.to_string().contains("contentHex"));
+
+    let stale = fixture.call(
+        &[
+            "work",
+            "expand",
+            &work,
+            current["current"]["details"]["grouped"]["reference"]
+                .as_str()
+                .unwrap(),
+        ],
+        None,
+    );
+    assert!(stale.status.success(), "{stale:?}");
+    let other = fixture.begin();
+    let wrong = fixture.call(
+        &[
+            "work",
+            "expand",
+            &other,
+            current["current"]["details"]["grouped"]["reference"]
+                .as_str()
+                .unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        !wrong.status.success(),
+        "cross-work grouped detail was accepted"
+    );
+    let foreign = Fixture::new();
+    let foreign_work = foreign.begin();
+    let wrong_project = foreign.call(
+        &[
+            "work",
+            "expand",
+            &foreign_work,
+            current["current"]["details"]["grouped"]["reference"]
+                .as_str()
+                .unwrap(),
+        ],
+        None,
+    );
+    assert!(!wrong_project.status.success());
+    let malformed = fixture.call(
+        &["work", "expand", &work, "ref:work-detail:v9:../unsafe"],
+        None,
+    );
+    assert!(!malformed.status.success());
+    assert!(worker["current"]["binding"].is_string());
+}
+
+#[test]
+fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() {
+    let fixture = Fixture::new();
+    let work = fixture.begin();
+    for n in 0..45 {
+        fixture.json(&[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            &work,
+            "--goal",
+            "multi-outcome goal",
+            "--obligation",
+            &format!("task {n}"),
+        ]);
+    }
+    let scope = "é".repeat(20000);
+    fixture.return_result(&work, "scoped", scope.as_bytes());
+    let next = fixture.json(&["work", "next", &work]);
+    let before = fixture.ledgers();
+    let output = fixture.call(&["work", "detail", &work], None);
+    assert!(output.status.success(), "{output:?}");
+    let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(detail["complete"], true);
+    assert!(output.stdout.len() <= 256 * 1024);
+    let (legacy_assignment, ac, ab) = fixture.detail_metrics(&next, "assignment");
+    let (legacy_evidence, ec, eb) = fixture.detail_metrics(&next, "evidence");
+    let (legacy_tasks, tc, tb) = fixture.detail_metrics(&next, "tasks");
+    let mut assignment = detail["sections"]["assignment"].clone();
+    let context = &mut assignment["assignment"]["context"];
+    for (alias, original) in [
+        ("goal", "goal"),
+        ("scope", "scope"),
+        ("subject", "subject"),
+        ("current", "evidence"),
+        ("missing", "obligations"),
+        ("loop", "loop"),
+        ("next", "next"),
+    ] {
+        if context["recovery"].get(alias).is_none() && context.get(original).is_some() {
+            context["recovery"][alias] = context[original].clone();
+        }
+    }
+    for alias in assignment["projection"]["equalAliases"]
+        .as_array()
+        .unwrap()
+        .clone()
+    {
+        let key = alias["removed"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("residual.")
+            .unwrap();
+        let source = alias["source"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("assignment.context")
+            .unwrap();
+        let value = if source.is_empty() {
+            assignment["assignment"]["context"].clone()
+        } else {
+            assignment["assignment"]["context"][&source[1..]].clone()
+        };
+        assignment["residual"][key] = value;
+    }
+    assignment.as_object_mut().unwrap().remove("projection");
+    assert_eq!(assignment, legacy_assignment);
+    assert_eq!(detail["sections"]["tasks"], legacy_tasks);
+    let artifacts = detail["sections"]["evidence"]["items"].as_array().unwrap();
+    assert_eq!(
+        artifacts.len(),
+        legacy_evidence["items"].as_array().unwrap().len()
+    );
+    assert_eq!(artifacts[0]["artifact"]["content"], scope);
+    assert_eq!(
+        artifacts[0]["artifact"]["sha256"],
+        legacy_evidence["items"][0]["artifact"]["sha256"]
+    );
+    assert_eq!(
+        detail["sections"]["tasks"]["tasks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        45
+    );
+    assert_eq!(before, fixture.ledgers());
+    eprintln!(
+        "R23_EQUIVALENT_TRANSPORT {}",
+        json!({"legacyReads": ac+ec+tc,
+        "legacyBytes": ab+eb+tb, "readableReads": 1, "readableBytes": output.stdout.len(),
+        "artifactBytes": scope.len(), "taskCount": 45})
+    );
+    fixture.json(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        &work,
+        "--goal",
+        "multi-outcome goal",
+        "--obligation",
+        "new task changes same recipient binding",
+    ]);
+    let stale = fixture.call(
+        &[
+            "work",
+            "expand",
+            &work,
+            next["current"]["details"]["grouped"]["reference"]
+                .as_str()
+                .unwrap(),
+        ],
+        None,
+    );
+    assert!(!stale.status.success(), "stale task binding was consumed");
+}
+
+#[test]
+fn grouped_unreadable_evidence_keeps_verified_origin_and_never_claims_complete() {
+    for body in [vec![0xff, 0], vec![b'x'; 65537]] {
+        let fixture = Fixture::new();
+        let work = fixture.begin();
+        fixture.return_result(&work, "scoped", &body);
+        let before = fixture.ledgers();
+        let value = fixture.json(&["work", "detail", &work]);
+        assert_eq!(value["complete"], false);
+        let artifact = &value["sections"]["evidence"]["items"][0]["artifact"];
+        assert_eq!(artifact["bytes"], body.len());
+        assert_eq!(artifact["verified"], true);
+        assert_eq!(artifact["readable"], false);
+        assert!(artifact["sha256"].is_string());
+        assert!(artifact["content"].is_null());
+        assert!(artifact["access"]["currentMetadata"]["command"].is_array());
+        assert_eq!(before, fixture.ledgers());
+    }
+}
+
+#[test]
+fn grouped_missing_or_corrupt_required_artifact_is_refused_without_events() {
+    for missing in [false, true] {
+        let fixture = Fixture::new();
+        let work = fixture.begin();
+        fixture.return_result(&work, "scoped", b"exact scope");
+        let artifact = fs::read_dir(fixture.root.join(".exitbind/artifacts"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.is_file())
+            .unwrap();
+        if missing {
+            fs::remove_file(artifact).unwrap();
+        } else {
+            fs::write(artifact, b"corrupted scope").unwrap();
+        }
+        let before = fixture.ledgers();
+        let output = fixture.call(&["work", "detail", &work], None);
+        assert!(!output.status.success(), "invalid evidence was consumed");
+        assert_eq!(before, fixture.ledgers());
+    }
 }

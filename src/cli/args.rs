@@ -15,6 +15,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "boundary",
     "check-command",
     "config",
+    "current-binding",
     "context",
     "confidence",
     "consider",

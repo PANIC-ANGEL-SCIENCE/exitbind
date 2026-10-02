@@ -17,7 +17,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
     let action = positional(
         a,
         0,
-        "work requires begin, next, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
+        "work requires begin, next, detail, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
         "file" => {
@@ -409,7 +409,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_options(
                 "work return",
                 a,
-                &["config", "outcome", "reason", "disposition", "result-ref", "json"],
+                &["config", "outcome", "reason", "disposition", "result-ref", "current-binding", "json"],
             )?;
             args::assert_positionals("work return", a, 3)?;
             let result = crate::work::return_result(
@@ -420,6 +420,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 a.options.get("reason").map(String::as_str),
                 a.options.get("disposition").map(String::as_str),
                 a.options.get("result-ref").map(String::as_str),
+                a.options.get("current-binding").map(String::as_str),
             )?;
             print_work_result(&result)
         }
@@ -429,6 +430,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 a,
                 &[
                     "config",
+                    "current-binding",
                     "decision",
                     "reason",
                     "repair-boundary",
@@ -450,6 +452,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     regression: a.options.get("regression").map(String::as_str),
                     category: a.options.get("category").map(String::as_str),
                     successor_basis: a.options.get("successor-basis").map(String::as_str),
+                    current_binding: a.options.get("current-binding").map(String::as_str),
                 },
             )?)
         }
@@ -484,6 +487,14 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 positional(a, 2, "work expand requires WORK REF")?,
             )?)
         }
+        "detail" => {
+            args::assert_options("work detail", a, &["config", "json"])?;
+            args::assert_positionals("work detail", a, 2)?;
+            print_json(&crate::work::readable::current(
+                l,
+                positional(a, 1, "work detail requires WORK")?,
+            )?)
+        }
         "resume" => {
             args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;
@@ -496,7 +507,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             print_json(&result)
         }
         _ => Err(
-            "work requires begin, next, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
+            "work requires begin, next, detail, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
                 .into(),
         ),
     }

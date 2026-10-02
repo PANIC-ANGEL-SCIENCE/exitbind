@@ -145,6 +145,9 @@ pub(super) fn bounded(
         });
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        value["current"] = super::compact::minimal_current(&value["current"]);
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         value.as_object_mut().unwrap().remove("presentation");
         value["next"]["progress"] = Value::Null;
     }

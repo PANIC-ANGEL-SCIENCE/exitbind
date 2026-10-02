@@ -65,6 +65,7 @@ pub(crate) fn replay_recorded_native(
 }
 use crate::kernel::result_contract::{self, Role};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn return_result(
     loaded: &Loaded,
     work: &str,
@@ -73,6 +74,7 @@ pub(crate) fn return_result(
     reason: Option<&str>,
     disposition: Option<&str>,
     held_reference: Option<&str>,
+    current_binding: Option<&str>,
 ) -> Result<Value, String> {
     return_result_with(
         loaded,
@@ -83,6 +85,7 @@ pub(crate) fn return_result(
         disposition,
         held_reference,
         None,
+        current_binding,
     )
 }
 
@@ -98,7 +101,9 @@ pub(crate) fn return_result_with(
     disposition: Option<&str>,
     held_reference: Option<&str>,
     supplied: Option<Vec<u8>>,
+    current_binding: Option<&str>,
 ) -> Result<Value, String> {
+    details::ensure_action_binding(loaded, work, current_binding)?;
     if outcome.trim().is_empty() {
         return Err("work return requires --outcome OUTCOME".into());
     }
@@ -187,7 +192,10 @@ pub(crate) fn return_result_with(
             *created_artifact.borrow_mut() = Some(path.clone());
             Ok(path)
         },
-        |events, source| preflight_submission(loaded, work, events, source),
+        |events, source| {
+            details::ensure_action_binding(loaded, work, current_binding)?;
+            preflight_submission(loaded, work, events, source)
+        },
         &mut recorded_protection,
     );
     let submitted = match submitted {

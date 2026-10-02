@@ -4,7 +4,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work"] => {
-            "work next WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
+            "work next WORK | work detail WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT]",
@@ -34,15 +34,16 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work sensor-result WORK ASSIGNMENT --assessment VALUE --input-digest HEX"
         }
         ["work", "return"] => {
-            "work return WORK ASSIGNMENT --outcome OUTCOME [--result-ref HELD_REFERENCE] [--json]"
+            "work return WORK ASSIGNMENT --outcome OUTCOME [--reason TEXT] [--result-ref HELD_REFERENCE] [--current-binding BINDING] [--json]"
         }
         ["work", "disposition"] => {
-            "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] (repair and supersede require both repair terms)"
+            "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
         }
         ["work", "check"] => "work check WORK",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
+        ["work", "detail"] => "work detail WORK [--json]",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"
