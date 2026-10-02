@@ -60,7 +60,7 @@ fn explicit_config_resume_uses_the_selected_project_from_a_hostile_cwd() {
     assert_eq!(value["status"], "resumed");
     assert_eq!(value["work"], work);
     assert_eq!(value["discovery"]["scope"], "configured_state_root");
-    assert_eq!(value["discovery"]["directory"], ".exitbind/runs");
+    assert_eq!(value["discovery"]["directory"], "work_ledgers");
     assert_eq!(value["discovery"]["recursive"], false);
     assert_eq!(value["discovery"]["automaticWidening"], false);
     assert_eq!(value["discovery"]["complete"], true);

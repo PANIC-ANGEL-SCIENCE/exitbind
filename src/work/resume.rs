@@ -267,7 +267,7 @@ fn count_work_ledgers(loaded: &Loaded) -> Result<usize, String> {
 fn discovery_value(observed: usize, complete: bool) -> Value {
     json!({
         "scope": "configured_state_root",
-        "directory": ".exitbind/runs",
+        "directory": "work_ledgers",
         "recursive": false,
         "automaticWidening": false,
         "maxWorkLedgers": MAX_DISCOVERED_WORK_LEDGERS,

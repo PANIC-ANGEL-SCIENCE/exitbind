@@ -1192,12 +1192,13 @@ fn skill_presentation_is_exact_and_packaged_copy_matches() {
     let packaged = include_bytes!("../plugins/exitbind/skills/exitbind/SKILL.md");
     assert_eq!(canonical, packaged);
     let text = std::str::from_utf8(canonical).unwrap();
-    assert!(text.contains(ROUTINE));
-    // One line, never a two-line header, and never an invented percentage.
+    assert!(!text.contains(ROUTINE));
+    // Human status is product-owned; no model remembers or formats progress.
     assert!(!text.contains("Neuro\nExitbind progress"));
-    assert!(
-        text.contains("never estimate the\nnumber and never show one when no governed run applies")
-    );
+    assert!(text.contains("product's English `goalProgress.systemText`"));
+    assert!(text.contains("a model must not render the legacy\npercentage"));
+    assert!(text.contains("Supported native and host paths surface that text automatically"));
+    assert!(text.contains("remember a progress command"));
     // The product supplies the terminal block and the host copies it without
     // rebuilding it from state or progress.
     assert!(text.contains(

@@ -687,7 +687,9 @@ options.
 `work resume` reports its discovery scope in JSON: it reads only the configured
 project's StateRoot-relative `.exitbind/runs` directory, without recursion or
 automatic widening, and stops before processing more than 128 valid work
-ledgers. A bounded refusal names the observed count and gives either the
+ledgers. Its opaque `discovery.directory` value is `work_ledgers`, under
+`configured_state_root`; transport paths stay outside the normal envelope.
+A bounded refusal names the observed count and gives either the
 saved focus's exact `work next WORK --json --config CONFIG` route or asks for
 an explicit Work and config.
 
