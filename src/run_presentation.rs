@@ -23,6 +23,9 @@ pub(crate) fn print_status(
         status.stage,
         status.attempt
     );
+    if let Some(text) = session_goal["goalProgress"]["systemText"].as_str() {
+        println!("{text}");
+    }
     println!("Artifact: {}", inert(&status.artifact_status));
     println!("Claim: current worker claims are listed below.");
     print_workers(&status.workers);
@@ -75,6 +78,9 @@ pub(crate) fn print_explain(
         inert(&explanation.status.status),
         inert(&explanation.status.artifact_status)
     );
+    if let Some(text) = session_goal["goalProgress"]["systemText"].as_str() {
+        println!("{text}");
+    }
     print_workers(&explanation.status.workers);
     print_checks(
         &explanation.status.checks.state,
@@ -470,6 +476,6 @@ fn optional(value: Option<&str>, missing: &str) -> String {
     value.map_or_else(|| missing.to_owned(), inert)
 }
 
-fn inert(value: &str) -> String {
+pub(crate) fn inert(value: &str) -> String {
     value.chars().flat_map(char::escape_default).collect()
 }

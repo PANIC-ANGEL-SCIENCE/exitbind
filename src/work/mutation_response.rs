@@ -2,7 +2,7 @@
 //! whether a ledger event was committed or a worker result was held. `result`
 //! is the checker's observed outcome; `outcome` is a role return or refusal.
 //! `eventSha256` names this call's event. `next` is only a short hint and always
-//! requires a fresh `work next --full` before another mutation. The read-only
+//! requires a fresh `work next` before another mutation. The read-only
 //! `nextAction.command` inspects the named event even after the head advances.
 //! An argv suffix/prefix marked `sameExecutableRequired` or
 //! `sameConfigRequired` needs the exact current executable or config argument
@@ -58,6 +58,7 @@ pub(super) fn bounded(
     );
     let mut value = json!({
         "compact": true,
+        "current": response["next"]["current"],
         "work": work,
         "assignment": assignment,
         "status": if refused { "refused" } else { effect },
@@ -85,7 +86,7 @@ pub(super) fn bounded(
             "progress": {"state": response["next"]["progress"]["state"], "reason": {"code": response["next"]["progress"]["reason"]["code"]}},
             "requiresExpansion": true,
         },
-        "continuation": {"readOnly": true, "commandSuffix": ["work", "next", work, "--full"], "sameConfig": true},
+        "continuation": {"readOnly": true, "commandSuffix": ["work", "next", work], "sameConfig": true},
     });
     if detail.same_config {
         value["nextAction"]["sameConfigRequired"] = json!(true);
@@ -140,6 +141,7 @@ pub(super) fn bounded(
             "neuro": presentation["neuro"],
             "phrase": presentation["phrase"],
             "terminal": presentation["terminal"],
+            "goalProgress": super::compact::compact_goal_progress(&presentation["goalProgress"]),
         });
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {

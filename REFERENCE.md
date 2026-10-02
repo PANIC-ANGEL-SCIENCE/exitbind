@@ -298,7 +298,10 @@ The receipt binds the run ledger bytes and head, configuration, Accepted
 Subject, current worker/reviewer/lead artifacts, check targets, review, and
 acceptance. Verification fails closed when covered subject, artifact, ledger,
 configuration, check, review, acceptance, or receipt data drifts. A receipt is
-local evidence, not tamper-proof proof or host/model compliance.
+local evidence, not tamper-proof proof or host/model compliance. Receipt output
+is confined to StateRoot: use a StateRoot-relative `--output` path (or an
+absolute path whose existing parent is inside StateRoot); an outside or
+traversing path is refused with an actionable StateRoot guidance error.
 
 Generate a local aggregate from explicit ledgers:
 
@@ -667,6 +670,26 @@ or `run explain` to show the three-line whole-goal room only when the current
 named goal is ready; machine and noninteractive output never include it. The
 room is local display, not completion evidence, and its replaceable display
 memo does not affect tested inputs.
+
+The same JSON status includes product-owned `goalProgress` when a canonical
+Lead goal exists. It lists the Lead's explicit obligation tasks, keeps
+performed-but-stale result history visible, and reports current Work
+`resultReadiness` separately. Missing goal decomposition is reported as
+`unavailable`; progress is never inferred from a worker packet or an elapsed
+percentage. Each bounded task entry includes a stable `taskId` hash alongside
+its shortened label; the full goal-status route retains canonical detail. The
+read-only `work continuation` and `work expand` commands accept
+an optional redundant `--json` for consistent scripted discovery.
+The same compatibility flag is accepted by `work validate` and `verify`; all
+four routes retain their existing JSON output and continue refusing unknown
+options.
+
+`work resume` reports its discovery scope in JSON: it reads only the configured
+project's StateRoot-relative `.exitbind/runs` directory, without recursion or
+automatic widening, and stops before processing more than 128 valid work
+ledgers. A bounded refusal names the observed count and gives either the
+saved focus's exact `work next WORK --json --config CONFIG` route or asks for
+an explicit Work and config.
 
 Use an exact run boundary to narrow configured maxima without editing config.
 This example uses the separate advanced fixture `examples/exitbind.json`; it

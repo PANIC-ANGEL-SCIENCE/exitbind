@@ -679,7 +679,7 @@ fn plan_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
 }
 
 fn verify_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    args::assert_options("verify", a, &["config"])?;
+    args::assert_options("verify", a, &["config", "json"])?;
     args::assert_positionals("verify", a, 1)?;
     let path = positional(a, 0, "verify requires a receipt path")?;
     let value = match receipt::verify_exit_path(path, l) {

@@ -154,7 +154,8 @@ pub(crate) fn execute(
         return Err("--resume requires a started native assignment journal".into());
     }
 
-    let assignment = &current["packet"];
+    let selected = crate::work::details::required_assignment(loaded, work, current)?;
+    let assignment = &selected;
     let _canonical_packet = bounded_json(assignment, MAX_PACKET_BYTES, "assignment packet")?;
     let packet = bounded_json(
         &prompt::delivery_packet(assignment),

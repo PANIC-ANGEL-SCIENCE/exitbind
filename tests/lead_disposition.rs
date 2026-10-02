@@ -319,11 +319,34 @@ fn reports_resolution(fixture: &Fixture, work: &str, decision: &str, disposition
         b"",
     );
     expected(&receipt["review"]);
-    let verified = fixture.ok(&["verify", receipt_path], b"");
+    let path = fixture.root.join(receipt_path);
+    let receipt_bytes = fs::read(&path).unwrap_or_default();
+    assert!(!receipt_bytes.is_empty(), "receipt export wrote no bytes");
+    let verified = fixture.ok(&["verify", receipt_path, "--json"], b"");
     assert_eq!(verified["valid"], true, "{verified}");
 
+    let outside = std::env::temp_dir().join(format!(
+        "exitbind-outside-receipt-{}-{}.json",
+        std::process::id(),
+        decision
+    ));
+    let outside_text = outside.to_string_lossy().into_owned();
+    let refused_output = fixture.call(
+        &["receipt", &ledger, "--output", &outside_text, "--json"],
+        b"",
+    );
+    assert!(
+        !refused_output.status.success(),
+        "outside receipt was written"
+    );
+    assert!(!outside.exists());
+    assert!(
+        text(&refused_output).contains("StateRoot"),
+        "{}",
+        text(&refused_output)
+    );
+
     // A receipt that claims a different Lead decision no longer verifies.
-    let path = fixture.root.join(receipt_path);
     let mut tampered: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     tampered["review"]["decision"] = json!(if decision == "defer" {
         "reject"

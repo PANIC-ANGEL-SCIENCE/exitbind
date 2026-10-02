@@ -65,6 +65,67 @@ fn establish_direct_goal(project: &Project) {
     ]);
 }
 
+#[test]
+fn goal_status_automatically_emits_goal_and_task_progress_without_model_formatting() {
+    let project = Project::new("goal-progress-product-surface");
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "progress",
+        "--goal",
+        "Ship the user's external request",
+        "--obligation",
+        "Implement the requested behavior",
+    ]);
+    let status = project.value(&["goal", "status", "--json"]);
+    assert_eq!(status["goalProgress"]["overall"], "in_progress");
+    assert_eq!(status["goalProgress"]["decomposition"]["total"], 1);
+    assert_eq!(status["goalProgress"]["decomposition"]["complete"], 0);
+    assert_eq!(
+        status["goalProgress"]["resultReadiness"]["state"],
+        "unavailable"
+    );
+    let text = status["goalProgress"]["systemText"].as_str().unwrap();
+    assert!(text.contains("Goal: IN PROGRESS"), "{text}");
+    assert!(text.contains("Tasks: 0/1 complete"), "{text}");
+    assert!(text.contains("Result readiness: unavailable"), "{text}");
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn unrelated_canonical_goal_is_not_projected_into_a_work_packet() {
+    let project = Project::new("goal-progress-work-binding");
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "unrelated-goal",
+        "--goal",
+        "Private external goal",
+        "--obligation",
+        "Private task",
+    ]);
+    let started = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Different Work goal",
+        "--check-command",
+        "true",
+    ]);
+    let progress = &started["next"]["packet"]["goalProgress"];
+    assert_eq!(progress["overall"], "unavailable");
+    assert_eq!(progress["goal"], Value::Null);
+    assert_eq!(progress["decomposition"]["available"], false);
+    assert_eq!(
+        progress["decomposition"]["reason"],
+        "overall_goal_unavailable"
+    );
+    fs::remove_dir_all(project.root).unwrap();
+}
+
 fn pty_status(project: &Project) -> String {
     let command = format!(
         "{} goal status --themed --config {}",

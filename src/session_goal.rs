@@ -6,6 +6,7 @@ use std::path::Path;
 
 mod continuity;
 mod current;
+mod progress;
 pub(crate) use continuity::{
     child_context, claim_child, claimed_child_context, continuation_bind, continuation_child,
     continuation_record, continuation_section, continuation_view, finalize_child, prepare_child,
@@ -996,7 +997,71 @@ pub(crate) fn presentation_for_loaded(
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
+    rendered["goalProgress"] = progress::project(Some(loaded), value, &rendered, None);
     Ok(rendered)
+}
+
+pub(crate) fn progress_for_loaded(
+    loaded: &crate::config::Loaded,
+    result: &Value,
+) -> Result<Value, String> {
+    let record = read(&loaded.state_root)?;
+    let mut rendered = presentation(record.as_ref());
+    let readiness = current::evaluate(loaded, record.as_ref());
+    rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
+    rendered["explicitLeadClosure"] = json!(readiness.is_current());
+    rendered["currentReadiness"] = readiness.value();
+    Ok(progress::project(
+        Some(loaded),
+        record.as_ref(),
+        &rendered,
+        Some(result),
+    ))
+}
+
+/// Project progress for one Work while enforcing the existing canonical
+/// goal-to-Work/continuation binding. A global goal record is not silently
+/// disclosed to an unrelated Work.
+pub(crate) fn progress_for_work(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+) -> Result<Value, String> {
+    let record = read(&loaded.state_root)?;
+    let mut rendered = presentation(record.as_ref());
+    let readiness = current::evaluate(loaded, record.as_ref());
+    rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
+    rendered["explicitLeadClosure"] = json!(readiness.is_current());
+    rendered["currentReadiness"] = readiness.value();
+    Ok(progress::project_for_work(
+        loaded,
+        work,
+        record.as_ref(),
+        &rendered,
+        Some(result),
+    ))
+}
+
+/// Full task projection for an already bound Work. Callers must paginate or
+/// group the returned task data before placing it on a bounded response.
+pub(crate) fn progress_detail_for_work(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+) -> Result<Value, String> {
+    let record = read(&loaded.state_root)?;
+    let mut rendered = presentation(record.as_ref());
+    let readiness = current::evaluate(loaded, record.as_ref());
+    rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
+    rendered["explicitLeadClosure"] = json!(readiness.is_current());
+    rendered["currentReadiness"] = readiness.value();
+    Ok(progress::project_detail_for_work(
+        loaded,
+        work,
+        record.as_ref(),
+        &rendered,
+        Some(result),
+    ))
 }
 
 #[cfg(test)]

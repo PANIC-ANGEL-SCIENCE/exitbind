@@ -2,6 +2,7 @@
 
 mod action;
 pub(crate) mod compact;
+pub(crate) mod details;
 mod disposition;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
@@ -204,7 +205,7 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
             .collect::<Vec<_>>();
         let mut response = json!({
             "work": work,
-            "next": {"warnings": warnings},
+            "next": {"warnings": warnings, "current": next["current"]},
             "presentation": presentation,
             "reason": {"code": classification},
             "effect": "no-change",
@@ -391,6 +392,9 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
     let ledger = resolve(loaded, work)?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
+    if details::is_section(reference) {
+        return details::expand(loaded, work, &snapshot, &next, reference);
+    }
     let packet = crate::work::packet::project(work, &snapshot, &next)?;
     let context = packet
         .get("context")
@@ -732,7 +736,7 @@ fn next_and_residual_from_snapshot(
     let facts = crate::work::packet::facts(snapshot, &next, || {
         crate::run::inputs::fingerprint(loaded).ok()
     })?;
-    let presentation = if remember_presentation {
+    let mut presentation = if remember_presentation {
         crate::presentation_events::project(
             &loaded.state_root,
             work,
@@ -751,6 +755,9 @@ fn next_and_residual_from_snapshot(
             resumed,
         )
     };
+    presentation["goalProgress"] =
+        crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
+    details::automatic_progress(&mut presentation["goalProgress"], &next["current"]);
     Ok((next, residual, presentation))
 }
 
@@ -778,6 +785,16 @@ fn attach_held(
 }
 
 fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
+    let mut next = next_from_base(loaded, work, snapshot)?;
+    details::attach(loaded, work, snapshot, &mut next)?;
+    Ok(next)
+}
+
+fn next_from_base(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &run::RunSnapshot,
+) -> Result<Value, String> {
     let value = snapshot.next_view(loaded)?;
     let progress = value["progress"].clone();
     let warnings = value["warnings"].clone();

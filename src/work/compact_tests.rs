@@ -54,6 +54,90 @@ fn projection_keeps_decision_identity_subject_recorder_and_references() {
 }
 
 #[test]
+fn compact_projection_keeps_product_owned_goal_and_result_readiness() {
+    let response = json!({
+        "status": "running",
+        "work": "smw_work",
+        "next": {"action": "spawn", "assignment": "sma_assignment"},
+        "presentation": {
+            "exitState": "IN_PROGRESS",
+            "goalProgress": {
+                "overall": "in_progress",
+                "systemText": "Goal: IN PROGRESS | Tasks: 1/2 complete | Result readiness: BLOCKED",
+                "decomposition": {"available": true, "total": 2, "complete": 1, "omitted": 0},
+                "tasks": [
+                    {"id": "A", "state": "complete", "performed": true, "current": true},
+                    {"id": "B", "state": "in_progress", "performed": false, "current": null}
+                ],
+                "resultReadiness": {"state": "BLOCKED", "reason": "check_missing"}
+            }
+        }
+    });
+    let compact = project(&response, Path::new("/tmp/exitbind.json"), "next").unwrap();
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["overall"],
+        "in_progress"
+    );
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["resultReadiness"]["state"],
+        "BLOCKED"
+    );
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["tasks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn compact_goal_progress_stays_bounded_with_many_long_tasks() {
+    let tasks = (0..32)
+        .map(|index| {
+            json!({
+                "id": format!("task-{index}-{}", "x".repeat(500)),
+                "state": "in_progress",
+                "disposition": "open",
+                "performed": false,
+                "current": null,
+                "currentReason": "currentness_unavailable",
+            })
+        })
+        .collect::<Vec<_>>();
+    let response = json!({
+        "status": "running",
+        "work": "smw_work",
+        "next": {"action": "spawn", "assignment": "sma_assignment"},
+        "presentation": {
+            "exitState": "IN_PROGRESS",
+            "goalProgress": {
+                "overall": "in_progress",
+                "goal": "g".repeat(500),
+                "systemText": "s".repeat(5000),
+                "decomposition": {"available": true, "total": 32, "complete": 0, "omitted": 0},
+                "tasks": tasks,
+                "resultReadiness": {"state": "BLOCKED", "reason": "check_missing"}
+            }
+        }
+    });
+    let compact = project(&response, Path::new("/tmp/exitbind.json"), "next").unwrap();
+    assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["tasks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(compact["presentation"]["goalProgress"]["taskOmissions"], 24);
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["resultReadiness"]["state"],
+        "BLOCKED"
+    );
+}
+
+#[test]
 fn compact_resume_keeps_other_candidates_and_unreadable_recovery_routes() {
     let works = json!([{
         "work": "smw_other",

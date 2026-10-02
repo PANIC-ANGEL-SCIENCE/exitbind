@@ -647,7 +647,23 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
         "true",
     ]);
     let work = started["work"].as_str().unwrap().to_owned();
+    fixture.json(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        &work,
+        "--goal",
+        "Preserve packet semantics for the user",
+        "--obligation",
+        "Keep the native current view available",
+    ]);
+    let started = fixture.json(&["work", "next", &work]);
     assert!(started["next"]["packet"]["context"]["digest"].is_string());
+    assert_eq!(started["next"]["goalProgress"]["overall"], "in_progress");
+    assert!(started["next"]["goalProgress"]["systemText"]
+        .as_str()
+        .unwrap()
+        .contains("Tasks: 0/1 complete"));
     let residual = fixture.json(&["work", "next", &work]);
     let context = &residual["residual"]["context"];
     assert_eq!(context["version"], 3);

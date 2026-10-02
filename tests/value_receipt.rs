@@ -234,7 +234,7 @@ fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
     let receipt = accepted_v5(&valid_root, ".soulmate/runs/accepted.jsonl", &["worker"]);
     let valid = invoke_exitbind(
         &valid_root,
-        &["verify", &receipt, "--config", "soulmate.json"],
+        &["verify", &receipt, "--json", "--config", "soulmate.json"],
     );
     assert!(valid.status.success(), "{}", text(&valid));
     let valid_value = json_output(&valid);

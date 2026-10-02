@@ -70,7 +70,10 @@ pub(crate) fn project(
         copy_if_present(response, &mut result, key);
     }
     copy_if_present(response, &mut result, "work");
-    for key in ["selection", "history", "focus"] {
+    if let Some(current) = response.pointer("/next/current") {
+        result.insert("current".into(), current.clone());
+    }
+    for key in ["selection", "history", "focus", "discovery"] {
         copy_if_present(response, &mut result, key);
     }
     if response["reason"]["code"] == "unreadable_candidate" {
@@ -196,10 +199,11 @@ pub(crate) fn project(
             "command": Value::Null,
             "summary": "Open the full response with fullCommand."
         });
-        let action = result["nextAction"].clone();
         if let Some(help) = result.get_mut("humanHelp") {
             *help = json!({
-                "nextAction": action,
+                "nextAction": help["nextAction"],
+                "ownerDecision": help["ownerDecision"],
+                "whatHappened": help["whatHappened"].as_str().map(|value| bounded_text(value, 512)),
                 "preservationAssignment": help["preservationAssignment"],
                 "preservationEvidence": help["preservationEvidence"],
                 "checkInstruction": help["checkInstruction"],
@@ -209,10 +213,12 @@ pub(crate) fn project(
             .as_object_mut()
             .expect("compact object")
             .remove("reason");
-        result
-            .as_object_mut()
-            .expect("compact object")
-            .remove("obligations");
+        if let Some(remaining) = response["residual"]["remaining"].as_array() {
+            result["obligations"] = json!({
+                "remaining": remaining.iter().take(8).cloned().collect::<Vec<_>>(),
+                "remainingOmissions": remaining.len().saturating_sub(8),
+            });
+        }
         result["references"] = Value::Array(references);
         result["omitted"] = json!(["large assignment and action detail; use fullCommand"]);
         result["truncated"] = json!(true);
@@ -220,6 +226,7 @@ pub(crate) fn project(
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         let mut emergency = json!({
             "compact": true,
+            "current": response["next"]["current"],
             "status": response["status"],
             "work": response["work"],
             "next": {
@@ -232,7 +239,10 @@ pub(crate) fn project(
                 "preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"]),
                 "checkInstruction": response["residual"]["humanHelp"]["checkInstruction"],
             },
-            "presentation": {"terminal": response["presentation"]["terminal"]},
+            "presentation": {
+                "terminal": response["presentation"]["terminal"],
+                "goalProgress": compact_goal_progress(&response["presentation"]["goalProgress"]),
+            },
             "fullCommand": recovery.argv.clone(),
             "fullCommandSameConfigRequired": recovery.same_config,
             "fullCommandSameExecutableRequired": recovery.same_executable,
@@ -259,6 +269,7 @@ pub(crate) fn project(
         let mut minimal = json!({
             "compact": true,
             "status": "unresolved",
+            "current": response["next"]["current"],
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "nextAction": {"command": null, "summary": "Open the full response."},
@@ -282,6 +293,7 @@ pub(crate) fn project(
         let mut fallback = json!({
             "compact": true,
             "status": "unresolved",
+            "current": response["next"]["current"],
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},
@@ -330,6 +342,8 @@ fn compact_next(next: &Value) -> Value {
         "assignment",
         "role",
         "agent",
+        "stage",
+        "attempt",
         "resolvedActor",
         "outcomes",
         "check",
@@ -340,6 +354,16 @@ fn compact_next(next: &Value) -> Value {
         copy_if_present(next, &mut result, key);
     }
     if let Some(packet) = next.get("packet") {
+        for key in ["stage", "attempt"] {
+            if !result.contains_key(key) {
+                copy_if_present(packet, &mut result, key);
+            }
+        }
+        if !result.contains_key("goal") {
+            if let Some(goal) = packet["goal"].as_str() {
+                result.insert("goal".into(), json!(bounded_text(goal, 192)));
+            }
+        }
         result.insert("packet".into(), compact_packet(packet));
     }
     if let Some(warnings) = next.get("warnings").and_then(Value::as_array) {
@@ -413,6 +437,8 @@ fn minimal_next(next: &Value) -> Value {
         "assignment",
         "role",
         "agent",
+        "stage",
+        "attempt",
         "resolvedActor",
         "check",
         "held",
@@ -422,6 +448,18 @@ fn minimal_next(next: &Value) -> Value {
     if let Some(held) = next.get("heldResults").and_then(Value::as_array) {
         result.insert("heldResultsCount".into(), json!(held.len()));
         result.insert("heldResultsOmissions".into(), json!(held.len()));
+    }
+    if let Some(packet) = next.get("packet") {
+        for key in ["stage", "attempt"] {
+            if !result.contains_key(key) {
+                copy_if_present(packet, &mut result, key);
+            }
+        }
+        if !result.contains_key("goal") {
+            if let Some(goal) = packet["goal"].as_str() {
+                result.insert("goal".into(), json!(bounded_text(goal, 192)));
+            }
+        }
     }
     Value::Object(result)
 }
@@ -474,9 +512,73 @@ fn representative_references(references: &[Value]) -> Vec<Value> {
 }
 
 fn compact_presentation(presentation: &Value) -> Value {
-    // Presentation is already a small, state-derived compatibility surface.
-    // Keep it intact so terminal and transition meaning cannot change here.
-    presentation.clone()
+    // Keep terminal and transition meaning, while bounding the additive goal
+    // projection by field. Full goal status remains available from
+    // `goal status --json`.
+    let Some(object) = presentation.as_object() else {
+        return Value::Null;
+    };
+    let mut result = object.clone();
+    if let Some(goal) = object.get("goalProgress") {
+        result.insert("goalProgress".into(), compact_goal_progress(goal));
+    }
+    Value::Object(result)
+}
+
+pub(crate) fn compact_goal_progress(goal: &Value) -> Value {
+    let mut compact = Map::new();
+    for key in ["overall", "decomposition", "resultReadiness"] {
+        if let Some(value) = goal.get(key) {
+            compact.insert(key.into(), value.clone());
+        }
+    }
+    if let Some(value) = goal["goal"].as_str() {
+        compact.insert("goal".into(), json!(bounded_text(value, 96)));
+    }
+    if let Some(tasks) = goal["tasks"].as_array() {
+        let omitted = tasks.len().saturating_sub(8);
+        let tasks = tasks
+            .iter()
+            .take(8)
+            .map(|task| {
+                json!({
+                    "id": task["id"].as_str().map(|value| bounded_text(value, 64)),
+                    "taskId": task["taskId"],
+                    "label": task["label"].as_str().map(|value| bounded_text(value, 64)),
+                    "state": task["state"],
+                    "disposition": task["disposition"],
+                    "performed": task["performed"],
+                    "current": task["current"],
+                    "currentReason": task["currentReason"],
+                })
+            })
+            .collect::<Vec<_>>();
+        compact.insert("tasks".into(), json!(tasks));
+        compact.insert(
+            "taskOmissions".into(),
+            json!(omitted + goal["decomposition"]["omitted"].as_u64().unwrap_or(0) as usize),
+        );
+    }
+    if let Some(value) = goal["systemText"].as_str() {
+        if value.chars().count() <= 512 {
+            compact.insert("systemText".into(), json!(value));
+        } else {
+            compact.insert("systemTextOmitted".into(), json!(true));
+            compact.insert(
+                "systemText".into(),
+                json!("Goal status: requires detail | Result readiness: requires detail"),
+            );
+        }
+    }
+    Value::Object(compact)
+}
+
+fn bounded_text(value: &str, max: usize) -> String {
+    let mut text = value.chars().take(max).collect::<String>();
+    if text.chars().count() < value.chars().count() {
+        text.push('…');
+    }
+    text
 }
 
 fn current_subject(response: &Value) -> Option<Value> {

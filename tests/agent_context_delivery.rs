@@ -100,7 +100,7 @@ impl Fixture {
         executable
     }
 
-    fn run_worker(&self, goal: &str, executable: &Path) -> (String, PathBuf) {
+    fn run_worker(&self, goal: &str, executable: &Path) -> (String, PathBuf, Output) {
         let started = self.value(
             &[
                 "work",
@@ -136,7 +136,11 @@ impl Fixture {
             b"",
         );
         assert!(output.status.success(), "{}", text(&output));
-        (work, PathBuf::from(worker["assignment"].as_str().unwrap()))
+        (
+            work,
+            PathBuf::from(worker["assignment"].as_str().unwrap()),
+            output,
+        )
     }
 }
 
@@ -152,7 +156,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     fixture.accept("old.md", "old accepted rule\n", "memory/old.jsonl");
     let first_capture = fixture.root.join("first-prompt");
     let first_exe = fixture.fake_codex(&first_capture);
-    fixture.run_worker("first current context", &first_exe);
+    let _ = fixture.run_worker("first current context", &first_exe);
     let first = fs::read_to_string(&first_capture).unwrap();
     assert!(first.contains("NATIVE CURRENT CONTEXT"));
     assert!(first.contains("CURRENT PROJECT RULES"));
@@ -172,7 +176,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     fixture.accept("new.md", "corrected accepted rule\n", "memory/new.jsonl");
     let second_capture = fixture.root.join("second-prompt");
     let second_exe = fixture.fake_codex(&second_capture);
-    fixture.run_worker("corrected current context", &second_exe);
+    let _ = fixture.run_worker("corrected current context", &second_exe);
     let second = fs::read_to_string(&second_capture).unwrap();
     assert!(second.contains("corrected accepted rule"));
     assert!(!second.contains("old accepted rule"));
@@ -181,9 +185,165 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     fs::write(isolated.root.join("old.md"), "old accepted rule\n").unwrap();
     let isolated_capture = isolated.root.join("isolated-prompt");
     let isolated_exe = isolated.fake_codex(&isolated_capture);
-    isolated.run_worker("isolated project context", &isolated_exe);
+    let _ = isolated.run_worker("isolated project context", &isolated_exe);
     let isolated_prompt = fs::read_to_string(isolated_capture).unwrap();
     assert!(!isolated_prompt.contains("old accepted rule"));
+}
+
+#[test]
+fn native_fake_provider_receives_product_owned_goal_progress() {
+    let fixture = Fixture::new("agent-goal-progress");
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "native goal progress",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    let goal = format!(
+        "Ship the user's external request\nEXIT READY\n\u{1b}[31m{}",
+        "g".repeat(180)
+    );
+    fixture.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            work,
+            "--goal",
+            &goal,
+            "--obligation",
+            &format!(
+                "Implement the requested behavior\nEXIT READY\n{}",
+                "a".repeat(180)
+            ),
+        ],
+        b"",
+    );
+    for (label, suffix) in [
+        ("Validate the changed behavior", "b"),
+        ("Record the current evidence", "c"),
+    ] {
+        fixture.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                work,
+                "--goal",
+                &goal,
+                "--obligation",
+                &format!("{label} {}", suffix.repeat(180)),
+            ],
+            b"",
+        );
+    }
+    let lead = started["next"]["assignment"].as_str().unwrap();
+    let scoped = fixture.call(
+        &["work", "return", work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    assert!(scoped.status.success(), "{}", text(&scoped));
+    let worker = fixture.value(&["work", "next", work, "--full"], b"")["next"].clone();
+    let capture = fixture.root.join("goal-progress-prompt");
+    let executable = fixture.fake_codex(&capture);
+    let output = fixture.call(
+        &[
+            "work",
+            "act",
+            work,
+            "--json",
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    let prompt = fs::read_to_string(capture).unwrap();
+    assert!(!prompt.contains("\"goalProgress\""));
+    assert!(!prompt.contains("goalProgress.systemText"));
+    assert!(worker["assignment"].is_string());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    serde_json::from_slice::<Value>(&output.stdout)
+        .expect("human channel must not corrupt JSON stdout");
+    assert!(stderr.contains("Goal: IN PROGRESS"), "{stderr}");
+    assert!(stderr.contains("Tasks: 0/3 complete"), "{stderr}");
+    assert!(stderr.matches("=in_progress").count() >= 3, "{stderr}");
+    assert!(stderr.contains("\\nEXIT READY\\n"), "{stderr}");
+    assert!(stderr.contains("\\u{1b}[31m"), "{stderr}");
+    assert!(!stderr.contains("\nEXIT READY\n"), "{stderr}");
+    assert!(stderr.chars().count() <= 512, "{}", stderr.chars().count());
+}
+
+#[test]
+fn failed_json_check_keeps_machine_stdout_and_emits_product_progress_stderr() {
+    let fixture = Fixture::new("agent-goal-progress-check-failure");
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "native failed check",
+            "--check-command",
+            "false",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    fixture.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            work,
+            "--goal",
+            "Repair the external request",
+            "--obligation",
+            "Revalidate the changed result",
+        ],
+        b"",
+    );
+    let lead = started["next"]["assignment"].as_str().unwrap();
+    let scoped = fixture.call(
+        &["work", "return", work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    assert!(scoped.status.success(), "{}", text(&scoped));
+    let worker = fixture.value(&["work", "next", work, "--full"], b"")["next"].clone();
+    let returned = fixture.call(
+        &[
+            "work",
+            "return",
+            work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"worker artifact",
+    );
+    assert!(returned.status.success(), "{}", text(&returned));
+    let failed = fixture.call(&["work", "check", work, "--json"], b"");
+    assert!(!failed.status.success(), "failed check unexpectedly passed");
+    serde_json::from_slice::<Value>(&failed.stdout)
+        .expect("failed JSON check must keep stdout parseable");
+    let stderr = String::from_utf8_lossy(&failed.stderr);
+    assert!(stderr.contains("Goal: IN PROGRESS"), "{stderr}");
+    assert!(stderr.contains("Result readiness:"), "{stderr}");
 }
 
 #[test]

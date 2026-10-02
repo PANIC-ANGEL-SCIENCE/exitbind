@@ -17,7 +17,19 @@ struct SupersessionStatus {
     unverified_successor: Option<UnverifiedSuccessor>,
 }
 
+const MAX_DISCOVERED_WORK_LEDGERS: usize = 128;
+
 pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
+    let observed = count_work_ledgers(loaded)?;
+    if observed > MAX_DISCOVERED_WORK_LEDGERS {
+        return Ok(discovery_limited(loaded, observed));
+    }
+    let mut result = resume_core(loaded, history)?;
+    attach_discovery(&mut result, observed, true);
+    Ok(result)
+}
+
+fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
@@ -30,6 +42,7 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let mut unreadable = Vec::new();
     let mut finished: Vec<(String, String, String)> = Vec::new();
     let mut claimed_predecessors = std::collections::BTreeSet::new();
+    let mut processed: usize = 0;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let info = entry.file_type().map_err(|error| error.to_string())?;
@@ -46,6 +59,10 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
         };
         if !info.is_file() || !valid_token(token) {
             continue;
+        }
+        processed += 1;
+        if processed > MAX_DISCOVERED_WORK_LEDGERS {
+            return Ok(discovery_limited(loaded, processed));
         }
         let ledger = format!("{}/{}", runs_dir(), name);
         let work = format!("{WORK_PREFIX}{token}");
@@ -214,6 +231,112 @@ pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
             Ok(result)
         }
     }
+}
+
+fn count_work_ledgers(loaded: &Loaded) -> Result<usize, String> {
+    let directory = loaded.state_root.join(runs_dir());
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut observed: usize = 0;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let info = entry.file_type().map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Some(token) = name
+            .strip_prefix("work-")
+            .and_then(|name| name.strip_suffix(".jsonl"))
+        else {
+            continue;
+        };
+        if info.is_file() && valid_token(token) {
+            observed = observed.saturating_add(1);
+            if observed > MAX_DISCOVERED_WORK_LEDGERS {
+                return Ok(observed);
+            }
+        }
+    }
+    Ok(observed)
+}
+
+fn discovery_value(observed: usize, complete: bool) -> Value {
+    json!({
+        "scope": "configured_state_root",
+        "directory": ".exitbind/runs",
+        "recursive": false,
+        "automaticWidening": false,
+        "maxWorkLedgers": MAX_DISCOVERED_WORK_LEDGERS,
+        "observed": observed,
+        "complete": complete,
+    })
+}
+
+fn attach_discovery(result: &mut Value, observed: usize, complete: bool) {
+    result["discovery"] = discovery_value(observed, complete);
+}
+
+fn discovery_limited(loaded: &Loaded, observed: usize) -> Value {
+    let (next_action, focus) = match focus::read(loaded) {
+        Ok(focus::Focus::Work(work)) => match candidate_command(loaded, &work) {
+            Ok(route) => (
+                json!({
+                    "type": "read_current_work",
+                    "safe": true,
+                    "summary": "Discovery is bounded; read the saved current Work with its exact config.",
+                    "command": route.argv,
+                    "sameConfigRequired": route.same_config,
+                    "sameExecutableRequired": route.same_executable,
+                }),
+                json!({"work": work, "valid": true}),
+            ),
+            Err(error) => (
+                json!({
+                    "type": "provide_explicit_work",
+                    "safe": true,
+                    "summary": "Discovery is bounded; provide an explicit WORK locator and the exact --config path.",
+                }),
+                json!({"work": work, "valid": false, "reason": "saved_focus_route_unavailable", "detail": error}),
+            ),
+        },
+        Ok(focus::Focus::Absent) => (
+            json!({
+                "type": "provide_explicit_work",
+                "safe": true,
+                "summary": "Discovery is bounded; provide an explicit WORK locator and the exact --config path.",
+            }),
+            json!({"valid": false, "reason": "no_saved_focus"}),
+        ),
+        Ok(focus::Focus::Unusable(detail)) => (
+            json!({
+                "type": "provide_explicit_work",
+                "safe": true,
+                "summary": "Discovery is bounded; provide an explicit WORK locator and the exact --config path.",
+            }),
+            json!({"valid": false, "reason": "saved_focus_unusable", "detail": detail}),
+        ),
+        Err(error) => (
+            json!({
+                "type": "provide_explicit_work",
+                "safe": true,
+                "summary": "Discovery is bounded; provide an explicit WORK locator and the exact --config path.",
+            }),
+            json!({"valid": false, "reason": "saved_focus_unreadable", "detail": error}),
+        ),
+    };
+    json!({
+        "status": "unresolved",
+        "reason": {"code": "discovery_limited", "detail": "work ledger discovery reached its fixed bound"},
+        "effect": "no-change",
+        "compact": true,
+        "discovery": discovery_value(observed, false),
+        "focus": focus,
+        "nextAction": next_action,
+    })
 }
 
 fn candidate_values(

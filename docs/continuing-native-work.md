@@ -1,9 +1,74 @@
 # Current context, managed file edits and the quiet hall
 
-These additions extend the existing Work path. Start with `work next WORK
---full`, follow its current assignment, and use `work act WORK` for a native
-Codex action. Checks, independent review and explicit Lead acceptance still
-have their own results.
+## Product-owned goal and result status
+
+When a Lead has registered the external user's goal with `goal incorporate`
+and divided it with one or more `--obligation` entries, supported Work and run
+responses include a bounded `goalProgress` projection. Its `systemText` names
+the overall goal state and the Lead's completed-task count and task states. The
+projection is generated from the canonical goal record; a model does not need
+to remember a progress command or calculate a percentage.
+
+`goalProgress.resultReadiness` is separate from goal completion. It reports the
+current Work result's prerequisite state and reason. A task whose recorded
+result is historical or whose tested inputs drifted remains visible as
+performed but stale, and is not counted as current completion. If no canonical
+goal or task decomposition exists, the projection says `unavailable` rather
+than inferring one from a worker packet. `goal status --json` and the normal
+human `run status` route surface the same product-owned text.
+
+Each task keeps a bounded human `label`/`id` and a stable `taskId` hash of the
+canonical obligation identity, so long task names cannot collide in compact
+output. The Work view supplies a scoped tasks route for every task, including tasks omitted from the compact projection.
+
+Use `goal status --json` to inspect the current projection. Existing full
+responses and exact result, review, acceptance, and receipt semantics remain
+unchanged; this is a derived read-only view.
+
+These additions extend the existing Work path. Start with `work next WORK`
+for the bounded current view, follow the exact argv in `current.details` when complete grouped
+assignment, evidence or task detail is needed, and follow the returned assignment
+with `work act WORK`. Checks, independent review and explicit Lead acceptance
+still have their own results. Normal `work act`, `work check`, and `work
+return` executions emit the same product-owned goal line on bounded stderr;
+`--json` keeps stdout machine-only while retaining that bounded human channel
+on stderr.
+
+## Current binding and complete detail
+
+The normal 8 KiB response exposes `current` version 1 across worker, check,
+reviewer, Lead, repair and terminal states. It names the Work and goal identity,
+current result availability and subject, phase/attempt, recipient and action,
+missing prerequisites, and any recorded rework event. A result that does not
+exist is distinct from an unavailable identity. Historical acceptance remains
+historical when current inputs have changed.
+
+Use the argv arrays in `current.details.assignment`, `.evidence` and `.tasks`.
+They pin this executable and configuration even from another directory or a
+hostile PATH. A route marked `sameExecutableRequired` or `sameConfigRequired`
+requires that exact invoking value before execution. These read-only routes
+create no grant, launch no provider and change no managed-edit baseline.
+
+`work expand WORK REFERENCE --json` returns exact JSON section bytes encoded
+as hex, with their hash, total byte count and offset. Each page carries at most
+24 KiB of section bytes; the complete response stays within 64 KiB. Follow
+`next.command` until null, concatenate the pages in offset order, verify the
+section hash and parse the decoded JSON. `pageComplete` applies to one page;
+`complete` only means the whole section fits in that response. All pages must
+name the same binding and section hash. Refresh on any mismatch or refusal;
+do not combine old and new sections.
+
+The assignment section groups the complete assignment and residual rules;
+the evidence section supplies the actual verified submission and check-log
+bytes; the tasks section contains every Lead-divided task state. Missing or
+oversized verified evidence refuses rather than becoming a summary. References
+expire on changes to the project, configuration, Work, current recipient,
+assignment, ledger, host execution conditions or relevant task conditions. A reference grants no access
+to another Work or private role. `--full` remains available for expert inspection.
+Native delivery uses the same canonical assignment section and still supplies
+all mandatory rules and required reviewer artifacts before launch. Automatic
+progress presentation stays on the host; its display payload is omitted from
+the provider assignment.
 
 ## What a native assignment receives
 

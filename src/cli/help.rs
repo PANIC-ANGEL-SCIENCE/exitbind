@@ -4,13 +4,13 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work"] => {
-            "work next WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON"
+            "work next WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
-            "work continuation WORK [--section NAME [--index N [--history-index N]]] [--config CONFIG]"
+            "work continuation WORK [--json] [--section NAME [--index N [--history-index N]]] [--config CONFIG]"
         }
         ["work", "record"] => "work record WORK [--config CONFIG] < JSON",
         ["work", "bind"] => {
@@ -41,8 +41,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "check"] => "work check WORK",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
-        ["work", "validate"] => "work validate WORK --packet FILE",
-        ["work", "expand"] => "work expand WORK REFERENCE",
+        ["work", "validate"] => "work validate WORK --packet FILE [--json]",
+        ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"
@@ -96,6 +96,16 @@ mod tests {
         assert!(help.contains("work next WORK"));
         let recovery = scoped_help("work", &["return".to_owned()]).unwrap();
         assert!(recovery.contains("--result-ref HELD_REFERENCE"));
+    }
+
+    #[test]
+    fn scoped_read_help_exposes_redundant_json_routes() {
+        let continuation = scoped_help("work", &["continuation".to_owned()]).unwrap();
+        assert!(continuation.contains("--json"));
+        let validate = scoped_help("work", &["validate".to_owned()]).unwrap();
+        assert!(validate.contains("--json"));
+        let expand = scoped_help("work", &["expand".to_owned()]).unwrap();
+        assert!(expand.contains("--json"));
     }
 
     #[test]

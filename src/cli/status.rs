@@ -9,6 +9,7 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     let presentation = crate::session_goal::presentation_for_loaded(l, record.as_ref())?;
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));
     value["currentReadiness"] = presentation["currentReadiness"].clone();
+    value["goalProgress"] = presentation["goalProgress"].clone();
     print_json(&value)?;
     if !a.flags.contains_key("json") {
         if let Some(card) = crate::presentation_events::session_goal_direct_card_for_human(
@@ -30,6 +31,7 @@ pub(super) fn run_status(l: &config::Loaded, a: &Arguments) -> Result<(), String
     let json_output = a.flags.contains_key("json");
     if json_output {
         let mut value = run::status(l, ledger).map_err(|error| map_run_error(error, true))?;
+        value["goalProgress"] = crate::session_goal::progress_for_loaded(l, &value["progress"])?;
         if let Some(terminal) = run::terminal_display(l, ledger) {
             value["terminal"] = json!(terminal);
         }
