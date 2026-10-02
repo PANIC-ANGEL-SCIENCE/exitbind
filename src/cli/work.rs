@@ -9,6 +9,19 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "work requires begin, next, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
+        "file" => {
+            args::assert_options("work file", a, &["config", "json"])?;
+            args::assert_positionals("work file", a, 4)?;
+            let command = positional(a, 1, "work file requires ACTION SESSION PATH")?;
+            let first = positional(a, 2, "work file requires ACTION SESSION PATH")?;
+            let second = positional(a, 3, "work file requires ACTION SESSION PATH")?;
+            let result = if command == "prepare" {
+                crate::work::managed_edit::prepare(l, first, second)?
+            } else {
+                crate::work::managed_edit::interact(l, command, first, second)?
+            };
+            print_json(&result)
+        }
         "world" => {
             args::assert_options("work world", a,
                 &["config", "json", "plain", "reduced-motion", "export"])?;

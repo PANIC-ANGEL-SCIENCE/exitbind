@@ -101,9 +101,15 @@ pub(super) fn build(
         let current_assignment = current["assignment"]
             .as_str()
             .ok_or("native assignment has no assignment identity")?;
+        let prepared = crate::work::managed_edit::prepare(loaded, work, current_assignment)?;
+        let tool = prepared["tool"]
+            .as_str()
+            .ok_or("managed edit tool unavailable")?;
+        let tool_path = tool;
+        let tool = crate::presentation::shell_quote(tool);
         format!(
-            " For supported project file effects, use only the bounded mediator route: `exitbind work write {work} {current_assignment} PATH --operation STABLE_ID --expected-sha256 CURRENT_SHA_OR_absent`, then provide the full replacement content as UTF-8 bytes on stdin. Replace the placeholders with the target path, stable operation ID, and the observed current SHA or `absent`; do not truncate content. If admission or the write result is uncertain, inspect the target file before deciding and never replay the write blindly. Native tools remain controlled by the host and this route grants no OS sandbox permission."
-        )
+            " For supported project edits, use the supplied managed file tool: `{tool} read PATH` returns the captured UTF-8 file or explicit absence. Prepare your edit from that content, then run `{tool} edit PATH` with full replacement content as UTF-8 bytes on stdin; do not truncate content. Retry the same submitted edit with that same command and content. For a deliberate next edit, use `{tool} refresh PATH` to capture a new baseline. On a conflict or uncertain result use `{tool} inspect PATH`; never replay the write blindly or reset uncertain state. Hashes, assignment details and retry identity are product-owned. A file edit does not submit your result or complete checks/review. Native tools remain controlled by the host and this route grants no OS sandbox permission."
+        ) + &format!("\nMANAGED FILE TOOL: {tool_path}\n")
     } else {
         String::new()
     };

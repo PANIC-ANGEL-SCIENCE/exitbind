@@ -40,6 +40,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] (repair and supersede require both repair terms)"
         }
         ["work", "check"] => "work check WORK",
+        ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE",
         ["work", "expand"] => "work expand WORK REFERENCE",
         ["work", "resume"] => "work resume [--json] [--full]",

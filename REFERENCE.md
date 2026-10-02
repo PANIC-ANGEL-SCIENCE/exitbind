@@ -603,12 +603,16 @@ journal is a stop, not permission to start another provider process.
 
 Native actions receive complete current project rules and eligible opted-in
 role memory alongside the checked profile and packet. Oversized sources refuse
-launch instead of being truncated. The current worker can use `work write WORK
-ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` with complete
-UTF-8 content on stdin for a product-mediated replacement. The route requires
-the current mutation grant and checks declared paths, protected control files,
-file preconditions and stable operation identity; it does not intercept other
-native tools or remote effects.
+launch instead of being truncated. A native worker also receives an assignment-bound
+file tool. `edit read PATH` captures permitted UTF-8 bytes or explicit absence;
+`edit edit PATH` takes the complete replacement on stdin. The supplied tool owns
+the executable/configuration binding, read baseline and durable retry identity.
+Use `edit inspect PATH` after a conflict or uncertain response, and `edit refresh
+PATH` only for a deliberate new edit after the prior request is resolved.
+It requires the current mutation grant and reuses declared paths, protected
+controls, file preconditions and atomic replacement. Existing expert `work write
+WORK ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` remains
+compatible. Neither route intercepts other native tools or remote effects.
 
 `work world WORK [--plain --reduced-motion]` reads six canonical event motifs.
 `--export --json` omits private task markers and source text. `work next

@@ -161,7 +161,9 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     assert!(first.contains("old accepted rule"));
     assert!(first.contains("requestedNativeBinding"));
     assert!(first.contains("currentWork"));
-    assert!(first.contains("exitbind work write"));
+    assert!(first.contains("supplied managed file tool"));
+    assert!(first.contains("edit PATH"));
+    assert!(!first.contains("--expected-sha256"));
     assert!(first.contains("full replacement content as UTF-8 bytes on stdin"));
     assert!(first.contains("never replay the write blindly"));
 

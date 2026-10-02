@@ -1,4 +1,4 @@
-# Current context, mediated file writes and the quiet hall
+# Current context, managed file edits and the quiet hall
 
 These additions extend the existing Work path. Start with `work next WORK
 --full`, follow its current assignment, and use `work act WORK` for a native
@@ -27,9 +27,51 @@ context is at most 64 KiB. Narrow an explicit selection or split an oversized
 source before trying again. A configured non-Codex runtime cannot be launched
 through the Codex executor.
 
-## Replace one UTF-8 file through the product boundary
+## Read and edit one UTF-8 file
 
-The current worker can replace a file within its declared write paths after
+The supported native worker launch supplies a private file tool bound to that
+assignment. The Lead issues the current worker's mutation permit through the
+existing Work path. Use the supplied tool's exact path as `EDIT` below:
+
+```sh
+"$EDIT" read src/example.txt
+"$EDIT" edit src/example.txt < replacement.txt
+"$EDIT" inspect src/example.txt
+```
+
+`read` returns JSON containing the captured UTF-8 content and an `exists` flag;
+explicit absence supports creation. Prepare the replacement from those bytes.
+Repeated reads retain that baseline rather than silently rebasing an edit onto
+newer disk content. The worker supplies the path and complete replacement,
+without computing hashes, selecting a Work or inventing operation IDs.
+The tool pins its invoking executable and exact configuration, so another
+working directory or `PATH` cannot select another project or binary.
+
+Retry the same submitted replacement using the same command and content.
+A completed replay returns `effect: no-change` without another replacement,
+only while the recorded result remains applicable. Changed parameters refuse.
+For an intentional next edit, `"$EDIT" refresh src/example.txt` captures a new
+baseline and returns its content. A refused stale-read edit preserves the newer
+file; inspect it and refresh before preparing a different replacement.
+
+An unresolved admitted effect, missing effect record or corrupt/missing read
+binding refuses replay and refresh. `inspect` reports the observed file state
+and available request/effect status; unresolved effects require Lead inspection
+and have no automatic reset here. Returning to an old assignment does not
+restore its authority. The managed route enforces permitted observation as well
+as the existing write boundary. A successful edit is separate from worker
+submission, checks, review and acceptance.
+
+Files and replacements are limited to 256 KiB. Private read storage is bounded
+to 64 paths and 2 MiB per assignment, including serialized content. Records live
+under the existing private state namespace, outside tested product inputs;
+they retain file baselines until that task's state is removed. Direct small
+work does not require this tool. Reads performed through unrelated native tools
+are not captured baselines, and other host tools retain their permissions.
+
+## Existing expert replacement command
+
+Expert callers can replace a file within the current worker's declared write paths after
 receiving a mutation permit. Use the exact current assignment from `work next`:
 
 ```sh

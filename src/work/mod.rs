@@ -6,6 +6,7 @@ mod disposition;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
 mod held;
+pub(crate) mod managed_edit;
 mod mutation_response;
 pub(crate) mod packet;
 mod permit_response;

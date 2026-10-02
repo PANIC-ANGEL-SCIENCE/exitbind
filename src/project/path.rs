@@ -92,7 +92,7 @@ impl SecureBytesResult {
 
 /// Read one project-relative regular file through no-follow directory handles.
 pub fn secure_bytes(root: &Path, requested: &str, label: &str) -> Result<Vec<u8>, String> {
-    secure_bytes_result(root, requested, label, true).into_result()
+    secure_bytes_result(root, requested, label, true, None).into_result()
 }
 
 /// Read one project-relative regular file and retain the descriptor-level
@@ -102,7 +102,17 @@ pub(crate) fn secure_bytes_observation(
     requested: &str,
     label: &str,
 ) -> SecureBytesResult {
-    secure_bytes_result(root, requested, label, false)
+    secure_bytes_result(root, requested, label, false, None)
+}
+
+/// The same no-follow observation with a bound on both descriptor reads.
+pub(crate) fn secure_bytes_observation_bounded(
+    root: &Path,
+    requested: &str,
+    label: &str,
+    max_bytes: u64,
+) -> SecureBytesResult {
+    secure_bytes_result(root, requested, label, false, Some(max_bytes))
 }
 
 #[cfg(unix)]
@@ -111,6 +121,7 @@ fn secure_bytes_result(
     requested: &str,
     label: &str,
     canonicalize_root: bool,
+    max_bytes: Option<u64>,
 ) -> SecureBytesResult {
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
@@ -205,15 +216,26 @@ fn secure_bytes_result(
         Err(error) => return classify_io_error(error, label),
     }
     let mut bytes = Vec::new();
-    if let Err(error) = file.read_to_end(&mut bytes) {
+    if let Err(error) = file
+        .by_ref()
+        .take(max_bytes.unwrap_or(u64::MAX).saturating_add(1))
+        .read_to_end(&mut bytes)
+    {
         return classify_io_error(error, label);
     }
     if let Err(error) = file.seek(SeekFrom::Start(0)) {
         return classify_io_error(error, label);
     }
     let mut confirmation = Vec::new();
-    if let Err(error) = file.read_to_end(&mut confirmation) {
+    if let Err(error) = file
+        .by_ref()
+        .take(max_bytes.unwrap_or(u64::MAX).saturating_add(1))
+        .read_to_end(&mut confirmation)
+    {
         return classify_io_error(error, label);
+    }
+    if max_bytes.is_some_and(|max| bytes.len() as u64 > max || confirmation.len() as u64 > max) {
+        return SecureBytesResult::Unreadable(format!("{label} exceeds its byte bound"));
     }
     if bytes != confirmation {
         return SecureBytesResult::Unreadable(format!("{label} changed while reading"));
@@ -222,7 +244,13 @@ fn secure_bytes_result(
 }
 
 #[cfg(not(unix))]
-fn secure_bytes_result(_: &Path, _: &str, label: &str, _: bool) -> SecureBytesResult {
+fn secure_bytes_result(
+    _: &Path,
+    _: &str,
+    label: &str,
+    _: bool,
+    _: Option<u64>,
+) -> SecureBytesResult {
     SecureBytesResult::Unsupported(format!(
         "{label} secure reading requires Unix no-follow support"
     ))
