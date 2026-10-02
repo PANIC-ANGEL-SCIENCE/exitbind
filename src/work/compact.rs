@@ -259,6 +259,7 @@ pub(crate) fn project(
         if let Some(counts) = candidate_counts(response) {
             emergency["candidateCounts"] = counts;
         }
+        omit_false_recovery_requirements(&mut emergency);
         if serialized_len(&emergency)? < MAX_RESPONSE_BYTES {
             return Ok(emergency);
         }
@@ -284,6 +285,7 @@ pub(crate) fn project(
             minimal["candidateCounts"] = counts;
             minimal["omitted"] = json!(["candidate details; use fullCommand"]);
         }
+        omit_false_recovery_requirements(&mut minimal);
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
@@ -308,12 +310,24 @@ pub(crate) fn project(
             fallback["omitted"] =
                 json!(["candidate details; use the required current executable and config"]);
         }
+        omit_false_recovery_requirements(&mut fallback);
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }
         return Ok(fallback);
     }
     Ok(result)
+}
+
+fn omit_false_recovery_requirements(value: &mut Value) {
+    for key in [
+        "fullCommandSameConfigRequired",
+        "fullCommandSameExecutableRequired",
+    ] {
+        if value[key] == false {
+            value.as_object_mut().expect("compact object").remove(key);
+        }
+    }
 }
 
 fn preservation_summary(assignment: &Value) -> Value {
