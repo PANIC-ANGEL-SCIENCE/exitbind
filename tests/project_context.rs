@@ -239,7 +239,7 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(lead_profile.contains("impact map as provisional"));
     assert!(lead_profile.contains("no fixed thinking sequence or model choice"));
     let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
-    assert!(skill.contains("first run `exitbind work next WORK --json --full`"));
+    assert!(skill.contains("first run `exitbind work next WORK --json`"));
     assert!(skill.contains("initialized same-Work cross-host handoff"));
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();

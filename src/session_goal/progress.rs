@@ -377,7 +377,7 @@ fn record_bound_to_work(record: &Value, work: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::project;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     fn record(obligations: serde_json::Value) -> serde_json::Value {
         json!({

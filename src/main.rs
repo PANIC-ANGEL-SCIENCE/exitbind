@@ -115,9 +115,6 @@ fn emit_work_progress(raw: &[std::ffi::OsString], machine: &str) {
     let Ok(progress) = crate::session_goal::progress_for_work(&loaded, work, result) else {
         return;
     };
-    if progress["overall"] == "unavailable" {
-        return;
-    }
     let Some(text) = progress["systemText"].as_str() else {
         return;
     };

@@ -41,8 +41,11 @@ and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
 its distinct decision. The commands below govern host-managed child handoffs,
 not this product-managed Codex route.
 
-For an explicit work locator, first run `exitbind work next WORK --json --full`
-to recover the current action. Use `exitbind work continuation WORK` for an
+For an explicit work locator, first run `exitbind work next WORK --json`
+to recover the bounded current action. Follow `current.details` exact argv for
+complete assignment, evidence and task sections before dependent action or
+review; compact status alone is insufficient. Expert `--full` inspection remains
+available. Use `exitbind work continuation WORK` for an
 initialized same-Work cross-host handoff; follow its `receive` block for binding
 and child preparation. If another goal owns the continuation sidecar, preserve
 it and continue through `work next`. This read-only continuation view carries the original
@@ -137,17 +140,12 @@ projected skill/config, fresh-session discovery, invocation, observed behavior,
 and outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as
 authority; process survival or an agent's report is not acceptance.
 
-For material work, the product may provide this bounded run-progress value:
-
-[Neuro] Exitbind progress: N%.
-
-Exitbind computes that progress and owns the terminal state; never estimate the
-number and never show one when no governed run applies. Supported product and
-host execution renders `presentation.neuro` as a bounded human value. A model
-must not render it, invent a replacement, or narrate it each turn. When
-`phrase` is present, the product may add that one short line in the user's
-language. Say nothing extra when it is absent - repeated reads of an unchanged
-state stay quiet.
+Legacy `presentation.neuro` is retained for machine compatibility and describes
+current-result prerequisite readiness. It is not overall-goal completion,
+elapsed effort or a delivery estimate. The normal human line comes from the
+product's English `goalProgress.systemText`; a model must not render the legacy
+percentage, invent a replacement or narrate progress each turn. Optional
+phrases and terminal state remain product-owned.
 When `presentation.goalProgress` is present, the product has already generated
 its bounded English `systemText` from the canonical external goal and Lead task
 records. Supported native and host paths surface that text automatically; do
