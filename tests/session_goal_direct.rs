@@ -115,7 +115,10 @@ fn unrelated_canonical_goal_is_not_projected_into_a_work_packet() {
         "--check-command",
         "true",
     ]);
-    let progress = &started["next"]["packet"]["goalProgress"];
+    assert!(started["next"]["packet"].get("goalProgress").is_none());
+    assert!(!started.to_string().contains("Private external goal"));
+    assert!(!started.to_string().contains("Private task"));
+    let progress = &started["next"]["goalProgress"];
     assert_eq!(progress["overall"], "unavailable");
     assert_eq!(progress["goal"], Value::Null);
     assert_eq!(progress["decomposition"]["available"], false);
