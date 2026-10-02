@@ -109,7 +109,10 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
     let state = if next["packet"].get("pendingDisposition").is_some() {
         "pending_review_finding"
     } else if next["action"] == "lead_decision"
-        && next["progress"]["reason"]["code"] == "check_failed"
+        && matches!(
+            next["progress"]["reason"]["code"].as_str(),
+            Some("check_failed" | "preservation_failed")
+        )
     {
         "failed_check"
     } else if next["action"] == "lead_decision" && outcomes.contains(&"scoped") {

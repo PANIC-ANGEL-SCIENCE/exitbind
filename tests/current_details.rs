@@ -93,11 +93,12 @@ impl Fixture {
         let _: Value = serde_json::from_slice(&output.stdout).unwrap();
     }
     fn detail(&self, next: &Value, section: &str) -> (Value, usize) {
-        let (value, calls, _) = self.detail_metrics(next, section);
+        let (value, calls, _, _) = self.detail_metrics(next, section);
         (value, calls)
     }
-    fn detail_metrics(&self, next: &Value, section: &str) -> (Value, usize, usize) {
+    fn detail_metrics(&self, next: &Value, section: &str) -> (Value, usize, usize, usize) {
         let mut transport_bytes = 0;
+        let mut peak_bytes = 0;
         let mut route = next["current"]["details"][section].clone();
         let mut bytes = Vec::new();
         let mut calls = 0;
@@ -121,6 +122,7 @@ impl Fixture {
             assert!(output.status.success(), "{output:?}");
             assert!(output.stdout.len() <= 64 * 1024);
             transport_bytes += output.stdout.len();
+            peak_bytes = peak_bytes.max(output.stdout.len());
             let page: Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(page["offset"], bytes.len());
             assert_eq!(page["binding"], next["current"]["binding"]);
@@ -149,6 +151,7 @@ impl Fixture {
             serde_json::from_slice(&bytes).unwrap(),
             calls,
             transport_bytes,
+            peak_bytes,
         )
     }
     fn ledgers(&self) -> Vec<(PathBuf, Vec<u8>)> {
@@ -427,9 +430,9 @@ fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() 
     let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(detail["complete"], true);
     assert!(output.stdout.len() <= 256 * 1024);
-    let (legacy_assignment, ac, ab) = fixture.detail_metrics(&next, "assignment");
-    let (legacy_evidence, ec, eb) = fixture.detail_metrics(&next, "evidence");
-    let (legacy_tasks, tc, tb) = fixture.detail_metrics(&next, "tasks");
+    let (legacy_assignment, ac, ab, ap) = fixture.detail_metrics(&next, "assignment");
+    let (legacy_evidence, ec, eb, ep) = fixture.detail_metrics(&next, "evidence");
+    let (legacy_tasks, tc, tb, tp) = fixture.detail_metrics(&next, "tasks");
     let mut assignment = detail["sections"]["assignment"].clone();
     let context = &mut assignment["assignment"]["context"];
     for (alias, original) in [
@@ -492,7 +495,15 @@ fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() 
         "R23_EQUIVALENT_TRANSPORT {}",
         json!({"legacyReads": ac+ec+tc,
         "legacyBytes": ab+eb+tb, "readableReads": 1, "readableBytes": output.stdout.len(),
-        "artifactBytes": scope.len(), "taskCount": 45})
+        "artifactBytes": scope.len(), "taskCount": 45,
+        "setupStatusBytes": serde_json::to_vec(&next).unwrap().len()+1,
+        "legacyTotalReads": ac+ec+tc+1, "readableTotalReads": 2,
+        "legacyTotalBytes": ab+eb+tb+serde_json::to_vec(&next).unwrap().len()+1,
+        "readableTotalBytes": output.stdout.len()+serde_json::to_vec(&next).unwrap().len()+1,
+        "legacyPeakPayloadBytes": ap.max(ep).max(tp), "readablePeakPayloadBytes": output.stdout.len(),
+        "legacyDecodedSectionBytes": serde_json::to_vec(&legacy_assignment).unwrap().len()+
+            serde_json::to_vec(&legacy_evidence).unwrap().len()+serde_json::to_vec(&legacy_tasks).unwrap().len(),
+        "cache": "none"})
     );
     fixture.json(&[
         "goal",

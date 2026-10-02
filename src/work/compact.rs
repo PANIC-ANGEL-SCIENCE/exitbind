@@ -164,6 +164,9 @@ pub(crate) fn project(
 
     let mut result = Value::Object(result);
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        result["current"] = minimal_current(&result["current"]);
+    }
+    if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         if let Some(continuation) = response.get("continuation") {
             let route = continuation_route(
                 config_path,
@@ -266,13 +269,22 @@ pub(crate) fn project(
             "current": minimal_current(&response["next"]["current"]),
             "status": response["status"],
             "work": response["work"],
+            "obligations": {"remaining": response["residual"]["remaining"].as_array().map(|items| items.iter().take(8).cloned().collect::<Vec<_>>()),
+                "remainingOmissions": response["residual"]["remaining"].as_array().map_or(0, |items| items.len().saturating_sub(8))},
             "next": minimal_next(&result["next"]),
             "nextAction": {"command": null, "summary": "Open the full response with fullCommand."},
             "humanHelp": {
+                "ownerDecision": response["residual"]["humanHelp"]["ownerDecision"],
+                "whatHappened": response["residual"]["humanHelp"]["whatHappened"].as_str().map(|text| bounded_text(text, 512)),
+                "nextAction": {"actor": response["residual"]["humanHelp"]["nextAction"]["actor"],
+                    "summary": response["residual"]["humanHelp"]["nextAction"]["summary"].as_str().map(|text| bounded_text(text, 512))},
                 "preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"]),
                 "checkInstruction": response["residual"]["humanHelp"]["checkInstruction"],
             },
             "presentation": {
+                "state": response["presentation"]["state"],
+                "exitState": response["presentation"]["exitState"],
+                "progress": response["presentation"]["progress"],
                 "terminal": response["presentation"]["terminal"],
                 "goalProgress": compact_goal_progress(&response["presentation"]["goalProgress"]),
             },

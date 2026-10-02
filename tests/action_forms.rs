@@ -376,3 +376,62 @@ fn final_acceptance_form_executes_after_current_check_and_review() {
     );
     assert_eq!(result["presentation"]["terminal"], "EXIT READY");
 }
+
+#[test]
+fn failed_preservation_check_uses_the_same_bound_rework_form() {
+    let fixture = Fixture::new("action-form-preservation");
+    let started = fixture.json(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "preserve identity",
+            "--check-command",
+            "true",
+            "--preserve-requirement",
+            "identity:keep the record",
+            "--preservation-check-command",
+            "false",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    let initial = fixture.next(work);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope agreed")],
+        b"scope",
+    );
+    let worker = fixture.next(work);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation",
+    );
+    fixture.json(&["work", "check", work], b"");
+    let checked = fixture.call(&["work", "check", work], b"");
+    assert!(
+        !checked.status.success(),
+        "failed preservation check returned success"
+    );
+    let lead = fixture.next(work);
+    assert_eq!(lead["progress"]["reason"]["code"], "preservation_failed");
+    assert_eq!(lead["current"]["actionForm"]["state"], "failed_check");
+    let repaired = fixture.execute_choice(
+        &fixture.choice(&lead, "rework"),
+        &[("<REASON>", "repair the preservation counterexample")],
+        b"preservation repair boundary",
+    );
+    assert_eq!(repaired["next"]["role"], "worker");
+}
