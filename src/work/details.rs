@@ -149,7 +149,7 @@ fn section(
             "assignment": next["packet"], "outcomes": next["outcomes"],
             "residual": super::packet::project(work, snapshot, next)?})),
         "tasks" => crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"]),
-        "evidence" => evidence(loaded, work, snapshot, next),
+        "evidence" => evidence(loaded, snapshot, next),
         _ => Err("unknown work section".into()),
     }
 }
@@ -163,12 +163,7 @@ fn verified(loaded: &Loaded, artifact: &Value, label: &str) -> Result<Value, Str
         "encoding": "hex", "contentHex": hex(&read.preview), "complete": true}))
 }
 
-fn evidence(
-    loaded: &Loaded,
-    work: &str,
-    snapshot: &RunSnapshot,
-    next: &Value,
-) -> Result<Value, String> {
+fn evidence(loaded: &Loaded, snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
     let view = snapshot.inspect_view();
     let events = view["events"]
         .as_array()
