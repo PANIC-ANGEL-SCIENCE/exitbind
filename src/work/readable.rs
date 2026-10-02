@@ -105,7 +105,7 @@ pub(crate) fn expand(
     if binding != expected {
         return Err("work detail reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
     }
-    let sections = grouped_sections(loaded, work, snapshot, &canonical, &binding)?;
+    let sections = grouped_sections(loaded, work, snapshot, &canonical, binding)?;
     super::details::ensure_current_config(loaded)?;
     let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
     let fresh = super::next_from(loaded, work, &fresh_snapshot)?;
