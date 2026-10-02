@@ -734,11 +734,22 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     assert_eq!(view["wholeGoalReady"], false);
     let entry = f.call(&["work", "next", &f.work]);
     assert!(entry.status.success(), "{entry:?}");
+    assert!(entry.stdout.len() <= 8 * 1024);
     let entry: Value = serde_json::from_slice(&entry.stdout).unwrap();
-    assert_eq!(
-        entry["continuation"]["corrections"][0]["id"],
-        "no-publication"
-    );
+    let before = f.history();
+    let continuation = if entry["continuation"]["requiresExpansion"] == true {
+        let argv = entry["continuation"]["command"].as_array().unwrap();
+        let expanded = Command::new(argv[0].as_str().unwrap())
+            .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
+            .output()
+            .unwrap();
+        assert!(expanded.status.success(), "{expanded:?}");
+        serde_json::from_slice::<Value>(&expanded.stdout).unwrap()
+    } else {
+        entry["continuation"].clone()
+    };
+    assert_eq!(continuation["corrections"][0]["id"], "no-publication");
+    assert_eq!(f.history(), before);
 }
 
 #[test]

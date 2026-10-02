@@ -149,6 +149,27 @@ pub(crate) fn project(
 
     let mut result = Value::Object(result);
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        if let Some(continuation) = response.get("continuation") {
+            let route = continuation_route(
+                config_path,
+                vec![
+                    "work".into(),
+                    "continuation".into(),
+                    response["work"].as_str().unwrap_or("").into(),
+                ],
+            );
+            result["continuation"] = json!({
+                "work": continuation["work"],
+                "goalRevision": continuation["goalRevision"],
+                "requiresExpansion": true,
+                "command": route["command"],
+                "sameConfigRequired": route["sameConfigRequired"],
+                "sameExecutableRequired": route["sameExecutableRequired"],
+            });
+            result["truncated"] = json!(true);
+        }
+    }
+    if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         // Full preservation constraints are still available through fullCommand.
         // Both aliases must shrink together so neither can defeat the bound.
         if let Some(assignment) = result.pointer_mut("/humanHelp/preservationAssignment") {
@@ -226,6 +247,7 @@ pub(crate) fn project(
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         let mut emergency = json!({
             "compact": true,
+            "continuation": result["continuation"],
             "current": response["next"]["current"],
             "status": response["status"],
             "work": response["work"],
@@ -269,6 +291,7 @@ pub(crate) fn project(
             .filter(|value| value.len() <= 128);
         let mut minimal = json!({
             "compact": true,
+            "continuation": result["continuation"],
             "status": "unresolved",
             "current": response["next"]["current"],
             "work": work,
@@ -294,6 +317,7 @@ pub(crate) fn project(
         // and require the caller to supply the exact current config value.
         let mut fallback = json!({
             "compact": true,
+            "continuation": result["continuation"],
             "status": "unresolved",
             "current": response["next"]["current"],
             "work": work,
