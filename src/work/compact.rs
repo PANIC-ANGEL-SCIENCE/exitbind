@@ -251,11 +251,7 @@ pub(crate) fn project(
             "current": response["next"]["current"],
             "status": response["status"],
             "work": response["work"],
-            "next": {
-                "action": response["next"]["action"],
-                "assignment": response["next"]["assignment"],
-                "held": response["next"]["held"],
-            },
+            "next": minimal_next(&result["next"]),
             "nextAction": {"command": null, "summary": "Open the full response with fullCommand."},
             "humanHelp": {
                 "preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"]),
@@ -480,12 +476,21 @@ fn minimal_next(next: &Value) -> Value {
         "resolvedActor",
         "check",
         "held",
+        "heldResultsCount",
+        "heldResultsOmissions",
+        "requiresExpansion",
+        "constraintsOmitted",
     ] {
         copy_if_present(next, &mut result, key);
     }
     if let Some(held) = next.get("heldResults").and_then(Value::as_array) {
         result.insert("heldResultsCount".into(), json!(held.len()));
-        result.insert("heldResultsOmissions".into(), json!(held.len()));
+        if serde_json::to_vec(held).is_ok_and(|bytes| bytes.len() <= 1024) {
+            result.insert("heldResults".into(), json!(held));
+            result.insert("heldResultsOmissions".into(), json!(0));
+        } else {
+            result.insert("heldResultsOmissions".into(), json!(held.len()));
+        }
     }
     if let Some(packet) = next.get("packet") {
         for key in ["stage", "attempt"] {
