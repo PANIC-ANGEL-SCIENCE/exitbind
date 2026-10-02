@@ -228,6 +228,8 @@ fn stale_and_absent_read_conflicts_preserve_external_creator() {
     fs::write(f.root.join("src/a.txt"), "A").unwrap();
     assert_eq!(f.edit_ok("read", "src/a.txt", b"")["content"], "A");
     fs::write(f.root.join("src/a.txt"), "B").unwrap();
+    let prepared = f.ok(&["work", "file", "prepare", &f.work, &f.assignment], b"");
+    assert_eq!(prepared["tool"], f.tool.to_str().unwrap());
     assert_eq!(f.edit_ok("read", "src/a.txt", b"")["content"], "A");
     refused(
         f.edit("edit", "src/a.txt", b"based on A"),
@@ -437,6 +439,97 @@ fn missing_corrupt_read_and_binding_state_cannot_be_recreated() {
         f.call(&["work", "file", "prepare", &f.work, &f.assignment], b""),
         "binding is missing",
     );
+}
+
+#[test]
+fn whole_session_loss_and_interrupted_initialization_refuse_reconstruction() {
+    for loss in ["session", "subtree", "interrupted"] {
+        let f = Fixture::new(false, false);
+        f.permit();
+        fs::write(f.root.join("src/a.txt"), "A").unwrap();
+        f.edit_ok("read", "src/a.txt", b"");
+        fs::write(f.root.join("src/a.txt"), "external B").unwrap();
+        let directory = f.tool.parent().unwrap();
+        fs::remove_dir_all(if loss == "subtree" {
+            directory.parent().unwrap()
+        } else {
+            directory
+        })
+        .unwrap();
+        if loss == "interrupted" {
+            fs::create_dir(directory).unwrap();
+        }
+        refused(
+            f.call(&["work", "file", "prepare", &f.work, &f.assignment], b""),
+            "missing",
+        );
+        let provider = f.root.join("must-not-launch");
+        fs::write(&provider, "#!/bin/sh\ntouch provider-started\nexit 99\n").unwrap();
+        fs::set_permissions(&provider, fs::Permissions::from_mode(0o700)).unwrap();
+        refused(
+            f.call(
+                &[
+                    "work",
+                    "act",
+                    &f.work,
+                    "--codex-bin",
+                    provider.to_str().unwrap(),
+                ],
+                b"",
+            ),
+            "missing",
+        );
+        assert!(!f.root.join("provider-started").exists());
+        assert!(!f.reads_path().exists());
+        assert_eq!(
+            fs::read_to_string(f.root.join("src/a.txt")).unwrap(),
+            "external B"
+        );
+    }
+}
+
+#[test]
+fn preparation_registry_loss_corruption_or_mismatch_refuses_intact_session() {
+    for fault in ["missing", "corrupt", "changed", "symlink"] {
+        let f = Fixture::new(false, false);
+        f.permit();
+        f.edit_ok("read", "src/a.txt", b"");
+        let registry = fs::read_dir(f.root.join(".exitbind/runs"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .contains(".managed-")
+            })
+            .unwrap();
+        match fault {
+            "missing" => fs::remove_file(&registry).unwrap(),
+            "corrupt" => fs::write(&registry, "{").unwrap(),
+            "changed" => {
+                let mut binding: Value =
+                    serde_json::from_slice(&fs::read(&registry).unwrap()).unwrap();
+                binding["assignment"] = json!("changed");
+                fs::write(&registry, binding.to_string()).unwrap();
+            }
+            _ => {
+                let original = fs::read(&registry).unwrap();
+                let outside = f.root.join("outside-registry");
+                fs::write(&outside, original).unwrap();
+                fs::remove_file(&registry).unwrap();
+                std::os::unix::fs::symlink(outside, &registry).unwrap();
+            }
+        }
+        let reason = if fault == "symlink" { "unsafe" } else { fault };
+        refused(
+            f.call(&["work", "file", "prepare", &f.work, &f.assignment], b""),
+            reason,
+        );
+        refused(f.edit("edit", "src/a.txt", b"replacement"), reason);
+        assert!(!f.root.join("src/a.txt").exists());
+    }
 }
 
 #[test]

@@ -108,6 +108,83 @@ pub(super) fn binding(loaded: &Loaded, work: &str, assignment: &str) -> Result<B
     })
 }
 
+/// Immutable preparation anchor beside the canonical Work ledger, independent
+/// of the disposable session directory. Caller holds the canonical Work lock.
+pub(super) fn preparation_path(
+    loaded: &Loaded,
+    ledger: &crate::run::ledger::LedgerPath,
+    session: &str,
+) -> Result<String, String> {
+    if !digest(session) {
+        return Err("managed edit session is invalid".into());
+    }
+    let relative = ledger
+        .path
+        .strip_prefix(&loaded.state_root)
+        .map_err(|_| "managed preparation escapes StateRoot")?
+        .to_str()
+        .ok_or("managed preparation path is not UTF-8")?;
+    Ok(format!("{relative}.managed-{session}.json"))
+}
+
+pub(super) fn preparation(
+    loaded: &Loaded,
+    ledger: &crate::run::ledger::LedgerPath,
+    session: &str,
+    binding: &Binding,
+) -> Result<bool, String> {
+    let Some(bytes) = observe(
+        &loaded.state_root,
+        &preparation_path(loaded, ledger, session)?,
+        16 * 1024,
+    )?
+    else {
+        return Ok(false);
+    };
+    let saved: Binding = serde_json::from_slice(&bytes)
+        .map_err(|_| "managed preparation registry is corrupt; no session reconstructed")?;
+    if &saved != binding {
+        return Err(
+            "managed preparation registry binding changed; no session reconstructed".into(),
+        );
+    }
+    Ok(true)
+}
+
+pub(super) fn record_preparation(
+    loaded: &Loaded,
+    ledger: &crate::run::ledger::LedgerPath,
+    session: &str,
+    binding: &Binding,
+) -> Result<(), String> {
+    use std::io::Write;
+    let target = loaded
+        .state_root
+        .join(preparation_path(loaded, ledger, session)?);
+    let parent = target
+        .parent()
+        .ok_or("managed preparation parent missing")?;
+    crate::project::managed_files::ensure_state_directory(&loaded.state_root, parent)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let mut file = options.open(&target).map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec(binding).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    // Refuse on failed durability, leaving the anchor unavailable rather than
+    // removing it and mistaking an interrupted preparation for first use.
+    file.sync_all().map_err(|e| e.to_string())?;
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| e.to_string())
+}
+
 fn text(path: PathBuf) -> Result<String, String> {
     path.into_os_string()
         .into_string()

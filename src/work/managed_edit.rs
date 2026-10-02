@@ -22,11 +22,17 @@ pub(crate) fn prepare(loaded: &Loaded, work: &str, assignment: &str) -> Result<V
         let parent = directory.parent().ok_or("managed edit parent missing")?;
         managed_files::ensure_state_directory(&loaded.state_root, parent)?;
         let tool = directory.join("edit");
+        let prepared = state::preparation(loaded, &lock, &session, &binding)?;
         let script = format!("#!/bin/sh\nif [ \"$#\" -ne 2 ]; then printf '%s\\n' 'Usage: edit read|refresh|edit|inspect PATH' >&2; exit 2; fi\nexec {} work file \"$1\" {} \"$2\" --config {}\n",
             crate::presentation::shell_quote(&binding.executable),
             crate::presentation::shell_quote(&session),
             crate::presentation::shell_quote(&binding.config));
         if directory.exists() {
+            if !prepared {
+                return Err(
+                    "managed preparation registry is missing; no session reconstructed".into(),
+                );
+            }
             if state::load_binding(loaded, &session)? != binding {
                 return Err("managed edit binding changed; no new session created".into());
             }
@@ -42,6 +48,12 @@ pub(crate) fn prepare(loaded: &Loaded, work: &str, assignment: &str) -> Result<V
                 );
             }
         } else {
+            if prepared {
+                return Err(
+                    "managed edit session state is missing; no session reconstructed".into(),
+                );
+            }
+            state::record_preparation(loaded, &lock, &session, &binding)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::DirBuilderExt;
@@ -110,6 +122,9 @@ pub(crate) fn interact(
     let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
     run::ledger::with_lock(&lock, || {
         let assignment = current_worker(loaded, &binding, &lock)?;
+        if !state::preparation(loaded, &lock, session, &binding)? {
+            return Err("managed preparation registry is missing; no edit admitted".into());
+        }
         let observable = assignment["declaredBoundary"]["observe"]
             .as_array()
             .is_some_and(|patterns| {

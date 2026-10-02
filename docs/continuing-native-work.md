@@ -62,6 +62,14 @@ restore its authority. The managed route enforces permitted observation as well
 as the existing write boundary. A successful edit is separate from worker
 submission, checks, review and acceptance.
 
+An immutable preparation record beside the canonical Work ledger is synced
+before session initialization. Losing the session directory, or interrupting
+its first initialization, refuses preparation and native launch rather than
+recreating read history. A missing, corrupt or mismatched preparation record
+also refuses an intact session. Simultaneous loss of both that record and the
+session cannot be distinguished from first use; preserve private StateRoot
+integrity rather than deleting selected task records to recover an edit.
+
 Files and replacements are limited to 256 KiB. Private read storage is bounded
 to 64 paths and 2 MiB per assignment, including serialized content. Records live
 under the existing private state namespace, outside tested product inputs;
