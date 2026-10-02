@@ -7,15 +7,17 @@ Exitbind — No result exits unbound.
 
 Bind the evidence to the exact result before exit.
 
-For material work, the default update is concise:
+For material work, supported product and host paths automatically surface a
+concise English status derived from the external user's whole goal, the Lead's
+divided tasks, and the current result prerequisite state:
 
 ```text
-Neuro
-Exitbind progress: N%.
+Goal: IN PROGRESS | Ship a change | Tasks: 2/3 complete | build=complete, review=complete, delivery=open | Result readiness: IN_PROGRESS
 ```
 
-Neuro is an optional narrator, never protocol identity or authority. Exitbind
-owns the weighted progress and terminal decision.
+The product owns this status and says `unavailable` when the canonical goal or
+decomposition is missing. Models do not calculate percentages, remember a
+progress command, or render a progress explanation each turn.
 
 Holytail preservation detail is exceptional: surface it only when requested or
 when a material preservation failure, regression, unresolved invariant, or

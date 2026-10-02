@@ -73,6 +73,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",
         ["context", "sensor-request"] => "context sensor-request --state FILE",
         ["context", "seal"] => "context seal --event FILE",
+        ["host"] => "host status [--hosts HOSTS] | host install [--hosts HOSTS] | host <child> --help",
         ["host", "status"] => "host status [--hosts HOSTS]",
         ["host", "install"] => "host install [--hosts HOSTS]",
         ["hooks", "plan"] => "hooks plan --hosts HOSTS",
