@@ -58,12 +58,14 @@ fn parent_and_native_snapshots_never_become_additive_values() {
     let mut overlaps = BTreeSet::new();
     let mut turns = BTreeSet::new();
     let mut cumulative = std::collections::BTreeMap::new();
+    let mut representations = std::collections::BTreeMap::new();
     let (_, parent_values) = numeric_event(
         &normalize_event("smw_123", &parent).unwrap(),
         &mut ids,
         &mut overlaps,
         &mut turns,
         &mut cumulative,
+        &mut representations,
     )
     .unwrap();
     let (_, child_values) = numeric_event(
@@ -72,6 +74,7 @@ fn parent_and_native_snapshots_never_become_additive_values() {
         &mut overlaps,
         &mut turns,
         &mut cumulative,
+        &mut representations,
     )
     .unwrap();
     assert!(parent_values.is_some());
@@ -86,6 +89,7 @@ fn parent_and_native_snapshots_never_become_additive_values() {
         &mut overlaps,
         &mut turns,
         &mut cumulative,
+        &mut representations,
     )
     .unwrap();
     assert!(native_values.is_none());
@@ -100,12 +104,14 @@ fn failed_execution_with_known_delta_remains_additive() {
     let mut overlaps = BTreeSet::new();
     let mut turns = BTreeSet::new();
     let mut cumulative = std::collections::BTreeMap::new();
+    let mut representations = std::collections::BTreeMap::new();
     let (_, values) = numeric_event(
         &normalize_event("smw_123", &failed).unwrap(),
         &mut ids,
         &mut overlaps,
         &mut turns,
         &mut cumulative,
+        &mut representations,
     )
     .unwrap();
     assert_eq!(values, Some([0, 0, 3]));
@@ -119,6 +125,7 @@ fn failed_execution_with_known_delta_remains_additive() {
         &mut overlaps,
         &mut turns,
         &mut cumulative,
+        &mut representations,
     )
     .unwrap();
     assert!(values.is_none());
@@ -130,6 +137,7 @@ fn cumulative_and_per_turn_contracts_derive_only_known_deltas() {
     let mut overlaps = BTreeSet::new();
     let mut turns = BTreeSet::new();
     let mut counters = std::collections::BTreeMap::new();
+    let mut representations = std::collections::BTreeMap::new();
 
     let mut cumulative = event();
     cumulative["semantics"] = json!("cumulative");
@@ -143,6 +151,7 @@ fn cumulative_and_per_turn_contracts_derive_only_known_deltas() {
         &mut overlaps,
         &mut turns,
         &mut counters,
+        &mut representations,
     )
     .unwrap();
     assert_eq!(first.1, None);
@@ -155,6 +164,7 @@ fn cumulative_and_per_turn_contracts_derive_only_known_deltas() {
         &mut overlaps,
         &mut turns,
         &mut counters,
+        &mut representations,
     )
     .unwrap();
     assert_eq!(second.1, Some([2, 1, 1]));
@@ -171,9 +181,74 @@ fn cumulative_and_per_turn_contracts_derive_only_known_deltas() {
         &mut overlaps,
         &mut turns,
         &mut counters,
+        &mut representations,
     )
     .unwrap();
     assert_eq!(values, Some([0, 0, 3]));
+}
+
+#[test]
+fn mixed_counter_semantics_are_refused_for_one_stream() {
+    let mut cumulative = event();
+    cumulative["id"] = json!("cumulative-100");
+    cumulative["semantics"] = json!("cumulative");
+    cumulative["lifetime"] = json!("session");
+    cumulative["sessionId"] = json!("session-1");
+    cumulative["counterId"] = json!("counter-1");
+    cumulative["values"] = json!({"inputTokens": 100, "cachedInputTokens": 20, "outputTokens": 10});
+    let cumulative = normalize_event("smw_123", &cumulative).unwrap();
+    let mut per_turn = cumulative.clone();
+    per_turn["id"] = json!("per-turn-10");
+    per_turn["semantics"] = json!("per_turn");
+    per_turn["turn"] = json!("turn-1");
+    per_turn["values"] = json!({"inputTokens": 10, "cachedInputTokens": 2, "outputTokens": 1});
+    assert!(validate_monotonic(&[cumulative.clone()], &per_turn).is_err());
+    let mut delta = cumulative.clone();
+    delta["id"] = json!("delta-10");
+    delta["semantics"] = json!("delta");
+    assert!(validate_monotonic(&[cumulative.clone()], &delta).is_err());
+    delta["counterId"] = json!("counter-2");
+    assert!(validate_monotonic(&[cumulative.clone()], &delta).is_ok());
+
+    let mut ids = BTreeSet::new();
+    let mut overlaps = BTreeSet::new();
+    let mut turns = BTreeSet::new();
+    let mut counters = std::collections::BTreeMap::new();
+    let mut representations = std::collections::BTreeMap::new();
+    numeric_event(
+        &cumulative,
+        &mut ids,
+        &mut overlaps,
+        &mut turns,
+        &mut counters,
+        &mut representations,
+    )
+    .unwrap();
+    assert_eq!(
+        numeric_event(
+            &per_turn,
+            &mut ids,
+            &mut overlaps,
+            &mut turns,
+            &mut counters,
+            &mut representations,
+        )
+        .unwrap_err(),
+        "mixed_counter_semantics"
+    );
+    let mut delta = cumulative.clone();
+    delta["id"] = json!("delta-10");
+    delta["semantics"] = json!("delta");
+    delta["counterId"] = json!("counter-2");
+    assert!(numeric_event(
+        &delta,
+        &mut ids,
+        &mut overlaps,
+        &mut turns,
+        &mut counters,
+        &mut representations,
+    )
+    .is_ok());
 }
 
 #[test]
@@ -223,6 +298,7 @@ fn per_turn_streams_count_same_turn_once_per_session() {
     let mut overlaps = BTreeSet::new();
     let mut turns = BTreeSet::new();
     let mut counters = std::collections::BTreeMap::new();
+    let mut representations = std::collections::BTreeMap::new();
     assert_eq!(
         numeric_event(
             &normalize_event("smw_123", &first).unwrap(),
@@ -230,6 +306,7 @@ fn per_turn_streams_count_same_turn_once_per_session() {
             &mut overlaps,
             &mut turns,
             &mut counters,
+            &mut representations,
         )
         .unwrap()
         .1,
@@ -242,6 +319,7 @@ fn per_turn_streams_count_same_turn_once_per_session() {
             &mut overlaps,
             &mut turns,
             &mut counters,
+            &mut representations,
         )
         .unwrap()
         .1,
@@ -280,6 +358,60 @@ fn native_account_redacts_unknown_scalars_and_gaps() {
         "status":"observed", "usage":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1}
     }));
     assert_eq!(missing["status"], "missing");
+}
+
+#[test]
+fn native_record_redacts_nested_siblings_and_keeps_valid_scalars() {
+    let account = json!({
+        "status":"observed", "source":"native_observation", "scope":"native_turn",
+        "counterSemantics":"provider_turn_snapshot", "usage":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1},
+        "coverage":{"turn":"completed","gaps":[],"unobservedItems":0}
+    });
+    let malformed = json!({
+        "attempt":{"rawSentinel":"secret"},
+        "sessionMode":{"rawSentinel":"secret"},
+        "adapterVersion":{"rawSentinel":"secret"},
+        "goalId":{"rawSentinel":"secret"},
+        "taskId":{"rawSentinel":"secret"},
+        "role":{"rawSentinel":"secret"},
+        "observation":{"turn":{"rawSentinel":"secret"}}
+    });
+    let bounded = native_record(
+        &malformed,
+        "assignment-1",
+        "operation-1",
+        "implementation",
+        true,
+        &account,
+    );
+    assert!(bounded["attempt"].is_null());
+    assert!(bounded["sessionMode"].is_null());
+    assert!(bounded["adapterVersion"].is_null());
+    assert!(bounded["goalId"].is_null());
+    assert!(bounded["taskId"].is_null());
+    assert!(bounded["role"].is_null());
+    assert!(bounded["turn"].is_null());
+    assert!(!serde_json::to_string(&bounded)
+        .unwrap()
+        .contains("rawSentinel"));
+
+    let valid = json!({
+        "attempt":2, "sessionMode":"persistent", "adapterVersion":"codex-1",
+        "goalId":"goal-1", "taskId":"task-1", "role":"worker",
+        "observation":{"turn":"completed"}
+    });
+    let bounded = native_record(
+        &valid,
+        "assignment-1",
+        "operation-1",
+        "implementation",
+        true,
+        &account,
+    );
+    assert_eq!(bounded["attempt"], 2);
+    assert_eq!(bounded["sessionMode"], "persistent");
+    assert_eq!(bounded["adapterVersion"], "codex-1");
+    assert_eq!(bounded["turn"], "completed");
 }
 
 #[test]

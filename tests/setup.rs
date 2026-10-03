@@ -212,6 +212,34 @@ fn setup_preserves_custom_profile_and_reports_it_on_repeat() {
 }
 
 #[test]
+fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop() {
+    let root = support::temp("setup-fresh-no-host");
+    let first = setup_without_host(&root, true, true);
+    assert!(first.status.success(), "{}", text(&first));
+    assert!(text(&first).contains("\"status\":\"applied\""));
+    assert!(text(&first).contains("\"configChanged\":true"));
+    let config = fs::read(root.join("exitbind.json")).unwrap();
+    let modified = fs::metadata(root.join("exitbind.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
+
+    let repeat = setup_without_host(&root, true, true);
+    assert!(repeat.status.success(), "{}", text(&repeat));
+    assert!(text(&repeat).contains("\"status\":\"unchanged\""));
+    assert!(text(&repeat).contains("\"configChanged\":false"));
+    assert_eq!(fs::read(root.join("exitbind.json")).unwrap(), config);
+    assert_eq!(
+        fs::metadata(root.join("exitbind.json"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        modified
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn setup_reports_missing_selected_host_path_without_claiming_activation() {
     let root = support::temp("setup-path");
     let output = setup_missing_path_host(&root);

@@ -185,3 +185,97 @@ fn work_usage_records_a_direct_observation_without_relaunching_work() {
     assert_eq!(goal_details["recordCount"], 1);
     fs::remove_dir_all(project.root).unwrap();
 }
+
+#[test]
+fn goal_usage_rejects_mixed_counter_representations_and_keeps_valid_delta() {
+    let project = Project::new("goal-usage-counter-contract");
+    project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "counter-goal",
+            "--goal",
+            "measure one counter stream",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    let record = |event: Value| {
+        let input = format!("{}\n", serde_json::to_string(&event).unwrap());
+        project.value(
+            &[
+                "goal",
+                "usage",
+                "--goal-id",
+                "counter-goal",
+                "--apply",
+                "--json",
+            ],
+            Some(&input),
+        )
+    };
+    record(json!({
+        "id":"counter-100", "source":"host_reported", "scope":"direct",
+        "phase":"implementation", "status":"observed", "semantics":"cumulative",
+        "lifetime":"session", "sessionId":"session-1", "counterId":"counter-1",
+        "adapterVersion":"codex-1",
+        "values":{"inputTokens":100,"cachedInputTokens":20,"outputTokens":10}
+    }));
+    record(json!({
+        "id":"counter-110", "source":"host_reported", "scope":"direct",
+        "phase":"implementation", "status":"observed", "semantics":"cumulative",
+        "lifetime":"session", "sessionId":"session-1", "counterId":"counter-1",
+        "adapterVersion":"codex-1",
+        "values":{"inputTokens":110,"cachedInputTokens":25,"outputTokens":20}
+    }));
+    let details = project.value(&["goal", "usage", "--goal-id", "counter-goal"], None);
+    assert_eq!(details["totals"]["inputTokens"], 10);
+    assert_eq!(details["totals"]["outputTokens"], 10);
+    assert_eq!(details["totals"]["totalTokens"], 20);
+
+    let mixed = json!({
+        "id":"per-turn-10", "source":"host_reported", "scope":"direct",
+        "phase":"implementation", "status":"observed", "semantics":"per_turn",
+        "lifetime":"session", "sessionId":"session-1", "counterId":"counter-1",
+        "adapterVersion":"codex-1", "turn":"turn-1",
+        "values":{"inputTokens":10,"cachedInputTokens":2,"outputTokens":1}
+    });
+    let input = format!("{}\n", serde_json::to_string(&mixed).unwrap());
+    let rejected = project.call(
+        &[
+            "goal",
+            "usage",
+            "--goal-id",
+            "counter-goal",
+            "--apply",
+            "--json",
+        ],
+        Some(&input),
+    );
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("mixes delta, cumulative, and per_turn")
+    );
+    let mut mixed_delta = mixed;
+    mixed_delta["id"] = json!("delta-10");
+    mixed_delta["semantics"] = json!("delta");
+    let input = format!("{}\n", serde_json::to_string(&mixed_delta).unwrap());
+    let rejected = project.call(
+        &[
+            "goal",
+            "usage",
+            "--goal-id",
+            "counter-goal",
+            "--apply",
+            "--json",
+        ],
+        Some(&input),
+    );
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("mixes delta, cumulative, and per_turn")
+    );
+    fs::remove_dir_all(project.root).unwrap();
+}

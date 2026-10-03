@@ -475,13 +475,17 @@ mod tests {
                 preservation_check_command: None,
                 preservation_proof_origin: None,
                 basis: None,
-                review_policy: Some("omitted"),
+                review_policy: None,
             },
         )
         .unwrap();
         let work = started["work"].as_str().unwrap();
+        let context_path = format!(
+            "{}/context-scope.md",
+            crate::project::layout_types::state_namespace()
+        );
         std::fs::write(
-            root.join(".exitbind/context-scope.md"),
+            root.join(&context_path),
             "Exercise current project rule reads in a worker assignment.\n",
         )
         .unwrap();
@@ -490,7 +494,7 @@ mod tests {
             "lead",
             &crate::work::resolve(&loaded, work).unwrap(),
             "scoped",
-            ".exitbind/context-scope.md",
+            &context_path,
             Some("state"),
             None,
             None,

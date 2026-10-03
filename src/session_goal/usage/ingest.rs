@@ -24,6 +24,67 @@ const NATIVE_LABELS: [&str; 6] = [
     "observed_or_missing",
     "replayed",
 ];
+const NATIVE_SESSION_MODES: [&str; 3] = ["persistent", "ephemeral", "stateless"];
+
+fn bounded_native_token(value: &Value) -> Option<&str> {
+    value.as_str().filter(|value| {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    })
+}
+
+pub(super) fn bounded_native_metadata(journal: &Value) -> Value {
+    json!({
+        "attempt": journal["attempt"].as_u64().filter(|value| *value <= 65_536),
+        "sessionMode": journal["sessionMode"]
+            .as_str()
+            .filter(|value| NATIVE_SESSION_MODES.contains(value)),
+        "adapterVersion": bounded_native_token(&journal["adapterVersion"]),
+        "turn": journal["observation"]["turn"]
+            .as_str()
+            .filter(|value| matches!(*value, "completed" | "failed" | "interrupted" | "unknown")),
+    })
+}
+
+pub(super) fn native_record(
+    journal: &Value,
+    assignment: &str,
+    operation: &str,
+    phase: &str,
+    completed: bool,
+    raw_account: &Value,
+) -> Value {
+    let account = if raw_account.is_object() {
+        bounded_native_account(raw_account)
+    } else {
+        json!({"status":"missing", "reason":"legacy_observation"})
+    };
+    let metadata = bounded_native_metadata(journal);
+    json!({
+        "id": format!("native:{assignment}:{operation}"),
+        "source": "native_observation",
+        "scope": "native",
+        "phase": phase,
+        "status": if completed { account["status"].as_str().filter(|value| STATUSES.contains(value)).unwrap_or("missing") } else { "failed" },
+        "semantics": "provider_turn_snapshot",
+        "lifetime": "invocation",
+        "goalId": bounded_native_token(&journal["goalId"]),
+        "taskId": bounded_native_token(&journal["taskId"]),
+        "role": journal["role"].as_str().filter(|value| matches!(*value, "lead" | "worker" | "reviewer" | "adviser")),
+        "assignment": assignment,
+        "attempt": metadata["attempt"],
+        "invocation": operation,
+        "turn": metadata["turn"],
+        "sessionMode": metadata["sessionMode"],
+        "adapterVersion": metadata["adapterVersion"],
+        "operation": operation,
+        "account": account,
+        "priorFailure": super::bounded_prior_failure(&journal["priorFailure"]),
+    })
+}
 
 pub(super) fn bounded_native_account(account: &Value) -> Value {
     let mut gaps: Vec<Value> = Vec::new();
@@ -568,7 +629,33 @@ pub(super) fn stream_key(event: &Value) -> Result<String, &'static str> {
     serde_json::to_string(&fields).map_err(|_| "stream_identity")
 }
 
+pub(super) fn declared_stream_key(event: &Value) -> Result<Option<String>, &'static str> {
+    if !event["semantics"]
+        .as_str()
+        .is_some_and(|value| SEMANTICS.contains(&value))
+        || event["counterId"].as_str().is_none()
+    {
+        return Ok(None);
+    }
+    let declared = match event["lifetime"].as_str() {
+        Some("invocation") => true,
+        Some("session") => event["sessionId"].as_str().is_some(),
+        Some("goal") => event["goalId"].as_str().is_some(),
+        _ => false,
+    };
+    declared.then(|| stream_key(event)).transpose()
+}
+
 fn validate_monotonic(existing: &[Value], current: &Value) -> Result<(), String> {
+    let declared = declared_stream_key(current).map_err(str::to_owned)?;
+    if let Some(stream) = declared.as_deref() {
+        if existing.iter().any(|value| {
+            value["semantics"] != current["semantics"]
+                && declared_stream_key(value).ok().flatten().as_deref() == Some(stream)
+        }) {
+            return Err("usage observation mixes delta, cumulative, and per_turn semantics".into());
+        }
+    }
     if current["semantics"] != "cumulative" {
         return Ok(());
     }

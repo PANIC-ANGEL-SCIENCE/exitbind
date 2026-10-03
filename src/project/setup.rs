@@ -150,6 +150,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     if existing.is_none() && !hosts.is_empty() {
         preflight_new_projections(&root, &hosts)?;
     }
+    let initialized = existing.is_none();
     let loaded = if let Some(loaded) = existing {
         loaded
     } else {
@@ -199,8 +200,8 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         }
         Some(status)
     };
-    let (next, config_changed) = updated_config(&loaded.config, facts, roles, &hosts)?;
-    if config_changed {
+    let (next, config_edited) = updated_config(&loaded.config, facts, roles, &hosts)?;
+    if config_edited {
         let mut source = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         source.push('\n');
         let root = fs::canonicalize(&loaded.control_root).map_err(|error| error.to_string())?;
@@ -217,6 +218,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     let projection_changed = projection_before
         .as_ref()
         .is_some_and(projection_needs_write);
+    let config_changed = config_edited || initialized;
     if !hosts.is_empty() {
         let projection = native_profiles::apply_for_hosts(&loaded, &host_refs(&hosts))
             .map_err(|error| format!("setup partially applied: {error}"))?;

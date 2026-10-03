@@ -52,6 +52,7 @@ pub(crate) fn details_for_goal(loaded: &crate::config::Loaded, goal_id: &str) ->
     let mut overlap_ids = BTreeSet::new();
     let mut turn_ids = BTreeSet::new();
     let mut cumulative = BTreeMap::new();
+    let mut representations = BTreeMap::new();
     for event in events {
         if records.len() >= MAX_RECORDS {
             push_gap(&mut gaps, "record_limit");
@@ -63,6 +64,7 @@ pub(crate) fn details_for_goal(loaded: &crate::config::Loaded, goal_id: &str) ->
             &mut overlap_ids,
             &mut turn_ids,
             &mut cumulative,
+            &mut representations,
         ) {
             Ok((record, values)) => {
                 let phase = record["phase"].as_str().unwrap_or("unknown");
@@ -200,6 +202,7 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
     let mut overlap_ids = BTreeSet::new();
     let mut turn_ids = BTreeSet::new();
     let mut cumulative = BTreeMap::new();
+    let mut representations = BTreeMap::new();
     let mut numeric_events = Vec::new();
     match crate::session_goal::read(&loaded.state_root) {
         Ok(Some(goal)) => {
@@ -244,6 +247,7 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
                 &mut overlap_ids,
                 &mut turn_ids,
                 &mut cumulative,
+                &mut representations,
             ) {
                 Ok((record, values)) => {
                     let phase = record["phase"].as_str().unwrap_or("unknown");
@@ -448,27 +452,14 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
             push_gap(&mut gaps, "record_limit");
             continue;
         }
-        native_records.push(json!({
-            "id": format!("native:{assignment}:{operation}"),
-            "source": "native_observation",
-            "scope": "native",
-            "phase": journal_phase(&journal),
-            "status": if completed { account["status"].as_str().filter(|value| STATUSES.contains(value)).unwrap_or("missing") } else { "failed" },
-            "semantics": "provider_turn_snapshot",
-            "lifetime": "invocation",
-            "goalId": journal["goalId"].as_str().filter(|value| !value.is_empty() && value.len() <= 128),
-            "taskId": journal["taskId"].as_str().filter(|value| !value.is_empty() && value.len() <= 128),
-            "role": journal["role"].as_str().filter(|value| !value.is_empty() && value.len() <= 128),
-            "assignment": assignment,
-            "attempt": journal["attempt"],
-            "invocation": operation,
-            "turn": journal["observation"]["turn"],
-            "sessionMode": journal["sessionMode"],
-            "adapterVersion": journal["adapterVersion"],
-            "operation": operation,
-            "account": if account.is_object() { ingest::bounded_native_account(&account) } else { json!({"status":"missing", "reason":"legacy_observation"}) },
-            "priorFailure": bounded_prior_failure(&journal["priorFailure"]),
-        }));
+        native_records.push(ingest::native_record(
+            &journal,
+            assignment,
+            operation,
+            journal_phase(&journal),
+            completed,
+            &account,
+        ));
     }
     records.extend(native_records);
     records.sort_by(|left, right| {
@@ -636,6 +627,7 @@ fn numeric_event(
     overlap_ids: &mut BTreeSet<String>,
     turn_ids: &mut BTreeSet<String>,
     cumulative: &mut BTreeMap<String, [u64; 3]>,
+    representations: &mut BTreeMap<String, String>,
 ) -> Result<(Value, Option<[u64; 3]>), &'static str> {
     let id = event["id"]
         .as_str()
@@ -682,6 +674,17 @@ fn numeric_event(
             }),
             None,
         ));
+    }
+    if let Some(stream) = crate::session_goal::usage::ingest::declared_stream_key(event)? {
+        if representations
+            .get(&stream)
+            .is_some_and(|previous| previous != semantics)
+        {
+            return Err("mixed_counter_semantics");
+        }
+        representations
+            .entry(stream)
+            .or_insert_with(|| semantics.to_owned());
     }
     let parent_raw = event.get("parentEventId");
     let parent = parent_raw
