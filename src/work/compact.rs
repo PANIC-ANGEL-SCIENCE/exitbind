@@ -24,10 +24,6 @@ pub(crate) fn minimal_current(current: &Value) -> Value {
     if value["repair"].is_object() {
         value["repair"].as_object_mut().unwrap().remove("reason");
     }
-    if value["details"]["grouped"].is_object() {
-        value["details"] = json!({"grouped": value["details"]["grouped"],
-            "sectionRoutesOmitted": true});
-    }
     value
 }
 

@@ -85,7 +85,10 @@ fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
             "--config".into(),
         ],
         loaded.path.to_str(),
-        1024,
+        // Three legacy section routes share the bounded response with the
+        // grouped route and its effective-action projection. Preserve every
+        // route and require exact invocation arguments when paths are long.
+        768,
     );
     json!({"reference": id, "command": command.argv,
         "sameConfigRequired": command.same_config,
