@@ -717,6 +717,7 @@ and `cumulative`. Cumulative observations require a baseline and compatible
 lifetime identity. Session counters and per-turn observations require an
 explicit `sessionId` and `counterId`; goal counters require `goalId` and
 `counterId`. Adapter, scope, and lifetime differences keep streams separate.
+The projection map names ingestion scope `root` as `rootLead`; stored observations retain `root`.
 Replay and declared parent/child overlap do not add twice.
 Native completion snapshots with unknown additive semantics remain separate.
 Cached input is a subset of input; total tokens are input plus output. Partial

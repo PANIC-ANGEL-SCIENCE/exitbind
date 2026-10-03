@@ -71,7 +71,8 @@ pub(crate) fn details_for_goal(loaded: &crate::config::Loaded, goal_id: &str) ->
                 }
                 let scope = record["scope"].as_str().unwrap_or("unknown");
                 if SCOPES.contains(&scope) {
-                    phases["scopes"][scope] = json!("observed");
+                    let scope_key = if scope == "root" { "rootLead" } else { scope };
+                    phases["scopes"][scope_key] = json!("observed");
                 }
                 if let Some(values) = values {
                     if aggregate[0].checked_add(values[0]).is_some()
@@ -251,7 +252,8 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
                     }
                     let scope = record["scope"].as_str().unwrap_or("unknown");
                     if SCOPES.contains(&scope) {
-                        phases["scopes"][scope] = json!("observed");
+                        let scope_key = if scope == "root" { "rootLead" } else { scope };
+                        phases["scopes"][scope_key] = json!("observed");
                     }
                     if let Some(values) = values {
                         if aggregate[0].checked_add(values[0]).is_some()
@@ -550,7 +552,10 @@ fn unknown_coverage(state: &str) -> Value {
         .collect::<serde_json::Map<_, _>>();
     let scopes = SCOPES
         .iter()
-        .map(|scope| ((*scope).to_owned(), json!(state)))
+        .map(|scope| {
+            let key = if *scope == "root" { "rootLead" } else { *scope };
+            (key.to_owned(), json!(state))
+        })
         .collect::<serde_json::Map<_, _>>();
     json!({"phases":phases, "scopes":scopes})
 }
