@@ -140,7 +140,6 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         &control,
         &state,
         &config_path,
-        roles,
         &hosts,
         existing.as_ref(),
     )?;
@@ -217,7 +216,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         .map_err(|error| format!("setup partially applied: {error}"))?;
     let projection_changed = projection_before
         .as_ref()
-        .is_some_and(|status| projection_needs_write(status));
+        .is_some_and(projection_needs_write);
     if !hosts.is_empty() {
         let projection = native_profiles::apply_for_hosts(&loaded, &host_refs(&hosts))
             .map_err(|error| format!("setup partially applied: {error}"))?;
@@ -385,7 +384,6 @@ fn preview_report(
     control: &Path,
     state: &Path,
     config_path: &Path,
-    roles: &[String],
     hosts: &[String],
     existing: Option<&config::Loaded>,
 ) -> Result<Value, String> {
@@ -489,7 +487,7 @@ fn preview_report(
         "applyRequired": true,
         "root": root,
         "mode": facts.mode,
-        "scope": roles,
+        "scope": facts.scope,
         "approvedFacts": {"observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal},
         "affectedPaths": affected,
         "conflicts": conflicts,

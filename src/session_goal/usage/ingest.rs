@@ -57,11 +57,13 @@ pub(super) fn bounded_native_account(account: &Value) -> Value {
     let coverage_present = account["coverage"]["gaps"].is_array()
         && turn.is_some_and(|value| value != "unknown")
         && account["coverage"]["unobservedItems"].as_u64() == Some(0);
-    let status = if base_status == "observed"
-        && (!(valid_usage && input.is_some() && cached.is_some() && output.is_some())
-            || !coverage_present
-            || !gaps.is_empty())
-    {
+    let complete = valid_usage
+        && input.is_some()
+        && cached.is_some()
+        && output.is_some()
+        && coverage_present
+        && gaps.is_empty();
+    let status = if base_status == "observed" && !complete {
         "missing"
     } else {
         base_status
