@@ -148,9 +148,10 @@ fn stable_rules(prompt: &str) -> String {
     let start = prompt
         .find("CURRENT STABLE PROJECT RULES (verified complete current bytes):")
         .unwrap();
-    let end = prompt
-        .find("CURRENT VOLATILE NATIVE PROJECT CONTEXT", start)
-        .unwrap();
+    let end = start
+        + prompt[start..]
+            .find("CURRENT VOLATILE NATIVE PROJECT CONTEXT")
+            .unwrap();
     prompt[start..end].to_owned()
 }
 

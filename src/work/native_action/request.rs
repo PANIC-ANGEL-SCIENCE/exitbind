@@ -139,8 +139,7 @@ fn managed_edit_guidance(tool_path: &str) -> (String, String) {
     let instructions = "Use the supplied managed file tool for supported project edits. TOOL means the executable declared in the current binding below; quote its path for shell invocation. Run
 `TOOL read PATH` to capture the UTF-8 file or explicit absence. Prepare from
 that content, then run `TOOL edit PATH` with full replacement content as UTF-8 bytes on stdin; do not truncate. Retry the same submitted edit with the same command and content. For a deliberate next edit, use `TOOL refresh PATH` to capture a
-new baseline. On a conflict or uncertain result use `TOOL inspect PATH`; never
-replay a write blindly or reset uncertain state. Hashes, assignment details and retry identity are
+new baseline. On a conflict or uncertain result use `TOOL inspect PATH`; never replay the write blindly or reset uncertain state. Hashes, assignment details and retry identity are
 product-owned. A file edit does not submit the result or complete checks/review.
 Native tools remain controlled by the host and this route grants no OS sandbox
 permission.\n";
