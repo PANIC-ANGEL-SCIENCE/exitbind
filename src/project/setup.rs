@@ -345,7 +345,7 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for directory in std::env::split_paths(&path) {
         let candidate = directory.join(name);
-        if candidate.is_file() {
+        if settings::executable_file(&candidate) {
             return fs::canonicalize(&candidate)
                 .ok()
                 .or_else(|| crate::project::path::absolute(&candidate).ok());

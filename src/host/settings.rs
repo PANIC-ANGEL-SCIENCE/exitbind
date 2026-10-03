@@ -404,7 +404,7 @@ fn parse_settings(source: &str, target: &Path) -> Result<Value, String> {
     Ok(value)
 }
 
-fn executable_file(path: &Path) -> bool {
+pub(crate) fn executable_file(path: &Path) -> bool {
     let Ok(info) = fs::metadata(path) else {
         return false;
     };

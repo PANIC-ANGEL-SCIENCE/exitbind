@@ -229,7 +229,10 @@ Before skipping work listed in a saved packet, run
 `exitbind work validate WORK --packet FILE`; skip only when it returns `usable`.
 
 Operational path (keep low-level details delayed): initialize with
-`exitbind init`, validate with `exitbind check`, then use `exitbind work begin`
+`exitbind init`, or preview known owner-approved facts with
+`exitbind setup --mode portable --root . --scope worker --observe PATHS --write PATHS --commands FACTUAL_COMMAND --check-command CHECK_COMMAND --goal GOAL --review-policy required|omitted`.
+Review setup's affected paths and host mapping, then repeat it with `--apply`.
+Validate with `exitbind check`, then use `exitbind work begin`
 and follow the returned handle. The product-managed Codex route uses `work act`
 as described above. The host-managed child route uses `work next`, `work permit`,
 `work return`, `work check`, and `work resume`. Before a pending host-managed

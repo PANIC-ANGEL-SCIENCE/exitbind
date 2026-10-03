@@ -221,6 +221,33 @@ fn setup_reports_missing_selected_host_path_without_claiming_activation() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn setup_does_not_report_a_nonexecutable_path_entry_as_an_available_host() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = support::temp("setup-nonexecutable-host");
+    let bin = support::temp("setup-nonexecutable-path");
+    let host = bin.join("codex");
+    fs::write(&host, "not an executable\n").unwrap();
+    fs::set_permissions(&host, fs::Permissions::from_mode(0o600)).unwrap();
+    let output = invoke_env(
+        &[
+            "setup",
+            "--root",
+            root.to_str().unwrap(),
+            "--hosts",
+            "codex",
+            "--json",
+        ],
+        &[("PATH", &bin)],
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(text(&output).contains("\"pathStatus\":\"missing\""));
+    assert!(!root.join("exitbind.json").exists());
+    fs::remove_dir_all(root).unwrap();
+    fs::remove_dir_all(bin).unwrap();
+}
+
 #[test]
 fn setup_reports_and_refuses_changed_owned_guidance() {
     let root = support::temp("setup-guidance");
