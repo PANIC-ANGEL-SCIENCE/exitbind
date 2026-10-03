@@ -585,11 +585,17 @@ fn preflight_new_projections(root: &Path, hosts: &[String]) -> Result<(), String
         let (directory, names): (&str, Vec<String>) = match host.as_str() {
             "codex" => (
                 ".codex/agents",
-                vec!["lead.toml", "worker.toml", "reviewer.toml"],
+                vec!["lead.toml", "worker.toml", "reviewer.toml"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
             ),
             "claude" => (
                 ".claude/agents",
-                vec!["lead.md", "worker.md", "reviewer.md"],
+                vec!["lead.md", "worker.md", "reviewer.md"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
             ),
             _ => continue,
         };

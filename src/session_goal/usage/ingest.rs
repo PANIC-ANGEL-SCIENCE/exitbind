@@ -224,7 +224,7 @@ fn bounded_id(value: Option<&Value>, name: &str) -> Result<Option<String>, Strin
     }
 }
 
-fn normalize_event(work: &str, event: &Value) -> Result<Value, String> {
+pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String> {
     let object = event
         .as_object()
         .ok_or("usage observation must be an object")?;
@@ -417,6 +417,7 @@ fn validate_monotonic(existing: &[Value], current: &Value) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_goal::usage::numeric_event;
 
     fn event() -> Value {
         json!({

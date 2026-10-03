@@ -547,11 +547,11 @@ fn account(
 fn unknown_coverage(state: &str) -> Value {
     let phases = PHASES
         .iter()
-        .map(|phase| (*phase, json!(state)))
+        .map(|phase| ((*phase).to_owned(), json!(state)))
         .collect::<serde_json::Map<_, _>>();
     let scopes = SCOPES
         .iter()
-        .map(|scope| (*scope, json!(state)))
+        .map(|scope| ((*scope).to_owned(), json!(state)))
         .collect::<serde_json::Map<_, _>>();
     json!({"phases":phases, "scopes":scopes})
 }
