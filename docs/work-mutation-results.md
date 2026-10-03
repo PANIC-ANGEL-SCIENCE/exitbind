@@ -2,8 +2,9 @@
 
 ## Current effective action
 
-Programmatic Work responses add `effectiveAction`, derived from the existing
+Programmatic Exitbind Work responses add `effectiveAction`, derived from the existing
 canonical current state and action forms. Existing fields keep their meanings.
+The optional historical Soulmate CLI keeps its existing response shape.
 Use its `exists`, `kind`, `state`, `binding`, `readiness` and `effect` to select
 the current path. `done` has no action; `blocked` and `unknown` also have no
 action but require inspection. A zero process exit alone does not establish

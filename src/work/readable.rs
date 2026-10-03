@@ -209,10 +209,11 @@ fn response(
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });
-    value["effectiveAction"] = super::effective_action::project(&json!({
+    let canonical = json!({
         "current":{"action":next["action"], "binding":binding, "readiness":next["progress"]["state"]},
         "actionForms":value["actionForms"], "warnings":next["warnings"],
-    }));
+    });
+    super::effective_action::insert(&mut value, &canonical);
     let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
     if bytes.len() + 1 > MAX_GROUPED_BYTES {
         return Err("grouped work detail exceeds the bounded readable channel; use the current section routes".into());

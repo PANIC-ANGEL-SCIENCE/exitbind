@@ -163,7 +163,7 @@ pub(crate) fn project(
     }
 
     let mut result = Value::Object(result);
-    result["effectiveAction"] = super::effective_action::project(response);
+    super::effective_action::insert(&mut result, response);
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         result["current"] = minimal_current(&result["current"]);
     }
@@ -334,7 +334,7 @@ pub(crate) fn project(
             minimal["omitted"] = json!(["candidate details; use fullCommand"]);
         }
         omit_false_recovery_requirements(&mut minimal);
-        minimal["effectiveAction"] = super::effective_action::project(response);
+        super::effective_action::insert(&mut minimal, response);
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
@@ -361,7 +361,7 @@ pub(crate) fn project(
                 json!(["candidate details; use the required current executable and config"]);
         }
         omit_false_recovery_requirements(&mut fallback);
-        fallback["effectiveAction"] = super::effective_action::project(response);
+        super::effective_action::insert(&mut fallback, response);
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }

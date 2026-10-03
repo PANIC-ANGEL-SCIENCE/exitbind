@@ -51,12 +51,18 @@ pub(crate) fn project(response: &Value) -> Value {
 }
 
 pub(crate) fn attach(response: &Value) -> Value {
-    if response.get("effectiveAction").is_some() {
+    if !crate::producer::exitbind_surface() || response.get("effectiveAction").is_some() {
         return response.clone();
     }
     let mut result = response.clone();
     result["effectiveAction"] = project(response);
     result
+}
+
+pub(crate) fn insert(response: &mut Value, canonical: &Value) {
+    if crate::producer::exitbind_surface() {
+        response["effectiveAction"] = project(canonical);
+    }
 }
 
 #[cfg(test)]
