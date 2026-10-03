@@ -41,15 +41,6 @@ and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
 its distinct decision. The commands below govern host-managed child handoffs,
 not this product-managed Codex route.
 
-For opted-in durable project lessons, the ordinary recipient context includes
-only current applicable reviewed facts, within explicit item/byte bounds and
-with an omitted-count inspection route. Consume those facts before selecting
-companion edits/checks. They grant no permission or old acceptance. Keep live
-tools/resources and transient Work state out of durable memory; only the
-configured Lead may change `project-lessons.v1` through the existing reviewed,
-expiring memory lifecycle. Follow current returned argv and branch on `effect`,
-not process exit zero: held/refused/unknown results cannot advance the workflow.
-
 For a Work already known in this conversation, `exitbind work detail WORK
 --json` is the sufficient ordinary read: current recipient profile/rules,
 assignment, upstream evidence, task obligations and executable action forms.
