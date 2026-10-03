@@ -15,7 +15,7 @@ struct Projection {
     source_sha256: String,
 }
 
-fn projections(loaded: &Loaded) -> Result<Vec<Projection>, String> {
+fn projections(loaded: &Loaded, hosts: &[&str]) -> Result<Vec<Projection>, String> {
     let mut result = Vec::new();
     for (id, agent) in &loaded.agents {
         let native = agent.native_name(id);
@@ -38,23 +38,27 @@ fn projections(loaded: &Loaded) -> Result<Vec<Projection>, String> {
         let purpose = serde_json::to_string(&agent.purpose).map_err(|e| e.to_string())?;
         let name = serde_json::to_string(&native).map_err(|e| e.to_string())?;
         let instructions = serde_json::to_string(&source).map_err(|e| e.to_string())?;
-        result.push(Projection {
-            agent:id.clone(), host:"codex",
-            path:loaded.product_root.join(format!(".codex/agents/{native}.toml")),
-            content:format!("# {MARKER}\nname = {name}\ndescription = {purpose}\ndeveloper_instructions = {instructions}\n"),
-            source_sha256:sha.clone(),
-        });
-        result.push(Projection {
-            agent: id.clone(),
-            host: "claude",
-            path: loaded
-                .product_root
-                .join(format!(".claude/agents/{native}.md")),
-            content: format!(
-                "---\nname: {name}\ndescription: {purpose}\n---\n<!-- {MARKER} -->\n{source}"
-            ),
-            source_sha256: sha,
-        });
+        if hosts.contains(&"codex") {
+            result.push(Projection {
+                agent:id.clone(), host:"codex",
+                path:loaded.product_root.join(format!(".codex/agents/{native}.toml")),
+                content:format!("# {MARKER}\nname = {name}\ndescription = {purpose}\ndeveloper_instructions = {instructions}\n"),
+                source_sha256:sha.clone(),
+            });
+        }
+        if hosts.contains(&"claude") {
+            result.push(Projection {
+                agent: id.clone(),
+                host: "claude",
+                path: loaded
+                    .product_root
+                    .join(format!(".claude/agents/{native}.md")),
+                content: format!(
+                    "---\nname: {name}\ndescription: {purpose}\n---\n<!-- {MARKER} -->\n{source}"
+                ),
+                source_sha256: sha,
+            });
+        }
     }
     Ok(result)
 }
@@ -92,8 +96,12 @@ fn state(item: &Projection) -> Result<(&'static str, Option<String>, Option<Stri
 }
 
 pub(crate) fn status(loaded: &Loaded) -> Result<Value, String> {
+    status_for_hosts(loaded, &["codex", "claude"])
+}
+
+pub(crate) fn status_for_hosts(loaded: &Loaded, hosts: &[&str]) -> Result<Value, String> {
     let mut items = Vec::new();
-    for item in projections(loaded)? {
+    for item in projections(loaded, hosts)? {
         let (state, observed_sha256, _) = state(&item)?;
         let relative = item
             .path
@@ -112,7 +120,11 @@ pub(crate) fn status(loaded: &Loaded) -> Result<Value, String> {
 }
 
 pub(crate) fn apply(loaded: &Loaded) -> Result<Value, String> {
-    let items = projections(loaded)?;
+    apply_for_hosts(loaded, &["codex", "claude"])
+}
+
+pub(crate) fn apply_for_hosts(loaded: &Loaded, hosts: &[&str]) -> Result<Value, String> {
+    let items = projections(loaded, hosts)?;
     let states = items.iter().map(state).collect::<Result<Vec<_>, _>>()?;
     if items
         .iter()
@@ -139,7 +151,7 @@ pub(crate) fn apply(loaded: &Loaded) -> Result<Value, String> {
             &root,
         )?;
     }
-    status(loaded)
+    status_for_hosts(loaded, hosts)
 }
 
 #[cfg(all(test, unix))]

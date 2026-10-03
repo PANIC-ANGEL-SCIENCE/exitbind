@@ -81,6 +81,21 @@ the single project write it needs and ask the owner before running:
 exitbind init --mode portable --root .
 ```
 
+When the owner already has the first task's approved paths and check, preview
+the model-free facts route before applying it:
+
+```sh
+exitbind setup --mode portable --root . --scope worker \
+  --observe README.md,src --write src --commands "YOUR_TEST_COMMAND" \
+  --check-command "YOUR_TEST_COMMAND" --review-policy required \
+  --goal "Describe the bounded change"
+```
+
+Review the affected paths and supported host mapping, then repeat with
+`--apply`. Setup updates only the selected declared facts and compatible
+managed native projections; it does not overwrite custom profiles, skills or
+hooks, launch a model, grant permissions, or reload an existing session.
+
 If project skills are managed elsewhere, the owner may choose `--skip-skills`
 on that initialization command. It preserves those paths, including symlinks,
 while creating configuration, profiles, and state. Report guidance projection

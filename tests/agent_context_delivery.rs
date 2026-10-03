@@ -144,6 +144,16 @@ impl Fixture {
     }
 }
 
+fn stable_rules(prompt: &str) -> String {
+    let start = prompt
+        .find("CURRENT STABLE PROJECT RULES (verified complete current bytes):")
+        .unwrap();
+    let end = prompt
+        .find("CURRENT VOLATILE NATIVE PROJECT CONTEXT", start)
+        .unwrap();
+    prompt[start..end].to_owned()
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
@@ -160,6 +170,10 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     let first = fs::read_to_string(&first_capture).unwrap();
     assert!(first.contains("NATIVE CURRENT CONTEXT"));
     assert!(first.contains("CURRENT PROJECT RULES"));
+    assert!(
+        first.find("CURRENT PROJECT RULES").unwrap()
+            < first.find("NATIVE CURRENT CONTEXT").unwrap()
+    );
     assert!(first.contains("current project rule"));
     assert!(first.contains("second current rule"));
     assert!(first.contains("old accepted rule"));
@@ -171,6 +185,12 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     assert!(first.contains("full replacement content as UTF-8 bytes on stdin"));
     assert!(first.contains("never replay the write blindly"));
 
+    let same_context_capture = fixture.root.join("same-context-prompt");
+    let same_context_exe = fixture.fake_codex(&same_context_capture);
+    let _ = fixture.run_worker("different Work and assignment", &same_context_exe);
+    let same_context = fs::read_to_string(&same_context_capture).unwrap();
+    assert_eq!(stable_rules(&first), stable_rules(&same_context));
+
     let revoked = fixture.value(&["memory", "revoke", "lead", "memory/old.jsonl"], b"");
     assert_eq!(revoked["action"], "revoke");
     fixture.accept("new.md", "corrected accepted rule\n", "memory/new.jsonl");
@@ -180,6 +200,16 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     let second = fs::read_to_string(&second_capture).unwrap();
     assert!(second.contains("corrected accepted rule"));
     assert!(!second.contains("old accepted rule"));
+    fs::write(
+        fixture.root.join("AGENTS.md"),
+        "changed current project rule\n",
+    )
+    .unwrap();
+    let changed_rules_capture = fixture.root.join("changed-rules-prompt");
+    let changed_rules_exe = fixture.fake_codex(&changed_rules_capture);
+    let _ = fixture.run_worker("changed stable rule", &changed_rules_exe);
+    let changed_rules = fs::read_to_string(&changed_rules_capture).unwrap();
+    assert_ne!(stable_rules(&first), stable_rules(&changed_rules));
 
     let isolated = Fixture::new("agent-context-isolation");
     fs::write(isolated.root.join("old.md"), "old accepted rule\n").unwrap();

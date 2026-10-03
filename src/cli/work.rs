@@ -456,6 +456,17 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 },
             )?)
         }
+        "usage" => {
+            args::assert_options("work usage", a, &["config", "apply", "json"])?;
+            args::assert_positionals("work usage", a, 2)?;
+            let work = positional(a, 1, "work usage requires WORK")?;
+            let value = if a.flags.contains_key("apply") {
+                crate::session_goal::usage::record_numeric_event(l, work, &super::goal::numeric_input()?)?
+            } else {
+                crate::session_goal::usage::details_for_work(l, work)
+            };
+            print_json(&value)
+        }
         "check" => {
             args::assert_options("work check", a, &["config", "json"])?;
             args::assert_positionals("work check", a, 2)?;

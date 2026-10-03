@@ -72,7 +72,7 @@ pub(super) fn build(
                 }),
         )
     };
-    let context = agent_context::project(
+    let context = agent_context::project_parts(
         loaded,
         work,
         current,
@@ -97,6 +97,9 @@ pub(super) fn build(
     } else {
         "Use the exact declared upstream evidence included below. Do not reconstruct it from git or summaries.".to_owned()
     };
+    // Keep the managed-edit instructions stable across assignments.  The
+    // selected path is volatile and is carried once below, so changing the
+    // current tool location does not duplicate a long command-shaped prefix.
     let mediator_route = if role == "worker" {
         let current_assignment = current["assignment"]
             .as_str()
@@ -105,18 +108,18 @@ pub(super) fn build(
         let tool = prepared["tool"]
             .as_str()
             .ok_or("managed edit tool unavailable")?;
-        let tool_path = tool;
-        let tool = crate::presentation::shell_quote(tool);
-        format!(
-            " For supported project edits, use the supplied managed file tool: `{tool} read PATH` returns the captured UTF-8 file or explicit absence. Prepare your edit from that content, then run `{tool} edit PATH` with full replacement content as UTF-8 bytes on stdin; do not truncate content. Retry the same submitted edit with that same command and content. For a deliberate next edit, use `{tool} refresh PATH` to capture a new baseline. On a conflict or uncertain result use `{tool} inspect PATH`; never replay the write blindly or reset uncertain state. Hashes, assignment details and retry identity are product-owned. A file edit does not submit your result or complete checks/review. Native tools remain controlled by the host and this route grants no OS sandbox permission."
-        ) + &format!("\nMANAGED FILE TOOL: {tool_path}\n")
+        managed_edit_guidance(tool)
     } else {
-        String::new()
+        (String::new(), String::new())
     };
     let prompt = format!(
-        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. {evidence_route}{mediator_route} Required assignment, evidence and goal/task conditions are resolved and verified below before this launch. No paging, hex decoding, checksum or JSON-join code is needed. Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES:\n{profile}\n\nCURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; equal aliases are described by projection):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n\nCURRENT NATIVE PROJECT CONTEXT (verified immediately before launch):\n{context}\n",
+        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. Required assignment, evidence and goal/task conditions are resolved and verified below before this launch. No paging, hex decoding, checksum or JSON-join code is needed. Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES (reviewed role guidance; exact bytes):\n{profile}\n\n{mediator_instructions}\nCURRENT STABLE PROJECT RULES (verified complete current bytes):\n{stable}\nCURRENT VOLATILE NATIVE PROJECT CONTEXT (verified immediately before launch):\n{tool_binding}{volatile}\n\n{evidence_route}\nCURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; equal aliases are described by projection):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n",
         canonical_sha = hash::value(assignment),
         current_binding = current["current"],
+        mediator_instructions = mediator_route.0,
+        tool_binding = mediator_route.1,
+        stable = context.stable,
+        volatile = context.volatile,
     );
     Ok(Request {
         executable,
@@ -130,6 +133,21 @@ pub(super) fn build(
         persist_session: true,
         timeout: Duration::from_millis(timeout),
     })
+}
+
+fn managed_edit_guidance(tool_path: &str) -> (String, String) {
+    let instructions = "Use the supplied managed file tool for supported project edits. TOOL means the executable declared in the current binding below; quote its path for shell invocation. Run
+`TOOL read PATH` to capture the UTF-8 file or explicit absence. Prepare from
+that content, then run `TOOL edit PATH` with full replacement content as UTF-8 bytes on stdin; do not truncate. Retry the same submitted edit with the same command and content. For a deliberate next edit, use `TOOL refresh PATH` to capture a
+new baseline. On a conflict or uncertain result use `TOOL inspect PATH`; never
+replay a write blindly or reset uncertain state. Hashes, assignment details and retry identity are
+product-owned. A file edit does not submit the result or complete checks/review.
+Native tools remain controlled by the host and this route grants no OS sandbox
+permission.\n";
+    (
+        instructions.to_owned(),
+        format!("MANAGED FILE TOOL: {tool_path}\n"),
+    )
 }
 
 pub(super) fn profile_bytes(
@@ -152,4 +170,41 @@ pub(super) fn profile_bytes(
         return Err("native assignment profile drifted before launch".into());
     }
     String::from_utf8(bytes).map_err(|_| "native profile is not UTF-8".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::managed_edit_guidance;
+
+    #[test]
+    fn managed_edit_guidance_keeps_syntax_fixed_and_path_singleton() {
+        let path = "/tmp/managed edit tool";
+        let (fixed, binding) = managed_edit_guidance(path);
+        let guidance = fixed + &binding;
+        assert_eq!(guidance.matches(path).count(), 1);
+        for command in ["read PATH", "edit PATH", "refresh PATH", "inspect PATH"] {
+            assert!(guidance.contains(command), "missing {command}");
+        }
+        assert!(guidance.contains("same command and content"));
+        assert!(guidance.contains("deliberate next edit"));
+    }
+
+    #[test]
+    fn matched_guidance_fixture_reduces_repeated_tool_path() {
+        let path =
+            "/tmp/current project/native-actions/current-work/current-assignment/managed file tool";
+        let tool = crate::presentation::shell_quote(path);
+        // Exact accepted R23 template, with identical current path and
+        // behavior obligations on both sides; bytes are not provider tokens.
+        let baseline = format!(
+            " For supported project edits, use the supplied managed file tool: `{tool} read PATH` returns the captured UTF-8 file or explicit absence. Prepare your edit from that content, then run `{tool} edit PATH` with full replacement content as UTF-8 bytes on stdin; do not truncate content. Retry the same submitted edit with that same command and content. For a deliberate next edit, use `{tool} refresh PATH` to capture a new baseline. On a conflict or uncertain result use `{tool} inspect PATH`; never replay the write blindly or reset uncertain state. Hashes, assignment details and retry identity are product-owned. A file edit does not submit your result or complete checks/review. Native tools remain controlled by the host and this route grants no OS sandbox permission.\nMANAGED FILE TOOL: {path}\n"
+        );
+        let (fixed, binding) = managed_edit_guidance(path);
+        assert!(!fixed.contains(path));
+        let candidate = fixed + &binding;
+        assert_eq!(baseline.matches(path).count(), 5);
+        assert_eq!(candidate.matches(path).count(), 1);
+        assert!(candidate.len() < baseline.len());
+        println!("matched managed guidance: baseline_bytes={} candidate_bytes={} path_occurrences=5->1 provider_tokens=unmeasured", baseline.len(), candidate.len());
+    }
 }

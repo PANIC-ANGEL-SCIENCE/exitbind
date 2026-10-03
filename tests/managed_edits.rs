@@ -633,6 +633,14 @@ printf '%s\n' '{{"type":"thread.started","thread_id":"managed-native-fixture"}}'
     );
     let prompt = fs::read_to_string(capture).unwrap();
     assert!(prompt.contains("MANAGED FILE TOOL:"));
+    let tool = prompt
+        .lines()
+        .find_map(|line| line.strip_prefix("MANAGED FILE TOOL: "))
+        .unwrap();
+    assert_eq!(prompt.matches(tool).count(), 1);
+    for syntax in ["read PATH", "edit PATH", "refresh PATH", "inspect PATH"] {
+        assert!(prompt.contains(syntax), "missing {syntax}");
+    }
     assert!(!prompt.contains("--expected-sha256"));
     assert!(!prompt.contains("--operation STABLE_ID"));
     f.ok(&["work", "check", &f.work], b"");

@@ -200,6 +200,26 @@ pub fn refresh(
     project_skills::refresh(&loaded.control_root, coffee)
 }
 
+/// Report whether a configured profile is the exact embedded starter profile.
+/// A different readable profile is custom-owned and must be preserved.
+pub(crate) fn profile_diagnostic(control: &Path, relative: &str) -> Result<Value, String> {
+    let bytes = crate::project::path::secure_bytes(control, relative, "agent profile")?;
+    let expected = PROFILES.iter().find_map(|(name, content)| {
+        (relative == format!("{}/{name}.md", crate::project::layout_types::agents_dir()))
+            .then_some(*content)
+    });
+    let state = match expected {
+        Some(content) if bytes == content.as_bytes() => "managed match",
+        Some(_) => "custom",
+        None => "custom",
+    };
+    Ok(json!({
+        "path": relative,
+        "state": state,
+        "sha256": crate::evidence::hash::bytes(&bytes),
+    }))
+}
+
 pub fn doctor(path: Option<&str>) -> Vec<Value> {
     let mut checks = Vec::new();
     let mut project_dotagents_config = false;

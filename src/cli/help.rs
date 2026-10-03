@@ -24,6 +24,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
         ["project"] => "project context [memory ITEM_ID] [--json] | project agents [--apply] [--json]",
+        ["setup"] => "setup [--apply] [--json] --mode local|portable --root ROOT --scope lead,worker,reviewer [--observe PATHS] [--write PATHS] [--commands FACTUAL_COMMAND] [--check-command CHECK_COMMAND] [--goal GOAL] [--review-policy required|omitted] [--hosts codex,claude]",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
         ["work", "replan"] => {
             "work replan WORK ASSIGNMENT [--hypothesis TEXT | --replan-file PATH|-]"
@@ -40,6 +41,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
         }
         ["work", "check"] => "work check WORK",
+        ["work", "usage"] => "work usage WORK [--apply] [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
@@ -70,6 +72,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
         ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
         ["goal", "status"] => "goal status [--themed]",
+        ["goal", "usage"] => "goal usage --goal-id ID [--apply] [--json] [--config CONFIG] < NUMERIC_JSON",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",
         ["context", "sensor-request"] => "context sensor-request --state FILE",

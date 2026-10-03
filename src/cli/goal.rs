@@ -1,0 +1,145 @@
+//! Canonical goal commands and bounded observational routes.
+
+use super::{args, config, option, positional, print_json, status, Arguments};
+use serde_json::{json, Value};
+use std::io::{IsTerminal, Read};
+
+pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
+    let action = positional(a, 0, "goal requires incorporate, close, status, or usage")?;
+    match action {
+        "incorporate" => {
+            args::assert_options(
+                "goal incorporate",
+                a,
+                &[
+                    "config",
+                    "goal-id",
+                    "goal",
+                    "obligation",
+                    "finding",
+                    "blocker",
+                    "decision",
+                    "external-action",
+                    "scope",
+                    "disposition",
+                    "result-ref",
+                    "consider",
+                    "none-applicable",
+                    "direct",
+                    "external-scope",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("goal incorporate", a, 1)?;
+            let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
+            let goal = option(a, "goal", "goal incorporate requires --goal")?;
+            let direct = a.flags.contains_key("direct");
+            let direct_items = [
+                ("obligations", a.options.get("obligation")),
+                ("findings", a.options.get("finding")),
+                ("blockers", a.options.get("blocker")),
+                ("decisions", a.options.get("decision")),
+                ("externalActions", a.options.get("external-action")),
+            ];
+            let selected = direct_items
+                .iter()
+                .filter_map(|(category, value)| value.as_deref().map(|item| (*category, item)))
+                .collect::<Vec<_>>();
+            let value = if direct && selected.len() == 1 {
+                let (category, item) = selected[0];
+                crate::session_goal::direct_complete(
+                    l,
+                    goal_id,
+                    goal,
+                    category,
+                    item,
+                    a.options.get("external-scope").map(String::as_str),
+                )?
+            } else {
+                crate::session_goal::incorporate(
+                    l,
+                    goal_id,
+                    goal,
+                    a.options.get("obligation").map(String::as_str),
+                    a.options.get("finding").map(String::as_str),
+                    a.options.get("blocker").map(String::as_str),
+                    a.options.get("decision").map(String::as_str),
+                    a.options.get("external-action").map(String::as_str),
+                    a.options.get("scope").map(String::as_str),
+                    a.options.get("disposition").map(String::as_str),
+                    a.options.get("result-ref").map(String::as_str),
+                    a.options.get("consider").map(String::as_str),
+                    a.options.get("none-applicable").map(String::as_str),
+                )?
+            };
+            print_json(&value)
+        }
+        "close" => {
+            args::assert_options(
+                "goal close",
+                a,
+                &["config", "goal-id", "result-ref", "direct", "json"],
+            )?;
+            args::assert_positionals("goal close", a, 1)?;
+            let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
+            let value = if a.flags.contains_key("direct") {
+                crate::session_goal::close_direct(
+                    l,
+                    goal_id,
+                    a.options.get("result-ref").map(String::as_str),
+                )?
+            } else {
+                crate::session_goal::close(
+                    l,
+                    goal_id,
+                    option(a, "result-ref", "goal close requires --result-ref")?,
+                )?
+            };
+            print_json(&value)
+        }
+        "usage" => {
+            args::assert_options("goal usage", a, &["config", "goal-id", "apply", "json"])?;
+            args::assert_positionals("goal usage", a, 1)?;
+            let goal_id = option(a, "goal-id", "goal usage requires --goal-id ID")?;
+            if goal_id.trim().is_empty() || goal_id.len() > 128 || goal_id.contains('\0') {
+                return Err("goal usage requires a non-empty goal identity of at most 128 bytes without NUL".into());
+            }
+            let value = if a.flags.contains_key("apply") {
+                let mut event = numeric_input()?;
+                if event.get("goalId").is_some_and(|value| value != goal_id) {
+                    return Err("usage observation goal identity does not match --goal-id".into());
+                }
+                event["goalId"] = json!(goal_id);
+                crate::session_goal::usage::record_goal_numeric_event(l, &event)?
+            } else {
+                crate::session_goal::usage::details_for_goal(l, goal_id)
+            };
+            print_json(&value)
+        }
+        "status" => status::goal_status(l, a),
+        _ => Err("goal requires incorporate, close, status, or usage".into()),
+    }
+}
+
+/// Numeric observations admit bounded allowlisted metadata in the persistence
+/// owner. No prompt, output, transcript or provider call belongs to this route.
+pub(super) fn numeric_input() -> Result<Value, String> {
+    const MAX_BYTES: u64 = 8192;
+    if std::io::stdin().is_terminal() {
+        return Err("usage observation requires bounded numeric JSON on stdin".into());
+    }
+    let mut bytes = Vec::new();
+    std::io::stdin()
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "usage observation input could not be read")?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_BYTES {
+        return Err("usage observation input must contain 1–8192 bytes".into());
+    }
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| "usage observation input must be valid JSON")?;
+    if !value.is_object() {
+        return Err("usage observation input must be an object".into());
+    }
+    Ok(value)
+}

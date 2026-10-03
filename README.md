@@ -91,6 +91,32 @@ empty starter boundaries are valid configuration, not access. Use
 `--skip-skills` if your host already manages project guidance. Codex and Claude
 are exercised setup paths; OpenCode compatibility is experimental.
 
+When the owner already knows the first task's boundaries, assemble those facts
+directly without a model-authored JSON join:
+
+```sh
+exitbind setup --mode portable --root . --scope worker \
+  --observe README.md,src --write src --commands "cargo fmt --check" \
+  --check-command "YOUR_TEST_COMMAND" --review-policy required \
+  --goal "Describe the bounded change"
+```
+
+This previews the affected paths and detected Codex/Claude executables. Add
+`--apply` only after reviewing the preview. Setup updates the selected role's
+declared facts, verifies compatible managed native projections, and reports an
+unchanged repeat without rewriting custom profiles, skills, hooks, or
+permissions. It never launches a model or reloads an existing session. Use
+`--hosts codex` or `--hosts claude` to select the supported native mapping;
+unsupported hosts are refused.
+
+To inspect the exact native role mapping before a governed task, use
+`exitbind project agents --json --config exitbind.json`. After explicit project
+consent, `--apply` materializes only Exitbind-managed projections; a current
+projection is reported as unchanged and custom or unsafe files are left alone.
+This route does not fill task boundaries, choose a check, launch a model, or
+change host permissions. Keep those owner decisions in the project
+configuration and the governed Work start.
+
 ## Work and return in the same conversation
 
 For a configured Codex worker or reviewer, the lead can use `work act` to run

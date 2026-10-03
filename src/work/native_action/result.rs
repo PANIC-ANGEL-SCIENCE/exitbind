@@ -137,6 +137,7 @@ pub(super) fn projection(observation: &Observation) -> Value {
             "cachedInputTokens": usage.cached_input_tokens,
             "outputTokens": usage.output_tokens,
         })),
+        "outcomeAccount": crate::host::codex_exec::usage_account(observation),
         "threadId": observation.thread_id,
         "diagnostic": diagnostic_projection(observation),
         "coverageGaps": observation.coverage_gap.iter().map(CoverageGap::as_str).collect::<Vec<_>>(),

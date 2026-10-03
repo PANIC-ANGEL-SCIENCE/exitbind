@@ -7,6 +7,7 @@ use std::path::Path;
 mod continuity;
 mod current;
 mod progress;
+pub(crate) mod usage;
 pub(crate) use continuity::{
     child_context, claim_child, claimed_child_context, continuation_bind, continuation_child,
     continuation_record, continuation_section, continuation_view, finalize_child, prepare_child,

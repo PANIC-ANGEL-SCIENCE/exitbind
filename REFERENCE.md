@@ -695,6 +695,30 @@ named goal is ready; machine and noninteractive output never include it. The
 room is local display, not completion evidence, and its replaceable display
 memo does not affect tested inputs.
 
+Optional prospective usage observations belong to an existing canonical goal
+or Work. Read them with `exitbind goal usage --goal-id ID --json` or
+`exitbind work usage WORK --json`. Recording requires explicit `--apply` and
+one allowlisted numeric JSON object on standard input, limited to 8 KiB:
+
+```sh
+exitbind goal usage --goal-id ID --apply --json <<'JSON'
+{"id":"setup-1","source":"host_reported","scope":"setup","phase":"setup","status":"observed","semantics":"delta","lifetime":"invocation","values":{"inputTokens":100,"cachedInputTokens":20,"outputTokens":30}}
+JSON
+```
+
+Use actual host counters and stable observation identities; this example is
+illustrative. The route stores no prompt, output, or transcript and launches no
+provider. It records private telemetry without changing the semantic goal,
+mutation grant, check, or acceptance. The account retains missing coverage
+instead of treating it as zero. Phases are `setup`, `implementation`, `review`,
+`repair`, `resume`, and `closeout`; scopes are `setup`, `root`, `direct`,
+`native`, and `child`. Supported counter semantics are `delta`, `per_turn`,
+and `cumulative`. Cumulative observations require a baseline and compatible
+lifetime identity; replay and declared parent/child overlap do not add twice.
+Native completion snapshots with unknown additive semantics remain separate.
+Cached input is a subset of input; total tokens are input plus output. Partial
+coverage and host-reported counters do not establish whole-goal savings.
+
 The same JSON status includes product-owned `goalProgress` when a canonical
 Lead goal exists. It lists the Lead's explicit obligation tasks, keeps
 performed-but-stale result history visible, and reports current Work

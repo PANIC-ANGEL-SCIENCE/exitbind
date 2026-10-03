@@ -130,3 +130,4 @@ case ":${PATH:-}:" in
 esac
 echo "Next: \"$prefix/$surface\" benchmark"
 echo "Then: cd YOUR_PROJECT && \"$prefix/$surface\" init --mode portable"
+echo "Or preview approved facts: cd YOUR_PROJECT && \"$prefix/$surface\" setup --mode portable --root . --scope worker --observe README.md --write src --commands \"cargo fmt --check\" --check-command \"YOUR_TEST_COMMAND\" --review-policy required --goal \"DESCRIBE_THE_BOUNDED_CHANGE\""

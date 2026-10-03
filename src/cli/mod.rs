@@ -14,6 +14,7 @@ use crate::{
 
 mod activity;
 pub(crate) mod args;
+mod goal;
 mod help;
 mod project;
 mod replan_input;
@@ -174,6 +175,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
             hook_runtime::run()
         }
         "init" => crate::project::commands::init(&parsed),
+        "setup" => crate::project::setup::command(&parsed),
         "bind" => crate::project::commands::bind(&parsed),
         "doctor" => crate::project::commands::doctor(&parsed),
         "hooks" => hooks_command(&parsed),
@@ -183,7 +185,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         }
         "goal" => {
             let loaded = config::load(parsed.options.get("config").map(String::as_str))?;
-            goal_command(&loaded, &parsed)
+            goal::command(&loaded, &parsed)
         }
         "activity" => {
             let loaded = config::load(parsed.options.get("config").map(String::as_str))?;
@@ -425,104 +427,6 @@ fn work_classify_command(a: &Arguments) -> Result<(), String> {
         parse_bool("material-consequence")?,
         parse_bool("promotion-required")?,
     ))
-}
-
-fn goal_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    let action = positional(a, 0, "goal requires incorporate, close, or status")?;
-    match action {
-        "incorporate" => {
-            args::assert_options(
-                "goal incorporate",
-                a,
-                &[
-                    "config",
-                    "goal-id",
-                    "goal",
-                    "obligation",
-                    "finding",
-                    "blocker",
-                    "decision",
-                    "external-action",
-                    "scope",
-                    "disposition",
-                    "result-ref",
-                    "consider",
-                    "none-applicable",
-                    "direct",
-                    "external-scope",
-                    "json",
-                ],
-            )?;
-            args::assert_positionals("goal incorporate", a, 1)?;
-            let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
-            let goal = option(a, "goal", "goal incorporate requires --goal")?;
-            let direct = a.flags.contains_key("direct");
-            let direct_items = [
-                ("obligations", a.options.get("obligation")),
-                ("findings", a.options.get("finding")),
-                ("blockers", a.options.get("blocker")),
-                ("decisions", a.options.get("decision")),
-                ("externalActions", a.options.get("external-action")),
-            ];
-            let selected = direct_items
-                .iter()
-                .filter_map(|(category, value)| value.as_deref().map(|item| (*category, item)))
-                .collect::<Vec<_>>();
-            let value = if direct && selected.len() == 1 {
-                let (category, item) = selected[0];
-                crate::session_goal::direct_complete(
-                    l,
-                    goal_id,
-                    goal,
-                    category,
-                    item,
-                    a.options.get("external-scope").map(String::as_str),
-                )?
-            } else {
-                crate::session_goal::incorporate(
-                    l,
-                    goal_id,
-                    goal,
-                    a.options.get("obligation").map(String::as_str),
-                    a.options.get("finding").map(String::as_str),
-                    a.options.get("blocker").map(String::as_str),
-                    a.options.get("decision").map(String::as_str),
-                    a.options.get("external-action").map(String::as_str),
-                    a.options.get("scope").map(String::as_str),
-                    a.options.get("disposition").map(String::as_str),
-                    a.options.get("result-ref").map(String::as_str),
-                    a.options.get("consider").map(String::as_str),
-                    a.options.get("none-applicable").map(String::as_str),
-                )?
-            };
-            print_json(&value)
-        }
-        "close" => {
-            args::assert_options(
-                "goal close",
-                a,
-                &["config", "goal-id", "result-ref", "direct", "json"],
-            )?;
-            args::assert_positionals("goal close", a, 1)?;
-            let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
-            let value = if a.flags.contains_key("direct") {
-                crate::session_goal::close_direct(
-                    l,
-                    goal_id,
-                    a.options.get("result-ref").map(String::as_str),
-                )?
-            } else {
-                crate::session_goal::close(
-                    l,
-                    goal_id,
-                    option(a, "result-ref", "goal close requires --result-ref")?,
-                )?
-            };
-            print_json(&value)
-        }
-        "status" => status::goal_status(l, a),
-        _ => Err("goal requires incorporate, close, or status".into()),
-    }
 }
 
 fn benchmark_command(a: &Arguments) -> Result<(), String> {
@@ -920,7 +824,7 @@ fn print_help() {
         "soulmate"
     };
     println!(
-        "{product} {VERSION}\n\nUsage: {command} <command> [options]\n\nCore: init, brief, work, check, activity\n  init prepares portable project setup and reviewable agent configuration.\n  brief presents one bounded task to an existing agent host.\n  work drives a checked task through opaque next actions and managed evidence.\n  activity codex runs and privately records a direct small task from standard input.\n  check validates configuration, profiles, and declared boundaries; the host runs project tests and reports their result.\n\nRun '{command} benchmark' for the model-free checked-work demonstration.\nRun '{command} help advanced' for work/run actions, recovery, migration, hooks, receipts, and optional surfaces.\nRun '{command} context reduce|checkpoint|seal' for replayable bounded context state."
+        "{product} {VERSION}\n\nUsage: {command} <command> [options]\n\nCore: setup, init, brief, work, check, activity\n  setup previews approved project facts; --apply assembles them into managed setup.\n  init prepares portable project setup and reviewable agent configuration.\n  brief presents one bounded task to an existing agent host.\n  work drives a checked task through opaque next actions and managed evidence.\n  activity codex runs and privately records a direct small task from standard input.\n  check validates configuration, profiles, and declared boundaries; the host runs project tests and reports their result.\n\nRun '{command} benchmark' for the model-free checked-work demonstration.\nRun '{command} help advanced' for work/run actions, recovery, migration, hooks, receipts, and optional surfaces.\nRun '{command} context reduce|checkpoint|seal' for replayable bounded context state."
     );
 }
 
@@ -936,7 +840,7 @@ fn print_advanced_help() {
         "soulmate"
     };
     let help = format!(
-        "{product} {VERSION}\n\nDo the next change\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  Direct small task: {command} activity codex < PROMPT; inspect the private record with activity show ID.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' only when you want a successor bound to changed configuration, profile, memory, boundary, or harness inputs."
+        "{product} {VERSION}\n\nDo the next change\n  {command} setup --root ROOT (preview approved project facts)\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  Direct small task: {command} activity codex < PROMPT; inspect the private record with activity show ID.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' only when you want a successor bound to changed configuration, profile, memory, boundary, or harness inputs."
     );
     let value_help = if crate::producer::exitbind_surface() {
         "Run value proof: new v8 runs may observe the frozen check locally with 'run observe-check' or record a host report with 'run record-check'; historical v3-v7 runs remain readable. Use 'run status', 'run explain', and 'run report' for bounded evidence views."

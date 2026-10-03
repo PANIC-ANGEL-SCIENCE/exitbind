@@ -193,6 +193,7 @@ fn response(
         "recipient": {"role": next["role"], "agent": next["agent"], "assignment": next["assignment"], "actor": next["resolvedActor"]},
         "complete": readable_complete,
         "sections": sections,
+        "usageAccount": crate::session_goal::usage::details_for_work(loaded, work),
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });

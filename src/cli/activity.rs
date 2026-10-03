@@ -255,6 +255,7 @@ fn projection(observation: &codex_exec::Observation) -> Value {
         "turn": observation.turn.as_str(),
         "commands": commands,
         "usage": usage,
+        "outcomeAccount": codex_exec::usage_account(observation),
         "diagnostic": {
             "status": "observed",
             "codes": observation

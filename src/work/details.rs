@@ -105,6 +105,7 @@ pub(super) fn attach(
 ) -> Result<(), String> {
     let progress = crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
     next["goalProgress"] = progress.clone();
+    next["goalProgress"]["usageAccount"] = crate::session_goal::usage::for_work(loaded, work);
     let view = snapshot.inspect_view();
     let subject = if next["packet"]["context"]["subject"].is_object() {
         next["packet"]["context"]["subject"].clone()

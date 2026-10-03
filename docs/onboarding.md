@@ -95,6 +95,51 @@ configuration, profiles, and declarations; **it does not run project tests**.
 A declaration is not a host permission grant or proof that all edits stayed
 inside it. Leave memory rights empty for this first task.
 
+### Assemble approved facts without a configuration join
+
+If the owner already knows the first task's paths and check, `setup` can
+preview and then apply those facts directly. Paths, roles, and hosts accept
+comma-separated lists; `--commands` preserves one exact factual command string
+and `--check-command` separately names the frozen project check. It never asks a
+model to compose configuration JSON:
+
+```sh
+exitbind setup --mode portable --root . --scope worker \
+  --observe README.md,src --write src \
+  --commands "cargo fmt --check" --check-command "cargo test --locked" \
+  --review-policy required \
+  --goal "Describe the bounded change"
+```
+
+Review the preview, then repeat with `--apply`. `--scope` selects `lead`,
+`worker`, and/or `reviewer`; the default is `worker`. `--hosts codex`,
+`--hosts claude`, or `--hosts codex,claude` selects the supported native
+projection. With no host selection, setup reports supported executables found
+on `PATH`. A selected executable's absolute path is shown so a PATH conflict
+has a runnable recovery command. Missing `observe`, `write`, or `commands`
+facts, goal, and review choice remain visible as owner decisions.
+
+Setup preserves the existing `init` refusal when its configuration already
+exists. For an existing compatible setup, it changes only the selected fields;
+custom profiles, skills, hooks, and permissions remain owned by their current
+files. A repeat with identical facts verifies managed bytes and reports
+`unchanged`. Unsafe or external native projection files produce an explicit
+conflict before an existing configuration is written. Setup does not grant
+permissions, invoke a model, start another host, or claim that a current
+session reloaded the files.
+
+The native role mapping can be reviewed without changing files:
+
+```sh
+exitbind project agents --json --config exitbind.json
+```
+
+After the owner approves the displayed paths and source hashes, add `--apply`
+to materialize only managed projections. A repeated apply verifies the same
+managed bytes and reports `current`; it does not rewrite custom files or start
+another model. Boundary values, checks and review policy remain explicit Work
+decisions and are not inferred by setup.
+
 Before starting governed Work, select the actual execution path. For native
 host-managed subagents, verify that this session exposes the worker and reviewer
 spawn tools and that their native names are usable. A profile or plan-only

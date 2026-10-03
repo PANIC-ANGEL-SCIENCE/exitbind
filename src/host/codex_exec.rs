@@ -184,6 +184,43 @@ impl CoverageGap {
     }
 }
 
+/// Project the bounded numeric facts available for one native turn.
+///
+/// Provider usage is a completion snapshot. It may be cumulative on the
+/// provider side, so this projection never sums it with a retry, parent,
+/// child, or replay. Missing fields stay unknown and an observed zero stays
+/// an observed zero.
+pub(crate) fn usage_account(observation: &Observation) -> Value {
+    let usage = observation.usage.as_ref();
+    let complete = usage.is_some_and(|value| {
+        value.input_tokens.is_some()
+            && value.cached_input_tokens.is_some()
+            && value.output_tokens.is_some()
+    });
+    json!({
+        "status": if complete { "observed" } else { "missing" },
+        "scope": "native_turn",
+        "source": usage.map_or("unavailable", |value| value.source),
+        "counterSemantics": "provider_turn_snapshot",
+        "additive": false,
+        "usage": usage.map(|value| json!({
+            "inputTokens": value.input_tokens,
+            "cachedInputTokens": value.cached_input_tokens,
+            "outputTokens": value.output_tokens,
+        })),
+        "coverage": {
+            "turn": observation.turn.as_str(),
+            "commands": observation.command_outcomes.len(),
+            "unobservedItems": observation.unobserved_item_count,
+            "rootSetup": "unobserved",
+            "parentChild": "not_counted",
+            "retry": "unknown",
+            "replay": "not_counted",
+            "gaps": observation.coverage_gap.iter().map(CoverageGap::as_str).collect::<Vec<_>>(),
+        },
+    })
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Observation {
     /// Mirrors the invocation's session mode. This is explicit so callers do
@@ -650,6 +687,40 @@ mod tests {
         assert!(observation.diagnostic.codes.is_empty());
         assert_eq!(observation.diagnostic.stdout_bytes, source.len());
         assert_eq!(observation.diagnostic.stderr_bytes, 0);
+        let account = usage_account(&observation);
+        assert_eq!(account["status"], "observed");
+        assert_eq!(account["counterSemantics"], "provider_turn_snapshot");
+        assert_eq!(account["additive"], false);
+        assert_eq!(account["usage"]["inputTokens"], 12);
+        assert_eq!(account["coverage"]["retry"], "unknown");
+        assert_eq!(account["coverage"]["parentChild"], "not_counted");
+    }
+
+    #[test]
+    fn usage_account_keeps_partial_usage_missing_and_does_not_infer_zero() {
+        let source = r#"{"type":"turn.completed","status":"completed","usage":{"input_tokens":0}}"#;
+        let observation = parse_stream(
+            source.as_bytes(),
+            false,
+            ProcessOutcome {
+                code: Some(0),
+                signal: None,
+                success: true,
+                timed_out: false,
+            },
+            b"",
+        )
+        .unwrap();
+        let account = usage_account(&observation);
+        assert_eq!(account["status"], "missing");
+        assert_eq!(account["usage"]["inputTokens"], 0);
+        assert!(account["usage"]["cachedInputTokens"].is_null());
+        assert_eq!(account["source"], "turn.completed");
+        assert!(account["coverage"]["gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| gap == "missing_usage"));
     }
 
     #[test]
