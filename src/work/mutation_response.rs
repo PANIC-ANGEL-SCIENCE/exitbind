@@ -149,7 +149,14 @@ pub(super) fn bounded(
         value["current"] = super::compact::minimal_current(&value["current"]);
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
-        value.as_object_mut().unwrap().remove("presentation");
+        // The human channel still needs its bounded product-owned status.
+        // Drop the larger structured task summary before that presentation.
+        if value["presentation"].is_object() {
+            value["presentation"] = json!({
+                "terminal": value["presentation"]["terminal"],
+                "goalProgress": {"systemText": value["presentation"]["goalProgress"]["systemText"]},
+            });
+        }
         value["next"]["progress"] = Value::Null;
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
