@@ -47,7 +47,7 @@ pub(crate) fn project(response: &Value) -> Value {
         "requiresDetail":exists && !response["actionForms"].is_object(),
         "warnings":response.get("warnings").or_else(|| response.pointer("/next/warnings")).cloned().unwrap_or(json!([])),
         "blocker":if blocked { response.get("reason").cloned().unwrap_or(json!({"code":"effect_unresolved"})) } else { Value::Null },
-        "source":{"version":1,"owner":"work actionForms/current","location":if response["actionForms"].is_object() { "actionForms" } else { if response.get("current").is_some() { "current.actionForm" } else { "next.current.actionForm" } }}})
+        "source":{"version":1,"owner":"work actionForms/current","location":if response["actionForms"].is_object() { "actionForms" } else if response.get("current").is_some() { "current.actionForm" } else { "next.current.actionForm" }}})
 }
 
 pub(crate) fn attach(response: &Value) -> Value {
