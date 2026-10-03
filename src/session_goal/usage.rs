@@ -199,6 +199,38 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
     let mut overlap_ids = BTreeSet::new();
     let mut turn_ids = BTreeSet::new();
     let mut cumulative = BTreeMap::new();
+    let mut numeric_events = Vec::new();
+    match crate::session_goal::read(&loaded.state_root) {
+        Ok(Some(goal)) => {
+            if let Some(goal_id) = goal["goalId"].as_str() {
+                match goal_records(loaded, goal_id) {
+                    Ok(events) => {
+                        for event in events {
+                            if event["work"].as_str() != Some(work) {
+                                continue;
+                            }
+                            numeric_events.push(event);
+                        }
+                    }
+                    Err(_) => push_gap(&mut gaps, "goal_usage_unreadable"),
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(_) => push_gap(&mut gaps, "goal_unreadable"),
+    }
+    match read_usage_raw(loaded, work) {
+        Ok(Some(raw)) => match parse_usage_records(Some(&raw), work) {
+            Ok(events) => {
+                for event in events {
+                    numeric_events.push(event);
+                }
+            }
+            Err(_) => push_gap(&mut gaps, "usage_ledger_corrupt"),
+        },
+        Ok(None) => {}
+        Err(_) => push_gap(&mut gaps, "usage_ledger_unreadable"),
+    }
     let mut consume = |event: &Value| {
         if records.len() >= MAX_RECORDS {
             push_gap(&mut gaps, "record_limit");
@@ -242,42 +274,8 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
             Err(reason) => push_gap(&mut gaps, reason),
         }
     };
-    match crate::session_goal::read(&loaded.state_root) {
-        Ok(Some(goal)) => {
-            if let Some(goal_id) = goal["goalId"].as_str() {
-                match goal_records(loaded, goal_id) {
-                    Ok(events) => {
-                        for event in events {
-                            if event["work"].as_str() != Some(work) {
-                                continue;
-                            }
-                            consume(&event);
-                            if records.len() >= MAX_RECORDS {
-                                break;
-                            }
-                        }
-                    }
-                    Err(_) => push_gap(&mut gaps, "goal_usage_unreadable"),
-                }
-            }
-        }
-        Ok(None) => {}
-        Err(_) => push_gap(&mut gaps, "goal_unreadable"),
-    }
-    match read_usage_raw(loaded, work) {
-        Ok(Some(raw)) => match parse_usage_records(Some(&raw), work) {
-            Ok(events) => {
-                for event in events {
-                    consume(&event);
-                    if records.len() >= MAX_RECORDS {
-                        break;
-                    }
-                }
-            }
-            Err(_) => push_gap(&mut gaps, "usage_ledger_corrupt"),
-        },
-        Ok(None) => {}
-        Err(_) => push_gap(&mut gaps, "usage_ledger_unreadable"),
+    for event in numeric_events {
+        consume(&event);
     }
     drop(consume);
     match std::fs::symlink_metadata(&root) {
