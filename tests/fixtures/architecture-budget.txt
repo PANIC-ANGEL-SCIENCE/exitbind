@@ -1,6 +1,5 @@
 # Grandfathered production sources over 32 KiB and their byte ceilings.
 # A ceiling may only fall. Remove a line when the file drops under 32 KiB.
-59768 src/cli/mod.rs
 60728 src/context.rs
 35330 src/distribution/update.rs
 40087 src/host/away.rs
