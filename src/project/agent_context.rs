@@ -478,20 +478,22 @@ mod tests {
         )
         .unwrap();
         let work = started["work"].as_str().unwrap();
-        let scope = crate::work::next(&loaded, work).unwrap();
-        let scoped = crate::work::return_result_with(
-            &loaded,
-            work,
-            scope["next"]["assignment"].as_str().unwrap(),
-            "scoped",
-            None,
-            None,
-            None,
-            Some(b"Exercise current project rule reads in a worker assignment.\n".to_vec()),
-            scope["current"]["binding"].as_str(),
+        std::fs::write(
+            root.join(".exitbind/context-scope.md"),
+            "Exercise current project rule reads in a worker assignment.\n",
         )
         .unwrap();
-        assert_eq!(scoped["effect"], "recorded");
+        crate::run::submit(
+            &loaded,
+            "lead",
+            &crate::work::resolve(&loaded, work).unwrap(),
+            "scoped",
+            ".exitbind/context-scope.md",
+            Some("state"),
+            None,
+            None,
+        )
+        .unwrap();
         let view = crate::work::next(&loaded, work).unwrap();
         let current = &view["next"];
         let binding = RequestedBinding {
