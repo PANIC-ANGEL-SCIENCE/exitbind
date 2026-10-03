@@ -253,7 +253,16 @@ pub(super) fn recorded_projection_failure(
 #[cfg(test)]
 mod tests {
     use super::{bounded, recorded_projection_failure, serialized_len};
-    use serde_json::json;
+    use serde_json::{json, Value};
+
+    fn assert_blocked_projection(compact: &Value) {
+        if crate::producer::exitbind_surface() {
+            assert_eq!(compact["effectiveAction"]["exists"], false);
+            assert_eq!(compact["effectiveAction"]["state"], "blocked");
+        } else {
+            assert!(compact.get("effectiveAction").is_none());
+        }
+    }
 
     #[test]
     fn recorded_projection_failure_is_successful_and_inspectable() {
@@ -321,8 +330,7 @@ mod tests {
         assert_eq!(compact["effect"], "recorded");
         assert_eq!(compact["diagnostic"]["phase"], "projection");
         assert_eq!(compact["next"]["requiresExpansion"], true);
-        assert_eq!(compact["effectiveAction"]["exists"], false);
-        assert_eq!(compact["effectiveAction"]["state"], "blocked");
+        assert_blocked_projection(&compact);
         assert!(compact["nextAction"]["command"].is_array());
         assert_eq!(
             compact["nextAction"]["command"]
@@ -348,7 +356,7 @@ mod tests {
         });
         let compact = bounded(&response, &work, None, &ledger, &config);
         assert!(serialized_len(&compact) <= 8 * 1024);
-        assert_eq!(compact["effectiveAction"]["exists"], false);
+        assert_blocked_projection(&compact);
         assert_eq!(compact["nextAction"]["sameConfigRequired"], true);
         assert_eq!(
             compact["nextAction"]["command"]
