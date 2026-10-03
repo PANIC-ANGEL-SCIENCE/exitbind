@@ -421,7 +421,9 @@ pub(crate) fn required_assignment(
         return Err("native current binding changed; refresh before execution".into());
     }
     let detail = super::readable::read(loaded, work, &snapshot, &fresh)?;
-    if detail["complete"] != true {
+    // Native request assembly owns its separate, validated profile read.
+    // A grouped inline-profile fallback is not missing upstream evidence.
+    if !super::readable::evidence_complete(&detail["sections"]["evidence"]) {
         let item = detail["sections"]["evidence"]["items"]
             .as_array()
             .and_then(|items| {

@@ -644,9 +644,12 @@ An oversized or non-UTF-8 recipient profile is also explicitly incomplete and
 names the existing profile reader; it is never silently truncated. Project
 rules retain the existing complete native delivery bound and fail closed.
 
-Native launch performs the same grouped validation before starting a provider
-and supplies the resolved exact assignment, evidence and task sections directly. A provider does not
-write paging, hex decoding, checksum, or JSON-join code. The current `actionForm`
+Native launch performs the same grouped evidence validation before starting a
+provider and supplies the resolved exact assignment, evidence and task sections
+directly. Its existing profile reader retains the separate 64 KiB native bound.
+An inline-profile fallback does not waive evidence validation or block a profile
+that the native reader can fully validate. A provider does not write paging,
+hex decoding, checksum, or JSON-join code. The current `actionForm`
 also supplies executable, assignment-bound Lead choices: failed checks use
 `work return WORK ASSIGNMENT --outcome rework|blocked --reason <REASON>`;
 pending findings use only their current repair/defer/reject/supersede choices

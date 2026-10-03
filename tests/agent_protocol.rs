@@ -88,6 +88,84 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn inline_profile_fallback_preserves_native_profile_limits() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for bytes in [16_384, 16_385, 17_000, 65_536, 65_537] {
+        let f = Fixture::new();
+        let profile = "p".repeat(bytes);
+        fs::write(f.root.join("exitbind/agents/worker.md"), &profile).unwrap();
+        let capture = f.root.join(".exitbind/profile-request");
+        let executable = f.root.join("fake-codex");
+        let events = [
+            json!({"type": "thread.started", "thread_id": "profile-limit-fixture"}),
+            json!({"type": "item.completed", "item": {"type": "agent_message",
+                "text": json!({"outcome": "completed", "summary": "fixture completed", "reason": ""}).to_string()}}),
+            json!({"type": "turn.completed", "status": "completed",
+                "usage": {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1}}),
+        ];
+        let output = events
+            .iter()
+            .map(|event| {
+                format!(
+                    "printf '%s\\n' '{}'\n",
+                    event.to_string().replace('\'', "'\\''")
+                )
+            })
+            .collect::<String>();
+        fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\ncat > '{}'\n{output}",
+                capture.to_str().unwrap().replace('\'', "'\\''")
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let work = f.begin();
+        f.return_result(&work, "scoped", b"scope");
+        let detail = f.detail(&work);
+        assert_eq!(detail["complete"], bytes <= 16_384);
+        let result = f.call(
+            &[
+                "work",
+                "act",
+                &work,
+                "--json",
+                "--codex-bin",
+                executable.to_str().unwrap(),
+            ],
+            None,
+        );
+        if bytes <= 65_536 {
+            assert!(result.status.success(), "{bytes}: {result:?}");
+            assert!(fs::read_to_string(&capture).unwrap().contains(&profile));
+            let response: Value = serde_json::from_slice(&result.stdout).unwrap();
+            assert_eq!(response["effect"], "recorded");
+            assert_eq!(response["next"]["action"], "check");
+        } else {
+            assert!(
+                !result.status.success(),
+                "oversized native profile launched"
+            );
+            assert!(
+                !capture.exists(),
+                "fake host launched past its native bound"
+            );
+            let refusal: Value = serde_json::from_slice(&result.stdout)
+                .expect("work act --json refusal must remain machine-readable");
+            assert!(
+                refusal
+                    .to_string()
+                    .contains("native profile exceeds its bound"),
+                "{refusal}"
+            );
+        }
+    }
+}
+
 #[test]
 fn one_detail_delivers_only_current_recipient_profile_rules_evidence_and_forms() {
     let f = Fixture::new();

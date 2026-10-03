@@ -216,7 +216,7 @@ fn response(
     Ok(value)
 }
 
-fn evidence_complete(value: &Value) -> bool {
+pub(super) fn evidence_complete(value: &Value) -> bool {
     value["items"].as_array().is_some_and(|items| {
         items.iter().all(|item| {
             ["artifact", "stdout", "stderr"].iter().all(|key| {
