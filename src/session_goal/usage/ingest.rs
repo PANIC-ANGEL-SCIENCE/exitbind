@@ -4,7 +4,6 @@ use super::{
     LIFETIMES, MAX_JOURNAL_BYTES, MAX_USAGE_EVENTS, PHASES, SCOPES, SEMANTICS, SOURCES, STATUSES,
 };
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
 
 /// Record a bounded host/native observation for an existing Work.  This is a
 /// private observation ledger beside the native journals; it never changes
@@ -418,6 +417,7 @@ fn validate_monotonic(existing: &[Value], current: &Value) -> Result<(), String>
 mod tests {
     use super::*;
     use crate::session_goal::usage::numeric_event;
+    use std::collections::BTreeSet;
 
     fn event() -> Value {
         json!({

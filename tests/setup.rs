@@ -227,14 +227,13 @@ fn setup_reports_and_refuses_changed_owned_guidance() {
     let first = setup_without_host(&root, true, false);
     assert!(first.status.success(), "{}", text(&first));
     let skill = root.join(".agents/skills/exitbind/SKILL.md");
-    fs::write(&skill, b"operator changed managed guidance\n").unwrap();
+    let mut changed = fs::read(&skill).unwrap();
+    changed.extend_from_slice(b"operator changed managed guidance\n");
+    fs::write(&skill, &changed).unwrap();
     let repeat = setup_without_host(&root, true, false);
     assert!(!repeat.status.success(), "{}", text(&repeat));
     assert!(text(&repeat).contains("managed guidance state"));
-    assert_eq!(
-        fs::read(skill).unwrap(),
-        b"operator changed managed guidance\n"
-    );
+    assert_eq!(fs::read(skill).unwrap(), changed);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -252,7 +251,7 @@ fn setup_supports_local_mode_and_non_ascii_preview_without_host_path() {
     let control_text = control.to_str().unwrap();
     let state_text = state.to_str().unwrap();
     let bindings_text = bindings.to_str().unwrap();
-    let mut args = vec![
+    let args = vec![
         "setup",
         "--json",
         "--apply",
