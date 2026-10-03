@@ -66,8 +66,10 @@ those agents; otherwise at least one case-insensitive literal substring must
 match the current Work goal. This is a declared applicability rule, not semantic
 inference. Session context without a task excludes task-specific lessons.
 
-Each record is at most 2,048 bytes. Normal readable delivery includes at most
-four records and 6,144 bytes including metadata and the inspection route. An
+Each record is at most 2,048 bytes. Normal readable delivery projects the complete
+fact, stable ID and owner with its current source reference; authoring metadata
+stays in the immutable source reached through that reference. Delivery includes
+at most four facts and 6,144 bytes including metadata and the inspection route. An
 explicit `omittedCount` and exact read-only command expose the remaining eligible
 references; no omitted fact is silently treated as read. The existing overall
 memory policy budget still applies. `memory resolve AGENT --task CURRENT_GOAL

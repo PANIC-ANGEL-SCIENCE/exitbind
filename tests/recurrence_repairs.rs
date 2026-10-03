@@ -163,6 +163,15 @@ fn ordinary_recipient_gets_only_applicable_current_project_lessons() {
         detail["recipientContext"]["projectLessons"]["omittedCount"],
         0
     );
+    let projected = &detail["recipientContext"]["projectLessons"]["items"][0];
+    assert_eq!(projected["lesson"]["owner"], "lead");
+    assert!(projected["lesson"].get("guards").is_none());
+    let source = f
+        .root
+        .join(projected["reference"]["sourcePath"].as_str().unwrap());
+    let full: Value = serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+    assert!(full["guards"].is_array());
+    assert_eq!(full["fact"], projected["lesson"]["fact"]);
     assert!(detail["actionForms"]["beforeEditing"]["command"]["argv"].is_array());
     let (_, other) = f.worker("update unrelated docs");
     assert!(other["recipientContext"].get("projectLessons").is_none());

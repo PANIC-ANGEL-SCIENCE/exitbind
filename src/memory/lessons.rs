@@ -274,8 +274,9 @@ pub(crate) fn validate_transition(
     Ok(())
 }
 
-/// Complete selected records and an explicit inspection route for each omitted
-/// record. The cap includes metadata, rather than only the fact's text.
+/// Complete fact text with current identity, rather than repeating authoring
+/// metadata. Source references and the inspector retain the full record route.
+/// The cap includes all delivered metadata, rather than only the fact's text.
 pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Option<Value>, String> {
     let references = super::selection::resolve_for_task(loaded, agent, Some(task))?;
     let mut items = Vec::new();
@@ -292,7 +293,8 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
             return Err("lesson changed during recipient delivery".into());
         }
         let lesson: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        let item = json!({"reference": reference, "lesson": lesson});
+        let fact = json!({"id":lesson["id"],"fact":lesson["fact"],"owner":lesson["owner"]});
+        let item = json!({"reference": reference, "lesson": fact});
         let mut attempted = items.clone();
         attempted.push(item.clone());
         if items.len() < MAX_ITEMS
