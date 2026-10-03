@@ -41,6 +41,14 @@ and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
 its distinct decision. The commands below govern host-managed child handoffs,
 not this product-managed Codex route.
 
+For a Work already known in this conversation, `exitbind work detail WORK
+--json` is the sufficient ordinary read: current recipient profile/rules,
+assignment, upstream evidence, task obligations and executable action forms.
+Use its worker pre-edit permit and complete return forms; keep review and Lead
+acceptance separate. Missing or oversized material remains explicitly incomplete
+and uses the emitted expert expansion. Do not repeat profile/rule discovery
+when the current complete delivery already contains it.
+
 For an explicit work locator, first run `exitbind work next WORK --json`
 to recover the bounded current action. Follow `current.details` exact argv for
 complete assignment, evidence and task sections before dependent action or
@@ -232,7 +240,12 @@ Operational path (keep low-level details delayed): initialize with
 `exitbind init`, or preview known owner-approved facts with
 `exitbind setup --mode portable --root . --scope worker --observe PATHS --write PATHS --commands FACTUAL_COMMAND --check-command CHECK_COMMAND --goal GOAL --review-policy required|omitted`.
 Review setup's affected paths and host mapping, then repeat it with `--apply`.
-Validate with `exitbind check`, then use `exitbind work begin`
+Applied setup returns validated configuration identity and exact next argv;
+use that current action instead of rediscovering it with a separate check.
+Role-specific `--lead-observe`, `--worker-write`, and corresponding per-role
+observe/write/commands flags express asymmetric approved facts in one application;
+`none` explicitly supplies an empty list. Shared scope/facts remain compatible
+but cannot be mixed with per-role flags. Use `exitbind work begin`
 and follow the returned handle. The product-managed Codex route uses `work act`
 as described above. The host-managed child route uses `work next`, `work permit`,
 `work return`, `work check`, and `work resume`. Before a pending host-managed

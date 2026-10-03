@@ -12,10 +12,14 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
+
+#[path = "setup_roles.rs"]
+mod setup_roles;
+use setup_roles::{single_command, split_list, RoleFacts};
 
 const ROLES: [&str; 3] = ["lead", "worker", "reviewer"];
 const HOSTS: [&str; 2] = ["codex", "claude"];
@@ -25,6 +29,7 @@ pub(crate) struct SetupFacts {
     root: String,
     mode: String,
     scope: Vec<String>,
+    role_facts: BTreeMap<String, RoleFacts>,
     observe: Option<Vec<String>>,
     write: Option<Vec<String>>,
     commands: Option<Vec<String>>,
@@ -41,30 +46,56 @@ pub(crate) struct SetupFacts {
     json: bool,
 }
 
+impl SetupFacts {
+    fn resolved_roles(&self) -> BTreeMap<String, RoleFacts> {
+        if !self.role_facts.is_empty() {
+            return self.role_facts.clone();
+        }
+        self.scope
+            .iter()
+            .map(|role| {
+                (
+                    role.clone(),
+                    RoleFacts {
+                        observe: self.observe.clone(),
+                        write: self.write.clone(),
+                        commands: self.commands.clone(),
+                    },
+                )
+            })
+            .collect()
+    }
+}
+
 pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
-    args::assert_options(
-        "setup",
-        arguments,
-        &[
-            "root",
-            "mode",
-            "scope",
-            "observe",
-            "write",
-            "commands",
-            "check-command",
-            "review-policy",
-            "goal",
-            "hosts",
-            "project-id",
-            "control-root",
-            "state-root",
-            "apply",
-            "skip-skills",
-            "json",
-        ],
-    )?;
+    let mut allowed = vec![
+        "root",
+        "mode",
+        "scope",
+        "observe",
+        "write",
+        "commands",
+        "check-command",
+        "review-policy",
+        "goal",
+        "hosts",
+        "project-id",
+        "control-root",
+        "state-root",
+        "apply",
+        "skip-skills",
+        "json",
+    ];
+    allowed.extend_from_slice(setup_roles::OPTIONS);
+    args::assert_options("setup", arguments, &allowed)?;
     args::assert_positionals("setup", arguments, 0)?;
+    let role_facts = setup_roles::parse(arguments)?;
+    let scope = if role_facts.is_empty() {
+        split_list(arguments.options.get("scope"), "scope")?
+            .unwrap_or_else(|| vec!["worker".into()])
+    } else {
+        role_facts.keys().cloned().collect()
+    };
     let facts = SetupFacts {
         root: arguments
             .options
@@ -76,8 +107,8 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
             .get("mode")
             .cloned()
             .unwrap_or_else(|| "portable".into()),
-        scope: split_list(arguments.options.get("scope"), "scope")?
-            .unwrap_or_else(|| vec!["worker".into()]),
+        scope,
+        role_facts,
         observe: split_list(arguments.options.get("observe"), "observe")?,
         write: split_list(arguments.options.get("write"), "write")?,
         commands: single_command(arguments.options.get("commands"), "commands")?,
@@ -132,7 +163,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     state.to_str().ok_or("StateRoot is not valid UTF-8")?;
     let config_path = control.join(crate::compatibility::profile().config);
     let hosts = selected_hosts(facts);
-    let roles = &facts.scope;
+    let roles = facts.resolved_roles();
     let existing = inspect_existing_config(&config_path)?;
     let mut report = preview_report(
         facts,
@@ -200,7 +231,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         }
         Some(status)
     };
-    let (next, config_edited) = updated_config(&loaded.config, facts, roles, &hosts)?;
+    let (next, config_edited) = setup_roles::updated_config(&loaded, &roles, &hosts)?;
     if config_edited {
         let mut source = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         source.push('\n');
@@ -238,6 +269,19 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     } else {
         guidance_diagnostics(&loaded.control_root)
     });
+    report["validation"] = crate::project::commands::validated_configuration(&loaded)?;
+    report["configuration"] = json!({"path": loaded.path,
+        "sha256": crate::evidence::hash::text(&loaded.source),
+        "productRoot": loaded.product_root, "controlRoot": loaded.control_root,
+        "stateRoot": loaded.state_root, "projectId": loaded.project_id});
+    let fresh = config::load(Some(loaded_path))?;
+    if fresh.source != loaded.source || profile_diagnostics(&fresh)? != profiles {
+        return Err(
+            "setup changed during validation; inspect the current configuration before continuing"
+                .into(),
+        );
+    }
+    report["applyRequired"] = json!(false);
     report["next"] = next_actions(&facts.root, &loaded.path, &hosts, facts)?;
     Ok(report)
 }
@@ -304,31 +348,6 @@ fn validate_facts(facts: &SetupFacts) -> Result<(), String> {
         return Err("--check-command must be a non-empty value without NUL bytes".into());
     }
     Ok(())
-}
-
-fn single_command(value: Option<&String>, label: &str) -> Result<Option<Vec<String>>, String> {
-    let Some(value) = value else { return Ok(None) };
-    if value.trim().is_empty() || value.contains('\0') {
-        return Err(format!(
-            "--{label} must be a non-empty value without NUL bytes"
-        ));
-    }
-    Ok(Some(vec![value.clone()]))
-}
-
-fn split_list(value: Option<&String>, label: &str) -> Result<Option<Vec<String>>, String> {
-    let Some(value) = value else { return Ok(None) };
-    let mut result = Vec::new();
-    for item in value.split(',') {
-        let item = item.trim();
-        if item.is_empty() || item.contains('\0') {
-            return Err(format!("--{label} contains an empty or NUL value"));
-        }
-        result.push(item.to_owned());
-    }
-    let mut unique = BTreeSet::new();
-    result.retain(|item| unique.insert(item.clone()));
-    Ok(Some(result))
 }
 
 fn selected_hosts(facts: &SetupFacts) -> Vec<String> {
@@ -438,17 +457,26 @@ fn preview_report(
                 .ok_or("affected setup path is not valid UTF-8")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let missing = [
-        ("observe", facts.observe.is_none()),
-        ("write", facts.write.is_none()),
-        ("commands", facts.commands.is_none()),
+    let mut missing = [
         ("check-command", facts.check_command.is_none()),
         ("review-policy", facts.review_policy.is_none()),
         ("goal", facts.goal.is_none()),
     ]
     .into_iter()
     .filter_map(|(name, missing)| missing.then_some(name))
+    .map(str::to_owned)
     .collect::<Vec<_>>();
+    for (role, supplied) in facts.resolved_roles() {
+        for (field, absent) in [
+            ("observe", supplied.observe.is_none()),
+            ("write", supplied.write.is_none()),
+            ("commands", supplied.commands.is_none()),
+        ] {
+            if absent {
+                missing.push(format!("{role}.{field}"));
+            }
+        }
+    }
     let host_mapping = hosts
         .iter()
         .map(|host| {
@@ -490,7 +518,7 @@ fn preview_report(
         "root": root,
         "mode": facts.mode,
         "scope": facts.scope,
-        "approvedFacts": {"observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal},
+        "approvedFacts": {"roles": facts.resolved_roles(), "observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal},
         "affectedPaths": affected,
         "conflicts": conflicts,
         "missingOwnerDecisions": missing,
@@ -500,54 +528,6 @@ fn preview_report(
         "projection": projection,
         "next": next_actions(&facts.root, config_path, hosts, facts)?,
     }))
-}
-
-fn updated_config(
-    source: &Value,
-    facts: &SetupFacts,
-    roles: &[String],
-    hosts: &[String],
-) -> Result<(Value, bool), String> {
-    let mut next = source.clone();
-    let mut changed = false;
-    for role in roles {
-        let agent = next["agents"]
-            .get_mut(role)
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| format!("configuration has no '{role}' agent"))?;
-        for (name, value) in [
-            ("observe", facts.observe.as_ref()),
-            ("write", facts.write.as_ref()),
-            ("commands", facts.commands.as_ref()),
-        ] {
-            if let Some(value) = value {
-                let value = json!(value);
-                if agent.get(name) != Some(&value) {
-                    agent.insert(name.to_owned(), value);
-                    changed = true;
-                }
-            }
-        }
-        if hosts.len() == 1 {
-            let runtime = agent.entry("runtime").or_insert_with(|| json!({}));
-            let runtime = runtime
-                .as_object_mut()
-                .ok_or_else(|| format!("agents.{role}.runtime must be an object"))?;
-            let host = json!(hosts[0]);
-            if runtime.get("host") != Some(&host) {
-                runtime.insert("host".into(), host);
-                changed = true;
-            }
-        }
-    }
-    let errors = config::validate(&next);
-    if !errors.is_empty() {
-        return Err(format!(
-            "approved setup facts would invalidate configuration:\n- {}",
-            errors.join("\n- ")
-        ));
-    }
-    Ok((next, changed))
 }
 
 fn validate_destination(
@@ -754,12 +734,18 @@ fn next_actions(
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
     let check_argv = vec![executable, "check", "--config", config];
-    let mut actions = vec![check_argv
-        .iter()
-        .map(|item| shell_quote(item))
-        .collect::<Vec<_>>()
-        .join(" ")];
-    let mut argv = vec![check_argv];
+    let mut actions = Vec::new();
+    let mut argv = Vec::new();
+    if !facts.apply {
+        actions.push(
+            check_argv
+                .iter()
+                .map(|item| shell_quote(item))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        argv.push(check_argv);
+    }
     if let (Some(check), Some(review_policy), Some(goal)) =
         (&facts.check_command, &facts.review_policy, &facts.goal)
     {
@@ -852,6 +838,7 @@ mod tests {
             root,
             mode: "portable".into(),
             scope: vec!["worker".into()],
+            role_facts: BTreeMap::new(),
             observe: Some(vec!["README.md".into()]),
             write: Some(vec!["src".into()]),
             commands: Some(vec!["cargo test --locked".into()]),

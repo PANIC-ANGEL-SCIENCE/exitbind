@@ -119,6 +119,27 @@ on `PATH`. A selected executable's absolute path is shown so a PATH conflict
 has a runnable recovery command. Missing `observe`, `write`, or `commands`
 facts, goal, and review choice remain visible as owner decisions.
 
+For different approved boundaries per role, provide them in one setup:
+
+```sh
+exitbind setup --root . \
+  --lead-observe README.md,src --lead-write none --lead-commands none \
+  --worker-observe README.md,src --worker-write src \
+  --worker-commands "cargo test --locked" \
+  --reviewer-observe README.md,src --reviewer-write none --reviewer-commands none \
+  --check-command "cargo test --locked" --review-policy required \
+  --goal "Describe the bounded change"
+```
+
+`none` explicitly declares an empty role-specific list. Omitted role fields
+leave existing facts untouched and remain visible as missing owner decisions.
+Do not mix role flags with shared `--scope`, `--observe`, `--write` or `--commands`.
+Review the preview and repeat with `--apply`. Applied setup returns the same
+`validation` result as `check`, configuration identity and exact `next.argv`.
+When check, goal and review decision are supplied, the next action starts Work
+directly. Standalone `check` remains useful after an external configuration
+change. Setup never starts Work automatically.
+
 Setup preserves the existing `init` refusal when its configuration already
 exists. For an existing compatible setup, it changes only the selected fields;
 custom profiles, skills, hooks, and permissions remain owned by their current

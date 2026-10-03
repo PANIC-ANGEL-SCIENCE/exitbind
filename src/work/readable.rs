@@ -8,6 +8,9 @@
 use crate::{config::Loaded, run::RunSnapshot};
 use serde_json::{json, Map, Value};
 
+#[path = "recipient_context.rs"]
+mod recipient_context;
+
 pub(crate) const PREFIX: &str = "ref:work-detail:v1:";
 pub(crate) const MAX_GROUPED_BYTES: usize = 256 * 1024;
 
@@ -55,6 +58,16 @@ pub(crate) fn read(
     snapshot: &RunSnapshot,
     next: &Value,
 ) -> Result<Value, String> {
+    read_after_reads(loaded, work, snapshot, next, || Ok(()))
+}
+
+fn read_after_reads(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &RunSnapshot,
+    next: &Value,
+    after_reads: impl FnOnce() -> Result<(), String>,
+) -> Result<Value, String> {
     super::details::ensure_current_config(loaded)?;
     let mut canonical = next.clone();
     canonical
@@ -62,7 +75,9 @@ pub(crate) fn read(
         .ok_or("current action unavailable")?
         .remove("current");
     let binding = super::details::binding(loaded, work, snapshot, &canonical)?;
+    let recipient = recipient_context::read(loaded, &canonical)?;
     let sections = grouped_sections(loaded, work, snapshot, &canonical, &binding)?;
+    after_reads()?;
     super::details::ensure_current_config(loaded)?;
     let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
     let fresh = super::next_from(loaded, work, &fresh_snapshot)?;
@@ -74,7 +89,13 @@ pub(crate) fn read(
     if super::details::binding(loaded, work, &fresh_snapshot, &fresh_canonical)? != binding {
         return Err("work detail changed during expansion; refresh with work next".into());
     }
-    response(loaded, work, &binding, &canonical, sections)
+    if recipient_context::read(loaded, &fresh_canonical)? != recipient {
+        return Err(
+            "recipient instructions changed during work detail; refresh the current assignment"
+                .into(),
+        );
+    }
+    response(loaded, work, &binding, &canonical, sections, recipient)
 }
 
 pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
@@ -105,19 +126,7 @@ pub(crate) fn expand(
     if binding != expected {
         return Err("work detail reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
     }
-    let sections = grouped_sections(loaded, work, snapshot, &canonical, binding)?;
-    super::details::ensure_current_config(loaded)?;
-    let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
-    let fresh = super::next_from(loaded, work, &fresh_snapshot)?;
-    let mut fresh_canonical = fresh.clone();
-    fresh_canonical
-        .as_object_mut()
-        .ok_or("current action unavailable")?
-        .remove("current");
-    if super::details::binding(loaded, work, &fresh_snapshot, &fresh_canonical)? != expected {
-        return Err("work detail changed during expansion; refresh with work next".into());
-    }
-    response(loaded, work, expected.as_str(), &canonical, sections)
+    read(loaded, work, snapshot, next)
 }
 
 fn grouped_sections(
@@ -180,8 +189,10 @@ fn response(
     binding: &str,
     next: &Value,
     sections: Map<String, Value>,
+    recipient: Value,
 ) -> Result<Value, String> {
-    let readable_complete = evidence_complete(&sections["evidence"]);
+    let readable_complete =
+        evidence_complete(&sections["evidence"]) && recipient["complete"] == true;
     let value = json!({
         "compact": true,
         "valid": true,
@@ -193,6 +204,7 @@ fn response(
         "recipient": {"role": next["role"], "agent": next["agent"], "assignment": next["assignment"], "actor": next["resolvedActor"]},
         "complete": readable_complete,
         "sections": sections,
+        "recipientContext": recipient,
         "usageAccount": crate::session_goal::usage::details_for_work(loaded, work),
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
@@ -213,4 +225,62 @@ fn evidence_complete(value: &Value) -> bool {
             })
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rules_changed_during_actual_detail_assembly_are_refused() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-detail-mid-read-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let config = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().unwrap(),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .unwrap();
+        let loaded = crate::config::load(config.to_str()).unwrap();
+        std::fs::write(root.join("AGENTS.md"), "before\n").unwrap();
+        let begun = crate::work::begin(
+            &loaded,
+            crate::work::BeginOptions {
+                workflow: "change",
+                goal: "mid-read detail",
+                check_command: "true",
+                boundary: None,
+                harness_receipt: None,
+                proof_origin: None,
+                preserve_requirement: None,
+                preservation_check_command: None,
+                preservation_proof_origin: None,
+                basis: None,
+                review_policy: Some("required"),
+            },
+        )
+        .unwrap();
+        let work = begun["work"].as_str().unwrap();
+        let snapshot =
+            RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, work).unwrap()).unwrap();
+        let next = crate::work::next_from(&loaded, work, &snapshot).unwrap();
+        let error = read_after_reads(&loaded, work, &snapshot, &next, || {
+            std::fs::write(root.join("AGENTS.md"), "after\n").map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(error.contains("recipient instructions changed"), "{error}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

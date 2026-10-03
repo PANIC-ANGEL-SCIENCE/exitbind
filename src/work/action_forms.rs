@@ -25,7 +25,7 @@ fn choice(
         "command": command(loaded, suffix),
         "placeholders": placeholders,
         "stdin": input,
-        "sideEffect": "records only after the Lead supplies the placeholders and executes the bound command",
+        "sideEffect": "records only after the selected actor supplies the placeholders and executes the bound command",
     })
 }
 
@@ -47,6 +47,18 @@ fn no_input() -> Value {
 }
 
 fn allowed_outcomes(next: &Value) -> Vec<&str> {
+    if next["action"] == "spawn" && next["role"] != "lead" {
+        return next["role"]
+            .as_str()
+            .and_then(crate::kernel::result_contract::Role::parse)
+            .map(|role| {
+                role.outcomes()
+                    .iter()
+                    .map(|outcome| outcome.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
     next["outcomes"]
         .as_array()
         .map(|items| items.iter().filter_map(Value::as_str).collect())
@@ -103,7 +115,11 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
 pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     let Some(assignment) = next["assignment"].as_str() else {
         return json!({"version": 1, "state": next["action"], "binding": binding,
-            "leadChoiceRequired": false, "choices": []});
+            "leadChoiceRequired": false, "choices": [],
+            "mechanicalAction": if next["action"] == "check" {
+                json!({"command": command(loaded, vec!["work".into(), "check".into(), work.into()]),
+                    "meaning": "execute only the current frozen applicable check; failure requires a Lead decision"})
+            } else { Value::Null }});
     };
     let outcomes = allowed_outcomes(next);
     let state = if next["packet"].get("pendingDisposition").is_some() {
@@ -260,8 +276,18 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             })
             .collect()
     } else {
-        Vec::new()
+        outcomes
+            .iter()
+            .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
+            .collect()
     };
     result["choices"] = json!(choices);
+    if next["action"] == "spawn" && next["role"] == "worker" {
+        result["beforeEditing"] = json!({
+            "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
+                assignment.into(), "--operation".into(), "<OPERATION>".into()]),
+            "placeholders": ["OPERATION"], "required": true,
+            "meaning": "obtain allowed:true before editing; this form grants no host permission"});
+    }
     result
 }

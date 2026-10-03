@@ -259,7 +259,7 @@ fn project_value(loaded: &Loaded) -> Result<Value, String> {
     }))
 }
 
-fn current_rules(loaded: &Loaded) -> Result<Vec<(String, String, String)>, String> {
+pub(crate) fn current_rules(loaded: &Loaded) -> Result<Vec<(String, String, String)>, String> {
     let mut rules = Vec::new();
     for name in RULES {
         let bytes = match path::secure_bytes_observation(&loaded.product_root, name, "project rule")

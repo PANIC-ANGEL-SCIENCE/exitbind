@@ -6,7 +6,7 @@ use crate::{
     config,
     project::{onboarding, skills as project_skills},
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use std::path::Path;
 
 const EMPTY_STARTER_DETAIL: &str = "empty starter boundary: review observe, write, and commands before tasks needing project files or commands; empty declarations do not grant host permission or establish task readiness";
@@ -179,31 +179,14 @@ pub(crate) fn doctor(arguments: &Arguments) -> Result<(), String> {
 pub(crate) fn check(loaded: &config::Loaded, arguments: &Arguments) -> Result<(), String> {
     args::assert_options("check", arguments, &["config", "json"])?;
     args::assert_positionals("check", arguments, 0)?;
-    for agent in loaded.agents.values() {
-        config::file(&loaded.control_root, &agent.profile)?;
-    }
-    let mut warnings = crate::config::boundary::warnings(&loaded.config);
-    if is_empty_starter(&loaded.agents) {
-        warnings.push(json!({
-            "classification": "empty_starter_boundary",
-            "detail": EMPTY_STARTER_DETAIL
-        }));
-    }
+    let validation = validated_configuration(loaded)?;
+    let warnings = validation["warnings"].as_array().unwrap();
     let skill_diagnostics = project_skills::diagnose(&loaded.control_root);
-    let mode = match loaded.mode {
-        crate::project::layout_types::Mode::Local => "local",
-        crate::project::layout_types::Mode::Portable => "portable",
-    };
+    let mode = validation["mode"].as_str().unwrap();
     if arguments.flags.contains_key("json") {
         println!(
             "{}",
-            serde_json::to_string(&json!({
-                "valid": true,
-                "mode": mode,
-                "projectId": loaded.project_id,
-                "warnings": warnings
-            }))
-            .map_err(|error| error.to_string())?
+            serde_json::to_string(&validation).map_err(|error| error.to_string())?
         );
     } else {
         println!(
@@ -223,16 +206,32 @@ pub(crate) fn check(loaded: &config::Loaded, arguments: &Arguments) -> Result<()
                         .unwrap_or("unknown warning detail")
                 );
             } else {
-                println!(
-                    "warning: agents.{}.{} entry '{}' is descriptive or unsupported for exact run narrowing",
-                    warning["agent"], warning["field"], warning["entry"]
-                );
+                println!("warning: agents.{}.{} entry '{}' is descriptive or unsupported for exact run narrowing", warning["agent"], warning["field"], warning["entry"]);
             }
         }
         print_skill_diagnostics(&skill_diagnostics);
     }
     print_skill_warnings(&skill_diagnostics, &loaded.control_root);
     Ok(())
+}
+
+/// The same validation owner supplies both standalone check and applied setup.
+pub(super) fn validated_configuration(loaded: &config::Loaded) -> Result<Value, String> {
+    for agent in loaded.agents.values() {
+        config::file(&loaded.control_root, &agent.profile)?;
+    }
+    let mut warnings = crate::config::boundary::warnings(&loaded.config);
+    if is_empty_starter(&loaded.agents) {
+        warnings.push(json!({
+            "classification": "empty_starter_boundary",
+            "detail": EMPTY_STARTER_DETAIL
+        }));
+    }
+    let mode = match loaded.mode {
+        crate::project::layout_types::Mode::Local => "local",
+        crate::project::layout_types::Mode::Portable => "portable",
+    };
+    Ok(json!({"valid": true, "mode": mode, "projectId": loaded.project_id, "warnings": warnings}))
 }
 
 fn is_empty_starter(

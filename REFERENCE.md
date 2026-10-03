@@ -627,12 +627,22 @@ Neither route intercepts other native tools or remote effects.
 --json` reads the same current route directly. The product validates the
 ledger, configuration, recipient and task binding, then returns grouped
 assignment, evidence and task sections with exact verified UTF-8 artifact
-content. The bounded grouped response is at most 256 KiB; `complete` is false
+content. `recipientContext` also delivers only the current recipient's exact
+profile, configuration identity, declared boundary and current project rules.
+Ordinary recipients can use this read without separate profile/rule discovery.
+Instructions are checked before and after assembly; changed recipient, profile,
+configuration, rule or Work bytes refuse delivery. Worker/reviewer return forms
+and the worker's pre-edit permit accompany the distinct Lead choices. A pending
+frozen check has its mechanical command with no review or acceptance authority.
+The bounded grouped response is at most 256 KiB; `complete` is false
 when non-UTF-8 or oversized evidence cannot be represented as readable text,
 and the response names the current scoped evidence route for the supported
 fallback. Legacy `current.details.assignment`, `.evidence` and `.tasks` routes
 remain available for expert hex paging and preserve their 24 KiB page and
 64 KiB response contracts.
+An oversized or non-UTF-8 recipient profile is also explicitly incomplete and
+names the existing profile reader; it is never silently truncated. Project
+rules retain the existing complete native delivery bound and fail closed.
 
 Native launch performs the same grouped validation before starting a provider
 and supplies the resolved exact assignment, evidence and task sections directly. A provider does not
