@@ -133,6 +133,19 @@ fn goal_usage_records_replay_and_preserves_semantic_currentness() {
 #[test]
 fn work_usage_records_a_direct_observation_without_relaunching_work() {
     let project = Project::new("work-usage-round-trip");
+    project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "work-goal",
+            "--goal",
+            "record one bounded work observation",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
     let started = project.value(
         &[
             "work",
@@ -151,6 +164,7 @@ fn work_usage_records_a_direct_observation_without_relaunching_work() {
         "source": "activity",
         "scope": "direct",
         "phase": "implementation",
+        "goalId": "work-goal",
         "status": "observed",
         "semantics": "delta",
         "lifetime": "invocation",
@@ -166,5 +180,8 @@ fn work_usage_records_a_direct_observation_without_relaunching_work() {
     let details = project.value(&inspect, None);
     assert_eq!(details["totals"]["totalTokens"], 3);
     assert_eq!(details["recordCount"], 1);
+    let goal_details = project.value(&["goal", "usage", "--goal-id", "work-goal"], None);
+    assert_eq!(goal_details["totals"]["totalTokens"], 3);
+    assert_eq!(goal_details["recordCount"], 1);
     fs::remove_dir_all(project.root).unwrap();
 }

@@ -714,10 +714,18 @@ instead of treating it as zero. Phases are `setup`, `implementation`, `review`,
 `repair`, `resume`, and `closeout`; scopes are `setup`, `root`, `direct`,
 `native`, and `child`. Supported counter semantics are `delta`, `per_turn`,
 and `cumulative`. Cumulative observations require a baseline and compatible
-lifetime identity; replay and declared parent/child overlap do not add twice.
+lifetime identity. Session counters and per-turn observations require an
+explicit `sessionId` and `counterId`; goal counters require `goalId` and
+`counterId`. Adapter, scope, and lifetime differences keep streams separate.
+Replay and declared parent/child overlap do not add twice.
 Native completion snapshots with unknown additive semantics remain separate.
 Cached input is a subset of input; total tokens are input plus output. Partial
 coverage and host-reported counters do not establish whole-goal savings.
+An observation recorded through `work usage` with the current `goalId` uses
+the same goal observation owner, so goal and Work inspection see it once.
+Without `goalId`, Work observations remain isolated. A supplied Work link is
+caller-reported numeric attribution and grants no semantic goal ownership or
+permission. The account keeps unassociated native and root coverage unknown.
 
 The same JSON status includes product-owned `goalProgress` when a canonical
 Lead goal exists. It lists the Lead's explicit obligation tasks, keeps

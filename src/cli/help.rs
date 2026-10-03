@@ -41,7 +41,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
         }
         ["work", "check"] => "work check WORK",
-        ["work", "usage"] => "work usage WORK [--apply] [--json] [--config CONFIG] < NUMERIC_JSON",
+        ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
@@ -72,7 +72,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
         ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
         ["goal", "status"] => "goal status [--themed]",
-        ["goal", "usage"] => "goal usage --goal-id ID [--apply] [--json] [--config CONFIG] < NUMERIC_JSON",
+        ["goal", "usage"] => "goal usage --goal-id ID [--json] [--config CONFIG] | goal usage --goal-id ID --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",
         ["context", "sensor-request"] => "context sensor-request --state FILE",

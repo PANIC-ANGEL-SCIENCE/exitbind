@@ -5,10 +5,118 @@ use super::{
 };
 use serde_json::{json, Value};
 
-/// Record a bounded host/native observation for an existing Work.  This is a
-/// private observation ledger beside the native journals; it never changes
-/// the canonical goal revision, Work packet, grant state, or check evidence.
-/// The CLI owns argument parsing and calls this API after explicit admission.
+const NATIVE_GAPS: [&str; 9] = [
+    "missing_thread_id",
+    "missing_turn_completion",
+    "missing_usage",
+    "missing_command_outcome",
+    "missing_final_result",
+    "prompt_delivery_failed",
+    "missing_command_exit_code",
+    "missing_command_identity",
+    "unknown_gap",
+];
+const NATIVE_LABELS: [&str; 6] = [
+    "unobserved",
+    "not_counted",
+    "unknown",
+    "observed",
+    "observed_or_missing",
+    "replayed",
+];
+
+pub(super) fn bounded_native_account(account: &Value) -> Value {
+    let mut gaps: Vec<Value> = Vec::new();
+    if let Some(items) = account["coverage"]["gaps"].as_array() {
+        for item in items.iter().take(super::MAX_GAPS) {
+            let value = item
+                .as_str()
+                .filter(|value| NATIVE_GAPS.contains(value))
+                .unwrap_or("unknown_gap");
+            if !gaps.iter().any(|gap| gap.as_str() == Some(value)) {
+                gaps.push(json!(value));
+            }
+        }
+    }
+    let input = account["usage"]["inputTokens"].as_u64();
+    let cached = account["usage"]["cachedInputTokens"].as_u64();
+    let output = account["usage"]["outputTokens"].as_u64();
+    let valid_usage = cached
+        .zip(input)
+        .map_or(true, |(cached, input)| cached <= input)
+        && input
+            .zip(output)
+            .map_or(true, |(input, output)| input.checked_add(output).is_some());
+    let base_status = account["status"]
+        .as_str()
+        .filter(|value| STATUSES.contains(value))
+        .unwrap_or("unknown");
+    let turn = account["coverage"]["turn"]
+        .as_str()
+        .filter(|value| matches!(*value, "completed" | "failed" | "interrupted" | "unknown"));
+    let coverage_present = account["coverage"]["gaps"].is_array()
+        && turn.is_some_and(|value| value != "unknown")
+        && account["coverage"]["unobservedItems"].as_u64() == Some(0);
+    let status = if base_status == "observed"
+        && (!(valid_usage && input.is_some() && cached.is_some() && output.is_some())
+            || !coverage_present
+            || !gaps.is_empty())
+    {
+        "missing"
+    } else {
+        base_status
+    };
+    let source = account["source"]
+        .as_str()
+        .filter(|value| {
+            matches!(
+                *value,
+                "turn.completed" | "native_observation" | "unavailable"
+            )
+        })
+        .unwrap_or("unavailable");
+    let scope = account["scope"]
+        .as_str()
+        .filter(|value| matches!(*value, "native_turn" | "native"))
+        .unwrap_or("native_turn");
+    let counter_semantics = account["counterSemantics"]
+        .as_str()
+        .filter(|value| *value == "provider_turn_snapshot")
+        .unwrap_or("unknown");
+    let label = |name: &str| {
+        account["coverage"][name]
+            .as_str()
+            .filter(|value| NATIVE_LABELS.contains(value))
+            .map_or(Value::Null, |value| json!(value))
+    };
+    json!({
+        "status": status,
+        "scope": scope,
+        "source": source,
+        "counterSemantics": counter_semantics,
+        "additive": false,
+        "usage": {
+            "inputTokens": input,
+            "cachedInputTokens": cached,
+            "outputTokens": output,
+        },
+        "coverage": {
+            "turn": turn,
+            "commands": account["coverage"]["commands"]
+                .as_u64()
+                .filter(|value| *value <= 65_536),
+            "unobservedItems": account["coverage"]["unobservedItems"]
+                .as_u64()
+                .filter(|value| *value <= 65_536),
+            "rootSetup": label("rootSetup"),
+            "parentChild": label("parentChild"),
+            "retry": label("retry"),
+            "replay": label("replay"),
+            "gaps": gaps,
+        },
+    })
+}
+
 pub(crate) fn record_numeric_event(
     loaded: &crate::config::Loaded,
     work: &str,
@@ -18,8 +126,22 @@ pub(crate) fn record_numeric_event(
         return Err("usage observation requires a valid Work identity".into());
     }
     let _ = crate::work::resolve(loaded, work)?;
+    if bounded_id(event.get("goalId"), "goalId")?.is_some() {
+        match event.get("work") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(value)) if value == work => {}
+            Some(Value::String(_)) => {
+                return Err("usage observation Work identity does not match".into())
+            }
+            Some(_) => return Err("usage observation work is invalid".into()),
+        }
+        let mut linked = event.clone();
+        linked["work"] = Value::String(work.to_owned());
+        return record_goal_numeric_event(loaded, &linked);
+    }
     validate_optional_goal(loaded, event)?;
     let normalized = normalize_event(work, event)?;
+    validate_contract(&normalized)?;
     let ledger = usage_ledger(loaded, work)?;
     crate::run::ledger::with_lock(&ledger, || {
         let raw = super::read_usage_raw(loaded, work)?;
@@ -53,10 +175,6 @@ pub(crate) fn record_numeric_event(
     })
 }
 
-/// Record a goal-owned observation whose Work association is optional.  The
-/// canonical goal identity is checked before the observation ledger is
-/// touched; this keeps setup/root/direct events available before child Work
-/// exists without changing the semantic goal revision.
 pub(crate) fn record_goal_numeric_event(
     loaded: &crate::config::Loaded,
     event: &Value,
@@ -73,14 +191,14 @@ pub(crate) fn record_goal_numeric_event(
         Some(_) => return Err("usage observation work is invalid".into()),
     }
     let normalized = normalize_event("__goal__", event)?;
+    validate_contract(&normalized)?;
     let ledger = goal_usage_ledger(loaded)?;
     crate::run::ledger::with_lock(&ledger, || {
         let raw = super::read_goal_usage_raw(loaded)?;
         let existing = parse_goal_records(raw.as_deref())?;
-        if let Some(previous) = existing
-            .iter()
-            .find(|value| value["id"] == normalized["id"])
-        {
+        if let Some(previous) = existing.iter().find(|value| {
+            value["id"] == normalized["id"] && value["goalId"] == normalized["goalId"]
+        }) {
             if previous == &normalized {
                 return Ok(json!({"status":"replayed", "id":normalized["id"], "goalId":goal_id}));
             }
@@ -192,7 +310,7 @@ fn parse_goal_records(raw: Option<&str>) -> Result<Vec<Value>, String> {
             return Err("goal usage observation has an invalid Work association".into());
         }
         let normalized = normalize_event("__goal__", &value)?;
-        if normalized != value {
+        if !canonical_record_matches(&value, &normalized) {
             return Err("goal usage observation ledger has noncanonical fields".into());
         }
         records.push(normalized);
@@ -227,7 +345,7 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
     let object = event
         .as_object()
         .ok_or("usage observation must be an object")?;
-    const ALLOWED_FIELDS: [&str; 23] = [
+    const ALLOWED_FIELDS: [&str; 24] = [
         "work",
         "id",
         "source",
@@ -245,6 +363,7 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
         "turn",
         "sessionMode",
         "adapterVersion",
+        "sessionId",
         "counterId",
         "reset",
         "parentEventId",
@@ -312,9 +431,6 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
         .filter(|value| LIFETIMES.contains(value))
         .ok_or("usage observation lifetime is unsupported")?;
     let counter_id = bounded_id(object.get("counterId"), "counterId")?;
-    if semantics == "cumulative" && counter_id.is_none() {
-        return Err("cumulative usage observation requires counterId".into());
-    }
     let values = match object.get("values") {
         None | Some(Value::Null) => None,
         Some(Value::Object(values)) => Some(values),
@@ -343,6 +459,16 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
     let input = number("inputTokens")?;
     let cached = number("cachedInputTokens")?;
     let output = number("outputTokens")?;
+    if let (Some(input), Some(cached)) = (input, cached) {
+        if cached > input {
+            return Err("usage observation cache exceeds input".into());
+        }
+    }
+    if let (Some(input), Some(output)) = (input, output) {
+        if input.checked_add(output).is_none() {
+            return Err("usage observation total overflows u64".into());
+        }
+    }
     let reset = object.get("reset").map_or(Ok(false), |value| {
         value.as_bool().ok_or("usage observation reset is invalid")
     })?;
@@ -373,6 +499,7 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
         "turn": optional("turn")?,
         "sessionMode": optional("sessionMode")?,
         "adapterVersion": optional("adapterVersion")?,
+        "sessionId": optional("sessionId")?,
         "counterId": counter_id,
         "reset": reset,
         "parentEventId": optional("parentEventId")?,
@@ -385,19 +512,68 @@ pub(super) fn normalize_event(work: &str, event: &Value) -> Result<Value, String
     }))
 }
 
+pub(super) fn canonical_record_matches(value: &Value, normalized: &Value) -> bool {
+    if value == normalized {
+        return true;
+    }
+    if value.get("sessionId").is_some() {
+        return false;
+    }
+    let mut legacy = normalized.clone();
+    if let Some(object) = legacy.as_object_mut() {
+        object.remove("sessionId");
+    }
+    value == &legacy
+}
+
+fn validate_contract(event: &Value) -> Result<(), String> {
+    let semantics = event["semantics"].as_str().unwrap_or_default();
+    let lifetime = event["lifetime"].as_str().unwrap_or_default();
+    let needs_stream = matches!(semantics, "cumulative" | "per_turn");
+    if semantics == "cumulative" && event["counterId"].as_str().is_none() {
+        return Err("cumulative usage observation requires counterId".into());
+    }
+    if needs_stream && lifetime == "session" {
+        if event["sessionId"].as_str().is_none() {
+            return Err("session usage observation requires sessionId".into());
+        }
+        if event["counterId"].as_str().is_none() {
+            return Err("session usage observation requires counterId".into());
+        }
+    }
+    if needs_stream && lifetime == "goal" {
+        if event["goalId"].as_str().is_none() {
+            return Err("goal usage observation requires goalId".into());
+        }
+        if event["counterId"].as_str().is_none() {
+            return Err("goal usage observation requires counterId".into());
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn stream_key(event: &Value) -> Result<String, &'static str> {
+    let fields = [
+        event["source"].clone(),
+        event["goalId"].clone(),
+        event["work"].clone(),
+        event["scope"].clone(),
+        event["lifetime"].clone(),
+        event["sessionId"].clone(),
+        event["counterId"].clone(),
+        event["adapterVersion"].clone(),
+    ];
+    serde_json::to_string(&fields).map_err(|_| "stream_identity")
+}
+
 fn validate_monotonic(existing: &[Value], current: &Value) -> Result<(), String> {
     if current["semantics"] != "cumulative" {
         return Ok(());
     }
-    let Some(counter_id) = current["counterId"].as_str() else {
-        return Err("cumulative usage observation requires counterId".into());
-    };
+    let stream = stream_key(current).map_err(str::to_owned)?;
     let prior = existing.iter().rev().find(|value| {
         value["semantics"] == "cumulative"
-            && value["counterId"].as_str() == Some(counter_id)
-            && value["source"] == current["source"]
-            && value["goalId"] == current["goalId"]
-            && value["work"] == current["work"]
+            && stream_key(value).ok().as_deref() == Some(stream.as_str())
     });
     let Some(prior) = prior else { return Ok(()) };
     let fields = ["inputTokens", "cachedInputTokens", "outputTokens"];
@@ -410,221 +586,23 @@ fn validate_monotonic(existing: &[Value], current: &Value) -> Result<(), String>
     if decreased && current["reset"] != true {
         return Err("cumulative usage counter decreased without reset".into());
     }
+    if current["reset"] != true {
+        let delta_input = current["values"]["inputTokens"]
+            .as_u64()
+            .zip(prior["values"]["inputTokens"].as_u64())
+            .and_then(|(now, before)| now.checked_sub(before));
+        let delta_cached = current["values"]["cachedInputTokens"]
+            .as_u64()
+            .zip(prior["values"]["cachedInputTokens"].as_u64())
+            .and_then(|(now, before)| now.checked_sub(before));
+        if let (Some(input), Some(cached)) = (delta_input, delta_cached) {
+            if cached > input {
+                return Err("cumulative cache delta exceeds input delta".into());
+            }
+        }
+    }
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::session_goal::usage::numeric_event;
-    use std::collections::BTreeSet;
-
-    fn event() -> Value {
-        json!({
-            "id": "host-1",
-            "source": "host_reported",
-            "scope": "direct",
-            "phase": "closeout",
-            "status": "observed",
-            "semantics": "delta",
-            "lifetime": "invocation",
-            "goalId": "goal-1",
-            "taskId": "task-1",
-            "role": "lead",
-            "assignment": "assignment-1",
-            "attempt": 2,
-            "invocation": "invocation-1",
-            "turn": "turn-1",
-            "sessionMode": "persistent",
-            "adapterVersion": "codex-1",
-            "values": {"inputTokens": 0, "cachedInputTokens": 0, "outputTokens": 3},
-        })
-    }
-
-    #[test]
-    fn normalizes_zero_and_allowlisted_associations_without_text() {
-        let normalized = normalize_event("smw_123", &event()).unwrap();
-        assert_eq!(normalized["work"], "smw_123");
-        assert_eq!(normalized["values"]["inputTokens"], 0);
-        assert_eq!(normalized["values"]["outputTokens"], 3);
-        assert_eq!(normalized["taskId"], "task-1");
-        assert!(normalized.get("summary").is_none());
-    }
-
-    #[test]
-    fn cumulative_decrease_requires_explicit_reset() {
-        let mut first = event();
-        first["id"] = json!("counter-1");
-        first["semantics"] = json!("cumulative");
-        first["counterId"] = json!("provider-counter");
-        first["values"] = json!({"inputTokens": 10, "cachedInputTokens": 2, "outputTokens": 4});
-        let first = normalize_event("smw_123", &first).unwrap();
-        let mut second = first.clone();
-        second["id"] = json!("counter-2");
-        second["values"]["inputTokens"] = json!(3);
-        assert!(validate_monotonic(&[first], &second).is_err());
-        second["reset"] = json!(true);
-        let prior = normalize_event("smw_123", &event()).unwrap();
-        let mut prior = prior;
-        prior["semantics"] = json!("cumulative");
-        prior["counterId"] = json!("provider-counter");
-        prior["values"] = json!({"inputTokens": 10, "cachedInputTokens": 2, "outputTokens": 4});
-        assert!(validate_monotonic(&[prior], &second).is_ok());
-    }
-
-    #[test]
-    fn parent_and_native_snapshots_never_become_additive_values() {
-        let mut parent = event();
-        parent["id"] = json!("parent");
-        let mut child = event();
-        child["id"] = json!("child");
-        child["parentEventId"] = json!("parent");
-        let mut ids = BTreeSet::new();
-        let mut overlaps = BTreeSet::new();
-        let mut turns = BTreeSet::new();
-        let mut cumulative = std::collections::BTreeMap::new();
-        let (_, parent_values) = numeric_event(
-            &normalize_event("smw_123", &parent).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut cumulative,
-        )
-        .unwrap();
-        let (_, child_values) = numeric_event(
-            &normalize_event("smw_123", &child).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut cumulative,
-        )
-        .unwrap();
-        assert!(parent_values.is_some());
-        assert!(child_values.is_none());
-
-        let mut native = event();
-        native["id"] = json!("native");
-        native["source"] = json!("native_observation");
-        let (_, native_values) = numeric_event(
-            &normalize_event("smw_123", &native).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut cumulative,
-        )
-        .unwrap();
-        assert!(native_values.is_none());
-    }
-
-    #[test]
-    fn failed_execution_with_known_delta_remains_additive() {
-        let mut failed = event();
-        failed["id"] = json!("failed");
-        failed["status"] = json!("failed");
-        let mut ids = BTreeSet::new();
-        let mut overlaps = BTreeSet::new();
-        let mut turns = BTreeSet::new();
-        let mut cumulative = std::collections::BTreeMap::new();
-        let (_, values) = numeric_event(
-            &normalize_event("smw_123", &failed).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut cumulative,
-        )
-        .unwrap();
-        assert_eq!(values, Some([0, 0, 3]));
-
-        let mut missing = failed;
-        missing["id"] = json!("failed-missing");
-        missing["values"] = Value::Null;
-        let (_, values) = numeric_event(
-            &normalize_event("smw_123", &missing).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut cumulative,
-        )
-        .unwrap();
-        assert!(values.is_none());
-    }
-
-    #[test]
-    fn cumulative_and_per_turn_contracts_derive_only_known_deltas() {
-        let mut ids = BTreeSet::new();
-        let mut overlaps = BTreeSet::new();
-        let mut turns = BTreeSet::new();
-        let mut counters = std::collections::BTreeMap::new();
-
-        let mut cumulative = event();
-        cumulative["semantics"] = json!("cumulative");
-        cumulative["lifetime"] = json!("session");
-        cumulative["counterId"] = json!("counter-1");
-        cumulative["values"] =
-            json!({"inputTokens": 10, "cachedInputTokens": 2, "outputTokens": 4});
-        let first = numeric_event(
-            &normalize_event("smw_123", &cumulative).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut counters,
-        )
-        .unwrap();
-        assert_eq!(first.1, None);
-
-        cumulative["id"] = json!("counter-2");
-        cumulative["values"] =
-            json!({"inputTokens": 12, "cachedInputTokens": 3, "outputTokens": 5});
-        let second = numeric_event(
-            &normalize_event("smw_123", &cumulative).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut counters,
-        )
-        .unwrap();
-        assert_eq!(second.1, Some([2, 1, 1]));
-
-        let mut per_turn = event();
-        per_turn["id"] = json!("turn-1");
-        per_turn["semantics"] = json!("per_turn");
-        per_turn["lifetime"] = json!("session");
-        let (_, values) = numeric_event(
-            &normalize_event("smw_123", &per_turn).unwrap(),
-            &mut ids,
-            &mut overlaps,
-            &mut turns,
-            &mut counters,
-        )
-        .unwrap();
-        assert_eq!(values, Some([0, 0, 3]));
-    }
-
-    #[test]
-    fn goal_event_keeps_optional_work_link_and_rejects_unbounded_fields() {
-        let mut goal = event();
-        goal["work"] = json!("smw_123");
-        let normalized = normalize_event("__goal__", &goal).unwrap();
-        assert_eq!(normalized["work"], "smw_123");
-        assert_eq!(normalized["goalId"], "goal-1");
-
-        goal["rawText"] = json!("must never be persisted");
-        assert!(normalize_event("__goal__", &goal).is_err());
-    }
-
-    #[test]
-    fn goal_records_are_partitionable_by_canonical_goal_identity() {
-        let first = normalize_event("__goal__", &event()).unwrap();
-        let mut second = first.clone();
-        second["goalId"] = json!("goal-2");
-        let raw = format!(
-            "{}\n{}\n",
-            serde_json::to_string(&first).unwrap(),
-            serde_json::to_string(&second).unwrap()
-        );
-        let records = parse_goal_records(Some(&raw)).unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0]["goalId"], "goal-1");
-        assert_eq!(records[1]["goalId"], "goal-2");
-    }
-}
+mod tests;
