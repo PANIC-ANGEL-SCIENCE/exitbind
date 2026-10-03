@@ -91,6 +91,7 @@ impl Drop for Fixture {
 #[cfg(unix)]
 #[test]
 fn inline_profile_fallback_preserves_native_profile_limits() {
+    use std::fmt::Write;
     use std::os::unix::fs::PermissionsExt;
 
     for bytes in [16_384, 16_385, 17_000, 65_536, 65_537] {
@@ -106,15 +107,15 @@ fn inline_profile_fallback_preserves_native_profile_limits() {
             json!({"type": "turn.completed", "status": "completed",
                 "usage": {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1}}),
         ];
-        let output = events
-            .iter()
-            .map(|event| {
-                format!(
-                    "printf '%s\\n' '{}'\n",
-                    event.to_string().replace('\'', "'\\''")
-                )
-            })
-            .collect::<String>();
+        let mut output = String::new();
+        for event in events {
+            writeln!(
+                output,
+                "printf '%s\\n' '{}'",
+                event.to_string().replace('\'', "'\\''")
+            )
+            .unwrap();
+        }
         fs::write(
             &executable,
             format!(
