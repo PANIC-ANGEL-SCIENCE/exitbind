@@ -5,6 +5,7 @@ pub(crate) mod action_forms;
 pub(crate) mod compact;
 pub(crate) mod details;
 mod disposition;
+pub(crate) mod effective_action;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
 mod held;
@@ -598,9 +599,7 @@ fn agent_response(mut value: Value) -> Value {
     crate::work::packet::sanitize_assignment(&mut value);
     value
 }
-fn safe_action(kind: &str) -> Value {
-    json!({"type": kind, "safe": true})
-}
+use effective_action::safe_action;
 
 fn diagnostic_error(
     error: &str,

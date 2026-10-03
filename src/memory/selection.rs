@@ -68,6 +68,7 @@ pub(crate) fn resolve_for_task(
             let source_path = relative_project_path(&loaded.product_root, &source_target)?;
             let source = current_source(loaded, &source_path, source_sha)?;
             if scope == super::lessons::SCOPE {
+                super::validate_history_current(loaded, &ledger.snapshot)?;
                 let lesson = super::lessons::parse(loaded, &source)?;
                 if !super::lessons::applicable(loaded, &lesson, agent_name, task)? {
                     continue;

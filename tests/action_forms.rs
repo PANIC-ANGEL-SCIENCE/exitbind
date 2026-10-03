@@ -70,9 +70,41 @@ impl Fixture {
     }
 
     fn next(&self, work: &str) -> Value {
-        let mut next = self.json(&["work", "next", work, "--full"], b"")["next"].clone();
+        let full = self.json(&["work", "next", work, "--full"], b"");
+        let compact = self.json(&["work", "next", work, "--json"], b"");
+        assert_eq!(
+            full["effectiveAction"]["exists"],
+            compact["effectiveAction"]["exists"]
+        );
+        assert_eq!(
+            full["effectiveAction"]["binding"],
+            compact["effectiveAction"]["binding"]
+        );
+        assert_eq!(
+            full["effectiveAction"]["kind"],
+            compact["effectiveAction"]["kind"]
+        );
+        let mut next = full["next"].clone();
         let detail = self.json(&["work", "detail", work], b"");
         assert_eq!(detail["binding"], next["current"]["binding"]);
+        assert_eq!(
+            detail["effectiveAction"]["binding"],
+            full["effectiveAction"]["binding"]
+        );
+        assert_eq!(
+            detail["effectiveAction"]["kind"],
+            full["effectiveAction"]["kind"]
+        );
+        assert_eq!(
+            detail["effectiveAction"]["readiness"],
+            full["effectiveAction"]["readiness"]
+        );
+        if detail["actionForms"]["choices"].is_array() {
+            assert_eq!(
+                detail["effectiveAction"]["choices"],
+                detail["actionForms"]["choices"]
+            );
+        }
         next["current"]["actionForm"] = detail["actionForms"].clone();
         next
     }
@@ -375,6 +407,9 @@ fn final_acceptance_form_executes_after_current_check_and_review() {
         b"lead acceptance",
     );
     assert_eq!(result["presentation"]["terminal"], "EXIT READY");
+    let done = fixture.json(&["work", "next", &work, "--json"], b"");
+    assert_eq!(done["effectiveAction"]["state"], "done");
+    assert_eq!(done["effectiveAction"]["exists"], false);
 }
 
 #[test]

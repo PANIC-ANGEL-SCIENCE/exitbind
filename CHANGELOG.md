@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.27.0
+
+- Assemble approved asymmetric role facts with model-free setup and keep
+  accounted usage and current scoped context attached to the supported Work.
+- Deliver reviewed, bounded project lessons in applicable assignments. Facts
+  carry no previous Work checks, review approval, acceptance or task grants.
+- Add explicit Lead-reviewed configuration revalidation for project lessons.
+  Only additive recipient read rights and schema URL metadata are compatible;
+  immutable old events remain readable. Revalidation writes memory-event v2;
+  older binaries refuse that ledger and must not mutate it during rollback.
+- Hash eligible lesson guards with a fixed streaming buffer, preserving
+  no-follow checks, missing-file exclusion and observed change/refusal behavior.
+- Expose one additive `effectiveAction` projection for programmatic Work
+  consumers, with current bindings, exact detail routes and action forms.
+- Validate workflow syntax and context availability before native builds with
+  checksum-pinned, task-local actionlint. Acquisition is explicit; a provisioned
+  archive supports offline checks. Reject the unsupported job `runner.temp`
+  expression before hosted checks.
+
 ## 0.26.0
 
 - Give the current assigned outcome and related goal obligations a readable,

@@ -4,6 +4,9 @@ use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
+mod digest_observation;
+pub(crate) use digest_observation::secure_digest_observation;
+
 pub fn file(root: &Path, requested: &str) -> Result<PathBuf, String> {
     if requested.contains('\0') || Path::new(requested).is_absolute() {
         return Err(format!("path escapes project root: {requested}"));
@@ -135,98 +138,11 @@ fn secure_bytes_result(
     max_bytes: Option<u64>,
     single_link: bool,
 ) -> SecureBytesResult {
-    use std::ffi::CString;
-    use std::fs::{File, OpenOptions};
-    use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    use std::os::unix::io::{AsRawFd, FromRawFd};
-
-    if requested.trim().is_empty() || requested.contains('\0') || Path::new(requested).is_absolute()
-    {
-        return SecureBytesResult::Unsafe(format!("path escapes project root: {label}"));
-    }
-    let components = Path::new(requested)
-        .components()
-        .filter_map(|component| match component {
-            Component::CurDir => None,
-            Component::Normal(value) => Some(Ok(value)),
-            _ => Some(Err(SecureBytesResult::Unsafe(format!(
-                "path escapes project root: {label}"
-            )))),
-        })
-        .collect::<Result<Vec<_>, SecureBytesResult>>();
-    let components = match components {
-        Ok(components) => components,
+    use std::os::unix::fs::MetadataExt;
+    let mut file = match secure_open(root, requested, label, canonicalize_root, single_link) {
+        Ok(file) => file,
         Err(error) => return error,
     };
-    let (file_name, parents) = match components.split_last() {
-        Some(parts) => parts,
-        None => return SecureBytesResult::Unsafe(format!("{label} path must name a project file")),
-    };
-    let real_root = if canonicalize_root {
-        match fs::canonicalize(root) {
-            Ok(root) => root,
-            Err(_) => {
-                return SecureBytesResult::Unreadable(format!(
-                    "project root does not exist: {}",
-                    root.display()
-                ))
-            }
-        }
-    } else {
-        root.to_path_buf()
-    };
-    let mut directory = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(real_root)
-    {
-        Ok(directory) => directory,
-        Err(error) => return classify_io_error(error, label),
-    };
-    for component in parents {
-        let component = CString::new(component.as_bytes())
-            .map_err(|_| SecureBytesResult::Unsafe(format!("path escapes project root: {label}")));
-        let component = match component {
-            Ok(component) => component,
-            Err(error) => return error,
-        };
-        let descriptor = unsafe {
-            libc::openat(
-                directory.as_raw_fd(),
-                component.as_ptr(),
-                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            )
-        };
-        if descriptor < 0 {
-            let error = io::Error::last_os_error();
-            return classify_io_error(error, label);
-        }
-        directory = unsafe { File::from_raw_fd(descriptor) };
-    }
-    let file_name = CString::new(file_name.as_bytes())
-        .map_err(|_| SecureBytesResult::Unsafe(format!("path escapes project root: {label}")));
-    let file_name = match file_name {
-        Ok(file_name) => file_name,
-        Err(error) => return error,
-    };
-    let descriptor = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            file_name.as_ptr(),
-            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if descriptor < 0 {
-        let error = io::Error::last_os_error();
-        return classify_io_error(error, label);
-    }
-    let mut file = unsafe { File::from_raw_fd(descriptor) };
-    match file.metadata() {
-        Ok(info) if info.is_file() && (!single_link || info.nlink() == 1) => {}
-        Ok(_) => return SecureBytesResult::Unsafe(format!("{label} must be a regular file")),
-        Err(error) => return classify_io_error(error, label),
-    }
     let mut bytes = Vec::new();
     if let Err(error) = file
         .by_ref()
@@ -260,6 +176,119 @@ fn secure_bytes_result(
         }
     }
     SecureBytesResult::Bytes(bytes)
+}
+
+#[cfg(unix)]
+fn secure_open(
+    root: &Path,
+    requested: &str,
+    label: &str,
+    canonicalize_root: bool,
+    single_link: bool,
+) -> Result<fs::File, SecureBytesResult> {
+    use std::ffi::CString;
+    use std::fs::{File, OpenOptions};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+
+    if requested.trim().is_empty() || requested.contains('\0') || Path::new(requested).is_absolute()
+    {
+        return Err(SecureBytesResult::Unsafe(format!(
+            "path escapes project root: {label}"
+        )));
+    }
+    let components = Path::new(requested)
+        .components()
+        .filter_map(|component| match component {
+            Component::CurDir => None,
+            Component::Normal(value) => Some(Ok(value)),
+            _ => Some(Err(SecureBytesResult::Unsafe(format!(
+                "path escapes project root: {label}"
+            )))),
+        })
+        .collect::<Result<Vec<_>, SecureBytesResult>>();
+    let components = match components {
+        Ok(components) => components,
+        Err(error) => return Err(error),
+    };
+    let (file_name, parents) = match components.split_last() {
+        Some(parts) => parts,
+        None => {
+            return Err(SecureBytesResult::Unsafe(format!(
+                "{label} path must name a project file"
+            )))
+        }
+    };
+    let real_root = if canonicalize_root {
+        match fs::canonicalize(root) {
+            Ok(root) => root,
+            Err(_) => {
+                return Err(SecureBytesResult::Unreadable(format!(
+                    "project root does not exist: {}",
+                    root.display()
+                )))
+            }
+        }
+    } else {
+        root.to_path_buf()
+    };
+    let mut directory = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(real_root)
+    {
+        Ok(directory) => directory,
+        Err(error) => return Err(classify_io_error(error, label)),
+    };
+    for component in parents {
+        let component = CString::new(component.as_bytes())
+            .map_err(|_| SecureBytesResult::Unsafe(format!("path escapes project root: {label}")));
+        let component = match component {
+            Ok(component) => component,
+            Err(error) => return Err(error),
+        };
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                component.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if descriptor < 0 {
+            let error = io::Error::last_os_error();
+            return Err(classify_io_error(error, label));
+        }
+        directory = unsafe { File::from_raw_fd(descriptor) };
+    }
+    let file_name = CString::new(file_name.as_bytes())
+        .map_err(|_| SecureBytesResult::Unsafe(format!("path escapes project root: {label}")));
+    let file_name = match file_name {
+        Ok(file_name) => file_name,
+        Err(error) => return Err(error),
+    };
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            file_name.as_ptr(),
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if descriptor < 0 {
+        let error = io::Error::last_os_error();
+        return Err(classify_io_error(error, label));
+    }
+    let file = unsafe { File::from_raw_fd(descriptor) };
+    match file.metadata() {
+        Ok(info) if info.is_file() && (!single_link || info.nlink() == 1) => {}
+        Ok(_) => {
+            return Err(SecureBytesResult::Unsafe(format!(
+                "{label} must be a regular file"
+            )))
+        }
+        Err(error) => return Err(classify_io_error(error, label)),
+    }
+    Ok(file)
 }
 
 #[cfg(not(unix))]

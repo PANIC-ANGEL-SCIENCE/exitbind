@@ -50,9 +50,9 @@ and uses the emitted expert expansion. Do not repeat profile/rule discovery
 when the current complete delivery already contains it.
 
 For an explicit work locator, first run `exitbind work next WORK --json`
-to recover the bounded current action. Follow `current.details` exact argv for
-complete assignment, evidence and task sections before dependent action or
-review; compact status alone is insufficient. Expert `--full` inspection remains
+to recover the bounded current action. Use `effectiveAction` and follow its
+exact `detail.command` for complete assignment, evidence, tasks and bound action
+forms before dependent action or review; compact status alone is insufficient. Expert `--full` inspection remains
 available. Use `exitbind work continuation WORK` for an
 initialized same-Work cross-host handoff; follow its `receive` block for binding
 and child preparation. If another goal owns the continuation sidecar, preserve

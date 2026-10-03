@@ -171,15 +171,11 @@ pub(crate) fn applicable(
         return Ok(false);
     }
     for guard in &lesson.guards {
-        match path::secure_bytes_observation(&loaded.product_root, &guard.path, "lesson guard") {
-            path::SecureBytesResult::Bytes(bytes) if hash::bytes(&bytes) == guard.sha256 => {}
-            path::SecureBytesResult::Bytes(_) | path::SecureBytesResult::Absent(_) => {
-                return Ok(false)
-            }
-            path::SecureBytesResult::Unsafe(reason)
-            | path::SecureBytesResult::Unreadable(reason) => return Err(reason),
-            #[cfg(not(unix))]
-            path::SecureBytesResult::Unsupported(reason) => return Err(reason),
+        if path::secure_digest_observation(&loaded.product_root, &guard.path, "lesson guard")?
+            .as_deref()
+            != Some(guard.sha256.as_str())
+        {
+            return Ok(false);
         }
     }
     Ok(true)

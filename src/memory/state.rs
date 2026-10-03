@@ -8,8 +8,15 @@ use super::ledger::{
     confined_target, project_file, relative_project_path, stable_bytes, stable_text, LedgerSnapshot,
 };
 
-pub(crate) const ACTIONS: [&str; 6] =
-    ["propose", "review", "promote", "reject", "revoke", "expire"];
+pub(crate) const ACTIONS: [&str; 7] = [
+    "propose",
+    "review",
+    "promote",
+    "reject",
+    "revoke",
+    "expire",
+    "revalidate",
+];
 const SHA256: &str = "0123456789abcdef";
 
 pub(crate) fn validate_event(
@@ -39,6 +46,7 @@ pub(crate) fn validate_event(
         "timestamp",
         "expiresAt",
         "eventSha256",
+        "revalidation",
     ];
     for key in object.keys() {
         if !allowed.contains(&key.as_str()) {
@@ -47,7 +55,10 @@ pub(crate) fn validate_event(
             ));
         }
     }
-    if event["version"] != json!(1)
+    if !(event["version"] == json!(1) && event.get("revalidation").is_none()
+        || event["version"] == json!(2)
+            && event["action"] == "revalidate"
+            && event["revalidation"].is_object())
         || event["kind"] != json!("memory")
         || !event["action"]
             .as_str()
@@ -174,6 +185,9 @@ pub(crate) fn validate_event(
             "invalid memory ledger line {line}: item evidence changed"
         ));
     }
+    if action == "revalidate" {
+        super::revalidation::validate_evidence(event, current)?;
+    }
     next_state_for(
         action,
         current["state"]
@@ -246,7 +260,7 @@ pub(crate) fn apply_event(
         .ok_or("memory event has no itemId")?
         .to_owned();
     if event["action"] == "propose" {
-        let mut item = json!({"itemId": id.clone(), "scope": event["scope"], "state": "proposed", "source": event["source"], "lastEventSha256": event["eventSha256"]});
+        let mut item = json!({"itemId": id.clone(), "scope": event["scope"], "state": "proposed", "source": event["source"], "lastEventSha256": event["eventSha256"], "configSha256": event["configSha256"]});
         if let Some(expiry) = event.get("expiresAt") {
             item["expiresAt"] = expiry.clone();
         }
@@ -255,8 +269,11 @@ pub(crate) fn apply_event(
         let action = event["action"]
             .as_str()
             .ok_or("memory event has no action")?;
-        item["state"] = json!(state_for_action(action));
+        if action != "revalidate" {
+            item["state"] = json!(state_for_action(action));
+        }
         item["lastEventSha256"] = event["eventSha256"].clone();
+        item["configSha256"] = event["configSha256"].clone();
     } else {
         return Err("memory transition has no proposal".into());
     }
@@ -282,17 +299,20 @@ pub(crate) fn validate_history_current(
     ledger: &LedgerSnapshot,
 ) -> Result<(), String> {
     let config_hash = hash::text(&loaded.source);
-    for event in &ledger.events {
+    let first = ledger
+        .events
+        .iter()
+        .rposition(|event| event["action"] == "revalidate")
+        .unwrap_or(0);
+    for event in &ledger.events[first..] {
         if event["configSha256"] != config_hash {
             return Err("configuration changed since memory event".into());
         }
         let actor = event["actor"].as_str().ok_or("invalid memory actor")?;
-        let agent = loaded.config["agents"]
-            .get(actor)
+        let agent = loaded
+            .agent(actor)
             .ok_or_else(|| format!("memory actor configuration changed: {actor}"))?;
-        let profile_name = agent["profile"]
-            .as_str()
-            .ok_or_else(|| format!("memory actor configuration changed: {actor}"))?;
+        let profile_name = &agent.profile;
         let profile = project_file(&loaded.control_root, profile_name, "actor profile")?;
         let current_path = relative_project_path(&loaded.control_root, &profile)?;
         let current_hash = hash::text(&stable_text(&profile, "actor profile")?);
@@ -370,6 +390,14 @@ pub(crate) fn state_for_action(action: &str) -> &str {
 }
 
 pub(crate) fn next_state_for(action: &str, current: &str) -> Result<String, String> {
+    if action == "revalidate"
+        && matches!(
+            current,
+            "proposed" | "reviewed" | "accepted" | "rejected" | "revoked" | "expired"
+        )
+    {
+        return Ok(current.to_owned());
+    }
     let allowed = match current {
         "proposed" => ["review", "reject"].as_slice(),
         "reviewed" => ["promote", "reject"].as_slice(),

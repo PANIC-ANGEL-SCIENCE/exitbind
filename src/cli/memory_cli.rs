@@ -5,6 +5,30 @@ use crate::memory::{self, forgetting};
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(a, 0, "memory requires an action")?;
     match action {
+        "revalidate" => {
+            args::assert_options(
+                "memory revalidate",
+                a,
+                &["config", "from-config", "reason", "apply", "json"],
+            )?;
+            args::assert_positionals("memory revalidate", a, 3)?;
+            print_json(&memory::revalidation::run(
+                l,
+                positional(a, 1, "memory revalidate requires AGENT LEDGER")?,
+                positional(a, 2, "memory revalidate requires AGENT LEDGER")?,
+                option(
+                    a,
+                    "from-config",
+                    "memory revalidate requires --from-config ORIGINAL_CONFIG",
+                )?,
+                option(
+                    a,
+                    "reason",
+                    "memory revalidate requires --reason REVIEWED_REASON",
+                )?,
+                a.flags.contains_key("apply"),
+            )?)
+        }
         "resolve" => {
             args::assert_options("memory resolve", a, &["config", "json", "task"])?;
             args::assert_positionals("memory resolve", a, 2)?;

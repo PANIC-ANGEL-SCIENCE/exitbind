@@ -26,6 +26,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "event",
     "external-scope",
     "expires-at",
+    "from-config",
     "exit-code",
     "forbid-term",
     "goal",

@@ -7,6 +7,7 @@ pub(crate) mod forgetting;
 pub(crate) mod ledger;
 pub(crate) mod lessons;
 pub(crate) mod policy;
+pub(crate) mod revalidation;
 pub(crate) mod selection;
 pub(crate) mod state;
 

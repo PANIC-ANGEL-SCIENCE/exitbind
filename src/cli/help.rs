@@ -24,6 +24,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
         ["project"] => "project context [memory ITEM_ID] [--json] | project agents [--apply] [--json]",
+        ["memory", "revalidate"] => "memory revalidate LEAD LEDGER --from-config ORIGINAL_CONFIG --reason REVIEWED_REASON [--apply] [--json]",
         ["setup"] => "setup [--apply] [--json] --mode local|portable --root ROOT --scope lead,worker,reviewer [--observe PATHS] [--write PATHS] [--commands FACTUAL_COMMAND] [--check-command CHECK_COMMAND] [--goal GOAL] [--review-policy required|omitted] [--hosts codex,claude]",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
         ["work", "replan"] => {

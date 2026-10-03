@@ -2,8 +2,12 @@
 
 use super::*;
 
+fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
+    print_json(&crate::work::effective_action::attach(value))
+}
+
 fn print_work_result(value: &serde_json::Value) -> Result<(), String> {
-    print_json(value)?;
+    print_work_json(value)?;
     if let Some(text) = value["presentation"]["goalProgress"]["systemText"]
         .as_str()
         .or_else(|| value["goalProgress"]["systemText"].as_str())
@@ -31,7 +35,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             } else {
                 crate::work::managed_edit::interact(l, command, first, second)?
             };
-            print_json(&result)
+            print_work_json(&result)
         }
         "world" => {
             args::assert_options("work world", a,
@@ -43,7 +47,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let world = if a.flags.contains_key("export") {
                 crate::presentation_events::world::export(&world)
             } else { world };
-            if a.flags.contains_key("json") { print_json(&world) } else {
+            if a.flags.contains_key("json") { print_work_json(&world) } else {
                 print!("{}", crate::presentation_events::world::render(&world,
                     a.flags.contains_key("plain")));
                 Ok(())
@@ -53,7 +57,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_options("work write", a,
                 &["config", "operation", "expected-sha256", "json"])?;
             args::assert_positionals("work write", a, 4)?;
-            print_json(&crate::work::file_effect::write(l, crate::work::file_effect::WriteRequest {
+            print_work_json(&crate::work::file_effect::write(l, crate::work::file_effect::WriteRequest {
                 work: positional(a, 1, "work write requires WORK ASSIGNMENT PATH")?,
                 assignment: positional(a, 2, "work write requires WORK ASSIGNMENT PATH")?,
                 path: positional(a, 3, "work write requires WORK ASSIGNMENT PATH")?,
@@ -91,7 +95,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 "host-version",
                 64,
             )?;
-            print_json(&crate::session_goal::continuation_bind(
+            print_work_json(&crate::session_goal::continuation_bind(
                 l,
                 work,
                 expected_revision,
@@ -111,7 +115,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
             let assignment = positional(a, 3, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
             let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_json(&crate::session_goal::prepare_child(
+            print_work_json(&crate::session_goal::prepare_child(
                 l,
                 work,
                 expected_revision,
@@ -127,7 +131,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_positionals("work child context", a, 4)?;
             let work = positional(a, 2, "work child context requires WORK INTENT")?;
             let intent = positional(a, 3, "work child context requires WORK INTENT")?;
-            print_json(&crate::session_goal::child_context(l, work, intent)?)
+            print_work_json(&crate::session_goal::child_context(l, work, intent)?)
         }
         "child" if a.positional.get(1).map(String::as_str) == Some("recover") => {
             args::assert_options("work child recover", a, &["config", "context"])?;
@@ -135,7 +139,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let work = positional(a, 2, "work child recover requires WORK INTENT")?;
             let intent = positional(a, 3, "work child recover requires WORK INTENT")?;
             let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_json(&crate::session_goal::recover_child(
+            print_work_json(&crate::session_goal::recover_child(
                 l,
                 work,
                 intent,
@@ -165,7 +169,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             )?;
             let result = child_result(a)?;
             let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_json(&crate::session_goal::continuation_child(
+            print_work_json(&crate::session_goal::continuation_child(
                 l,
                 work,
                 expected_revision,
@@ -184,7 +188,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_positionals("work continuation", a, 2)?;
             let work = positional(a, 1, "work continuation requires WORK")?;
             if let Some(section) = a.options.get("section") {
-                print_json(&crate::session_goal::continuation_section(
+                print_work_json(&crate::session_goal::continuation_section(
                     l,
                     work,
                     section,
@@ -194,13 +198,13 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             } else if a.options.contains_key("index") || a.options.contains_key("history-index") {
                 Err("--index and --history-index require --section".into())
             } else {
-                print_json(&crate::session_goal::continuation_view(l, work)?)
+                print_work_json(&crate::session_goal::continuation_view(l, work)?)
             }
         }
         "focus" => {
             args::assert_options("work focus", a, &["config", "json"])?;
             args::assert_positionals("work focus", a, 2)?;
-            print_json(&crate::work::set_focus(
+            print_work_json(&crate::work::set_focus(
                 l,
                 positional(a, 1, "work focus requires WORK")?,
             )?)
@@ -208,7 +212,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "record" => {
             args::assert_options("work record", a, &["config"])?;
             args::assert_positionals("work record", a, 2)?;
-            print_json(&crate::session_goal::continuation_record(
+            print_work_json(&crate::session_goal::continuation_record(
                 l, positional(a, 1, "work record requires WORK")?,
             )?)
         }
@@ -232,7 +236,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
-            print_json(&crate::work::begin(
+            print_work_json(&crate::work::begin(
                 l,
                 crate::work::BeginOptions {
                     workflow: positional(a, 1, "work begin requires WORKFLOW")?,
@@ -276,7 +280,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     positional(a, 1, "work next requires WORK")?, &result);
                 result["world"] = world;
             }
-            print_json(&result)
+            print_work_json(&result)
         }
         "act" => {
             args::assert_options(
@@ -325,7 +329,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
             args::assert_positionals("work permit", a, 3)?;
-            print_json(&crate::work::permit(
+            print_work_json(&crate::work::permit(
                 l,
                 positional(a, 1, "work permit requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work permit requires WORK ASSIGNMENT")?,
@@ -349,7 +353,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             )?;
             args::assert_positionals("work replan", a, 3)?;
             let input = replan_input::ReplanInput::from_args(a)?;
-            print_json(&crate::work::replan(
+            print_work_json(&crate::work::replan(
                 l,
                 positional(a, 1, "work replan requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work replan requires WORK ASSIGNMENT")?,
@@ -366,7 +370,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 &["config", "artifact", "artifact-root", "json"],
             )?;
             args::assert_positionals("work evidence", a, 3)?;
-            print_json(&crate::work::evidence(
+            print_work_json(&crate::work::evidence(
                 l,
                 positional(a, 1, "work evidence requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work evidence requires WORK ASSIGNMENT")?,
@@ -379,7 +383,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "sensor-request" => {
             args::assert_options("work sensor-request", a, &["config"])?;
             args::assert_positionals("work sensor-request", a, 3)?;
-            print_json(&crate::work::sensor_request(
+            print_work_json(&crate::work::sensor_request(
                 l,
                 positional(a, 1, "work sensor-request requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work sensor-request requires WORK ASSIGNMENT")?,
@@ -392,7 +396,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 &["config", "assessment", "confidence", "input-digest", "identity-source"],
             )?;
             args::assert_positionals("work sensor-result", a, 3)?;
-            print_json(&crate::work::sensor_result(
+            print_work_json(&crate::work::sensor_result(
                 l,
                 positional(a, 1, "work sensor-result requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work sensor-result requires WORK ASSIGNMENT")?,
@@ -441,7 +445,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 ],
             )?;
             args::assert_positionals("work disposition", a, 3)?;
-            print_json(&crate::work::dispose(
+            print_work_json(&crate::work::dispose(
                 l,
                 positional(a, 1, "work disposition requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work disposition requires WORK ASSIGNMENT")?,
@@ -465,7 +469,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             } else {
                 crate::session_goal::usage::details_for_work(l, work)
             };
-            print_json(&value)
+            print_work_json(&value)
         }
         "check" => {
             args::assert_options("work check", a, &["config", "json"])?;
@@ -483,7 +487,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 .options
                 .get("packet")
                 .ok_or("work validate requires --packet FILE")?;
-            print_json(&crate::work::validate(
+            print_work_json(&crate::work::validate(
                 l,
                 positional(a, 1, "work validate requires WORK")?,
                 packet,
@@ -492,7 +496,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "expand" => {
             args::assert_options("work expand", a, &["config", "json"])?;
             args::assert_positionals("work expand", a, 3)?;
-            print_json(&crate::work::expand(
+            print_work_json(&crate::work::expand(
                 l,
                 positional(a, 1, "work expand requires WORK REF")?,
                 positional(a, 2, "work expand requires WORK REF")?,
@@ -501,7 +505,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "detail" => {
             args::assert_options("work detail", a, &["config", "json"])?;
             args::assert_positionals("work detail", a, 2)?;
-            print_json(&crate::work::readable::current(
+            print_work_json(&crate::work::readable::current(
                 l,
                 positional(a, 1, "work detail requires WORK")?,
             )?)
@@ -515,7 +519,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             } else {
                 crate::work::compact::project(&result, &l.path, "resume")?
             };
-            print_json(&result)
+            print_work_json(&result)
         }
         _ => Err(
             "work requires begin, next, detail, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"

@@ -132,6 +132,8 @@ run() {
 }
 
 run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}"
+run workflows ./scripts/check-workflows.sh
+run workflow-regression ./scripts/test-workflow-validation.sh
 VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
 if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
   VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)

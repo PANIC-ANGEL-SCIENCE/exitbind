@@ -163,6 +163,7 @@ pub(crate) fn project(
     }
 
     let mut result = Value::Object(result);
+    result["effectiveAction"] = super::effective_action::project(response);
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         result["current"] = minimal_current(&result["current"]);
     }
@@ -305,6 +306,7 @@ pub(crate) fn project(
             emergency["candidateCounts"] = counts;
         }
         omit_false_recovery_requirements(&mut emergency);
+        emergency = super::effective_action::attach(&emergency);
         if serialized_len(&emergency)? < MAX_RESPONSE_BYTES {
             return Ok(emergency);
         }

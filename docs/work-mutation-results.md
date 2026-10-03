@@ -1,5 +1,28 @@
 # Work mutation results (current source branch)
 
+## Current effective action
+
+Programmatic Work responses add `effectiveAction`, derived from the existing
+canonical current state and action forms. Existing fields keep their meanings.
+Use its `exists`, `kind`, `state`, `binding`, `readiness` and `effect` to select
+the current path. `done` has no action; `blocked` and `unknown` also have no
+action but require inspection. A zero process exit alone does not establish
+semantic success. Warnings stay separate from action existence.
+
+The bounded response's `requiresDetail` and exact `detail.command` lead to the
+current grouped detail. Read that route before dependent execution or review.
+Its projection includes complete `choices` (with current-bound command argv,
+required input and placeholders), `beforeEditing`, or a mechanical `command`.
+The Lead supplies semantic decisions and reasons. The projection does not
+execute a choice, grant rights or bypass the pre-edit governor. Binding changes
+require reacquisition; old action forms remain stale and are refused.
+
+Held, refused and uncertain effects expose no advancement action. An inspection
+route remains available through the existing recovery fields. A terminal READY
+with later memory drift warnings remains done and does not replay governance.
+
+## Recorded mutation
+
 `work check WORK`, `work permit WORK ASSIGNMENT --operation OPERATION`, and
 `work return WORK ASSIGNMENT --outcome OUTCOME` emit one compact JSON result by
 default. `work return` also accepts `--json` for scripts. The emitted JSON,

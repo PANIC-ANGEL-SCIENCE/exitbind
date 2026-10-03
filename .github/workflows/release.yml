@@ -41,6 +41,8 @@ jobs:
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
       - name: Run shared native CI checks
+        env:
+          EXITBIND_FETCH_VALIDATOR: '1'
         run: ./scripts/ci-local.sh --checks-only
       - run: cargo audit
       - name: Build native Linux stable release
@@ -129,6 +131,8 @@ jobs:
             "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
             "${{ matrix.target }}" "$GITHUB_SHA"
       - name: Run shared native CI checks
+        env:
+          EXITBIND_FETCH_VALIDATOR: '1'
         run: ./scripts/ci-local.sh --checks-only
       - name: Build native macOS stable release
         env:

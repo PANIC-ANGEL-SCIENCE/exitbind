@@ -59,6 +59,35 @@ duplicate is refused. History remains attributable instead of being overwritten.
 An expiry is mandatory. Changed/missing guarded files exclude the lesson until
 the Lead revalidates it; unsafe paths refuse. A foreign project identity refuses.
 
+## Review compatible configuration evolution
+
+Save the original authorized configuration before changing recipient rights.
+An old lesson remains pinned to its recorded configuration until the current
+Lead explicitly reviews and applies compatible lineage:
+
+```sh
+exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
+  --from-config ORIGINAL_CONFIG.json --reason "Reviewed additive recipient access"
+exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
+  --from-config ORIGINAL_CONFIG.json --reason "Reviewed additive recipient access" --apply
+```
+
+The first call previews exact configuration hashes and recipient-right changes
+without appending an event. Compatibility permits additive `memoryRead` rights
+and schema URL metadata only. Ownership, write/runtime/retention semantics,
+project roots and existing rights must remain unchanged. The current Lead must
+hold the lesson write, review, promote and revoke rights. The prior configuration,
+owner profile and immutable source provenance must still be provable; incompatible
+changes refuse without an append.
+
+Apply appends a memory-event v2 revalidation to the existing chain and preserves
+its lesson identity, lifecycle state, expiry and earlier events. Follow the
+returned exact `nextAction.command` to inspect or retire it, then use a new
+immutable correction with `supersedes`. Revalidation never refreshes a stale
+guard or transfers Work state, checks, review approval, acceptance or task grants.
+Older binaries can read unchanged v1 ledgers, but refuse a revalidated v2 ledger;
+keep v2 ledgers intact during binary rollback and use the current reader for them.
+
 ## Selection and bounds
 
 Agent names are explicit. An empty `taskTerms` list applies to all tasks for
@@ -80,3 +109,10 @@ Work's inputs. Existing running evidence may become stale and must be
 reacquired through the supported Work path. New Work does not inherit an earlier
 semantic acceptance. These controls validate stored data and delivery, not the
 truth of a model's inferred lesson or universal host compliance.
+
+Guard observation hashes two descriptor reads with a fixed 32 KiB buffer and
+checks descriptor metadata and the reopened path identity. Missing or changed
+guards exclude or refuse; symlink and nonregular paths refuse. Guard heap storage
+does not grow with file size, while I/O still scales with the guarded bytes.
+These observations detect the exercised drift; they do not lock a file against
+changes after observation.

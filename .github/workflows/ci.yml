@@ -19,6 +19,7 @@ jobs:
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+          EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-local.sh
@@ -59,6 +60,7 @@ jobs:
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+          EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-local.sh

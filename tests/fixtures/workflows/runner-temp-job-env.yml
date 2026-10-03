@@ -1,0 +1,9 @@
+name: Unsupported job environment context
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+    steps:
+      - run: true

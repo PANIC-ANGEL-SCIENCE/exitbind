@@ -144,6 +144,7 @@ pub(super) fn bounded(
             "goalProgress": super::compact::compact_goal_progress(&presentation["goalProgress"]),
         });
     }
+    value = super::effective_action::attach(&value);
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         value["current"] = super::compact::minimal_current(&value["current"]);
     }

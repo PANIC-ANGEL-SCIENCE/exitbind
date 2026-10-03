@@ -36,6 +36,13 @@ Run the shared native CI sequence from any working directory:
 ./scripts/ci-local.sh
 ```
 
+Workflow syntax/context validation runs before Rust builds. It uses checksum-
+pinned actionlint 1.7.12 from a task-local archive cache, with ambient shell/Python
+analyzers disabled. For first acquisition, explicitly set
+`EXITBIND_FETCH_VALIDATOR=1`; hosted jobs opt in. Offline contributors provision
+the matching verified archive in `EXITBIND_WORKFLOW_CACHE`; an absent or corrupt
+archive refuses the gate. No global validator installation is required.
+
 Use the script's absolute path when outside the checkout. On Linux it runs
 `cargo fmt --check`, path and product-surface gates,
 `cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
