@@ -350,13 +350,15 @@ mod tests {
     use crate::evidence::hash;
     use serde_json::json;
 
-    fn baseline() -> (
+    type Baseline = (
         String,
         String,
         serde_json::Value,
         Vec<(String, String, String)>,
         Vec<serde_json::Value>,
-    ) {
+    );
+
+    fn baseline() -> Baseline {
         let packet = json!({"role":"worker", "agent":"worker", "stage":"implementation"});
         let packet_sha = hash::value(&packet);
         let next = json!({"action":"spawn", "assignment":"assignment-1", "packet":packet});
