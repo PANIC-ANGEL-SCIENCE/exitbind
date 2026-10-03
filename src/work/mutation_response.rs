@@ -298,7 +298,9 @@ mod tests {
         let sha = "a".repeat(64);
         let work = format!("smw_{}", "b".repeat(64));
         let ledger = format!(".exitbind/runs/work-{}.jsonl", "b".repeat(64));
-        let config = format!("/project/{}/exitbind.json", "p".repeat(7_000));
+        // Leave room for the additive effective-action identity as well as
+        // the existing result and exact recovery argv.
+        let config = format!("/project/{}/exitbind.json", "p".repeat(6_500));
         let response = json!({
             "event": {"action": "check", "eventSha256": sha,
                 "targetEventSha256": "target", "result": {"kind": "exit", "code": 7}},
@@ -312,6 +314,8 @@ mod tests {
         assert_eq!(compact["effect"], "recorded");
         assert_eq!(compact["diagnostic"]["phase"], "projection");
         assert_eq!(compact["next"]["requiresExpansion"], true);
+        assert_eq!(compact["effectiveAction"]["exists"], false);
+        assert_eq!(compact["effectiveAction"]["state"], "blocked");
         assert!(compact["nextAction"]["command"].is_array());
         assert_eq!(
             compact["nextAction"]["command"]
@@ -321,6 +325,34 @@ mod tests {
                 .unwrap(),
             &json!(config)
         );
+    }
+
+    #[test]
+    fn recovery_config_uses_explicit_marker_when_combined_envelope_exceeds_budget() {
+        let sha = "a".repeat(64);
+        let work = format!("smw_{}", "b".repeat(64));
+        let ledger = format!(".exitbind/runs/work-{}.jsonl", "b".repeat(64));
+        let config = format!("/project/{}/exitbind.json", "p".repeat(7_700));
+        let response = json!({
+            "event": {"action": "check", "eventSha256": sha,
+                "result": {"kind": "exit", "code": 7}},
+            "projectionError": "projection failed",
+            "next": {"action": "check"},
+        });
+        let compact = bounded(&response, &work, None, &ledger, &config);
+        assert!(serialized_len(&compact) <= 8 * 1024);
+        assert_eq!(compact["effectiveAction"]["exists"], false);
+        assert_eq!(compact["nextAction"]["sameConfigRequired"], true);
+        assert_eq!(
+            compact["nextAction"]["command"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap(),
+            "--config"
+        );
+        assert_eq!(compact["result"]["code"], 7);
+        assert_eq!(compact["eventSha256"], sha);
     }
 
     #[test]
