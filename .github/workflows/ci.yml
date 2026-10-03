@@ -8,6 +8,8 @@ permissions:
 jobs:
   exit:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -26,10 +28,12 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: exitbind-linux-x86_64-${{ github.sha }}
-          path: target/release/exitbind
+          path: ${{ env.CARGO_TARGET_DIR }}/release/exitbind
           if-no-files-found: error
           retention-days: 1
   macos:
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
     strategy:
       fail-fast: false
       matrix:

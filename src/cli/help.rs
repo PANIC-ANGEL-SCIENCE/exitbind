@@ -6,7 +6,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work"] => {
             "work next WORK | work detail WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
         }
-        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND",
+        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--basis JSON] (basis is a versioned JSON object; current actions provide exact argv)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {

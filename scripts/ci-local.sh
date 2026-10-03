@@ -4,9 +4,11 @@ set -eu
 
 fail() { printf 'ci-local: %s\n' "$*" >&2; exit 1; }
 checks_only=false
+preflight_only=false
 case "${1:-}" in
   '') test "$#" -eq 0 || fail 'usage: ci-local.sh [--checks-only]' ;;
   --checks-only) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only]'; checks_only=true ;;
+  --preflight) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight]'; preflight_only=true ;;
   *) fail 'usage: ci-local.sh [--checks-only]' ;;
 esac
 
@@ -40,17 +42,23 @@ if [ "$platform" = linux ]; then
   command -v tmux >/dev/null 2>&1 || fail 'tmux is required for the native handoff check; install it first'
 fi
 
-# Keep Cargo and all binary-consuming scripts on the same output directory.
-CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/target}
-case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR="$root/$CARGO_TARGET_DIR" ;; esac
-export CARGO_TARGET_DIR
+# Resolve target, fixture and log roots before any build or instrumentation.
+. "$root/scripts/ci-preflight.sh"
+prepare_execution_roots
+CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-1}
+export CARGO_BUILD_JOBS
+if [ "$preflight_only" = true ]; then
+  show_execution_preflight
+  exit 0
+fi
 
 # Retain raw stage output independently of the caller's console/tee log.
 # Git-private storage is excluded from product input fingerprints and commits.
-log_root=$(git rev-parse --git-path ci-local-runs)
+log_root=$CI_LOG_ROOT
 mkdir -p "$log_root"
 log_root=$(CDPATH= cd -- "$log_root" && pwd -P)
 run_dir=$(umask 077; mktemp -d "$log_root/run.XXXXXX")
+show_execution_preflight > "$run_dir/preflight"
 current_stage=setup
 owns_lock=false
 finish() {

@@ -1113,3 +1113,11 @@ profiles, and private state while preserving all project skill paths. The same
 option applies to local mode with its usual root and binding arguments. It does
 not follow skill-directory symlinks or claim guidance was installed. Combining
 it with `--refresh-skills` or `--with-coffee` is refused before writes.
+
+## Durable project lessons
+
+Opt-in [project lessons](docs/project-lessons.md) reuse the role-scoped memory
+lifecycle and arrive in ordinary recipient context. Inspect applicable references
+with `exitbind memory resolve AGENT --task CURRENT_GOAL --json`. Lead ownership,
+expiry, source guards and delivery bounds keep this context separate from Work
+authority.

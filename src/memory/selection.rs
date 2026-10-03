@@ -20,6 +20,14 @@ const REFERENCE_FIELDS: &[&str] = &[
 const MAX_REFERENCE_BYTES: u64 = 4 * 1024 * 1024;
 
 pub(crate) fn resolve(loaded: &config::Loaded, agent_name: &str) -> Result<Vec<Value>, String> {
+    resolve_for_task(loaded, agent_name, None)
+}
+
+pub(crate) fn resolve_for_task(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+) -> Result<Vec<Value>, String> {
     let agent = loaded
         .agent(agent_name)
         .ok_or_else(|| format!("unknown agent '{agent_name}'"))?;
@@ -59,6 +67,12 @@ pub(crate) fn resolve(loaded: &config::Loaded, agent_name: &str) -> Result<Vec<V
                 confined_target(loaded.product_root.as_path(), source_path, "memory source")?;
             let source_path = relative_project_path(&loaded.product_root, &source_target)?;
             let source = current_source(loaded, &source_path, source_sha)?;
+            if scope == super::lessons::SCOPE {
+                let lesson = super::lessons::parse(loaded, &source)?;
+                if !super::lessons::applicable(loaded, &lesson, agent_name, task)? {
+                    continue;
+                }
+            }
             let attempted_items = references.len().saturating_add(1);
             let attempted_bytes = bytes.saturating_add(source.len());
             if attempted_items > policy.max_items || attempted_bytes > policy.max_bytes {

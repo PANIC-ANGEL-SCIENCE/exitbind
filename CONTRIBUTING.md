@@ -52,7 +52,7 @@ file means completion has not been recorded, not success. `context` records
 checkout/target paths, HEAD, dirty paths, tool versions, and comparison base;
 it is diagnostic context, not an immutable acceptance receipt.
 
-Logs live under Git's private `ci-local-runs` directory and are retained until
+Logs live under the external target's private `ci-local-runs` directory and are retained until
 you remove the selected completed run. They may contain private command output;
 inspect them before sharing. Do not delete a running run's logs or cache.
 
@@ -60,7 +60,11 @@ Cargo is resolved from `CARGO`, then `PATH`, then the usual Cargo home. The
 script adds that executable's directory to its own PATH; it does not change
 shell settings. Install the repository Rust toolchain and, on Linux, tmux
 before running. It never installs system packages. `CARGO_TARGET_DIR` defaults
-to the checkout's `target`; relative overrides are relative to the checkout.
+to a checkout-specific directory under the temporary root; relative overrides
+are relative to the checkout and must resolve outside it. Target, temporary
+fixtures and `CI_LOG_ROOT` are validated before a build or log is created.
+Run `scripts/ci-local.sh --preflight` to inspect exact Cargo/toolchain,
+selected paths and live disk/memory observations without starting a check.
 The script selects native builds; leave `CARGO_BUILD_TARGET` unset.
 
 Each target directory is associated with its canonical checkout path on first

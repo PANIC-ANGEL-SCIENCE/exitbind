@@ -396,7 +396,11 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
             assert_selected_agent(loaded, selected)?;
             if let Some(references) = selected.get("memoryReferences") {
                 let expected = hash::value(references);
-                let current = match crate::memory::selection::resolve(loaded, name) {
+                let current = match crate::memory::selection::resolve_for_task(
+                    loaded,
+                    name,
+                    state["goal"].as_str(),
+                ) {
                     Ok(current) => {
                         let current = Value::Array(current);
                         if &current == references {

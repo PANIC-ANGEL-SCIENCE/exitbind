@@ -75,14 +75,22 @@ fn project_parts_after_reads(
     verify_current_work(loaded, work, current, assignment, &packet_sha256)?;
 
     let rules = current_rules(loaded)?;
-    let references = memory::selection::resolve(loaded, agent_name)?;
-    if references.len() > MAX_MEMORY_ITEMS {
+    let references =
+        memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
+    let generic_references: Vec<_> = references
+        .iter()
+        .filter(|reference| reference["scope"] != memory::lessons::SCOPE)
+        .cloned()
+        .collect();
+    if generic_references.len() > MAX_MEMORY_ITEMS {
         return Err(format!(
             "native current context has {} eligible memory items; the limit is {MAX_MEMORY_ITEMS}; use a smaller role-scoped selection",
-            references.len()
+            generic_references.len()
         ));
     }
-    let memory = current_memory(loaded, &references)?;
+    let memory = current_memory(loaded, &generic_references)?;
+    let lessons =
+        memory::lessons::delivery(loaded, agent_name, packet["goal"].as_str().unwrap_or(""))?;
     let project = project_value(loaded)?;
     let role_value = json!({
         "agentId": agent_name,
@@ -163,11 +171,21 @@ fn project_parts_after_reads(
     // Re-check both the packet and the role-scoped memory after all reads.  A
     // revoked item, changed source, or advanced Work therefore fails closed
     // before a provider process can start.
+    if let Some(lessons) = lessons {
+        push_complete(
+            &mut volatile,
+            &format!(
+                "\nCURRENT APPLICABLE PROJECT LESSONS:\n{}\n",
+                serde_json::to_string(&lessons).map_err(|error| error.to_string())?
+            ),
+        )?;
+    }
     after_reads()?;
     let fresh = crate::work::next(loaded, work)?;
     let fresh_next = &fresh["next"];
     let fresh_rules = current_rules(loaded)?;
-    let fresh_references = memory::selection::resolve(loaded, agent_name)?;
+    let fresh_references =
+        memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
     validate_fresh_context(
         assignment,
         &packet_sha256,

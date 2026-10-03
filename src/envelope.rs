@@ -29,7 +29,7 @@ pub fn brief(loaded: &Loaded, agent_name: &str, task: &str) -> Result<Value, Str
         "declaredBoundary": agent.boundary_value(),
         "notice": BRIEF_NOTICE,
     });
-    attach_memory_references(loaded, agent_name, &mut envelope)?;
+    attach_memory_references(loaded, agent_name, task, &mut envelope)?;
     Ok(envelope)
 }
 
@@ -69,7 +69,7 @@ pub fn plan(loaded: &Loaded, workflow_name: &str, goal: &str) -> Result<Value, S
                 "runtime": agent.runtime_value(),
                 "declaredBoundary": agent.boundary_value(),
             });
-            attach_memory_references(loaded, &name, &mut selected_agent)?;
+            attach_memory_references(loaded, &name, goal, &mut selected_agent)?;
             if role == "reviewer" {
                 if let Some(binding) = agent.runtime.fallback.runtime() {
                     // The alternate execution binding authorized for this same
@@ -110,11 +110,15 @@ pub fn plan(loaded: &Loaded, workflow_name: &str, goal: &str) -> Result<Value, S
 fn attach_memory_references(
     loaded: &Loaded,
     agent_name: &str,
+    task: &str,
     envelope: &mut Value,
 ) -> Result<(), String> {
     if crate::memory::policy::get(&loaded.config).is_some() {
-        envelope["memoryReferences"] =
-            json!(crate::memory::selection::resolve(loaded, agent_name)?);
+        envelope["memoryReferences"] = json!(crate::memory::selection::resolve_for_task(
+            loaded,
+            agent_name,
+            Some(task)
+        )?);
     }
     Ok(())
 }

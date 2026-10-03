@@ -525,6 +525,12 @@ pub(super) fn liveness(journal: &Value) -> ProcessLiveness {
 }
 
 pub(super) fn mark_same_work_return(mut response: Value, work: &str, assignment: &str) -> Value {
+    if response["effect"] != "recorded"
+        || response["status"] == "refused"
+        || !response["eventSha256"].is_string()
+    {
+        return response;
+    }
     response["recoveryEvent"] = json!({
         "kind": "native_saved_return",
         "cue": "same_door",
@@ -535,4 +541,30 @@ pub(super) fn mark_same_work_return(mut response: Value, work: &str, assignment:
         "nextObligation": response["next"]["action"],
     });
     response
+}
+
+#[cfg(test)]
+mod semantic_effect_tests {
+    use super::*;
+
+    #[test]
+    fn native_effect_gate_distinguishes_held_refused_unknown_and_recorded() {
+        for response in [
+            json!({"effect":"held","outcome":"completed","next":{"action":"check"}}),
+            json!({"effect":"recorded","status":"refused","eventSha256":"refusal"}),
+            json!({"effect":"recorded","eventSha256":null}),
+            json!({"processExit":0,"outcome":"completed"}),
+        ] {
+            assert!(mark_same_work_return(response, "work", "assignment")
+                .get("recoveryEvent")
+                .is_none());
+        }
+        let result = mark_same_work_return(
+            json!({"effect":"recorded","eventSha256":"committed","next":{"action":"check"}}),
+            "work",
+            "assignment",
+        );
+        assert_eq!(result["recoveryEvent"]["eventSha256"], "committed");
+        assert_eq!(result["recoveryEvent"]["providerExecuted"], false);
+    }
 }

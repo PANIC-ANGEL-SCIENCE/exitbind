@@ -5,6 +5,7 @@ use crate::{config::Loaded, evidence::hash};
 pub(crate) mod discovery;
 pub(crate) mod forgetting;
 pub(crate) mod ledger;
+pub(crate) mod lessons;
 pub(crate) mod policy;
 pub(crate) mod selection;
 pub(crate) mod state;
@@ -34,12 +35,11 @@ pub fn action(
         return Err(format!("unknown memory action '{act}'"));
     }
     ensure_config_current(loaded)?;
-    let agent = loaded.config["agents"]
-        .get(actor)
+    let _lesson_lock = lessons::mutation_lock(loaded)?;
+    let agent = loaded
+        .agent(actor)
         .ok_or_else(|| format!("unknown agent '{actor}'"))?;
-    let profile_name = agent["profile"]
-        .as_str()
-        .ok_or_else(|| format!("agent '{actor}' has no profile"))?;
+    let profile_name = &agent.profile;
     let resolved_profile = project_file(&loaded.control_root, profile_name, "actor profile")?;
 
     let (requested_scope, requested_expiry) = if act == "propose" {
@@ -118,10 +118,13 @@ pub fn action(
     };
 
     let right = right_for(act);
-    if !authorized(agent, right, &item_scope) {
+    if !authorized(&agent.boundary_value(), right, &item_scope) {
         return Err(format!(
             "agent is not authorized for {right} scope '{item_scope}'"
         ));
+    }
+    if item_scope == lessons::SCOPE {
+        lessons::validate_transition(loaded, actor, act, &item_source, item_expiry.as_deref())?;
     }
     let action_time = normalize_timestamp(&now(), "clock")?;
     let parsed_action_time = parse_timestamp(&action_time).ok_or("clock timestamp is invalid")?;

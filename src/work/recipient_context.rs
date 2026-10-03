@@ -43,10 +43,18 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
             "complete": true})
         })
         .collect::<Vec<_>>();
-    Ok(json!({"complete": content.is_some(), "available": true,
+    let mut result = json!({"complete": content.is_some(), "available": true,
         "agent": name, "role": next["role"], "nativeName": agent.native_name(name),
         "configurationSha256": hash::text(&loaded.source), "profile": profile,
         "rules": rules,
         "declaredBoundary": next["packet"]["declaredBoundary"],
-        "authority": "read-only delivery; declarations do not grant host permissions"}))
+        "authority": "read-only delivery; declarations do not grant host permissions"});
+    if let Some(lessons) = crate::memory::lessons::delivery(
+        loaded,
+        name,
+        next["packet"]["goal"].as_str().unwrap_or(""),
+    )? {
+        result["projectLessons"] = lessons;
+    }
+    Ok(result)
 }
