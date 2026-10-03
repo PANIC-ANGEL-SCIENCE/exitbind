@@ -255,9 +255,11 @@ fn goal_usage_rejects_mixed_counter_representations_and_keeps_valid_delta() {
         Some(&input),
     );
     assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr).contains("mixes delta, cumulative, and per_turn")
-    );
+    let error: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("mixes delta, cumulative, and per_turn"));
     let mut mixed_delta = mixed;
     mixed_delta["id"] = json!("delta-10");
     mixed_delta["semantics"] = json!("delta");
@@ -274,8 +276,12 @@ fn goal_usage_rejects_mixed_counter_representations_and_keeps_valid_delta() {
         Some(&input),
     );
     assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr).contains("mixes delta, cumulative, and per_turn")
-    );
+    let error: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert!(error["error"]
+        .as_str()
+        .unwrap()
+        .contains("mixes delta, cumulative, and per_turn"));
+    let unchanged = project.value(&["goal", "usage", "--goal-id", "counter-goal"], None);
+    assert_eq!(unchanged["totals"], details["totals"]);
     fs::remove_dir_all(project.root).unwrap();
 }
