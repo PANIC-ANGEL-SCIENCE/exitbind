@@ -24,6 +24,10 @@ pub(crate) fn minimal_current(current: &Value) -> Value {
     if value["repair"].is_object() {
         value["repair"].as_object_mut().unwrap().remove("reason");
     }
+    if value["details"]["grouped"].is_object() {
+        value["details"] = json!({"grouped": value["details"]["grouped"],
+            "sectionRoutesOmitted": true});
+    }
     value
 }
 
@@ -334,6 +338,7 @@ pub(crate) fn project(
             minimal["omitted"] = json!(["candidate details; use fullCommand"]);
         }
         omit_false_recovery_requirements(&mut minimal);
+        minimal["effectiveAction"] = super::effective_action::project(response);
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
@@ -360,6 +365,7 @@ pub(crate) fn project(
                 json!(["candidate details; use the required current executable and config"]);
         }
         omit_false_recovery_requirements(&mut fallback);
+        fallback["effectiveAction"] = super::effective_action::project(response);
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }

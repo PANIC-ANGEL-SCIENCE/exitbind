@@ -17,6 +17,10 @@ The Lead supplies semantic decisions and reasons. The projection does not
 execute a choice, grant rights or bypass the pre-edit governor. Binding changes
 require reacquisition; old action forms remain stale and are refused.
 
+At the output limit, `current.details.sectionRoutesOmitted` marks removed
+section-route duplicates. The complete grouped route remains available;
+`fullCommand` also recovers the full response with its original section routes.
+
 Held, refused and uncertain effects expose no advancement action. An inspection
 route remains available through the existing recovery fields. A terminal READY
 with later memory drift warnings remains done and does not replay governance.
