@@ -155,7 +155,15 @@ fn reviewed_compatible_lineage_enables_retirement_and_correction_without_rewriti
         "--json",
     ])["items"][0]["itemId"]
         .clone();
-    f.ok(&["memory", "revoke", "lead", ".exitbind/memory/lesson.jsonl"]);
+    let retired = f.ok(&["memory", "revoke", "lead", ".exitbind/memory/lesson.jsonl"]);
+    assert_eq!(retired["nextAction"]["state"], "revoked");
+    let argv = retired["nextAction"]["command"].as_array().unwrap();
+    let observed = Command::new(argv[0].as_str().unwrap())
+        .current_dir(&f.root)
+        .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
+        .output()
+        .unwrap();
+    assert!(observed.status.success(), "{observed:?}");
     assert_eq!(
         f.ok(&["memory", "resolve", "worker", "--json"])["references"],
         json!([])

@@ -52,6 +52,12 @@ exitbind memory inspect MEMORY_ROOT/lesson.jsonl --json
 exitbind memory revoke lead MEMORY_ROOT/lesson.jsonl
 ```
 
+Lesson mutations add an exact current `nextAction` to their CLI response:
+proposal leads to review, review to promotion, and promotion/retirement to
+inspection. This response projection is not part of the immutable ledger event;
+`memory inspect` retains the exact hashed event. Follow the emitted argv rather
+than reconstructing command syntax.
+
 Correction uses a new immutable source and ledger with the same stable `id`.
 Revoke the accepted predecessor before promoting its correction. The optional
 `supersedes` field names the predecessor's retired memory item ID. An accepted

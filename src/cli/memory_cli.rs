@@ -108,6 +108,10 @@ fn memory_transition(l: &config::Loaded, a: &Arguments, propose: bool) -> Result
         ledger,
         a.options.get("expires-at").map(String::as_str),
     )?;
-    print_json(&value["event"])?;
+    let mut response = value["event"].clone();
+    if let Some(next) = value.get("nextAction") {
+        response["nextAction"] = next.clone();
+    }
+    print_json(&response)?;
     Ok(())
 }

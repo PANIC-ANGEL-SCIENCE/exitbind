@@ -114,10 +114,6 @@ pub(crate) fn run(
         &loaded.state_root,
         &[snapshot.path.as_path()],
     )?;
-    append_event(&snapshot, &event)?;
-    response["effect"] = json!("recorded");
-    response["status"] = json!("revalidated");
-    response["event"] = event;
     let next = if item["state"] == "accepted" {
         "revoke"
     } else {
@@ -125,6 +121,10 @@ pub(crate) fn run(
     };
     response["nextAction"] = json!({"command":argv(next)?,"readOnly":next == "inspect",
         "meaning":"retire this immutable lesson before correcting it; current guards still determine delivery"});
+    append_event(&snapshot, &event)?;
+    response["effect"] = json!("recorded");
+    response["status"] = json!("revalidated");
+    response["event"] = event;
     Ok(response)
 }
 
@@ -211,4 +211,39 @@ pub(crate) fn validate_evidence(event: &Value, current: &Value) -> Result<(), St
     } else {
         Err("invalid reviewed lesson configuration lineage".into())
     }
+}
+
+pub(crate) fn next_action(
+    loaded: &Loaded,
+    actor: &str,
+    ledger: &str,
+    state: &str,
+) -> Result<Value, String> {
+    let action = match state {
+        "proposed" => "review",
+        "reviewed" => "promote",
+        _ => "inspect",
+    };
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    let mut argv = vec![
+        exe.to_str().ok_or("executable is not UTF-8")?.to_owned(),
+        "memory".into(),
+        action.into(),
+    ];
+    if action != "inspect" {
+        argv.push(actor.to_owned());
+    }
+    argv.extend([
+        ledger.to_owned(),
+        "--config".into(),
+        loaded
+            .path
+            .to_str()
+            .ok_or("configuration path is not UTF-8")?
+            .to_owned(),
+    ]);
+    Ok(
+        json!({"command":argv,"readOnly":action == "inspect", "state":state,
+        "meaning":"current lesson lifecycle only; correction requires a new immutable source and ledger"}),
+    )
 }

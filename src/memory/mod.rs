@@ -166,8 +166,22 @@ pub fn action(
         event["expiresAt"] = json!(expiry);
     }
     event["eventSha256"] = json!(hash::value(&event));
+    let next_action = if event["scope"] == lessons::SCOPE {
+        Some(revalidation::next_action(
+            loaded,
+            actor,
+            ledger,
+            &next_state,
+        )?)
+    } else {
+        None
+    };
     append_event(&ledger_state, &event)?;
-    Ok(json!({"event": event, "state": next_state}))
+    let mut response = json!({"event": event, "state": next_state});
+    if let Some(next) = next_action {
+        response["nextAction"] = next;
+    }
+    Ok(response)
 }
 
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
