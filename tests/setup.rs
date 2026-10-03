@@ -214,7 +214,20 @@ fn setup_preserves_custom_profile_and_reports_it_on_repeat() {
 #[test]
 fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop() {
     let root = support::temp("setup-fresh-no-host");
-    let first = setup_without_host(&root, true, true);
+    let root_arg = root.to_str().unwrap();
+    let first = invoke_env(
+        &[
+            "setup",
+            "--mode",
+            "portable",
+            "--root",
+            root_arg,
+            "--apply",
+            "--skip-skills",
+            "--json",
+        ],
+        &[("PATH", Path::new("/definitely/missing"))],
+    );
     assert!(first.status.success(), "{}", text(&first));
     assert!(text(&first).contains("\"status\":\"applied\""));
     assert!(text(&first).contains("\"configChanged\":true"));
@@ -224,7 +237,19 @@ fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop(
         .modified()
         .unwrap();
 
-    let repeat = setup_without_host(&root, true, true);
+    let repeat = invoke_env(
+        &[
+            "setup",
+            "--mode",
+            "portable",
+            "--root",
+            root_arg,
+            "--apply",
+            "--skip-skills",
+            "--json",
+        ],
+        &[("PATH", Path::new("/definitely/missing"))],
+    );
     assert!(repeat.status.success(), "{}", text(&repeat));
     assert!(text(&repeat).contains("\"status\":\"unchanged\""));
     assert!(text(&repeat).contains("\"configChanged\":false"));

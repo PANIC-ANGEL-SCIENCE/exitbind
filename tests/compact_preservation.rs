@@ -112,31 +112,30 @@ fn recovery_uses_the_exact_long_executable_path() {
     }
     fs::create_dir_all(&nested).unwrap();
     let candidate = nested.join("exitbind");
-    fs::copy(original, &candidate).unwrap();
+    support::place_executable(std::path::Path::new(original), &candidate);
     assert!(candidate.to_str().unwrap().len() > 512);
-    let next = Command::new(&candidate)
-        .current_dir(&root)
+    let mut next = Command::new(&candidate);
+    next.current_dir(&root)
         .args(["work", "next", work, "--config"])
-        .arg(&config)
-        .output()
-        .unwrap();
+        .arg(&config);
+    let next = support::run(&mut next);
     assert!(next.status.success(), "{next:?}");
     assert!(next.stdout.len() <= 8 * 1024);
     let compact: Value = serde_json::from_slice(&next.stdout).unwrap();
     assert_eq!(compact["fullCommand"][0], candidate.to_str().unwrap());
     assert!(compact["fullCommandSameExecutableRequired"].is_null());
     let argv = compact["fullCommand"].as_array().unwrap();
-    let expanded = Command::new(argv[0].as_str().unwrap())
-        .args(argv[1..].iter().map(|arg| arg.as_str().unwrap()))
-        .output()
-        .unwrap();
+    let mut expanded = Command::new(argv[0].as_str().unwrap());
+    expanded.args(argv[1..].iter().map(|arg| arg.as_str().unwrap()));
+    let expanded = support::run(&mut expanded);
     assert!(expanded.status.success(), "{expanded:?}");
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
     assert_eq!(
         expanded["next"]["assignment"],
         compact["next"]["assignment"]
     );
-    let returned = Command::new(&candidate)
+    let mut returned = Command::new(&candidate);
+    returned
         .current_dir(&root)
         .args([
             "work",
@@ -147,9 +146,8 @@ fn recovery_uses_the_exact_long_executable_path() {
             "scoped",
             "--config",
         ])
-        .arg(&config)
-        .output()
-        .unwrap();
+        .arg(&config);
+    let returned = support::run(&mut returned);
     assert!(returned.status.success(), "{returned:?}");
     assert!(returned.stdout.len() <= 8 * 1024);
     let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
@@ -158,10 +156,9 @@ fn recovery_uses_the_exact_long_executable_path() {
         candidate.to_str().unwrap()
     );
     let detail_argv = returned["nextAction"]["command"].as_array().unwrap();
-    let detail = Command::new(detail_argv[0].as_str().unwrap())
-        .args(detail_argv[1..].iter().map(|arg| arg.as_str().unwrap()))
-        .output()
-        .unwrap();
+    let mut detail = Command::new(detail_argv[0].as_str().unwrap());
+    detail.args(detail_argv[1..].iter().map(|arg| arg.as_str().unwrap()));
+    let detail = support::run(&mut detail);
     assert!(detail.status.success(), "{detail:?}");
     let detail: Value = serde_json::from_slice(&detail.stdout).unwrap();
     assert_eq!(detail["eventSha256"], returned["eventSha256"]);
