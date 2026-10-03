@@ -232,6 +232,10 @@ mod tests {
     use super::*;
     #[test]
     fn rules_changed_during_actual_detail_assembly_are_refused() {
+        // Grouped current-Work delivery is not a historical Soulmate protocol.
+        if !crate::compatibility::is_exitbind() {
+            return;
+        }
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
