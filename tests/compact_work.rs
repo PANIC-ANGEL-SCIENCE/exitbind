@@ -6,12 +6,13 @@ use std::process::Command;
 #[test]
 fn default_work_next_is_bounded_json_with_recovery_identity() {
     let root = std::env::temp_dir().join(format!(
-        "exitbind-compact-work-{}-{}",
+        "exitbind-compact-work-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        "path".repeat(24)
     ));
     std::fs::create_dir(&root).unwrap();
     let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
@@ -53,9 +54,17 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert_eq!(value["compact"], true);
     assert!(value["next"]["action"].is_string());
     assert!(value["next"]["assignment"].is_string());
-    assert!(value["recorder"].is_object());
-    assert!(value["currentSubject"].is_object());
-    assert!(value["references"].is_array());
+    for key in ["recorder", "currentSubject"] {
+        if !value[key].is_object() {
+            assert!(value[key].is_null());
+            assert_eq!(value["truncated"], true);
+        }
+    }
+    if let Some(references) = value.get("references") {
+        assert!(references.is_array());
+    } else {
+        assert_eq!(value["truncated"], true);
+    }
     assert!(value["omitted"].is_array());
     let command = value["fullCommand"].as_array().unwrap();
     assert!(command.iter().any(|arg| arg == "--full"));
@@ -78,8 +87,24 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     let full: Value = serde_json::from_slice(&full.stdout).unwrap();
     assert_eq!(full["next"]["assignment"], value["next"]["assignment"]);
     assert_eq!(recovered["next"]["assignment"], full["next"]["assignment"]);
+    assert!(full["recorder"].is_object());
+    assert!(full["residual"]["currentSubject"].is_object());
+    assert_eq!(
+        value["current"]["result"]["subject"]["sha256"],
+        full["residual"]["currentSubject"]["sha256"]
+    );
+    for (key, complete) in [
+        ("recorder", &full["recorder"]),
+        ("currentSubject", &full["residual"]["currentSubject"]),
+    ] {
+        if let Some(inline) = value.get(key) {
+            assert_eq!(inline, complete);
+        }
+    }
     assert!(full["residual"]["context"].is_object());
-    let history = value["references"]
+    let history = value
+        .get("references")
+        .unwrap_or(&full["residual"]["context"]["expansions"])
         .as_array()
         .unwrap()
         .iter()

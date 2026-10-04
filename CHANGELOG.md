@@ -7,6 +7,8 @@
 - Exercise stale-return protection on long native paths and read complete
   assignment detail when the bounded response omits its optional inline packet.
   Preserve the stale refusal, ledger and artifact nonmutation checks.
+- Verify bounded Work recovery on long paths through complete metadata and
+  exact history expansion, retaining assignment and subject agreement.
 
 ## 0.27.1
 
