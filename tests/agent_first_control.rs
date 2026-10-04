@@ -26,7 +26,11 @@ struct CallTrace {
 
 impl Fixture {
     fn new() -> Self {
-        let root = support::temp("agent-first-control");
+        Self::with_label("agent-first-control")
+    }
+
+    fn with_label(label: &str) -> Self {
+        let root = support::temp(label);
         let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
@@ -355,7 +359,7 @@ fn resume_is_explicit_for_zero_and_multiple_active_work_items() {
 
 #[test]
 fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::with_label(&format!("agent-first-control-stale-{}", "path".repeat(32)));
     let begin = fixture.value(
         &[
             "work",
@@ -430,7 +434,17 @@ fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
 
     let fresh = fixture.value(&["work", "next", &work], None);
     assert_eq!(fresh["next"]["action"], "spawn");
-    assert_eq!(fresh["next"]["packet"]["attempt"], 2);
+    // Inline packet detail is optional in the bounded response on long paths.
+    assert_eq!(fresh["next"]["attempt"], 2);
+    let complete = fixture.value(&["work", "next", &work, "--full"], None);
+    assert_eq!(complete["next"]["action"], "spawn");
+    assert_eq!(complete["next"]["assignment"], fresh["next"]["assignment"]);
+    assert_eq!(complete["next"]["packet"]["attempt"], 2);
+    assert_eq!(fs::read(&ledger_path).unwrap(), events_before);
+    assert_eq!(
+        fs::read_dir(&artifact_dir).unwrap().count(),
+        artifacts_before
+    );
     let events = fs::read_to_string(ledger_path)
         .unwrap()
         .lines()

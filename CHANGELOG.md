@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.27.2
+
+- Exercise stale-return protection on long native paths and read complete
+  assignment detail when the bounded response omits its optional inline packet.
+  Preserve the stale refusal, ledger and artifact nonmutation checks.
+
 ## 0.27.1
 
 - Preserve current-Work selection, history, focus and discovery metadata through

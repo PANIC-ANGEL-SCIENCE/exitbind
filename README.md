@@ -51,14 +51,14 @@ is correct. Goal/task status and current-result readiness remain distinct.
 
 ## Install and see a first result
 
-This source targets `v0.27.1` for Linux x86_64 and macOS on Apple Silicon or
+This source targets `v0.27.2` for Linux x86_64 and macOS on Apple Silicon or
 Intel. Check [published releases](https://github.com/envy404/exitbind/releases)
 for the available tag and assets before installing. The pinned installer
 verifies the archive checksum; release archives also carry GitHub build
 attestations. Review the command and destination before approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.27.1/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.27.2/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
