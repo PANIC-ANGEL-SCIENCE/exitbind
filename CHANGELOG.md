@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.27.1
+
+- Preserve current-Work selection, history, focus and discovery metadata through
+  compact response fallbacks, including long native temporary paths.
+- Complete the R24–R27 stable distribution after the immutable v0.27.0 tag
+  failed native release checks before publishing assets.
+
 ## 0.27.0
 
 - Assemble approved asymmetric role facts with model-free setup and keep

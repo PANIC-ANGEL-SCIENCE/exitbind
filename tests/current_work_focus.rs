@@ -68,7 +68,9 @@ fn focus_file(root: &Path) -> PathBuf {
 
 #[test]
 fn begin_selects_new_work_and_older_running_work_stays_history() {
-    let root = project("focus-select");
+    // Force the longer native temporary-path boundary on every host, rather
+    // than depending on the runner's TMPDIR to reach compact fallback.
+    let root = project(&format!("focus-select-{}", "path".repeat(24)));
     let old = begin(&root, "older task")["work"]
         .as_str()
         .unwrap()

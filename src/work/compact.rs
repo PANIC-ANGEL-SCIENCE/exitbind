@@ -88,9 +88,7 @@ pub(crate) fn project(
     if let Some(current) = response.pointer("/next/current") {
         result.insert("current".into(), current.clone());
     }
-    for key in ["selection", "history", "focus", "discovery"] {
-        copy_if_present(response, &mut result, key);
-    }
+    copy_navigation(response, &mut result);
     if response["reason"]["code"] == "unreadable_candidate" {
         copy_if_present(response, &mut result, "nextAction");
     }
@@ -302,6 +300,7 @@ pub(crate) fn project(
                 key,
             );
         }
+        copy_navigation(response, emergency.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             emergency["candidateCounts"] = counts;
         }
@@ -329,6 +328,7 @@ pub(crate) fn project(
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
+        copy_navigation(response, minimal.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             minimal["candidateCounts"] = counts;
             minimal["omitted"] = json!(["candidate details; use fullCommand"]);
@@ -355,6 +355,7 @@ pub(crate) fn project(
             "omitted": ["oversized response detail; use the required current executable and config"],
             "truncated": true,
         });
+        copy_navigation(response, fallback.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             fallback["candidateCounts"] = counts;
             fallback["omitted"] =
@@ -368,6 +369,12 @@ pub(crate) fn project(
         return Ok(fallback);
     }
     Ok(result)
+}
+
+fn copy_navigation(response: &Value, output: &mut Map<String, Value>) {
+    for key in ["selection", "history", "focus", "discovery"] {
+        copy_if_present(response, output, key);
+    }
 }
 
 fn omit_false_recovery_requirements(value: &mut Value) {

@@ -5,6 +5,40 @@ use serde_json::json;
 use std::path::Path;
 
 #[test]
+fn emergency_resume_keeps_navigation_with_current_action_detail() {
+    for config_bytes in [32, 512, 6_000, 64_000] {
+        let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
+        let response = json!({
+            "status": "resumed",
+            "work": "smw_work",
+            "selection": {"basis": "current_work_focus", "authority": "none"},
+            "history": {"running": 1, "command": ["work", "resume", "--history"],
+                "sameExecutableRequired": true, "sameConfigRequired": true},
+            "focus": {"work": "smw_work", "resumable": true},
+            "discovery": {"observed": 2, "complete": true},
+            "next": {"action": "spawn", "current": {
+                "action": "spawn", "binding": "binding", "readiness": "IN_PROGRESS",
+                "details": {"grouped": {"command": ["work", "expand", "smw_work", "ref:detail"],
+                    "sameExecutableRequired": true, "sameConfigRequired": true}},
+                "actionForm": {"version": 1, "state": "pending_assignment",
+                    "binding": "binding", "leadChoiceRequired": false,
+                    "oversized": "x".repeat(16_000)}
+            }},
+            "continuation": {"oversized": "x".repeat(8_000)},
+            "residual": {"humanHelp": {"whatHappened": "x".repeat(16_000)}}
+        });
+        let compact = project(&response, Path::new(&config), "resume").unwrap();
+        assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
+        assert_eq!(compact["truncated"], true);
+        for key in ["selection", "history", "focus", "discovery"] {
+            assert_eq!(compact[key], response[key], "navigation field {key}");
+        }
+        assert_eq!(compact["current"]["binding"], "binding");
+        assert!(compact["fullCommand"].is_array());
+    }
+}
+
+#[test]
 fn projection_keeps_decision_identity_subject_recorder_and_references() {
     let reference = json!({
         "id": "ref:history",
