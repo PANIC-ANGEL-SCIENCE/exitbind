@@ -383,7 +383,9 @@ fn many_accepted_items_never_drop_the_session_context() {
         accept(&root, &file, "Rule: keep it.\n", "project-rules", &ledger);
     }
     let context = session_context(&root);
-    assert!(context.contains("first run `exitbind work next WORK --json`"));
+    assert!(context.contains("run `exitbind work detail WORK --json` directly"));
+    assert!(context.contains("Unknown Work uses `exitbind work resume --json`"));
+    assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.len() <= 3072);
     assert!(context.contains("more references; run `exitbind project context --json`"));
     fs::remove_dir_all(&root).unwrap();

@@ -1,6 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.28.0
+
+Candidate source; publication remains pending the ordinary stable release gates.
+
+- Complete legitimate repeated check repair with a current carried re-plan over
+  the permitted edit's inputs. Require frozen configuration and contract,
+  preserve spent authority, and keep exhausted or uncertain work stopped.
+- Deliver executable worker recovery and retained-result return forms in current
+  Work detail. Fresh checks, required review and Lead acceptance still follow.
+- Include external control/state topology diagnostics, the narrow supported
+  controlled file-effect path, and producer-bound binary consumption accumulated
+  since the previous stable release.
+- Align current agent guidance with direct Work detail and provide optional
+  requested Work closeout through the existing verified receipt owner. Replays
+  verify the same receipt without repeating acceptance or checks.
+
+
+- Integrate optional Architecture Contract history and add reviewed-source
+  selection preview/apply through the existing project owner, with exact pins,
+  drift refusal, returned action and custom configuration preservation.
+
+- Retain bounded canonical check-observation admission/failure facts and route
+  safe same-Work repair through the Lead, fresh worker result, checks and review.
+  Unresolved effects block retry and supersession. Add ordinary Work deadlines
+  and exact committed-check replay without executing the checker twice.
 
 ## 0.27.2
 

@@ -49,12 +49,13 @@ pub fn start_with_policy(
     if goal.trim().is_empty() {
         return Err("--goal requires a non-empty value".into());
     }
-    let plan = crate::config::boundary::apply(
+    let mut plan = crate::config::boundary::apply(
         loaded,
         selected_plan(envelope::plan(loaded, workflow, goal)?)?,
         boundary,
     )?;
     let check_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+    crate::project::architecture::bind_plan(loaded, &mut plan)?;
     let preservation = crate::run_value::preservation_from_cli(
         preserve_requirement,
         preservation_check_command,
@@ -135,6 +136,7 @@ pub fn start_with_policy(
             value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
             if check_policy.is_some() {
                 value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+                value["checkObservationProtocol"] = json!(crate::run::check_observation::PROTOCOL);
             }
             if let Some(basis) = &extension.basis {
                 value["basis"] = basis.value();

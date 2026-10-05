@@ -4,12 +4,12 @@ mod support;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 fn call(root: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(root)
         .args(args)
         .output()
@@ -17,7 +17,7 @@ fn call(root: &Path, args: &[&str]) -> Output {
 }
 
 fn call_exitbind(root: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .output()
@@ -45,6 +45,7 @@ fn run(root: &Path, args: &[&str]) -> Value {
 
 fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
     let root = support::temp(label);
+    support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     let ledger = format!(".soulmate/runs/{label}.jsonl");
@@ -113,14 +114,15 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
 
 fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
     let root = support::temp(label);
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::repository(&root);
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["init", "--mode", "portable", "--root", "."])
         .output()
         .unwrap();
     assert!(init.status.success(), "{}", text(&init));
     let ledger = format!(".exitbind/runs/{label}.jsonl");
-    let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let started = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",
@@ -142,7 +144,7 @@ fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, S
     assert!(started.status.success(), "{}", text(&started));
     let artifact = format!(".exitbind/artifacts/{label}.md");
     fs::write(root.join(&artifact), "worker\n").unwrap();
-    let lead = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let lead = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",
@@ -161,7 +163,7 @@ fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, S
         .output()
         .unwrap();
     assert!(lead.status.success(), "{}", text(&lead));
-    let worker = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let worker = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",
@@ -225,6 +227,7 @@ fn process_exists(pid: i32) -> bool {
 #[test]
 fn observes_frozen_command_in_product_root_and_records_provenance() {
     let root = support::temp("observe-check");
+    support::git_topology::repository(&root);
     let config = root.join("soulmate.json");
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
@@ -359,6 +362,7 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
 #[test]
 fn records_signal_without_fabricating_exit_code() {
     let root = support::temp("observe-signal");
+    support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     let ledger = ".soulmate/runs/signal.jsonl";
@@ -628,6 +632,7 @@ fn passing_observation_does_not_auto_review_or_accept() {
 #[test]
 fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
     let root = support::temp("observe-mixed");
+    support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     configure_workers(&root, &["worker", "worker_two"]);
@@ -758,7 +763,7 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
 
 #[test]
 fn advanced_help_documents_the_positive_observe_timeout() {
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .args(["help", "advanced"])
         .output()
         .unwrap();
@@ -772,9 +777,84 @@ fn advanced_help_documents_the_positive_observe_timeout() {
 #[cfg(unix)]
 #[test]
 fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
-    let command = "if [ -f allow-check ]; then exit 0; fi; trap '' TERM; sh -c 'trap \"\" TERM; echo $$ > child.pid; while :; do sleep 30; done' & wait";
+    #[cfg(target_os = "linux")]
+    if std::env::var("EXITBIND_LEGACY_OBSERVE_REAPER").as_deref() != Ok("1") {
+        let captures = support::temp("legacy-observe-reaper");
+        let mut child = support::git_topology::command(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "timeout_cleans_descendants_appends_nothing_and_allows_recovery",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("EXITBIND_LEGACY_OBSERVE_REAPER", "1")
+            .stdout(fs::File::create(captures.join("stdout")).unwrap())
+            .stderr(fs::File::create(captures.join("stderr")).unwrap())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(25);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("legacy fixture deadline; captures {}", captures.display());
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
+        assert!(
+            status.success(),
+            "legacy fixture failed; captures {}: {}",
+            captures.display(),
+            fs::read_to_string(captures.join("stderr")).unwrap()
+        );
+        fs::remove_dir_all(captures).unwrap();
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) },
+        0
+    );
+    let command = "if [ -f allow-check ]; then exit 0; fi; trap '' TERM; sh -c 'trap \"\" TERM; echo $$ > child.pid; exec sleep 30' & wait";
     let (root, ledger, target) = checked_worker("observe-timeout", command);
     let before = fs::read(root.join(&ledger)).unwrap();
+    #[cfg(target_os = "linux")]
+    let reaper = {
+        let pid_file = root.join("child.pid");
+        thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !pid_file.exists() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(2));
+            }
+            let pid: i32 = fs::read_to_string(pid_file)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            while Instant::now() < deadline {
+                let mut status = 0;
+                if unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) } == pid {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(2));
+            }
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+            for _ in 0..100 {
+                let mut status = 0;
+                if unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) } == pid {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(2));
+            }
+            panic!("owned legacy descendant not reaped");
+        })
+    };
+
     let started = Instant::now();
     let timed_out = call(
         &root,
@@ -790,6 +870,8 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             "soulmate.json",
         ],
     );
+    #[cfg(target_os = "linux")]
+    reaper.join().unwrap();
     assert!(!timed_out.status.success(), "{}", text(&timed_out));
     assert!(text(&timed_out).contains("timed out after 100 ms"));
     assert!(started.elapsed() < Duration::from_secs(2));
@@ -865,7 +947,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
 fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
     let command = "printf started > observe-started; while [ ! -f observe-continue ]; do sleep 0.01; done; printf observed > observe-effect.txt; exit 7";
     let (root, ledger, target) = checked_worker("observe-race", command);
-    let observation = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let observation = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&root)
         .args([
             "run",
@@ -943,7 +1025,7 @@ fn launch_failure_and_caller_overrides_do_not_append() {
     let bin = root.join("no-sh");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink("/usr/bin/git", bin.join("git")).unwrap();
-    let failed = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let failed = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&root)
         .env("PATH", &bin)
         .args([

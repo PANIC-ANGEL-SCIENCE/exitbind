@@ -59,7 +59,19 @@ pub(super) fn build(
                 .into(),
         );
     }
-    let sandbox = if thread_id.is_some() {
+    if options.controlled_effects
+        && (role != "worker"
+            || thread_id.is_some()
+            || options.sandbox_mode.is_some_and(|s| s != "read-only"))
+    {
+        return Err(
+            "controlled effects require a fresh read-only worker; sandbox overrides are refused"
+                .into(),
+        );
+    }
+    let sandbox = if options.controlled_effects {
+        Some("read-only".to_owned())
+    } else if thread_id.is_some() {
         None
     } else {
         Some(
@@ -100,6 +112,7 @@ pub(super) fn build(
     // Keep the managed-edit instructions stable across assignments.  The
     // selected path is volatile and is carried once below, so changing the
     // current tool location does not duplicate a long command-shaped prefix.
+    let mut controlled_tool = None;
     let mediator_route = if role == "worker" {
         let current_assignment = current["assignment"]
             .as_str()
@@ -108,7 +121,42 @@ pub(super) fn build(
         let tool = prepared["tool"]
             .as_str()
             .ok_or("managed edit tool unavailable")?;
-        managed_edit_guidance(tool)
+        if options.controlled_effects {
+            let permit =
+                crate::work::managed_edit::controlled_permit(loaded, work, current_assignment)?;
+            controlled_tool = Some(codex_exec::ControlledTool {
+                executable: std::env::current_exe()
+                    .map_err(|e| e.to_string())?
+                    .to_str()
+                    .ok_or("effect adapter path is not UTF-8")?
+                    .into(),
+                session: prepared["session"]
+                    .as_str()
+                    .ok_or("effect adapter session unavailable")?
+                    .into(),
+                config: loaded
+                    .path
+                    .to_str()
+                    .ok_or("effect adapter config path is not UTF-8")?
+                    .into(),
+                protected_roots: vec![
+                    loaded.product_root.clone(),
+                    loaded.control_root.clone(),
+                    loaded
+                        .state_root
+                        .join(crate::project::layout_types::state_namespace()),
+                    std::env::current_exe().map_err(|e| e.to_string())?,
+                    std::env::current_exe()
+                        .map_err(|e| e.to_string())?
+                        .parent()
+                        .ok_or("effect executable has no parent")?
+                        .to_path_buf(),
+                ],
+            });
+            (format!("The host verified an already-issued current unconsumed mutation permit for this assignment, grant event SHA-256 {permit}. The permit step has been completed outside your read-only worker. Use that existing authority through the exitbind-file MCP file tool; it revalidates current authority under the Work lock for each new effect. The generic beforeEditing permit route is the host-side step for this mode. Your shell cannot issue permits. Action read captures PATH, action edit replaces PATH with full UTF-8 content; repeat exactly to recover a lost reply. Use inspect for uncertainty and refresh only for an intentional new edit. Supply only action, path and (for edit) content. Direct shell and apply_patch writes are read-only. This file effect does not submit your result or complete checks/review."), String::new())
+        } else {
+            managed_edit_guidance(tool)
+        }
     } else {
         (String::new(), String::new())
     };
@@ -130,7 +178,8 @@ pub(super) fn build(
         sandbox,
         output_schema: Some(schema_path.to_path_buf()),
         resume_thread_id: thread_id.map(str::to_owned),
-        persist_session: true,
+        persist_session: !options.controlled_effects,
+        controlled_tool,
         timeout: Duration::from_millis(timeout),
     })
 }

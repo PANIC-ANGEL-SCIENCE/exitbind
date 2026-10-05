@@ -2,6 +2,7 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
 mod apply;
+pub(crate) mod check_observation;
 mod check_stage;
 mod governor_validation;
 mod historical_review;
@@ -61,6 +62,9 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     }
     if let Some(marker) = first.get("recoveryProtocol") {
         state["recoveryProtocol"] = marker.clone();
+    }
+    if let Some(marker) = first.get("checkObservationProtocol") {
+        state["checkObservationProtocol"] = marker.clone();
     }
     let governor_enabled = first
         .get("governor")
@@ -201,6 +205,7 @@ fn reject_unknown(
             allowed.push("basis");
             allowed.push("reviewPolicy");
             allowed.push("recoveryProtocol");
+            allowed.push("checkObservationProtocol");
         }
         return object
             .keys()
@@ -210,6 +215,22 @@ fn reject_unknown(
                     "invalid run ledger line {line}: unknown field '{key}'"
                 ))
             });
+    } else if matches!(action, "check_observation" | "check_observation_failed") {
+        return reject_unknown_fields(
+            object,
+            &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "observation",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            line,
+        );
     } else if action == "submit" {
         let mut allowed = vec![
             "version",
@@ -319,6 +340,7 @@ fn reject_unknown(
                     "acquisition",
                     "result",
                     "durationMs",
+                    "observationEventSha256",
                     "stdout",
                     "stderr",
                     "previousEventSha256",

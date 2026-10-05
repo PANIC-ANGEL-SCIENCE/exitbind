@@ -74,6 +74,9 @@ fn read_after_reads(
         .as_object_mut()
         .ok_or("current action unavailable")?
         .remove("current");
+    if let Some(assignment) = canonical["assignment"].as_str().map(str::to_owned) {
+        super::attach_held(loaded, work, &assignment, &mut canonical)?;
+    }
     let binding = super::details::binding(loaded, work, snapshot, &canonical)?;
     let recipient = recipient_context::read(loaded, &canonical)?;
     let sections = grouped_sections(loaded, work, snapshot, &canonical, &binding)?;
@@ -95,7 +98,9 @@ fn read_after_reads(
                 .into(),
         );
     }
-    response(loaded, work, &binding, &canonical, sections, recipient)
+    response(
+        loaded, work, &binding, &canonical, sections, recipient, snapshot,
+    )
 }
 
 pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
@@ -190,6 +195,7 @@ fn response(
     next: &Value,
     sections: Map<String, Value>,
     recipient: Value,
+    snapshot: &RunSnapshot,
 ) -> Result<Value, String> {
     let readable_complete =
         evidence_complete(&sections["evidence"]) && recipient["complete"] == true;
@@ -209,6 +215,9 @@ fn response(
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });
+    if next["action"] == "done" {
+        value["completion"] = super::closeout::projection(loaded, work, snapshot, next);
+    }
     let canonical = json!({
         "current":{"action":next["action"], "binding":binding, "readiness":next["progress"]["state"]},
         "actionForms":value["actionForms"], "warnings":next["warnings"],
@@ -250,6 +259,22 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&root).unwrap();
+        let mut git = std::process::Command::new("git");
+        for key in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_INDEX_FILE",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        ] {
+            git.env_remove(key);
+        }
+        assert!(git
+            .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
+            .status()
+            .unwrap()
+            .success());
         let config = crate::project::onboarding::init_with_options(
             crate::project::onboarding::InitOptions {
                 product_root: root.to_str().unwrap(),

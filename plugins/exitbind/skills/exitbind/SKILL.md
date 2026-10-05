@@ -5,96 +5,43 @@ description: This project is governed by Exitbind: use it for material coding wo
 
 <!-- exitbind-managed-skill:v1 -->
 
-This project is configured for Exitbind. Select it before consequential
-repository mutation when the task has a material consequence or promotion
-requirement: authority, trust, security, data loss, release, lifecycle,
-evidence, compatibility, or a required check/review. Read-only planning,
-disposable prototypes, and tiny obvious reversible edits stay direct, with no
-extra reviewers, checks, or ceremony. For important work, the Lead recommends
-independent review; the owner chooses whether it is required and may revise
-that choice while work continues. Retained work gets useful exact-result checks
-proportionate to risk; promotion means applicable obligations require
-governance, not merely keeping a harmless local file.
+Before first diagnosis or governed invocation, select the exact executable path
+and run that path's `version --json`. Record its version, producer commit,
+SHA-256 independently checked against `executableSha256`, and development or
+release acquisition class. Continue using that path. A null commit is `producer
+unresolved`; a digest mismatch stays unresolved. Never choose between binaries
+from the version string alone. Compare with the intended clean development
+commit or authenticated release evidence before attributing observations to it;
+see the repository's `scripts/verify-binary.py` and contributor guide. Existing
+records retain their recorded producer, including unresolved historical builds.
 
-Small reversible work stays direct: do not initialize a project or ask workflow or review-policy questions for it. In an already configured project, an explicit request for lightweight direct Codex recording may use `exitbind activity codex < PROMPT_FILE`; its private observation is unjudged, not governed acceptance. The governed protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+Use the existing scope and owner review decision. A task with material or promotion consequences selects governance before mutation; read-only questions, disposable prototypes and tiny obvious reversible edits stay direct, with no initialization or review questionnaire. The Lead classifies actual effects and project policy; a filename or file count alone is not a trigger. If required activation fails, report the failing layer. URL-only onboarding requires inspection and consent before owner-controlled installation, writes or permission changes.
 
-For already governed work, continue with `exitbind work resume`; start new governed work
-with `exitbind work begin` and record `--review-policy required` or
-`--review-policy omitted` at entry. Follow the returned next action instead of asking
-the user for work handles, ledger paths, or event hashes. `work begin` makes
-the new work the project's current-work focus; `work resume` returns that work
-and reports older running work only as history (`work resume --history`). The
-focus is navigation, never authority. Report exact
-progress, evidence, and any refusal. If the user gives only the Exitbind
-repository URL, inspect this project and your host capabilities first, and ask
-before installation, project writes, permission changes, or another
-owner-controlled action.
+## Current route
 
-For a configured Codex worker or reviewer on the selected product-managed
-path, use `exitbind work act WORK` for one pending `work next` assignment. It
-delivers the current packet and profile, executes Codex, and records the native
-result without manual bind, child preparation, or result copying. Use
-`--resume` only for a recorded resumable worker turn; an uncertain running
-journal is not proof that a retry is safe. Continue with the recorded next
-action: a later `work act WORK` or `work check WORK` runs the frozen check,
-and the Lead's own `work act WORK --outcome OUTCOME --reason REASON` records
-its distinct decision. The commands below govern host-managed child handoffs,
-not this product-managed Codex route.
+- Known Work in this conversation or an explicit `smw_…` locator: run the selected executable's `work detail WORK --json` directly. It validates the current recipient binding and delivers profile/rules, assignment, upstream evidence, task obligations and executable action forms. Do not rediscover that same route with another `work next` first.
+- Unknown Work or project focus: use `work resume --json`; focus is navigation with no authority. Use its current grouped detail route before dependent action. A stale locator or revoked expansion needs a fresh detail/current read; if the Work cannot be resolved, use project resume/history rather than guessing.
+- New material Work: after authorized setup, `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted`. The Lead recommends independent review and the owner decides; reuse an existing decision. Unmarked historical entry retains required review and cannot revise it.
 
-For a Work already known in this conversation, `exitbind work detail WORK
---json` is the sufficient ordinary read: current recipient profile/rules,
-assignment, upstream evidence, task obligations and executable action forms.
-Use its worker pre-edit permit and complete return forms; keep review and Lead
-acceptance separate. Missing or oversized material remains explicitly incomplete
-and uses the emitted expert expansion. Do not repeat profile/rule discovery
-when the current complete delivery already contains it.
+A complete detail is the sufficient ordinary read. If required profile, rules, evidence or sections are incomplete, follow the exact emitted expansion before action. Expert `work next --full`, saved-packet `work validate` and scoped sections remain available when needed. Missing information is never permission to act. Follow `sameExecutableRequired`/`sameConfigRequired` with the exact current arguments when long paths yield a partial argv; never execute placeholders, substitute a PATH binary or invent flags. Supply only meaningful task intent, complete result, reason and decisions your role owns.
 
-For an explicit work locator, first run `exitbind work next WORK --json`
-to recover the bounded current action. Use `effectiveAction` and follow its
-exact `detail.command` for complete assignment, evidence, tasks and bound action
-forms before dependent action or review; compact status alone is insufficient. Expert `--full` inspection remains
-available. Use `exitbind work continuation WORK` for an
-initialized same-Work cross-host handoff; follow its `receive` block for binding
-and child preparation. If another goal owns the continuation sidecar, preserve
-it and continue through `work next`. This read-only continuation view carries the original
-requirements, current corrections, exact result references, binding,
-uncertain operations, `mutationContext.token`, and a `receive` block with the
-bind and native-child commands. If it returns `requiresExpansion`, follow the
-section and item commands it gives to read exact bounded facts. Do not inspect
-raw state files or infer a retry from a missing native process. `work next`
-remains the Lead's assignment view.
+## Native execution and decisions
 
-When handing off a host-managed native child result, first bind the receiving host
-and native session. Pass the `mutationContext.token` from `work next` or `work
-continuation` to the supported action:
+For a configured product-managed Codex worker/reviewer, follow `actionForms.productManaged.command`; its bound `work act WORK` delivers its current packet/profile, executes the configured provider and records its result. This path needs no manual binding, child preparation or result copying. Use `--resume` only for a recorded resumable worker turn; an uncertain journal is not retry permission. Later `work act` can run the frozen check or record the Lead's explicit `--outcome`/`--reason` decision.
 
-```sh
-exitbind work bind WORK --context TOKEN --host claude --session NATIVE_SESSION --host-version VERSION
-```
+For host-managed native agents, deliver the current complete detail through the host's own delegation. Before a worker edits, execute its `actionForms.beforeEditing` permit with a meaningful operation and require `allowed:true`; this grants no host permission. The role returns its complete artifact through the emitted return form. A Reviewer and Lead retain their own decisions and do not use a worker permit. Ordinary host-managed results require no continuation initialization. Read [operator detail](references/operators.md) only for initialized cross-host continuation, explicit setup/review-policy revision or architecture selection.
 
-Use only host-reported identity. In Claude Code, Exitbind's SessionStart hook
-exports the host's session ID as `EXITBIND_NATIVE_SESSION_ID`; other launchers
-may set the same variable. If unavailable, report that limit instead of
-inventing one. Run the returned read-only `nextAction.command` for a fresh
-context token, then prepare the child before launching it:
+Preserve the exact user-authorized check command. Run the emitted check action once; `--timeout-ms` selects 1..86,400,000 ms (default1,800,000). Process exit zero is check evidence, not semantic acceptance. A committed identical check request replays its event without another execution. A safely ended observation failure carries the Lead's actual repair/blocked/rejected choices. Unknown execution or live descendants block retry, repair, acceptance and supersession. Neither a deadline change nor replay resets spent authority.
 
-```sh
-exitbind work child prepare WORK SHORT_ASSIGNMENT --context FRESH_TOKEN
-```
+When a worker needs governor recovery, follow `actionForms.recovery` and its current choices from fresh detail. Supply the Lead's meaningful re-plan or exact new evidence; recovery keeps spent authority. After recovery, return a selected `recovery.heldResults` entry through its emitted command to preserve retained bytes, then check and review the current result. A blocked governor stays blocked.
 
-Then launch the native child normally. In Claude Code, Exitbind's managed
-subagent hooks capture the next compatible subagent this session starts: they
-record its host-reported ID and its final message exactly as the host delivers
-it, so do not copy either yourself. Add `--agent-type TYPE` when other
-subagents may start first. A subagent started with no prepared intent is never
-recorded. Read `exitbind work continuation WORK` afterwards: `preparedChildren`
-shows the capture state and `children` the recorded result. If a finished
-child stays `prepared` or `claimed` (a host without these hooks), record its
-exact final message with `exitbind work child WORK SHORT_ASSIGNMENT --context
-FRESH_TOKEN --native-child CHILD_ID < EXACT_RESULT_FILE`, within 8 KiB and
-never truncated; if it is `failed` with a retained result, run the `recover`
-command it names. A host-reported child is not a provider-authenticated
-identity or independent review.
+A review finding is evidence, not a requirement. Consume the Lead's current disposition forms; repair/supersede retain explicit repair boundaries and regressions, and supersede retains its basis decision. A deferred or rejected finding is not approval. For a clear defect within accepted scope, choose the supported repair without asking the owner again; changed authority, scope, review choice or irreversible decisions need the owner. Architecture detail carries the selected role slice and exact provenance; proposals and previews are not approval, and a contract grants no permission. Custom profiles remain custom.
+
+## Completion
+
+Terminal `effectiveAction.exists=false` means no Work advancement. Its separate `completion` projection (also in terminal compact `current.completion`) keeps recorded Work acceptance, current evidence availability and canonical goal/task readiness distinct. An accepted historical Work may have stale current inputs; a Work READY cannot close an unmodeled publication/install obligation.
+
+Receipt export is optional and explicit. If durable proof is requested, use the emitted `completion.receipt.export.command`: `work closeout WORK --export` resolves the exact Work and creates/verifies the existing Exit Path receipt at its Work-specific default destination. `--output PATH` selects another normalized StateRoot destination; when StateRoot is ProductRoot, new files stay beneath its managed receipts directory to preserve checked inputs. An existing destination is reused only after exact Work/current evidence verification and is never overwritten; repeat/lost reply does not spend a permit, rerun checks or duplicate acceptance. `work closeout WORK` is read-only and never writes. `--receipt PATH` verifies an existing receipt for that exact Work; missing, corrupt, stale, aliased or cross-project evidence refuses verification. A receipt records evidence, not code correctness. Use no receipt ceremony for small direct work.
 
 Exitbind owns the checked-run lifecycle and exact-subject exit semantics. The
 host owns models, tools, process execution, permissions, and merge authority.
@@ -121,42 +68,6 @@ their focused positive and negative fixtures. Keep that map bounded and
 source-supported; it is not a universal dependency graph or a readiness score.
 Missing required detail remains explicit and follows the current supported read
 route.
-
-For a material task, the lead first classifies the goal, dependencies, useful
-context, tools, roles, role boundary, actual check command, and the consequence
-that may require promotion into a governed run: authority, trust, security,
-data loss, release, lifecycle, evidence, compatibility, or a required
-check/review. A file count by itself is not a trigger. If the required
-activation is unavailable or fails, the material task is blocked and the exact
-failing layer is reported; it is never silently relabelled as harmless work.
-Keep tiny, clear, reversible work direct. If the task is complex but has no
-material semantic-preservation risk, the lead performs only that readiness and
-does not add a preservation route. Tool and agent selection remains the lead's
-responsibility; this skill does not require a preparation artifact or a
-separate preservation installation. A review recommendation is not a review
-decision or evidence; record an owner choice and any later revision explicitly.
-A run started without `--review-policy` is the unmarked historical path: it
-retains required-review semantics and cannot later use `run review-policy`. On a
-marked running run, the actual revision command is `exitbind run review-policy
-lead LEDGER --decision omitted --reason "OWNER_REASON" --config CONFIG`; use
-`--decision required` when that is the owner's selected choice.
-A reviewer's launch context names the current check records and logs with the
-`work expand` commands that read them; hand the reviewer its assignment, not a
-summary of the checks.
-In marked work, a reviewer `rework` waits for the Lead instead of starting a
-worker. A finding is evidence, not a requirement. Decide it with
-`exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede
---reason TEXT`: `repair` also takes your own `--repair-boundary` and
-`--regression`, `supersede` takes an explicit `--successor-basis`, and `defer`
-or `reject` keep the finding without new work. A deferred or rejected finding
-is not an approval.
-For a clear defect inside the accepted task, record `repair` and proceed without
-asking the owner again. Ask only when the finding changes accepted scope,
-authority, review choice, or an irreversible decision.
-When the governed path is selected, inspect the bridge end to end: source,
-projected skill/config, fresh-session discovery, invocation, observed behavior,
-and outcome. Run the normal Exitbind lifecycle and keep the ledger/Exit Path as
-authority; process survival or an agent's report is not acceptance.
 
 Legacy `presentation.neuro` is retained for machine compatibility and describes
 current-result prerequisite readiness. It is not overall-goal completion,
@@ -196,6 +107,11 @@ reported-versus-observed check provenance. Bind every check, review, and lead
 decision to the current subject; stale or partial evidence must remain refused
 or blocked. Curiosity is non-blocking and cannot expand scope or become proof.
 
+If the task is complex but has no material semantic-preservation risk, the Lead
+performs the applicable readiness and does not add a preservation route. Tool
+and agent selection remains the Lead's responsibility; this skill requires no
+separate preservation installation.
+
 For preservation-risk work, carry preservation requirements selectively. Route
 and quality are separate axes: the route is `INLINE` or `FORMAL`, the assigned
 quality is `FULL`, `ECO`, or `MODE-UNBOUND` when no assignment exists, and
@@ -230,47 +146,5 @@ path.
 `work next` returns the resolved route and quality in
 `humanHelp.preservationAssignment`; carry that assignment to any child agent and
 refuse a packet that arrives with none or with conflicting ones.
-The default `work next` and single-candidate `work resume` views are bounded.
-Use their exact `fullCommand` to inspect omitted detail before handing off an
-assignment that needs it; `--full` returns the complete response.
 Before skipping work listed in a saved packet, run
 `exitbind work validate WORK --packet FILE`; skip only when it returns `usable`.
-
-Operational path (keep low-level details delayed): initialize with
-`exitbind init`, or preview known owner-approved facts with
-`exitbind setup --mode portable --root . --scope worker --observe PATHS --write PATHS --commands FACTUAL_COMMAND --check-command CHECK_COMMAND --goal GOAL --review-policy required|omitted`.
-Review setup's affected paths and host mapping, then repeat it with `--apply`.
-Applied setup returns validated configuration identity and exact next argv;
-use that current action instead of rediscovering it with a separate check.
-Role-specific `--lead-observe`, `--worker-write`, and corresponding per-role
-observe/write/commands flags express asymmetric approved facts in one application;
-`none` explicitly supplies an empty list. Shared scope/facts remain compatible
-but cannot be mixed with per-role flags. Use `exitbind work begin`
-and follow the returned handle. The product-managed Codex route uses `work act`
-as described above. The host-managed child route uses `work next`, `work permit`,
-`work return`, `work check`, and `work resume`. Before a pending host-managed
-worker edits product files,
-issue `exitbind work permit WORK ASSIGNMENT --operation OPERATION` and edit
-only after it returns `allowed: true`. Lead and reviewer returns follow their
-own `work next` actions; they do not use a worker permit. For a current accepted
-checked run, issue
-`exitbind receipt --json LEDGER --config CONFIG --output RECEIPT`, then verify
-with `exitbind verify RECEIPT --config CONFIG`. A nonzero result or a
-REFUSED/BLOCKED outcome is evidence to inspect, never acceptance; the ledger
-and exact Exit Path receipt remain authoritative.
-
-URL-only onboarding is supported: a user may provide only this repository's
-canonical URL. The lead inspects it and asks only for owner-controlled install,
-write, or permission decisions; the user need not learn commands or protocol.
-The host's compliance remains an honest boundary and is never inferred from a
-URL, projected bytes, or a process exit.
-
-## Thin context and bounded iteration
-
-The activated v0.22 surface routes context, checkpoint, sensor, and recovery
-procedure to [references/preservation.md](references/preservation.md). That
-reference defines the role-specific projection and exact expansion references.
-
-The delayed reference also defines currentness checks and the conservative loop
-boundary; this router stays small so the procedure is loaded only when the
-preservation path is active.

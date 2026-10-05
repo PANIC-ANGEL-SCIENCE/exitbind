@@ -73,6 +73,7 @@ fn run_codex(loaded: &config::Loaded, args: &Arguments) -> Result<(), String> {
                 .cloned()
                 .unwrap_or_else(|| "workspace-write".into()),
         ),
+        controlled_tool: None,
         output_schema: None,
         resume_thread_id: None,
         persist_session: false,

@@ -91,6 +91,9 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
     parsed
         .as_object_mut()
         .map(|object| object.remove("inputsSha256"));
+    parsed
+        .as_object_mut()
+        .map(|o| o.remove("observationEventSha256"));
     let record: CheckObservationV4 = serde_json::from_value(parsed)
         .map_err(|_| format!("invalid run ledger line {line}: malformed check event"))?;
     let object = event
@@ -113,6 +116,7 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "acquisition",
         "result",
         "durationMs",
+        "observationEventSha256",
         "stdout",
         "stderr",
         "previousEventSha256",
@@ -120,6 +124,11 @@ fn validate_check_event_v4(event: &Value, line: usize) -> Result<(), String> {
         "eventSha256",
     ];
     reject_unknown(object, &allowed, line, "check")?;
+    if event.get("observationEventSha256").is_some()
+        && (event["version"] != 8 || !is_sha(event["observationEventSha256"].as_str()))
+    {
+        return Err("check observation binding is invalid".into());
+    }
     if object.contains_key("configSha256")
         && !record
             .config_sha256

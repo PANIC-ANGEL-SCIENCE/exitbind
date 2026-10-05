@@ -1,10 +1,34 @@
 //! Assignment-bound file interaction. Native tools outside it retain host authority.
 mod state;
+mod transport;
 use super::file_effect;
 use crate::{config::Loaded, evidence::hash, project::managed_files, run};
 use serde_json::{json, Value};
 use state::{Baseline, Binding, Reads, Status, Submission};
 use std::{collections::BTreeMap, io::Read};
+pub(crate) use transport::serve;
+
+/// Read-only host preflight. This issues no permit and grants no effect.
+pub(crate) fn controlled_permit(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+) -> Result<String, String> {
+    let binding = state::binding(loaded, work, assignment)?;
+    let ledger = super::resolve(loaded, work)?;
+    let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
+    run::ledger::with_lock(&lock, || {
+        let selected = current_worker(loaded, &binding, &lock)?;
+        let (_, events, _) = run::ledger::load_at(loaded, &lock)?;
+        let state = run::reduce_live(loaded, &events)?;
+        let grant = file_effect::current_grant(&state, &events, &selected, assignment)
+            .map_err(|_| "controlled launch requires a host-issued current worker mutation permit; obtain allowed:true outside the read-only worker before launch".to_owned())?;
+        Ok(grant["eventSha256"]
+            .as_str()
+            .ok_or("current permit has no event identity")?
+            .into())
+    })
+}
 
 pub(crate) fn prepare(loaded: &Loaded, work: &str, assignment: &str) -> Result<Value, String> {
     let binding = state::binding(loaded, work, assignment)?;
@@ -100,10 +124,6 @@ pub(crate) fn interact(
     session: &str,
     file: &str,
 ) -> Result<Value, String> {
-    if !matches!(action, "read" | "refresh" | "edit" | "inspect") {
-        return Err("managed file action must be read, refresh, edit or inspect".into());
-    }
-    file_path(file)?;
     let content = if action == "edit" {
         let mut bytes = Vec::new();
         std::io::stdin()
@@ -117,27 +137,66 @@ pub(crate) fn interact(
     } else {
         None
     };
+    interact_content(loaded, action, session, file, content.as_deref())
+}
+
+pub(super) fn interact_content(
+    loaded: &Loaded,
+    action: &str,
+    session: &str,
+    file: &str,
+    content: Option<&str>,
+) -> Result<Value, String> {
+    if !matches!(action, "read" | "refresh" | "edit" | "inspect") {
+        return Err("managed file action must be read, refresh, edit or inspect".into());
+    }
+    file_path(file)?;
+    if (action == "edit") != content.is_some()
+        || content.is_some_and(|s| s.len() as u64 > file_effect::MAX_BYTES)
+    {
+        return Err("only edit accepts content, bounded to 256 KiB UTF-8".into());
+    }
     let binding = state::load_binding(loaded, session)?;
     let ledger = super::resolve(loaded, &binding.work)?;
     let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
     run::ledger::with_lock(&lock, || {
-        let assignment = current_worker(loaded, &binding, &lock)?;
+        // Reconcile an already-admitted exact intent without minting a new
+        // grant after revocation. New requests still require current authority.
+        let (mut reads, mut original) = state::load_reads(loaded, session)?;
+        let recovery = if action == "edit" {
+            reads
+                .files
+                .get(file)
+                .filter(|b| b.request.is_some())
+                .map(|b| effect_record(loaded, &binding, session, file, b))
+                .transpose()?
+                .flatten()
+                .is_some()
+        } else {
+            false
+        };
+        let assignment = if recovery {
+            None
+        } else {
+            Some(current_worker(loaded, &binding, &lock)?)
+        };
         if !state::preparation(loaded, &lock, session, &binding)? {
             return Err("managed preparation registry is missing; no edit admitted".into());
         }
-        let observable = assignment["declaredBoundary"]["observe"]
-            .as_array()
-            .is_some_and(|patterns| {
-                patterns
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .any(|p| crate::config::boundary::maximum_contains(p, file))
-            });
+        let observable = assignment.as_ref().map_or(true, |assignment| {
+            assignment["declaredBoundary"]["observe"]
+                .as_array()
+                .is_some_and(|patterns| {
+                    patterns
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|p| crate::config::boundary::maximum_contains(p, file))
+                })
+        });
         if !observable {
             return Err("file is outside the current worker read boundary".into());
         }
         file_effect::protect(loaded, &loaded.product_root.join(file), file)?;
-        let (mut reads, mut original) = state::load_reads(loaded, session)?;
         if action == "inspect" {
             return inspect(loaded, session, file, reads.files.get(file));
         }
@@ -183,9 +242,7 @@ pub(crate) fn interact(
                 "content":baseline.content,"baseline":"captured","authority":"none"}),
             );
         }
-        let content = content
-            .as_deref()
-            .ok_or("managed replacement unavailable")?;
+        let content = content.ok_or("managed replacement unavailable")?;
         let baseline = reads
             .files
             .get_mut(file)
@@ -201,7 +258,7 @@ pub(crate) fn interact(
                 ));
             }
             let effect = effect_record(loaded, &binding, session, file, baseline)?;
-            if effect.as_ref().map_or(true, |e| e["status"] != "completed") {
+            if effect.is_none() {
                 return Err("edit has an unresolved or missing effect record; use inspect and do not retry blindly".into());
             }
         } else {

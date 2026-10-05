@@ -41,20 +41,30 @@ pub fn observe_check_for_requirement(
     requirement_id: Option<&str>,
     timeout_ms: Option<&str>,
 ) -> Result<Value, String> {
-    let timeout_ms = timeout_ms
-        .map(|value| parse_positive("--timeout-ms", value))
-        .transpose()?
-        .unwrap_or(DEFAULT_OBSERVE_TIMEOUT_MS);
+    let timeout_ms = check_observation::timeout(timeout_ms)?;
+    if let Some(replay) = check_observation::replay_for_operation(
+        loaded,
+        ledger,
+        Some(&timeout_ms.to_string()),
+        Some((target, requirement_id)),
+    )? {
+        if replay["event"]["targetEventSha256"] == target
+            && replay["event"]["requirementId"].as_str() == requirement_id
+        {
+            return Ok(replay);
+        }
+    }
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-    let (source, policy, inputs, identity, capture_logs, initial_warning) =
-        with_lock(&path, || {
+    let (source, policy, inputs, identity, capture_logs, initial_warning, admission) = with_lock(
+        &path,
+        || {
             crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
             if claim_path(&path).exists() {
                 return Err("run has been superseded; no mutation was made".into());
             }
-            let (_, events, source) = load_at(loaded, &path)?;
+            let (_, events, mut source) = load_at(loaded, &path)?;
             let state = reduce_live(loaded, &events)?;
             if state["version"].as_u64().unwrap_or(0) < 4 {
                 return Err("observe-check requires a newly created checked run".into());
@@ -64,6 +74,7 @@ pub fn observe_check_for_requirement(
                     "run has already reached a terminal state; no mutation was made".into(),
                 );
             }
+            check_observation::assert_current(loaded, &state)?;
             let warning = action_drift_warning(loaded, &state)?;
             crate::run::artifact::assert_current(loaded, &state)?;
             predecessor(loaded, &events[0])?;
@@ -74,21 +85,35 @@ pub fn observe_check_for_requirement(
             } else {
                 None
             };
+            let identity = json!({
+                "runId": state["runId"], "targetEventSha256": target,
+                "subjectSha256": state["subject"]["sha256"], "inputsSha256": inputs,
+                "configSha256": hash::text(&loaded.source), "checkCommandSha256": policy.command_sha256,
+                "requirementId": requirement_id,
+                "observerExecutableSha256": if state["checkObservationProtocol"] == check_observation::PROTOCOL {
+                    crate::producer::build_identity()["executableSha256"].clone()
+                } else { Value::Null },
+            });
+            let admission = check_observation::admit(
+                loaded,
+                &path,
+                &mut source,
+                &state,
+                &events,
+                identity.clone(),
+                timeout_ms,
+            )?;
             Ok((
                 source,
                 policy.clone(),
                 inputs.clone(),
-                json!({
-                    "runId": state["runId"],
-                    "targetEventSha256": target,
-                    "subjectSha256": state["subject"]["sha256"],
-                    "inputsSha256": inputs,
-                    "checkCommandSha256": policy.command_sha256,
-                }),
+                identity,
                 state["version"] == 8,
                 warning,
+                admission,
             ))
-        })?;
+        },
+    )?;
 
     warn_drift(initial_warning.as_ref());
     let request = ObservationRequest {
@@ -108,6 +133,7 @@ pub fn observe_check_for_requirement(
             "ledgerSourceSha256": hash::text(&source),
         })),
         capture: CapturePolicy::FINITE,
+        retain_partial: admission.is_some(),
     };
     let capture = match if capture_logs {
         capture_observed_command(&request)
@@ -115,11 +141,26 @@ pub fn observe_check_for_requirement(
         run_observed_command(&request).map(CapturedCheck::without_logs)
     } {
         Ok(capture) => capture,
-        Err(error) => return Err(error.to_string()),
+        Err(error) => {
+            if admission.is_some() {
+                return check_observation::record_failure(
+                    loaded,
+                    ledger,
+                    &path,
+                    admission.as_ref(),
+                    error.facts(),
+                );
+            }
+            return Err(error.to_string());
+        }
     };
 
     let result = observed_result(&capture.status)?;
+    let mut storage_partials = Vec::new();
     let committed = with_lock(&path, || {
+        if admission.is_some() && !capture.group_ended {
+            return Err("check leader ended but descendants remain or group termination is unknown; no check was recorded".into());
+        }
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, current_events, current_source) = load_at(loaded, &path)?;
         let current_state = reduce_live(loaded, &current_events)?;
@@ -135,6 +176,16 @@ pub fn observe_check_for_requirement(
             || current_state["status"] != "running"
         {
             return Err("run changed while observing; this check result was not recorded".into());
+        }
+        check_observation::assert_current(loaded, &current_state)?;
+        if admission.is_some()
+            && (fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source
+                || current_state["inputsSha256"] != identity["inputsSha256"]
+                || current_state["subject"]["sha256"] != identity["subjectSha256"]
+                || crate::producer::build_identity()["executableSha256"]
+                    != identity["observerExecutableSha256"])
+        {
+            return Err("observation binding changed before commit; no check was recorded".into());
         }
         let warning = action_drift_warning(loaded, &current_state)?;
         let warning = inputs
@@ -172,6 +223,9 @@ pub fn observe_check_for_requirement(
             "previousEventSha256": last["eventSha256"],
             "timestamp": nondecreasing(&last["timestamp"])?
         });
+        if let Some(admission) = &admission {
+            event_value["observationEventSha256"] = admission["eventSha256"].clone();
+        }
         if let (Some(stdout), Some(stderr)) = (&capture.stdout_artifact, &capture.stderr_artifact) {
             event_value["stdout"] = stdout.clone();
             event_value["stderr"] = stderr.clone();
@@ -220,6 +274,9 @@ pub fn observe_check_for_requirement(
         };
         let append_result = append(&path, &event, false, &current_source);
         if let Err(error) = append_result {
+            if admission.is_some() {
+                storage_partials = super::capture::retain_complete_failure(&request, &capture);
+            }
             let failure = match rollback_installed(&capture, installed_stdout, installed_stderr) {
                 Ok(()) => error,
                 Err(cleanup) => format!("{error}; cleanup failed: {cleanup}"),
@@ -243,6 +300,13 @@ pub fn observe_check_for_requirement(
             },
         ))
     });
+    let partial_captures = if !storage_partials.is_empty() {
+        storage_partials
+    } else if committed.is_err() && admission.is_some() {
+        super::capture::retain_complete_failure(&request, &capture)
+    } else {
+        Vec::new()
+    };
     let cleanup = cleanup_capture(&capture);
     let cleanup = if committed.is_ok() && post_append_fault_is(2) {
         Err("injected post-append cleanup fault".into())
@@ -251,6 +315,21 @@ pub fn observe_check_for_requirement(
     };
     #[cfg(test)]
     POST_APPEND_FAULT.with(|fault| fault.set(0));
+    if let Err(error) = &committed {
+        if admission.is_some() {
+            let facts = json!({"process": result, "processStarted": true, "groupEnded": capture.group_ended, "captureReadersEnded": true, "captureAvailability": "complete", "durationMs": capture.duration_ms, "capture": "complete", "storage": "not_committed", "storageStage": "commit", "deadlineExceeded": false, "partialCaptures": partial_captures,
+                "termination": if capture.group_ended && cleanup.is_ok() { "ended" } else { "unknown" },
+                "diagnostic": error.chars().filter(|c| !c.is_control()).take(1024).collect::<String>(),
+                "cleanupErrorCount": if cleanup.is_ok() { 0 } else { 1 }, "remainingOwnedPathCount": 0});
+            return check_observation::record_failure(
+                loaded,
+                ledger,
+                &path,
+                admission.as_ref(),
+                facts,
+            );
+        }
+    }
     match (committed, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
         (Err(error), Ok(())) => Err(observed_storage_failure(&capture, error)),
@@ -350,6 +429,7 @@ mod tests {
         use crate::{config, run};
         use std::fs;
 
+        let marked = crate::producer::exitbind_surface();
         for fault in [1, 2, 3] {
             let root = std::env::temp_dir().join(format!(
                 "exitbind-post-append-{}-{fault}",
@@ -392,7 +472,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                marked.then_some("required"),
             )
             .unwrap();
             let artifact_dir = root.join(format!("{state}/artifacts"));
@@ -435,6 +515,21 @@ mod tests {
                 1
             );
             assert_eq!(observed["event"]["result"]["code"], 0);
+            assert_eq!(
+                observed["event"]["observationEventSha256"].is_string(),
+                marked
+            );
+            let replay = run::check_observation::committed_replay(&loaded, &ledger, None).unwrap();
+            if marked {
+                let replay = replay.unwrap();
+                assert_eq!(replay["event"], observed["event"]);
+                assert_eq!(replay["recovered"], true);
+            } else {
+                assert!(replay.is_none());
+                assert!(!events
+                    .iter()
+                    .any(|event| event["action"] == "check_observation"));
+            }
             if fault & 1 != 0 {
                 assert!(observed["projectionError"]
                     .as_str()

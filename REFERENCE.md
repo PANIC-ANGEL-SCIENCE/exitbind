@@ -41,11 +41,11 @@ new install.
 
 ## Quick start
 
-When the `v0.27.2` tag and assets are available, install it as a single Rust binary. Node.js,
+When the `v0.28.0` tag and assets are available, install it as a single Rust binary. Node.js,
 npm, Python, and Cargo are not required after installation:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.27.2/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.28.0/install.sh | sh
 exitbind init --mode portable
 exitbind brief worker --task "Describe the change you want to make" --config exitbind.json
 exitbind run start change --goal "Describe the bounded change" --check-command "YOUR_TEST_COMMAND" --review-policy required --ledger .exitbind/runs/run.jsonl --config exitbind.json
@@ -55,11 +55,11 @@ exitbind check --config exitbind.json
 Replace `YOUR_TEST_COMMAND` with your actual project check. These commands
 prepare the run; the [complete first checked run](docs/first-checked-run.md)
 continues through real result documents, check execution, review, and acceptance.
-`v0.27.2` includes the `--event-id`/`--text` forms below. Older
+`v0.28.0` includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-v0.27.2 targets Linux x86_64 and native macOS on
+v0.28.0 targets Linux x86_64 and native macOS on
 Apple Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -225,7 +225,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in `v0.27.2` use run-event format 8. The
+New checked runs in `v0.28.0` use run-event format 8. The
 reader retains historical v1–v7 ledgers, including their original producer
 values and guarantees. Current v8 records bind an Accepted Subject, tested-input
 identity, and the v0.24 basis/review-policy extension to each applicable result
@@ -251,8 +251,9 @@ exitbind run observe-check .exitbind/runs/checked.jsonl \
 
 This local observation runs synchronously in the configured ProductRoot with
 the invoking environment and permissions. It has a 1,800,000 ms (30 minute)
-default deadline; pass a positive `--timeout-ms MS` override when a different
-bounded deadline is appropriate. It keeps command output off JSON stdout,
+default deadline; both `work check WORK` and `run observe-check` accept a
+positive `--timeout-ms MS` override from 1 to 86,400,000 when a different bounded
+deadline is appropriate. It keeps command output off JSON stdout,
 records normal exits and POSIX signals as distinct results, and writes no check
 event when launch, timeout, or durable binding fails. On timeout it terminates
 the spawned POSIX process group and reaps the command process. The command runs
@@ -260,6 +261,29 @@ outside the ledger lock, then Exitbind reacquires the lock and revalidates the
 exact durable binding before append. A local observation is still check
 evidence: review and lead acceptance remain separate. Existing v3 ledgers keep
 the caller-reported `record-check` representation.
+
+New checked starts with an explicit review policy also record
+`checkObservationProtocol: 1`. Their observer appends a bounded admission before
+launch, binding target, subject, inputs, configuration, frozen policy,
+requirement, producer/executable digest and capture/deadline limits. Repeated
+exact requests recover a committed check; they do not execute it twice. Changed
+bindings or limits are refused. An observation/capture/commit failure records
+separate process, deadline, capture, storage and termination facts, never a
+passing check. Stable partial captures retain bounded private state references.
+`groupEnded` measures the owned process group separately from
+`captureReadersEnded`; uninspectably unfinished readers keep termination
+unknown even after that group ends. Marked observation also requires the
+frozen configuration and current selected contract before launch, commit and
+committed replay.
+`work detail` exposes the current Lead choice: an ended attempt may be repaired
+through `work disposition`, a new worker permit/result, fresh checks and any
+required review. An unresolved admission, live descendant or uncertain cleanup
+permits stopping but blocks repair, acceptance, retry and supersession. If
+failure storage is unavailable, the response says no durable failure was
+recorded and returns a bounded inspection route; the admission stays unresolved.
+These additive v8 fields/events require a reader that supports the marker;
+older v8 binaries refuse them. Markerless historical ledgers are unchanged.
+See [observation schema](schema/check-observation-v1.schema.json).
 
 This fragment assumes the worker is pending and has written that fresh result
 file. Use the project's actual command consistently at start and execution.
@@ -338,13 +362,13 @@ For a project outside the current directory, pass `--root PATH` to `init` and
 use the printed `--config` path with later commands. A checkout can also be run
 directly with a release binary from GitHub.
 
-After installing `v0.27.2`, update project skill copies after upgrading the
+After installing `v0.28.0`, update project skill copies after upgrading the
 CLI with the explicit refresh path. It requires an existing valid `exitbind.json` and only updates
 files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.27.2/install.sh | EXITBIND_VERSION=v0.27.2 sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.28.0/install.sh | EXITBIND_VERSION=v0.28.0 sh
 exitbind init --refresh-skills --root PATH
 ```
 
@@ -578,6 +602,17 @@ the current project, focus, rule, memory, and optional resource observations.
 These are context, not a check, approval, or permission. A changed source or
 unavailable observation is reported as unavailable, not projected as current.
 
+An optional `project.architectureContract` selection pins a project-relative
+JSON source, exact SHA256 and revision. `project architecture --json` reads the
+current contract. `project architecture select SOURCE --decision reviewed
+--reason TEXT --json` previews an already reviewed selection and returns its
+exact bound apply argv, preserving custom configuration. A digest is not review
+evidence. `project architecture check --json` evaluates its bounded
+literal file assertions and returns nonzero for failure. Current assignment
+detail and native role context receive only the applicable slice. See
+[Architecture Contract](docs/architecture-contract.md) for the format,
+current/proposed distinction, authority and check coverage.
+
 ## Run and recovery
 
 Run state is private operational data beneath StateRoot. Each assignment fixes
@@ -595,9 +630,16 @@ the task outcome remains `unjudged` and acceptance is not applicable. The
 default sandbox request is `workspace-write`. A check run separately by the
 host or CI creates no Exitbind activity record.
 
+For automatic external control/state placement on managed hosts, see
+[project placement](docs/project-placement.md). The optional Linux file enforcement
+cell and its support matrix are described in
+[controlled file effects](docs/controlled-file-effects.md).
+
 For governed Work, the lead uses `exitbind work act WORK [--model MODEL]
-[--reasoning-effort EFFORT]` on the current action from `work next WORK
---full`. A worker or reviewer action launches Codex with the checked packet
+[--reasoning-effort EFFORT]` through the current detail's
+`actionForms.productManaged.command` when the configured role selects Codex.
+Its `--current-binding` fence refuses stale delivery before provider execution;
+the companion inspect command is read-only. A worker or reviewer action launches Codex with the checked packet
 and profile and records one structured native result. The reviewer receives
 the packet-bound current worker result. A later check action runs the frozen
 check (`work check WORK` is also available); a later Lead action requires an
@@ -622,7 +664,9 @@ checked on its actual descriptor before reading and before returning content.
 Hard links, including ordinary source aliases, refuse without disclosure.
 Neither route intercepts other native tools or remote effects.
 
-`work next WORK --json` also exposes `current.details.grouped`, a versioned
+For a known Work or explicit locator, `work detail WORK --json` is the direct
+ordinary current read. Unknown project Work uses `work resume --json` and its
+emitted detail route. `work next WORK --json` also exposes `current.details.grouped`, a versioned
 `ref:work-detail:v1:<binding>` route for ordinary consumers. `work detail WORK
 --json` reads the same current route directly. The product validates the
 ledger, configuration, recipient and task binding, then returns grouped
@@ -660,6 +704,34 @@ Preparation has an immutable, synced record beside the Work ledger; missing
 session state refuses reconstruction. Preserve private StateRoot integrity:
 joint loss of both preparation record and session is indistinguishable from
 first use. See the linked guide for recovery limits.
+
+`work closeout WORK [--export | --output PATH | --receipt PATH] --json`
+resolves the exact Work through existing receipt owners. Without an export or
+receipt request it is read-only and returns recorded Work acceptance, canonical
+goal/task readiness, current evidence availability and the optional export argv.
+Terminal compact responses expose this as `current.completion`; complete detail
+exposes `completion`. Terminal `effectiveAction.exists=false` still denotes no
+Work advancement. A canonical external goal remains separate from Work readiness
+and any publication/install obligations it records.
+
+`--export` creates the existing `exit-path-v1` receipt at the Work-specific path
+beneath StateRoot's managed receipts directory. `--output PATH` is an explicit
+export to another normalized StateRoot path beneath existing real directories.
+When StateRoot is ProductRoot, new exports stay beneath its managed receipts
+directory so the export cannot invalidate the checked product inputs.
+No symlink directory/leaf alias, hard-linked receipt or outside destination is
+accepted. Existing files are never overwritten: a repeated/lost-reply export
+succeeds only if those bytes verify for this exact Work. `--receipt PATH` checks
+existing evidence read-only and cannot combine with export options. Corrupt,
+missing, stale or cross-project evidence refuses without changing the ledger,
+permits, checks, review or acceptance. Closeout responses stay within 8 KiB.
+
+Historical ledger receipts retain their existing validation meaning through
+`receipt`/`verify`. Current Work closeout additionally uses the established result
+reference evidence owner to require current configuration, profiles, artifacts
+and bound tested inputs; an old unbound or stale accepted Work remains historical
+and has no current export action. This does not add a receipt prerequisite to
+previously completed Work or to small direct work.
 
 `work world WORK [--plain --reduced-motion]` reads six canonical event motifs.
 `--export --json` omits private task markers and source text. `work next
@@ -864,14 +936,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add envy404/exitbind --ref v0.27.2
+dotagents --project add envy404/exitbind --ref v0.28.0
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add envy404/exitbind --ref v0.27.2
+dotagents --project add envy404/exitbind --ref v0.28.0
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -1056,7 +1128,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.27.2/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/envy404/exitbind/v0.28.0/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },

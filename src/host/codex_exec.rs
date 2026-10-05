@@ -5,6 +5,8 @@
 //! command text, or stderr. Assignment and ledger mutation remain the caller's
 //! responsibility.
 
+mod controlled;
+pub(crate) use controlled::Tool as ControlledTool;
 mod process;
 mod stream;
 
@@ -40,6 +42,7 @@ pub(crate) struct Request {
     /// Exitbind never writes session files itself.
     pub(crate) persist_session: bool,
     pub(crate) timeout: Duration,
+    pub(crate) controlled_tool: Option<ControlledTool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -450,6 +453,7 @@ pub(crate) fn process_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
 }
 
 pub(crate) fn validate_request(request: &Request) -> Result<(), RunError> {
+    controlled::validate(request)?;
     if !request.executable.is_absolute() {
         return Err(RunError::InvalidRequest("executable path must be absolute"));
     }
@@ -552,6 +556,9 @@ fn command_line(request: &Request, executable: &Path, cwd: &Path) -> Result<Comm
         command.args(["resume", thread_id]);
     }
     command.arg("--json");
+    if let Some(tool) = &request.controlled_tool {
+        controlled::configure(&mut command, tool);
+    }
     if !request.persist_session {
         command.arg("--ephemeral");
     }

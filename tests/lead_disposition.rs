@@ -10,7 +10,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const SUGGESTION: &str = "Suggested fix: also add a retry cache for the parser";
@@ -22,7 +22,8 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::repository(&root);
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -32,7 +33,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -81,6 +82,10 @@ impl Fixture {
         assert_eq!(events.len(), 1);
         let mut start = events.remove(0);
         start.as_object_mut().unwrap().remove("recoveryProtocol");
+        start
+            .as_object_mut()
+            .unwrap()
+            .remove("checkObservationProtocol");
         start.as_object_mut().unwrap().remove("eventSha256");
         start["eventSha256"] = json!(format!(
             "{:x}",

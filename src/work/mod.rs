@@ -2,6 +2,8 @@
 
 pub(crate) mod action;
 pub(crate) mod action_forms;
+mod check;
+pub(crate) mod closeout;
 pub(crate) mod compact;
 pub(crate) mod details;
 mod disposition;
@@ -15,7 +17,7 @@ pub(crate) mod packet;
 mod permit_response;
 pub(crate) mod readable;
 mod recovery;
-mod response_recovery;
+pub(crate) mod response_recovery;
 mod resume;
 mod return_result_impl;
 
@@ -26,7 +28,9 @@ use std::io::Read;
 use std::path::Path;
 
 pub(crate) use action::{act, ActOptions};
+pub(crate) use check::check_with_timeout;
 pub(crate) use disposition::{dispose, DispositionOptions};
+pub(crate) use focus::valid_work_handle;
 pub(crate) use permit_response::permit;
 pub(crate) use resume::resume;
 pub(crate) use return_result_impl::return_result;
@@ -165,10 +169,6 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         Err(error) => focus::recovery(loaded, &work, &error),
     };
     Ok(json!({"work": work, "next": next, "focus": focus}))
-}
-
-pub(crate) fn valid_work_handle(work: &str) -> bool {
-    work.strip_prefix(WORK_PREFIX).is_some_and(valid_token)
 }
 
 /// Point navigation at an explicit, existing work. This changes no ledger.
@@ -555,42 +555,6 @@ fn hex(bytes: &[u8]) -> String {
     value
 }
 
-pub(crate) fn check(loaded: &Loaded, work: &str) -> Result<Value, String> {
-    let ledger = resolve(loaded, work)?;
-    let config_path = loaded
-        .path
-        .to_str()
-        .ok_or("configuration path is not valid UTF-8")?;
-    let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
-    let pending = retry_check_target(&snapshot)?.ok_or("no current worker check is pending")?;
-    let observed = run::observe_check_for_requirement(
-        loaded,
-        &ledger,
-        &pending.target_event_sha256,
-        pending.requirement_id.as_deref(),
-        None,
-    )?;
-    let mut response = json!({"work": work, "event": observed["event"]});
-    if let Some(error) = observed.get("projectionError") {
-        response["projectionError"] = error.clone();
-    }
-    if let Some(error) = observed.get("cleanupError") {
-        response["cleanupError"] = error.clone();
-    }
-    match next_for(loaded, work, &ledger) {
-        Ok(next) => response["next"] = next,
-        Err(error) => response["projectionError"] = json!(error),
-    }
-    let bounded = bounded_mutation(&response, work, None, &ledger, config_path);
-    if mutation_response::check_result_failed(&bounded["result"]) {
-        return Err(format!(
-            "EXITBIND_JSON:{}",
-            serde_json::to_string(&bounded).map_err(|error| error.to_string())?
-        ));
-    }
-    Ok(bounded)
-}
-
 fn reference(work: &str) -> Value {
     json!({"work": work})
 }
@@ -869,7 +833,9 @@ fn next_from_base(
         result["packet"]["context"] = context;
     }
     if role == "lead" {
-        result["outcomes"] = if value["currentStage"] == 1 {
+        result["outcomes"] = if check::unresolved(&result) {
+            json!(["blocked", "rejected"])
+        } else if value["currentStage"] == 1 {
             json!(["scoped", "blocked"])
         } else if assignment.get("pendingDisposition").is_some() {
             json!(crate::run::disposition::PENDING_LEAD_OUTCOMES)
@@ -904,6 +870,9 @@ fn current_check_target(snapshot: &run::RunSnapshot) -> Result<Option<PendingChe
         return Ok(None);
     }
     let status = snapshot.status_view()?;
+    if status["checkObservation"].is_object() {
+        return Ok(None);
+    }
     Ok(status["checks"]["targets"].as_array().and_then(|targets| {
         targets.iter().find_map(|item| {
             (item["status"] == "missing").then(|| PendingCheck {

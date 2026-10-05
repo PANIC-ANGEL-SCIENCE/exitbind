@@ -6,6 +6,11 @@
 //! explicit work locator always overrides it. Projects without it keep the
 //! legacy resume behavior.
 
+pub(crate) fn valid_work_handle(work: &str) -> bool {
+    work.strip_prefix(super::WORK_PREFIX)
+        .is_some_and(super::valid_token)
+}
+
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Write;

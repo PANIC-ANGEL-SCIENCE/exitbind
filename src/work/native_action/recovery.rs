@@ -64,6 +64,9 @@ pub(super) fn validate_overrides(
     journal: &Value,
     options: &super::Options<'_>,
 ) -> Result<(), String> {
+    if journal["request"]["controlledEffects"] == true && journal["status"] != "completed" {
+        return Err("controlled native sessions cannot be resumed; reconcile their file tool receipts separately".into());
+    }
     let request = &journal["request"];
     let conflict = options.model.is_some_and(|value| request["model"] != value)
         || options

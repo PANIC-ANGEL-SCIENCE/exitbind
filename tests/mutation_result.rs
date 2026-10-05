@@ -5,11 +5,7 @@
 mod support;
 
 use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
     root: PathBuf,
@@ -19,7 +15,8 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("mutation-result");
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::repository(&root);
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -29,7 +26,7 @@ impl Fixture {
         Self { root, config }
     }
     fn call(&self, args: &[&str]) -> (Value, Output) {
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -41,7 +38,7 @@ impl Fixture {
         (value, output)
     }
     fn recorded_failure(&self, args: &[&str]) -> (Value, Output) {
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -144,13 +141,13 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
 #[test]
 fn return_help_advertises_json_and_unknown_options_fail_directly() {
     let fixture = Fixture::new();
-    let help = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let help = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["work", "return", "--help"])
         .output()
         .unwrap();
     assert!(help.status.success(), "{help:?}");
     assert!(String::from_utf8_lossy(&help.stdout).contains("[--json]"));
-    let invalid = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let invalid = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&fixture.root)
         .args(["work", "return", "--unrecognized", "--config"])
         .arg(&fixture.config)

@@ -9,14 +9,17 @@ mod support;
 #[test]
 fn version_json_names_build_and_local_executable_digest_without_authenticating() {
     let binary = env!("CARGO_BIN_EXE_exitbind");
-    let plain = Command::new(binary).arg("version").output().unwrap();
+    let plain = support::git_topology::command(binary)
+        .arg("version")
+        .output()
+        .unwrap();
     assert!(plain.status.success(), "{plain:?}");
     assert_eq!(
         String::from_utf8(plain.stdout).unwrap().trim(),
         env!("CARGO_PKG_VERSION")
     );
 
-    let output = Command::new(binary)
+    let output = support::git_topology::command(binary)
         .args(["version", "--json"])
         .output()
         .unwrap();
@@ -36,7 +39,7 @@ fn version_json_names_build_and_local_executable_digest_without_authenticating()
         .unwrap()
         .starts_with("none:"));
 
-    let refused = Command::new(binary)
+    let refused = support::git_topology::command(binary)
         .args(["version", "--json", "extra"])
         .output()
         .unwrap();
@@ -52,15 +55,22 @@ fn copied_exitbind_keeps_identity_while_soulmate_target_stays_legacy() {
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &soulmate_copy);
 
     let assert_identity = |binary: &Path, expected: &str| {
-        let output = support::run(Command::new(binary).args(["version", "--json"]));
+        let output =
+            support::run(support::git_topology::command(binary).args(["version", "--json"]));
         assert!(output.status.success(), "{output:?}");
         let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(identity["name"], expected);
     };
     let assert_init = |binary: &Path, project: &Path, config: &str, skill: &str| {
         std::fs::create_dir(project).unwrap();
+        assert!(support::git_topology::git(project)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success());
+        support::git_topology::assert_worktree(project, project);
         let init = support::run(
-            Command::new(binary)
+            support::git_topology::command(binary)
                 .args(["init", "--mode", "portable", "--root"])
                 .arg(project),
         );
@@ -107,5 +117,93 @@ fn copied_exitbind_keeps_identity_while_soulmate_target_stays_legacy() {
         "soulmate",
     );
 
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn binary_consumer_binds_exact_executable_and_refuses_same_version_mismatches() {
+    let root = support::temp("consumer-identity");
+    let copied = root.join("exitbind candidate's bytes");
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &copied);
+    let version = support::run(support::git_topology::command(&copied).args(["version", "--json"]));
+    assert!(version.status.success(), "{version:?}");
+    let identity: Value = serde_json::from_slice(&version.stdout).unwrap();
+    let commit = identity["commit"]
+        .as_str()
+        .unwrap_or("0000000000000000000000000000000000000000");
+    let digest = format!("{:x}", Sha256::digest(std::fs::read(&copied).unwrap()));
+    let invoke = |expected_commit: &str, expected_digest: &str| {
+        Command::new("python3")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-binary.py"))
+            .arg(&copied)
+            .args([
+                "--class",
+                "development",
+                "--commit",
+                expected_commit,
+                "--sha256",
+                expected_digest,
+            ])
+            .output()
+            .unwrap()
+    };
+    let output = invoke(commit, &digest);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["executable"], copied.to_str().unwrap());
+    assert_eq!(report["acquisitionClass"], "development");
+    assert_eq!(output.status.success(), identity["commit"].is_string());
+    assert_eq!(report["resolved"], identity["commit"].is_string());
+    if identity["commit"].is_null() {
+        assert!(report["reason"]
+            .as_str()
+            .unwrap()
+            .contains("producer unresolved"));
+    }
+    for (wrong_commit, wrong_digest) in [
+        ("f".repeat(40), digest),
+        (commit.to_owned(), "f".repeat(64)),
+    ] {
+        let output = invoke(&wrong_commit, &wrong_digest);
+        assert!(!output.status.success(), "{output:?}");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["producer"]["version"], identity["version"]);
+        assert_eq!(report["resolved"], false);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn binary_consumer_keeps_null_producer_unresolved_with_matching_local_bytes() {
+    let root = support::temp("unresolved-producer");
+    let fixture = root.join("fixture-producer");
+    std::fs::write(&fixture, "#!/usr/bin/env python3\nimport hashlib,json\nprint(json.dumps({'name':'exitbind','version':'0.27.2','commit':None,'executableSha256':hashlib.sha256(open(__file__,'rb').read()).hexdigest(),'executableSha256Error':None}))\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fixture, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let digest = format!("{:x}", Sha256::digest(std::fs::read(&fixture).unwrap()));
+    let output = Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-binary.py"))
+        .arg(&fixture)
+        .args([
+            "--class",
+            "release",
+            "--commit",
+            &"a".repeat(40),
+            "--sha256",
+            &digest,
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["sha256"], digest);
+    assert_eq!(report["resolved"], false);
+    assert!(report["reason"]
+        .as_str()
+        .unwrap()
+        .contains("producer unresolved"));
+    assert!(report["authentication"]
+        .as_str()
+        .unwrap()
+        .starts_with("none:"));
     std::fs::remove_dir_all(root).unwrap();
 }

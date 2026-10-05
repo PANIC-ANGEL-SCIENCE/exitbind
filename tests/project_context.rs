@@ -4,17 +4,12 @@
 mod support;
 
 use serde_json::{json, Value};
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::symlink,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{fs, io::Write, os::unix::fs::symlink, path::Path, process::Stdio};
 
 fn project(label: &str) -> std::path::PathBuf {
     let root = support::temp(label);
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::repository(&root);
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -24,7 +19,7 @@ fn project(label: &str) -> std::path::PathBuf {
 }
 
 fn call(root: &Path, args: &[&str]) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .args(["--config", "exitbind.json"])
@@ -35,7 +30,7 @@ fn call(root: &Path, args: &[&str]) -> Value {
 }
 
 fn call_input(root: &Path, args: &[&str], input: &Value) -> Value {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .args(["--config", "exitbind.json"])
@@ -58,7 +53,7 @@ fn call_input(root: &Path, args: &[&str], input: &Value) -> Value {
 fn hook(root: &Path, agent: &str) -> Option<String> {
     let payload = json!({"hook_event_name":"SubagentStart", "cwd":root,
         "agent_type":agent});
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -84,7 +79,7 @@ fn hook(root: &Path, agent: &str) -> Option<String> {
 fn child_hook(root: &Path, agent: &str, session: &str, child: &str) -> String {
     let payload = json!({"hook_event_name":"SubagentStart", "cwd":root,
         "agent_type":agent, "session_id":session, "agent_id":child});
-    let mut process = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut process = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -107,7 +102,7 @@ fn child_hook(root: &Path, agent: &str, session: &str, child: &str) -> String {
 
 fn session_hook(root: &Path) -> String {
     let payload = json!({"hook_event_name":"SessionStart", "cwd":root});
-    let mut process = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut process = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -215,7 +210,7 @@ fn native_projection_refuses_external_profile_before_any_write() {
     fs::create_dir_all(root.join(".codex/agents")).unwrap();
     let external = root.join(".codex/agents/worker.toml");
     fs::write(&external, "# managed elsewhere\nname = \"worker\"\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["project", "agents", "--apply", "--config", "exitbind.json"])
         .output()
@@ -239,8 +234,12 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(lead_profile.contains("impact map as provisional"));
     assert!(lead_profile.contains("no fixed thinking sequence or model choice"));
     let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
-    assert!(skill.contains("first run `exitbind work next WORK --json`"));
-    assert!(skill.contains("initialized same-Work cross-host handoff"));
+    assert!(skill.contains("`work detail WORK --json` directly"));
+    assert!(skill.contains("Unknown Work or project focus: use `work resume --json`"));
+    assert!(skill.contains("[operator detail](references/operators.md)"));
+    let operators =
+        fs::read_to_string(root.join(".agents/skills/exitbind/references/operators.md")).unwrap();
+    assert!(operators.contains("initialized same-Work cross-host handoff"));
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["agents"]["worker"]["nativeName"] = json!("sonic");
@@ -290,7 +289,7 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(reviewer_context.contains("assignment context mismatch"));
     let conflict = json!({"hook_event_name":"SubagentStart", "cwd":root,
         "agent_name":"sonic", "agent_type":"worker"});
-    let mut process = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut process = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -399,7 +398,7 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
         .unwrap();
     }
     let four = r#"[{"id":"qa","path":"exitbind/perspectives/qa.md"},{"id":"p2","path":"exitbind/perspectives/p2.md"},{"id":"p3","path":"exitbind/perspectives/p3.md"},{"id":"p4","path":"exitbind/perspectives/p4.md"}]"#;
-    let too_many = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let too_many = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",
@@ -587,7 +586,7 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
     call(&root, &["work", "focus", work]);
 
     fs::write(&qa, "changed perspective\n").unwrap();
-    let stale = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let stale = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",
@@ -622,7 +621,7 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
             "0.157.1",
         ],
     );
-    let stale = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let stale = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",

@@ -49,6 +49,9 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
         "rules": rules,
         "declaredBoundary": next["packet"]["declaredBoundary"],
         "authority": "read-only delivery; declarations do not grant host permissions"});
+    if let Some(architecture) = crate::project::architecture::delivery(loaded, &next["packet"])? {
+        result["architectureContract"] = architecture;
+    }
     if let Some(lessons) = crate::memory::lessons::delivery(
         loaded,
         name,

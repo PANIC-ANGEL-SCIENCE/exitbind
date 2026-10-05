@@ -39,6 +39,36 @@ pub fn init_with_options(options: InitOptions<'_>) -> Result<PathBuf, String> {
         control_root,
         state_root,
     } = options;
+    if mode == Some("portable") && (control_root.is_some() || state_root.is_some()) {
+        return Err("bootstrap options preflight: explicit --control-root and --state-root require --mode local or auto; portable mode stores control and state in source".into());
+    }
+    // Auto placement is explicit, or selected when the ordinary source cannot
+    // hold bootstrap files. Explicit portable/local choices retain precedence.
+    let discovered = crate::project::portability::source(Path::new(product_root))?;
+    let automatic = if mode == Some("auto")
+        || (mode.is_none() && !crate::project::portability::bootstrap_writable(&discovered))
+    {
+        Some(crate::project::portability::automatic(
+            &discovered,
+            control_root,
+            state_root,
+            project_id,
+        )?)
+    } else {
+        None
+    };
+    let (product_root, mode, project_id, control_root, state_root) = if let Some(roots) = &automatic
+    {
+        (
+            roots.product.to_str().ok_or("source root is not UTF-8")?,
+            Some("local"),
+            Some(roots.id.as_str()),
+            Some(roots.control.to_str().ok_or("control root is not UTF-8")?),
+            Some(roots.state.to_str().ok_or("state root is not UTF-8")?),
+        )
+    } else {
+        (product_root, mode, project_id, control_root, state_root)
+    };
     let requested = absolute(Path::new(product_root))?;
     let product = ordinary_directory(&requested, "project path")?;
     let in_worktree = match crate::project::git_preflight::worktree_root(&product) {
@@ -51,10 +81,13 @@ pub fn init_with_options(options: InitOptions<'_>) -> Result<PathBuf, String> {
         Some("portable") => "portable",
         Some(_) => return Err("--mode must be local or portable".into()),
         None if in_worktree || crate::project::git_preflight::has_git_marker(&product) => {
-            return Err("init in a Git worktree requires explicit --mode local or portable".into())
+            return Err("bootstrap mode preflight: init in a Git worktree requires explicit --mode local or portable; use --mode auto for owned external storage, or select portable for approved source writes".into())
         }
         None => "portable",
     };
+    if selected_mode == "portable" && !crate::project::portability::bootstrap_writable(&product) {
+        return Err("portable bootstrap source/state surface is read-only; use --mode auto for owned external placement without relocating source".into());
+    }
     let control = if selected_mode == "local" {
         ordinary_directory(
             &absolute(Path::new(

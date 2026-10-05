@@ -27,7 +27,9 @@ pub(super) fn bounded(
     ledger: &str,
     config_path: &str,
 ) -> Value {
-    let event = &response["event"];
+    let event = response
+        .get("observationFailure")
+        .unwrap_or(&response["event"]);
     let event_sha = event["eventSha256"].as_str();
     let held = response["effect"] == "held";
     let refused = event["action"] == "protect";
@@ -144,6 +146,15 @@ pub(super) fn bounded(
             "goalProgress": super::compact::compact_goal_progress(&presentation["goalProgress"]),
         });
     }
+    if response.get("observationFailure").is_some() {
+        value["reason"] = json!({"code": "check_observation_failed"});
+        value["checkRecorded"] = json!(false);
+        value["observationFailure"] =
+            json!({"eventSha256": event_sha, "facts": event["observation"]["facts"]});
+    }
+    if response["recovered"] == true {
+        value["recovered"] = json!(true);
+    }
     value = super::effective_action::attach(&value);
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         value["current"] = super::compact::minimal_current(&value["current"]);
@@ -164,6 +175,13 @@ pub(super) fn bounded(
         value["next"]["check"] = Value::Null;
         value["next"]["role"] = Value::Null;
         value["event"] = Value::Null;
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        if let Some(facts) = value["observationFailure"]["facts"].as_object_mut() {
+            facts.remove("diagnostic");
+            facts.remove("partialCaptures");
+            value["observationFailure"]["requiresExpansion"] = json!(true);
+        }
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         // The exact executable and config were supplied by this invocation.
@@ -394,6 +412,42 @@ mod tests {
             "argv_prefix_requires_config_value"
         );
         assert_eq!(compact["outcome"], "completed");
+    }
+
+    #[test]
+    fn observation_failure_keeps_typed_state_and_exact_route_at_byte_limit() {
+        let sha = "a".repeat(64);
+        let response = json!({"observationFailure": {"eventSha256": sha,
+            "action": "check_observation_failed", "observation": {"facts": {
+                "process": {"kind": "signal", "signal": 15}, "processStarted": true,
+                "groupEnded": true, "captureReadersEnded": false, "capture": "incomplete", "captureAvailability": "partial",
+                "deadlineExceeded": true, "termination": "unknown", "storageStage": "capture",
+                "diagnostic": "界".repeat(1024), "partialCaptures": [{"path": "界".repeat(1024)}, {"path": "界".repeat(1024)}]
+            }}}, "next": {"action": "lead_decision"}});
+        let compact = bounded(
+            &response,
+            "smw_work",
+            None,
+            "ledger.jsonl",
+            "/project/exitbind.json",
+        );
+        assert!(serialized_len(&compact) <= 8 * 1024);
+        assert_eq!(compact["eventSha256"], sha);
+        assert_eq!(compact["checkRecorded"], false);
+        assert_eq!(
+            compact["observationFailure"]["facts"]["deadlineExceeded"],
+            true
+        );
+        assert_eq!(
+            compact["observationFailure"]["facts"]["termination"],
+            "unknown"
+        );
+        assert_eq!(
+            compact["observationFailure"]["facts"]["captureReadersEnded"],
+            false
+        );
+        assert_eq!(compact["observationFailure"]["requiresExpansion"], true);
+        assert_eq!(compact["nextAction"]["command"][5], sha);
     }
 
     #[test]

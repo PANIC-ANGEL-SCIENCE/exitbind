@@ -26,6 +26,7 @@ pub(crate) enum Selection {
         provenance: Box<Provenance>,
         /// Read routes for the evidence this assignment's packet covers.
         evidence: Vec<String>,
+        architecture: Option<serde_json::Value>,
     },
     Mismatch(String),
     Unavailable(String),
@@ -107,12 +108,17 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
             .to_owned(),
     };
     let evidence = super::assignment_evidence::lines(loaded, &work, context);
+    let architecture = match crate::project::architecture::delivery(loaded, &next["packet"]) {
+        Ok(slice) => slice,
+        Err(reason) => return Selection::Unavailable(reason),
+    };
     Selection::Bound {
         work,
         assignment: assignment.to_owned(),
         packet_digest: packet_digest.to_owned(),
         provenance: Box::new(provenance),
         evidence,
+        architecture,
     }
 }
 
@@ -198,6 +204,7 @@ mod tests {
             config: json!({}),
             agents: BTreeMap::new(),
             lead: None,
+            architecture_contract: None,
             path: PathBuf::from("config.json"),
             control_root: PathBuf::from("fixture-root"),
             product_root: PathBuf::from("fixture-root"),

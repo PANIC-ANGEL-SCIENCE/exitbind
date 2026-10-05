@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "fixture-approved-1",
+  "responsibilities": [
+    {"id": "app", "summary": "Coordinate requests and own the store port.", "paths": ["src/app"]},
+    {"id": "store", "summary": "Persist records behind the application port.", "paths": ["src/store"]},
+    {"id": "unrelated", "summary": "Unrelated export workflow.", "paths": ["src/export"]}
+  ],
+  "dependencies": [
+    {"from": "store", "to": "app", "direction": "allowed", "interface": "store-port"},
+    {"from": "app", "to": "store", "direction": "forbidden"}
+  ],
+  "interfaces": [
+    {"id": "store-port", "owner": "app", "path": "src/app/port.rs", "summary": "Store operations used by request handling."}
+  ],
+  "checks": [
+    {"id": "port", "responsibility": "app", "path": "src/app/port.rs", "assertion": "contains", "literal": "trait Store", "interface": "store-port"},
+    {"id": "no-store-import", "responsibility": "app", "path": "src/app/request.rs", "assertion": "excludes", "literal": "use crate::store", "dependency": {"from": "app", "to": "store"}},
+    {"id": "store-port-use", "responsibility": "store", "path": "src/store/mod.rs", "assertion": "contains", "literal": "use crate::app::port", "dependency": {"from": "store", "to": "app"}},
+    {"id": "export", "responsibility": "unrelated", "path": "src/export/mod.rs", "assertion": "contains", "literal": "fn export"}
+  ]
+}

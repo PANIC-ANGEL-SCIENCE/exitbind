@@ -33,7 +33,14 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
     let action = event["action"].as_str().unwrap_or_default();
     if !matches!(
         action,
-        "start" | "submit" | "check" | "protect" | "govern" | "review_policy"
+        "start"
+            | "submit"
+            | "check"
+            | "protect"
+            | "govern"
+            | "review_policy"
+            | "check_observation"
+            | "check_observation_failed"
     ) {
         return Err(format!("invalid run ledger line {line}: invalid action"));
     }
@@ -85,6 +92,11 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
     }
     let shape = if event["action"] == "start" {
         validate_start_version(event, line, version.unwrap_or_default())
+    } else if matches!(
+        event["action"].as_str(),
+        Some("check_observation" | "check_observation_failed")
+    ) {
+        super::check_observation::validate(event)
     } else if event["action"] == "submit" {
         validate_submission(event, line)
     } else if event["action"] == "govern" {
@@ -140,6 +152,10 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     }
     validate_basis_extension(event, line, version)?;
     let plan = &event["plan"];
+    if let Some(selection) = plan.get("architectureContract") {
+        crate::project::architecture::selection(selection)
+            .map_err(|error| format!("invalid run ledger line {line}: {error}"))?;
+    }
     if plan["version"] != 1 {
         return Err(format!(
             "invalid run ledger line {line}: invalid workflow plan"
@@ -227,6 +243,14 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             return Err(format!(
                 "invalid run ledger line {line}: recovery protocol requires a checked, governed v8 basis"
             ));
+        }
+    }
+    if let Some(marker) = event.get("checkObservationProtocol") {
+        if version != 8
+            || marker != crate::run::check_observation::PROTOCOL
+            || event.get("recoveryProtocol").is_none()
+        {
+            return Err("check observation protocol requires checked governed v8 recovery".into());
         }
     }
     if version == 2 {

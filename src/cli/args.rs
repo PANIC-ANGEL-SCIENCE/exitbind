@@ -110,6 +110,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "workflow",
 ];
 const BOOLEAN_OPTIONS: &[&str] = &[
+    "controlled-effects",
     "all",
     "apply",
     "json",

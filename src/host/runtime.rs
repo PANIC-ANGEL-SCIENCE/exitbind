@@ -185,7 +185,7 @@ pub fn run() -> Result<(), String> {
         }
         portable
     } else {
-        match crate::project::layout_types::config_for_product(&project) {
+        match crate::project::portability::discover_from(&project) {
             Ok(Some(path)) => path,
             Ok(None) => {
                 if let Some(text) =
@@ -219,9 +219,9 @@ pub fn run() -> Result<(), String> {
             return Ok(());
         }
     };
-    if fs::canonicalize(&loaded.product_root).ok().as_deref() != Some(project.as_path())
+    if !project.starts_with(&loaded.product_root)
         || (loaded.mode == crate::project::layout_types::Mode::Portable
-            && !contained_existing(&project, &loaded.control_root))
+            && !contained_existing(&loaded.product_root, &loaded.control_root))
     {
         if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved) {
             emit(event, &text)?;
@@ -377,7 +377,7 @@ pub fn run() -> Result<(), String> {
             "hookEventName":event,"additionalContext":context}}))
         .map_err(|_| String::new())?;
         if core_serialized.len() > MAX_OUTPUT {
-            "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+            "Exitbind profile, architecture or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
         } else {
             let evidence = match &selected {
                 super::assignment_context::Selection::Bound { evidence, .. } => evidence.as_slice(),
@@ -391,7 +391,7 @@ pub fn run() -> Result<(), String> {
                     if serialized.len() <= MAX_OUTPUT {
                         context
                     } else {
-                        "Exitbind profile or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+                        "Exitbind profile, architecture or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
                     }
                 }
                 None => "Evidence route or shortened-preview notice cannot fit beside the required profile and perspectives; assignment context is unavailable.".to_owned(),
@@ -414,7 +414,7 @@ const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task
 const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
-const RECEIVE_WORK: &str = "When the user gives an explicit smw_ work locator, first run `exitbind work next WORK --json` for the bounded current action. Follow its current.details exact argv for complete assignment and evidence; compact status alone is insufficient for execution or review. Expert full inspection remains available. Use `exitbind work continuation WORK` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and continue through `work next`. Do not read raw .exitbind state to recover it.";
+const RECEIVE_WORK: &str = "For a known Work or explicit smw_ locator, run `exitbind work detail WORK --json` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `exitbind work resume --json` and its current detail route; focus is navigation, never authority. Use `exitbind work continuation WORK` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.";
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {
@@ -571,12 +571,18 @@ fn format_agent_context(
             assignment,
             packet_digest,
             provenance,
+            architecture,
             ..
         } => {
             lines.push(format!(
                 "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
             ));
             lines.push("Base profile is associated with this current assignment; model use is not inferred.".into());
+            if let Some(architecture) = architecture {
+                lines.push(format!(
+                    "Current architecture contract slice: {architecture}"
+                ));
+            }
             lines.push(format!(
                 "Assignment provenance: project {}, work {}, assignment {}, role {}, configured agent {}, native task {}, profile source SHA-256 {}, packet context SHA-256 {}, project rules projection SHA-256 {}, root scope {}.",
                 safe_inline(&provenance.project),

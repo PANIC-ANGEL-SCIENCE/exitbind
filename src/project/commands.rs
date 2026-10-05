@@ -84,6 +84,14 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
         path.to_str()
             .ok_or("configuration path is not valid UTF-8")?,
     ))?;
+    println!(
+        "Placement: {}",
+        crate::project::portability::diagnostic(
+            &created.product_root,
+            &created.state_root,
+            &created.control_root
+        )
+    );
     let empty_starter = is_empty_starter(&created.agents);
     let coffee = if with_coffee { " + opt-in Coffee" } else { "" };
     let quoted_config = crate::presentation::shell_quote(

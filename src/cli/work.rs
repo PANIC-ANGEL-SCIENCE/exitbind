@@ -21,9 +21,14 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
     let action = positional(
         a,
         0,
-        "work requires begin, next, detail, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
+        "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
+        "file-serve" => {
+            args::assert_options("work file-serve", a, &["config"])?;
+            args::assert_positionals("work file-serve", a, 2)?;
+            crate::work::managed_edit::serve(l, positional(a, 1, "work file-serve requires SESSION")?)
+        }
         "file" => {
             args::assert_options("work file", a, &["config", "json"])?;
             args::assert_positionals("work file", a, 4)?;
@@ -291,10 +296,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "json",
                     "outcome",
                     "reason",
+                    "current-binding",
                     "codex-bin",
                     "model",
                     "reasoning-effort",
                     "sandbox-mode",
+                    "controlled-effects",
                     "timeout-ms",
                     "resume",
                     "operation",
@@ -307,6 +314,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 l,
                 positional(a, 1, "work act requires WORK")?,
                 crate::work::ActOptions {
+                    current_binding: a.options.get("current-binding").map(String::as_str),
                     outcome: a.options.get("outcome").map(String::as_str),
                     reason: a.options.get("reason").map(String::as_str),
                     codex_bin: a.options.get("codex-bin").map(String::as_str),
@@ -317,6 +325,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     resume: a.flags.contains_key("resume"),
                     operation: a.options.get("operation").map(String::as_str),
                     inspect: a.flags.contains_key("inspect"),
+                    controlled_effects: a.flags.contains_key("controlled-effects"),
                 },
             )?;
             if a.flags.contains_key("themed") {
@@ -472,11 +481,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             print_work_json(&value)
         }
         "check" => {
-            args::assert_options("work check", a, &["config", "json"])?;
+            args::assert_options("work check", a, &["config", "json", "timeout-ms"])?;
             args::assert_positionals("work check", a, 2)?;
-            let result = crate::work::check(
+            let result = crate::work::check_with_timeout(
                 l,
                 positional(a, 1, "work check requires WORK")?,
+                a.options.get("timeout-ms").map(String::as_str),
             )?;
             print_work_result(&result)
         }
@@ -502,6 +512,15 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 positional(a, 2, "work expand requires WORK REF")?,
             )?)
         }
+        "closeout" => {
+            args::assert_options("work closeout", a, &["config", "json", "export", "output", "receipt"])?;
+            args::assert_positionals("work closeout", a, 2)?;
+            print_work_json(&crate::work::closeout::closeout(
+                l, positional(a, 1, "work closeout requires WORK")?,
+                a.flags.contains_key("export"), a.options.get("output").map(String::as_str),
+                a.options.get("receipt").map(String::as_str),
+            )?)
+        }
         "detail" => {
             args::assert_options("work detail", a, &["config", "json"])?;
             args::assert_positionals("work detail", a, 2)?;
@@ -522,7 +541,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             print_work_json(&result)
         }
         _ => Err(
-            "work requires begin, next, detail, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
+            "work requires begin, next, detail, closeout, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"
                 .into(),
         ),
     }

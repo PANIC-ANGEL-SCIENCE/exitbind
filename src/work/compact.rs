@@ -488,6 +488,7 @@ fn assignment_summary(packet: &Value) -> Value {
         "purpose",
         "runtime",
         "declaredBoundary",
+        "architectureContractSha256",
         "basisSha256",
         "reviewDecisionSha256",
         "upstreamArtifacts",

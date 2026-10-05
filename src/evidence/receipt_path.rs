@@ -5,7 +5,7 @@ use std::path::{Component, Path};
 
 const OUTPUT_SCOPE: &str = "receipt --output must be inside StateRoot; use a StateRoot-relative path or an absolute path whose parent resolves inside StateRoot";
 
-pub(super) fn state_relative(root: &Path, requested: &str) -> Result<String, String> {
+pub(crate) fn state_relative(root: &Path, requested: &str) -> Result<String, String> {
     if requested.trim().is_empty() || requested.contains('\0') || requested.contains('\\') {
         return Err("receipt path must remain beneath StateRoot".into());
     }

@@ -65,16 +65,27 @@ pub(crate) fn snapshot(loaded: &Loaded) -> Value {
         None => json!({"state":"unavailable", "reason":"no configured lead", "references":[]}),
     };
     let resources = crate::host::project_resources::observe(&loaded.product_root);
-    json!({
+    let mut snapshot = json!({
         "version":1,
         "project":{"identity":identity, "productRoot":loaded.product_root,
             "controlRoot":loaded.control_root,
             "memoryIdentity":crate::host::assignment_context::project_identity(loaded).ok()},
+        "placement":crate::project::portability::diagnostic(&loaded.product_root, &loaded.state_root, &loaded.control_root),
         "focus":focus, "lead":lead, "rules":rules, "memory":memory,
         "resources":resources,
         "integration":{"version":env!("CARGO_PKG_VERSION"),
             "build":crate::producer::build_identity()},
-    })
+    });
+    match super::architecture::reference(loaded) {
+        Ok(Some(reference)) => {
+            snapshot["architectureContract"] = json!({"state": "current", "provenance": reference})
+        }
+        Ok(None) => {}
+        Err(reason) => {
+            snapshot["architectureContract"] = json!({"state": "unavailable", "reason": reason})
+        }
+    }
+    snapshot
 }
 
 /// Full current content is read only for an eligible reference and checked again.

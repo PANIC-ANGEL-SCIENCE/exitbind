@@ -214,8 +214,8 @@ fn expanded_view_keeps_the_token_and_receive_routes() {
 }
 
 #[test]
-fn governed_session_start_routes_explicit_locators_to_work_next() {
-    let (root, _work) = project(
+fn governed_session_start_routes_known_work_to_detail_and_unknown_work_to_resume() {
+    let (root, work) = project(
         "receiving-hook",
         json!([{"id":"docs","text":"Document the flag."}]),
         "Document the flag.",
@@ -235,7 +235,15 @@ fn governed_session_start_routes_explicit_locators_to_work_next() {
     let context = value["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
-    assert!(context.contains("first run `exitbind work next WORK --json`"));
+    assert!(context.contains("run `exitbind work detail WORK --json` directly"));
+    assert!(context.contains("Unknown Work uses `exitbind work resume --json`"));
+    assert!(!context.contains("first run `exitbind work next WORK --json`"));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
+    assert!(context.contains("stale or incomplete detail needs its supported refresh/expansion"));
+    assert!(context.contains("preserve it and use current Work detail"));
+    let detail = exitbind(&root, &["work", "detail", &work, "--json"], b"");
+    assert_eq!(detail["complete"], true);
+    assert_eq!(detail["recipientContext"]["complete"], true);
+    assert_eq!(detail["actionForms"]["work"], work);
     std::fs::remove_dir_all(&root).unwrap();
 }

@@ -255,7 +255,9 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     let sources: Vec<Frozen> = serde_json::from_value(intent["perspectives"].clone())
         .map_err(|_| "prepared perspectives are malformed")?;
     let perspectives = perspective::current(loaded, &sources)?;
-    let result = json!({
+    let current = crate::work::next(loaded, work)?;
+    let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
+    let mut result = json!({
         "work":work,"intent":intent_id,"assignment":selected["assignment"],
         "configuredAgent":agent_id,"nativeTaskName":selected["nativeTaskName"],
         "bindingRevision":intent["bindingRevision"],
@@ -265,6 +267,17 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         "perspectives":perspectives,
         "evidence":"product-presented-for-current-assignment; native launch and behavior separate",
     });
+    if let Some(architecture) = &architecture {
+        result["architectureContract"] = architecture.clone();
+    }
+    let fresh = crate::work::next(loaded, work)?;
+    let (_, fresh_binding) = current_binding(loaded, work)?;
+    if fresh["next"]["assignment"] != selected["assignment"]
+        || fresh_binding != binding
+        || crate::project::architecture::delivery(loaded, &fresh["next"]["packet"])? != architecture
+    {
+        return Err("child context changed during delivery; refresh the current assignment".into());
+    }
     if serde_json::to_vec(&result)
         .map_err(|_| "child context serialization failed")?
         .len()

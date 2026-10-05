@@ -180,6 +180,9 @@ pub(super) fn attach(
     crate::work::readable::attach(loaded, work, &binding, &mut next["current"]);
     next["current"]["actionForm"] =
         crate::work::action_forms::project(loaded, work, next, &binding);
+    if next["action"] == "done" {
+        next["current"]["completion"] = super::closeout::projection(loaded, work, snapshot, next);
+    }
     Ok(())
 }
 

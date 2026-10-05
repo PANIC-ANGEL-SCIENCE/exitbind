@@ -91,3 +91,18 @@ rendered as product identity anywhere in the interface.
 
 Historical readers and published evidence remain independent of active
 Soulmate distribution.
+
+## Working selector and active Work
+
+Updating the executable or managed guidance selects a reader for future work.
+Keep each active Work's original immutable governor, configuration and ledger.
+Do not substitute a new observer into an admitted check or add current markers
+to old history. The current reader keeps markerless semantics unchanged; it
+cannot retroactively repair or accept old held Work.
+
+A current marked carried re-plan may record inputs from its permitted edit.
+Earlier readers that reject that transition are a compatibility limit: retain
+the current reader for that Work. Rollback restores retained executable and
+managed guidance bytes for their supported history; it does not downgrade the
+ledger or transfer acceptance to changed inputs. Preserve custom profiles and
+settings.

@@ -130,6 +130,9 @@ impl RunSnapshot {
                 },
                 |warning| json!([warning]),
             );
+        if let Some(observation) = state.get("checkObservation").filter(|v| v.is_object()) {
+            result["checkObservation"] = observation.clone();
+        }
         result["ledgerSha256"] = json!(self.ledger_sha256.clone());
         if state.get("checkPolicy").is_some() {
             result["assignments"] = state["assignments"].clone();
@@ -150,6 +153,9 @@ impl RunSnapshot {
     pub(crate) fn status_view(&self) -> Result<Value, String> {
         let mut status =
             crate::run_value::status(&self.state, Some(self.artifact_current.clone()?))?;
+        if let Some(observation) = self.state.get("checkObservation").filter(|v| v.is_object()) {
+            status["checkObservation"] = observation.clone();
+        }
         status["warnings"] = self
             .drift
             .as_ref()
@@ -380,6 +386,7 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
         )));
     }
 
+    crate::project::architecture::assert_current(loaded)?;
     let mut seen = std::collections::BTreeSet::new();
     let stages = state["plan"]["stages"]
         .as_array()

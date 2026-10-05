@@ -18,6 +18,13 @@ pub(super) fn before_worker_completion(
         }
         let (_, events, source) = load_at(loaded, path)?;
         let state = reduce_live(loaded, &events)?;
+        if state["checkObservationProtocol"] == crate::run::check_observation::PROTOCOL
+            && hash::text(&loaded.source) != state["configSha256"]
+        {
+            return Err(
+                "forward repair refuses changed configuration; use authorized supersession".into(),
+            );
+        }
         if state["governor"]["state"] != "replan_required" {
             return Ok(());
         }

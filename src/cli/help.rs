@@ -4,10 +4,10 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work"] => {
-            "work next WORK | work detail WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
+            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--basis JSON] (basis is a versioned JSON object; current actions provide exact argv)",
-        ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT]",
+        ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
             "work continuation WORK [--json] [--section NAME [--index N [--history-index N]]] [--config CONFIG]"
@@ -23,7 +23,9 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work child prepare WORK SHORT_ASSIGNMENT --context TOKEN [--agent-type NAME] [--perspectives JSON]"
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
-        ["project"] => "project context [memory ITEM_ID] [--json] | project agents [--apply] [--json]",
+        ["project"] => "project context [memory ITEM_ID] [--json] | project agents [--apply] [--json] | project architecture [check] [--json]",
+        ["project", "architecture", "select"] => "project architecture select SOURCE --decision reviewed --reason TEXT [--current-binding SHA --apply] [--json] [--config CONFIG] (preview returns the exact apply command)",
+        ["project", "architecture"] | ["project", "architecture", "check"] => "project architecture [check] [--json] [--config CONFIG] | project architecture select SOURCE --decision reviewed --reason TEXT",
         ["memory", "revalidate"] => "memory revalidate LEAD LEDGER --from-config ORIGINAL_CONFIG --reason REVIEWED_REASON [--apply] [--json]",
         ["setup"] => "setup [--apply] [--json] --mode local|portable --root ROOT --scope lead,worker,reviewer [--observe PATHS] [--write PATHS] [--commands FACTUAL_COMMAND] [--check-command CHECK_COMMAND] [--goal GOAL] [--review-policy required|omitted] [--hosts codex,claude]",
         ["work", "permit"] => "work permit WORK ASSIGNMENT --operation OPERATION [--request-id ID]",
@@ -41,11 +43,13 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "disposition"] => {
             "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
         }
-        ["work", "check"] => "work check WORK",
+        ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
+        ["work", "file-serve"] => "work file-serve SESSION --config CONFIG (host-owned stdio MCP transport)",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
+        ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
         ["work", "detail"] => "work detail WORK [--json]",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {

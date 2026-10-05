@@ -3,10 +3,10 @@
 use serde_json::{json, Value};
 use std::path::Path;
 
-pub(super) struct RecoveryCommand {
-    pub(super) argv: Value,
-    pub(super) same_config: bool,
-    pub(super) same_executable: bool,
+pub(crate) struct RecoveryCommand {
+    pub(crate) argv: Value,
+    pub(crate) same_config: bool,
+    pub(crate) same_executable: bool,
 }
 
 pub(super) fn recovery_command(
@@ -29,7 +29,7 @@ pub(super) fn recovery_command(
     bounded_argv(suffix, config_path.to_str(), argv_budget)
 }
 
-pub(super) fn bounded_argv(
+pub(crate) fn bounded_argv(
     suffix: Vec<String>,
     config: Option<&str>,
     argv_budget: usize,

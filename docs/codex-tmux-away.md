@@ -18,6 +18,12 @@ operator-away/disconnect handoff below remains available.
 ## Contract
 
 - The adapter starts only an exact assignment returned by `exitbind run next`.
+- [Architecture Contract](architecture-contract.md) delivery is unsupported by
+  this adapter. Shared preparation refuses current or frozen contract presence
+  before artifact directories and native Codex/tmux probes or launches; use the
+  current Work delivery routes. Contract-absent legacy work remains supported.
+  An already-existing child runner can record its normal failure diagnostic
+  after refusal; refusal does not create a task artifact or ledger event.
 - A harness-bound run carries a content-free receipt reference in its v2 start
   event. Before native launch, the adapter asks Exitbind to revalidate the
   current receipt/configuration/profile/manifest evidence, then hash-reads the

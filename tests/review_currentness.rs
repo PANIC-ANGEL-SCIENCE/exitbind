@@ -4,11 +4,7 @@
 mod support;
 
 use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
     root: PathBuf,
@@ -17,7 +13,8 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("review-currentness");
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::repository(&root);
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -28,7 +25,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .output()

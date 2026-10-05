@@ -215,8 +215,12 @@ fn normal_create_replace_replay_and_check_progression() {
         &["work", "return", &f.work, lead, "--outcome", "accepted"],
         b"checked",
     );
+    assert_eq!(
+        f.edit_ok("edit", "src/a.txt", b"next")["effect"],
+        "no-change"
+    );
     refused(
-        f.edit("edit", "src/a.txt", b"next"),
+        f.edit("edit", "src/new.txt", b"late"),
         "current worker assignment",
     );
 }
@@ -452,11 +456,15 @@ fn lost_reply_and_uncertain_or_missing_effects_never_start_new_request() {
     let mut pending: Value = serde_json::from_slice(&completed).unwrap();
     pending["status"] = json!("admitted");
     fs::write(&effect, pending.to_string()).unwrap();
-    refused(f.edit("edit", "src/a.txt", b"once"), "unresolved");
     refused(f.edit("refresh", "src/a.txt", b""), "uncertain");
     assert_eq!(
+        f.edit_ok("edit", "src/a.txt", b"once")["effect"],
+        "no-change"
+    );
+    assert_eq!(fs::metadata(f.root.join("src/a.txt")).unwrap().ino(), inode);
+    assert_eq!(
         f.edit_ok("inspect", "src/a.txt", b"")["effectStatus"],
-        "admitted"
+        "completed"
     );
     fs::write(&effect, b"{").unwrap();
     refused(f.edit("edit", "src/a.txt", b"once"), "corrupt");

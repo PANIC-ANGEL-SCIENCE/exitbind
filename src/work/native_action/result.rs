@@ -166,6 +166,8 @@ pub(super) fn request_projection(request: &Request) -> Value {
         "timeoutMs": request.timeout.as_millis() as u64,
         "persistSession": request.persist_session,
         "resumed": request.resume_thread_id.is_some(),
+        "controlledEffects": request.controlled_tool.is_some(),
+        "controlledSession": request.controlled_tool.as_ref().map(|tool| &tool.session),
     })
 }
 

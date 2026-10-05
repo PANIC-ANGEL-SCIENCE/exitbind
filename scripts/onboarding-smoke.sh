@@ -30,9 +30,31 @@ core_words="$skill_name brief"
 
 activation="$root/activation.json"
 
+invoke_path=/nonexistent
+ancestor=$(CDPATH= cd "$root/project" && pwd -P)
+while :; do
+  if test -e "$ancestor/.git" || test -L "$ancestor/.git"; then
+    if test "${EXITBIND_TEST_NO_GIT_UNAVAILABLE:-}" = 1; then
+      git_bin=$(command -v git)
+      git_bin="$(CDPATH= cd "$(dirname "$git_bin")" && pwd -P)/$(basename "$git_bin")"
+      test -x "$git_bin"
+      mkdir "$root/tools"
+      ln -s "$git_bin" "$root/tools/git"
+      env -i HOME="$root/home" PATH="$root/tools" "$git_bin" init --quiet "$root/project"
+      git_root=$(env -i HOME="$root/home" PATH="$root/tools" "$git_bin" -C "$root/project" rev-parse --show-toplevel)
+      test "$git_root" = "$(CDPATH= cd "$root/project" && pwd -P)"
+      invoke_path="$root/tools"
+      printf '%s\n' 'COVERAGE UNAVAILABLE: onboarding marker-free/no-Git cell: fixture inherits a Git marker; the owned real-Git-only core workflow runs instead' >&2
+    fi
+    break
+  fi
+  test "$ancestor" != / || break
+  ancestor=$(dirname "$ancestor")
+done
+
 invoke() {
   env -i HOME="$root/home" "$binding_env=$root/bindings" \
-    PATH=/nonexistent "$bin" "$@"
+    PATH="$invoke_path" "$bin" "$@"
 }
 
 next=$(invoke init --mode portable --root "$root/project")

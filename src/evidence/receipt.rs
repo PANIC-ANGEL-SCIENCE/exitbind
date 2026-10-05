@@ -206,7 +206,11 @@ pub(crate) fn exit_path(loaded: &Loaded, ledger: &str) -> Result<Value, ExitPath
 
 pub(crate) fn verify_exit_path(path: &str, loaded: &Loaded) -> Result<Value, String> {
     let (_, source) = read_state_bytes(loaded, path)?;
-    let receipt: Value = serde_json::from_slice(&source)
+    verify_exit_path_bytes(&source, loaded)
+}
+
+pub(crate) fn verify_exit_path_bytes(source: &[u8], loaded: &Loaded) -> Result<Value, String> {
+    let receipt: Value = serde_json::from_slice(source)
         .map_err(|error| format!("invalid Exit Path receipt JSON: {error}"))?;
     let mut mismatches = Vec::new();
     if receipt["version"] != 1

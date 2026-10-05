@@ -19,6 +19,14 @@ pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), S
         .get("pendingDisposition")
         .filter(|value| value.is_object())
         .ok_or("Lead disposition is not currently pending")?;
+    if state["pendingDisposition"]["kind"] == "check_observation_failed"
+        && crate::run::state::check_observation::unresolved(state)
+    {
+        return Err(
+            "unresolved check effects block repair and supersession; inspect or stop this Work"
+                .into(),
+        );
+    }
     if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str()
         || pending["basisSha256"] != state["basis"]["sha256"]
         || pending["owner"] != "lead"
@@ -71,6 +79,12 @@ pub(crate) fn submission(
 
 fn lead_outcome_allowed(state: &Value, role: &Value, outcome: &str) -> Result<(), String> {
     if role == "lead"
+        && crate::run::state::check_observation::unresolved(state)
+        && !matches!(outcome, "blocked" | "rejected")
+    {
+        return Err("unresolved check effects require inspection or stopping; repair, acceptance and retry are refused".into());
+    }
+    if role == "lead"
         && state["pendingDisposition"].is_object()
         && !PENDING_LEAD_OUTCOMES.contains(&outcome)
     {
@@ -117,6 +131,7 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         .ok_or("run disposition history is invalid")?
         .push(disposition.value());
     state["pendingDisposition"] = Value::Null;
+    state["checkObservation"] = Value::Null;
     if disposition.resolves_review() {
         state["reviewResolution"] = json!({
             "state": "resolved_by_lead_disposition",
@@ -194,7 +209,9 @@ pub(crate) fn lead_view(state: &Value) -> Option<Value> {
     let pending = state
         .get("pendingDisposition")
         .filter(|value| value.is_object())?;
-    let decisions = if pending["kind"] == "review_rework" {
+    let decisions = if crate::run::state::check_observation::unresolved(state) {
+        json!([])
+    } else if pending["kind"] == "review_rework" {
         json!(["repair", "defer", "reject", "supersede"])
     } else {
         json!(["repair", "supersede"])

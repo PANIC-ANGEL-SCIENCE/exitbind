@@ -12,6 +12,11 @@ pub(crate) fn worktree_root(path: &Path) -> Result<Option<PathBuf>, String> {
         .output()
         .map_err(command_error)?;
     if !output.status.success() {
+        if has_git_marker(Path::new(path)) {
+            return Err(format!(
+                "Git topology preflight failed: a .git marker exists at or above {path}, but Git cannot resolve a worktree; inspect the marker and run git rev-parse --show-toplevel from the requested source directory before retrying bootstrap; suspicious markers are not a no-Git fallback"
+            ));
+        }
         return Ok(None);
     }
     let value = String::from_utf8(output.stdout)
@@ -24,8 +29,8 @@ pub(crate) fn worktree_root(path: &Path) -> Result<Option<PathBuf>, String> {
 pub(crate) fn has_git_marker(path: &Path) -> bool {
     path.ancestors().any(|ancestor| {
         std::fs::symlink_metadata(ancestor.join(".git"))
-            .map(|metadata| metadata.is_dir() || metadata.is_file())
-            .unwrap_or(false)
+            .map(|_| true)
+            .unwrap_or_else(|error| error.kind() != std::io::ErrorKind::NotFound)
     })
 }
 
@@ -117,7 +122,7 @@ pub(crate) fn reject_roots_under_worktree(
     };
     if control_root.starts_with(&top) || state_root.starts_with(&top) {
         return Err(
-            "local ControlRoot and StateRoot must stay outside ProductRoot's Git worktree".into(),
+            "storage preflight: local ControlRoot and StateRoot must stay outside ProductRoot's Git worktree; choose existing owned external --control-root and --state-root, then retry without relocating source".into(),
         );
     }
     Ok(())
@@ -125,7 +130,7 @@ pub(crate) fn reject_roots_under_worktree(
 
 fn command_error(error: std::io::Error) -> String {
     if error.kind() == std::io::ErrorKind::NotFound {
-        "Git executable not found on PATH".into()
+        "Git executable not found on PATH; Git discovery requires an available Git executable when a .git marker exists; provide Git on PATH and retry bootstrap without changing project files".into()
     } else {
         format!("Git preflight command could not run: {error}")
     }
@@ -193,6 +198,6 @@ mod tests {
     #[test]
     fn missing_git_error_is_actionable() {
         let error = command_error(std::io::Error::from(std::io::ErrorKind::NotFound));
-        assert_eq!(error, "Git executable not found on PATH");
+        assert_eq!(error, "Git executable not found on PATH; Git discovery requires an available Git executable when a .git marker exists; provide Git on PATH and retry bootstrap without changing project files");
     }
 }

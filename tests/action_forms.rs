@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::{
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -19,7 +19,8 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::repository(&root);
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -29,7 +30,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -129,7 +130,7 @@ impl Fixture {
     }
 
     fn run_argv(&self, argv: &[String], input: &[u8]) -> Output {
-        let mut child = Command::new(&argv[0])
+        let mut child = support::git_topology::command(&argv[0])
             .current_dir(&self.root)
             .args(&argv[1..])
             .stdin(Stdio::piped())

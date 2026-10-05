@@ -75,6 +75,7 @@ fn project_parts_after_reads(
     verify_current_work(loaded, work, current, assignment, &packet_sha256)?;
 
     let rules = current_rules(loaded)?;
+    let architecture = super::architecture::delivery(loaded, packet)?;
     let references =
         memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
     let generic_references: Vec<_> = references
@@ -130,6 +131,13 @@ fn project_parts_after_reads(
         }
     }
     let mut volatile = String::new();
+    if let Some(architecture) = &architecture {
+        push_section(
+            &mut volatile,
+            "CURRENT ARCHITECTURE CONTRACT SLICE",
+            architecture,
+        )?;
+    }
     push_section(
         &mut volatile,
         "NATIVE CURRENT CONTEXT",
@@ -181,6 +189,9 @@ fn project_parts_after_reads(
         )?;
     }
     after_reads()?;
+    if super::architecture::delivery(loaded, packet)? != architecture {
+        return Err("architecture contract changed before native launch".into());
+    }
     let fresh = crate::work::next(loaded, work)?;
     let fresh_next = &fresh["next"];
     let fresh_rules = current_rules(loaded)?;
@@ -465,6 +476,22 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir(&root).unwrap();
+        let mut git = std::process::Command::new("git");
+        for key in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_INDEX_FILE",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        ] {
+            git.env_remove(key);
+        }
+        assert!(git
+            .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
+            .status()
+            .unwrap()
+            .success());
         let rule = root.join("AGENTS.md");
         std::fs::write(&rule, "stable rule with NATIVE CURRENT CONTEXT text\n").unwrap();
         let configuration = crate::project::onboarding::init_with_options(
@@ -479,6 +506,16 @@ mod tests {
             },
         )
         .unwrap();
+        let architecture_source = include_str!("../../tests/fixtures/architecture-contract.json");
+        std::fs::write(root.join("architecture.json"), architecture_source).unwrap();
+        std::fs::create_dir_all(root.join("src/app")).unwrap();
+        let mut configuration_value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&configuration).unwrap()).unwrap();
+        configuration_value["project"]["architectureContract"] = json!({
+            "sourcePath": "architecture.json", "sourceSha256": hash::text(architecture_source),
+            "revision": "fixture-approved-1"});
+        configuration_value["agents"]["worker"]["observe"] = json!(["src/app"]);
+        std::fs::write(&configuration, configuration_value.to_string()).unwrap();
         let loaded = crate::config::load(configuration.to_str()).unwrap();
         let started = crate::work::begin(
             &loaded,
@@ -539,6 +576,19 @@ mod tests {
         .unwrap();
         assert_eq!(first.stable, second.stable);
         assert_ne!(first.volatile, second.volatile);
+        assert!(first
+            .volatile
+            .contains("CURRENT ARCHITECTURE CONTRACT SLICE"));
+        assert!(first.volatile.contains("no-store-import"));
+        assert!(!first.volatile.contains("src/export"));
+        let drift = project_parts_after_reads(&loaded, work, current, binding, || {
+            std::fs::write(root.join("architecture.json"), "{}").map_err(|error| error.to_string())
+        });
+        assert!(drift
+            .err()
+            .unwrap()
+            .contains("architecture contract source changed"));
+        std::fs::write(root.join("architecture.json"), architecture_source).unwrap();
         assert!(first
             .stable
             .contains("stable rule with NATIVE CURRENT CONTEXT text"));

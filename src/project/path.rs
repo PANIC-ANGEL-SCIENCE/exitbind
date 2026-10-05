@@ -186,12 +186,72 @@ fn secure_open(
     canonicalize_root: bool,
     single_link: bool,
 ) -> Result<fs::File, SecureBytesResult> {
+    use std::fs::File;
+    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+
+    let (directory, file_name) = secure_parent(root, requested, label, canonicalize_root)?;
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            file_name.as_ptr(),
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if descriptor < 0 {
+        let error = io::Error::last_os_error();
+        return Err(classify_io_error(error, label));
+    }
+    let file = unsafe { File::from_raw_fd(descriptor) };
+    match file.metadata() {
+        Ok(info) if info.is_file() && (!single_link || info.nlink() == 1) => {}
+        Ok(_) => {
+            return Err(SecureBytesResult::Unsafe(format!(
+                "{label} must be a regular file"
+            )))
+        }
+        Err(error) => return Err(classify_io_error(error, label)),
+    }
+    Ok(file)
+}
+
+/// Create a private file exclusively beneath existing no-follow directories.
+/// Neither symlink aliases nor a concurrently created leaf are overwritten.
+#[cfg(unix)]
+pub(crate) fn secure_create_new(
+    root: &Path,
+    requested: &str,
+    label: &str,
+) -> Result<fs::File, String> {
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+    let (directory, file_name) = secure_parent(root, requested, label, false)
+        .map_err(|error| error.into_result().unwrap_err())?;
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            file_name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if descriptor < 0 {
+        return Err(format!("{label}: {}", io::Error::last_os_error()));
+    }
+    Ok(unsafe { fs::File::from_raw_fd(descriptor) })
+}
+
+#[cfg(unix)]
+fn secure_parent(
+    root: &Path,
+    requested: &str,
+    label: &str,
+    canonicalize_root: bool,
+) -> Result<(fs::File, std::ffi::CString), SecureBytesResult> {
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
     use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::{AsRawFd, FromRawFd};
-
     if requested.trim().is_empty() || requested.contains('\0') || Path::new(requested).is_absolute()
     {
         return Err(SecureBytesResult::Unsafe(format!(
@@ -267,28 +327,7 @@ fn secure_open(
         Ok(file_name) => file_name,
         Err(error) => return Err(error),
     };
-    let descriptor = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            file_name.as_ptr(),
-            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if descriptor < 0 {
-        let error = io::Error::last_os_error();
-        return Err(classify_io_error(error, label));
-    }
-    let file = unsafe { File::from_raw_fd(descriptor) };
-    match file.metadata() {
-        Ok(info) if info.is_file() && (!single_link || info.nlink() == 1) => {}
-        Ok(_) => {
-            return Err(SecureBytesResult::Unsafe(format!(
-                "{label} must be a regular file"
-            )))
-        }
-        Err(error) => return Err(classify_io_error(error, label)),
-    }
-    Ok(file)
+    Ok((directory, file_name))
 }
 
 #[cfg(not(unix))]

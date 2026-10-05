@@ -10,7 +10,7 @@ use std::{
 mod support;
 
 fn call(root: &Path, args: &[&str], body: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .args(["--config", "exitbind.json"])
@@ -29,7 +29,8 @@ fn ok(root: &Path, args: &[&str], body: &[u8]) -> Value {
 }
 fn project(broad: bool) -> (PathBuf, String, String) {
     let root = support::temp("file-effect");
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::repository(&root);
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--skip-skills", "--root"])
         .arg(&root)
         .output()
@@ -372,10 +373,10 @@ fn revoked_configuration_new_work_and_uncertain_operation_never_renew_authority(
         "absent",
         b"result",
     );
-    assert!(!retry.status.success());
-    assert!(String::from_utf8(retry.stdout)
-        .unwrap()
-        .contains("unresolved admitted effect"));
+    assert!(retry.status.success(), "{retry:?}");
+    let recovered: Value = serde_json::from_slice(&retry.stdout).unwrap();
+    assert_eq!(recovered["effect"], "no-change");
+    assert_eq!(recovered["recovered"], true);
     assert_eq!(fs::read(root.join("src/a.txt")).unwrap(), b"result");
     let begin = ok(
         &root,
@@ -491,4 +492,219 @@ fn symlink_target_or_parent_and_non_utf8_replacement_are_rejected() {
     .success());
     assert!(!root.join("src/invalid.txt").exists());
     fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn real_process_crashes_reconcile_four_cuts_without_duplicate_writes_or_new_grants() {
+    use std::{
+        os::unix::fs::MetadataExt,
+        thread,
+        time::{Duration, Instant},
+    };
+    let hook_root = support::temp("effect-crash-hook");
+    let hook = hook_root.join("crash.so");
+    assert!(Command::new("cc")
+        .args(["-shared", "-fPIC", "-Wall", "-Werror"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/file-effect-crash.c"))
+        .args(["-ldl", "-o"])
+        .arg(&hook)
+        .status()
+        .unwrap()
+        .success());
+    for phase in [
+        "before_admission",
+        "after_admission",
+        "after_write",
+        "after_completion",
+    ] {
+        let (root, work, assignment) = project(false);
+        permit(&root, &work, &assignment);
+        let marker = root.join("stopped");
+        let mut child = CrashChild(Some(
+            support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+                .current_dir(&root)
+                .args([
+                    "work",
+                    "write",
+                    &work,
+                    &assignment,
+                    "src/cut.txt",
+                    "--operation",
+                    "crash-cut",
+                    "--expected-sha256",
+                    "absent",
+                    "--config",
+                    "exitbind.json",
+                ])
+                .env("LD_PRELOAD", &hook)
+                .env("EXITBIND_TEST_CRASH_PHASE", phase)
+                .env("EXITBIND_TEST_CRASH_MARKER", &marker)
+                .env("EXITBIND_TEST_TARGET_DIR", root.join("src"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        ));
+        child.stdin.take().unwrap().write_all(b"once").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !marker.exists() && Instant::now() < deadline {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "fault child exited before {phase}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(marker.exists(), "fault checkpoint was not reached: {phase}");
+        // A concurrent assignment transition cannot commit while the effect
+        // owner holds the same canonical Work lock (not a separate tool lock).
+        let raced = call(
+            &root,
+            &[
+                "work",
+                "return",
+                &work,
+                &assignment,
+                "--outcome",
+                "completed",
+            ],
+            b"race",
+        );
+        child.kill().unwrap();
+        let killed = child.0.take().unwrap().wait_with_output().unwrap();
+        assert!(!killed.status.success());
+        assert!(
+            !raced.status.success(),
+            "transition bypassed canonical lock"
+        );
+        assert!(
+            String::from_utf8_lossy(&raced.stderr).contains("busy"),
+            "{raced:?}"
+        );
+        let target = root.join("src/cut.txt");
+        let prior_inode = fs::metadata(&target).ok().map(|m| m.ino());
+        if phase == "before_admission" || phase == "after_admission" {
+            assert!(prior_inode.is_none());
+        } else {
+            assert_eq!(fs::read(&target).unwrap(), b"once");
+        }
+        if phase != "before_admission" {
+            // Revocation/transition wins after the crashed lock is released.
+            // Only that durable admitted intent may finish; no new operation.
+            ok(
+                &root,
+                &[
+                    "work",
+                    "return",
+                    &work,
+                    &assignment,
+                    "--outcome",
+                    "completed",
+                ],
+                b"transition after crash",
+            );
+            assert!(!write(
+                &root,
+                &work,
+                &assignment,
+                "src/late.txt",
+                "late",
+                "absent",
+                b"late"
+            )
+            .status
+            .success());
+        }
+        let recovered = write(
+            &root,
+            &work,
+            &assignment,
+            "src/cut.txt",
+            "crash-cut",
+            "absent",
+            b"once",
+        );
+        assert!(recovered.status.success(), "{phase}: {recovered:?}");
+        assert_eq!(fs::read(&target).unwrap(), b"once");
+        if let Some(inode) = prior_inode {
+            assert_eq!(
+                fs::metadata(&target).unwrap().ino(),
+                inode,
+                "duplicate physical replacement: {phase}"
+            );
+        }
+        let inode = fs::metadata(&target).unwrap().ino();
+        assert_eq!(
+            serde_json::from_slice::<Value>(
+                &write(
+                    &root,
+                    &work,
+                    &assignment,
+                    "src/cut.txt",
+                    "crash-cut",
+                    "absent",
+                    b"once"
+                )
+                .stdout
+            )
+            .unwrap()["effect"],
+            "no-change"
+        );
+        assert_eq!(fs::metadata(&target).unwrap().ino(), inode);
+        assert!(!write(
+            &root,
+            &work,
+            &assignment,
+            "src/cut.txt",
+            "crash-cut",
+            "absent",
+            b"changed parameters"
+        )
+        .status
+        .success());
+        let events: Vec<Value> = fs::read_to_string(root.join(format!(
+            ".exitbind/runs/work-{}.jsonl",
+            work.strip_prefix("smw_").unwrap()
+        )))
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["action"] == "govern" && e["governorEvent"]["action"] == "mutation")
+                .count(),
+            1,
+            "recovery reminted a grant"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    fs::remove_dir_all(hook_root).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+struct CrashChild(Option<std::process::Child>);
+#[cfg(target_os = "linux")]
+impl std::ops::Deref for CrashChild {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+#[cfg(target_os = "linux")]
+impl std::ops::DerefMut for CrashChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().unwrap()
+    }
+}
+#[cfg(target_os = "linux")]
+impl Drop for CrashChild {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 }

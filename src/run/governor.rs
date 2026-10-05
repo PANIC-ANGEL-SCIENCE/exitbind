@@ -350,6 +350,7 @@ pub(crate) fn replan_for_assignment(
         if state["governor"]["state"] != "replan_required" {
             return Err("material re-plan is not currently required".into());
         }
+        super::check_observation::assert_current(loaded, &state)?;
         let assignment = crate::run::assignment::pending(&state)
             .into_iter()
             .find(|item| item["agent"] == "worker")

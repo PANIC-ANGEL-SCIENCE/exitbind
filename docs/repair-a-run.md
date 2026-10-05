@@ -21,13 +21,23 @@ response rules in [work mutation results](work-mutation-results.md).
 | What happened | Next action |
 | --- | --- |
 | A check is missing | Have the host execute the exact frozen command and report its actual result for the current worker submission. |
+| Check observation failed | Read `work detail WORK`. An ended attempt exposes a Lead repair disposition; follow its new worker assignment/permit, return fresh work, then check and review. Unresolved execution or live descendants remain blocked from retry or supersession. |
+| Failure storage was unavailable | Keep the admitted Work unresolved; follow the returned inspection route and stop if termination cannot be established. The response is diagnostic evidence, not a durable check or permission. |
 | A check failed | Repair through explicit rework, then submit fresh work, check, and review. A review approval cannot clear the failed report. |
-| Reviewer requested rework | Follow the returned worker assignment. Preserve the earlier documents. |
+| Reviewer requested rework | The Lead decides the current finding through disposition, then follows its authorized worker assignment. Preserve earlier documents. |
 | Recorded artifact changed | Inspect its hash and restore the exact legitimate bytes. Do not edit the ledger to approve different bytes. |
 | Configuration, profile, or selected context changed intentionally | The lead inspects the predecessor and explicitly creates a successor where supported. |
 | Native agent cannot be started | Resolve the host mapping before continuing. A printed assignment does not mean an agent ran. |
 | A worker, reviewer, or lead recorded `blocked` | Inspect the blocker. The lead can resolve scope and create an explicit successor where supported; do not record approval on the blocked run. |
 | Run is accepted or rejected | It remains final. Start a separate task when more work is needed. |
+
+Repeated check failures keep the same Work and its spent authority. Read
+`work detail WORK --json`: `actionForms.recovery` supplies the current material
+re-plan or evidence form. Fill only the Lead's actual intent; it grants no new
+host permission. After recovery, a `recovery.heldResults` command returns the
+selected exact retained bytes with no rewriting. Refresh detail and run the
+fresh applicable check and required review before Lead acceptance. A blocked
+governor or unresolved execution remains a truthful stop.
 
 The [first checked run](first-checked-run.md#3-record-the-review-and-lead-decision)
 contains the complete rework sequence. Exact supersession and drift rules live

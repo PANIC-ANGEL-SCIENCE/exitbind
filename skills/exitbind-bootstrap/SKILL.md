@@ -7,128 +7,20 @@ description: Use Exitbind when the actual target and existing project policy mak
 
 # Exitbind
 
-Exitbind is installed on this machine. It is a local CLI that decides whether a
-result has earned acceptance: checks, review, and lead acceptance count only for
-the exact result they were taken on.
-
-Small reversible work stays direct: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. The protocol surfaces only for material or promotion-required work, resuming governed work, or explicit cross-host continuation. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.
+Exitbind is installed. It supplies local exact-result checks, review and Lead acceptance inside the current conversation. The host owns models, tools and permissions. This bootstrap is guidance, not proof of activation or compliance.
 
 ## Check applicability before setup
 
-Use the actual target and any existing project policy to decide whether the
-task requires governed acceptance. A repository or configuration filename by
-itself does not activate Exitbind, and an installed bootstrap is not an active
-session. If the target and policy do not require governance, keep ordinary work
-on the native host without initialization.
+Classify actual effects and existing project policy before setup. For read-only questions, disposable prototypes and tiny obvious reversible edits, do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. Material or promotion consequences select governance before mutation. The Lead recommends review and the owner chooses required/omitted; reuse existing scoped decisions. Failed required activation stays an explicit blocker.
 
-## Select it for material work
+For a known Work or explicit `smw_…` locator, use the selected executable's `work detail WORK --json` directly: current profile/rules, assignment, evidence, tasks and exact action forms. Unknown project work uses `work resume --json`, then its emitted current detail route. Stale/incomplete detail needs its supported refresh/expansion before dependent action. Focus is navigation, never authority. Keep exact executable/config arguments on routes marked `sameExecutableRequired`/`sameConfigRequired`; do not guess ledger paths, flags or placeholders.
 
-Select Exitbind before consequential repository mutation when the task has a
-material consequence or promotion requirement: authority, trust, security,
-data loss, release, lifecycle, evidence, compatibility, or a required
-check/review. Read-only planning, disposable prototypes, and tiny obvious
-reversible edits stay direct. For important work, the Lead recommends review;
-the owner chooses whether it is required and may revise that choice while the
-work continues. Retained work gets useful exact-result checks proportionate to
-risk; promotion means applicable obligations require governance, not merely
-keeping a harmless local file.
+In an unconfigured project, inspect first and obtain owner consent for `exitbind init --mode portable --root .` (or preview approved facts with `exitbind setup` before `--apply`). Use `--skip-skills` when owner-selected host guidance is managed elsewhere; preserve custom or symlinked files. Init writes config/private state/profiles/project guidance, starts no model and grants no permission. Select the intended producer once with that path's `version --json` and independently verify its executable hash; equal version strings do not identify a development commit.
 
-Stay direct for read-only questions, explanations, and tiny obvious reversible
-edits. Do not add reviewers, checks, or ceremony to those. If required
-activation is unavailable or fails, report the refusal and its failing layer;
-do not downgrade the work to direct execution.
+Start new governed Work with `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted`. Unmarked historical Work keeps required review and cannot revise policy. Project guidance carries the full authority rules. Product-managed Codex uses `work act WORK` for its configured pending role/check and explicit Lead decision. Host-managed native agents consume complete current detail and its permit/return forms; ordinary returns need no continuation initialization. Do not replace native identity or imply that a permit grants host access. Cross-host initialized continuation uses its own bound receive routes.
 
-## Start or resume governed work
+After acceptance, `effectiveAction.exists=false` remains terminal. Separate `completion.receipt.export.command` provides optional requested `work closeout WORK --export` (or `--output PATH`) using the existing Exit Path receipt and exact Work verification. Plain `work closeout WORK` and `--receipt PATH` are read-only. Current evidence may be stale despite historical acceptance; receipt verification and Work readiness remain separate from goal/publication/install completion. Repeat export reuses only a verified existing destination and never overwrites it or repeats checks/acceptance.
 
-```sh
-exitbind work resume            # continue existing governed work
-exitbind work begin WORKFLOW --goal "GOAL" --check-command "COMMAND" \
-  --review-policy required
-```
+Report observed checks, actual role decisions, currentness/refusals and requested receipt status distinctly. `goalProgress.systemText` is product-owned. When a response carries a non-null `presentation.terminal`, that value is the terminal status block: print it on a line of its own, exactly as given, with nothing else on that line - not inside a sentence, not wrapped in emphasis. Put results and limitations in separate sentences; never reconstruct terminal wording from state or progress.
 
-At a new governed entry, record the owner's choice explicitly: the Lead may
-recommend `required`, while the owner chooses `required` or `omitted` and may
-revise that choice while the marked run is running. A run started without
-`--review-policy` is the unmarked historical path; it retains required-review
-semantics and cannot later use `run review-policy`.
-
-To revise a marked running run, use the actual ledger interface:
-
-```sh
-exitbind run review-policy lead LEDGER \
-  --decision omitted --reason "OWNER_REASON" --config CONFIG
-```
-
-Use `--review-policy omitted` or `--decision required` when that is the
-owner's selected choice.
-
-`work resume` and `work next` return the next action, what evidence is still
-valid, and what must not be repeated. Follow that returned action; do not ask
-the user for work handles, ledger paths, or event hashes.
-
-When a receiving task agent is given an explicit `smw_…` work locator in a
-configured project, run `exitbind work next WORK` first. Read its `continuation`
-view for current requirements, corrections, results and uncertain operations;
-if it says `requiresExpansion`, follow the emitted `work continuation` read
-route. Use the same executable and configuration indicated by each route.
-Do not search raw state files to reconstruct the handoff or retry an uncertain
-effect just because its native process is absent.
-
-If the repository is not configured yet, `exitbind work` reports that. Explain
-the single project write it needs and ask the owner before running:
-
-```sh
-exitbind init --mode portable --root .
-```
-
-When the owner already has the first task's approved paths and check, preview
-the model-free facts route before applying it:
-
-```sh
-exitbind setup --mode portable --root . --scope worker \
-  --observe README.md,src --write src --commands "YOUR_TEST_COMMAND" \
-  --check-command "YOUR_TEST_COMMAND" --review-policy required \
-  --goal "Describe the bounded change"
-```
-
-Review the affected paths and supported host mapping, then repeat with
-`--apply`. Setup updates only the selected declared facts and compatible
-managed native projections; it does not overwrite custom profiles, skills or
-hooks, launch a model, grant permissions, or reload an existing session.
-
-If project skills are managed elsewhere, the owner may choose `--skip-skills`
-on that initialization command. It preserves those paths, including symlinks,
-while creating configuration, profiles, and state. Report guidance projection
-as skipped and use matching host-managed guidance; do not remove existing
-links or weaken path checks to make setup succeed.
-
-Initialization writes project configuration, private state, and project-local
-Exitbind guidance. It installs no hook, starts no agent, and grants no host
-permission. The project-local guidance carries the detailed protocol; this
-bootstrap only decides when to reach for it.
-
-## Report honestly
-
-Say Exitbind is active only after a real lifecycle action exists — a work
-handle, a recorded check, a review, or an acceptance. Projected files, an
-installed binary, and this text are not activation.
-
-Report the exit state the CLI gives you with its reason code. When a response
-carries a non-null `presentation.terminal`, that value is the terminal status
-block: print it on a line of its own, exactly as given, with nothing else on
-that line - not inside a sentence, not wrapped in emphasis, and with no
-percentage, parenthesis, dash clause, or closing remark attached to it.
-Everything worth saying goes in its own sentences around it. Never build that
-line yourself from the exit state or the progress number. Never present a passing check as
-acceptance, and never reuse evidence the CLI has refused.
-
-Run `exitbind host status` when the user asks whether Exitbind is installed and
-current.
-
-For a native command or child assignment that is still running, keep one
-handle and wait for completion or a meaningful state transition, normally for
-30–60 seconds. Do not start a fresh watch process or poll unchanged status at
-short intervals. A timeout is not a failure and never authorizes restarting
-the command; wait on the same handle or inspect authoritative state. Stay
-quiet when nothing changed, but answer an explicit human status request with
-the current truth.
+Run `exitbind host status` when asked whether setup is installed/current. An installed binary or skill alone is not an active lifecycle. For a native command or child still running, keep one handle and wait for completion or a meaningful state transition (normally 30–60 seconds). Do not start a fresh watch process or poll unchanged status at short intervals. A timeout is not a failure and never authorizes restarting. Answer an explicit human status request with the current truth.

@@ -361,10 +361,33 @@ fn preflight_resolves_cargo_once_and_refuses_product_target_log_or_temp() {
     let outside = support::temp("preflight");
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-local.sh");
     let cargo = std::env::var_os("CARGO").unwrap();
+    // Preserve restricted system-tool PATH and explicit Cargo selection while
+    // retaining the caller's actual Linux prerequisite, including local tools.
+    let command_path = if cfg!(target_os = "linux") {
+        let tmux = Command::new("sh")
+            .args(["-c", "command -v tmux"])
+            .output()
+            .unwrap();
+        assert!(
+            tmux.status.success(),
+            "real tmux prerequisite: {}",
+            text(&tmux)
+        );
+        let tmux = fs::canonicalize(PathBuf::from(
+            String::from_utf8(tmux.stdout).unwrap().trim(),
+        ))
+        .unwrap();
+        let tools = outside.join("tools");
+        fs::create_dir(&tools).unwrap();
+        std::os::unix::fs::symlink(tmux, tools.join("tmux")).unwrap();
+        std::env::join_paths([tools, PathBuf::from("/usr/bin"), PathBuf::from("/bin")]).unwrap()
+    } else {
+        std::ffi::OsString::from("/usr/bin:/bin")
+    };
     let run = |field: &str, value: &std::path::Path| {
         Command::new(&script)
             .arg("--preflight")
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", &command_path)
             .env("CARGO", &cargo)
             .env("CARGO_TARGET_DIR", outside.join("target"))
             .env("TMPDIR", &outside)

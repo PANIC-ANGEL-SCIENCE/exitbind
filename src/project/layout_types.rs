@@ -154,6 +154,9 @@ pub fn create_binding(
     let product_root = canonical_directory(product_root)?;
     let state_root = canonical_directory(state_root)?;
     ensure_distinct_roots(&control_root, &product_root, &state_root)?;
+    if super::binding_location::locate(project_id)?.is_some() {
+        return Err("project binding already exists; refusing to replace it".into());
+    }
     let directory = binding_directory(true)?;
     let path = directory.join(format!("{project_id}.json"));
     if fs::symlink_metadata(&path).is_ok() {
@@ -188,11 +191,10 @@ pub fn create_binding(
 
 pub fn ensure_binding_available(project_id: &str) -> Result<(), String> {
     validate_id(project_id)?;
-    let directory = binding_directory(true)?;
-    let path = directory.join(format!("{project_id}.json"));
-    if fs::symlink_metadata(path).is_ok() {
+    if super::binding_location::locate(project_id)?.is_some() {
         return Err("project binding already exists; refusing to replace it".into());
     }
+    binding_directory(true)?;
     Ok(())
 }
 
@@ -247,10 +249,11 @@ fn upgrade_binding(
                     .into(),
             );
         }
-        return Ok(binding_directory(false)?.join(format!("{project_id}.json")));
+        return super::binding_location::locate(project_id)?
+            .ok_or_else(|| "project binding disappeared".into());
     }
-    let directory = binding_directory(false)?;
-    let path = directory.join(format!("{project_id}.json"));
+    let path = super::binding_location::locate(project_id)?.ok_or("project binding unavailable")?;
+    let directory = path.parent().ok_or("project binding has no parent")?;
     let temporary = directory.join(format!(".{project_id}.{}.tmp", std::process::id()));
     let value = json!({
         "version": BINDING_VERSION,
@@ -283,8 +286,7 @@ fn upgrade_binding(
 }
 
 fn read_binding(project_id: &str) -> Result<Value, String> {
-    let directory = binding_directory(false)?;
-    let path = directory.join(format!("{project_id}.json"));
+    let path = super::binding_location::locate(project_id)?.ok_or("project binding unavailable")?;
     let metadata =
         fs::symlink_metadata(&path).map_err(|error| format!("project binding: {error}"))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -354,37 +356,37 @@ fn read_binding(project_id: &str) -> Result<Value, String> {
 /// under the product root and do not need this lookup.
 pub(crate) fn config_for_product(product_root: &Path) -> Result<Option<PathBuf>, String> {
     let product_root = canonical_directory(product_root)?;
-    let directory = match binding_directory(false) {
-        Ok(value) => value,
-        Err(error) if error.starts_with("binding directory:") => return Ok(None),
-        Err(error) => return Err(error),
-    };
     let mut names = Vec::new();
-    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err("project binding directory contains an unsafe entry".into());
+    for directory in super::binding_location::directories()? {
+        for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("project binding directory contains an unsafe entry".into());
+            }
+            let name = entry
+                .file_name()
+                .to_str()
+                .ok_or("project binding name is not UTF-8")?
+                .to_owned();
+            let Some(project_id) = name.strip_suffix(".json") else {
+                return Err("project binding name is invalid".into());
+            };
+            validate_id(project_id)?;
+            names.push(project_id.to_owned());
         }
-        let name = entry
-            .file_name()
-            .to_str()
-            .ok_or("project binding name is not UTF-8")?
-            .to_owned();
-        let Some(project_id) = name.strip_suffix(".json") else {
-            return Err("project binding name is invalid".into());
-        };
-        validate_id(project_id)?;
-        names.push(project_id.to_owned());
     }
     names.sort();
+    names.dedup();
     if names.len() > 256 {
         return Err("project binding count exceeds lookup limit".into());
     }
     let mut found = None;
     for project_id in names {
         let binding = read_binding(&project_id)?;
-        if bound_directory(&binding, "productRoot")? != product_root {
+        // Binding writers store canonical paths. An unrelated stale binding
+        // must not break discovery for a different source tree.
+        if binding["productRoot"].as_str() != product_root.to_str() {
             continue;
         }
         let Some(control) = binding.get("controlRoot") else {
@@ -418,32 +420,10 @@ fn bound_directory(binding: &Value, field: &str) -> Result<PathBuf, String> {
 }
 
 fn binding_directory(create: bool) -> Result<PathBuf, String> {
-    let base = if exitbind_surface() {
-        std::env::var_os("EXITBIND_BINDINGS_DIR")
-            .or_else(|| std::env::var_os("SOULMATE_BINDINGS_DIR"))
-    } else {
-        std::env::var_os("SOULMATE_BINDINGS_DIR")
-    }
-    .map(PathBuf::from)
-    .or_else(|| {
-        std::env::var_os("XDG_STATE_HOME").map(|value| {
-            PathBuf::from(value).join(if exitbind_surface() {
-                "exitbind/bindings"
-            } else {
-                "soulmate/bindings"
-            })
-        })
-    })
-    .or_else(|| {
-        std::env::var_os("HOME").map(|value| {
-            PathBuf::from(value).join(if exitbind_surface() {
-                ".local/state/exitbind/bindings"
-            } else {
-                ".local/state/soulmate/bindings"
-            })
-        })
-    })
-    .ok_or("cannot determine machine-local binding directory")?;
+    binding_directory_at(&super::binding_location::select()?, create)
+}
+
+pub(super) fn binding_directory_at(base: &Path, create: bool) -> Result<PathBuf, String> {
     if !base.is_absolute() {
         return Err("machine-local binding directory must be absolute".into());
     }
@@ -463,17 +443,19 @@ fn binding_directory(create: bool) -> Result<PathBuf, String> {
         }
     }
     let metadata =
-        fs::symlink_metadata(&base).map_err(|error| format!("binding directory: {error}"))?;
+        fs::symlink_metadata(base).map_err(|error| format!("binding directory: {error}"))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err("binding directory must be a real directory".into());
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&base, fs::Permissions::from_mode(0o700))
-            .map_err(|error| error.to_string())?;
+        if create {
+            fs::set_permissions(base, fs::Permissions::from_mode(0o700))
+                .map_err(|error| error.to_string())?;
+        }
     }
-    Ok(base)
+    Ok(base.to_path_buf())
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf, String> {

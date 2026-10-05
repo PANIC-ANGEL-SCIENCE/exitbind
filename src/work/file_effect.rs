@@ -2,6 +2,9 @@
 //! changes; a durable intent prevents a lost reply from repeating the effect.
 //! Native tools outside this mediator retain their host's own permissions.
 
+#[path = "file_effect_recovery.rs"]
+mod recovery;
+
 use crate::{config::Loaded, evidence::hash, project::path, run};
 use serde_json::{json, Value};
 use std::{io::Read, path::Component};
@@ -79,21 +82,20 @@ pub(super) fn replace_locked(
         _ => return Err("file effect journal is unavailable; no effect admitted".into()),
     };
     if let Some(previous) = previous.as_deref() {
-        let recorded: Value =
-            serde_json::from_str(previous).map_err(|_| "file effect journal is malformed")?;
-        if recorded["version"] != 1 || recorded["parametersSha256"] != parameters {
-            return Err("file operation identity conflicts with its recorded request".into());
-        }
-        if recorded["status"] != "completed" {
-            return Err("file operation has an unresolved admitted effect; inspect the file before choosing a new operation".into());
-        }
-        let now = path::secure_bytes(&root, request.path, "file replay target")?;
-        if hash::bytes(&now) != hash::text(content) {
-            return Err("recorded file result changed; replay cannot overwrite it".into());
-        }
-        return Ok(result(&request, &parameters, true));
+        return recovery::reconcile(
+            loaded,
+            &request,
+            content,
+            &parameters,
+            previous,
+            &root,
+            &loaded.state_root.join(&journal_relative),
+        );
     }
 
+    if !crate::project::portability::writable(&root) {
+        return Err("unsupported file effect: project source is read-only; Exitbind state placement is separate".into());
+    }
     if run::ledger::claim_path(lock).exists() {
         return Err("work was superseded; no file effect admitted".into());
     }
@@ -124,18 +126,7 @@ pub(super) fn replace_locked(
     // A permit is cooperative authority, never a caller-supplied token.
     // Its canonical grant must belong to this current assignment and remain
     // unconsumed; no earlier Work or completed attempt can supply it.
-    let grant = &state["governor"]["currentMutation"];
-    if state["governor"]["enabled"] != true
-        || state["governor"]["state"] != "ready"
-        || grant["attempt"] != assignment["attempt"]
-        || !events.iter().any(|event| {
-            event["governorEvent"]["eventSha256"] == grant["eventSha256"]
-                && event["assignmentSha256"] == hash::text(request.assignment)
-                && event["governorEvent"]["action"] == "mutation"
-        })
-    {
-        return Err("file effect needs a current unconsumed worker mutation permit".into());
-    }
+    let grant = current_grant(&state, &events, &assignment, request.assignment)?;
     let expected = match path::secure_bytes_observation(&root, request.path, "file effect target") {
         path::SecureBytesResult::Absent(_) if request.expected == "absent" => None,
         path::SecureBytesResult::Bytes(bytes) if hash::bytes(&bytes) == request.expected => {
@@ -154,9 +145,9 @@ pub(super) fn replace_locked(
     let mut record = json!({"version":1,"kind":"mediated_file_effect",
         "parametersSha256":parameters,"work":request.work,"assignment":request.assignment,
         "operation":request.operation,"path":request.path,"status":"admitted",
-        "grantEventSha256":grant["eventSha256"],"resultSha256":hash::text(content)});
+        "grantEventSha256":grant["eventSha256"],"resultSha256":hash::text(content), "ownerSha256":owner_binding(loaded)?});
     let intent = format!("{record}\n");
-    crate::host::settings::atomic_write(
+    durable_write(
         &journal_path,
         &intent,
         Some(0o600),
@@ -165,9 +156,9 @@ pub(super) fn replace_locked(
     )?;
     // Keep the canonical run lock through the actual replacement. Revoked
     // assignments cannot pass admission after a Lead transition commits.
-    crate::host::settings::atomic_write(&target, content, mode, expected.as_deref(), &root)?;
+    durable_write(&target, content, mode, expected.as_deref(), &root)?;
     record["status"] = json!("completed");
-    crate::host::settings::atomic_write(
+    durable_write(
         &journal_path,
         &format!("{record}\n"),
         Some(0o600),
@@ -175,6 +166,55 @@ pub(super) fn replace_locked(
         &loaded.state_root,
     )?;
     Ok(result(&request, &parameters, false))
+}
+
+pub(super) fn current_grant<'a>(
+    state: &'a Value,
+    events: &[Value],
+    assignment: &Value,
+    handle: &str,
+) -> Result<&'a Value, String> {
+    let grant = &state["governor"]["currentMutation"];
+    if state["governor"]["enabled"] != true
+        || state["governor"]["state"] != "ready"
+        || grant["attempt"] != assignment["attempt"]
+        || !events.iter().any(|event| {
+            event["governorEvent"]["eventSha256"] == grant["eventSha256"]
+                && event["assignmentSha256"] == hash::text(handle)
+                && event["governorEvent"]["action"] == "mutation"
+        })
+    {
+        return Err("file effect needs a current unconsumed worker mutation permit".into());
+    }
+    Ok(grant)
+}
+
+fn owner_binding(loaded: &Loaded) -> Result<String, String> {
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let binary = std::fs::read(executable).map_err(|e| e.to_string())?;
+    Ok(hash::value(&json!([
+        loaded.product_root,
+        loaded.control_root,
+        loaded.state_root,
+        hash::text(&loaded.source),
+        hash::bytes(&binary)
+    ])))
+}
+
+fn durable_write(
+    target: &std::path::Path,
+    content: &str,
+    mode: Option<u32>,
+    expected: Option<&str>,
+    root: &std::path::Path,
+) -> Result<(), String> {
+    crate::host::settings::atomic_write(target, content, mode, expected, root)?;
+    std::fs::File::open(target)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    std::fs::File::open(target.parent().ok_or("effect target has no parent")?)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| e.to_string())
 }
 
 fn replacement_mode(target: &std::path::Path, exists: bool) -> Result<Option<u32>, String> {

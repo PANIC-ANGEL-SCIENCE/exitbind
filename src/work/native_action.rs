@@ -45,6 +45,7 @@ pub(crate) struct Options<'a> {
     pub(crate) sandbox_mode: Option<&'a str>,
     pub(crate) timeout_ms: Option<&'a str>,
     pub(crate) resume: bool,
+    pub(crate) controlled_effects: bool,
 }
 
 pub(crate) fn recover(

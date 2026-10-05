@@ -155,18 +155,22 @@ pub fn supersede_with_policy(
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, old_events, old_source) = load_at(loaded, &old)?;
         let old_state = run_state::reduce(&old_events)?;
+        if crate::run::state::check_observation::unresolved(&old_state) {
+            return Err("supersession refused unresolved check effects; no successor may retry uncertain execution".into());
+        }
         if !matches!(old_state["status"].as_str(), Some("running" | "blocked")) {
             return Err("only a running or blocked run can be superseded".into());
         }
         if fs::read_to_string(&loaded.path).map_err(|error| error.to_string())? != loaded.source {
             return Err("configuration changed while superseding; reload configuration".into());
         }
-        let plan = crate::config::boundary::apply(
+        let mut plan = crate::config::boundary::apply(
             loaded,
             selected_plan(envelope::plan(loaded, workflow, goal)?)?,
             boundary,
         )?;
         let extension = extension_from_cli(basis, review_policy)?;
+        crate::project::architecture::bind_plan(loaded, &mut plan)?;
         let old_policy = old_state
             .get("checkPolicy")
             .map(|policy| crate::run_value::policy_from_value(policy, 0))
@@ -322,6 +326,8 @@ pub fn supersede_with_policy(
             if check_policy.is_some() {
                 event_value["recoveryProtocol"] =
                     json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+                event_value["checkObservationProtocol"] =
+                    json!(crate::run::check_observation::PROTOCOL);
             }
             if let Some(basis) = &extension.basis {
                 event_value["basis"] = basis.value();

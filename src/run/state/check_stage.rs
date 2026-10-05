@@ -13,6 +13,7 @@ pub(super) fn apply_check(state: &mut Value, event: &Value) -> Result<(), String
     if !crate::run_exit::reduce(state)?.subject_is_current(&event["subjectSha256"]) {
         return Err("check is bound to a stale subject".into());
     }
+    super::check_observation::checked(state, event)?;
     state["checks"]
         .as_array_mut()
         .ok_or("run state checks are invalid")?

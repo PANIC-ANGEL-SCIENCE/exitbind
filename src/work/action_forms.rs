@@ -3,6 +3,8 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+mod repair;
+
 fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
     suffix.push("--config".into());
     let command = super::response_recovery::bounded_argv(suffix, loaded.path.to_str(), 16 * 1024);
@@ -104,6 +106,15 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
             }
         }
     }
+    if let Some(native) = result
+        .get_mut("productManaged")
+        .and_then(Value::as_object_mut)
+    {
+        native.remove("command");
+        native.remove("inspect");
+        native.insert("requiresDetail".into(), json!(true));
+    }
+    repair::compact(&mut result);
     result["detail"] = json!({
         "route": "current.details.grouped",
         "binding": binding,
@@ -118,11 +129,16 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             "leadChoiceRequired": false, "choices": [],
             "mechanicalAction": if next["action"] == "check" {
                 json!({"command": command(loaded, vec!["work".into(), "check".into(), work.into()]),
-                    "meaning": "execute only the current frozen applicable check; failure requires a Lead decision"})
+                    "meaning": "execute only the current frozen applicable check; failure requires a Lead decision",
+                    "executionOptions": {"timeoutMs": {"option": "--timeout-ms", "default": 1_800_000, "minimum": 1, "maximum": crate::run::check_observation::MAX_TIMEOUT_MS}, "repeat": "an admitted observation is never automatically retried"}})
             } else { Value::Null }});
     };
     let outcomes = allowed_outcomes(next);
-    let state = if next["packet"].get("pendingDisposition").is_some() {
+    let state = if super::check::unresolved(next) {
+        "unresolved_check_observation"
+    } else if next["packet"]["pendingDisposition"]["kind"] == "check_observation_failed" {
+        "failed_check_observation"
+    } else if next["packet"].get("pendingDisposition").is_some() {
         "pending_review_finding"
     } else if next["action"] == "lead_decision"
         && matches!(
@@ -148,7 +164,13 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         "leadChoiceRequired": state != "pending_assignment",
         "choices": [],
     });
-    let choices: Vec<Value> = if state == "pending_review_finding" {
+    let choices: Vec<Value> = if state == "unresolved_check_observation" {
+        outcomes
+            .iter()
+            .filter(|v| matches!(**v, "blocked" | "rejected"))
+            .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
+            .collect()
+    } else if matches!(state, "pending_review_finding" | "failed_check_observation") {
         let available = next["packet"]["pendingDisposition"]["decisions"]
             .as_array()
             .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>())
@@ -249,6 +271,16 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                 no_input(),
             ));
         }
+        if state == "failed_check_observation" {
+            choices.extend(
+                outcomes
+                    .iter()
+                    .filter(|outcome| matches!(**outcome, "blocked" | "rejected"))
+                    .map(|outcome| {
+                        return_choice(loaded, work, assignment, binding, outcome, outcome)
+                    }),
+            );
+        }
         choices
     } else if state == "failed_check" {
         outcomes
@@ -282,6 +314,27 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             .collect()
     };
     result["choices"] = json!(choices);
+    if next["action"] == "spawn"
+        && matches!(next["role"].as_str(), Some("worker" | "reviewer"))
+        && next["agent"]
+            .as_str()
+            .and_then(|name| loaded.agent(name))
+            .is_some_and(|agent| agent.runtime.host.as_deref() == Some("codex"))
+    {
+        let suffix = vec![
+            "work".into(),
+            "act".into(),
+            work.into(),
+            "--current-binding".into(),
+            binding.into(),
+        ];
+        let mut inspect = suffix.clone();
+        inspect.push("--inspect".into());
+        result["productManaged"] = json!({"host": "codex", "command": command(loaded, suffix),
+            "inspect": {"command": command(loaded, inspect), "readOnly": true},
+            "profileSha256": next["packet"]["profileSha256"],
+            "meaning": "when the Lead selects product-managed delivery, execute one current configured native role; the provider supplies its own verdict and the host owns model access/permissions"});
+    }
     if next["action"] == "spawn" && next["role"] == "worker" {
         result["beforeEditing"] = json!({
             "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
@@ -289,5 +342,6 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             "placeholders": ["OPERATION"], "required": true,
             "meaning": "obtain allowed:true before editing; this form grants no host permission"});
     }
+    repair::attach(loaded, work, assignment, binding, next, &mut result);
     result
 }

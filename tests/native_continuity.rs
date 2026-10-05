@@ -96,6 +96,8 @@ impl Fixture {
             .env("PATH", self.host.join("commands"))
             .env("HOME", &self.base)
             .env("XDG_CACHE_HOME", self.base.join("cache"))
+            .env_remove("EXITBIND_NO_UPDATE_CHECK")
+            .env_remove("SOULMATE_NO_UPDATE_CHECK")
             .env("SOULMATE_TEST_LAUNCH_SENTINEL", self.host.join("launched"));
         if !update {
             command.env("SOULMATE_NO_UPDATE_CHECK", "1");

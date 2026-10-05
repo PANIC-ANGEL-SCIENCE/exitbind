@@ -7,6 +7,7 @@ const SOULMATE_REFERENCE: &str = include_str!("../../skills/soulmate/references/
 const EXITBIND: &str = include_str!("../../skills/exitbind/SKILL.md");
 const EXITBIND_PRESERVATION: &str =
     include_str!("../../skills/exitbind/references/preservation.md");
+const EXITBIND_OPERATORS: &str = include_str!("../../skills/exitbind/references/operators.md");
 const COFFEE: &str = include_str!("../../skills/coffee/SKILL.md");
 const SKILL_MARKER: &str = "<!-- soulmate-managed-skill:v1 -->";
 const EXITBIND_SKILL_MARKER: &str = "<!-- exitbind-managed-skill:v1 -->";
@@ -142,6 +143,18 @@ pub(crate) fn diagnose(control: &Path) -> Vec<SkillObservation> {
             ),
             (
                 "Exitbind",
+                ".agents/skills/exitbind/references/operators.md",
+                EXITBIND_OPERATORS,
+                false,
+            ),
+            (
+                "Exitbind",
+                ".claude/skills/exitbind/references/operators.md",
+                EXITBIND_OPERATORS,
+                false,
+            ),
+            (
+                "Exitbind",
                 ".agents/skills/exitbind/references/preservation.md",
                 EXITBIND_PRESERVATION,
                 false,
@@ -245,6 +258,7 @@ fn selected_destinations(control: &Path, coffee: bool) -> Result<Vec<SkillDestin
             for (relative, content) in [
                 ("SKILL.md", EXITBIND),
                 ("references/preservation.md", EXITBIND_PRESERVATION),
+                ("references/operators.md", EXITBIND_OPERATORS),
             ] {
                 let path = control.join(base).join("exitbind").join(relative);
                 validate_managed_directory(

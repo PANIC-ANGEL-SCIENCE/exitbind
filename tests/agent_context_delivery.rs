@@ -8,7 +8,7 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -18,7 +18,8 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::repository(&root);
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -47,7 +48,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -159,6 +160,87 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+#[test]
+fn configured_product_managed_form_executes_and_stale_binding_refuses_before_provider() {
+    let fixture = Fixture::new("native-action-form");
+    let config_path = fixture.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["agents"]["worker"]["runtime"] = json!({"host": "codex", "fallback": "none"});
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let capture = fixture.root.join("form-prompt");
+    let fake = fixture.fake_codex(&capture);
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "execute emitted native form",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+            "--proof-origin",
+            "synthetic",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    fixture.value(
+        &[
+            "work",
+            "return",
+            work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        b"complete scoped artifact",
+    );
+    let detail = fixture.value(&["work", "detail", work], b"");
+    let native = &detail["actionForms"]["productManaged"];
+    assert_eq!(native["host"], "codex");
+    assert_eq!(
+        native["profileSha256"],
+        detail["sections"]["assignment"]["assignment"]["profileSha256"]
+    );
+    let run = |command: &Value, execute: bool| {
+        assert_eq!(command["sameExecutableRequired"], false);
+        assert_eq!(command["sameConfigRequired"], false);
+        let argv = command["argv"].as_array().unwrap();
+        let mut process = support::git_topology::command(argv[0].as_str().unwrap());
+        process
+            .current_dir(&fixture.root)
+            .args(argv[1..].iter().map(|a| a.as_str().unwrap()));
+        if execute {
+            process.arg("--codex-bin").arg(&fake);
+        }
+        process.output().unwrap()
+    };
+    let inspected = run(&native["inspect"]["command"], false);
+    assert!(inspected.status.success(), "{}", text(&inspected));
+    assert!(!capture.exists());
+    let executed = run(&native["command"], true);
+    assert!(executed.status.success(), "{}", text(&executed));
+    assert!(fs::read_to_string(&capture)
+        .unwrap()
+        .contains("execute emitted native form"));
+    let repeated = run(&native["command"], true);
+    assert!(
+        !repeated.status.success(),
+        "a revoked form must not execute a later assignment"
+    );
+    assert!(text(&repeated).contains("binding is stale"));
+    let reviewer = fixture.value(&["work", "check", work], b"");
+    assert_eq!(reviewer["next"]["role"], "reviewer");
+    let host_managed = fixture.value(&["work", "detail", work], b"");
+    assert!(host_managed["actionForms"].get("productManaged").is_none());
+    assert!(!host_managed["actionForms"]["choices"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

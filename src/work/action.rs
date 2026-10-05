@@ -10,6 +10,7 @@ pub(crate) fn delivery_packet(assignment: &Value) -> Value {
 }
 
 pub(crate) struct ActOptions<'a> {
+    pub(crate) current_binding: Option<&'a str>,
     pub(crate) outcome: Option<&'a str>,
     pub(crate) reason: Option<&'a str>,
     pub(crate) codex_bin: Option<&'a str>,
@@ -20,9 +21,11 @@ pub(crate) struct ActOptions<'a> {
     pub(crate) resume: bool,
     pub(crate) operation: Option<&'a str>,
     pub(crate) inspect: bool,
+    pub(crate) controlled_effects: bool,
 }
 
 pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Result<Value, String> {
+    details::ensure_action_binding(loaded, work, options.current_binding)?;
     let ledger = resolve(loaded, work)?;
     let current = next_for(loaded, work, &ledger)?;
     if options.inspect {
@@ -35,6 +38,7 @@ pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Resul
             || options.reasoning_effort.is_some()
             || options.sandbox_mode.is_some()
             || options.timeout_ms.is_some()
+            || options.controlled_effects
         {
             return Err("--inspect is read-only and takes no execution or decision options".into());
         }
@@ -42,6 +46,13 @@ pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Resul
             return Err("--inspect requires a current native assignment".into());
         }
         return native_action::inspect(loaded, work, &current);
+    }
+    if options.controlled_effects
+        && (options.resume || current["action"] != "spawn" || current["role"] != "worker")
+    {
+        return Err(
+            "--controlled-effects requires a fresh current native worker assignment".into(),
+        );
     }
     if options.operation.is_some() && !options.resume {
         return Err("--operation requires --resume".into());
@@ -66,7 +77,7 @@ pub(crate) fn act(loaded: &Loaded, work: &str, options: ActOptions<'_>) -> Resul
             if options.outcome.is_some() || options.reason.is_some() {
                 return Err("a check takes no Lead decision".into());
             }
-            check(loaded, work)
+            check_with_timeout(loaded, work, options.timeout_ms)
         }
         Some("lead_decision") => {
             if options.resume {
@@ -131,6 +142,7 @@ fn native_assignment(
             sandbox_mode: options.sandbox_mode,
             timeout_ms: options.timeout_ms,
             resume: options.resume,
+            controlled_effects: options.controlled_effects,
         },
     )
 }

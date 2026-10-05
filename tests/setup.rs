@@ -6,12 +6,19 @@ use std::{
     process::{Command, Output},
 };
 
+fn fixture(label: &str) -> std::path::PathBuf {
+    let root = support::temp(label);
+    support::git_topology::repository(&root);
+    root
+}
+
 fn invoke(arguments: &[&str]) -> Output {
     invoke_env(arguments, &[])
 }
 
 fn invoke_env(arguments: &[&str], environment: &[(&str, &Path)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    support::git_topology::isolate(&mut command);
     command.args(arguments);
     for (name, value) in environment {
         command.env(name, value);
@@ -20,6 +27,7 @@ fn invoke_env(arguments: &[&str], environment: &[(&str, &Path)]) -> Output {
 }
 
 fn setup_without_host(root: &Path, apply: bool, skip_skills: bool) -> Output {
+    let bin = support::git_topology::git_only_path(root);
     let root = root.to_str().unwrap();
     let mut args = vec![
         "setup",
@@ -49,7 +57,7 @@ fn setup_without_host(root: &Path, apply: bool, skip_skills: bool) -> Output {
     if apply {
         args.push("--apply");
     }
-    invoke_env(&args, &[("PATH", Path::new("/definitely/missing"))])
+    invoke_env(&args, &[("PATH", &bin)])
 }
 
 fn setup(root: &Path, apply: bool) -> Output {
@@ -86,6 +94,7 @@ fn setup(root: &Path, apply: bool) -> Output {
 }
 
 fn setup_missing_path_host(root: &Path) -> Output {
+    let bin = support::git_topology::git_only_path(root);
     let root = root.to_str().unwrap();
     let args = [
         "setup",
@@ -112,7 +121,7 @@ fn setup_missing_path_host(root: &Path) -> Output {
         "--review-policy",
         "omitted",
     ];
-    invoke_env(&args, &[("PATH", Path::new("/definitely/missing"))])
+    invoke_env(&args, &[("PATH", &bin)])
 }
 
 fn text(output: &Output) -> String {
@@ -125,7 +134,7 @@ fn text(output: &Output) -> String {
 
 #[test]
 fn setup_previews_then_applies_and_repeats_without_changing_managed_bytes() {
-    let root = support::temp("setup");
+    let root = fixture("setup");
     let preview = setup(&root, false);
     assert!(preview.status.success(), "{}", text(&preview));
     assert!(text(&preview).contains("\"status\":\"preview\""));
@@ -180,7 +189,7 @@ fn setup_previews_then_applies_and_repeats_without_changing_managed_bytes() {
 
 #[test]
 fn setup_refuses_external_projection_before_fresh_init() {
-    let root = support::temp("setup-conflict");
+    let root = fixture("setup-conflict");
     fs::create_dir_all(root.join(".codex/agents")).unwrap();
     fs::write(root.join(".codex/agents/worker.toml"), b"operator-owned\n").unwrap();
     let output = setup(&root, true);
@@ -196,7 +205,7 @@ fn setup_refuses_external_projection_before_fresh_init() {
 
 #[test]
 fn setup_preserves_custom_profile_and_reports_it_on_repeat() {
-    let root = support::temp("setup-custom-profile");
+    let root = fixture("setup-custom-profile");
     let first = setup_without_host(&root, true, true);
     assert!(first.status.success(), "{}", text(&first));
     let custom = b"# operator-owned worker profile\n";
@@ -213,7 +222,8 @@ fn setup_preserves_custom_profile_and_reports_it_on_repeat() {
 
 #[test]
 fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop() {
-    let root = support::temp("setup-fresh-no-host");
+    let root = fixture("setup-fresh-no-host");
+    let bin = support::git_topology::git_only_path(&root);
     let root_arg = root.to_str().unwrap();
     let first = invoke_env(
         &[
@@ -226,7 +236,7 @@ fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop(
             "--skip-skills",
             "--json",
         ],
-        &[("PATH", Path::new("/definitely/missing"))],
+        &[("PATH", &bin)],
     );
     assert!(first.status.success(), "{}", text(&first));
     assert!(text(&first).contains("\"status\":\"applied\""));
@@ -248,7 +258,7 @@ fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop(
             "--skip-skills",
             "--json",
         ],
-        &[("PATH", Path::new("/definitely/missing"))],
+        &[("PATH", &bin)],
     );
     assert!(repeat.status.success(), "{}", text(&repeat));
     assert!(text(&repeat).contains("\"status\":\"unchanged\""));
@@ -266,7 +276,7 @@ fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop(
 
 #[test]
 fn setup_reports_missing_selected_host_path_without_claiming_activation() {
-    let root = support::temp("setup-path");
+    let root = fixture("setup-path");
     let output = setup_missing_path_host(&root);
     assert!(output.status.success(), "{}", text(&output));
     assert!(text(&output).contains("\"pathStatus\":\"missing\""));
@@ -278,8 +288,10 @@ fn setup_reports_missing_selected_host_path_without_claiming_activation() {
 #[test]
 fn setup_does_not_report_a_nonexecutable_path_entry_as_an_available_host() {
     use std::os::unix::fs::PermissionsExt;
-    let root = support::temp("setup-nonexecutable-host");
+    let root = fixture("setup-nonexecutable-host");
     let bin = support::temp("setup-nonexecutable-path");
+    let git_only = support::git_topology::git_only_path(&root);
+    std::fs::copy(git_only.join("git"), bin.join("git")).unwrap();
     let host = bin.join("codex");
     fs::write(&host, "not an executable\n").unwrap();
     fs::set_permissions(&host, fs::Permissions::from_mode(0o600)).unwrap();
@@ -303,7 +315,7 @@ fn setup_does_not_report_a_nonexecutable_path_entry_as_an_available_host() {
 
 #[test]
 fn setup_reports_and_refuses_changed_owned_guidance() {
-    let root = support::temp("setup-guidance");
+    let root = fixture("setup-guidance");
     let first = setup_without_host(&root, true, false);
     assert!(first.status.success(), "{}", text(&first));
     let skill = root.join(".agents/skills/exitbind/SKILL.md");
@@ -319,7 +331,7 @@ fn setup_reports_and_refuses_changed_owned_guidance() {
 
 #[test]
 fn setup_supports_local_mode_and_non_ascii_preview_without_host_path() {
-    let base = support::temp("setup-local");
+    let base = fixture("setup-local");
     let product = base.join("项目");
     let control = base.join("control");
     let state = base.join("state");
@@ -327,6 +339,8 @@ fn setup_supports_local_mode_and_non_ascii_preview_without_host_path() {
     fs::create_dir_all(&product).unwrap();
     fs::create_dir_all(&control).unwrap();
     fs::create_dir_all(&state).unwrap();
+    support::git_topology::repository(&product);
+    let bin = support::git_topology::git_only_path(&product);
     let product_text = product.to_str().unwrap();
     let control_text = control.to_str().unwrap();
     let state_text = state.to_str().unwrap();
@@ -364,7 +378,7 @@ fn setup_supports_local_mode_and_non_ascii_preview_without_host_path() {
     let output = invoke_env(
         &args,
         &[
-            ("PATH", Path::new("/definitely/missing")),
+            ("PATH", &bin),
             ("EXITBIND_BINDINGS_DIR", Path::new(bindings_text)),
         ],
     );

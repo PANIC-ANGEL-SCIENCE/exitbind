@@ -13,7 +13,17 @@
       "properties": {
         "root": { "type": "string" },
         "mode": { "enum": ["local", "portable"] },
-        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "architectureContract": {
+          "type": "object",
+          "required": ["sourcePath", "sourceSha256", "revision"],
+          "properties": {
+            "sourcePath": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "sourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "revision": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          },
+          "additionalProperties": false
+        }
       },
       "allOf": [
         {

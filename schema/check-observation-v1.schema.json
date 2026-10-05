@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exitbind:check-observation:1",
+  "title": "Non-check observation body for marked v8 runs",
+  "description": "Canonical admission/failure facts; never check success, approval or authority. Header and stateful binding are validated by the run reducer.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        },
+        "perStreamBytes": {
+          "const": 8388608
+        },
+        "combinedBytes": {
+          "const": 16777216
+        },
+        "state": {
+          "const": "running"
+        }
+      },
+      "required": [
+        "binding",
+        "timeoutMs",
+        "perStreamBytes",
+        "combinedBytes",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "admissionEventSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        }
+      },
+      "required": [
+        "admissionEventSha256",
+        "facts"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "properties": {
+        "runId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "targetEventSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "subjectSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inputsSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "configSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checkCommandSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "observerExecutableSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requirementId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "runId",
+        "targetEventSha256",
+        "subjectSha256",
+        "inputsSha256",
+        "configSha256",
+        "checkCommandSha256",
+        "observerExecutableSha256",
+        "requirementId"
+      ],
+      "additionalProperties": false
+    },
+    "partial": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "const": "state"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^\\.exitbind/artifacts/check-partial-[^/]+\\.raw$",
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8388608
+        },
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        "completeness": {
+          "const": "partial"
+        },
+        "perStreamLimit": {
+          "const": 8388608
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "path",
+        "sha256",
+        "bytes",
+        "stream",
+        "completeness",
+        "perStreamLimit"
+      ]
+    },
+    "facts": {
+      "type": "object",
+      "properties": {
+        "process": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "code"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "exit"
+                },
+                "code": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "signal"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "signal"
+                },
+                "signal": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "processStarted": {
+          "type": "boolean"
+        },
+        "groupEnded": {
+          "type": "boolean"
+        },
+        "captureAvailability": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capture": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "disabled"
+          ]
+        },
+        "deadlineExceeded": {
+          "type": "boolean"
+        },
+        "partialCaptures": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/partial"
+          }
+        },
+        "storageStage": {
+          "enum": [
+            "capture",
+            "commit"
+          ]
+        },
+        "storage": {
+          "const": "not_committed"
+        },
+        "termination": {
+          "enum": [
+            "ended",
+            "unknown"
+          ]
+        },
+        "diagnostic": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "cleanupErrorCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remainingOwnedPathCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "captureReadersEnded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "process",
+        "processStarted",
+        "groupEnded",
+        "captureReadersEnded",
+        "captureAvailability",
+        "durationMs",
+        "capture",
+        "deadlineExceeded",
+        "partialCaptures",
+        "storageStage",
+        "storage",
+        "termination",
+        "diagnostic",
+        "cleanupErrorCount",
+        "remainingOwnedPathCount"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "termination": {
+                "const": "ended"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "groupEnded": {
+                "const": true
+              },
+              "captureReadersEnded": {
+                "const": true
+              },
+              "cleanupErrorCount": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

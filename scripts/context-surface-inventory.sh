@@ -19,8 +19,10 @@ entries='AGENTS.md|bootstrap|root|none
 skills/exitbind-bootstrap/SKILL.md|bootstrap|router|none
 skills/exitbind/SKILL.md|activated-skill|router|skills/exitbind/references/preservation.md
 skills/exitbind/references/preservation.md|delayed-reference|reference|none
+skills/exitbind/references/operators.md|delayed-reference|reference|none
 plugins/exitbind/skills/exitbind/SKILL.md|packaged-duplicate|projection|skills/exitbind/SKILL.md
 plugins/exitbind/skills/exitbind/references/preservation.md|packaged-duplicate|projection|skills/exitbind/references/preservation.md
+plugins/exitbind/skills/exitbind/references/operators.md|packaged-duplicate|projection|skills/exitbind/references/operators.md
 .agents/skills/exitbind/SKILL.md|generated-host|host-copy|skills/exitbind/SKILL.md
 .claude/skills/exitbind/SKILL.md|generated-host|host-copy|skills/exitbind/SKILL.md
 exitbind/agents/lead.md|generated-host|role-packet|none
@@ -134,7 +136,7 @@ printf '%s\n' "$entries" | while IFS='|' read -r path stage projection duplicate
 done
 total=0
 count=0
-for path in AGENTS.md skills/exitbind-bootstrap/SKILL.md skills/exitbind/SKILL.md skills/exitbind/references/preservation.md plugins/exitbind/skills/exitbind/SKILL.md plugins/exitbind/skills/exitbind/references/preservation.md .agents/skills/exitbind/SKILL.md .claude/skills/exitbind/SKILL.md exitbind/agents/lead.md exitbind/agents/worker.md exitbind/agents/reviewer.md; do
+for path in AGENTS.md skills/exitbind-bootstrap/SKILL.md skills/exitbind/SKILL.md skills/exitbind/references/preservation.md skills/exitbind/references/operators.md plugins/exitbind/skills/exitbind/SKILL.md plugins/exitbind/skills/exitbind/references/preservation.md plugins/exitbind/skills/exitbind/references/operators.md .agents/skills/exitbind/SKILL.md .claude/skills/exitbind/SKILL.md exitbind/agents/lead.md exitbind/agents/worker.md exitbind/agents/reviewer.md; do
   if test -f "$path"; then
     total=$((total + $(wc -c <"$path" | tr -d ' ')))
     count=$((count + 1))

@@ -7,6 +7,7 @@
 pub(crate) mod artifact;
 pub(crate) mod assignment;
 pub(crate) mod capture;
+pub(crate) mod check_observation;
 pub(crate) mod disposition;
 pub(crate) mod error;
 mod event_detail;
@@ -231,17 +232,13 @@ fn active_check_policy(
 }
 
 #[cfg(all(test, unix))]
+mod cleanup_tests;
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::canonical_work_for_ledger;
-    use super::capture::{process_group_exists, terminate_process_group};
     use crate::run::ledger::LedgerPath;
-    use std::os::unix::process::CommandExt;
     use std::path::PathBuf;
-    use std::process::Command;
-    use std::{
-        fs, thread,
-        time::{Duration, Instant},
-    };
 
     #[test]
     fn canonical_work_binding_rejects_cross_run_ledger_pairs() {
@@ -270,51 +267,7 @@ mod tests {
 
     #[test]
     fn cleanup_reports_reap_failure_after_still_killing_the_group() {
-        let marker =
-            std::env::temp_dir().join(format!("soulmate-cleanup-{}.ready", std::process::id()));
-        let _ = fs::remove_file(&marker);
-        let command = format!(
-            "sh -c 'trap : TERM HUP; echo ready > {}; while :; do :; done' & exit 0",
-            marker.display()
-        );
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .process_group(0)
-            .spawn()
-            .expect("cleanup fixture should launch");
-        let child_pid = i32::try_from(child.id()).expect("fixture pid should fit POSIX");
-        let ready_started = Instant::now();
-        while !marker.exists() && ready_started.elapsed() < Duration::from_secs(1) {
-            thread::sleep(Duration::from_millis(1));
-        }
-        let waited = unsafe { libc::waitpid(child_pid, std::ptr::null_mut(), 0) };
-        let group_before = process_group_exists(child_pid).unwrap_or(false);
-
-        let started = Instant::now();
-        let failure = terminate_process_group(&mut child).expect_err("external reap is an error");
-        let group_after = process_group_exists(child_pid);
-        let ready = marker.exists();
-        let _ = fs::remove_file(marker);
-        assert_eq!(waited, child_pid);
-        assert!(ready, "cleanup fixture did not become ready");
-        assert!(
-            group_before,
-            "cleanup fixture process group was not present"
-        );
-        assert!(
-            matches!(group_after, Ok(false)),
-            "cleanup left the process group behind: {group_after:?}"
-        );
-        assert!(
-            started.elapsed() >= Duration::from_millis(250),
-            "cleanup skipped its bounded TERM grace"
-        );
-        assert!(
-            started.elapsed() < Duration::from_secs(1),
-            "cleanup exceeded its bounded budget"
-        );
-        assert!(failure.contains("could not be reaped"), "{failure}");
+        super::cleanup_tests::external_reap_fixture();
     }
 }
 

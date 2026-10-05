@@ -25,6 +25,7 @@ pub(crate) struct ObservationRequest {
     pub(crate) timeout_ms: u64,
     pub(crate) operation_id: String,
     pub(crate) capture: CapturePolicy,
+    pub(crate) retain_partial: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -40,96 +41,9 @@ impl CapturePolicy {
     };
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum CaptureDisposition {
-    Disabled,
-    Complete {
-        stdout_bytes: u64,
-        stderr_bytes: u64,
-    },
-    Failed,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ExecutionOutcome {
-    pub(crate) status: Option<ExitStatus>,
-    pub(crate) duration_ms: u64,
-    pub(crate) capture: CaptureDisposition,
-}
-
-pub(crate) struct ObservationError {
-    message: String,
-    outcome: ExecutionOutcome,
-    cleanup_errors: Vec<String>,
-    remaining_paths: Vec<PathBuf>,
-}
-
-impl ObservationError {
-    fn new(message: impl Into<String>, outcome: ExecutionOutcome) -> Self {
-        Self {
-            message: message.into(),
-            outcome,
-            cleanup_errors: Vec::new(),
-            remaining_paths: Vec::new(),
-        }
-    }
-
-    fn with_cleanup(
-        mut self,
-        owned: &OwnedPaths,
-        cleanup_errors: impl IntoIterator<Item = String>,
-    ) -> Self {
-        self.cleanup_errors.extend(cleanup_errors);
-        self.remaining_paths = owned.remaining();
-        self
-    }
-}
-
-impl fmt::Display for ObservationError {
-    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let status = self
-            .outcome
-            .status
-            .as_ref()
-            .map(|status| format!("{:?}", status))
-            .unwrap_or_else(|| "unavailable".into());
-        let capture = match &self.outcome.capture {
-            CaptureDisposition::Disabled => "disabled".to_owned(),
-            CaptureDisposition::Failed => "failed".to_owned(),
-            CaptureDisposition::Complete {
-                stdout_bytes,
-                stderr_bytes,
-            } => format!("complete(stdout={stdout_bytes}, stderr={stderr_bytes})"),
-        };
-        write!(
-            output,
-            "{} (status={status}, durationMs={}, capture={capture})",
-            self.message, self.outcome.duration_ms
-        )?;
-        if !self.cleanup_errors.is_empty() {
-            write!(
-                output,
-                "; cleanup failed: {}",
-                self.cleanup_errors.join("; ")
-            )?;
-        }
-        if !self.remaining_paths.is_empty() {
-            let paths = self
-                .remaining_paths
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>();
-            write!(output, "; owned paths remain: {}", paths.join(", "))?;
-        }
-        Ok(())
-    }
-}
-
-impl fmt::Debug for ObservationError {
-    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, output)
-    }
-}
+#[path = "capture_error.rs"]
+mod error;
+pub(crate) use error::{CaptureDisposition, ExecutionOutcome, ObservationError};
 
 struct OwnedPaths(Vec<PathBuf>);
 
@@ -172,6 +86,7 @@ fn timestamp_nanos() -> u128 {
 pub(crate) struct CapturedCheck {
     pub(crate) status: ExitStatus,
     pub(crate) duration_ms: u64,
+    pub(crate) group_ended: bool,
     pub(crate) stdout_temp: Option<PathBuf>,
     pub(crate) stderr_temp: Option<PathBuf>,
     pub(crate) stdout_final: Option<PathBuf>,
@@ -188,6 +103,7 @@ impl CapturedCheck {
         Self {
             status,
             duration_ms: outcome.duration_ms,
+            group_ended: outcome.group_ended,
             stdout_temp: None,
             stderr_temp: None,
             stdout_final: None,
@@ -198,124 +114,9 @@ impl CapturedCheck {
     }
 }
 
-pub(crate) fn run_observed_command(
-    request: &ObservationRequest,
-) -> Result<ExecutionOutcome, ObservationError> {
-    #[cfg(not(unix))]
-    {
-        let _ = request;
-        return Err(ObservationError::new(
-            "observe-check requires a POSIX host",
-            ExecutionOutcome {
-                status: None,
-                duration_ms: 0,
-                capture: CaptureDisposition::Disabled,
-            },
-        ));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-
-        let child_stderr = child_stderr_stdio().map_err(|error| {
-            ObservationError::new(
-                error,
-                ExecutionOutcome {
-                    status: None,
-                    duration_ms: 0,
-                    capture: CaptureDisposition::Disabled,
-                },
-            )
-        })?;
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(&request.command)
-            .arg("exitbind-observe-check")
-            .current_dir(&request.working_dir)
-            .stdout(child_stderr)
-            .stderr(Stdio::inherit())
-            .process_group(0);
-        let started = Instant::now();
-        let mut child = command.spawn().map_err(|error| {
-            ObservationError::new(
-                format!("check command could not be launched: {error}"),
-                ExecutionOutcome {
-                    status: None,
-                    duration_ms: 0,
-                    capture: CaptureDisposition::Disabled,
-                },
-            )
-        })?;
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    return Ok(ExecutionOutcome {
-                        status: Some(status),
-                        duration_ms: elapsed_ms(started),
-                        capture: CaptureDisposition::Disabled,
-                    })
-                }
-                Ok(None) if Instant::now() >= request.deadline => {
-                    let cleanup = terminate_process_group(&mut child);
-                    let mut error = ObservationError::new(
-                        format!(
-                            "check observation timed out after {} ms",
-                            request.timeout_ms
-                        ),
-                        ExecutionOutcome {
-                            status: None,
-                            duration_ms: elapsed_ms(started),
-                            capture: CaptureDisposition::Disabled,
-                        },
-                    );
-                    if let Err(cleanup) = cleanup {
-                        error.cleanup_errors.push(cleanup);
-                    }
-                    return Err(error);
-                }
-                Ok(None) => {
-                    let remaining = request.deadline.saturating_duration_since(Instant::now());
-                    thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
-                }
-                Err(error) => {
-                    let cleanup = terminate_process_group(&mut child);
-                    let mut result = ObservationError::new(
-                        format!("check command could not be observed: {error}"),
-                        ExecutionOutcome {
-                            status: None,
-                            duration_ms: elapsed_ms(started),
-                            capture: CaptureDisposition::Disabled,
-                        },
-                    );
-                    if let Err(cleanup) = cleanup {
-                        result.cleanup_errors.push(cleanup);
-                    }
-                    return Err(result);
-                }
-            }
-        }
-    }
-}
-
-fn child_stderr_stdio() -> Result<Stdio, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::{FromRawFd, RawFd};
-        let fd: RawFd = unsafe { libc::dup(libc::STDERR_FILENO) };
-        if fd < 0 {
-            return Err(format!(
-                "check command stderr could not be connected: {}",
-                io::Error::last_os_error()
-            ));
-        }
-        Ok(unsafe { Stdio::from(std::fs::File::from_raw_fd(fd)) })
-    }
-    #[cfg(not(unix))]
-    {
-        Err("observe-check requires a POSIX host".into())
-    }
-}
+#[path = "capture_execution.rs"]
+mod execution;
+pub(crate) use execution::run_observed_command;
 
 pub(crate) fn capture_observed_command(
     request: &ObservationRequest,
@@ -331,6 +132,8 @@ pub(crate) fn capture_observed_command(
                 status: None,
                 duration_ms: 0,
                 capture: CaptureDisposition::Failed,
+                group_ended: true,
+                process_started: false,
             },
         )
     })?;
@@ -381,6 +184,7 @@ pub(crate) fn capture_observed_command(
             .status
             .expect("capture completed with process status"),
         duration_ms: outcome.duration_ms,
+        group_ended: outcome.group_ended,
         stdout_temp: Some(stdout_temp),
         stderr_temp: Some(stderr_temp),
         stdout_final: Some(stdout_final),
@@ -404,6 +208,8 @@ fn capture_to_files(
                 status: None,
                 duration_ms: 0,
                 capture: CaptureDisposition::Failed,
+                group_ended: false,
+                process_started: false,
             },
         ));
     }
@@ -415,7 +221,7 @@ fn capture_to_files(
         let mut owned = OwnedPaths::new();
         let stdout_file =
             crate::project::managed_files::open_state_file(stdout_temp).map_err(|error| {
-                capture_failure(
+                capture_prelaunch_failure(
                     format!("stdout capture could not be created: {error}"),
                     started,
                     None,
@@ -427,7 +233,7 @@ fn capture_to_files(
         let stderr_file = match crate::project::managed_files::open_state_file(stderr_temp) {
             Ok(file) => file,
             Err(error) => {
-                return Err(capture_failure(
+                return Err(capture_prelaunch_failure(
                     format!("stderr capture could not be created: {error}"),
                     started,
                     None,
@@ -450,7 +256,7 @@ fn capture_to_files(
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
-                return Err(capture_failure(
+                return Err(capture_prelaunch_failure(
                     format!("check command could not be launched: {error}"),
                     started,
                     None,
@@ -641,13 +447,28 @@ fn capture_to_files(
             ));
         }
         if !stream_errors.is_empty() {
-            return Err(capture_failure(
+            let partial_captures = if request.retain_partial && stream_results.len() == 2 {
+                error::retain_partial(request, &owned)
+            } else {
+                Vec::new()
+            };
+            let mut failure = capture_failure(
                 stream_errors.join("; "),
                 started,
                 status,
                 &owned,
                 cleanup_errors,
-            ));
+            );
+            failure.deadline_exceeded = timed_out;
+            // An escaped descendant may hold a pipe after the owned group has
+            // ended. Detached readers leave that effect uninspectably live.
+            failure.capture_readers_ended = stream_results.len() == 2;
+            failure.outcome.group_ended = i32::try_from(child.id())
+                .ok()
+                .and_then(|pid| process_group_exists(pid).ok())
+                == Some(false);
+            failure.partial_captures = partial_captures;
+            return Err(failure);
         }
         let status = status.ok_or_else(|| {
             capture_failure(
@@ -673,6 +494,11 @@ fn capture_to_files(
             ExecutionOutcome {
                 status: Some(status),
                 duration_ms: elapsed_ms(started),
+                process_started: true,
+                group_ended: i32::try_from(child.id())
+                    .ok()
+                    .and_then(|pid| process_group_exists(pid).ok())
+                    == Some(false),
                 capture: CaptureDisposition::Complete {
                     stdout_bytes: stdout_bytes.unwrap_or_default(),
                     stderr_bytes: stderr_bytes.unwrap_or_default(),
@@ -697,6 +523,8 @@ fn capture_failure(
             status,
             duration_ms: elapsed_ms(started),
             capture: CaptureDisposition::Failed,
+            group_ended: status.is_some() && cleanup_errors.is_empty(),
+            process_started: true,
         },
     )
     .with_cleanup(owned, cleanup_errors)
@@ -1012,4 +840,41 @@ pub(crate) fn observed_result(status: &std::process::ExitStatus) -> Result<Value
         .code()
         .map(|code| json!({"kind": "exit", "code": code as u64}))
         .ok_or_else(|| "check command ended indeterminately; no mutation was made".into())
+}
+
+pub(super) fn retain_complete_failure(
+    request: &ObservationRequest,
+    capture: &CapturedCheck,
+) -> Vec<Value> {
+    let owned = OwnedPaths(
+        [
+            capture
+                .stdout_temp
+                .clone()
+                .filter(|p| p.exists())
+                .or_else(|| capture.stdout_final.clone()),
+            capture
+                .stderr_temp
+                .clone()
+                .filter(|p| p.exists())
+                .or_else(|| capture.stderr_final.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+    );
+    error::retain_partial(request, &owned)
+}
+
+fn capture_prelaunch_failure(
+    message: String,
+    started: Instant,
+    status: Option<ExitStatus>,
+    owned: &OwnedPaths,
+    errors: Vec<String>,
+) -> ObservationError {
+    let mut failure = capture_failure(message, started, status, owned, errors);
+    failure.outcome.group_ended = true;
+    failure.outcome.process_started = false;
+    failure
 }
