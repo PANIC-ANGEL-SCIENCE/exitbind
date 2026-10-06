@@ -4,7 +4,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
         ["work"] => {
-            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE"
+            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--basis JSON] (basis is a versioned JSON object; current actions provide exact argv)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
@@ -74,6 +74,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER"
         }
+        ["goal"] => "goal incorporate --goal-id ID --goal TEXT | goal status [--json] | goal close --goal-id ID --result-ref REF | goal usage --goal-id ID [--json] | goal <child> --help",
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
         ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
         ["goal", "status"] => "goal status [--themed]",
@@ -92,7 +93,11 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         _ => return None,
     };
     let command_name = crate::compatibility::profile().caller;
-    Some(format!("Usage: {command_name} {usage}"))
+    let mut help = format!("Usage: {command_name} {usage}");
+    if matches!(path.as_slice(), ["goal", "usage"] | ["work", "usage"]) {
+        help.push_str("\n\nInspect an existing goal or Work; --apply records one prospective observation (JSON on stdin, at most 8192 bytes). It launches no model and does not change task acceptance.\nExample for unavailable root counters (replace id for each distinct observation):\n{\"id\":\"root-setup-1\",\"source\":\"host_reported\",\"scope\":\"root\",\"phase\":\"setup\",\"status\":\"missing\",\"semantics\":\"delta\",\"lifetime\":\"invocation\"}\nMissing counters stay unknown. For actual non-overlapping invocation deltas, use status observed and values with inputTokens, cachedInputTokens and outputTokens. Cached input is part of input; total is input plus output. Never derive tokens from bytes or assume provider snapshots are additive.\nCounter lifetimes, cumulative baselines and parent/child overlap: REFERENCE.md, prospective usage observations in the goal section.");
+    }
+    Some(help)
 }
 
 #[cfg(test)]
