@@ -109,6 +109,14 @@ permissions. It never launches a model or reloads an existing session. Use
 `--hosts codex` or `--hosts claude` to select the supported native mapping;
 unsupported hosts are refused.
 
+After approved application, follow setup's exact next argv. Its Work-start
+command includes `--detail`, which delivers the current recipient's verified
+context directly. A complete reply needs no separate `work detail` read. The
+Lead still records scope before worker editing; checks, required review and
+acceptance stay separate. If a start reply is lost, use `work resume --json`
+with the same configuration to recover the existing Work instead of starting
+another one.
+
 To inspect the exact native role mapping before a governed task, use
 `exitbind project agents --json --config exitbind.json`. After explicit project
 consent, `--apply` materializes only Exitbind-managed projections; a current

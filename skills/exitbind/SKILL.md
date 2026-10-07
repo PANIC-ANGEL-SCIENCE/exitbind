@@ -21,7 +21,11 @@ Use the existing scope and owner review decision. A task with material or promot
 
 - Known Work in this conversation or an explicit `smw_…` locator: run the selected executable's `work detail WORK --json` directly. It validates the current recipient binding and delivers profile/rules, assignment, upstream evidence, task obligations and executable action forms. Do not rediscover that same route with another `work next` first.
 - Unknown Work or project focus: use `work resume --json`; focus is navigation with no authority. Use its current grouped detail route before dependent action. A stale locator or revoked expansion needs a fresh detail/current read; if the Work cannot be resolved, use project resume/history rather than guessing.
-- New material Work: after authorized setup, `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted`. The Lead recommends independent review and the owner decides; reuse an existing decision. Unmarked historical entry retains required review and cannot revise it.
+- New material Work: after authorized setup, follow setup's exact next argv, or use `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted --detail`. This delivers the current recipient's verified detail with the recorded start; consume it directly when complete. It still requires the Lead's scope decision before worker editing. The Lead recommends independent review and the owner decides; reuse an existing decision. Unmarked historical entry retains required review and cannot revise it.
+
+If start records a Work but detail delivery fails, follow its read-only recovery
+for that existing Work. If the start reply was lost, use `work resume --json`
+with the same configuration. Never repeat `work begin` to recover a lost reply.
 
 A complete detail is the sufficient ordinary read. If required profile, rules, evidence or sections are incomplete, follow the exact emitted expansion before action. Expert `work next --full`, saved-packet `work validate` and scoped sections remain available when needed. Missing information is never permission to act. Follow `sameExecutableRequired`/`sameConfigRequired` with the exact current arguments when long paths yield a partial argv; never execute placeholders, substitute a PATH binary or invent flags. Supply only meaningful task intent, complete result, reason and decisions your role owns.
 

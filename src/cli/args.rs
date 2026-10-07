@@ -115,6 +115,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "apply",
     "json",
     "full",
+    "detail",
     "event-id",
     "text",
     "help",

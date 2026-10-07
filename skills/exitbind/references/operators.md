@@ -41,7 +41,7 @@ identity or independent review.
 
 ## Setup and review-policy revision
 
-Preview owner-approved facts with `exitbind setup --mode portable --root . --scope worker --observe PATHS --write PATHS --commands FACTUAL_COMMAND --check-command CHECK_COMMAND --goal GOAL --review-policy required|omitted`. Review affected paths and host mapping before `--apply`. The applied response supplies exact next argv. Per-role observe/write/commands flags express asymmetric facts; `none` supplies an empty list. Do not mix shared scope/facts with per-role facts.
+Preview owner-approved facts with `exitbind setup --mode portable --root . --scope worker --observe PATHS --write PATHS --commands FACTUAL_COMMAND --check-command CHECK_COMMAND --goal GOAL --review-policy required|omitted`. Review affected paths and host mapping before `--apply`. The applied response supplies exact next argv including `work begin --detail`: consume its complete current recipient context directly, preserving the Lead scope decision. Recover a lost start reply with `work resume --json` on the same configuration; never repeat begin for recovery. Per-role observe/write/commands flags express asymmetric facts; `none` supplies an empty list. Do not mix shared scope/facts with per-role facts.
 
 On a marked running run, the owner may revise review policy using `exitbind run review-policy lead LEDGER --decision omitted --reason "OWNER_REASON" --config CONFIG` (or `--decision required`). Use the current supported run reference; never infer an omission or approval. An unmarked historical run retains required-review semantics and cannot use this revision route.
 

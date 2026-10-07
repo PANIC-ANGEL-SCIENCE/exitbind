@@ -20,6 +20,7 @@ mod recovery;
 pub(crate) mod response_recovery;
 mod resume;
 mod return_result_impl;
+pub(crate) mod start_delivery;
 
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
@@ -162,8 +163,7 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
     )?;
     let work = format!("{WORK_PREFIX}{token}");
     let next = next_for(loaded, &work, &ledger)?;
-    // The work is committed; a focus failure is reported with its recovery
-    // route instead of hiding the created work.
+    // Preserve the committed Work even if navigation fails.
     let focus = match focus::write(loaded, &work) {
         Ok(()) => json!({"updated": true, "authority": "none"}),
         Err(error) => focus::recovery(loaded, &work, &error),

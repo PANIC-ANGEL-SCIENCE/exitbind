@@ -665,7 +665,14 @@ Hard links, including ordinary source aliases, refuse without disclosure.
 Neither route intercepts other native tools or remote effects.
 
 For a known Work or explicit locator, `work detail WORK --json` is the direct
-ordinary current read. Unknown project Work uses `work resume --json` and its
+ordinary current read. A new `work begin ... --detail` delivers that same
+verified current recipient context with a `creation` record, including the
+Lead's initial scope decision. Without `--detail`, the historical start envelope
+is unchanged. Applied setup emits the detail form. Failed delivery after a
+recorded start retains the Work and a bounded read-only recovery; a lost reply
+uses `work resume --json` with the same configuration, never another begin.
+
+Unknown project Work uses `work resume --json` and its
 emitted detail route. `work next WORK --json` also exposes `current.details.grouped`, a versioned
 `ref:work-detail:v1:<binding>` route for ordinary consumers. `work detail WORK
 --json` reads the same current route directly. The product validates the

@@ -165,6 +165,12 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     let hosts = selected_hosts(facts);
     let roles = facts.resolved_roles();
     let existing = inspect_existing_config(&config_path)?;
+    // Diagnose unresolved metadata before preview claims a usable first path.
+    // The existing discovery owner preserves suspicious-marker refusal.
+    if existing.is_none() {
+        crate::project::portability::source(&root)
+            .map_err(|error| format!("setup source preflight; no files changed: {error}"))?;
+    }
     let mut report = preview_report(
         facts,
         &root,
@@ -760,6 +766,7 @@ fn next_actions(
             check,
             "--review-policy",
             review_policy,
+            "--detail",
             "--config",
             config,
         ];

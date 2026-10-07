@@ -238,10 +238,11 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "basis",
                     "review-policy",
                     "json",
+                    "detail",
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
-            print_work_json(&crate::work::begin(
+            let response = crate::work::begin(
                 l,
                 crate::work::BeginOptions {
                     workflow: positional(a, 1, "work begin requires WORKFLOW")?,
@@ -266,7 +267,13 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     basis: a.options.get("basis").map(String::as_str),
                     review_policy: a.options.get("review-policy").map(String::as_str),
                 },
-            )?)
+            )?;
+            let response = if a.flags.contains_key("detail") {
+                crate::work::start_delivery::with_detail(l, response)
+            } else {
+                response
+            };
+            print_work_json(&response)
         }
         "next" => {
             args::assert_options("work next", a, &["config", "json", "full", "themed"])?;

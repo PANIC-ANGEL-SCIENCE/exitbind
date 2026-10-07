@@ -77,6 +77,21 @@ to carry protocol JSON or event hashes between turns.
 
 ### Review the starter setup once
 
+When task facts are already approved, use `setup` to preview and apply them
+instead of manually joining configuration JSON. Give asymmetric roles their
+own `--worker-observe`, `--worker-write`, `--worker-commands`, and
+`--reviewer-observe`, `--reviewer-write`, `--reviewer-commands` facts; `none`
+is an explicit empty list. Do not give a reviewer worker write access.
+Supply the goal, exact check and review choice once; review the preview before
+`--apply`. Follow the applied response's exact Work-start argv. Its `--detail`
+reply contains verified current recipient context; consume a complete reply
+directly. The Lead's scope decision, worker permit, check, review and acceptance
+still use their separate current forms. Recover a lost start reply with
+`work resume --json` using the same configuration, without repeating begin.
+
+The following table is the manual configuration route when setup facts are
+not available.
+
 The starter intentionally grants no file or command access. Before `run start`,
 have your host propose edits to the existing `exitbind.json` for this task:
 
