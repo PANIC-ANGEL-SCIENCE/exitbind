@@ -63,6 +63,10 @@ mod tests {
 
     #[test]
     fn failed_delivery_retains_the_recorded_work_and_read_only_recovery() {
+        // Current Work delivery is not a historical Soulmate protocol.
+        if !crate::compatibility::is_exitbind() {
+            return;
+        }
         let root =
             std::env::temp_dir().join(format!("exitbind-start-delivery-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
