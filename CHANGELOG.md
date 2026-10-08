@@ -1,8 +1,30 @@
 # Changelog
 
-## 0.28.0
+## 0.29.0
 
 Candidate source; publication remains pending the ordinary stable release gates.
+
+- Add a marked v8 `carryProtocol` v1 accounting seed to same-goal
+  `run supersede` successors. Preserve phase, spent count, no-information
+  streak, post-re-plan count, re-plan count, budget and defaults, seen-evidence
+  fingerprints, and observation keys. The successor gets a fresh run identity,
+  assignment and authority. Mutation pointers, grants and check evidence do
+  not carry; the successor must check its current result. Older readers refuse
+  the marked record without mutation; markerless historical records keep their
+  existing meaning.
+- Complete the ordinary handoff path with current role context, role-bound
+  operations, and same-goal continuation while preserving prior Work records
+  and decisions.
+- Align active schemas, examples, installer and bundled plugin metadata with
+  this release line. Add explicit upgrade and selector-only rollback guidance
+  for custom files, pinned Work readers and newer marked state.
+- Replace the README's specialist-first tour with a short path through the
+  existing conversation, a first checked result, interrupted work and the
+  lead's completion decision. No new product capability is implied.
+
+## 0.28.0
+
+Published stable release; the `v0.28.0` tag and release assets are available.
 
 - Complete legitimate repeated check repair with a current carried re-plan over
   the permitted edit's inputs. Require frozen configuration and contract,

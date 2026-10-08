@@ -16,6 +16,9 @@ run-event format numbers continue across it. See the
 [public format map](../CHANGELOG.md#public-tags-and-format-readers) before
 choosing a rollback or release channel.
 
+For current executable changes and rollback limits, see
+[upgrade and rollback](upgrade-and-rollback.md).
+
 ## Old command, config, and state paths
 
 | Historical surface | Current surface | Status |

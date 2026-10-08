@@ -20,7 +20,7 @@ fi
 if test "$legacy_bridge" = 1; then
   repo=envy404/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.28.0}"
+version="${EXITBIND_VERSION:-v0.29.0}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
 fi
