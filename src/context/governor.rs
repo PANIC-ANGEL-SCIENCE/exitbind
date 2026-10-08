@@ -9,6 +9,7 @@ use super::{
 use crate::evidence::hash;
 use crate::kernel::governor::{LoopState, Phase, Transition};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeSet;
 
 fn semantic_mutation(value: &Value) -> Result<Value, String> {
     let object = value.as_object().ok_or("mutation must be an object")?;
@@ -56,6 +57,7 @@ pub(crate) fn reduce_governor_seeded(
         "lineageSha256": Value::Null,
         "evidence": [],
         "seenEvidenceSha256": [],
+        "observations": [],
         "seenMutations": [],
         "consumedGrants": [],
         "seenSensors": [],
@@ -90,6 +92,17 @@ pub(crate) fn reduce_governor_seeded(
                 return Err("governor carry has invalid evidence identities".into());
             }
             state["seenEvidenceSha256"] = identities.clone();
+        }
+        if let Some(observation_keys) = seed.get("observationKeys") {
+            if !valid_observation_keys(observation_keys) {
+                return Err("governor carry has invalid observation keys".into());
+            }
+            state["observations"] = observation_keys
+                .as_array()
+                .expect("validated observation keys are an array")
+                .iter()
+                .map(|key| json!({"key": key}))
+                .collect();
         }
         state["lineageSha256"] = Value::Null;
         state["runId"] = Value::Null;
@@ -134,6 +147,22 @@ pub(crate) fn reduce_governor_seeded(
     }
     state["headSha256"] = expected_previous;
     Ok(state)
+}
+
+fn valid_observation_keys(value: &Value) -> bool {
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    let mut seen = BTreeSet::new();
+    items.iter().all(|item| {
+        item.as_str().is_some_and(|key| {
+            key.len() == 64
+                && key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                && seen.insert(key.to_owned())
+        })
+    })
 }
 
 fn apply_blocked(state: &mut Value, event: &Value) -> Result<(), String> {

@@ -932,7 +932,9 @@ marked v8 `carryProtocol` v1 accounting seed. Every current replay checks that
 seed against the verified predecessor ledger, preserving its phase, spent
 count, no-information streak, post-re-plan count, re-plan count, budget,
 defaults and non-content evidence fingerprints used to recognize repeated
-evidence. Carry is refused when the budget is exhausted. The successor gets a
+checks and file evidence. Cumulative spent is telemetry, not a lifetime carry
+cutoff: a ready state may carry at or above the displayed budget, while
+non-ready phases and unresolved effects still refuse. The successor gets a
 fresh run identity and current assignment; old
 mutation pointers, consumed grants and assignments do not transfer. Historical
 unmarked starts and changed-goal successors retain their prior format. Older

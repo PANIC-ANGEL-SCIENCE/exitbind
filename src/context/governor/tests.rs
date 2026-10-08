@@ -82,6 +82,32 @@ fn seeded_carry_preserves_phase_and_counters_without_old_authority() {
 }
 
 #[test]
+fn seeded_carry_preserves_only_valid_noncontent_observation_keys() {
+    let observation_keys = json!(["a".repeat(64)]);
+    let seed = json!({
+        "spent": 2,
+        "noInformationStreak": 1,
+        "postReplanSpent": 0,
+        "replanCount": 1,
+        "afterReplan": true,
+        "state": "ready",
+        "observationKeys": observation_keys,
+    });
+    let carried = reduce_governor_seeded(&[], Some(&seed)).unwrap();
+    assert_eq!(carried["observations"], json!([{"key": "a".repeat(64)}]));
+
+    for invalid in [
+        json!(["A".repeat(64)]),
+        json!([{"key": "a".repeat(64), "stdout": "must not be carried"}]),
+        json!(["a".repeat(64), "a".repeat(64)]),
+    ] {
+        let mut invalid_seed = seed.clone();
+        invalid_seed["observationKeys"] = invalid;
+        assert!(reduce_governor_seeded(&[], Some(&invalid_seed)).is_err());
+    }
+}
+
+#[test]
 fn seeded_carry_never_reopens_a_blocked_phase() {
     let seed = json!({
         "spent": 3,

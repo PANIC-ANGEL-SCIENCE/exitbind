@@ -60,7 +60,19 @@ pub(crate) fn accounting(state: &Value, defaults: &Value) -> Result<Value, Strin
     {
         return Err("governor carry has invalid phase or defaults".into());
     }
-    Ok(json!({
+    let observation_keys = governor
+        .get("observations")
+        .and_then(Value::as_array)
+        .ok_or("governor carry has invalid observation keys")?
+        .iter()
+        .map(|observation| {
+            observation
+                .get("key")
+                .cloned()
+                .ok_or("governor carry has invalid observation keys")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let accounting = json!({
         "budget": governor["budget"],
         "defaults": defaults,
         "spent": governor["spent"],
@@ -70,7 +82,10 @@ pub(crate) fn accounting(state: &Value, defaults: &Value) -> Result<Value, Strin
         "afterReplan": governor["afterReplan"],
         "state": governor["state"],
         "seenEvidenceSha256": governor["seenEvidenceSha256"],
-    }))
+        "observationKeys": observation_keys,
+    });
+    crate::context::reduce_governor_seeded(&[], Some(&accounting))?;
+    Ok(accounting)
 }
 
 pub(crate) fn make(
@@ -89,11 +104,6 @@ pub(crate) fn make(
         .ok_or("governor carry requires an enabled predecessor governor")?;
     if governor["state"] != "ready" {
         return Err("supersession refused an exhausted or unresolved governor phase".into());
-    }
-    if governor["spent"].as_u64().unwrap_or(u64::MAX)
-        >= governor["budget"].as_u64().unwrap_or_default()
-    {
-        return Err("supersession refused an exhausted governor budget".into());
     }
     if let Some(request) = governor
         .get("currentSensorRequest")
@@ -173,7 +183,8 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     }
     let accounting = &carry["accounting"];
     if accounting.as_object().map_or(true, |object| {
-        object.len() != 9
+        object.len() != 10
+            || !object.contains_key("observationKeys")
             || [
                 "budget",
                 "spent",
@@ -190,6 +201,7 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
             || accounting["seenEvidenceSha256"]
                 .as_array()
                 .is_some_and(|items| items.iter().any(|item| !valid_sha(item.as_str())))
+            || crate::context::reduce_governor_seeded(&[], Some(accounting)).is_err()
     }) {
         return Err(invalid());
     }
@@ -342,16 +354,87 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ready_state_at_hard_budget_is_not_carried() {
+    fn ready_state_at_hard_budget_carries_telemetry() {
         let state = json!({
+            "runId": "run",
+            "configSha256": "config",
             "governor": {
                 "enabled": true,
                 "state": "ready",
                 "spent": 3,
                 "budget": 3,
+                "noInformationStreak": 0,
+                "postReplanSpent": 0,
+                "replanCount": 1,
+                "afterReplan": false,
+                "seenEvidenceSha256": [],
+                "observations": [],
             },
         });
-        let error = make(&state, "old.jsonl", "source", &[], "same goal").unwrap_err();
-        assert!(error.contains("exhausted governor budget"));
+        let events = [
+            json!({"goal": "same goal", "governor": {"budget": 3}}),
+            json!({"eventSha256": "a".repeat(64)}),
+        ];
+        let carry = make(&state, "old.jsonl", "source", &events, "same goal").unwrap();
+        assert_eq!(carry["accounting"]["spent"], 3);
+        assert_eq!(carry["accounting"]["budget"], 3);
+        assert_eq!(carry["accounting"]["state"], "ready");
+        assert_eq!(carry["accounting"]["observationKeys"], json!([]));
+    }
+
+    #[test]
+    fn marked_carry_requires_valid_observation_keys() {
+        fn start(include_observation_keys: bool, observation_keys: Value) -> Value {
+            let mut accounting = json!({
+                "budget": 3,
+                "defaults": {"budget": 3},
+                "spent": 3,
+                "noInformationStreak": 0,
+                "postReplanSpent": 0,
+                "replanCount": 1,
+                "afterReplan": false,
+                "state": "ready",
+                "seenEvidenceSha256": [],
+            });
+            if include_observation_keys {
+                accounting["observationKeys"] = observation_keys;
+            }
+            let supersedes = json!({
+                "ledgerPath": "old.jsonl",
+                "ledgerSha256": "b".repeat(64),
+                "runId": "old-run",
+                "headEventSha256": "c".repeat(64),
+                "configSha256": "d".repeat(64),
+            });
+            let carry = json!({
+                "protocol": PROTOCOL,
+                "goalSha256": crate::evidence::hash::text("goal"),
+                "predecessor": supersedes,
+                "accounting": accounting,
+            });
+            json!({
+                "version": 8,
+                "carryProtocol": PROTOCOL,
+                "governor": {"budget": 3},
+                "supersedes": supersedes,
+                "goal": "goal",
+                "governorCarrySha256": crate::evidence::hash::value(&carry),
+                "governorCarry": carry,
+            })
+        }
+
+        let valid = start(true, json!(["a".repeat(64)]));
+        assert!(validate_start(&valid, 1).is_ok());
+
+        let malformed = start(true, json!(["A".repeat(64)]));
+        assert!(validate_start(&malformed, 1).is_err());
+
+        let missing = start(false, Value::Null);
+        let mut carry = missing["governorCarry"].clone();
+        carry["accounting"].as_object_mut().unwrap().remove("observationKeys");
+        let mut rehashed = missing;
+        rehashed["governorCarrySha256"] = json!(crate::evidence::hash::value(&carry));
+        rehashed["governorCarry"] = carry;
+        assert!(validate_start(&rehashed, 1).is_err());
     }
 }
