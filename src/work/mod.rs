@@ -11,6 +11,7 @@ pub(crate) mod effective_action;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
 mod held;
+mod locator;
 pub(crate) mod managed_edit;
 mod mutation_response;
 pub(crate) mod packet;
@@ -36,6 +37,7 @@ pub(crate) use permit_response::permit;
 pub(crate) use resume::resume;
 pub(crate) use return_result_impl::return_result;
 
+use locator::{runs_dir, valid_token, WORK_PREFIX};
 use mutation_response::{
     bounded as bounded_mutation, recorded_projection_failure, recorded_protection_reference,
     recorded_reference,
@@ -45,12 +47,8 @@ use recovery::{
     Candidate,
 };
 
-const WORK_PREFIX: &str = "smw_";
 pub(crate) const DIAGNOSTIC_PREFIX: &str = "EXITBIND_WORK_DIAGNOSTIC:";
-
-fn runs_dir() -> String {
-    format!("{}/runs", crate::project::layout_types::state_namespace())
-}
+pub(crate) use locator::locator_for_ledger;
 
 /// Read-only activation assessment used by the explicit `work classify`
 /// bridge. The caller supplies both typed consequence facts; local availability
@@ -972,10 +970,6 @@ fn write_artifact(
 
 fn assignment_handle(work: &str, assignment: &Value) -> Result<String, String> {
     crate::run::assignment::handle(work, assignment)
-}
-
-fn valid_token(token: &str) -> bool {
-    token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn timestamp_nanos() -> u128 {

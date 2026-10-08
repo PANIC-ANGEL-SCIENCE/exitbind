@@ -927,9 +927,30 @@ claims exactly one successor. `accepted` and `rejected` runs remain final and
 cannot be superseded.
 
 The successor records the predecessor run ID, full ledger hash, verified head,
-and run-start config hash. `run inspect` checks recorded chain/predecessor
-consistency only and exposes sensitive local goal state. Detailed confinement,
-locking, Git, concurrency, and transaction limits are in
+and run-start config hash. Same-goal supersession of a governed run adds the
+marked v8 `carryProtocol` v1 accounting seed. Every current replay checks that
+seed against the verified predecessor ledger, preserving its phase, spent
+count, no-information streak, post-re-plan count, re-plan count, budget,
+defaults and non-content evidence fingerprints used to recognize repeated
+evidence. Carry is refused when the budget is exhausted. The successor gets a
+fresh run identity and current assignment; old
+mutation pointers, consumed grants and assignments do not transfer. Historical
+unmarked starts and changed-goal successors retain their prior format. Older
+readers may refuse the marked carry extension, while still reading historical
+unmarked v8 records.
+
+When the successor ledger uses the `work-<64 hex>.jsonl` naming form,
+`run supersede` returns its derived Work handle and a read-only `work detail`
+command. Consume that fresh detail before acting. For another supported Work,
+use `work resume --history` to discover the current locator, then read its
+detail; do not transfer old assignment or permit authority. Unresolved check
+observations and pending governor sensor requests refuse carry. A separately
+admitted managed-file request stays with its exact existing effect owner; a
+carry neither certifies it resolved nor retries it.
+
+`run inspect` checks recorded chain/predecessor consistency only and exposes
+sensitive local goal state. Detailed confinement, locking, Git, concurrency,
+and transaction limits are in
 [SECURITY.md](SECURITY.md).
 
 ## Optional distribution with dotagents

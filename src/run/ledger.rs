@@ -43,6 +43,17 @@ pub(crate) fn load(
 }
 
 pub(crate) fn load_at(
+    loaded: &Loaded,
+    ledger: &LedgerPath,
+) -> Result<(LedgerPath, Vec<Value>, String), String> {
+    let loaded_events = load_at_unchecked(loaded, ledger)?;
+    super::carry::validate_chain(loaded, ledger, &loaded_events.1)?;
+    Ok(loaded_events)
+}
+
+/// Read and reduce one ledger without following predecessor links. The carry
+/// verifier uses this owner while it walks the bounded lineage itself.
+pub(crate) fn load_at_unchecked(
     _loaded: &Loaded,
     ledger: &LedgerPath,
 ) -> Result<(LedgerPath, Vec<Value>, String), String> {
@@ -446,6 +457,11 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
                     return Err("a different successor is already claimed".into());
                 }
             }
+            for key in ["carryProtocol", "governorCarrySha256"] {
+                if value.get(key) != wanted.get(key) {
+                    return Err("a different successor is already claimed".into());
+                }
+            }
             Ok(SupersessionClaim {
                 value,
                 created_inode: None,
@@ -533,7 +549,7 @@ fn remove_owned(path: &Path, owned: &fs::Metadata) {
 
 fn validate_claim(value: &Value) -> Result<(), String> {
     let object = value.as_object().ok_or("invalid supersession claim")?;
-    let fields = [
+    let legacy_fields = [
         "version",
         "oldLedgerPath",
         "oldLedgerSha256",
@@ -547,8 +563,14 @@ fn validate_claim(value: &Value) -> Result<(), String> {
         "newRunId",
         "timestamp",
     ];
-    if object.len() != fields.len()
-        || fields.iter().any(|key| !object.contains_key(*key))
+    let carry_fields = ["carryProtocol", "governorCarrySha256"];
+    if (object.len() != legacy_fields.len()
+        && object.len() != legacy_fields.len() + carry_fields.len())
+        || legacy_fields.iter().any(|key| !object.contains_key(*key))
+        || (object.len() != legacy_fields.len()
+            && (carry_fields.iter().any(|key| !object.contains_key(*key))
+                || value["carryProtocol"] != crate::run::carry::PROTOCOL
+                || !sha(value["governorCarrySha256"].as_str())))
         || value["version"] != 1
         || [
             "oldLedgerSha256",

@@ -6,6 +6,7 @@ mod support;
 
 use opaque_work_surface::{assert_opaque_envelope, assert_opaque_reference};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
@@ -938,6 +939,20 @@ fn resume_refuses_focused_predecessor_with_invalid_successor_lineage() {
         None,
     );
     assert!(created.status.success(), "{created:?}");
+    let created_value: Value = serde_json::from_slice(&created.stdout).unwrap();
+    assert_eq!(created_value["work"], successor_work);
+    assert_eq!(created_value["currentDetail"]["route"], "work detail");
+    assert_eq!(created_value["currentDetail"]["readOnly"], true);
+    assert_eq!(created_value["currentDetail"]["requiresFreshContext"], true);
+    assert_eq!(created_value["currentDetail"]["command"]["argv"][1], "work");
+    assert_eq!(
+        created_value["currentDetail"]["command"]["argv"][2],
+        "detail"
+    );
+    assert_eq!(
+        created_value["currentDetail"]["command"]["argv"][3],
+        successor_work
+    );
 
     let successor_path = fixture.root.join(&successor_ledger);
     let mut events = fs::read_to_string(&successor_path)
@@ -1001,6 +1016,204 @@ fn resume_refuses_focused_predecessor_with_invalid_successor_lineage() {
     assert_eq!(fs::read(successor_path).unwrap(), successor_before);
     assert_eq!(fs::read(claim_path).unwrap(), claim_before);
     assert_eq!(fs::read(focus_path).unwrap(), focus_before);
+}
+
+#[test]
+fn same_goal_successor_carries_replayed_accounting_and_fresh_work_detail() {
+    let fixture = Fixture::new_single();
+    let goal = "same-goal successor carry";
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            goal,
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let predecessor_work = begin["work"].as_str().unwrap().to_owned();
+    let predecessor_ledger = fixture.ledger(&predecessor_work);
+    let scope = fixture.value(
+        &[
+            "work",
+            "return",
+            &predecessor_work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        Some(b"scope"),
+    );
+    fixture.value(
+        &[
+            "work",
+            "return",
+            &predecessor_work,
+            scope["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        Some(b"first worker result"),
+    );
+    let predecessor_path = fixture.root.join(&predecessor_ledger);
+    let predecessor_state = fixture.value(&["run", "inspect", &predecessor_ledger], None);
+    let predecessor_before = fs::read(&predecessor_path).unwrap();
+    let successor_work = format!("smw_{}", "a".repeat(64));
+    let successor_ledger = fixture.ledger(&successor_work);
+    let args = [
+        "run",
+        "supersede",
+        &predecessor_ledger,
+        "--workflow",
+        "change",
+        "--goal",
+        goal,
+        "--ledger",
+        &successor_ledger,
+        "--check-command",
+        "true",
+    ];
+    let created = fixture.value(&args, None);
+    assert_eq!(created["work"], successor_work);
+    assert_eq!(created["currentDetail"]["route"], "work detail");
+    assert_eq!(created["currentDetail"]["readOnly"], true);
+    assert_eq!(created["currentDetail"]["requiresFreshContext"], true);
+    assert_eq!(created["currentDetail"]["command"]["argv"][2], "detail");
+    assert_eq!(
+        created["currentDetail"]["command"]["argv"][3],
+        successor_work
+    );
+
+    let successor_path = fixture.root.join(&successor_ledger);
+    let successor_before = fs::read(&successor_path).unwrap();
+    let mut events = fs::read_to_string(&successor_path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["carryProtocol"], 1);
+    assert_eq!(events[0]["governorCarry"]["accounting"]["spent"], 1);
+    assert_eq!(events[0]["governorCarry"]["accounting"]["state"], "ready");
+    assert_eq!(
+        events[0]["governorCarrySha256"],
+        format!(
+            "{:x}",
+            sha2::Sha256::digest(canonical(&events[0]["governorCarry"]).as_bytes())
+        )
+    );
+    let successor = fixture.value(&["run", "inspect", &successor_ledger], None);
+    assert_eq!(successor["governor"]["spent"], 1);
+    assert_eq!(
+        successor["governor"]["seenEvidenceSha256"],
+        predecessor_state["governor"]["seenEvidenceSha256"]
+    );
+    assert!(successor["governor"]["evidence"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(successor["governor"]["currentMutation"], Value::Null);
+    assert!(successor["governor"]["seenMutations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(successor["governor"]["consumedGrants"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let fresh = fixture.value(&["work", "detail", &successor_work], None);
+    assert_ne!(
+        fresh["current"]["result"]["subject"]["sha256"],
+        predecessor_state["subject"]["sha256"]
+    );
+
+    let repeated = fixture.value(&args, None);
+    assert_eq!(repeated["runId"], created["runId"]);
+    assert_eq!(repeated["work"], successor_work);
+    let other_work = format!("smw_{}", "b".repeat(64));
+    let other_ledger = fixture.ledger(&other_work);
+    let refused = fixture.call(
+        &[
+            "run",
+            "supersede",
+            &predecessor_ledger,
+            "--workflow",
+            "change",
+            "--goal",
+            goal,
+            "--ledger",
+            &other_ledger,
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(&predecessor_path).unwrap(), predecessor_before);
+    assert!(!fixture.root.join(&other_ledger).exists());
+
+    events[0]["governorCarry"]["accounting"]["spent"] = serde_json::json!(0);
+    events[0]["governorCarrySha256"] = serde_json::json!(format!(
+        "{:x}",
+        sha2::Sha256::digest(canonical(&events[0]["governorCarry"]).as_bytes())
+    ));
+    events[0] = rehash(events[0].clone());
+    fs::write(
+        &successor_path,
+        events
+            .iter()
+            .map(serde_json::to_string)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let inspect = fixture.call(&["run", "inspect", &successor_ledger], None);
+    assert!(!inspect.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&inspect.stdout),
+        String::from_utf8_lossy(&inspect.stderr)
+    );
+    assert!(diagnostic.contains("governor carry"), "{diagnostic}");
+    assert_eq!(fs::read(&predecessor_path).unwrap(), predecessor_before);
+
+    // The predecessor's persisted claim binds this successor to the carry.
+    // Removing every marker and rehashing the start must not reset spent to 0.
+    fs::write(&successor_path, &successor_before).unwrap();
+    let mut stripped: Value = serde_json::from_slice(
+        successor_before
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let object = stripped.as_object_mut().unwrap();
+    object.remove("carryProtocol");
+    object.remove("governorCarry");
+    object.remove("governorCarrySha256");
+    stripped = rehash(stripped);
+    fs::write(
+        &successor_path,
+        serde_json::to_string(&stripped).unwrap() + "\n",
+    )
+    .unwrap();
+    let inspect = fixture.call(&["run", "inspect", &successor_ledger], None);
+    assert!(!inspect.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&inspect.stdout),
+        String::from_utf8_lossy(&inspect.stderr)
+    );
+    assert!(
+        diagnostic.contains("carry marker is missing"),
+        "{diagnostic}"
+    );
+    assert_eq!(fs::read(&predecessor_path).unwrap(), predecessor_before);
 }
 
 #[test]
@@ -2404,7 +2617,6 @@ fn canonical(value: &Value) -> String {
 }
 
 fn rehash(mut event: Value) -> Value {
-    use sha2::{Digest, Sha256};
     event.as_object_mut().unwrap().remove("eventSha256");
     let digest = Sha256::digest(canonical(&event).as_bytes());
     event["eventSha256"] = Value::String(format!("{digest:x}"));

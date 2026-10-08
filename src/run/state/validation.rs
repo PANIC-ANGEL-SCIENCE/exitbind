@@ -233,6 +233,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     if let Some(link) = event.get("supersedes") {
         validate_supersession(link, line)?;
     }
+    crate::run::carry::validate_start(event, line)?;
     if let Some(marker) = event.get("recoveryProtocol") {
         if version != 8
             || marker.as_u64() != Some(RECOVERY_PROTOCOL_VERSION)

@@ -5,6 +5,7 @@
 //! from the novelty key; replay and repeated failures cannot buy more work.
 
 use super::*;
+use crate::kernel::governor::Transition;
 
 pub(super) fn mutation_evidence(event: &Value) -> Result<Option<Value>, String> {
     if let Some(value) = event.get("newEvidence") {
@@ -44,7 +45,7 @@ pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         return Err("blocked governor cannot be reopened by observation".into());
     }
     match event["identityTransition"].as_str() {
-        None => bind_identity(state, event)?,
+        None => super::governor::bind_identity(state, event)?,
         Some("checked_submission_v1") => {
             let current = state["currentMutation"]
                 .as_object()
@@ -76,8 +77,8 @@ pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         "key": key,
         "checkEventSha256": event["checkEventSha256"],
     }));
-    let mut loop_state = loop_state(state)?;
+    let mut loop_state = super::governor::loop_state(state)?;
     loop_state.apply(Transition::NewEvidence)?;
-    sync_loop(state, loop_state);
+    super::governor::sync_loop(state, loop_state);
     Ok(())
 }

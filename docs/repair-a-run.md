@@ -43,6 +43,14 @@ The [first checked run](first-checked-run.md#3-record-the-review-and-lead-decisi
 contains the complete rework sequence. Exact supersession and drift rules live
 in [run and recovery](../REFERENCE.md#run-and-recovery).
 
+For an approved same-goal successor, use the current `run supersede` response.
+When it includes a Work handle and `currentDetail` command, consume that fresh
+detail before assigning work; it carries the remaining bounded accounting and
+starts with new authority. If the response only describes a legacy run ledger,
+use `work resume --history` to discover a supported Work locator. A separately
+admitted managed-file request remains with its existing effect owner and is
+never resolved or retried by governor carry.
+
 Before starting another run in the same host session, check that its configured
 native task names are usable there. Some hosts retain used names. Reusing an
 existing native agent and spawning a fresh context are different operations;

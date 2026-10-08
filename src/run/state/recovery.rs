@@ -15,12 +15,15 @@ pub(super) fn append_governor(state: &mut Value, governor_event: Value) -> Resul
     events.push(governor_event);
     let grant_protocol = state["governor"]["grantProtocol"].clone();
     let defaults = state["governor"]["defaults"].clone();
-    let mut next = crate::context::reduce_governor(&events)?;
+    let seed = state.get("governorCarry").map(|carry| &carry["accounting"]);
+    let mut next = crate::context::reduce_governor_seeded(&events, seed)?;
     next["enabled"] = json!(true);
     if !grant_protocol.is_null() {
         next["grantProtocol"] = grant_protocol;
     }
-    if state["recoveryProtocol"] == RECOVERY_PROTOCOL_VERSION {
+    if state["recoveryProtocol"] == RECOVERY_PROTOCOL_VERSION
+        || state.get("governorCarry").is_some()
+    {
         next["defaults"] = defaults;
     }
     state["governor"] = next;

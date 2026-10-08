@@ -23,6 +23,14 @@ Use the existing scope and owner review decision. A task with material or promot
 - Unknown Work or project focus: use `work resume --json`; focus is navigation with no authority. Use its current grouped detail route before dependent action. A stale locator or revoked expansion needs a fresh detail/current read; if the Work cannot be resolved, use project resume/history rather than guessing.
 - New material Work: after authorized setup, follow setup's exact next argv, or use `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted --detail`. This delivers the current recipient's verified detail with the recorded start; consume it directly when complete. It still requires the Lead's scope decision before worker editing. The Lead recommends independent review and the owner decides; reuse an existing decision. Unmarked historical entry retains required review and cannot revise it.
 
+For a same-goal governed successor, consume the `work detail` route returned by
+`run supersede` when the successor has a Work-compatible ledger name. It is a
+fresh read with new assignment authority and carried accounting; old permits
+and assignments do not transfer. If no Work handle is returned, discover a
+supported locator with `work resume --history`. Separately admitted managed-file
+requests remain with their exact effect owner; governor carry never resolves or
+retries them.
+
 If start records a Work but detail delivery fails, follow its read-only recovery
 for that existing Work. If the start reply was lost, use `work resume --json`
 with the same configuration. Never repeat `work begin` to recover a lost reply.

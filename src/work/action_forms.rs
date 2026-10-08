@@ -15,6 +15,13 @@ fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
     })
 }
 
+pub(crate) fn current_detail_command(loaded: &Loaded, work: &str) -> Value {
+    command(
+        loaded,
+        vec!["work".into(), "detail".into(), work.into(), "--json".into()],
+    )
+}
+
 fn choice(
     loaded: &Loaded,
     suffix: Vec<String>,

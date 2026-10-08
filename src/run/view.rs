@@ -85,6 +85,19 @@ pub fn report_markdown(report: &Value) -> String {
     crate::run_value::markdown(report)
 }
 
+fn attach_successor_work(loaded: &Loaded, new_ledger: &str, mut value: Value) -> Value {
+    if let Some(work) = crate::work::locator_for_ledger(new_ledger) {
+        value["work"] = json!(work);
+        value["currentDetail"] = json!({
+            "route": "work detail",
+            "readOnly": true,
+            "requiresFreshContext": true,
+            "command": crate::work::action_forms::current_detail_command(loaded, &work),
+        });
+    }
+    value
+}
+
 /// Start a fresh bounded run while atomically claiming one running or blocked predecessor.
 pub fn supersede(
     loaded: &Loaded,
@@ -234,15 +247,22 @@ pub fn supersede_with_policy(
         if preservation.is_some() && !crate::producer::exitbind_surface() {
             return Err("preservation requirements require Exitbind v6 runs".into());
         }
-        if old_state["governor"]["enabled"] == true
+        let carry_accounting = if old_state["governor"]["enabled"] == true
             && old_state["subject"]["goalSha256"] == hash::text(goal)
         {
-            return Err(
-                "same-goal supersession is refused until governor lineage carry is persisted"
-                    .into(),
-            );
-        }
+            let old_rel = config::rel(&loaded.state_root, &old.expected)?;
+            Some(crate::run::carry::make(
+                &old_state,
+                &old_rel,
+                &old_source,
+                &old_events,
+                goal,
+            )?)
+        } else {
+            None
+        };
         let old_rel = config::rel(&loaded.state_root, &old.expected)?;
+        let new_rel = config::rel(&loaded.state_root, &new.expected)?;
         let old_sha = hash::text(&old_source);
         let head = old_events
             .last()
@@ -267,13 +287,22 @@ pub fn supersede_with_policy(
             "oldRunId": old_state["runId"],
             "oldHeadEventSha256": head,
             "oldConfigSha256": old_state["configSha256"],
-            "newLedgerPath": config::rel(&loaded.state_root, &new.expected)?,
+            "newLedgerPath": new_rel.clone(),
             "workflow": workflow,
             "goalSha256": hash::text(goal),
             "configSha256": config_sha,
             "newRunId": run_id,
             "timestamp": timestamp
         });
+        let carry_protocol = carry_accounting
+            .as_ref()
+            .map(|_| crate::run::carry::PROTOCOL);
+        let carry_sha = carry_accounting.as_ref().map(crate::evidence::hash::value);
+        let mut wanted_claim = wanted_claim;
+        if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {
+            wanted_claim["carryProtocol"] = json!(protocol);
+            wanted_claim["governorCarrySha256"] = json!(sha);
+        }
         let claim_path = claim_path(&old);
         if new.path.exists() && !claim_path.exists() {
             return Err("successor ledger exists without a matching predecessor claim".into());
@@ -312,6 +341,13 @@ pub fn supersede_with_policy(
             "timestamp": claim.value["timestamp"],
             "supersedes": supersedes
         });
+        if let (Some(carry), Some(protocol), Some(sha)) =
+            (carry_accounting, carry_protocol, carry_sha)
+        {
+            event_value["carryProtocol"] = json!(protocol);
+            event_value["governorCarry"] = carry;
+            event_value["governorCarrySha256"] = json!(sha);
+        }
         if let Some(reference) = harness_reference {
             event_value["harnessReceipt"] = reference;
         }
@@ -335,15 +371,17 @@ pub fn supersede_with_policy(
             event_value["reviewPolicy"] = extension.review.value();
         }
         if version >= 5 {
+            let basis_sha = extension
+                .as_ref()
+                .and_then(|x| x.basis.as_ref())
+                .map(|x| x.sha256.as_str())
+                .or_else(|| carry_protocol.and_then(|_| old_state["basis"]["sha256"].as_str()));
             event_value["subject"] = subject(
                 goal,
                 &event_value["plan"],
                 &config_sha,
                 successor_run_id,
-                extension
-                    .as_ref()
-                    .and_then(|x| x.basis.as_ref())
-                    .map(|x| x.sha256.as_str()),
+                basis_sha,
             );
         }
         if version >= 6 {
@@ -353,6 +391,28 @@ pub fn supersede_with_policy(
                 "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
                 "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
             });
+        }
+        if carry_protocol.is_some() {
+            event_value["governor"] = old_events[0]["governor"].clone();
+            if old_state.get("basisProtocol").is_some() {
+                event_value["basisProtocol"] = old_state["basisProtocol"].clone();
+                if event_value.get("basis").is_none() {
+                    if let Some(basis) = old_state.get("basis") {
+                        event_value["basis"] = basis.clone();
+                    }
+                }
+            }
+        }
+        if extension.is_none() && carry_protocol.is_some() {
+            if let Some(review) = old_state.get("reviewPolicy") {
+                event_value["reviewPolicy"] = review.clone();
+            }
+            if let Some(protocol) = old_state.get("recoveryProtocol") {
+                event_value["recoveryProtocol"] = protocol.clone();
+            }
+            if let Some(protocol) = old_state.get("checkObservationProtocol") {
+                event_value["checkObservationProtocol"] = protocol.clone();
+            }
         }
         let event = run_state::make_event(event_value);
         if new.path.exists() {
@@ -371,6 +431,8 @@ pub fn supersede_with_policy(
                 "recoveryProtocol",
                 "governor",
                 "supersedes",
+                "carryProtocol",
+                "governorCarrySha256",
             ];
             let mismatched = existing.first().map(|current| {
                 request_fields
@@ -390,7 +452,11 @@ pub fn supersede_with_policy(
             });
             let same_request = mismatched.as_ref().is_some_and(Vec::is_empty) && same_subject;
             if same_request {
-                return result(&existing);
+                return Ok(attach_successor_work(
+                    loaded,
+                    claim.value["newLedgerPath"].as_str().unwrap_or_default(),
+                    result(&existing)?,
+                ));
             }
             let mut fields = mismatched.unwrap_or_default();
             if !same_subject {
@@ -405,6 +471,6 @@ pub fn supersede_with_policy(
             rollback_claim(&claim_path, &claim);
             return Err(error);
         }
-        result(&[event])
+        Ok(attach_successor_work(loaded, &new_rel, result(&[event])?))
     })
 }

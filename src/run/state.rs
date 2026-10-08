@@ -66,20 +66,7 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     if let Some(marker) = first.get("checkObservationProtocol") {
         state["checkObservationProtocol"] = marker.clone();
     }
-    let governor_enabled = first
-        .get("governor")
-        .is_some_and(crate::context::validate_marker);
-    if first.get("governor").is_some() && !governor_enabled {
-        return Err("invalid run start: malformed governor marker".into());
-    }
-    if governor_enabled {
-        state["governor"] = crate::context::reduce_governor(&[])?;
-        state["governor"]["enabled"] = json!(true);
-        state["governor"]["defaults"] = first["governor"].clone();
-        if let Some(protocol) = first["governor"].get("grantProtocol") {
-            state["governor"]["grantProtocol"] = protocol.clone();
-        }
-    }
+    let governor_enabled = super::carry::initialize_governor(first, &mut state)?;
     if let Some(receipt) = first.get("harnessReceipt") {
         state["harnessReceipt"] = receipt.clone();
     }
@@ -206,6 +193,9 @@ fn reject_unknown(
             allowed.push("reviewPolicy");
             allowed.push("recoveryProtocol");
             allowed.push("checkObservationProtocol");
+            allowed.push("carryProtocol");
+            allowed.push("governorCarry");
+            allowed.push("governorCarrySha256");
         }
         return object
             .keys()
