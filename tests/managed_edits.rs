@@ -452,12 +452,17 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
         before["recipientContext"]["rules"]
     );
     assert_eq!(after["actionForms"]["beforeEditing"]["required"], true);
-    assert!(after["actionForms"]["productManaged"]["command"]["argv"].is_array());
-    assert!(after["actionForms"]["productManaged"]["command"]["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|arg| arg == after["binding"].as_str().unwrap()));
+    let choices = after["actionForms"]["choices"].as_array().unwrap();
+    assert!(!choices.is_empty());
+    let assignment = after["recipient"]["assignment"].as_str().unwrap();
+    let binding = after["binding"].as_str().unwrap();
+    for choice in choices {
+        let argv = choice["command"]["argv"].as_array().unwrap();
+        assert!(argv.iter().any(|arg| arg == assignment));
+        assert!(argv
+            .windows(2)
+            .any(|pair| { pair[0] == "--current-binding" && pair[1] == binding }));
+    }
 
     // A newly prepared managed tool consumes the current assignment after the permit.
     let prepared = f.ok(&["work", "file", "prepare", &f.work, &f.assignment], b"");
