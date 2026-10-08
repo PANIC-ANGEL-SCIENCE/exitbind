@@ -110,9 +110,8 @@ for supported host handoffs.
 
 **A reported “done” is not an accepted result.** A worker's completion, a
 passing check, reviewer approval and your lead's acceptance are separate
-events. Exitbind refuses acceptance if the configured check is missing or
-failed for the current result. When the result or covered files change, earlier
-check evidence remains historical.
+events. In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
+When the result or covered files change, earlier check evidence remains historical.
 
 Your lead recommends whether a change needs independent review. You decide
 whether review is required, and an explicit omission stays an omission. A
