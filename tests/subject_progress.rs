@@ -1450,7 +1450,10 @@ fn same_goal_carry_accepts_current_subject_check_without_duplicate_governor_evid
     );
     let repeated: Value = serde_json::from_slice(&repeated.stdout).unwrap();
     assert_eq!(repeated["event"]["acquisition"], "observed");
-    assert_eq!(repeated["event"]["targetEventSha256"], successor_worker_event);
+    assert_eq!(
+        repeated["event"]["targetEventSha256"],
+        successor_worker_event
+    );
     assert_eq!(repeated["event"]["subjectSha256"], successor_subject);
     assert_eq!(
         repeated["event"]["result"]["code"],
@@ -1692,13 +1695,7 @@ fn same_goal_carry_preserves_ready_cumulative_spent_at_three() {
         let ledger = fixture.ledger(&work);
         let worker_event = complete_current_worker(&fixture, &work);
         let observed = fixture.value(
-            &[
-                "run",
-                "observe-check",
-                &ledger,
-                "--target",
-                &worker_event,
-            ],
+            &["run", "observe-check", &ledger, "--target", &worker_event],
             None,
         );
         assert_eq!(observed["event"]["acquisition"], "observed");

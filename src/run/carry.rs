@@ -431,7 +431,10 @@ mod tests {
 
         let missing = start(false, Value::Null);
         let mut carry = missing["governorCarry"].clone();
-        carry["accounting"].as_object_mut().unwrap().remove("observationKeys");
+        carry["accounting"]
+            .as_object_mut()
+            .unwrap()
+            .remove("observationKeys");
         let mut rehashed = missing;
         rehashed["governorCarrySha256"] = json!(crate::evidence::hash::value(&carry));
         rehashed["governorCarry"] = carry;
