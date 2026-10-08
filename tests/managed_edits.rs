@@ -19,6 +19,17 @@ struct Fixture {
 }
 impl Fixture {
     fn new(broad: bool, copied: bool) -> Self {
+        Self::with_observe(
+            broad,
+            copied,
+            if broad {
+                json!(["**"])
+            } else {
+                json!(["src/**"])
+            },
+        )
+    }
+    fn with_observe(broad: bool, copied: bool, observe: Value) -> Self {
         let root = support::temp(if copied {
             "managed edits 'quoted"
         } else {
@@ -39,11 +50,7 @@ impl Fixture {
         assert!(output.status.success(), "{output:?}");
         let path = root.join("exitbind.json");
         let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        config["agents"]["worker"]["observe"] = if broad {
-            json!(["**"])
-        } else {
-            json!(["src/**"])
-        };
+        config["agents"]["worker"]["observe"] = observe;
         config["agents"]["worker"]["write"] = if broad {
             json!(["**"])
         } else {
@@ -370,6 +377,101 @@ fn managed_reads_enforce_observe_scope_utf8_bounds_and_control_aliases() {
     refused(
         narrow.edit("edit", "src/a.txt", &vec![b'a'; 256 * 1024 + 1]),
         "256 KiB",
+    );
+}
+
+#[test]
+fn empty_observe_stays_empty_for_read_refresh_and_inspect() {
+    let f = Fixture::with_observe(false, false, json!([]));
+    f.permit();
+    fs::write(f.root.join("src/private.txt"), "must stay private").unwrap();
+    let reads = fs::read(f.reads_path()).unwrap();
+    for action in ["read", "refresh", "inspect"] {
+        let output = f.edit(action, "src/private.txt", b"");
+        refused(output, "read boundary");
+        assert_eq!(fs::read(f.reads_path()).unwrap(), reads);
+        assert_eq!(
+            fs::read_to_string(f.root.join("src/private.txt")).unwrap(),
+            "must stay private"
+        );
+    }
+}
+
+#[test]
+fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
+    let f = Fixture::new(false, false);
+    let before = f.ok(&["work", "detail", &f.work], b"");
+    assert_eq!(before["recipientContext"]["role"], "worker");
+    assert_eq!(before["recipient"]["assignment"], f.assignment);
+    assert_eq!(
+        before["recipientContext"]["declaredBoundary"]["observe"],
+        json!(["src/**"])
+    );
+
+    let mut permit_argv = before["actionForms"]["beforeEditing"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let operation = permit_argv
+        .iter_mut()
+        .find(|arg| arg.as_str() == "<OPERATION>")
+        .unwrap();
+    *operation = "managed-handoff-regression".into();
+    let permit = Command::new(&permit_argv[0])
+        .args(&permit_argv[1..])
+        .output()
+        .unwrap();
+    assert!(permit.status.success(), "{permit:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&permit.stdout).unwrap()["allowed"],
+        true
+    );
+
+    let after = f.ok(&["work", "detail", &f.work], b"");
+    assert_ne!(before["binding"], after["binding"]);
+    assert_eq!(
+        after["recipientContext"]["role"],
+        before["recipientContext"]["role"]
+    );
+    assert_eq!(
+        after["recipient"]["assignment"],
+        before["recipient"]["assignment"]
+    );
+    assert_eq!(
+        after["recipientContext"]["profile"],
+        before["recipientContext"]["profile"]
+    );
+    assert_eq!(
+        after["recipientContext"]["declaredBoundary"],
+        before["recipientContext"]["declaredBoundary"]
+    );
+    assert_eq!(
+        after["recipientContext"]["rules"],
+        before["recipientContext"]["rules"]
+    );
+    assert_eq!(after["actionForms"]["beforeEditing"]["required"], true);
+    assert!(after["actionForms"]["productManaged"]["command"]["argv"].is_array());
+    assert!(after["actionForms"]["productManaged"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == after["binding"].as_str().unwrap()));
+
+    // A newly prepared managed tool consumes the current assignment after the permit.
+    let prepared = f.ok(&["work", "file", "prepare", &f.work, &f.assignment], b"");
+    let tool = PathBuf::from(prepared["tool"].as_str().unwrap());
+    let output = Command::new(tool)
+        .args(["read", "src/fresh.txt"])
+        .current_dir(std::env::temp_dir())
+        .env("PATH", "/missing-native-tools")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["exists"],
+        false
     );
 }
 

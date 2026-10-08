@@ -180,6 +180,67 @@ fn host_bound_transport_requires_current_grant_and_strict_parameters() {
 }
 
 #[test]
+fn supported_cli_rejects_supplemental_observe_and_attachment_scope_without_mutation() {
+    let f = Fixture::new();
+    let provider = f.root.join("must-not-launch");
+    fs::write(&provider, "#!/bin/sh\ntouch provider-started\nexit 0\n").unwrap();
+    fs::set_permissions(&provider, fs::Permissions::from_mode(0o700)).unwrap();
+    let ledger = fs::read_dir(f.root.join(".exitbind/runs"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (path.clone(), fs::read(path).unwrap())
+        })
+        .collect::<Vec<_>>();
+
+    for (expected, args) in [
+        (
+            "option '--observe' is not supported by 'work act'",
+            vec![
+                "work",
+                "act",
+                f.work.as_str(),
+                "--codex-bin",
+                provider.to_str().unwrap(),
+                "--observe",
+                "outside.txt",
+            ],
+        ),
+        (
+            "unknown option '--attachments'",
+            vec![
+                "work",
+                "act",
+                f.work.as_str(),
+                "--codex-bin",
+                provider.to_str().unwrap(),
+                "--attachments",
+                "outside.txt",
+            ],
+        ),
+    ] {
+        let output = f.call(&args, b"");
+        assert!(
+            !output.status.success(),
+            "unexpected acceptance: {output:?}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected),
+            "{output:?}"
+        );
+        assert!(!f.root.join("provider-started").exists());
+        let current = fs::read_dir(f.root.join(".exitbind/runs"))
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                (path.clone(), fs::read(path).unwrap())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(current, ledger);
+    }
+}
+
+#[test]
 fn persistent_transport_observes_configuration_revocation_before_replay() {
     let f = Fixture::new();
     f.ok(

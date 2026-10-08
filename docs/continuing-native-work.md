@@ -118,6 +118,29 @@ memory checks. Ambient transcripts are never collected. The provider receives
 the selected bytes; this observation does not prove that a model followed them.
 Memory is context, and cannot expand the assignment's authority.
 
+For ordinary host-managed consumption, pass the complete current recipient
+context and its emitted actions from `work detail WORK --json` (or the
+equivalent native start response). Use the selected role, profile, rules and
+declared boundary as delivered; do not add parallel permission prose or attach
+extra sources to widen them. An empty `observe` list stays empty, and task
+intent does not grant a read. If the task needs more information, use evidence
+the authorized recipient may already read or ask the Lead to make a
+prospective, explicit scope change before acting.
+
+When the emitted pre-edit action is used, require its exact `allowed: true`
+result before any dependent action. The permit appends to the Work ledger and
+changes the current detail binding. Read current detail again, confirm the same
+Work, assignment, role, profile, rules and declared boundary, and then use only
+the actions bound to that fresh response. A denied, missing, malformed, stale
+or interrupted acquisition dispatches no dependent action. Correct an invalid
+operation from the current form; reread after stale currentness; inspect an
+uncertain result. Do not blindly replay an uncertain action.
+
+These declarations and native action paths guide cooperative hosts. Supported
+managed file effects enforce their own current assignment, observation and
+write checks; other host tools keep the permissions granted by the host. This
+does not turn role text into an operating-system sandbox.
+
 Delivery refuses oversized content rather than silently shortening it: each
 rule and memory source is at most 16 KiB, at most eight memory items are
 included, each memory reference is at most 8 KiB, and the combined current
