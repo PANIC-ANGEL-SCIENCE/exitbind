@@ -1,12 +1,10 @@
 # Exitbind
 
-**Keep an agreed goal connected to checked results as work is split, interrupted and resumed.**
+**Help your coding agent start the right task, continue when work is interrupted, and show what was checked.**
 
 Exitbind works with the Codex or Claude conversation you already use. For
 important changes, it keeps the goal, approved boundaries, work and evidence
-together so you can inspect the result and decide when it is ready. For a goal
-with several agreed requirements, your lead can show which items have current
-checked support and which still need work. Your host
+together so you can inspect the result and decide when it is ready. Your host
 still runs the agent and controls its tools and permissions.
 Local records and checks need no model, daemon or cloud service. Your host
 provides model access when an agent needs it.
@@ -138,6 +136,13 @@ commands and returned files can contain private information. Keep records
 private and read [Security](SECURITY.md) and the
 [authority boundary](REFERENCE.md#authority-boundary).
 
+## Intentional boundaries
+
+**Approval.** Exitbind adds no second approval channel or human-only secret. The configured lead records scope and acceptance; the host controls which process may do so. One session may implement and submit the lead's reason. That limits independence; it does not replace required review. Exitbind does not invent requirements or mark missing items complete.
+
+**Executable identity.** The installer checks the release archive. Archive attestations do not authenticate every later executable. `exitbind version --json` reports a digest, not a signature. Compare `executableSha256` with trusted evidence for those executable bytes. Startup does not require a match to the latest release. A scoped Work may retain an older or candidate executable.
+
+**Other checkouts.** Resume uses saved work in the configured project. It does not scan other checkouts or detect overlapping uncommitted files. No scheduler or shared dirty-file database is added. Coordinate separate working trees outside Exitbind. Resuming does not copy an older task's permission or check result.
 ## Update or roll back
 
 `exitbind update` refreshes the executable and managed host guidance. It does
