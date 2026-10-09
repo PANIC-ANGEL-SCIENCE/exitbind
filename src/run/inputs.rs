@@ -14,6 +14,25 @@ use std::process::Command;
 
 pub(crate) const COVERAGE: &str = "product-root-files-v1";
 
+/// Confirm that a declared checker file actually participates in the existing
+/// product fingerprint; an ignored or external file cannot establish reuse.
+pub(crate) fn covered_file(loaded: &crate::config::Loaded, path: &str) -> Result<bool, String> {
+    let root = &loaded.product_root;
+    let wanted = root.join(path).canonicalize().map_err(|e| e.to_string())?;
+    let paths = match crate::project::git_preflight::worktree_root(root)? {
+        Some(_) => git_paths(root)?,
+        None => walk_paths(root)?,
+    };
+    Ok(paths
+        .into_iter()
+        .filter(|relative| !excluded(root, &loaded.state_root, relative))
+        .any(|relative| {
+            root.join(relative)
+                .canonicalize()
+                .is_ok_and(|candidate| candidate == wanted)
+        }))
+}
+
 const EXCLUDED_DIRS: [&str; 3] = [".git", ".exitbind", ".soulmate"];
 
 /// Digest of the current tested inputs, or an error when they cannot be

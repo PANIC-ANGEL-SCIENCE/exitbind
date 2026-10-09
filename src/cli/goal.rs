@@ -5,8 +5,80 @@ use serde_json::{json, Value};
 use std::io::{IsTerminal, Read};
 
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    let action = positional(a, 0, "goal requires incorporate, close, status, or usage")?;
+    let action = positional(
+        a,
+        0,
+        "goal requires incorporate, require, cover, assign, close, status, or usage",
+    )?;
     match action {
+        "require" => {
+            args::assert_options(
+                "goal require",
+                a,
+                &[
+                    "config",
+                    "goal-id",
+                    "requirement",
+                    "obligation",
+                    "artifact",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("goal require", a, 1)?;
+            print_json(&crate::session_goal::requirements::require(
+                l,
+                option(a, "goal-id", "goal require requires --goal-id ID")?,
+                option(a, "requirement", "goal require requires --requirement ID")?,
+                option(
+                    a,
+                    "obligation",
+                    "goal require requires --obligation EXACT_TEXT",
+                )?,
+                option(
+                    a,
+                    "artifact",
+                    "goal require requires --artifact APPROVED_SOURCE_FILE",
+                )?,
+            )?)
+        }
+        "cover" => {
+            args::assert_options("goal cover", a, &["config", "goal-id", "json"])?;
+            args::assert_positionals("goal cover", a, 1)?;
+            print_json(&crate::session_goal::requirements::cover(
+                l,
+                option(a, "goal-id", "goal cover requires --goal-id ID")?,
+            )?)
+        }
+        "assign" => {
+            args::assert_options(
+                "goal assign",
+                a,
+                &[
+                    "config",
+                    "goal-id",
+                    "requirement",
+                    "result-ref",
+                    "disposition",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("goal assign", a, 1)?;
+            let disposition = a
+                .options
+                .get("disposition")
+                .map(String::as_str)
+                .unwrap_or("add");
+            if !matches!(disposition, "add" | "replace") {
+                return Err("goal assign disposition must be add or replace".into());
+            }
+            print_json(&crate::session_goal::requirements::assign(
+                l,
+                option(a, "goal-id", "goal assign requires --goal-id ID")?,
+                option(a, "requirement", "goal assign requires --requirement IDs")?,
+                option(a, "result-ref", "goal assign requires --result-ref WORK")?,
+                disposition == "replace",
+            )?)
+        }
         "incorporate" => {
             args::assert_options(
                 "goal incorporate",
@@ -117,7 +189,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             print_json(&value)
         }
         "status" => status::goal_status(l, a),
-        _ => Err("goal requires incorporate, close, status, or usage".into()),
+        _ => {
+            Err("goal requires incorporate, require, cover, assign, close, status, or usage".into())
+        }
     }
 }
 

@@ -1,10 +1,12 @@
 # Exitbind
 
-**Help your coding agent start the right task, continue when work is interrupted, and show what was checked.**
+**Keep an agreed goal connected to checked results as work is split, interrupted and resumed.**
 
 Exitbind works with the Codex or Claude conversation you already use. For
 important changes, it keeps the goal, approved boundaries, work and evidence
-together so you can inspect the result and decide when it is ready. Your host
+together so you can inspect the result and decide when it is ready. For a goal
+with several agreed requirements, your lead can show which items have current
+checked support and which still need work. Your host
 still runs the agent and controls its tools and permissions.
 Local records and checks need no model, daemon or cloud service. Your host
 provides model access when an agent needs it.
@@ -92,6 +94,16 @@ first-task boundaries and unsupported hosts. The [first checked run](docs/first-
 walks through an inspectable example.
 
 ## Continue interrupted work
+
+For a goal with several requirements, ask your lead to retain the agreed source
+and meanings, assign useful work, and resume the remaining items. `goal status`
+shows each requirement's revision, mapped work, current evidence and next action.
+Missing or stale support keeps the goal open. Final closure needs a current
+checked integration covering every agreed item, with the selected review and
+Lead acceptance. See [Complete a goal with several requirements](docs/goal-requirements.md)
+for the supported commands and a reproducible three-item example. This capability
+is in the development source; the stable `v0.29.0` installer above retains its
+previous goal path.
 
 Ask your lead to resume the existing task in the same conversation. Exitbind
 can provide the current task details and available next steps, including a
