@@ -24,7 +24,11 @@ fn minimum_recovery_retains_terminal_without_inventing_completion() {
             assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
             assert_eq!(compact["presentation"]["terminal"], terminal);
             assert!(compact["presentation"].get("goalProgress").is_none());
-            assert_eq!(compact["effectiveAction"]["exists"], false);
+            if crate::producer::exitbind_surface() {
+                assert_eq!(compact["effectiveAction"]["exists"], false);
+            } else {
+                assert!(compact.get("effectiveAction").is_none());
+            }
         }
     }
 }
