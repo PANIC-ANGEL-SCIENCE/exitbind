@@ -25,9 +25,15 @@ pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<
 /// rule with the work facade.
 pub(crate) fn terminal_display(loaded: &Loaded, ledger: &str) -> Option<&'static str> {
     let snapshot = RunSnapshot::capture(loaded, ledger).ok()?;
-    crate::work::packet::terminal_display(&snapshot.inspect_view(), || {
+    let terminal = crate::work::packet::terminal_display(&snapshot.inspect_view(), || {
         crate::run::inputs::fingerprint(loaded).ok()
-    })
+    });
+    match crate::work::locator_for_ledger(ledger) {
+        Some(work) => crate::session_goal::terminal_for_work(loaded, &work, terminal)
+            .ok()
+            .flatten(),
+        None => terminal,
+    }
 }
 
 /// Build the typed read-only projection used by the default human status view.

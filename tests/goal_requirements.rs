@@ -2,7 +2,7 @@
 //! fixtures, not claims of independent semantic review, model use or adoption.
 #![cfg(unix)]
 mod support;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
@@ -15,6 +15,7 @@ const REQUIREMENTS: [(&str, &str); 3] = [
     ("R2", "Persist each valid name only once."),
     ("R3", "Show the number of distinct imported names."),
 ];
+const TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
 
 struct Project {
     root: PathBuf,
@@ -56,7 +57,11 @@ impl Project {
         }
     }
     fn value(&self, args: &[&str], input: Option<&str>) -> Value {
-        let output = self.call(args, input);
+        let mut json_args = args.to_vec();
+        if args.get(..2) == Some(&["goal", "close"][..]) && !json_args.contains(&"--json") {
+            json_args.push("--json");
+        }
+        let output = self.call(&json_args, input);
         assert!(
             output.status.success(),
             "{args:?}: {}{}",
@@ -90,20 +95,41 @@ impl Project {
         self.file("data.txt", "alpha,x\nalpha,y\nbeta,x\n");
         self.file(
             "validate.sh",
-            "set -eu\nawk -F \"$(cat format.txt)\" '{if ($1 == \"bad\") exit 2; print $1}'\n",
+            "set -eu\nawk -F \"$(cat format.txt)\" '{if ($1 == \"bad\" || $1 == \"\") exit 2; print $1}'\n",
         );
-        self.file("persist.sh", "set -eu\nsort -u\n");
+        self.file(
+            "persist.sh",
+            "set -eu\ncat \"$1\" - | sort -u > \"$1.next\"\nmv \"$1.next\" \"$1\"\ncat \"$1\"\n",
+        );
+        self.file(
+            "import.sh",
+            "set -eu\nnames=$(sh validate.sh < \"$2\")\nif [ -n \"$names\" ]; then printf '%s\\n' \"$names\" | sh persist.sh \"$1\"; else cat \"$1\"; fi\n",
+        );
         self.file("render.sh", "set -eu\nawk 'END {print NR \" items\"}'\n");
         self.file(
             "check.sh",
             r#"set -eu
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+db="$scratch/names"
+: > "$db"
 case "$1" in
-R1) if printf 'bad\n' | sh validate.sh > /dev/null; then exit 3; fi
-    test "$(printf 'alpha\n' | sh validate.sh)" = alpha ;;
-R2) test "$(printf 'alpha\nalpha\n' | sh persist.sh)" = alpha ;;
+R1) printf 'kept\n' > "$db"
+    printf 'alpha\nbad\n' > "$scratch/input"
+    if sh import.sh "$db" "$scratch/input" > /dev/null; then exit 3; fi
+    test "$(cat "$db")" = kept
+    printf 'alpha\n' > "$scratch/input"
+    sh import.sh "$db" "$scratch/input" > /dev/null
+    test "$(cat "$db")" = "$(printf 'alpha\nkept')" ;;
+R2) printf 'alpha\nalpha\n' > "$scratch/input"
+    sh import.sh "$db" "$scratch/input" > /dev/null
+    sh import.sh "$db" "$scratch/input" > /dev/null
+    test "$(cat "$db")" = alpha ;;
 R3) test "$(printf 'alpha\nbeta\n' | sh render.sh)" = '2 items' ;;
 all) sh check.sh R1; sh check.sh R2; sh check.sh R3
-     test "$(sh validate.sh < data.txt | sh persist.sh | sh render.sh)" = '2 items' ;;
+     sh import.sh "$db" data.txt > "$scratch/output"
+     test "$(sh render.sh < "$scratch/output")" = '2 items' ;;
+*) exit 4 ;;
 esac
 "#,
         );
@@ -257,6 +283,7 @@ fn three_requirements_multiple_works_interruption_drift_composition_and_closure(
     assert_eq!(row(&partial, "R2")["state"], "current");
     assert_eq!(row(&partial, "R3")["state"], "unmapped");
     assert_eq!(partial["requirements"]["coverageCurrent"], false);
+    assert!(partial["presentation"]["terminal"].is_null());
     p.reject(
         &["goal", "close", "--goal-id", "import", "--result-ref", &a],
         "coverage",
@@ -266,9 +293,13 @@ fn three_requirements_multiple_works_interruption_drift_composition_and_closure(
     assert_eq!(recovered["revision"], partial["revision"]);
     let detail = p.value(&["work", "next", &a, "--json", "--full"], None);
     assert_eq!(detail["next"]["goalProgress"]["decomposition"]["total"], 3);
+    assert!(detail["presentation"]["terminal"].is_null());
+    let compact = p.value(&["work", "next", &a, "--json"], None);
+    assert!(compact["presentation"]["terminal"].is_null());
     let b = p.begin("R3", "sh check.sh R3");
     p.drive(&b, true);
     assert_eq!(p.status()["requirements"]["coverageCurrent"], true);
+    assert!(p.status()["presentation"]["terminal"].is_null());
     p.reject(
         &["goal", "close", "--goal-id", "import", "--result-ref", &b],
         "integration Work",
@@ -361,7 +392,7 @@ fn three_requirements_multiple_works_interruption_drift_composition_and_closure(
         None,
     );
     assert_eq!(p.status()["revision"], before_repeat);
-    p.value(
+    let close = p.call(
         &[
             "goal",
             "close",
@@ -372,8 +403,35 @@ fn three_requirements_multiple_works_interruption_drift_composition_and_closure(
         ],
         None,
     );
+    assert!(close.status.success(), "{close:?}");
+    assert_eq!(
+        String::from_utf8(close.stdout).unwrap(),
+        format!("{TERMINAL}\n")
+    );
     let closed = p.status();
     assert_eq!(closed["currentReadiness"]["state"], "current");
+    assert_eq!(closed["presentation"]["terminal"], TERMINAL);
+    let work = p.value(&["work", "next", &integrated, "--json"], None);
+    let full = p.value(&["work", "next", &integrated, "--json", "--full"], None);
+    let after_read = p.status();
+    assert_eq!(
+        work["presentation"]["terminal"],
+        TERMINAL,
+        "{}",
+        json!({"compactPresentation":work["presentation"],
+            "fullPresentation":full["presentation"], "currentReadiness":after_read["currentReadiness"],
+            "goalTerminal":after_read["presentation"]["terminal"], "reason":work["reason"],
+            "work":integrated, "mappedWorks":after_read["continuation"]["mappings"]
+                .as_array().map(|items|items.iter().map(|item|item["work"].clone()).collect::<Vec<_>>())})
+    );
+    assert_eq!(full["presentation"]["terminal"], TERMINAL);
+    let repeat = p.call(&["goal", "status"], None);
+    assert!(repeat.status.success(), "{repeat:?}");
+    assert_eq!(
+        String::from_utf8(repeat.stdout).unwrap(),
+        format!("{TERMINAL}\n")
+    );
+    assert_eq!(p.status()["revision"], closed["revision"]);
     for (id, _) in REQUIREMENTS {
         let evidence = &row(&closed, id)["support"][0]["evidence"];
         assert_eq!(evidence["check"]["acquisition"], "observed");
@@ -384,6 +442,9 @@ fn three_requirements_multiple_works_interruption_drift_composition_and_closure(
     let stale = p.status();
     assert_eq!(stale["closure"], closed["closure"]);
     assert_eq!(stale["currentReadiness"]["state"], "stale");
+    assert!(stale["presentation"]["terminal"].is_null());
+    let work = p.value(&["work", "next", &integrated, "--json"], None);
+    assert!(work["presentation"]["terminal"].is_null());
 }
 
 #[test]

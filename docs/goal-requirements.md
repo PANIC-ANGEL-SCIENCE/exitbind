@@ -87,6 +87,15 @@ replacement, every active contributor remains required. Correct a meaning with
 increases, old meaning remains in history, coverage needs confirmation, and old
 support cannot satisfy the new revision.
 
+Exitbind automatically supplies the completion block in `presentation.terminal`
+on existing goal and bound Work responses only after current whole-goal checks,
+selected review, final integration and explicit Lead closure. Finishing a part
+does not emit it. Ordinary `goal close` and `goal status` print only the block
+when this named goal is currently complete; `--json` retains structured evidence
+and the same product-owned block. No extra display command or model call is
+needed. Stale or unknown evidence suppresses it without erasing historical
+closure.
+
 Currentness conservatively covers tracked and non-ignored project files, or all
 walked files outside Git, excluding Exitbind state. A shared input or checker
 change invalidates prior support even when its result artifact stays unchanged.
@@ -107,7 +116,9 @@ cargo test --locked --test goal_requirements \
   three_requirements_multiple_works_interruption_drift_composition_and_closure -- --exact --nocapture
 ```
 
-The packaged CLI creates an isolated import example with a shared format file.
+The packaged CLI creates an isolated import example with a shared format file
+and a retained names file. Repeated imports check the saved bytes for duplicates;
+rejected input must leave those bytes unchanged.
 It shows partial observed checks with one unmapped item, recovery in new CLI
 processes, shared-format drift, passing individual checks with failing
 composition, a new integrated validation Work, explicit closure and stale

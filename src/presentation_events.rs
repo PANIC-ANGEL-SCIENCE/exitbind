@@ -20,7 +20,9 @@ pub(crate) mod world;
 use room::{
     session_goal_card, session_goal_card_transition, session_goal_direct_card, SESSION_GOAL_CARD,
 };
-pub(crate) use room::{session_goal_card_for_human, session_goal_direct_card_for_human};
+pub(crate) use room::{
+    session_goal_card_for_human, session_goal_direct_card_for_human, whole_goal_terminal,
+};
 
 /// Record one optional human-only failure joke for a meaningful transition.
 /// The memo is display state only and is safe to lose or corrupt.

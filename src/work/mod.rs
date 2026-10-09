@@ -651,6 +651,11 @@ fn next_and_residual_from_snapshot(
     };
     presentation["goalProgress"] =
         crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
+    presentation["terminal"] = json!(crate::session_goal::terminal_for_work(
+        loaded,
+        work,
+        presentation["terminal"].is_string().then_some("EXIT READY"),
+    )?);
     details::automatic_progress(&mut presentation["goalProgress"], &next["current"]);
     Ok((next, residual, presentation))
 }

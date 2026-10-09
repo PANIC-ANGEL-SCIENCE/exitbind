@@ -7,6 +7,63 @@ use std::path::Path;
 pub(crate) const SESSION_GOAL_CARD: &str =
     "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
+const WHOLE_GOAL_TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
+
+/// Automatic protocol presentation from current whole-goal closure facts.
+/// This is display only: no model, percentage, memo, or new acceptance event.
+pub(crate) fn whole_goal_terminal(goal: &Value) -> Option<&'static str> {
+    (goal["completionMode"] == "governed"
+        && goal["explicitLeadClosure"] == true
+        && goal["currentReadiness"]["state"] == "current"
+        && [
+            "subgoals",
+            "findings",
+            "blockers",
+            "decisions",
+            "externalActions",
+        ]
+        .iter()
+        .all(|key| goal[key].as_array().is_some_and(|items| items.is_empty())))
+    .then_some(WHOLE_GOAL_TERMINAL)
+}
+
+#[cfg(test)]
+mod terminal_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_room_requires_current_governed_whole_goal_facts() {
+        let ready = json!({"completionMode":"governed", "explicitLeadClosure":true,
+            "currentReadiness":{"state":"current"}, "subgoals":[], "findings":[],
+            "blockers":[], "decisions":[], "externalActions":[]});
+        assert_eq!(whole_goal_terminal(&ready), Some(WHOLE_GOAL_TERMINAL));
+        for state in ["stale", "unknown"] {
+            let mut goal = ready.clone();
+            goal["currentReadiness"]["state"] = json!(state);
+            assert_eq!(whole_goal_terminal(&goal), None);
+        }
+        let mut direct = ready.clone();
+        direct["completionMode"] = json!("direct");
+        assert_eq!(whole_goal_terminal(&direct), None);
+        let mut open = ready.clone();
+        open["explicitLeadClosure"] = json!(false);
+        assert_eq!(whole_goal_terminal(&open), None);
+        for key in [
+            "subgoals",
+            "findings",
+            "blockers",
+            "decisions",
+            "externalActions",
+        ] {
+            let mut pending = ready.clone();
+            pending[key] = json!(["unfinished"]);
+            assert_eq!(whole_goal_terminal(&pending), None);
+            pending.as_object_mut().unwrap().remove(key);
+            assert_eq!(whole_goal_terminal(&pending), None);
+        }
+    }
+}
+
 /// Render the explicit whole-session closure card from lead-owned facts. A
 /// ready run alone is insufficient: every requested category must be empty and
 /// closure must be explicitly recorded by the lead. This function is pure so

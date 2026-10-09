@@ -14,10 +14,17 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         .as_ref()
         .is_some_and(crate::session_goal::requirements::named)
     {
+        value["presentation"] = json!({"terminal": presentation["terminal"]});
         value["requirements"] = crate::session_goal::requirements::projection(
             l,
             record.as_ref().expect("named record"),
         )?;
+        if !a.flags.contains_key("json") {
+            if let Some(terminal) = presentation["terminal"].as_str() {
+                println!("{terminal}");
+                return Ok(());
+            }
+        }
     }
     print_json(&value)?;
     if !a.flags.contains_key("json") {

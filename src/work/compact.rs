@@ -315,6 +315,7 @@ pub(crate) fn project(
             .filter(|value| value.len() <= 128);
         let mut minimal = json!({
             "compact": true,
+            "presentation": {"terminal": response["presentation"]["terminal"]},
             "continuation": result["continuation"],
             "status": "unresolved",
             "current": minimal_current(&response["next"]["current"]),
@@ -343,6 +344,7 @@ pub(crate) fn project(
         // and require the caller to supply the exact current config value.
         let mut fallback = json!({
             "compact": true,
+            "presentation": {"terminal": response["presentation"]["terminal"]},
             "continuation": result["continuation"],
             "status": "unresolved",
             "current": minimal_current(&response["next"]["current"]),

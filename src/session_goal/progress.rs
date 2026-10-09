@@ -422,7 +422,7 @@ pub(super) fn project_detail_for_work(
     )
 }
 
-fn record_bound_to_work(record: &Value, work: &str) -> bool {
+pub(super) fn record_bound_to_work(record: &Value, work: &str) -> bool {
     record["goalId"].as_str() == Some(work)
         || record["continuation"]["work"].as_str() == Some(work)
         || super::requirements::bound(record, work)

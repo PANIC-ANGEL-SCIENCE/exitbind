@@ -154,7 +154,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal close", a, 1)?;
             let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
-            let value = if a.flags.contains_key("direct") {
+            let mut value = if a.flags.contains_key("direct") {
                 crate::session_goal::close_direct(
                     l,
                     goal_id,
@@ -167,6 +167,16 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     option(a, "result-ref", "goal close requires --result-ref")?,
                 )?
             };
+            if crate::session_goal::requirements::named(&value) {
+                let rendered = crate::session_goal::presentation_for_loaded(l, Some(&value))?;
+                value["presentation"] = json!({"terminal": rendered["terminal"]});
+                if !a.flags.contains_key("json") {
+                    if let Some(terminal) = rendered["terminal"].as_str() {
+                        println!("{terminal}");
+                        return Ok(());
+                    }
+                }
+            }
             print_json(&value)
         }
         "usage" => {
