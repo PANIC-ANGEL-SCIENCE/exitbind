@@ -3,6 +3,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .chain(positional.iter().map(String::as_str))
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
+        ["init"] => "init [--mode local|portable|auto] [--root ROOT] [--project-id ID] [--control-root ROOT] [--state-root ROOT] [--skip-skills | --refresh-skills] [--with-coffee] (creates project configuration and managed guidance; review placement and boundaries before use)",
+        ["update"] => "update (checks for a stable release and may replace the current executable; an existing regular binary is required for rollback)",
         ["work"] => {
             "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
@@ -121,6 +123,19 @@ mod tests {
         assert!(validate.contains("--json"));
         let expand = scoped_help("work", &["expand".to_owned()]).unwrap();
         assert!(expand.contains("--json"));
+    }
+
+    #[test]
+    fn init_and_update_help_are_scoped_and_non_mutating() {
+        let init = scoped_help("init", &[]).unwrap();
+        assert!(init.contains("Usage: "));
+        assert!(init.contains("--mode local|portable|auto"));
+        assert!(init.contains("review placement and boundaries"));
+
+        let update = scoped_help("update", &[]).unwrap();
+        assert!(update.contains("Usage: "));
+        assert!(update.contains("checks for a stable release"));
+        assert!(update.contains("may replace the current executable"));
     }
 
     #[test]

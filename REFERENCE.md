@@ -656,8 +656,11 @@ file tool. `edit read PATH` captures permitted UTF-8 bytes or explicit absence;
 the executable/configuration binding, read baseline and durable retry identity.
 Use `edit inspect PATH` after a conflict or uncertain response, and `edit refresh
 PATH` only for a deliberate new edit after the prior request is resolved.
-It requires the current mutation grant and reuses declared paths, protected
-controls, file preconditions and atomic replacement. Existing expert `work write
+It requires the exact current unconsumed mutation grant and reuses declared
+paths, protected controls, file preconditions and atomic replacement. A
+post-grant re-plan applies to the next new mutation request; it does not revoke
+that current grant. A later governor event can make the grant stale, and worker
+completion still requires the existing ready-governor state. Existing expert `work write
 WORK ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` remains
 compatible. Managed read/refresh/inspect requires a single-link regular file,
 checked on its actual descriptor before reading and before returning content.
@@ -693,7 +696,11 @@ remain available for expert hex paging and preserve their 24 KiB page and
 64 KiB response contracts.
 An oversized or non-UTF-8 recipient profile is also explicitly incomplete and
 names the existing profile reader; it is never silently truncated. Project
-rules retain the existing complete native delivery bound and fail closed.
+rules are complete UTF-8 content with a 32 KiB per-rule and 48 KiB aggregate
+source limit. Ordinary detail also limits the JSON-encoded rule projection to
+48 KiB, leaving room within its 64 KiB response bound. Native current context
+remains bounded at 64 KiB and the Codex prompt at 256 KiB. Invalid UTF-8,
+unsafe paths, changed inputs and over-limit rules refuse without truncation.
 
 Native launch performs the same grouped evidence validation before starting a
 provider and supplies the resolved exact assignment, evidence and task sections

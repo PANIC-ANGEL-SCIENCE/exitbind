@@ -94,4 +94,89 @@ test -n "$benchmark_line"
 test -n "$init_line"
 test "$benchmark_line" -lt "$init_line"
 "$script_dir/onboarding-smoke.sh" "$prefix/exitbind" "$repo_root/skills/exitbind/SKILL.md" >/dev/null
-printf '%s\n' "installer smoke passed target=$target version=$version"
+
+# Exercise the real host tar with archive ownership that differs from the
+# caller. The synthetic archive retains the package's exact executable bytes.
+python3 - "$root/server/$archive" "$root/server/$checksum" "$dist/$stem" "$stem" <<'PY'
+import hashlib
+import os
+import pathlib
+import sys
+import tarfile
+
+archive, checksum, binary, member = map(pathlib.Path, sys.argv[1:])
+owner = os.getuid() + 1 if os.getuid() else 1001
+group = os.getgid() + 1 if os.getgid() else 1001
+data = binary.read_bytes()
+info = tarfile.TarInfo(member.as_posix())
+info.size = len(data)
+info.mode = 0o755
+info.uid = owner
+info.gid = group
+info.uname = "release-builder"
+info.gname = "release-builder"
+with tarfile.open(archive, "w:gz") as output:
+    output.addfile(info, __import__("io").BytesIO(data))
+digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+checksum.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+PY
+
+tar_options=
+if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  tar_options=--same-owner
+fi
+env \
+  HOME="$root/home" \
+  PATH="$path" \
+  EXITBIND_INSTALL_PREFIX="$prefix" \
+  EXITBIND_REPOSITORY="$repo" \
+  EXITBIND_VERSION="$tag" \
+  SOULMATE_SMOKE_BASE="https://github.com/$repo/releases/download/$tag" \
+  SOULMATE_SMOKE_ARCHIVE="$archive" \
+  SOULMATE_SMOKE_CHECKSUM="$checksum" \
+  SOULMATE_SMOKE_ARCHIVE_SOURCE="$root/server/$archive" \
+  SOULMATE_SMOKE_CHECKSUM_SOURCE="$root/server/$checksum" \
+  SOULMATE_SMOKE_CALLS="$calls" \
+  TAR_OPTIONS="$tar_options" \
+  sh "$installer" >"$root/owner-install.log" 2>&1 || {
+    cat "$root/owner-install.log" >&2
+    fail 'actual archive extraction failed with non-caller ownership metadata'
+  }
+cmp "$dist/$stem" "$prefix/exitbind"
+python3 - "$prefix/exitbind" <<'PY'
+import os
+import pathlib
+import sys
+
+assert pathlib.Path(sys.argv[1]).stat().st_uid == os.getuid(), "installer retained archive UID"
+PY
+
+# Injected tar failure is intentionally a mocked failure case. It checks that
+# the installer does not move an existing binary before extraction succeeds.
+mkdir "$root/failing-tar"
+cat > "$root/failing-tar/tar" <<'EOF'
+#!/bin/sh
+exit 73
+EOF
+chmod 0755 "$root/failing-tar/tar"
+if env \
+  HOME="$root/home" \
+  PATH="$root/failing-tar:$path" \
+  EXITBIND_INSTALL_PREFIX="$prefix" \
+  EXITBIND_REPOSITORY="$repo" \
+  EXITBIND_VERSION="$tag" \
+  SOULMATE_SMOKE_BASE="https://github.com/$repo/releases/download/$tag" \
+  SOULMATE_SMOKE_ARCHIVE="$archive" \
+  SOULMATE_SMOKE_CHECKSUM="$checksum" \
+  SOULMATE_SMOKE_ARCHIVE_SOURCE="$root/server/$archive" \
+  SOULMATE_SMOKE_CHECKSUM_SOURCE="$root/server/$checksum" \
+  SOULMATE_SMOKE_CALLS="$calls" \
+  sh "$installer" >"$root/failing-tar.log" 2>&1
+then
+  fail 'mocked tar failure unexpectedly installed the package'
+else
+  status=$?
+  test "$status" -eq 73 || fail "mocked tar failure returned unexpected status $status"
+fi
+cmp "$dist/$stem" "$prefix/exitbind"
+printf '%s\n' "installer smoke passed target=$target version=$version (actual owner extraction; mocked tar failure preserved install)"

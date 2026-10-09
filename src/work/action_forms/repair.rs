@@ -63,7 +63,9 @@ pub(super) fn attach(
             "meaning":"supply meaningful current recovery evidence or a Lead re-plan, then refresh detail; spent authority and held bytes remain unchanged"});
         result["choices"] = json!([form]);
         result["leadChoiceRequired"] = json!(true);
-        result.as_object_mut().unwrap().remove("beforeEditing");
+        if result["beforeEditing"]["currentGrantEventSha256"].is_null() {
+            result.as_object_mut().unwrap().remove("beforeEditing");
+        }
         return;
     }
     if state == Some("blocked") {

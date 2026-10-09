@@ -429,6 +429,23 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
         true
     );
 
+    let second = f.ok(
+        &[
+            "work",
+            "permit",
+            &f.work,
+            &f.assignment,
+            "--operation",
+            "managed-handoff-regression-second",
+            "--request-id",
+            "managed-handoff-second",
+        ],
+        b"",
+    );
+    assert_eq!(second["allowed"], true);
+    assert_eq!(second["governor"]["state"], "replan_required");
+    assert_eq!(second["nextRequest"]["requiredAction"], "work replan");
+
     let after = f.ok(&["work", "detail", &f.work], b"");
     assert_ne!(before["binding"], after["binding"]);
     assert_eq!(
@@ -451,20 +468,53 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
         after["recipientContext"]["rules"],
         before["recipientContext"]["rules"]
     );
-    assert_eq!(after["actionForms"]["beforeEditing"]["required"], true);
+    assert_eq!(after["actionForms"]["beforeEditing"]["required"], false);
+    assert_eq!(
+        after["actionForms"]["beforeEditing"]["currentGrantEventSha256"],
+        second["currentGrant"]["governorEventSha256"]
+    );
+    assert!(after["actionForms"]["beforeEditing"]["meaning"]
+        .as_str()
+        .unwrap()
+        .contains("next new mutation request"));
     let choices = after["actionForms"]["choices"].as_array().unwrap();
     assert!(!choices.is_empty());
     let assignment = after["recipient"]["assignment"].as_str().unwrap();
     let binding = after["binding"].as_str().unwrap();
     for choice in choices {
         let argv = choice["command"]["argv"].as_array().unwrap();
-        assert!(argv.iter().any(|arg| arg == assignment));
-        assert!(argv
-            .windows(2)
-            .any(|pair| { pair[0] == "--current-binding" && pair[1] == binding }));
+        if choice["label"] == "replan" {
+            assert_eq!(
+                argv[0].as_str(),
+                Some(f.executable.to_string_lossy().as_ref())
+            );
+            assert_eq!(
+                &argv[1..5],
+                &[
+                    json!("work"),
+                    json!("replan"),
+                    json!(f.work.as_str()),
+                    json!(assignment),
+                ]
+            );
+            assert_eq!(argv[argv.len() - 2], "--config");
+            assert_eq!(
+                argv[argv.len() - 1].as_str(),
+                Some(f.root.join("exitbind.json").to_string_lossy().as_ref())
+            );
+            for flag in ["--hypothesis", "--scope-decision", "--evidence-request"] {
+                assert!(argv.iter().any(|arg| arg == flag));
+            }
+        } else {
+            assert!(argv.iter().any(|arg| arg == assignment));
+            assert!(argv
+                .windows(2)
+                .any(|pair| { pair[0] == "--current-binding" && pair[1] == binding }));
+        }
     }
 
-    // A newly prepared managed tool consumes the current assignment after the permit.
+    // A newly prepared managed tool uses the current grant while re-plan is
+    // required for any next mutation request.
     let prepared = f.ok(&["work", "file", "prepare", &f.work, &f.assignment], b"");
     let tool = PathBuf::from(prepared["tool"].as_str().unwrap());
     let output = Command::new(tool)
@@ -477,6 +527,11 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
     assert_eq!(
         serde_json::from_slice::<Value>(&output.stdout).unwrap()["exists"],
         false
+    );
+    f.edit_ok("read", "src/granted.txt", b"");
+    assert_eq!(
+        f.edit_ok("edit", "src/granted.txt", b"current grant used")["status"],
+        "completed"
     );
 }
 

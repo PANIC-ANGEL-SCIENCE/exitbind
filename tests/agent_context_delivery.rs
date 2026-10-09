@@ -304,6 +304,163 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
 }
 
 #[test]
+fn reported_long_rule_survives_start_detail_and_native_prompt() {
+    let fixture = Fixture::new("agent-context-long-rule");
+    let rule = format!("{}TAIL-UNIQUE-123456", "é".repeat(9_451));
+    assert_eq!(rule.len(), 18_920);
+    fs::write(fixture.root.join("AGENTS.md"), &rule).unwrap();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "deliver long current rule",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--detail",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    assert_eq!(started["recipientContext"]["rules"][0]["content"], rule);
+    let detail = fixture.value(&["work", "detail", work], b"");
+    assert_eq!(detail["recipientContext"]["rules"][0]["content"], rule);
+    let grouped_reference = detail["reference"].as_str().unwrap();
+    let grouped = fixture.value(&["work", "expand", work, grouped_reference], b"");
+    assert_eq!(grouped["recipientContext"]["rules"][0]["content"], rule);
+
+    let lead = started["recipient"]["assignment"].as_str().unwrap();
+    fixture.value(
+        &["work", "return", work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    let capture = fixture.root.join("long-rule-prompt");
+    let executable = fixture.fake_codex(&capture);
+    let worker = fixture.call(
+        &[
+            "work",
+            "act",
+            work,
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(worker.status.success(), "{}", text(&worker));
+    assert!(stable_rules(&fs::read_to_string(capture).unwrap()).contains(&rule));
+}
+
+#[test]
+fn aggregate_rule_limit_keeps_the_recorded_work_and_refuses_partial_detail() {
+    let fixture = Fixture::new("agent-context-aggregate-limit");
+    fs::write(fixture.root.join("AGENTS.md"), vec![b'a'; 24 * 1024]).unwrap();
+    fs::write(fixture.root.join("CLAUDE.md"), vec![b'b'; 24 * 1024 + 1]).unwrap();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "retain work when combined rules exceed the envelope",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--detail",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    assert_eq!(started["effect"], "recorded");
+    assert_eq!(started["complete"], false);
+    assert!(started["projectionError"]
+        .as_str()
+        .unwrap()
+        .contains("aggregate complete-delivery limit"));
+    assert_eq!(
+        fixture.value(&["work", "resume", "--json"], b"")["work"],
+        work
+    );
+}
+
+#[test]
+fn exact_per_rule_byte_limit_is_delivered_when_consumer_projection_fits() {
+    let fixture = Fixture::new("agent-context-exact-rule-limit");
+    let rule = "r".repeat(32 * 1024);
+    fs::write(fixture.root.join("AGENTS.md"), &rule).unwrap();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "deliver the complete exact-boundary rule",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--detail",
+        ],
+        b"",
+    );
+    assert_eq!(started["complete"], true);
+    assert_eq!(started["recipientContext"]["rules"][0]["content"], rule);
+}
+
+#[test]
+fn symlinked_project_rule_is_not_read_into_a_recorded_start() {
+    let fixture = Fixture::new("agent-context-symlink-rule");
+    fs::remove_file(fixture.root.join("AGENTS.md")).unwrap();
+    std::os::unix::fs::symlink(
+        fixture.root.join("exitbind.json"),
+        fixture.root.join("AGENTS.md"),
+    )
+    .unwrap();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "refuse an unsafe rule path",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--detail",
+        ],
+        b"",
+    );
+    assert_eq!(started["effect"], "recorded");
+    assert_eq!(started["complete"], false);
+    assert!(started["projectionError"]
+        .as_str()
+        .is_some_and(|error| error.contains("project rule")));
+    let work = started["work"].as_str().unwrap();
+    let detail = fixture.call(&["work", "detail", work], b"");
+    assert!(
+        !detail.status.success(),
+        "unsafe rule path was read: {detail:?}"
+    );
+    assert!(text(&detail).contains("project rule"));
+    assert_eq!(
+        fixture.value(&["work", "resume", "--json"], b"")["work"],
+        work
+    );
+}
+
+#[test]
 fn native_fake_provider_receives_product_owned_goal_progress() {
     let fixture = Fixture::new("agent-goal-progress");
     let started = fixture.value(
@@ -462,7 +619,7 @@ fn failed_json_check_keeps_machine_stdout_and_emits_product_progress_stderr() {
 #[test]
 fn oversized_project_rule_refuses_native_launch_before_provider_spawn() {
     let fixture = Fixture::new("agent-context-oversized-rule");
-    fs::write(fixture.root.join("AGENTS.md"), vec![b'x'; 16 * 1024 + 1]).unwrap();
+    fs::write(fixture.root.join("AGENTS.md"), vec![b'x'; 32 * 1024 + 1]).unwrap();
     let capture = fixture.root.join("should-not-exist");
     let executable = fixture.fake_codex(&capture);
     let started = fixture.value(

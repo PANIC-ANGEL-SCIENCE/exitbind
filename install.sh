@@ -70,7 +70,10 @@ if test -z "${EXITBIND_INSTALL_PREFIX:-}" && test -n "${SOULMATE_INSTALL_PREFIX:
 fi
 case "$prefix" in ""|/) echo "exitbind: unsafe install prefix" >&2; exit 1 ;; esac
 mkdir -p "$prefix"
-tar -xzf "$tmp/$archive" -C "$tmp"
+# Release archives do not require restoration of the builder's UID/GID.  The
+# explicit option works with GNU and BSD tar and keeps unprivileged installs
+# independent of archive ownership metadata.
+tar -xzf "$tmp/$archive" -C "$tmp" --no-same-owner
 # Exitbind 0.18.0 and 0.19.0 updaters re-read their own executable name after
 # this script returns; on Linux a binary replaced in place reads as
 # "NAME (deleted)" and those updaters then truncate the new install. Move a

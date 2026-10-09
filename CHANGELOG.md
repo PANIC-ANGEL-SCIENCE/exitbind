@@ -2,7 +2,7 @@
 
 ## 0.29.0
 
-Candidate source; publication remains pending the ordinary stable release gates.
+Published stable release; the `v0.29.0` tag and release assets are available.
 
 - Add a marked v8 `carryProtocol` v1 accounting seed to same-goal
   `run supersede` successors. Preserve phase, spent count, no-information

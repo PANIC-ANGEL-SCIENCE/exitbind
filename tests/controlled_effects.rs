@@ -180,6 +180,103 @@ fn host_bound_transport_requires_current_grant_and_strict_parameters() {
 }
 
 #[test]
+fn a_later_replan_does_not_reopen_an_earlier_grant() {
+    let f = Fixture::new();
+    let mut last_grant = Value::Null;
+    for (operation, request_id) in [
+        ("first-current-grant", "grant-first"),
+        ("second-current-grant", "grant-second"),
+    ] {
+        last_grant = f.ok(
+            &[
+                "work",
+                "permit",
+                &f.work,
+                &f.worker,
+                "--operation",
+                operation,
+                "--request-id",
+                request_id,
+            ],
+            b"",
+        );
+    }
+    assert_eq!(last_grant["governor"]["state"], "replan_required");
+    let replay = f.ok(
+        &[
+            "work",
+            "permit",
+            &f.work,
+            &f.worker,
+            "--operation",
+            "second-current-grant",
+            "--request-id",
+            "grant-second",
+        ],
+        b"",
+    );
+    assert_eq!(replay["eventSha256"], last_grant["eventSha256"]);
+    assert_eq!(replay["idempotent"], true);
+    assert!(replay["currentGrant"].is_object());
+    assert_eq!(
+        f.ok(&["work", "next", &f.work, "--full"], b"")["next"]["packet"]["context"]["loop"]
+            ["spent"],
+        2
+    );
+    let superseded_replay = f.ok(
+        &[
+            "work",
+            "permit",
+            &f.work,
+            &f.worker,
+            "--operation",
+            "first-current-grant",
+            "--request-id",
+            "grant-first",
+        ],
+        b"",
+    );
+    assert_eq!(superseded_replay["idempotent"], true);
+    assert!(superseded_replay.get("currentGrant").is_none());
+    let replanned = f.ok(
+        &[
+            "work",
+            "replan",
+            &f.work,
+            &f.worker,
+            "--hypothesis",
+            "the next operation needs updated evidence",
+            "--scope-decision",
+            "hold this worker boundary",
+            "--evidence-request",
+            "inspect current task inputs",
+        ],
+        b"",
+    );
+    assert_eq!(replanned["governor"]["state"], "ready");
+    let stale_replay = f.ok(
+        &[
+            "work",
+            "permit",
+            &f.work,
+            &f.worker,
+            "--operation",
+            "second-current-grant",
+            "--request-id",
+            "grant-second",
+        ],
+        b"",
+    );
+    assert_eq!(stale_replay["idempotent"], true);
+    assert!(stale_replay.get("currentGrant").is_none());
+    let rejected = f.mcp(&[json!({
+        "action":"edit", "path":"src/stale.txt", "content":"must not be written"
+    })]);
+    assert_eq!(rejected[0]["result"]["isError"], true);
+    assert!(!f.root.join("src/stale.txt").exists());
+}
+
+#[test]
 fn supported_cli_rejects_supplemental_observe_and_attachment_scope_without_mutation() {
     let f = Fixture::new();
     let provider = f.root.join("must-not-launch");

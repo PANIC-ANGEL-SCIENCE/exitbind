@@ -141,12 +141,15 @@ managed file effects enforce their own current assignment, observation and
 write checks; other host tools keep the permissions granted by the host. This
 does not turn role text into an operating-system sandbox.
 
-Delivery refuses oversized content rather than silently shortening it: each
-rule and memory source is at most 16 KiB, at most eight memory items are
-included, each memory reference is at most 8 KiB, and the combined current
-context is at most 64 KiB. Narrow an explicit selection or split an oversized
-source before trying again. A configured non-Codex runtime cannot be launched
-through the Codex executor.
+Delivery refuses oversized content rather than silently shortening it. Each
+project rule is at most 32 KiB and all current project rules together are at
+most 48 KiB; the JSON-encoded rules in ordinary detail are also limited to
+48 KiB to leave room within its 64 KiB response bound. The native current
+context remains bounded at 64 KiB, and the Codex prompt at 256 KiB. Memory
+sources remain at most 16 KiB, at most eight memory items are included, and
+each memory reference is at most 8 KiB. Narrow an explicit selection or split
+an oversized source before trying again. A configured non-Codex runtime cannot
+be launched through the Codex executor.
 
 ## Read and edit one UTF-8 file
 

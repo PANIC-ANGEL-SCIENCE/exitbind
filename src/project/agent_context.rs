@@ -5,12 +5,15 @@
 //! instruction and memory source is delivered as complete UTF-8 bytes, with a
 //! bounded refusal when the complete projection cannot fit.
 
-use crate::{config::Loaded, evidence::hash, memory, project::path};
+use crate::{
+    config::Loaded,
+    evidence::hash,
+    memory,
+    project::{agent_rules, path},
+};
 use serde_json::{json, Value};
 
-const RULES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
 const MAX_CONTEXT_BYTES: usize = 64 * 1024;
-const MAX_RULE_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_ITEM_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_ITEMS: usize = 8;
 const MAX_REFERENCE_BYTES: usize = 8 * 1024;
@@ -289,27 +292,7 @@ fn project_value(loaded: &Loaded) -> Result<Value, String> {
 }
 
 pub(crate) fn current_rules(loaded: &Loaded) -> Result<Vec<(String, String, String)>, String> {
-    let mut rules = Vec::new();
-    for name in RULES {
-        let bytes = match path::secure_bytes_observation(&loaded.product_root, name, "project rule")
-        {
-            path::SecureBytesResult::Bytes(bytes) => bytes,
-            path::SecureBytesResult::Absent(_) => continue,
-            path::SecureBytesResult::Unsafe(reason)
-            | path::SecureBytesResult::Unreadable(reason) => return Err(reason),
-            #[cfg(not(unix))]
-            path::SecureBytesResult::Unsupported(reason) => return Err(reason),
-        };
-        if bytes.len() > MAX_RULE_BYTES {
-            return Err(format!(
-                "project rule {name} exceeds the {MAX_RULE_BYTES}-byte native delivery bound; launch refused so instructions are not truncated"
-            ));
-        }
-        let content = String::from_utf8(bytes.clone())
-            .map_err(|_| format!("project rule {name} is not UTF-8; launch refused"))?;
-        rules.push(((*name).to_owned(), hash::bytes(&bytes), content));
-    }
-    Ok(rules)
+    agent_rules::current(loaded)
 }
 
 fn current_memory(loaded: &Loaded, references: &[Value]) -> Result<Vec<(Value, String)>, String> {

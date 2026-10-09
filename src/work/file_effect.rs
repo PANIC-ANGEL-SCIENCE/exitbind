@@ -175,14 +175,50 @@ pub(super) fn current_grant<'a>(
     handle: &str,
 ) -> Result<&'a Value, String> {
     let grant = &state["governor"]["currentMutation"];
-    if state["governor"]["enabled"] != true
-        || state["governor"]["state"] != "ready"
-        || grant["attempt"] != assignment["attempt"]
-        || !events.iter().any(|event| {
-            event["governorEvent"]["eventSha256"] == grant["eventSha256"]
-                && event["assignmentSha256"] == hash::text(handle)
+    let grant_sha = grant["eventSha256"].as_str();
+    let current_event = grant_sha.and_then(|sha| {
+        events.iter().find(|event| {
+            event["governorEvent"]["eventSha256"] == sha
+                && event["action"] == "govern"
                 && event["governorEvent"]["action"] == "mutation"
         })
+    });
+    let valid_current_grant = current_event.is_some_and(|event| {
+        let nested = &event["governorEvent"];
+        event["runId"] == state["runId"]
+            && event["stage"] == assignment["stage"]
+            && event["attempt"] == assignment["attempt"]
+            && event["agent"] == assignment["agent"]
+            && event["role"] == assignment["role"]
+            && event["subjectSha256"] == state["subject"]["sha256"]
+            && event["assignmentSha256"] == hash::text(handle)
+            && nested["runId"] == state["runId"]
+            && nested["subjectSha256"] == state["subject"]["sha256"]
+            && nested["attempt"] == assignment["attempt"]
+            && nested["checkpoint"] == grant["checkpoint"]
+            && nested["lineageSha256"] == state["governor"]["lineageSha256"]
+            && nested["inputSha256"] == event["inputsSha256"]
+            && nested["inputSha256"] == grant["inputSha256"]
+            && nested["carryLineage"] == true
+    });
+    let grant_run_event_sha = current_event.and_then(|event| event["eventSha256"].as_str());
+    let consumed = grant_run_event_sha.is_some_and(|sha| {
+        state["governor"]["consumedGrants"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(sha)))
+    });
+    if state["governor"]["enabled"] != true
+        || !matches!(
+            state["governor"]["state"].as_str(),
+            Some("ready" | "replan_required")
+        )
+        || grant["carryLineage"] != true
+        || grant["runId"] != state["runId"]
+        || grant["subjectSha256"] != state["subject"]["sha256"]
+        || grant["attempt"] != assignment["attempt"]
+        || state["governor"]["headSha256"] != grant["eventSha256"]
+        || consumed
+        || !valid_current_grant
     {
         return Err("file effect needs a current unconsumed worker mutation permit".into());
     }

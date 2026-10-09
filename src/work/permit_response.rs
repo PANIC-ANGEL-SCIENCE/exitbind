@@ -48,6 +48,7 @@ pub(super) fn compact(
     let event = &permission["event"];
     let event_sha = &event["eventSha256"];
     let allowed = permission["allowed"] == true;
+    let current_grant = allowed && is_current_grant(permission, next, assignment);
     let mut response = json!({
         "compact": true,
         "work": work,
@@ -77,10 +78,71 @@ pub(super) fn compact(
             "sameExecutableRequired": true, "sameConfigRequired": true,
         },
     });
+    if current_grant {
+        response["currentGrant"] = json!({
+            "governorEventSha256": permission["event"]["governorEvent"]["eventSha256"],
+            "runEventSha256": event_sha,
+            "operation": operation,
+            "state": "current_for_this_worker_assignment",
+            "use": "the exact current grant may support the present mutation; it does not grant host permissions",
+        });
+        if next["packet"]["context"]["loop"]["state"] == "replan_required" {
+            response["nextRequest"] = json!({
+                "requiredAction": "work replan",
+                "meaning": "the current grant remains usable for its present mutation; re-plan is required before another mutation request",
+            });
+        }
+    }
     if let Some(idempotent) = permission.get("idempotent") {
         response["idempotent"] = idempotent.clone();
     }
     response
+}
+
+fn is_current_grant(permission: &Value, next: &Value, assignment: &str) -> bool {
+    let event = &permission["event"];
+    let nested = &event["governorEvent"];
+    let loop_state = &next["packet"]["context"]["loop"];
+    let grant = &loop_state["currentMutation"];
+    let outer_sha = event["eventSha256"].as_str();
+    let nested_sha = nested["eventSha256"].as_str();
+    let packet = &next["packet"];
+    let context = &packet["context"];
+    let consumed = outer_sha.is_some_and(|sha| {
+        loop_state["consumedGrants"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(sha)))
+    });
+
+    event["action"] == "govern"
+        && nested["action"] == "mutation"
+        && matches!(
+            loop_state["state"].as_str(),
+            Some("ready" | "replan_required")
+        )
+        && nested_sha.is_some()
+        && event["runId"] == context["run"]["id"]
+        && event["stage"] == packet["stage"]
+        && event["attempt"] == packet["attempt"]
+        && event["agent"] == packet["agent"]
+        && event["role"] == packet["role"]
+        && event["subjectSha256"] == context["subject"]["sha256"]
+        && event["assignmentSha256"] == crate::evidence::hash::text(assignment)
+        && event["inputsSha256"] == nested["inputSha256"]
+        && nested_sha == grant["eventSha256"].as_str()
+        && loop_state["headSha256"] == nested["eventSha256"]
+        && loop_state["runId"] == nested["runId"]
+        && grant["runId"] == nested["runId"]
+        && grant["subjectSha256"] == nested["subjectSha256"]
+        && grant["attempt"] == nested["attempt"]
+        && grant["checkpoint"] == nested["checkpoint"]
+        && grant["inputSha256"] == nested["inputSha256"]
+        && nested["lineageSha256"] == loop_state["lineageSha256"]
+        && nested["runId"] == context["run"]["id"]
+        && nested["subjectSha256"] == context["subject"]["sha256"]
+        && nested["attempt"] == packet["attempt"]
+        && grant["carryLineage"] == true
+        && !consumed
 }
 
 #[cfg(test)]
@@ -112,5 +174,46 @@ mod tests {
         assert_eq!(result["governor"]["state"], "blocked");
         assert_eq!(result["next"]["role"], "lead");
         assert_eq!(result["audit"]["commandSuffix"][3], "--event");
+    }
+
+    #[test]
+    fn historical_allowed_event_is_not_advertised_as_a_current_grant() {
+        let permission = json!({
+            "allowed": true,
+            "event": {
+                "action": "govern",
+                "eventSha256": "outer-grant",
+                "runId": "run", "stage": 1, "attempt": 2, "agent": "worker-a",
+                "role": "worker", "subjectSha256": "subject",
+                "assignmentSha256": crate::evidence::hash::text("worker-a"),
+                "inputsSha256": "inputs",
+                "governorEvent": {
+                    "action": "mutation", "eventSha256": "nested-grant",
+                    "runId": "run", "subjectSha256": "subject", "attempt": 2,
+                    "checkpoint": 1, "inputSha256": "inputs", "carryLineage": true,
+                    "lineageSha256": "lineage"
+                }
+            },
+            "governor": {"state": "replan_required"}
+        });
+        let mut next = json!({"packet":{"stage":1,"attempt":2,"agent":"worker-a","role":"worker","context":{
+          "run":{"id":"run"},"subject":{"sha256":"subject"},"loop":{
+            "headSha256":"nested-grant", "runId":"run", "state":"replan_required",
+            "lineageSha256":"lineage",
+            "currentMutation":{
+                "eventSha256":"nested-grant", "runId":"run", "subjectSha256":"subject",
+                "attempt":2, "checkpoint":1, "inputSha256":"inputs", "carryLineage":true
+            },
+            "consumedGrants":[]
+        }}}});
+        assert!(is_current_grant(&permission, &next, "worker-a"));
+        next["packet"]["context"]["loop"]["consumedGrants"] = json!(["outer-grant"]);
+        assert!(!is_current_grant(&permission, &next, "worker-a"));
+        next["packet"]["context"]["loop"]["consumedGrants"] = json!([]);
+        next["packet"]["context"]["loop"]["headSha256"] = json!("later-event");
+        assert!(!is_current_grant(&permission, &next, "worker-a"));
+        next["packet"]["context"]["loop"]["headSha256"] = json!("nested-grant");
+        next["packet"]["context"]["loop"]["state"] = json!("unknown");
+        assert!(!is_current_grant(&permission, &next, "worker-a"));
     }
 }

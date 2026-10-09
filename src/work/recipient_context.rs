@@ -2,7 +2,7 @@
 use crate::{
     config::Loaded,
     evidence::hash,
-    project::{agent_context, path},
+    project::{agent_context, agent_rules, path},
 };
 use serde_json::{json, Value};
 
@@ -36,13 +36,7 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
             "command": super::super::response_recovery::bounded_argv(
                 vec!["profile".into(), name.into(), "--config".into()], loaded.path.to_str(), 1024).argv,
             "readOnly": true, "sameConfigRequired": true, "sameExecutableRequired": true}) }});
-    let rules = agent_context::current_rules(loaded)?
-        .into_iter()
-        .map(|(path, sha256, content)| {
-            json!({"path": path, "sha256": sha256, "bytes": content.len(), "content": content,
-            "complete": true})
-        })
-        .collect::<Vec<_>>();
+    let rules = agent_rules::detail_projection(&agent_context::current_rules(loaded)?)?;
     let mut result = json!({"complete": content.is_some(), "available": true,
         "agent": name, "role": next["role"], "nativeName": agent.native_name(name),
         "configurationSha256": hash::text(&loaded.source), "profile": profile,

@@ -74,6 +74,22 @@ fn allowed_outcomes(next: &Value) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+fn current_grant(next: &Value) -> Option<&Value> {
+    let loop_state = &next["packet"]["context"]["loop"];
+    let grant = &loop_state["currentMutation"];
+    (grant["eventSha256"].is_string()
+        && loop_state["headSha256"] == grant["eventSha256"]
+        && grant["runId"] == next["packet"]["context"]["run"]["id"]
+        && grant["attempt"] == next["packet"]["attempt"]
+        && grant["subjectSha256"] == next["packet"]["context"]["subject"]["sha256"]
+        && grant["carryLineage"] == true
+        && matches!(
+            loop_state["state"].as_str(),
+            Some("ready" | "replan_required")
+        ))
+    .then_some(grant)
+}
+
 fn return_choice(
     loaded: &Loaded,
     work: &str,
@@ -343,11 +359,17 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             "meaning": "when the Lead selects product-managed delivery, execute one current configured native role; the provider supplies its own verdict and the host owns model access/permissions"});
     }
     if next["action"] == "spawn" && next["role"] == "worker" {
+        let grant = current_grant(next);
         result["beforeEditing"] = json!({
-            "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
-                assignment.into(), "--operation".into(), "<OPERATION>".into()]),
-            "placeholders": ["OPERATION"], "required": true,
-            "meaning": "obtain allowed:true before editing; this form grants no host permission"});
+        "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
+            assignment.into(), "--operation".into(), "<OPERATION>".into()]),
+        "placeholders": ["OPERATION"], "required": grant.is_none(),
+        "currentGrantEventSha256": grant.map(|item| item["eventSha256"].clone()),
+        "meaning": if grant.is_some() {
+            "use the exact current unconsumed grant for this assignment now; a required re-plan governs the next new mutation request, and this grant conveys no host permission"
+        } else {
+            "obtain allowed:true before editing; this form grants no host permission"
+        }});
     }
     repair::attach(loaded, work, assignment, binding, next, &mut result);
     result
