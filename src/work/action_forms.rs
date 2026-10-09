@@ -78,16 +78,24 @@ fn current_grant(next: &Value) -> Option<&Value> {
     let loop_state = &next["packet"]["context"]["loop"];
     let grant = &loop_state["currentMutation"];
     (grant["eventSha256"].is_string()
-        && loop_state["headSha256"] == grant["eventSha256"]
+        && loop_state["currentGrantEventSha256"] == grant["eventSha256"]
+        && grant["unit"] == "worker-mutation"
         && grant["runId"] == next["packet"]["context"]["run"]["id"]
         && grant["attempt"] == next["packet"]["attempt"]
         && grant["subjectSha256"] == next["packet"]["context"]["subject"]["sha256"]
         && grant["carryLineage"] == true
         && matches!(
             loop_state["state"].as_str(),
-            Some("ready" | "replan_required")
+            Some("ready" | "replan_required" | "evidence_required")
         ))
     .then_some(grant)
+}
+
+fn has_held_results(next: &Value) -> bool {
+    next.get("held").is_some_and(|held| !held.is_null())
+        || next["heldResults"]
+            .as_array()
+            .is_some_and(|held| !held.is_empty())
 }
 
 fn return_choice(
@@ -360,16 +368,38 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
     }
     if next["action"] == "spawn" && next["role"] == "worker" {
         let grant = current_grant(next);
-        result["beforeEditing"] = json!({
-        "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
-            assignment.into(), "--operation".into(), "<OPERATION>".into()]),
-        "placeholders": ["OPERATION"], "required": grant.is_none(),
-        "currentGrantEventSha256": grant.map(|item| item["eventSha256"].clone()),
-        "meaning": if grant.is_some() {
-            "use the exact current unconsumed grant for this assignment now; a required re-plan governs the next new mutation request, and this grant conveys no host permission"
-        } else {
-            "obtain allowed:true before editing; this form grants no host permission"
-        }});
+        let governor_phase = next["packet"]["context"]["loop"]["state"].as_str();
+        let held = has_held_results(next);
+        if let Some(grant) = grant.filter(|_| !held) {
+            result["currentGrant"] = json!({
+                "governorEventSha256": grant["eventSha256"],
+                "operation": grant["operation"],
+                "state": "current_for_this_worker_assignment",
+                "use": "the exact current grant may support the present mutation; it grants no host permissions",
+            });
+        }
+        if let Some(next_request) = match governor_phase {
+            Some("replan_required") => Some(json!({
+                "requiredAction": "work replan",
+                "meaning": "complete a material re-plan before another mutation request"
+            })),
+            Some("evidence_required") => Some(json!({
+                "requiredAction": "work evidence",
+                "meaning": "record new exact evidence before another mutation request"
+            })),
+            _ => None,
+        } {
+            result["nextRequest"] = next_request;
+        }
+        if grant.is_none() && governor_phase == Some("ready") && !held {
+            result["beforeEditing"] = json!({
+                "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
+                    assignment.into(), "--operation".into(), "<OPERATION>".into()]),
+                "placeholders": ["OPERATION"],
+                "required": true,
+                "meaning": "obtain allowed:true before editing; this form grants no host permission"
+            });
+        }
     }
     repair::attach(loaded, work, assignment, binding, next, &mut result);
     result

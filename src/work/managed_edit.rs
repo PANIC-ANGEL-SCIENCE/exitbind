@@ -19,6 +19,12 @@ pub(crate) fn controlled_permit(
     let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
     run::ledger::with_lock(&lock, || {
         let selected = current_worker(loaded, &binding, &lock)?;
+        if !super::held::discover(loaded, work, assignment)?.is_empty() {
+            return Err(
+                "controlled launch refused while a worker result is retained; follow the current recovery form first"
+                    .into(),
+            );
+        }
         let (_, events, _) = run::ledger::load_at(loaded, &lock)?;
         let state = run::reduce_live(loaded, &events)?;
         let grant = file_effect::current_grant(&state, &events, &selected, assignment)

@@ -69,6 +69,7 @@ fn seeded_carry_preserves_phase_and_counters_without_old_authority() {
     assert_eq!(carried["afterReplan"], true);
     assert_eq!(carried["state"], "ready");
     assert!(carried["currentMutation"].is_null());
+    assert!(carried["currentGrantEventSha256"].is_null());
     assert!(carried["currentReplan"].is_null());
     assert!(carried["currentSensorRequest"].is_null());
     assert!(carried["seenMutations"].as_array().unwrap().is_empty());
@@ -405,6 +406,81 @@ fn sensor_must_match_the_exact_current_mutation() {
     let blocked = reduce_governor(&[mutation, request, valid_sensor]).unwrap();
     assert_eq!(blocked["state"], "blocked");
     assert_eq!(blocked["seenSensors"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn current_worker_grant_survives_only_sensor_observation_without_authority_change() {
+    let grant = event(
+        None,
+        json!({
+            "action":"mutation", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "checkpoint":1, "inputSha256":"input",
+            "lineageSha256":"lineage", "unit":"worker-mutation",
+            "operation":"edit", "newEvidenceSha256":null,
+        }),
+    );
+    let grant_state = reduce_governor(std::slice::from_ref(&grant)).unwrap();
+    let request = event(Some(&grant), sensor_request(&grant_state).unwrap());
+    let requested = reduce_governor(&[grant.clone(), request.clone()]).unwrap();
+    assert_eq!(requested["currentGrantEventSha256"], grant["eventSha256"]);
+    let inert = event(
+        Some(&request),
+        json!({
+            "action":"sensor", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "checkpoint":1, "inputSha256":"input", "inputDigest":"digest",
+            "sensorVersion":1, "requestDigest":request["requestDigest"],
+            "identitySource":"host-reported", "assessment":"uncertain", "confidence":0.95,
+        }),
+    );
+    let observed = reduce_governor(&[grant.clone(), request.clone(), inert.clone()]).unwrap();
+    assert_eq!(observed["currentGrantEventSha256"], grant["eventSha256"]);
+    assert_eq!(observed["headSha256"], inert["eventSha256"]);
+    assert_eq!(observed["state"], "ready");
+
+    let conservative = event(
+        Some(&request),
+        json!({
+            "action":"sensor", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "checkpoint":1, "inputSha256":"input", "inputDigest":"digest",
+            "sensorVersion":1, "requestDigest":request["requestDigest"],
+            "identitySource":"host-reported", "assessment":"evidence", "confidence":0.95,
+        }),
+    );
+    let stopped = reduce_governor(&[grant.clone(), request, conservative]).unwrap();
+    assert!(stopped["currentGrantEventSha256"].is_null());
+    assert_eq!(stopped["state"], "evidence_required");
+
+    let second = event(
+        Some(&grant),
+        json!({
+            "action":"mutation", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "checkpoint":2, "inputSha256":"input",
+            "lineageSha256":"lineage", "unit":"worker-mutation",
+            "operation":"edit", "newEvidenceSha256":null,
+        }),
+    );
+    let replan = event(
+        Some(&second),
+        json!({
+            "action":"replan", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "inputSha256":"input", "hypothesis":"revise the approach"
+        }),
+    );
+    let replanned = reduce_governor(&[grant.clone(), second, replan]).unwrap();
+    assert!(replanned["currentGrantEventSha256"].is_null());
+
+    let held = event(
+        Some(&grant),
+        json!({
+            "action":"mutation", "runId":"run", "subjectSha256":"subject",
+            "attempt":1, "checkpoint":1, "inputSha256":"input",
+            "lineageSha256":"lineage", "unit":"worker",
+            "operation":"completed_submission", "newEvidenceSha256":null,
+        }),
+    );
+    let completed = reduce_governor(&[grant, held]).unwrap();
+    assert!(completed["currentGrantEventSha256"].is_null());
+    assert_eq!(completed["currentMutation"]["unit"], "worker");
 }
 
 #[test]

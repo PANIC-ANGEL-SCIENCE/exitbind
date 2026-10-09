@@ -20,6 +20,11 @@ pub(super) fn attach(
     if next["action"] != "spawn" || next["role"] != "worker" {
         return;
     }
+    let held: Vec<&Value> = next
+        .get("held")
+        .into_iter()
+        .chain(next["heldResults"].as_array().into_iter().flatten())
+        .collect();
     let state = next["packet"]["context"]["loop"]["state"].as_str();
     let form = match state {
         Some("replan_required") => Some(choice(
@@ -61,11 +66,16 @@ pub(super) fn attach(
     if let Some(form) = form {
         result["recovery"] = json!({"state":state,"command":form["command"],
             "meaning":"supply meaningful current recovery evidence or a Lead re-plan, then refresh detail; spent authority and held bytes remain unchanged"});
+        if !held.is_empty() {
+            result["recovery"]["heldResults"] =
+                json!(held.iter().map(|item| json!({
+                "reference": item["reference"], "sha256": item["sha256"], "bytes": item["bytes"]
+            })).collect::<Vec<_>>());
+            result.as_object_mut().unwrap().remove("currentGrant");
+        }
         result["choices"] = json!([form]);
         result["leadChoiceRequired"] = json!(true);
-        if result["beforeEditing"]["currentGrantEventSha256"].is_null() {
-            result.as_object_mut().unwrap().remove("beforeEditing");
-        }
+        result.as_object_mut().unwrap().remove("beforeEditing");
         return;
     }
     if state == Some("blocked") {
@@ -74,11 +84,6 @@ pub(super) fn attach(
         result.as_object_mut().unwrap().remove("beforeEditing");
         return;
     }
-    let held: Vec<&Value> = next
-        .get("held")
-        .into_iter()
-        .chain(next["heldResults"].as_array().into_iter().flatten())
-        .collect();
     if held.is_empty() {
         return;
     }
@@ -92,4 +97,6 @@ pub(super) fn attach(
     }).collect();
     result["recovery"] = json!({"state":"retained_result","heldResults":forms,
         "meaning":"return the selected exact retained bytes once, then perform the fresh applicable check and review"});
+    result.as_object_mut().unwrap().remove("currentGrant");
+    result.as_object_mut().unwrap().remove("beforeEditing");
 }

@@ -123,6 +123,12 @@ pub(super) fn replace_locked(
     if !allowed {
         return Err("file path is outside the current worker write boundary".into());
     }
+    if !super::held::discover(loaded, request.work, request.assignment)?.is_empty() {
+        return Err(
+            "new file effect refused while a worker result is retained; follow the current recovery form first"
+                .into(),
+        );
+    }
     // A permit is cooperative authority, never a caller-supplied token.
     // Its canonical grant must belong to this current assignment and remain
     // unconsumed; no earlier Work or completed attempt can supply it.
@@ -200,6 +206,7 @@ pub(super) fn current_grant<'a>(
             && nested["inputSha256"] == event["inputsSha256"]
             && nested["inputSha256"] == grant["inputSha256"]
             && nested["carryLineage"] == true
+            && nested["unit"] == "worker-mutation"
     });
     let grant_run_event_sha = current_event.and_then(|event| event["eventSha256"].as_str());
     let consumed = grant_run_event_sha.is_some_and(|sha| {
@@ -210,13 +217,13 @@ pub(super) fn current_grant<'a>(
     if state["governor"]["enabled"] != true
         || !matches!(
             state["governor"]["state"].as_str(),
-            Some("ready" | "replan_required")
+            Some("ready" | "replan_required" | "evidence_required")
         )
         || grant["carryLineage"] != true
         || grant["runId"] != state["runId"]
         || grant["subjectSha256"] != state["subject"]["sha256"]
         || grant["attempt"] != assignment["attempt"]
-        || state["governor"]["headSha256"] != grant["eventSha256"]
+        || state["governor"]["currentGrantEventSha256"] != grant["eventSha256"]
         || consumed
         || !valid_current_grant
     {

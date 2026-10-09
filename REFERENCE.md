@@ -657,10 +657,16 @@ the executable/configuration binding, read baseline and durable retry identity.
 Use `edit inspect PATH` after a conflict or uncertain response, and `edit refresh
 PATH` only for a deliberate new edit after the prior request is resolved.
 It requires the exact current unconsumed mutation grant and reuses declared
-paths, protected controls, file preconditions and atomic replacement. A
-post-grant re-plan applies to the next new mutation request; it does not revoke
-that current grant. A later governor event can make the grant stale, and worker
-completion still requires the existing ready-governor state. Existing expert `work write
+paths, protected controls, file preconditions and atomic replacement. Inspect
+`actionForms.currentGrant` for the exact current grant and `actionForms.nextRequest`
+for required re-plan/evidence before another mutation request; a new permit
+form is present only when a new permit is admissible. `replan_required` and
+`evidence_required` apply to the next new mutation request; they do not revoke
+that current grant. A validated sensor request or inert
+sensor result preserves it; a conservative sensor result or later semantic
+governor event makes it stale. A retained worker result takes priority over
+editing and must be resolved through the current recovery form. Worker completion
+still requires the existing ready-governor state. Existing expert `work write
 WORK ASSIGNMENT PATH --operation ID --expected-sha256 SHA_OR_absent` remains
 compatible. Managed read/refresh/inspect requires a single-link regular file,
 checked on its actual descriptor before reading and before returning content.

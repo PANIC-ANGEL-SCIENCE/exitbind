@@ -49,6 +49,8 @@ pub(crate) fn project(response: &Value) -> Value {
         "command":if exists { forms["mechanicalAction"]["command"].clone() } else { Value::Null },
         "choices":if exists && response["actionForms"].is_object() { forms["choices"].clone() } else { json!([]) },
         "beforeEditing":if exists && response["actionForms"].is_object() { forms["beforeEditing"].clone() } else { Value::Null },
+        "currentGrant":if exists && response["actionForms"].is_object() { forms["currentGrant"].clone() } else { Value::Null },
+        "nextRequest":if exists && response["actionForms"].is_object() { forms["nextRequest"].clone() } else { Value::Null },
         "detail":if exists { current["details"]["grouped"].clone() } else { Value::Null },
         "requiresDetail":exists && !response["actionForms"].is_object(),
         "warnings":response.get("warnings").or_else(|| response.pointer("/next/warnings")).cloned().unwrap_or(json!([])),
@@ -78,6 +80,8 @@ mod tests {
     fn effects_never_manufacture_advancement_and_done_keeps_warnings() {
         let active = json!({"current":{"binding":"current","action":"spawn","readiness":"IN_PROGRESS","actionForm":{"choices":[]}}});
         assert_eq!(project(&active)["exists"], true);
+        assert!(project(&active)["currentGrant"].is_null());
+        assert!(project(&active)["nextRequest"].is_null());
         for effect in ["held", "unknown", "uncertain", "refused"] {
             let mut value = active.clone();
             value["effect"] = json!(effect);

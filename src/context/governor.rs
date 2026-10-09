@@ -62,6 +62,7 @@ pub(crate) fn reduce_governor_seeded(
         "consumedGrants": [],
         "seenSensors": [],
         "currentMutation": Value::Null,
+        "currentGrantEventSha256": Value::Null,
         "currentReplan": Value::Null,
         "currentSensorRequest": Value::Null,
     });
@@ -109,6 +110,7 @@ pub(crate) fn reduce_governor_seeded(
         state["subjectSha256"] = Value::Null;
         state["attempt"] = Value::Null;
         state["currentMutation"] = Value::Null;
+        state["currentGrantEventSha256"] = Value::Null;
         state["currentReplan"] = Value::Null;
         state["currentSensorRequest"] = Value::Null;
     }
@@ -123,6 +125,12 @@ pub(crate) fn reduce_governor_seeded(
             return Err(format!("governor event {} is not replayable", index + 1));
         }
         let action = event["action"].as_str().unwrap_or_default();
+        // A current worker grant remains available while the requested sensor
+        // observes it. Every other governor event advances the semantic
+        // boundary and retires that derived authority marker.
+        if !matches!(action, "sensor_request" | "sensor") {
+            state["currentGrantEventSha256"] = Value::Null;
+        }
         match action {
             "mutation" => apply_mutation(&mut state, event)?,
             "checkpoint" => apply_checkpoint(&mut state, event)?,
@@ -314,6 +322,9 @@ fn apply_mutation(state: &mut Value, event: &Value) -> Result<(), String> {
     })?;
     sync_loop(state, loop_state);
     state["currentMutation"] = current_mutation(event);
+    if event["unit"] == "worker-mutation" {
+        state["currentGrantEventSha256"] = event["eventSha256"].clone();
+    }
     Ok(())
 }
 
@@ -326,6 +337,8 @@ fn current_mutation(event: &Value) -> Value {
         "attempt": event["attempt"],
         "checkpoint": event["checkpoint"],
         "inputSha256": event["inputSha256"],
+        "unit": event["unit"],
+        "operation": event["operation"],
     })
 }
 
@@ -768,6 +781,9 @@ fn apply_sensor(state: &mut Value, event: &Value) -> Result<(), String> {
     let mut loop_state = loop_state(state)?;
     loop_state.apply(transition)?;
     sync_loop(state, loop_state);
+    if transition != Transition::SensorInert {
+        state["currentGrantEventSha256"] = Value::Null;
+    }
     Ok(())
 }
 

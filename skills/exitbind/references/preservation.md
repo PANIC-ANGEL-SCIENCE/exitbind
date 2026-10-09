@@ -203,11 +203,14 @@ bytes per stream; reported
 checks and historical versions do not claim captured logs. Expansion does not
 capture arbitrary host logs or dereference an unpersisted reference.
 
-Before each worker product-mutation unit, call `exitbind work permit WORK ASSIGNMENT
+Before a new worker mutation request, use a supplied current grant for its
+present mutation; when no current grant is supplied and `beforeEditing` is
+present in `work detail`, call `exitbind work permit WORK ASSIGNMENT
 --operation OPERATION` and mutate only when it returns `allowed=true`. This
 cooperative action revalidates the assignment and tested inputs and appends
 its governor event under the canonical run-ledger lock before returning
-permission. Lead and reviewer returns, checks, and acceptance follow their
+permission. A retained worker result suppresses editing until its recovery
+form is resolved. Lead and reviewer returns, checks, and acceptance follow their
 own lifecycle actions without a worker permit. Replay governor events in order.
 The marker's budget is the
 bounded no-information-path default, while total mutations remain monotonic
