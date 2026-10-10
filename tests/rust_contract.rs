@@ -156,9 +156,7 @@ fn forgetting_receipt_is_content_free_and_requires_a_terminal_item() {
 }
 
 fn with_binary_path(command: &mut Command, bin: &Path) {
-    let current = std::env::var_os("PATH").unwrap_or_default();
-    let paths = std::iter::once(bin.to_path_buf()).chain(std::env::split_paths(&current));
-    command.env("PATH", std::env::join_paths(paths).unwrap());
+    command.env("PATH", bin);
 }
 
 #[cfg(unix)]
@@ -169,7 +167,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     let (root, config) = project("hooks");
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
-    symlink(env!("CARGO_BIN_EXE_exitbind"), bin.join("soulmate")).unwrap();
+    symlink(env!("CARGO_BIN_EXE_exitbind"), bin.join("exitbind")).unwrap();
     fs::create_dir(root.join(".codex")).unwrap();
     fs::write(root.join(".codex/hooks.json"), "{\"keep\":true}\n").unwrap();
 
@@ -189,7 +187,9 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
         .unwrap();
     assert!(
         applied.status.success(),
-        "{}",
+        "status: {}\nstdout:\n{}\nstderr:\n{}",
+        applied.status,
+        String::from_utf8_lossy(&applied.stdout),
         String::from_utf8_lossy(&applied.stderr)
     );
     let settings: Value =
@@ -232,7 +232,13 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
         ])
         .output()
         .unwrap();
-    assert!(removed.status.success());
+    assert!(
+        removed.status.success(),
+        "status: {}\nstdout:\n{}\nstderr:\n{}",
+        removed.status,
+        String::from_utf8_lossy(&removed.stdout),
+        String::from_utf8_lossy(&removed.stderr)
+    );
     let settings: Value =
         serde_json::from_str(&fs::read_to_string(root.join(".codex/hooks.json")).unwrap()).unwrap();
     assert_eq!(settings["keep"], true);
