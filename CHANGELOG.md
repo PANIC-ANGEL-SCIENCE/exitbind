@@ -9,6 +9,8 @@
 - Cover intermediate configuration lengths and validate stale-return recovery
   through canonical full detail when long fixture paths require compact
   navigation. Retain refusal, current binding, attempt and no-mutation checks.
+- Preserve the original resume status and small unreadable-candidate details
+  in emergency responses while retaining bounded counts for oversized lists.
 
 The immutable 0.30.0 tag is retained. Its release checks failed before assets
 were published; this patch carries its accepted product changes forward.

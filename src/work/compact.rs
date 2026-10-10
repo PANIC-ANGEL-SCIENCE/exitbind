@@ -317,7 +317,7 @@ pub(crate) fn project(
             "compact": true,
             "presentation": {"terminal": response["presentation"]["terminal"]},
             "continuation": result["continuation"],
-            "status": "unresolved",
+            "status": response["status"].as_str().unwrap_or("unresolved"),
             "current": minimal_current(&response["next"]["current"]),
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
@@ -336,6 +336,7 @@ pub(crate) fn project(
         }
         omit_false_recovery_requirements(&mut minimal);
         super::effective_action::insert(&mut minimal, response);
+        retain_small_candidates(response, &mut minimal)?;
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             return Ok(minimal);
         }
@@ -349,7 +350,7 @@ pub(crate) fn project(
             "compact": true,
             "presentation": {"terminal": response["presentation"]["terminal"]},
             "continuation": result["continuation"],
-            "status": "unresolved",
+            "status": response["status"].as_str().unwrap_or("unresolved"),
             "current": minimal_current(&response["next"]["current"]),
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
@@ -368,6 +369,7 @@ pub(crate) fn project(
         }
         omit_false_recovery_requirements(&mut fallback);
         super::effective_action::insert(&mut fallback, response);
+        retain_small_candidates(response, &mut fallback)?;
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }
@@ -380,6 +382,28 @@ fn copy_navigation(response: &Value, output: &mut Map<String, Value>) {
     for key in ["selection", "history", "focus", "discovery"] {
         copy_if_present(response, output, key);
     }
+}
+
+fn retain_small_candidates(response: &Value, output: &mut Value) -> Result<(), String> {
+    if response.get("works").is_none() && response.get("unreadable").is_none() {
+        return Ok(());
+    }
+    let omitted = output["omitted"].clone();
+    for key in ["works", "unreadable"] {
+        copy_if_present(
+            response,
+            output.as_object_mut().expect("compact object"),
+            key,
+        );
+    }
+    output["omitted"] = json!(["large response detail; use fullCommand"]);
+    if serialized_len(output)? + 1 > MAX_RESPONSE_BYTES {
+        for key in ["works", "unreadable"] {
+            output.as_object_mut().expect("compact object").remove(key);
+        }
+        output["omitted"] = omitted;
+    }
+    Ok(())
 }
 
 fn omit_false_recovery_requirements(value: &mut Value) {

@@ -11,6 +11,8 @@ fn minimum_recovery_retains_terminal_without_inventing_completion() {
         for config_bytes in [32, 4_096, 6_000, 64_000] {
             let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
             let response = json!({
+                "status": "resumed", "works": [],
+                "unreadable": [{"work": "smw_old", "reason": "corrupt_ledger"}],
                 "work":"smw_work", "effect":"no-change",
                 "next":{"action":"done", "current":{"action":"done", "binding":"bound",
                     "readiness":"READY", "details":{"summary":"x".repeat(6_400)},
@@ -23,6 +25,9 @@ fn minimum_recovery_retains_terminal_without_inventing_completion() {
             let compact = project(&response, Path::new(&config), "next").unwrap();
             assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
             assert_eq!(compact["presentation"]["terminal"], terminal);
+            assert_eq!(compact["status"], "resumed");
+            assert_eq!(compact["works"], response["works"]);
+            assert_eq!(compact["unreadable"], response["unreadable"]);
             assert_eq!(compact["current"]["binding"], "bound");
             let argv = compact["fullCommand"].as_array().unwrap();
             if !argv
@@ -268,6 +273,7 @@ fn oversized_candidate_details_keep_counts_and_a_full_resume_route() {
     let compact = project(&response, Path::new("/tmp/exitbind.json"), "resume").unwrap();
     assert!(serde_json::to_vec(&compact).unwrap().len() <= MAX_RESPONSE_BYTES);
     assert_eq!(compact["candidateCounts"]["works"], 100);
+    assert_eq!(compact["status"], "resumed");
     assert_eq!(compact["candidateCounts"]["unreadable"], 100);
     assert_eq!(compact["omitted"][0], "candidate details; use fullCommand");
     assert_eq!(compact["fullCommand"][2], "resume");
