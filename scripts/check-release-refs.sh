@@ -64,10 +64,14 @@ equal_version install.sh "$installer_version" "$current"
 changelog_version=$(awk '/^## [0-9]/ { print $2; exit }' CHANGELOG.md)
 equal_version CHANGELOG.md "$changelog_version" "$plain"
 
-for manifest in plugin.json; do
+for manifest in plugin.json plugins/exitbind/plugin.json \
+  plugins/exitbind/.codex-plugin/plugin.json \
+  plugins/exitbind/.claude-plugin/plugin.json; do
   version=$(sed -n 's/^[[:space:]]*"version": "\([0-9][^"]*\)",*$/\1/p' "$manifest")
   equal_version "$manifest" "$version" "$plain"
 done
+plugin_validator_version=$(sed -n 's/^VERSION = "\([^"]*\)"$/\1/p' scripts/check-plugin-distribution.py)
+equal_version scripts/check-plugin-distribution.py "$plugin_validator_version" "$plain"
 for manifest in \
   systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json
