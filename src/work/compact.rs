@@ -342,6 +342,9 @@ pub(crate) fn project(
         // A pathological path or identifier must never make the bounded
         // endpoint emit an unbounded response.  Keep an executable argv prefix
         // and require the caller to supply the exact current config value.
+        // The effective-action projection also carries this route. Reserve
+        // space for both copies within the complete response budget.
+        let recovery = recovery_command(response, config_path, invoked, 1024);
         let mut fallback = json!({
             "compact": true,
             "presentation": {"terminal": response["presentation"]["terminal"]},

@@ -5,7 +5,7 @@ without a durable result. Freeing space does not itself authorize another
 execution. Inspect the existing Work with its compatible reader and configuration.
 Do not start a replacement Work to reset accounting.
 
-In 0.30.0, the configured Lead can recover a retained storage-failure response
+In 0.30.1, the configured Lead can recover a retained storage-failure response
 whose process group and capture readers ended, whose cleanup is complete, and
 whose partial capture bytes still exist. Preview first:
 
@@ -47,7 +47,7 @@ worker obtains its ordinary permit, returns its result, and completes fresh
 checks, required review and acceptance. Recovery supplies no permit, check
 credit, acceptance or accounting reset.
 
-The distinct v8 recovery event requires a compatible 0.30.0 reader for the
+The distinct v8 recovery event requires a compatible 0.30.1 reader for the
 affected Work's remaining lifecycle. Keep its original binary/configuration
 and all unrelated Work pins. Older readers refuse this action without changing
 saved bytes; switching a selector does not downgrade the record. If the complete

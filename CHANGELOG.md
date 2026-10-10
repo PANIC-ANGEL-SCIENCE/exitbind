@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.30.1
+
+- Keep complete recovery responses within the existing 8 KiB output budget
+  when short executable paths allow a longer configuration path to be inlined.
+  Preserve exact configuration/executable recovery obligations and terminal
+  state instead of duplicating a route beyond the complete response budget.
+- Cover intermediate configuration lengths and validate stale-return recovery
+  through canonical full detail when long fixture paths require compact
+  navigation. Retain refusal, current binding, attempt and no-mutation checks.
+
+The immutable 0.30.0 tag is retained. Its release checks failed before assets
+were published; this patch carries its accepted product changes forward.
+
 ## 0.30.0
 
 - Retire the source-built Soulmate executable, its selectable runtime profile,

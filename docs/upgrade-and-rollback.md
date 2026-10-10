@@ -46,14 +46,14 @@ A reader that predates this marker deliberately refuses the newer state
 without mutating it. That refusal is a compatibility boundary, not transparent
 downgrade support. Historical markerless records retain their existing meaning.
 
-The 0.30.0 release also includes named requirements and memory policy-correction
+The 0.30.1 release also includes named requirements and memory policy-correction
 events. Keep a compatible producer for their completion and lifecycle commands.
 An older executable's raw goal-status display does not establish support for
 named-goal completion. Policy-corrected memory uses v3 events that older memory
 readers refuse. Switching the executable selector does not downgrade these
 saved formats or restore an earlier authority decision.
 
-Explicit known-ended check recovery in 0.30.0 appends a distinct v8
+Explicit known-ended check recovery in 0.30.1 appends a distinct v8
 `check_observation_recovered` event. A reader without that action refuses the
 affected ledger. Retain its original executable and configuration, and explicitly
 select the compatible recovery reader for that Work's remaining lifecycle.

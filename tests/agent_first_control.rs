@@ -433,12 +433,24 @@ fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
     );
 
     let fresh = fixture.value(&["work", "next", &work], None);
-    assert_eq!(fresh["next"]["action"], "spawn");
-    // Inline packet detail is optional in the bounded response on long paths.
-    assert_eq!(fresh["next"]["attempt"], 2);
+    assert_eq!(fresh["current"]["action"], "spawn");
+    // Compact packet fields are optional on long paths; canonical currentness
+    // and the complete native assignment determine the pending attempt.
+    if fresh["next"]["action"] != "spawn" {
+        assert_eq!(fresh["next"]["action"], "inspect");
+        assert!(fresh["fullCommand"].is_array());
+    }
     let complete = fixture.value(&["work", "next", &work, "--full"], None);
     assert_eq!(complete["next"]["action"], "spawn");
-    assert_eq!(complete["next"]["assignment"], fresh["next"]["assignment"]);
+    assert_eq!(
+        complete["next"]["current"]["binding"],
+        fresh["current"]["binding"]
+    );
+    assert_eq!(
+        complete["next"]["assignment"],
+        fresh["current"]["recipient"]["assignment"]
+    );
+    assert_eq!(complete["next"]["current"]["phase"]["attempt"], 2);
     assert_eq!(complete["next"]["packet"]["attempt"], 2);
     assert_eq!(fs::read(&ledger_path).unwrap(), events_before);
     assert_eq!(

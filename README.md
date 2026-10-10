@@ -49,14 +49,14 @@ usual agent and Git workflow.
 ## Install and try a first result
 
 The candidate targets Linux x86_64 and macOS on Apple Silicon or Intel. Use the
-versioned installer below after the `v0.30.0` tag and release assets are
+versioned installer below after the `v0.30.1` tag and release assets are
 published. Until then, check the [published releases](https://github.com/envy404/exitbind/releases)
 for a version that is available. The installer checks the archive checksum;
 release archives also carry GitHub build attestations. Review the command and
 destination before approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.30.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.30.1/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
