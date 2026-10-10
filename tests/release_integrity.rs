@@ -25,6 +25,8 @@ const RELEASE_FILES: &[&str] = &[
     "systems.soulmate/.codex-plugin/plugin.json",
     "systems.soulmate/.claude-plugin/plugin.json",
     "scripts/ci-wsl.sh",
+    "docs/goal-requirements.md",
+    "docs/legacy-compatibility.md",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
 
@@ -123,6 +125,26 @@ fn packaged_plugin_mirrors_and_validator_cannot_drift_from_the_release() {
     ] {
         let fixture = Fixture::release();
         fixture.replace(file, VERSION, "99.98.97");
+        expect_failure(gate("check-release-refs.sh", &fixture.0), file);
+    }
+}
+
+#[test]
+fn current_guides_reject_obsolete_development_only_availability() {
+    for (file, claim) in [
+        (
+            "docs/goal-requirements.md",
+            format!("This path is available in the\ndevelopment source; it does not change the stable v{VERSION} installation."),
+        ),
+        (
+            "docs/legacy-compatibility.md",
+            "This unreleased\nsource line also retires the old executable.".to_owned(),
+        ),
+    ] {
+        let fixture = Fixture::release();
+        let path = fixture.0.join(file);
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(path, format!("{text}\n{claim}\n")).unwrap();
         expect_failure(gate("check-release-refs.sh", &fixture.0), file);
     }
 }

@@ -6,8 +6,8 @@ ledger, an old executable, or a rollback.
 
 The rule behind every entry below: compatibility reads the old world, and never
 relabels its evidence as new evidence. Active Soulmate distribution ended in
-`v0.25.0`; historical releases and records remain available. This unreleased
-source line also retires its old executable profile and updater route.
+`v0.25.0`; historical releases and records remain available.
+The current release also retires its old executable profile and updater route.
 
 ## Rename history
 
@@ -24,7 +24,7 @@ For current executable changes and rollback limits, see
 
 | Historical surface | Current surface | Status |
 | --- | --- | --- |
-| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; this source line no longer builds or selects the old profile, and refuses copy or symlink invocations before CLI effects |
+| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; the current release no longer builds or selects the old profile, and refuses copy or symlink invocations before CLI effects |
 | `soulmate.json` | `exitbind.json` | Read for existing projects; never created by a current install |
 | `.soulmate/` state | `.exitbind/` | Read for existing projects; never created by a current install |
 | `soulmate/` control tree | `exitbind/` | Read for existing projects; never created by a current install |

@@ -64,6 +64,21 @@ equal_version install.sh "$installer_version" "$current"
 changelog_version=$(awk '/^## [0-9]/ { print $2; exit }' CHANGELOG.md)
 equal_version CHANGELOG.md "$changelog_version" "$plain"
 
+# Current installed guides must not retain the pre-release availability claims
+# while version substitution alone makes their references look current.
+for guide in docs/goal-requirements.md docs/legacy-compatibility.md; do
+  test -r "$guide" || fail "missing or unreadable release guide: $guide"
+  awk '
+    { text = text " " $0 }
+    END {
+      gsub(/[[:space:]]+/, " ", text)
+      text = tolower(text)
+      exit (index(text, "unreleased source line") ||
+            index(text, "development source; it does not change the stable")) ? 1 : 0
+    }
+  ' "$guide" || fail "obsolete development-only availability claim: $guide"
+done
+
 for manifest in plugin.json plugins/exitbind/plugin.json \
   plugins/exitbind/.codex-plugin/plugin.json \
   plugins/exitbind/.claude-plugin/plugin.json; do
