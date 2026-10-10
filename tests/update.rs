@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 mod support;
 
 mod matrix {
@@ -26,7 +25,7 @@ case "$*" in
   *) printf '%s' '#!/bin/sh
 target="$EXITBIND_INSTALL_PREFIX/exitbind"
 if [ "$FAKE_INSTALL_FAIL" = "1" ]; then exit 9; fi
-if [ "$FAKE_INSTALL_DIRECTORY" = "1" ]; then rm -f "$SOULMATE_INSTALL_PREFIX/soulmate"; mkdir "$SOULMATE_INSTALL_PREFIX/soulmate"; exit 0; fi
+if [ "$FAKE_INSTALL_DIRECTORY" = "1" ]; then rm -f "$EXITBIND_INSTALL_PREFIX/exitbind"; mkdir "$EXITBIND_INSTALL_PREFIX/exitbind"; exit 0; fi
 version=${EXITBIND_VERSION#v}
 if [ "$FAKE_INSTALL_WRONG" = "1" ]; then version=0.14.0-rc.9; fi
 if [ "$FAKE_INSTALL_RENAME" = "1" ]; then stage="$EXITBIND_INSTALL_PREFIX/.exitbind-install-$$"; aside="$EXITBIND_INSTALL_PREFIX/.exitbind-previous-$$"; printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = version ]; then echo $version; fi" > "$stage"; chmod 755 "$stage"; if test -f "$target" && test ! -L "$target"; then mkdir "$aside"; mv -f "$target" "$aside/exitbind"; fi; mv -f "$stage" "$target"; exit 0; fi
@@ -130,16 +129,16 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
     fs::create_dir(&bin).unwrap();
     fs::create_dir(&prefix).unwrap();
     fake_curl(&bin);
-    let target = prefix.join("soulmate");
+    let target = prefix.join("exitbind");
     binary(&target, "0.14.0-rc.1");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
         .env("XDG_CACHE_HOME", root.join("cache"))
-        .env("SOULMATE_NO_UPDATE_CHECK", "1")
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .output()
         .unwrap();
     assert!(
@@ -154,12 +153,12 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
     );
 
     binary(&target, "0.14.0-rc.1");
-    let failed = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let failed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
-        .env("SOULMATE_NO_UPDATE_CHECK", "1")
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .env("FAKE_INSTALL_FAIL", "1")
         .output()
         .unwrap();
@@ -170,12 +169,12 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
         "0.14.0-rc.1"
     );
 
-    let wrong = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let wrong = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
-        .env("SOULMATE_NO_UPDATE_CHECK", "1")
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .env("FAKE_INSTALL_WRONG", "1")
         .output()
         .unwrap();
@@ -189,21 +188,17 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
 
 #[test]
 fn update_is_discoverable_in_advanced_help() {
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["help", "advanced"])
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("soulmate update"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("exitbind update"));
 }
 
 #[test]
-fn updater_matrix_drives_exact_api_and_raw_installer_origins_for_both_callers() {
+fn current_updater_uses_exact_api_and_raw_installer_origin() {
     exercise_matrix_origin(env!("CARGO_BIN_EXE_exitbind"), "current-canonical");
-    exercise_matrix_origin(
-        env!("CARGO_BIN_EXE_soulmate"),
-        "canonical-legacy-historical",
-    );
 }
 
 #[test]
@@ -214,16 +209,16 @@ fn double_update_failure_names_and_retains_private_backup() {
     fs::create_dir(&bin).unwrap();
     fs::create_dir(&prefix).unwrap();
     fake_curl(&bin);
-    let target = prefix.join("soulmate");
+    let target = prefix.join("exitbind");
     binary(&target, "0.14.0-rc.1");
     let original = fs::read(&target).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let failed = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let failed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
-        .env("SOULMATE_NO_UPDATE_CHECK", "1")
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .env("FAKE_INSTALL_DIRECTORY", "1")
         .output()
         .unwrap();
@@ -235,7 +230,7 @@ fn double_update_failure_names_and_retains_private_backup() {
         .find(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with(".soulmate-old-"))
+                .is_some_and(|name| name.starts_with(".exitbind-old-"))
         })
         .expect("double failure must retain its backup");
     assert_eq!(fs::read(&backup).unwrap(), original);
@@ -263,13 +258,13 @@ fn malformed_release_response_and_missing_curl_are_errors() {
     fs::create_dir(&bin).unwrap();
     fs::create_dir(&prefix).unwrap();
     fake_curl(&bin);
-    binary(&prefix.join("soulmate"), "0.14.0-rc.1");
+    binary(&prefix.join("exitbind"), "0.14.0-rc.1");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let bad = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let bad = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("FAKE_BAD", "1")
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .output()
         .unwrap();
     assert!(!bad.status.success());
@@ -279,10 +274,10 @@ fn malformed_release_response_and_missing_curl_are_errors() {
         String::from_utf8_lossy(&bad.stderr)
     );
     assert!(bad_text.contains("release metadata"), "{bad_text}");
-    let missing = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let missing = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", root.join("missing"))
-        .env("SOULMATE_INSTALL_PREFIX", &prefix)
+        .env("EXITBIND_INSTALL_PREFIX", &prefix)
         .output()
         .unwrap();
     assert!(!missing.status.success());
@@ -465,9 +460,9 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
         .env("HOME", &root)
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .env("SOULMATE_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
         .env_remove("EXITBIND_INSTALL_PREFIX")
-        .env_remove("SOULMATE_INSTALL_PREFIX")
+        .env_remove("EXITBIND_INSTALL_PREFIX")
         .env("FAKE_INSTALL_RENAME", "1");
     let output = support::run(&mut update);
     assert!(
@@ -633,9 +628,9 @@ esac
                 .env("HOME", self.root.join("home"))
                 .env("XDG_CACHE_HOME", self.root.join("cache"))
                 .env("EXITBIND_NO_UPDATE_CHECK", "1")
-                .env("SOULMATE_NO_UPDATE_CHECK", "1")
+                .env("EXITBIND_NO_UPDATE_CHECK", "1")
                 .env_remove("EXITBIND_INSTALL_PREFIX")
-                .env_remove("SOULMATE_INSTALL_PREFIX")
+                .env_remove("EXITBIND_INSTALL_PREFIX")
                 .env_remove("EXITBIND_REPOSITORY")
                 .env_remove("EXITBIND_VERSION"),
         );

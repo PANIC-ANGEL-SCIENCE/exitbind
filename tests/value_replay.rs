@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 mod support;
@@ -8,7 +8,7 @@ use std::{
     process::{Command, Output},
 };
 
-const CHECK: &str = "soulmate check --config verification.json";
+const CHECK: &str = "exitbind check --config verification.json";
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
@@ -18,7 +18,7 @@ fn project(label: &str) -> PathBuf {
 }
 
 fn invoke(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()
@@ -34,7 +34,7 @@ fn invoke_exitbind(root: &Path, arguments: &[&str]) -> Output {
 }
 
 fn invoke_owned(root: &Path, arguments: Vec<String>) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()
@@ -55,9 +55,9 @@ fn json_output(output: &Output) -> Value {
 }
 
 fn state_artifact(root: &Path, name: &str, content: &str) -> String {
-    let path = root.join(".soulmate/artifacts").join(name);
+    let path = root.join(".exitbind/artifacts").join(name);
     fs::write(path, content).expect("artifact should be written");
-    format!(".soulmate/artifacts/{name}")
+    format!(".exitbind/artifacts/{name}")
 }
 
 fn checked_start(root: &Path, ledger: &str) {
@@ -76,7 +76,7 @@ fn checked_start(root: &Path, ledger: &str) {
             "--proof-origin",
             "synthetic",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -97,7 +97,7 @@ fn submit(root: &Path, agent: &str, ledger: &str, outcome: &str, artifact: &str)
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -118,7 +118,7 @@ fn record_check(root: &Path, ledger: &str, target: &str, exit_code: &str) {
             exit_code.into(),
             "--json".into(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -128,7 +128,7 @@ fn record_check(root: &Path, ledger: &str, target: &str, exit_code: &str) {
 
 fn prepare_checked_project(label: &str) -> (PathBuf, String, Vec<Value>, String) {
     let root = project(label);
-    let ledger = ".soulmate/runs/replay.jsonl".to_owned();
+    let ledger = ".exitbind/runs/replay.jsonl".to_owned();
     checked_start(&root, &ledger);
     let lead = state_artifact(&root, "replay-lead.md", "lead scope\n");
     submit(&root, "lead", &ledger, "scoped", &lead);
@@ -161,32 +161,199 @@ fn replayed_forged_acceptance_requires_passing_check() {
 
     let mut missing = without_check.clone();
     append_forged_acceptance(&root, &mut missing, "replay-forged-missing.md");
-    let missing_ledger = ".soulmate/runs/replay-missing.jsonl";
+    let missing_ledger = ".exitbind/runs/replay-missing.jsonl";
     write_events(&root, missing_ledger, &missing);
     let rejected = inspect(&root, missing_ledger);
     assert!(!rejected.status.success(), "{}", text(&rejected));
     assert_contains_all(
         &rejected,
-        &[
-            "canonical acceptance requires passing checks",
-            "check_missing",
-        ],
+        &["canonical acceptance requires reviewer approval"],
     );
+    let missing_status = json_output(&invoke(
+        &root,
+        &[
+            "run",
+            "status",
+            &ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(missing_status["checks"]["status"], "not_observed");
 
     record_check(&root, &ledger, &worker_target, "1");
     let with_failed_check = read_events(&root, &ledger);
     let mut failed = with_failed_check;
     append_forged_acceptance(&root, &mut failed, "replay-forged-failed.md");
-    let failed_ledger = ".soulmate/runs/replay-failed.jsonl";
+    let failed_ledger = ".exitbind/runs/replay-failed.jsonl";
     write_events(&root, failed_ledger, &failed);
     let rejected = inspect(&root, failed_ledger);
     assert!(!rejected.status.success(), "{}", text(&rejected));
     assert_contains_all(
         &rejected,
+        &["canonical acceptance requires reviewer approval"],
+    );
+    let failed_status = json_output(&invoke(
+        &root,
         &[
-            "canonical acceptance requires passing checks",
-            "check_failed",
+            "run",
+            "status",
+            &ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
         ],
+    ));
+    assert_eq!(failed_status["checks"]["status"], "blocked");
+    assert_eq!(failed_status["checks"]["failedCount"], 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn omitted_review_still_requires_a_passing_check_before_acceptance() {
+    let root = project("value-replay-omitted-review-check-gate");
+    let ledger = ".exitbind/runs/omitted-review-check-gate.jsonl";
+    let started = invoke(
+        &root,
+        &[
+            "run",
+            "start",
+            "change",
+            "--goal",
+            "exercise the check gate with recorded review omission",
+            "--ledger",
+            ledger,
+            "--check-command",
+            CHECK,
+            "--proof-origin",
+            "local_report",
+            "--review-policy",
+            "omitted",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(started.status.success(), "{}", text(&started));
+    let lead = state_artifact(&root, "omitted-check-lead.md", "scope\n");
+    submit(&root, "lead", ledger, "scoped", &lead);
+    let worker = state_artifact(&root, "omitted-check-worker.md", "worker result\n");
+    submit(&root, "worker", ledger, "completed", &worker);
+    let worker_target = read_events(&root, ledger)
+        .iter()
+        .find(|event| event["role"] == "worker")
+        .and_then(|event| event["eventSha256"].as_str())
+        .expect("completed worker event is present in the canonical ledger")
+        .to_owned();
+    let before_refusal = fs::read(root.join(ledger)).unwrap();
+    let accepted_before_check = invoke(
+        &root,
+        &[
+            "run",
+            "submit",
+            "lead",
+            ledger,
+            "--outcome",
+            "accepted",
+            "--artifact",
+            &lead,
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(!accepted_before_check.status.success());
+    assert_contains_all(
+        &accepted_before_check,
+        &[
+            "acceptance refused",
+            "configured check evidence is check_missing",
+        ],
+    );
+    let after_refusal = fs::read(root.join(ledger)).unwrap();
+    assert!(after_refusal.starts_with(&before_refusal));
+    let refused_events = read_events(&root, ledger);
+    assert_eq!(refused_events.last().unwrap()["action"], "protect");
+    assert_eq!(refused_events.last().unwrap()["reason"], "check_missing");
+    assert_eq!(refused_events.len(), 4);
+
+    record_check(&root, ledger, &worker_target, "1");
+    let before_failed_refusal = fs::read(root.join(ledger)).unwrap();
+    let accepted_after_failed_check = invoke(
+        &root,
+        &[
+            "run",
+            "submit",
+            "lead",
+            ledger,
+            "--outcome",
+            "accepted",
+            "--artifact",
+            &lead,
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(!accepted_after_failed_check.status.success());
+    assert_contains_all(
+        &accepted_after_failed_check,
+        &[
+            "acceptance refused",
+            "configured check evidence is check_failed",
+        ],
+    );
+    let after_failed_refusal = fs::read(root.join(ledger)).unwrap();
+    assert!(after_failed_refusal.starts_with(&before_failed_refusal));
+    let failed_events = read_events(&root, ledger);
+    assert_eq!(failed_events.len(), 6);
+    assert_eq!(failed_events.last().unwrap()["action"], "protect");
+    assert_eq!(failed_events.last().unwrap()["reason"], "check_failed");
+    assert!(!failed_events
+        .iter()
+        .any(|event| event["outcome"] == "accepted"));
+
+    record_check(&root, ledger, &worker_target, "0");
+    let accepted_after_check = invoke(
+        &root,
+        &[
+            "run",
+            "submit",
+            "lead",
+            ledger,
+            "--outcome",
+            "accepted",
+            "--artifact",
+            &lead,
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(
+        accepted_after_check.status.success(),
+        "{}",
+        text(&accepted_after_check)
+    );
+    let final_status = json_output(&invoke(
+        &root,
+        &[
+            "run",
+            "status",
+            ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(final_status["status"], "accepted");
+    assert_eq!(final_status["checks"]["status"], "passed");
+    assert_eq!(
+        read_events(&root, ledger)[0]["reviewPolicy"]["decision"],
+        "omitted"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -224,7 +391,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
         });
     }
     rehash_chain_with_current_worker_target(&mut events);
-    let historical_ledger = ".soulmate/runs/replay-historical-review.jsonl";
+    let historical_ledger = ".exitbind/runs/replay-historical-review.jsonl";
     write_events(&root, historical_ledger, &events);
 
     let inspected = inspect(&root, historical_ledger);
@@ -248,7 +415,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
             historical_ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(status.status.success(), "{}", text(&status));
@@ -264,7 +431,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
         }
         rehash_chain_with_current_worker_target(&mut historical);
         let historical_ledger =
-            format!(".soulmate/runs/replay-historical-review-{producer_version}.jsonl");
+            format!(".exitbind/runs/replay-historical-review-{producer_version}.jsonl");
         write_events(&root, &historical_ledger, &historical);
         let inspected = inspect(&root, &historical_ledger);
         assert!(inspected.status.success(), "{}", text(&inspected));
@@ -276,7 +443,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
                 &historical_ledger,
                 "--json",
                 "--config",
-                "soulmate.json",
+                "exitbind.json",
             ],
         );
         assert!(
@@ -296,7 +463,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
             event["producer"]["version"] = json!(producer_version);
         }
         rehash_chain_with_current_worker_target(&mut rejected);
-        let rejected_ledger = format!(".soulmate/runs/replay-reviewer-{producer_version}.jsonl");
+        let rejected_ledger = format!(".exitbind/runs/replay-reviewer-{producer_version}.jsonl");
         write_events(&root, &rejected_ledger, &rejected);
         let rejected = inspect(&root, &rejected_ledger);
         assert!(!rejected.status.success(), "{}", text(&rejected));
@@ -316,7 +483,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
             _ => unreachable!(),
         }
         rehash_chain_with_current_worker_target(&mut forged);
-        let forged_ledger = format!(".soulmate/runs/replay-reviewer-forged-{forged_field}.jsonl");
+        let forged_ledger = format!(".exitbind/runs/replay-reviewer-forged-{forged_field}.jsonl");
         write_events(&root, &forged_ledger, &forged);
         let rejected = inspect(&root, &forged_ledger);
         assert!(!rejected.status.success(), "{}", text(&rejected));
@@ -329,7 +496,7 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
         .find(|event| event["role"] == "reviewer")
         .expect("reviewer event");
     reviewer["agent"] = json!("unplanned_reviewer");
-    let corrupt_ledger = ".soulmate/runs/replay-reviewer-corrupt-hash.jsonl";
+    let corrupt_ledger = ".exitbind/runs/replay-reviewer-corrupt-hash.jsonl";
     write_events(&root, corrupt_ledger, &corrupt_hash);
     let rejected = inspect(&root, corrupt_ledger);
     assert!(!rejected.status.success(), "{}", text(&rejected));
@@ -340,30 +507,26 @@ fn historical_reviewer_after_failed_check_is_read_only_compatibility() {
 
 #[test]
 fn replayed_check_after_terminal_state_is_rejected() {
-    let (root, _ledger, without_check, worker_target) =
+    let (root, ledger, without_check, worker_target) =
         prepare_checked_project("value-replay-terminal-check");
+    record_check(&root, &ledger, &worker_target, "0");
+    let current_check = read_events(&root, &ledger)
+        .into_iter()
+        .find(|event| event["action"] == "check")
+        .expect("fixture command emits a current check template");
+
     let mut forged = without_check;
     append_forged_acceptance(&root, &mut forged, "replay-terminal-check.md");
-    forged[4]["outcome"] = json!("rejected");
-    let head = forged.last().unwrap().clone();
-    forged.push(json!({
-        "version": 4,
-        "kind": "run",
-        "producer": {"name": "soulmate", "version": env!("CARGO_PKG_VERSION"), "commit": null},
-        "action": "check",
-        "runId": forged[0]["runId"],
-        "targetEventSha256": worker_target,
-        "checkCommand": CHECK,
-        "checkCommandSha256": sha256(CHECK.as_bytes()),
-        "origin": "synthetic",
-        "acquisition": "reported",
-        "result": {"kind": "exit", "code": 0},
-        "durationMs": null,
-        "previousEventSha256": head["eventSha256"],
-        "timestamp": head["timestamp"],
-    }));
+    forged.last_mut().unwrap()["outcome"] = json!("rejected");
+    forged
+        .last_mut()
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("inputsSha256");
+    forged.push(current_check);
     rehash_chain(&mut forged);
-    let terminal_ledger = ".soulmate/runs/replay-terminal-check.jsonl";
+    let terminal_ledger = ".exitbind/runs/replay-terminal-check.jsonl";
     write_events(&root, terminal_ledger, &forged);
     let rejected = inspect(&root, terminal_ledger);
     assert!(!rejected.status.success(), "{}", text(&rejected));
@@ -383,7 +546,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     unknown_check[check_index]["unexpected"] = json!(true);
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-unknown-check.jsonl",
+        ".exitbind/runs/replay-unknown-check.jsonl",
         unknown_check,
         &["malformed check event"],
     );
@@ -392,7 +555,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     malformed_check[check_index]["exitCode"] = json!(-1);
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-malformed-check.jsonl",
+        ".exitbind/runs/replay-malformed-check.jsonl",
         malformed_check,
         &["malformed check event"],
     );
@@ -402,7 +565,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     wrong_command[check_index]["checkCommandSha256"] = json!(sha256(b"different check"));
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-wrong-command.jsonl",
+        ".exitbind/runs/replay-wrong-command.jsonl",
         wrong_command,
         &["check report does not match configured policy"],
     );
@@ -411,7 +574,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     wrong_origin[check_index]["origin"] = json!("local_report");
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-wrong-origin.jsonl",
+        ".exitbind/runs/replay-wrong-origin.jsonl",
         wrong_origin,
         &["check report does not match configured policy"],
     );
@@ -420,7 +583,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     wrong_target[check_index]["targetEventSha256"] = json!("0".repeat(64));
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-wrong-target.jsonl",
+        ".exitbind/runs/replay-wrong-target.jsonl",
         wrong_target,
         &["check target is not a current worker completion"],
     );
@@ -429,7 +592,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     mixed_versions[1]["version"] = json!(2);
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-mixed-versions.jsonl",
+        ".exitbind/runs/replay-mixed-versions.jsonl",
         mixed_versions,
         &["mixed event versions"],
     );
@@ -450,7 +613,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -462,7 +625,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     unknown_protection[protection_index]["unexpected"] = json!(true);
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-unknown-protection.jsonl",
+        ".exitbind/runs/replay-unknown-protection.jsonl",
         unknown_protection,
         &["malformed protection event"],
     );
@@ -472,7 +635,7 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
     malformed_protection[protection_index]["checkEvidence"] = json!([]);
     reject_replayed(
         &root,
-        ".soulmate/runs/replay-malformed-protection.jsonl",
+        ".exitbind/runs/replay-malformed-protection.jsonl",
         malformed_protection,
         &["malformed protection event"],
     );
@@ -482,13 +645,58 @@ fn replayed_v3_shape_and_policy_mutations_are_rejected_after_rehash() {
 #[test]
 fn live_v3_checked_submit_and_record_check_preserve_historical_version() {
     let root = project("value-replay-live-v3");
-    let ledger = ".soulmate/runs/live-v3.jsonl";
+    let ledger = ".exitbind/runs/live-v3.jsonl";
     checked_start(&root, ledger);
     let lead = state_artifact(&root, "live-v3-lead.md", "lead scope\n");
     submit(&root, "lead", ledger, "scoped", &lead);
     let mut prefix = read_events(&root, ledger);
     for event in &mut prefix {
         event["version"] = json!(3);
+        event["producer"] = json!({
+            "name": "soulmate",
+            "version": "0.25.0",
+            "commit": null
+        });
+        let allowed: &[&str] = match event["action"].as_str().unwrap() {
+            "start" => &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "workflow",
+                "goal",
+                "configSha256",
+                "plan",
+                "checkPolicy",
+                "harnessReceipt",
+                "supersedes",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            "submit" => &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "stage",
+                "attempt",
+                "agent",
+                "role",
+                "outcome",
+                "artifact",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            other => panic!("unexpected current prefix action {other}"),
+        };
+        event
+            .as_object_mut()
+            .unwrap()
+            .retain(|key, _| allowed.contains(&key.as_str()));
     }
     rehash_chain(&mut prefix);
     write_events(&root, ledger, &prefix);
@@ -517,7 +725,7 @@ fn live_v3_checked_submit_and_record_check_preserve_historical_version() {
 fn frozen_v3_fixture_inspects_successfully() {
     let root = project("value-replay-frozen");
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/run-v3.jsonl");
-    let ledger = ".soulmate/runs/frozen-v3.jsonl";
+    let ledger = ".exitbind/runs/frozen-v3.jsonl";
     fs::copy(fixture, root.join(ledger)).expect("frozen v3 fixture should copy");
     let inspected = inspect(&root, ledger);
     assert!(inspected.status.success(), "{}", text(&inspected));
@@ -529,55 +737,49 @@ fn frozen_v3_fixture_inspects_successfully() {
 }
 
 #[test]
-fn producer_identity_preserves_v1_history_and_accepts_current_exitbind() {
-    let root = project("value-replay-v1-producer");
-    let ledger = ".soulmate/runs/v1.jsonl";
-    let started = invoke(
-        &root,
-        &[
-            "run",
-            "start",
-            "change",
-            "--goal",
-            "historical producer",
-            "--ledger",
-            ledger,
-            "--config",
-            "soulmate.json",
-        ],
+fn frozen_v1_history_remains_readable_without_an_old_writer() {
+    let root = project("value-replay-v1-history");
+    let ledger = ".exitbind/runs/frozen-v1.jsonl";
+    let fixture = include_bytes!("fixtures/v0.0.8-run.jsonl");
+    fs::write(root.join(ledger), fixture).expect("frozen v1 fixture should copy");
+    let accepted = inspect(&root, ledger);
+    assert!(accepted.status.success(), "{}", text(&accepted));
+    assert_eq!(json_output(&accepted)["valid"], true);
+    assert_eq!(fs::read(root.join(ledger)).unwrap(), fixture);
+
+    // The frozen producer-less v1 above and an explicitly named historical
+    // producer both remain readable. Rehash mutations so identity refusal is
+    // exercised on an otherwise intact chain.
+    let mut historical = read_events(&root, ledger);
+    assert!(historical[0].get("producer").is_none());
+    historical[0]["producer"] = json!({
+        "name": "soulmate",
+        "version": "0.9.0",
+        "commit": null
+    });
+    rehash_chain(&mut historical);
+    let historical_ledger = ".exitbind/runs/named-historical-v1.jsonl";
+    write_events(&root, historical_ledger, &historical);
+    let historical_read = inspect(&root, historical_ledger);
+    assert!(
+        historical_read.status.success(),
+        "{}",
+        text(&historical_read)
     );
-    assert!(started.status.success(), "{}", text(&started));
-    let historical = read_events(&root, ledger);
-    assert_eq!(historical[0]["version"], 1);
-    assert_eq!(historical[0]["producer"]["name"], "soulmate");
-
-    let soulmate_ledger = ".soulmate/runs/v1-soulmate.jsonl";
-    write_events(&root, soulmate_ledger, &historical);
-    let accepted = inspect(&root, soulmate_ledger);
-    assert!(accepted.status.success(), "{}", text(&accepted));
-
-    let mut producerless = historical.clone();
-    producerless[0]
-        .as_object_mut()
-        .expect("historical start should be an object")
-        .remove("producer");
-    rehash_chain(&mut producerless);
-    let producerless_ledger = ".soulmate/runs/v1-producerless.jsonl";
-    write_events(&root, producerless_ledger, &producerless);
-    let accepted = inspect(&root, producerless_ledger);
-    assert!(accepted.status.success(), "{}", text(&accepted));
+    assert_eq!(json_output(&historical_read)["valid"], true);
 
     let mut relabeled = historical;
-    relabeled[0]["producer"]["name"] = json!("exitbind");
-    reject_replayed(
-        &root,
-        ".soulmate/runs/v1-exitbind.jsonl",
-        relabeled,
-        &["invalid producer"],
-    );
+    relabeled[0]["producer"] = json!({
+        "name": "exitbind",
+        "version": env!("CARGO_PKG_VERSION"),
+        "commit": null
+    });
+    let relabeled_ledger = ".exitbind/runs/relabelled-v1.jsonl";
+    reject_replayed(&root, relabeled_ledger, relabeled, &["invalid producer"]);
+    assert_eq!(fs::read(root.join(ledger)).unwrap(), fixture);
 
     let v5_root = project("value-replay-v5-producer");
-    let v5_ledger = ".soulmate/runs/v5.jsonl";
+    let v5_ledger = ".exitbind/runs/v5.jsonl";
     let v5_started = invoke_exitbind(
         &v5_root,
         &[
@@ -593,7 +795,7 @@ fn producer_identity_preserves_v1_history_and_accepts_current_exitbind() {
             "--proof-origin",
             "synthetic",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(v5_started.status.success(), "{}", text(&v5_started));
@@ -602,7 +804,7 @@ fn producer_identity_preserves_v1_history_and_accepts_current_exitbind() {
     assert_eq!(v5_events[0]["producer"]["name"], "exitbind");
     let v5_inspected = invoke_exitbind(
         &v5_root,
-        &["run", "inspect", v5_ledger, "--config", "soulmate.json"],
+        &["run", "inspect", v5_ledger, "--config", "exitbind.json"],
     );
     assert!(v5_inspected.status.success(), "{}", text(&v5_inspected));
 
@@ -652,7 +854,7 @@ fn reject_replayed(root: &Path, ledger: &str, mut events: Vec<Value>, expected: 
 fn inspect(root: &Path, ledger: &str) -> Output {
     invoke(
         root,
-        &["run", "inspect", ledger, "--config", "soulmate.json"],
+        &["run", "inspect", ledger, "--config", "exitbind.json"],
     )
 }
 

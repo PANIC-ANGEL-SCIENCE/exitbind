@@ -15,6 +15,7 @@ mod event_detail;
 mod event_evidence;
 mod evidence_identity;
 mod governor;
+pub(crate) mod governor_recovery;
 pub(crate) mod inputs;
 pub(crate) mod ledger;
 mod lifecycle;
@@ -45,7 +46,7 @@ pub(crate) use self::reducer::{
 pub use self::submission::submit;
 pub(crate) use self::submission::submit_for_assignment;
 pub use self::view::{
-    explain, inspect, report, report_markdown, status, supersede, supersede_with_policy,
+    explain, inspect, report, report_markdown, status, supersede, supersede_with_owner_recovery,
 };
 pub(crate) use self::view::{human_explain, human_status, terminal_display};
 

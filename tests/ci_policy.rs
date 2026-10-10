@@ -142,6 +142,171 @@ fn selected_proof_base<'a>(pr_base: &'a str, before: &'a str, head_parent: &'a s
     }
 }
 
+fn ci_concurrency(event: &str, reference: &str, pr: Option<u64>, run_id: u64) -> (String, bool) {
+    let group = if event == "pull_request" {
+        format!("Exitbind / Exit-pull-request-{}", pr.unwrap())
+    } else if event == "push" && reference.starts_with("refs/heads/feature/") {
+        format!("Exitbind / Exit-feature-push-{reference}")
+    } else {
+        format!("Exitbind / Exit-protected-run-{run_id}")
+    };
+    let cancel = event == "pull_request"
+        || (event == "push" && reference.starts_with("refs/heads/feature/"));
+    (group, cancel)
+}
+
+#[test]
+fn workflow_concurrency_reuses_only_selected_feature_runs() {
+    let workflow = source(".github/workflows/ci.yml");
+    let group = "group: ${{ (github.event_name == 'pull_request' && format('{0}-pull-request-{1}', github.workflow, github.event.pull_request.number)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/') && format('{0}-feature-push-{1}', github.workflow, github.ref)) || format('{0}-protected-run-{1}', github.workflow, github.run_id) }}";
+    let cancellation = "cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) }}";
+    assert!(
+        workflow.contains(group),
+        "workflow concurrency group drifted"
+    );
+    assert!(
+        workflow.contains(cancellation),
+        "workflow cancellation policy drifted"
+    );
+
+    let rows = [
+        ("pull_request", "refs/pull/7/merge", Some(7), 10, "-7", true),
+        ("pull_request", "refs/pull/7/merge", Some(7), 11, "-7", true),
+        ("pull_request", "refs/pull/8/merge", Some(8), 12, "-8", true),
+        (
+            "push",
+            "refs/heads/feature/repair",
+            None,
+            20,
+            "repair",
+            true,
+        ),
+        (
+            "push",
+            "refs/heads/feature/repair",
+            None,
+            21,
+            "repair",
+            true,
+        ),
+        ("push", "refs/heads/feature/other", None, 22, "other", true),
+        (
+            "push",
+            "refs/heads/main",
+            None,
+            30,
+            "protected-run-30",
+            false,
+        ),
+        (
+            "push",
+            "refs/heads/main",
+            None,
+            31,
+            "protected-run-31",
+            false,
+        ),
+        (
+            "push",
+            "refs/tags/v1.0.0",
+            None,
+            40,
+            "protected-run-40",
+            false,
+        ),
+        (
+            "push",
+            "refs/tags/v1.0.0",
+            None,
+            41,
+            "protected-run-41",
+            false,
+        ),
+        (
+            "workflow_dispatch",
+            "refs/heads/main",
+            None,
+            50,
+            "protected-run-50",
+            false,
+        ),
+        (
+            "workflow_dispatch",
+            "refs/heads/main",
+            None,
+            51,
+            "protected-run-51",
+            false,
+        ),
+        (
+            "push",
+            "refs/heads/release",
+            None,
+            60,
+            "protected-run-60",
+            false,
+        ),
+        (
+            "push",
+            "refs/heads/release",
+            None,
+            61,
+            "protected-run-61",
+            false,
+        ),
+    ];
+    let evaluated = rows
+        .iter()
+        .map(|(event, reference, pr, run_id, _, _)| ci_concurrency(event, reference, *pr, *run_id))
+        .collect::<Vec<_>>();
+    for ((_, _, _, _, expected_suffix, expected_cancel), (group, cancel)) in
+        rows.iter().zip(evaluated.iter())
+    {
+        assert!(group.ends_with(expected_suffix), "{group}");
+        assert_eq!(cancel, expected_cancel);
+    }
+    assert_eq!(
+        evaluated[0].0, evaluated[1].0,
+        "same PR replaces its pending run"
+    );
+    assert_ne!(
+        evaluated[0].0, evaluated[2].0,
+        "different PRs stay isolated"
+    );
+    assert_eq!(
+        evaluated[3].0, evaluated[4].0,
+        "same feature ref cancels stale work"
+    );
+    for left in 6usize..evaluated.len() {
+        for right in (left + 1)..evaluated.len() {
+            assert!(rows[left].4.starts_with("protected-"));
+            assert!(rows[right].4.starts_with("protected-"));
+            assert_ne!(evaluated[left].0, evaluated[right].0);
+            assert!(!evaluated[left].1);
+            assert!(!evaluated[right].1);
+        }
+    }
+}
+
+#[test]
+fn ci_tests_the_default_product_and_runs_the_real_native_handoff() {
+    let manifest = source("Cargo.toml");
+    assert!(!manifest.contains("name = \"soulmate\""));
+    assert!(!manifest.contains("legacy-cli-test"));
+
+    let shared = source("scripts/ci-local.sh");
+    assert!(shared.contains(
+        "run native-handoff \"$CARGO\" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact"
+    ));
+    assert!(shared.contains(
+        "./scripts/assert-test-ran.sh real_tmux_child_presents_bound_evidence_without_persisting_the_prompt"
+    ));
+    assert!(!shared.contains("--features legacy-cli-test"));
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(!root.join("scripts/ci-legacy-tests.sh").exists());
+    assert!(!root.join("scripts/test-ci-legacy-selection.sh").exists());
+}
+
 #[test]
 fn current_proof_and_drift_warning_gates_use_the_exitbind_binary() {
     let proof = matrix::matrix()["proof"].clone();

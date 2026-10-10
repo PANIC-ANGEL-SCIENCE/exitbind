@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 use std::{
     fs,
@@ -7,8 +7,8 @@ use std::{
     process::{Command, Output},
 };
 
-const SOULMATE_SKILL: &[u8] = include_bytes!("../skills/soulmate/SKILL.md");
-const SOULMATE_REFERENCE: &[u8] = include_bytes!("../skills/soulmate/references/manual.md");
+const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
+const EXITBIND_REFERENCE: &[u8] = include_bytes!("../skills/exitbind/references/operators.md");
 const AWAY_GUIDE: &str = include_str!("../docs/codex-tmux-away.md");
 const REFERENCE: &str = include_str!("../REFERENCE.md");
 const EXTERNAL_SENTINEL: &[u8] = b"host-owned sentinel\n";
@@ -20,9 +20,9 @@ fn temp(label: &str) -> PathBuf {
 fn invoke(arguments: &[&str], bindings: &Path) -> Output {
     let home = bindings.parent().unwrap().join("home");
     fs::create_dir_all(&home).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .env("HOME", home)
-        .env("SOULMATE_BINDINGS_DIR", bindings)
+        .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
         .unwrap()
@@ -80,25 +80,26 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
 fn attended_work_uses_native_spawn_without_away_fallback() {
     let (base, _product, control, _bindings) = local_project("native-spawn");
     let agents_projection =
-        fs::read_to_string(control.join(".agents/skills/soulmate/SKILL.md")).unwrap();
+        fs::read_to_string(control.join(".agents/skills/exitbind/SKILL.md")).unwrap();
     let claude_projection =
-        fs::read_to_string(control.join(".claude/skills/soulmate/SKILL.md")).unwrap();
+        fs::read_to_string(control.join(".claude/skills/exitbind/SKILL.md")).unwrap();
     let agents_reference =
-        fs::read(control.join(".agents/skills/soulmate/references/manual.md")).unwrap();
+        fs::read(control.join(".agents/skills/exitbind/references/operators.md")).unwrap();
     let claude_reference =
-        fs::read(control.join(".claude/skills/soulmate/references/manual.md")).unwrap();
-    let source = std::str::from_utf8(SOULMATE_SKILL).unwrap();
-    assert_eq!(agents_projection.as_bytes(), SOULMATE_SKILL);
-    assert_eq!(claude_projection.as_bytes(), SOULMATE_SKILL);
-    assert_eq!(agents_reference, SOULMATE_REFERENCE);
-    assert_eq!(claude_reference, SOULMATE_REFERENCE);
+        fs::read(control.join(".claude/skills/exitbind/references/operators.md")).unwrap();
+    let source = std::str::from_utf8(EXITBIND_SKILL).unwrap();
+    assert_eq!(agents_projection.as_bytes(), EXITBIND_SKILL);
+    assert_eq!(claude_projection.as_bytes(), EXITBIND_SKILL);
+    assert_eq!(agents_reference, EXITBIND_REFERENCE);
+    assert_eq!(claude_reference, EXITBIND_REFERENCE);
     let normalize = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(source.contains("soulmate work begin WORKFLOW"));
-    assert!(source.contains("manual reference"));
-    let reference = normalize(std::str::from_utf8(SOULMATE_REFERENCE).unwrap()).to_lowercase();
-    assert!(reference.contains("soulmate run observe-check ledger --target worker_event_sha"));
-    assert!(reference.contains("soulmate run supersede old_ledger"));
-    assert!(reference.contains("never use a basename-only `productroot` path"));
+    assert!(source.contains("work begin WORKFLOW"));
+    assert!(source.contains("selected executable's"));
+    assert!(source.contains("operator detail"));
+    let reference = normalize(std::str::from_utf8(EXITBIND_REFERENCE).unwrap()).to_lowercase();
+    assert!(reference.contains("exitbind work continuation work"));
+    assert!(reference.contains("exitbind work child prepare work"));
+    assert!(reference.contains("never search raw state"));
 
     for document in [AWAY_GUIDE, REFERENCE] {
         let document = normalize(document);
@@ -106,10 +107,7 @@ fn attended_work_uses_native_spawn_without_away_fallback() {
         assert!(document.contains("work act"));
         assert!(document.contains("ad hoc shell `codex exec`"));
         assert!(!document.contains("token-efficiency baselines"));
-        assert!(
-            document.contains("exitbind away start implementation_worker")
-                || document.contains("soulmate away start implementation_worker")
-        );
+        assert!(document.contains("exitbind away start implementation_worker"));
     }
 
     fs::remove_dir_all(base).unwrap();
@@ -136,21 +134,21 @@ fn portable_init_and_refresh_distribute_native_continuity_guidance() {
         "{}",
         output_text(&initialized)
     );
-    let source = std::str::from_utf8(SOULMATE_SKILL).unwrap();
-    assert!(source.contains("## HOW"));
+    let source = std::str::from_utf8(EXITBIND_SKILL).unwrap();
+    assert!(source.contains("## Current route"));
     assert!(product
-        .join(".agents/skills/soulmate/references/manual.md")
+        .join(".agents/skills/exitbind/references/operators.md")
         .is_file());
-    let config_before = fs::read(product.join("soulmate.json")).unwrap();
+    let config_before = fs::read(product.join("exitbind.json")).unwrap();
     let paths = [
-        product.join(".agents/skills/soulmate/SKILL.md"),
-        product.join(".claude/skills/soulmate/SKILL.md"),
+        product.join(".agents/skills/exitbind/SKILL.md"),
+        product.join(".claude/skills/exitbind/SKILL.md"),
     ];
     for path in &paths {
-        assert_eq!(fs::read(path).unwrap(), SOULMATE_SKILL);
+        assert_eq!(fs::read(path).unwrap(), EXITBIND_SKILL);
         fs::write(
             path,
-            "<!-- soulmate-managed-skill:v1 -->\nOld managed skill.\n",
+            "<!-- exitbind-managed-skill:v1 -->\nOld managed skill.\n",
         )
         .unwrap();
     }
@@ -165,10 +163,10 @@ fn portable_init_and_refresh_distribute_native_continuity_guidance() {
     );
     assert!(refreshed.status.success(), "{}", output_text(&refreshed));
     for path in paths {
-        assert_eq!(fs::read(path).unwrap(), SOULMATE_SKILL);
+        assert_eq!(fs::read(path).unwrap(), EXITBIND_SKILL);
     }
     assert_eq!(
-        fs::read(product.join("soulmate.json")).unwrap(),
+        fs::read(product.join("exitbind.json")).unwrap(),
         config_before
     );
     fs::remove_dir_all(base).unwrap();
@@ -180,12 +178,12 @@ fn refresh_restores_missing_skills_and_reports_each_state() {
     let product_before = fs::read_dir(&product).unwrap().count();
     let selected = [
         (
-            control.join(".agents/skills/soulmate/SKILL.md"),
-            SOULMATE_SKILL,
+            control.join(".agents/skills/exitbind/SKILL.md"),
+            EXITBIND_SKILL,
         ),
         (
-            control.join(".claude/skills/soulmate/SKILL.md"),
-            SOULMATE_SKILL,
+            control.join(".claude/skills/exitbind/SKILL.md"),
+            EXITBIND_SKILL,
         ),
     ];
     for (path, _) in &selected {
@@ -244,7 +242,7 @@ fn refresh_restores_missing_skills_and_reports_each_state() {
         "refreshed {}",
         relative_skill(&selected[0].0, &control)
     )));
-    assert_eq!(fs::read(&selected[0].0).unwrap(), SOULMATE_SKILL);
+    assert_eq!(fs::read(&selected[0].0).unwrap(), EXITBIND_SKILL);
 
     fs::remove_dir_all(base).unwrap();
 }
@@ -252,8 +250,8 @@ fn refresh_restores_missing_skills_and_reports_each_state() {
 #[test]
 fn refresh_conflict_preflight_prevents_earlier_missing_creation() {
     let (base, _product, control, bindings) = local_project("conflict");
-    let missing = control.join(".agents/skills/soulmate/SKILL.md");
-    let conflict = control.join(".claude/skills/soulmate/SKILL.md");
+    let missing = control.join(".agents/skills/exitbind/SKILL.md");
+    let conflict = control.join(".claude/skills/exitbind/SKILL.md");
     fs::remove_file(&missing).unwrap();
     fs::write(&conflict, "operator-owned skill\n").unwrap();
 
@@ -280,8 +278,11 @@ fn refresh_conflict_preflight_prevents_earlier_missing_creation() {
 #[test]
 fn portable_init_stale_managed_skill_refuses_without_partial_tree() {
     for (label, relative) in [
-        ("skill", ".agents/skills/soulmate/SKILL.md"),
-        ("reference", ".agents/skills/soulmate/references/manual.md"),
+        ("skill", ".agents/skills/exitbind/SKILL.md"),
+        (
+            "reference",
+            ".agents/skills/exitbind/references/operators.md",
+        ),
     ] {
         let base = temp(&format!("stale-{label}"));
         let product = base.join("product");
@@ -290,7 +291,7 @@ fn portable_init_stale_managed_skill_refuses_without_partial_tree() {
         fs::create_dir_all(stale.parent().unwrap()).unwrap();
         fs::write(
             &stale,
-            b"<!-- soulmate-managed-skill:v1 -->\nstale managed bytes\n",
+            b"<!-- exitbind-managed-skill:v1 -->\nstale managed bytes\n",
         )
         .unwrap();
         let before = snapshot_tree(&product);
@@ -309,7 +310,7 @@ fn portable_init_stale_managed_skill_refuses_without_partial_tree() {
         assert!(output_text(&refused).contains("project skill differs from embedded bytes"));
         assert_eq!(
             fs::read(&stale).unwrap(),
-            b"<!-- soulmate-managed-skill:v1 -->\nstale managed bytes\n"
+            b"<!-- exitbind-managed-skill:v1 -->\nstale managed bytes\n"
         );
         assert_eq!(snapshot_tree(&product), before);
 
@@ -347,11 +348,11 @@ fn relative_skill(path: &Path, control: &Path) -> String {
 #[test]
 fn reality_and_decision_guidance_is_embedded_and_distributed() {
     let (base, _product, control, _bindings) = local_project("reality-decision");
-    let source = std::str::from_utf8(SOULMATE_SKILL).unwrap();
-    let reference = std::str::from_utf8(SOULMATE_REFERENCE).unwrap();
+    let source = std::str::from_utf8(EXITBIND_SKILL).unwrap();
+    let reference = std::str::from_utf8(EXITBIND_REFERENCE).unwrap();
     let projections = [
-        control.join(".agents/skills/soulmate/SKILL.md"),
-        control.join(".claude/skills/soulmate/SKILL.md"),
+        control.join(".agents/skills/exitbind/SKILL.md"),
+        control.join(".claude/skills/exitbind/SKILL.md"),
     ];
     assert_eq!(
         fs::read(base.join("external-sentinel")).unwrap(),
@@ -359,12 +360,12 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
     );
     let normalize = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
     let required = [
-        "soulmate work begin workflow",
-        "do not ask the human to carry",
-        "worker completion is not a check result",
-        "reviewer approval is not lead acceptance",
-        "never guess among many",
-        "manual reference",
+        "work begin workflow",
+        "the lead classifies actual effects",
+        "worker completion still requires the existing ready-governor state",
+        "the lead recommends independent review and the owner decides",
+        "a review finding is evidence, not a requirement",
+        "ordinary host-managed results require no continuation initialization",
     ];
     for skill in std::iter::once(source.to_owned()).chain(
         projections
@@ -375,17 +376,16 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
         for phrase in required {
             assert!(
                 normalized.contains(phrase),
-                "missing {phrase:?} in distributed Soulmate skill"
+                "missing {phrase:?} in distributed Exitbind skill"
             );
         }
         assert!(normalized.lines().count() < 140);
     }
     let delayed = normalize(reference).to_lowercase();
     for phrase in [
-        "soulmate run observe-check ledger --target worker_event_sha",
-        "soulmate run supersede old_ledger",
-        "artifact drift blocks appends",
-        "existing v1–v4 readers and event shapes remain authoritative",
+        "exitbind work continuation work",
+        "exitbind run review-policy lead ledger",
+        "a preview never approves a proposal",
     ] {
         assert!(
             delayed.contains(phrase),
@@ -393,7 +393,7 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
         );
     }
     for projection in projections {
-        assert_eq!(fs::read(projection).unwrap(), SOULMATE_SKILL);
+        assert_eq!(fs::read(projection).unwrap(), EXITBIND_SKILL);
     }
     fs::remove_dir_all(base).unwrap();
 }

@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -15,8 +15,8 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(arguments: &[&str], bindings: &Path) -> Output {
-    support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", bindings)
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
         .unwrap()
@@ -39,7 +39,7 @@ fn git(root: &Path, arguments: &[&str]) -> Output {
 
 fn clean_git_product(root: &Path) {
     assert!(git(root, &["init", "-q"]).status.success());
-    assert!(git(root, &["config", "user.name", "Soulmate Test"])
+    assert!(git(root, &["config", "user.name", "Exitbind Test"])
         .status
         .success());
     assert!(git(
@@ -47,7 +47,7 @@ fn clean_git_product(root: &Path) {
         &[
             "config",
             "user.email",
-            "soulmate-test@users.noreply.github.com"
+            "exitbind-test@users.noreply.github.com"
         ]
     )
     .status
@@ -74,7 +74,7 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
     let implicit = invoke(&["init", "--root", product.to_str().unwrap()], &bindings);
     assert!(!implicit.status.success());
     assert!(output_text(&implicit).contains("requires explicit --mode"));
-    assert!(!product.join("soulmate.json").exists());
+    assert!(!product.join("exitbind.json").exists());
 
     let initialized = invoke(
         &[
@@ -98,58 +98,58 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
         output_text(&initialized)
     );
     let initialized_text = output_text(&initialized);
-    let skill = control.join(".agents/skills/soulmate/SKILL.md");
+    let skill = control.join(".agents/skills/exitbind/SKILL.md");
     assert!(skill.is_file());
     assert!(initialized_text.contains(skill.to_str().unwrap()));
-    assert!(initialized_text.contains(control.join("soulmate.json").to_str().unwrap()));
+    assert!(initialized_text.contains(control.join("exitbind.json").to_str().unwrap()));
     assert!(
         initialized_text
             .find("Bounded setup facts for your existing root agent")
             .unwrap()
             < initialized_text.find("CLI reference").unwrap()
     );
-    let brief = initialized_text.find("soulmate brief").unwrap();
-    let work = initialized_text.find("soulmate work begin").unwrap();
-    let check = initialized_text.find("soulmate check").unwrap();
+    let brief = initialized_text.find("exitbind brief").unwrap();
+    let work = initialized_text.find("exitbind work begin").unwrap();
+    let check = initialized_text.find("exitbind check").unwrap();
     assert!(brief < work && work < check);
     assert!(git(&product, &["status", "--porcelain"]).stdout.is_empty());
-    assert!(!product.join("soulmate.json").exists());
-    assert!(!product.join(".soulmate").exists());
-    assert!(control.join("soulmate.json").is_file());
-    assert!(control.join("soulmate/agents/worker.md").is_file());
-    let reviewer = fs::read_to_string(control.join("soulmate/agents/reviewer.md")).unwrap();
+    assert!(!product.join("exitbind.json").exists());
+    assert!(!product.join(".exitbind").exists());
+    assert!(control.join("exitbind.json").is_file());
+    assert!(control.join("exitbind/agents/worker.md").is_file());
+    let reviewer = fs::read_to_string(control.join("exitbind/agents/reviewer.md")).unwrap();
     assert!(reviewer.contains("file:line reference"));
     assert!(reviewer.contains("mechanical inventory"));
     assert!(reviewer.contains("agent-consumer"));
     assert!(reviewer.contains("mechanical gate"));
     assert!(reviewer.contains("role-scoped evidence"));
     for path in [
-        "soulmate/agents",
-        "soulmate/boundaries",
-        "soulmate/policies",
-        "soulmate/harness",
+        "exitbind/agents",
+        "exitbind/boundaries",
+        "exitbind/policies",
+        "exitbind/harness",
     ] {
         assert!(control.join(path).is_dir(), "{path}");
     }
     assert!(!control.join(".agents/profiles").exists());
-    assert!(state.join(".soulmate/.gitignore").is_file());
+    assert!(state.join(".exitbind/.gitignore").is_file());
     for path in [
-        ".soulmate/runs",
-        ".soulmate/memory",
-        ".soulmate/artifacts",
-        ".soulmate/receipts",
-        ".soulmate/away",
-        ".soulmate/locks",
+        ".exitbind/runs",
+        ".exitbind/memory",
+        ".exitbind/artifacts",
+        ".exitbind/receipts",
+        ".exitbind/away",
+        ".exitbind/locks",
     ] {
         assert!(state.join(path).is_dir(), "{path}");
     }
 
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     let config_text = fs::read_to_string(&config).unwrap();
     let config_value: Value = serde_json::from_str(&config_text).unwrap();
     assert_eq!(
         config_value["agents"]["worker"]["profile"],
-        "soulmate/agents/worker.md"
+        "exitbind/agents/worker.md"
     );
     assert!(!config_text.contains(product.to_str().unwrap()));
     assert!(!config_text.contains(state.to_str().unwrap()));
@@ -173,8 +173,8 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
     );
     assert!(checked.status.success(), "{}", output_text(&checked));
 
-    let mut hook = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", &bindings)
+    let mut hook = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", &bindings)
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -238,21 +238,21 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
             "--goal",
             "bounded",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             config.to_str().unwrap(),
         ],
         &bindings,
     );
     assert!(started.status.success(), "{}", output_text(&started));
-    let ledger = state.join(".soulmate/run.jsonl");
+    let ledger = state.join(".exitbind/run.jsonl");
     let ledger_text = fs::read_to_string(ledger).unwrap();
     assert!(!ledger_text.contains(product.to_str().unwrap()));
     assert!(!ledger_text.contains(state.to_str().unwrap()));
     assert!(git(&product, &["status", "--porcelain"]).stdout.is_empty());
 
     fs::write(
-        state.join(".soulmate/artifacts/lead-stage-1-attempt-1.md"),
+        state.join(".exitbind/artifacts/lead-stage-1-attempt-1.md"),
         "scope\n",
     )
     .unwrap();
@@ -261,11 +261,11 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
             "run",
             "submit",
             "lead",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--outcome",
             "scoped",
             "--artifact",
-            ".soulmate/artifacts/lead-stage-1-attempt-1.md",
+            ".exitbind/artifacts/lead-stage-1-attempt-1.md",
             "--artifact-root",
             "state",
             "--config",
@@ -285,7 +285,7 @@ fn local_mode_separates_control_product_state_and_preserves_git_status() {
                 "run",
                 "submit",
                 agent,
-                ".soulmate/run.jsonl",
+                ".exitbind/run.jsonl",
                 "--outcome",
                 outcome,
                 "--artifact",
@@ -353,10 +353,10 @@ fn portable_mode_refuses_a_tracked_private_run_ledger() {
         &root,
         &[
             "add",
-            "soulmate.json",
+            "exitbind.json",
             ".agents",
             ".claude",
-            ".soulmate/.gitignore"
+            ".exitbind/.gitignore"
         ]
     )
     .status
@@ -364,7 +364,7 @@ fn portable_mode_refuses_a_tracked_private_run_ledger() {
     assert!(git(&root, &["commit", "-qm", "portable control"])
         .status
         .success());
-    let config = root.join("soulmate.json");
+    let config = root.join("exitbind.json");
     assert!(invoke(
         &[
             "run",
@@ -373,7 +373,7 @@ fn portable_mode_refuses_a_tracked_private_run_ledger() {
             "--goal",
             "bounded",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             config.to_str().unwrap(),
         ],
@@ -381,16 +381,16 @@ fn portable_mode_refuses_a_tracked_private_run_ledger() {
     )
     .status
     .success());
-    assert!(git(&root, &["add", "-f", ".soulmate/run.jsonl"])
+    assert!(git(&root, &["add", "-f", ".exitbind/run.jsonl"])
         .status
         .success());
-    let before = fs::read(root.join(".soulmate/run.jsonl")).unwrap();
+    let before = fs::read(root.join(".exitbind/run.jsonl")).unwrap();
     let refused = invoke(
         &[
             "run",
             "submit",
             "lead",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--outcome",
             "scoped",
             "--artifact",
@@ -402,14 +402,14 @@ fn portable_mode_refuses_a_tracked_private_run_ledger() {
     );
     assert!(!refused.status.success());
     assert!(output_text(&refused).contains("tracked or staged"));
-    assert_eq!(fs::read(root.join(".soulmate/run.jsonl")).unwrap(), before);
+    assert_eq!(fs::read(root.join(".exitbind/run.jsonl")).unwrap(), before);
 
     let status: Value = serde_json::from_slice(
         &invoke(
             &[
                 "run",
                 "inspect",
-                ".soulmate/run.jsonl",
+                ".exitbind/run.jsonl",
                 "--config",
                 config.to_str().unwrap(),
             ],
@@ -431,15 +431,15 @@ fn git_marker_without_git_fails_with_the_missing_dependency() {
     fs::create_dir(&bindings).unwrap();
     fs::create_dir(root.join(".git")).unwrap();
 
-    let output = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", &bindings)
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", &bindings)
         .env("PATH", "/nonexistent")
         .args(["init", "--root", root.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(!output.status.success());
     assert!(output_text(&output).contains("Git executable not found on PATH"));
-    assert!(!root.join("soulmate.json").exists());
+    assert!(!root.join("exitbind.json").exists());
 
     fs::remove_dir_all(base).unwrap();
 }
@@ -471,7 +471,7 @@ fn empty_starter_is_valid_but_warns_before_project_scoped_work() {
     assert!(init_text.contains("empty starter boundary"));
     assert!(init_text.contains("project files or commands"));
 
-    let config = root.join("soulmate.json");
+    let config = root.join("exitbind.json");
     let checked = invoke(
         &["check", "--json", "--config", config.to_str().unwrap()],
         &bindings,
@@ -557,12 +557,13 @@ fn migrations_preserve_local_mode_and_historical_ledger_bytes() {
         "{}",
         output_text(&initialized)
     );
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     let historical = b"historical ledger bytes must remain in place\n";
     let ledger = state.join(".soulmate/runs/resumable.jsonl");
+    fs::create_dir_all(ledger.parent().unwrap()).unwrap();
     fs::write(&ledger, historical).unwrap();
 
-    let canonical_profile = control.join("soulmate/agents/worker.md");
+    let canonical_profile = control.join("exitbind/agents/worker.md");
     let legacy_profile = control.join(".agents/profiles/worker.md");
     fs::create_dir_all(legacy_profile.parent().unwrap()).unwrap();
     fs::rename(canonical_profile, legacy_profile).unwrap();
@@ -590,14 +591,14 @@ fn migrations_preserve_local_mode_and_historical_ledger_bytes() {
     assert_eq!(fs::read(&ledger).unwrap(), historical);
 
     for path in [
-        "soulmate/boundaries",
-        "soulmate/policies",
-        "soulmate/harness",
-        ".soulmate/memory",
-        ".soulmate/artifacts",
-        ".soulmate/receipts",
-        ".soulmate/away",
-        ".soulmate/locks",
+        "exitbind/boundaries",
+        "exitbind/policies",
+        "exitbind/harness",
+        ".exitbind/memory",
+        ".exitbind/artifacts",
+        ".exitbind/receipts",
+        ".exitbind/away",
+        ".exitbind/locks",
     ] {
         fs::remove_dir(control.join(path))
             .or_else(|_| fs::remove_dir(state.join(path)))

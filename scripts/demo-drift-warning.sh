@@ -1,14 +1,15 @@
 #!/bin/sh
 set -eu
 
-bin="${EXITBIND_BIN:-${SOULMATE_BIN:-soulmate}}"
+bin="${EXITBIND_BIN:-${SOULMATE_BIN:-exitbind}}"
 demo_dir="$(mktemp -d)"
 trap 'rm -rf "$demo_dir"' EXIT HUP INT TERM
-case "$(basename "$bin")" in
-  exitbind) config="$demo_dir/exitbind.json"; ledger=.exitbind/runs/demo.jsonl ;;
-  soulmate) config="$demo_dir/soulmate.json"; ledger=.soulmate/runs/demo.jsonl ;;
-  *) printf 'Demo requires an exitbind or soulmate binary: %s\n' "$bin" >&2; exit 1 ;;
-esac
+test "$(basename "$bin")" = exitbind || {
+  printf 'Demo requires the current exitbind binary: %s\n' "$bin" >&2
+  exit 1
+}
+config="$demo_dir/exitbind.json"
+ledger=.exitbind/runs/demo.jsonl
 
 "$bin" init --mode portable --root "$demo_dir" >/dev/null
 "$bin" run start change --goal "Change one line" --ledger "$ledger" --config "$config" >/dev/null

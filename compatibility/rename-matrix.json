@@ -20,7 +20,8 @@
       "product": "exitbind",
       "producerId": "exitbind-v6",
       "pathId": "current-defaults",
-      "installedCommands": ["exitbind"]
+      "installedCommands": ["exitbind"],
+      "status": "current"
     },
     {
       "id": "legacy-soulmate",
@@ -28,7 +29,8 @@
       "product": "soulmate",
       "producerId": "soulmate-v1-write",
       "pathId": "legacy-defaults",
-      "installedCommands": ["soulmate"]
+      "installedCommands": ["soulmate"],
+      "status": "historical-only"
     }
   ],
   "repositories": [
@@ -42,14 +44,16 @@
       "callerSurfaceId": "current-exitbind",
       "installPrefixEnv": "EXITBIND_INSTALL_PREFIX",
       "api": "https://api.github.com/repos/envy404/exitbind/releases?per_page=20",
-      "rawInstaller": "https://raw.githubusercontent.com/envy404/exitbind/"
+      "rawInstaller": "https://raw.githubusercontent.com/envy404/exitbind/",
+      "status": "current"
     },
     {
       "id": "legacy-updater",
       "callerSurfaceId": "legacy-soulmate",
       "installPrefixEnv": "SOULMATE_INSTALL_PREFIX",
       "api": "https://api.github.com/repos/envy404/soulmate/releases?per_page=20",
-      "rawInstaller": "https://raw.githubusercontent.com/envy404/soulmate/"
+      "rawInstaller": "https://raw.githubusercontent.com/envy404/soulmate/",
+      "status": "historical-only"
     }
   ],
   "paths": [
@@ -60,7 +64,8 @@
       "defaultState": ".exitbind",
       "legacyConfig": "soulmate.json",
       "legacyControl": "soulmate",
-      "legacyState": ".soulmate"
+      "legacyState": ".soulmate",
+      "status": "current"
     },
     {
       "id": "legacy-defaults",
@@ -69,7 +74,8 @@
       "defaultState": ".soulmate",
       "legacyConfig": "soulmate.json",
       "legacyControl": "soulmate",
-      "legacyState": ".soulmate"
+      "legacyState": ".soulmate",
+      "status": "historical-only"
     }
   ],
   "producers": [
@@ -84,8 +90,8 @@
       "id": "soulmate-v1-write",
       "name": "soulmate",
       "eventFormat": "v1",
-      "historical": false,
-      "writable": true
+      "historical": true,
+      "writable": false
     },
     {
       "id": "historical-soulmate-v1-v4",
@@ -102,13 +108,6 @@
       "callerSurfaceId": "current-exitbind",
       "operation": "write",
       "versions": [6]
-    },
-    {
-      "id": "producer-legacy-v1-write",
-      "producerId": "soulmate-v1-write",
-      "callerSurfaceId": "legacy-soulmate",
-      "operation": "write",
-      "versions": [1]
     },
     {
       "id": "producer-historical-v1-v4-read",
@@ -139,6 +138,7 @@
     },
     {
       "id": "custom-legacy",
+      "status": "historical-only",
       "selectionRule": "custom repositories bypass the canonical bridge and preserve legacy assets and name",
       "versions": ["v0.12.0", "v0.17.0"],
       "assetPrefix": "soulmate"
@@ -147,6 +147,7 @@
   "routes": [
     {
       "id": "current-canonical",
+      "status": "current",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
       "producerId": "exitbind-v6",
@@ -160,6 +161,7 @@
     },
     {
       "id": "canonical-legacy-historical",
+      "status": "historical-only",
       "callerSurfaceId": "legacy-soulmate",
       "product": "soulmate",
       "producerId": "soulmate-v1-write",
@@ -173,6 +175,7 @@
     },
     {
       "id": "canonical-legacy-current",
+      "status": "historical-only",
       "callerSurfaceId": "legacy-soulmate",
       "product": "exitbind",
       "producerId": "exitbind-v6",
@@ -186,6 +189,7 @@
     },
     {
       "id": "canonical-legacy-malformed",
+      "status": "historical-only",
       "callerSurfaceId": "legacy-soulmate",
       "product": "exitbind",
       "producerId": "exitbind-v6",
@@ -199,6 +203,7 @@
     },
     {
       "id": "custom-legacy",
+      "status": "historical-only",
       "callerSurfaceId": "legacy-soulmate",
       "product": "soulmate",
       "producerId": "soulmate-v1-write",
@@ -212,6 +217,7 @@
     },
     {
       "id": "custom-current",
+      "status": "current",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
       "producerId": "exitbind-v6",
@@ -225,6 +231,7 @@
     },
     {
       "id": "partial-exitbind-custom-legacy",
+      "status": "current",
       "callerSurfaceId": "current-exitbind",
       "product": "exitbind",
       "producerId": "exitbind-v6",

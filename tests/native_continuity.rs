@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 
 use serde_json::{json, Value};
@@ -40,8 +40,8 @@ impl Fixture {
                 .unwrap();
             assert!(git.success(), "local fixture requires its own Git root");
         }
-        let mut init = Command::new(env!("CARGO_BIN_EXE_soulmate"));
-        init.env("SOULMATE_BINDINGS_DIR", &bindings)
+        let mut init = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        init.env("EXITBIND_BINDINGS_DIR", &bindings)
             .args(["init", "--mode", mode, "--root"])
             .arg(&product);
         if mode == "local" {
@@ -69,7 +69,7 @@ impl Fixture {
                 let path = host.join("commands").join(name);
                 fs::write(
                     &path,
-                    b"#!/bin/sh\nprintf launched >> \"$SOULMATE_TEST_LAUNCH_SENTINEL\"\nexit 99\n",
+                    b"#!/bin/sh\nprintf launched >> \"$EXITBIND_TEST_LAUNCH_SENTINEL\"\nexit 99\n",
                 )
                 .unwrap();
                 fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -89,18 +89,18 @@ impl Fixture {
     }
 
     fn hook_with_update(&self, input: &[u8], update: bool) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
         command
             .arg("hook-run")
-            .env("SOULMATE_BINDINGS_DIR", &self.bindings)
+            .env("EXITBIND_BINDINGS_DIR", &self.bindings)
             .env("PATH", self.host.join("commands"))
             .env("HOME", &self.base)
             .env("XDG_CACHE_HOME", self.base.join("cache"))
             .env_remove("EXITBIND_NO_UPDATE_CHECK")
-            .env_remove("SOULMATE_NO_UPDATE_CHECK")
-            .env("SOULMATE_TEST_LAUNCH_SENTINEL", self.host.join("launched"));
+            .env_remove("EXITBIND_NO_UPDATE_CHECK")
+            .env("EXITBIND_TEST_LAUNCH_SENTINEL", self.host.join("launched"));
         if !update {
-            command.env("SOULMATE_NO_UPDATE_CHECK", "1");
+            command.env("EXITBIND_NO_UPDATE_CHECK", "1");
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -146,6 +146,41 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     files
 }
 
+fn stable_hook_with_resource_observation(output: &[u8]) -> Value {
+    let mut parsed: Value = serde_json::from_slice(output).unwrap();
+    let context = parsed["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let marker = "project available bytes ";
+    let start = context.find(marker).expect("current resource observation");
+    let number_start = start + marker.len();
+    let number_end = context[number_start..]
+        .find('.')
+        .map(|offset| number_start + offset)
+        .expect("resource observation terminator");
+    let _observed_bytes = context[number_start..number_end]
+        .parse::<u64>()
+        .expect("filesystem availability is a reported integer");
+    let mut normalized = context;
+    normalized.replace_range(number_start..number_end, "<observed>");
+    parsed["hookSpecificOutput"]["additionalContext"] = json!(normalized);
+    parsed
+}
+
+fn hook_context(output: &[u8]) -> String {
+    let parsed: Value = serde_json::from_slice(output).expect("hook output is JSON");
+    assert_eq!(parsed.as_object().unwrap().len(), 1);
+    assert_eq!(
+        parsed["hookSpecificOutput"]["hookEventName"],
+        "SessionStart"
+    );
+    parsed["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .expect("SessionStart returns bounded additional context")
+        .to_owned()
+}
+
 #[test]
 fn session_lifecycle_hooks_only_add_bounded_context_and_preserve_host_files() {
     for mode in ["portable", "local"] {
@@ -164,13 +199,16 @@ fn session_lifecycle_hooks_only_add_bounded_context_and_preserve_host_files() {
             assert_eq!(fields.len(), 2);
             assert_eq!(fields["hookEventName"], "SessionStart");
             let context = fields["additionalContext"].as_str().unwrap();
+            assert!(context.len() <= 3072, "{} bytes", context.len());
+            assert!(context.contains("exitbind project context --json"));
             assert!(context.contains("Preserve the existing root host conversation"));
             assert!(!context.contains("native session sentinel"));
             assert!(!context.contains("existing-root-sentinel"));
+            let stable = stable_hook_with_resource_observation(&output.stdout);
             if let Some(previous) = &previous {
-                assert_eq!(&output.stdout, previous);
+                assert_eq!(&stable, previous);
             }
-            previous = Some(output.stdout);
+            previous = Some(stable);
         }
         assert_eq!(snapshot(&fixture.base), before);
         assert!(!fixture.host.join("launched").exists());
@@ -178,7 +216,7 @@ fn session_lifecycle_hooks_only_add_bounded_context_and_preserve_host_files() {
 }
 
 #[test]
-fn ordinary_turns_and_invalid_or_unconfigured_inputs_remain_silent() {
+fn ordinary_turns_and_malformed_inputs_are_silent_but_unconfigured_sessions_are_routed() {
     let fixture = Fixture::new("portable");
     let before = snapshot(&fixture.base);
     let mut inputs = vec![
@@ -191,24 +229,36 @@ fn ordinary_turns_and_invalid_or_unconfigured_inputs_remain_silent() {
     for event in ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"] {
         inputs.push(serde_json::to_vec(&fixture.payload(event, "resume")).unwrap());
     }
-    let mut unconfigured = fixture.payload("SessionStart", "startup");
-    unconfigured["cwd"] = json!(fixture.host.clone());
-    inputs.push(serde_json::to_vec(&unconfigured).unwrap());
     for input in inputs {
         let output = fixture.hook(&input);
         assert!(output.status.success());
         assert!(output.stdout.is_empty());
         assert!(output.stderr.is_empty());
     }
+    let mut unconfigured = fixture.payload("SessionStart", "startup");
+    unconfigured["cwd"] = json!(fixture.host.clone());
+    let unconfigured_output = fixture.hook(&serde_json::to_vec(&unconfigured).unwrap());
+    assert!(unconfigured_output.status.success());
+    assert!(unconfigured_output.stderr.is_empty());
+    let context = hook_context(&unconfigured_output.stdout);
+    assert!(context.contains("Exitbind is available but not active for this task"));
+    assert!(context.len() <= 3072, "{} bytes", context.len());
     assert_eq!(snapshot(&fixture.base), before);
-    fs::write(fixture.control.join("soulmate.json"), b"malformed config").unwrap();
+    assert!(!fixture.host.join("launched").exists());
+
+    assert_eq!(snapshot(&fixture.base), before);
+    fs::write(fixture.control.join("exitbind.json"), b"malformed config").unwrap();
     let malformed_before = snapshot(&fixture.base);
     let output =
         fixture.hook(&serde_json::to_vec(&fixture.payload("SessionStart", "resume")).unwrap());
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    let context = hook_context(&output.stdout);
+    assert!(context.contains("Exitbind could not verify this target or its configuration"));
+    assert!(context.len() <= 3072, "{} bytes", context.len());
     assert!(output.stderr.is_empty());
     assert_eq!(snapshot(&fixture.base), malformed_before);
+    assert!(!fixture.host.join("launched").exists());
 }
 
 /// One release ahead of whatever this build is, so a version bump cannot
@@ -233,7 +283,7 @@ fn package_channel() -> &'static str {
 #[test]
 fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     let fixture = Fixture::new("portable");
-    let cache = fixture.base.join("cache/soulmate");
+    let cache = fixture.base.join("cache/exitbind");
     let next = newer_version();
     let next = next.as_str();
     fs::create_dir_all(&cache).unwrap();
@@ -254,7 +304,7 @@ fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     assert!(configured_text["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap()
-        .contains("Run `soulmate` update"));
+        .contains("Run `exitbind` update"));
     let configured_context = configured_text["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
@@ -264,18 +314,18 @@ fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
     let mut unconfigured = fixture.payload("SessionStart", "startup");
     unconfigured["cwd"] = json!(fixture.host.clone());
     let unconfigured = fixture.hook_with_update(&serde_json::to_vec(&unconfigured).unwrap(), true);
-    assert!(String::from_utf8_lossy(&unconfigured.stdout).contains("Run `soulmate` update"));
+    assert!(String::from_utf8_lossy(&unconfigured.stdout).contains("Run `exitbind` update"));
 
     let mut subagent = fixture.payload("SubagentStart", "startup");
     subagent["agent_name"] = json!("worker");
     let subagent = fixture.hook_with_update(&serde_json::to_vec(&subagent).unwrap(), true);
-    assert!(!String::from_utf8_lossy(&subagent.stdout).contains("Run `soulmate` update"));
+    assert!(!String::from_utf8_lossy(&subagent.stdout).contains("Run `exitbind` update"));
 }
 
 #[test]
 fn fresh_no_update_cache_stays_silent_without_curl() {
     let fixture = Fixture::new("portable");
-    let cache = fixture.base.join("cache/soulmate");
+    let cache = fixture.base.join("cache/exitbind");
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),
@@ -300,14 +350,18 @@ fn fresh_no_update_cache_stays_silent_without_curl() {
     payload["cwd"] = json!(orphan);
     let output = fixture.hook_with_update(&serde_json::to_vec(&payload).unwrap(), true);
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    let context = hook_context(&output.stdout);
+    assert!(context.contains("Exitbind is available but not active for this task"));
+    assert!(!context.contains("Run `exitbind` update"));
+    assert!(context.len() <= 3072, "{} bytes", context.len());
     assert!(!calls.exists());
+    assert!(!fixture.host.join("launched").exists());
 }
 
 #[test]
 fn failed_session_lookup_backs_off_and_opt_out_stays_silent() {
     let fixture = Fixture::new("portable");
-    let cache = fixture.base.join("cache/soulmate");
+    let cache = fixture.base.join("cache/exitbind");
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("update.json"),
@@ -325,21 +379,21 @@ fn failed_session_lookup_backs_off_and_opt_out_stays_silent() {
     let payload = fixture.payload("SessionStart", "startup");
     let failed = fixture.hook_with_update(&serde_json::to_vec(&payload).unwrap(), true);
     assert!(failed.status.success());
-    assert!(!String::from_utf8_lossy(&failed.stdout).contains("Run `soulmate` update"));
+    assert!(!String::from_utf8_lossy(&failed.stdout).contains("Run `exitbind` update"));
     let cache_text = fs::read_to_string(cache.join("update.json")).unwrap();
     assert!(cache_text.contains("backoff_until"));
     let calls_before = fs::read_to_string(&calls).unwrap();
     let backed_off = fixture.hook_with_update(&serde_json::to_vec(&payload).unwrap(), true);
-    assert!(!String::from_utf8_lossy(&backed_off.stdout).contains("Run `soulmate` update"));
+    assert!(!String::from_utf8_lossy(&backed_off.stdout).contains("Run `exitbind` update"));
     assert_eq!(fs::read_to_string(&calls).unwrap(), calls_before);
     let opted_out = fixture.hook(&serde_json::to_vec(&payload).unwrap());
-    assert!(!String::from_utf8_lossy(&opted_out.stdout).contains("Run `soulmate` update"));
+    assert!(!String::from_utf8_lossy(&opted_out.stdout).contains("Run `exitbind` update"));
 }
 
 #[test]
 fn stale_session_cache_refreshes_with_local_fake_curl() {
     let fixture = Fixture::new("portable");
-    let cache = fixture.base.join("cache/soulmate");
+    let cache = fixture.base.join("cache/exitbind");
     let next = newer_version();
     let next = next.as_str();
     fs::create_dir_all(&cache).unwrap();
@@ -365,7 +419,7 @@ fn stale_session_cache_refreshes_with_local_fake_curl() {
     );
     assert!(output.status.success());
     assert!(calls.is_file());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Run `soulmate` update"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Run `exitbind` update"));
 }
 
 /// A session that never opens the skill file still learns the one rule that
@@ -388,7 +442,7 @@ fn session_context_carries_the_terminal_block_rule() {
     );
     // It stays a pointer-sized fact, not a copy of the skill.
     assert!(
-        context.len() < 1200,
+        context.len() <= 3072,
         "injected context grew to {}",
         context.len()
     );

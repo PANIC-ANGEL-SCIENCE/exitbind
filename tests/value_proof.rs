@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 mod support;
@@ -8,7 +8,7 @@ use std::{
     process::{Command, Output},
 };
 
-const CHECK: &str = "soulmate check --config verification.json";
+const CHECK: &str = "exitbind check --config verification.json";
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
@@ -18,7 +18,7 @@ fn project(label: &str) -> PathBuf {
 }
 
 fn invoke(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()
@@ -26,7 +26,7 @@ fn invoke(root: &Path, arguments: &[&str]) -> Output {
 }
 
 fn invoke_owned(root: &Path, arguments: Vec<String>) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()
@@ -47,9 +47,9 @@ fn json_output(output: &Output) -> Value {
 }
 
 fn state_artifact(root: &Path, name: &str, content: &str) -> String {
-    let path = root.join(".soulmate/artifacts").join(name);
+    let path = root.join(".exitbind/artifacts").join(name);
     fs::write(path, content).unwrap();
-    format!(".soulmate/artifacts/{name}")
+    format!(".exitbind/artifacts/{name}")
 }
 
 fn submit(root: &Path, agent: &str, ledger: &str, outcome: &str, artifact: &str) -> Value {
@@ -67,7 +67,7 @@ fn submit(root: &Path, agent: &str, ledger: &str, outcome: &str, artifact: &str)
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -90,7 +90,7 @@ fn checked_start(root: &Path, ledger: &str, origin: &str) -> Value {
             "--proof-origin",
             origin,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -123,7 +123,7 @@ fn record_check_duration(
         arguments.push("--duration-ms".into());
         arguments.push(duration_ms.into());
     }
-    arguments.extend(["--json".into(), "--config".into(), "soulmate.json".into()]);
+    arguments.extend(["--json".into(), "--config".into(), "exitbind.json".into()]);
     invoke_owned(root, arguments)
 }
 
@@ -188,16 +188,16 @@ fn write_events(root: &Path, ledger: &str, events: &[Value]) {
 }
 
 fn configure_workers(root: &Path, workers: &[&str]) {
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     let base = config["agents"]["worker"].clone();
     for worker in workers.iter().copied().filter(|worker| *worker != "worker") {
         let mut agent = base.clone();
-        agent["profile"] = serde_json::json!(format!("soulmate/agents/{worker}.md"));
+        agent["profile"] = serde_json::json!(format!("exitbind/agents/{worker}.md"));
         agent["purpose"] = serde_json::json!(format!("Complete bounded work for {worker}."));
         config["agents"][worker] = agent;
         fs::write(
-            root.join(format!("soulmate/agents/{worker}.md")),
+            root.join(format!("exitbind/agents/{worker}.md")),
             format!("# {worker}\n\nComplete bounded work.\n"),
         )
         .unwrap();
@@ -242,7 +242,7 @@ fn split_worker_stages(root: &Path, ledger: &str) {
 #[test]
 fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     let root = project("value-proof-guard");
-    let ledger = ".soulmate/runs/checked.jsonl";
+    let ledger = ".exitbind/runs/checked.jsonl";
     let started = checked_start(&root, ledger, "local_report");
     assert_eq!(started["assignments"][0]["checkPolicy"]["command"], CHECK);
     assert_eq!(
@@ -252,7 +252,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
 
     let next = json_output(&invoke(
         &root,
-        &["run", "next", ledger, "--json", "--config", "soulmate.json"],
+        &["run", "next", ledger, "--json", "--config", "exitbind.json"],
     ));
     assert_eq!(next["assignments"][0]["checkPolicy"]["command"], CHECK);
     assert_eq!(next["assignments"][0]["checkPolicy"]["version"], 1);
@@ -273,7 +273,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(before_check["checks"]["status"], "not_observed");
@@ -282,7 +282,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     assert_eq!(before_check["checks"]["missingCount"], 1);
     let human_status = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(human_status.status.success(), "{}", text(&human_status));
     let human_status_text = String::from_utf8_lossy(&human_status.stdout);
@@ -290,8 +290,8 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
         "Claim:",
         "Worker claim: worker (worker) stage 2 outcome=completed",
         "Checks:",
-        "Host-reported check: not observed; not executed by Soulmate",
-        "Frozen command: soulmate check --config verification.json",
+        "Host-reported check: not observed; not executed by Exitbind",
+        "Frozen command: exitbind check --config verification.json",
         "Review:",
         "Reviewer outcome: reviewer (reviewer) stage 3 pending",
         "Acceptance:",
@@ -318,7 +318,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             "state",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -334,7 +334,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
         .all(|event| !(event["action"] == "submit" && event["outcome"] == "accepted")));
     let refused_status = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(refused_status.status.success(), "{}", text(&refused_status));
     let refused_status_text = String::from_utf8_lossy(&refused_status.stdout);
@@ -353,7 +353,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             "--event".into(),
             protection_hash,
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ],
     );
     assert!(explanation.status.success(), "{}", text(&explanation));
@@ -361,7 +361,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     assert!(explanation_text.contains("Protection:"));
     assert!(explanation_text.contains("reason=check_missing"));
     assert!(
-        explanation_text.contains("Host-reported check: not observed; not executed by Soulmate")
+        explanation_text.contains("Host-reported check: not observed; not executed by Exitbind")
     );
     assert!(explanation_text.contains(&worker_event));
 
@@ -376,7 +376,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(stale["status"], "running");
@@ -404,7 +404,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(report["groups"]["local_report"]["runs"], 1);
@@ -414,7 +414,7 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
     assert!(!serialized.contains(CHECK));
     assert!(!serialized.contains("checked test"));
 
-    let positive_ledger = ".soulmate/runs/checked-positive.jsonl";
+    let positive_ledger = ".exitbind/runs/checked-positive.jsonl";
     checked_start(&root, positive_ledger, "local_report");
     let positive_lead = state_artifact(&root, "guard-positive-lead.md", "lead scope\n");
     submit(&root, "lead", positive_ledger, "scoped", &positive_lead);
@@ -449,20 +449,20 @@ fn checked_packets_and_guard_keep_missing_and_passing_distinct() {
             "status",
             positive_ledger,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(terminal_human.status.success(), "{}", text(&terminal_human));
     let terminal_text = String::from_utf8_lossy(&terminal_human.stdout);
     assert!(terminal_text.contains("Lead decision: accepted"));
-    assert!(terminal_text.contains("Host-reported check: passed; not executed by Soulmate"));
+    assert!(terminal_text.contains("Host-reported check: passed; not executed by Exitbind"));
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn human_status_keeps_rework_history_and_prior_protection_visible() {
     let root = project("value-proof-human-rework");
-    let ledger = ".soulmate/runs/rework.jsonl";
+    let ledger = ".exitbind/runs/rework.jsonl";
     checked_start(&root, ledger, "local_report");
 
     let scoped = state_artifact(&root, "rework-scope.md", "scope\n");
@@ -487,7 +487,7 @@ fn human_status_keeps_rework_history_and_prior_protection_visible() {
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -497,7 +497,7 @@ fn human_status_keeps_rework_history_and_prior_protection_visible() {
     let before = fs::read(root.join(ledger)).unwrap();
     let status = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(status.status.success(), "{}", text(&status));
     let rendered = String::from_utf8_lossy(&status.stdout);
@@ -514,7 +514,7 @@ fn human_status_keeps_rework_history_and_prior_protection_visible() {
     }
     let explanation = invoke(
         &root,
-        &["run", "explain", ledger, "--config", "soulmate.json"],
+        &["run", "explain", ledger, "--config", "exitbind.json"],
     );
     assert!(explanation.status.success(), "{}", text(&explanation));
     let explanation_text = String::from_utf8_lossy(&explanation.stdout);
@@ -529,7 +529,7 @@ fn human_status_and_explain_render_terminal_lead_decisions() {
     for outcome in ["rejected", "blocked"] {
         let label = format!("value-proof-human-lead-{outcome}");
         let root = project(&label);
-        let ledger = format!(".soulmate/runs/{outcome}.jsonl");
+        let ledger = format!(".exitbind/runs/{outcome}.jsonl");
         checked_start(&root, &ledger, "local_report");
 
         let scoped = state_artifact(&root, &format!("{outcome}-scope.md"), "scope\n");
@@ -545,7 +545,7 @@ fn human_status_and_explain_render_terminal_lead_decisions() {
         let before = fs::read(root.join(&ledger)).unwrap();
         let status = invoke(
             &root,
-            &["run", "status", &ledger, "--config", "soulmate.json"],
+            &["run", "status", &ledger, "--config", "exitbind.json"],
         );
         assert!(status.status.success(), "{}", text(&status));
         let status_text = String::from_utf8_lossy(&status.stdout);
@@ -553,7 +553,7 @@ fn human_status_and_explain_render_terminal_lead_decisions() {
 
         let explanation = invoke(
             &root,
-            &["run", "explain", &ledger, "--config", "soulmate.json"],
+            &["run", "explain", &ledger, "--config", "exitbind.json"],
         );
         assert!(explanation.status.success(), "{}", text(&explanation));
         let explanation_text = String::from_utf8_lossy(&explanation.stdout);
@@ -566,8 +566,8 @@ fn human_status_and_explain_render_terminal_lead_decisions() {
 #[test]
 fn stale_and_cross_run_check_targets_fail_without_append() {
     let root = project("value-proof-targets");
-    let first = ".soulmate/runs/first.jsonl";
-    let second = ".soulmate/runs/second.jsonl";
+    let first = ".exitbind/runs/first.jsonl";
+    let second = ".exitbind/runs/second.jsonl";
     checked_start(&root, first, "local_report");
     checked_start(&root, second, "local_report");
 
@@ -602,7 +602,7 @@ fn stale_and_cross_run_check_targets_fail_without_append() {
 #[test]
 fn status_reports_artifact_drift_without_appending() {
     let root = project("value-proof-drift");
-    let ledger = ".soulmate/runs/checked.jsonl";
+    let ledger = ".exitbind/runs/checked.jsonl";
     checked_start(&root, ledger, "local_report");
     let lead = state_artifact(&root, "drift-lead.md", "original\n");
     submit(&root, "lead", ledger, "scoped", &lead);
@@ -617,7 +617,7 @@ fn status_reports_artifact_drift_without_appending() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(status.status.success(), "{}", text(&status));
@@ -631,7 +631,7 @@ fn status_reports_artifact_drift_without_appending() {
 #[test]
 fn legacy_report_keeps_missing_origin_unclassified() {
     let root = project("value-proof-legacy-report");
-    let ledger = ".soulmate/runs/legacy.jsonl";
+    let ledger = ".exitbind/runs/legacy.jsonl";
     let output = invoke(
         &root,
         &[
@@ -643,13 +643,13 @@ fn legacy_report_keeps_missing_origin_unclassified() {
             "--ledger",
             ledger,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
-    let synthetic = ".soulmate/runs/synthetic.jsonl";
+    let synthetic = ".exitbind/runs/synthetic.jsonl";
     checked_start(&root, synthetic, "synthetic");
-    let local = ".soulmate/runs/local.jsonl";
+    let local = ".exitbind/runs/local.jsonl";
     checked_start(&root, local, "local_report");
     let report = json_output(&invoke(
         &root,
@@ -659,7 +659,7 @@ fn legacy_report_keeps_missing_origin_unclassified() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(report["groups"]["unclassified"]["runs"], 1);
@@ -675,7 +675,7 @@ fn legacy_report_keeps_missing_origin_unclassified() {
             local.into(),
             "--json".into(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ],
     ));
     assert_eq!(mixed["groups"]["unclassified"]["runs"], 1);
@@ -687,7 +687,7 @@ fn legacy_report_keeps_missing_origin_unclassified() {
 #[test]
 fn report_rejects_duration_overflow_instead_of_saturating() {
     let root = project("value-proof-overflow");
-    let ledger = ".soulmate/runs/overflow.jsonl";
+    let ledger = ".exitbind/runs/overflow.jsonl";
     checked_start(&root, ledger, "local_report");
     let lead = state_artifact(&root, "overflow-lead.md", "lead\n");
     submit(&root, "lead", ledger, "scoped", &lead);
@@ -707,7 +707,7 @@ fn report_rejects_duration_overflow_instead_of_saturating() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!report.status.success(), "{}", text(&report));
@@ -718,7 +718,7 @@ fn report_rejects_duration_overflow_instead_of_saturating() {
 #[test]
 fn human_status_escapes_frozen_check_command_without_appending() {
     let root = project("value-proof-human-escaping");
-    let ledger = ".soulmate/runs/escaping.jsonl";
+    let ledger = ".exitbind/runs/escaping.jsonl";
     let command = "printf \u{1b}[31mcheck";
     let started = invoke_owned(
         &root,
@@ -733,18 +733,18 @@ fn human_status_escapes_frozen_check_command_without_appending() {
             "--check-command".into(),
             command.into(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ],
     );
     assert!(started.status.success(), "{}", text(&started));
     let before = fs::read(root.join(ledger)).unwrap();
     let status = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(status.status.success(), "{}", text(&status));
     let rendered = String::from_utf8_lossy(&status.stdout);
-    assert!(rendered.contains("Host-reported check: not observed; not executed by Soulmate"));
+    assert!(rendered.contains("Host-reported check: not observed; not executed by Exitbind"));
     assert!(rendered.contains("Frozen command: printf"));
     assert!(!rendered.as_bytes().contains(&0x1b));
     assert_eq!(fs::read(root.join(ledger)).unwrap(), before);
@@ -755,19 +755,49 @@ fn human_status_escapes_frozen_check_command_without_appending() {
 fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     let root = project("value-proof-all-workers");
     configure_workers(&root, &["worker", "worker_two", "worker_three"]);
-    let ledger = ".soulmate/runs/all-workers.jsonl";
-    checked_start(&root, ledger, "local_report");
+    fs::copy(root.join("exitbind.json"), root.join("verification.json")).unwrap();
+    let started = invoke(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "exercise every current worker stage",
+            "--check-command",
+            CHECK,
+            "--proof-origin",
+            "local_report",
+            "--review-policy",
+            "required",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(started.status.success(), "{}", text(&started));
+    let started = json_output(&started);
+    let work = started["work"].as_str().unwrap().to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let ledger = ledger.as_str();
     split_worker_stages(&root, ledger);
 
     let lead = state_artifact(&root, "all-workers-lead.md", "lead\n");
     submit(&root, "lead", ledger, "scoped", &lead);
     let worker_one = state_artifact(&root, "all-workers-one.md", "one\n");
+    fs::write(
+        root.join("first-worker-output.txt"),
+        "first modeled product result\n",
+    )
+    .unwrap();
     let first = submit(&root, "worker", ledger, "completed", &worker_one);
     let first_target = event_hash(&first);
 
     let next = json_output(&invoke(
         &root,
-        &["run", "next", ledger, "--json", "--config", "soulmate.json"],
+        &["run", "next", ledger, "--json", "--config", "exitbind.json"],
     ));
     assert_eq!(next["assignments"].as_array().unwrap().len(), 2);
     assert!(next["assignments"]
@@ -776,9 +806,72 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
         .iter()
         .any(|assignment| assignment["agent"] == "worker_two"));
     let worker_two = state_artifact(&root, "all-workers-two.md", "two\n");
+    fs::write(
+        root.join("second-worker-output.txt"),
+        "second modeled product result\n",
+    )
+    .unwrap();
     let second = submit(&root, "worker_two", ledger, "completed", &worker_two);
     let second_target = event_hash(&second);
+
+    // An actually observed frozen check supplies new information to the shared
+    // governor. Merely reporting a check or returning another artifact does not.
+    let before_observation = json_output(&invoke(
+        &root,
+        &[
+            "run",
+            "inspect",
+            ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(before_observation["governor"]["state"], "replan_required");
+    let binary_dir = Path::new(env!("CARGO_BIN_EXE_exitbind")).parent().unwrap();
+    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+    let check_path = std::env::join_paths(
+        std::iter::once(binary_dir.to_owned()).chain(std::env::split_paths(&inherited_path)),
+    )
+    .unwrap();
+    let observed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .env("PATH", check_path)
+        .args([
+            "run",
+            "observe-check",
+            ledger,
+            "--target",
+            &first_target,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(observed.status.success(), "{}", text(&observed));
+    assert_eq!(json_output(&observed)["event"]["acquisition"], "observed");
+    assert_eq!(json_output(&observed)["event"]["result"]["code"], 0);
+    let after_observation = json_output(&invoke(
+        &root,
+        &[
+            "run",
+            "inspect",
+            ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(after_observation["governor"]["state"], "ready");
+    assert_eq!(after_observation["governor"]["spent"], 2);
+
     let worker_three = state_artifact(&root, "all-workers-three.md", "three\n");
+    fs::write(
+        root.join("third-worker-output.txt"),
+        "third modeled product result\n",
+    )
+    .unwrap();
     let third = submit(&root, "worker_three", ledger, "completed", &worker_three);
     let third_target = event_hash(&third);
 
@@ -791,7 +884,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(before_checks["checks"]["targetCount"], 3);
@@ -800,7 +893,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     assert_eq!(before_checks["checks"]["status"], "not_observed");
     let human_before = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(human_before.status.success(), "{}", text(&human_before));
     let human_before_text = String::from_utf8_lossy(&human_before.stdout);
@@ -814,7 +907,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
         .success());
     let mixed = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(mixed.status.success(), "{}", text(&mixed));
     let mixed_text = String::from_utf8_lossy(&mixed.stdout);
@@ -835,7 +928,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(one_check["checks"]["observedCount"], 1);
@@ -843,7 +936,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     assert_eq!(one_check["checks"]["status"], "not_observed");
     let human_one = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(human_one.status.success(), "{}", text(&human_one));
     let human_one_text = String::from_utf8_lossy(&human_one.stdout);
@@ -867,7 +960,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(complete["checks"]["targetCount"], 3);
@@ -876,14 +969,136 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
     assert_eq!(complete["checks"]["status"], "passed");
     let human_complete = invoke(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(human_complete.status.success(), "{}", text(&human_complete));
     let human_complete_text = String::from_utf8_lossy(&human_complete.stdout);
-    assert!(human_complete_text.contains("Host-reported check: passed; not executed by Soulmate"));
+    assert!(human_complete_text.contains("Host-reported check: passed; not executed by Exitbind"));
     assert!(human_complete_text.contains("Reviewer outcome:"));
     assert!(human_complete_text.contains("outcome=approved"));
     assert!(human_complete_text.contains("Lead decision: pending"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn named_worker_replan_uses_the_current_assignment_and_keeps_spent_authority() {
+    let root = project("value-proof-named-worker-replan");
+    configure_workers(&root, &["worker_named"]);
+    let started = invoke(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "replan the current named worker",
+            "--check-command",
+            CHECK,
+            "--review-policy",
+            "required",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(started.status.success(), "{}", text(&started));
+    let work = json_output(&started)["work"].as_str().unwrap().to_owned();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let scope = state_artifact(
+        &root,
+        "named-worker-scope.md",
+        "bounded named worker scope\n",
+    );
+    submit(&root, "lead", &ledger, "scoped", &scope);
+    let detail = json_output(&invoke(
+        &root,
+        &[
+            "work",
+            "detail",
+            &work,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(detail["recipient"]["agent"], "worker_named");
+    let assignment = detail["recipient"]["assignment"].as_str().unwrap();
+    for (operation, request) in [
+        ("first-bounded-step", "named-first"),
+        ("second-bounded-step", "named-second"),
+    ] {
+        let granted = invoke(
+            &root,
+            &[
+                "work",
+                "permit",
+                &work,
+                assignment,
+                "--operation",
+                operation,
+                "--request-id",
+                request,
+                "--config",
+                "exitbind.json",
+            ],
+        );
+        assert!(granted.status.success(), "{}", text(&granted));
+        assert_eq!(json_output(&granted)["allowed"], true);
+    }
+    let detail = json_output(&invoke(
+        &root,
+        &[
+            "work",
+            "detail",
+            &work,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    ));
+    assert_eq!(
+        detail["actionForms"]["nextRequest"]["requiredAction"],
+        "work replan"
+    );
+    let replanned = invoke(
+        &root,
+        &[
+            "work",
+            "replan",
+            &work,
+            assignment,
+            "--hypothesis",
+            "Inspect the exact failed check before choosing another bounded mutation.",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(replanned.status.success(), "{}", text(&replanned));
+    let result = json_output(&replanned);
+    assert_eq!(result["event"]["agent"], "worker_named");
+    assert_eq!(result["governor"]["spent"], 2);
+    assert_eq!(result["governor"]["replanCount"], 1);
+    assert_eq!(result["governor"]["state"], "ready");
+    assert!(result["governor"]["currentGrantEventSha256"].is_null());
+    let before = fs::read(root.join(&ledger)).unwrap();
+    let wrong_assignment = invoke(
+        &root,
+        &[
+            "work",
+            "replan",
+            &work,
+            &format!("sma_{}", "0".repeat(64)),
+            "--hypothesis",
+            "wrong assignment",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(!wrong_assignment.status.success());
+    assert!(text(&wrong_assignment).contains("not the current pending work action"));
+    assert_eq!(fs::read(root.join(&ledger)).unwrap(), before);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -900,19 +1115,19 @@ fn checked_runs_reject_no_worker_plans_and_early_lead_acceptance() {
             "--goal",
             "no worker",
             "--ledger",
-            ".soulmate/runs/no-worker.jsonl",
+            ".exitbind/runs/no-worker.jsonl",
             "--check-command",
             CHECK,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!rejected.status.success(), "{}", text(&rejected));
-    assert!(!no_worker.join(".soulmate/runs/no-worker.jsonl").exists());
+    assert!(!no_worker.join(".exitbind/runs/no-worker.jsonl").exists());
     fs::remove_dir_all(no_worker).unwrap();
 
     let root = project("value-proof-early-acceptance");
-    let ledger = ".soulmate/runs/early.jsonl";
+    let ledger = ".exitbind/runs/early.jsonl";
     checked_start(&root, ledger, "local_report");
     let lead = state_artifact(&root, "early-lead.md", "lead\n");
     let before = fs::read(root.join(ledger)).unwrap();
@@ -931,7 +1146,7 @@ fn checked_runs_reject_no_worker_plans_and_early_lead_acceptance() {
             "state",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!accepted.status.success(), "{}", text(&accepted));
@@ -944,7 +1159,7 @@ fn checked_runs_reject_no_worker_plans_and_early_lead_acceptance() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(status["checks"]["status"], "not_observed");
@@ -955,7 +1170,7 @@ fn checked_runs_reject_no_worker_plans_and_early_lead_acceptance() {
 #[test]
 fn latest_check_result_controls_acceptance_and_failure_protection() {
     let root = project("value-proof-latest-check");
-    let ledger = ".soulmate/runs/latest.jsonl";
+    let ledger = ".exitbind/runs/latest.jsonl";
     checked_start(&root, ledger, "local_report");
     let lead = state_artifact(&root, "latest-lead.md", "lead\n");
     submit(&root, "lead", ledger, "scoped", &lead);
@@ -974,7 +1189,7 @@ fn latest_check_result_controls_acceptance_and_failure_protection() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(passed["checks"]["status"], "passed");
@@ -987,7 +1202,7 @@ fn latest_check_result_controls_acceptance_and_failure_protection() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     ));
     assert_eq!(failed["checks"]["status"], "blocked");
@@ -1010,7 +1225,7 @@ fn latest_check_result_controls_acceptance_and_failure_protection() {
             "state",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!accepted.status.success(), "{}", text(&accepted));
@@ -1023,7 +1238,7 @@ fn latest_check_result_controls_acceptance_and_failure_protection() {
 #[test]
 fn artifact_drift_blocks_check_and_protection_without_appending() {
     let root = project("value-proof-drift-no-append");
-    let ledger = ".soulmate/runs/drift-no-append.jsonl";
+    let ledger = ".exitbind/runs/drift-no-append.jsonl";
     checked_start(&root, ledger, "local_report");
     let lead = state_artifact(&root, "drift-no-append-lead.md", "lead\n");
     submit(&root, "lead", ledger, "scoped", &lead);
@@ -1053,7 +1268,7 @@ fn artifact_drift_blocks_check_and_protection_without_appending() {
             "state",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!accepted.status.success(), "{}", text(&accepted));
@@ -1064,8 +1279,8 @@ fn artifact_drift_blocks_check_and_protection_without_appending() {
 #[test]
 fn checked_supersession_inherits_policy_and_seals_predecessor() {
     let root = project("value-proof-supersede");
-    let old = ".soulmate/runs/old.jsonl";
-    let new = ".soulmate/runs/new.jsonl";
+    let old = ".exitbind/runs/old.jsonl";
+    let new = ".exitbind/runs/new.jsonl";
     checked_start(&root, old, "synthetic");
     let output = invoke(
         &root,
@@ -1081,18 +1296,18 @@ fn checked_supersession_inherits_policy_and_seals_predecessor() {
             new,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
     let successor = json_output(&invoke(
         &root,
-        &["run", "inspect", new, "--json", "--config", "soulmate.json"],
+        &["run", "inspect", new, "--json", "--config", "exitbind.json"],
     ));
-    assert_eq!(successor["events"][0]["version"], 4);
+    assert_eq!(successor["events"][0]["version"], 8);
     assert_eq!(successor["events"][0]["checkPolicy"]["command"], CHECK);
     assert_eq!(successor["events"][0]["checkPolicy"]["origin"], "synthetic");
-    assert!(root.join(".soulmate/runs/old.jsonl.supersede").is_file());
+    assert!(root.join(".exitbind/runs/old.jsonl.supersede").is_file());
 
     let worker = state_artifact(&root, "sealed-worker.md", "worker\n");
     let before = fs::read(root.join(old)).unwrap();
@@ -1111,7 +1326,7 @@ fn checked_supersession_inherits_policy_and_seals_predecessor() {
             "state",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!mutation.status.success(), "{}", text(&mutation));

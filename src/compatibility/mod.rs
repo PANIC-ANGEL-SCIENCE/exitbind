@@ -3,7 +3,6 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Surface {
     Exitbind,
-    Soulmate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,8 +34,6 @@ pub(crate) struct Profile {
 pub(crate) const ACCEPTED_HOOK_PROTOCOLS: [&str; 2] = ["soulmate-hook-v1", "exitbind-hook-v1"];
 
 const EXITBIND_COMMANDS: &[&str] = &["exitbind"];
-const SOULMATE_COMMANDS: &[&str] = &["soulmate"];
-
 const EXITBIND: Profile = Profile {
     surface: Surface::Exitbind,
     caller: "exitbind",
@@ -54,76 +51,39 @@ const EXITBIND: Profile = Profile {
     installed_commands: EXITBIND_COMMANDS,
 };
 
-const SOULMATE: Profile = Profile {
-    surface: Surface::Soulmate,
-    caller: "soulmate",
-    product: "soulmate",
-    producer: "soulmate",
-    format_version: 1,
-    config: "soulmate.json",
-    control: "soulmate",
-    state: ".soulmate",
-    api: "https://api.github.com/repos/envy404/soulmate/releases?per_page=20",
-    raw_installer: "https://raw.githubusercontent.com/envy404/soulmate/",
-    install_prefix_env: "SOULMATE_INSTALL_PREFIX",
-    cache: "soulmate/update.json",
-    marker: "soulmate/update.lock",
-    installed_commands: SOULMATE_COMMANDS,
-};
-
-/// The binary target sets the default surface; the exact legacy basename keeps
-/// installer-managed soulmate copies on their historical surface.
+/// The executable profile is always Exitbind. Historical record identifiers
+/// remain accepted by their owning readers below this boundary.
 pub(crate) fn profile() -> Profile {
-    static PROFILE: std::sync::OnceLock<Profile> = std::sync::OnceLock::new();
-    *PROFILE.get_or_init(detect_profile)
+    EXITBIND
 }
 
-fn detect_profile() -> Profile {
-    let invoked_as_soulmate = std::env::current_exe()
-        .ok()
-        .and_then(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name == SOULMATE.caller)
-        })
-        .unwrap_or(false);
-    if invoked_as_soulmate || option_env!("CARGO_BIN_NAME") == Some(SOULMATE.caller) {
-        SOULMATE
-    } else {
-        EXITBIND
-    }
+/// Retired copied binaries and symlink aliases must not silently acquire the
+/// Exitbind configuration or write authority. Check the invocation spelling
+/// before CLI parsing or configuration loading.
+pub(crate) fn invoked_as_retired_soulmate(
+    argv0: Option<&std::ffi::OsStr>,
+    current_exe: Option<&std::ffi::OsStr>,
+) -> bool {
+    [argv0, current_exe].into_iter().flatten().any(|value| {
+        let Some(name) = std::path::Path::new(value).file_name() else {
+            return false;
+        };
+        #[cfg(windows)]
+        {
+            name.to_str().is_some_and(|name| {
+                let lowercase = name.to_ascii_lowercase();
+                lowercase.strip_suffix(".exe").unwrap_or(&lowercase) == "soulmate"
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            name == "soulmate"
+        }
+    })
 }
 
 pub(crate) fn is_exitbind() -> bool {
     profile().surface == Surface::Exitbind
-}
-
-#[cfg(test)]
-fn legacy_release_asset(tag: &str) -> bool {
-    let mut parts = tag.strip_prefix('v').unwrap_or_default().splitn(2, '.');
-    let (Some(major), Some(rest)) = (parts.next(), parts.next()) else {
-        return false;
-    };
-    if major != "0" {
-        return false;
-    }
-    let Some((minor, rest)) = rest.split_once('.') else {
-        return false;
-    };
-    if minor.is_empty() || (minor.len() > 1 && minor.starts_with('0')) {
-        return false;
-    }
-    let Ok(minor) = minor.parse::<u64>() else {
-        return false;
-    };
-    if minor > 16 {
-        return false;
-    }
-    let patch_end = rest.find(['-', '+']).unwrap_or(rest.len());
-    let patch = &rest[..patch_end];
-    !patch.is_empty()
-        && (patch == "0" || !patch.starts_with('0'))
-        && patch.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -132,59 +92,79 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn profiles_own_the_two_public_surfaces() {
+    fn only_the_exitbind_profile_is_current() {
         assert_eq!(EXITBIND.caller, "exitbind");
         assert_eq!(EXITBIND.product, "exitbind");
         assert_eq!(EXITBIND.format_version, 8);
         assert_eq!(EXITBIND.installed_commands, ["exitbind"]);
-        assert_eq!(SOULMATE.caller, "soulmate");
-        assert_eq!(SOULMATE.product, "soulmate");
-        assert_eq!(SOULMATE.format_version, 1);
-        assert_eq!(SOULMATE.installed_commands, ["soulmate"]);
+        assert_eq!(profile(), EXITBIND);
+        assert_eq!(profile().installed_commands, ["exitbind"]);
     }
 
     #[test]
-    fn historical_release_selector_rejects_malformed_semver() {
-        assert!(legacy_release_asset(&format!("v{}.{}.{}", 0, 16, 0)));
-        assert!(legacy_release_asset(&format!(
-            "v{}.{}.{}-rc.2+build.7",
-            0, 16, 999
-        )));
-        assert!(!legacy_release_asset(&format!("v{}.{}.{}", 0, 16, "00")));
-        assert!(!legacy_release_asset(&format!("v{}.{}.{}", 0, 17, 0)));
-        assert!(!legacy_release_asset(&format!("v{}.{}", 0, 16)));
+    fn retired_name_is_detected_from_copy_or_symlink_argv0() {
+        assert!(invoked_as_retired_soulmate(
+            Some(std::ffi::OsStr::new("soulmate")),
+            None
+        ));
+        assert!(invoked_as_retired_soulmate(
+            Some(std::ffi::OsStr::new("/tmp/alias/soulmate")),
+            None
+        ));
+        assert!(invoked_as_retired_soulmate(
+            Some(std::ffi::OsStr::new("exitbind")),
+            Some(std::ffi::OsStr::new("/opt/bin/soulmate"))
+        ));
+        assert!(!invoked_as_retired_soulmate(
+            Some(std::ffi::OsStr::new("exitbind")),
+            Some(std::ffi::OsStr::new("/opt/bin/exitbind"))
+        ));
+        assert!(!invoked_as_retired_soulmate(None, None));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_retired_name_accepts_optional_extension_and_case_variants() {
+        for name in ["soulmate", "SoulMate", "soulmate.exe", "SOULMATE.EXE"] {
+            assert!(
+                invoked_as_retired_soulmate(Some(std::ffi::OsStr::new(name)), None),
+                "{name}"
+            );
+        }
+        for name in ["exitbind", "exitbind.exe", "soulmate-copy.exe"] {
+            assert!(
+                !invoked_as_retired_soulmate(Some(std::ffi::OsStr::new(name)), None),
+                "{name}"
+            );
+        }
     }
 
     #[test]
     fn matrix_keeps_the_typed_profile_projection_bound() {
         let matrix: serde_json::Value =
             serde_json::from_str(include_str!("../../compatibility/rename-matrix.json")).unwrap();
-        for (id, expected) in [
-            ("current-exitbind", EXITBIND),
-            ("legacy-soulmate", SOULMATE),
-        ] {
-            let row = matrix["surfaces"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|row| row["id"] == id)
-                .unwrap();
-            assert_eq!(row["callerBasename"], expected.caller);
-            assert_eq!(row["product"], expected.product);
-            assert_eq!(
-                row["installedCommands"],
-                serde_json::json!(expected.installed_commands)
-            );
-            let path = matrix["paths"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|path| path["id"] == row["pathId"])
-                .unwrap();
-            assert_eq!(path["defaultConfig"], expected.config);
-            assert_eq!(path["defaultControl"], expected.control);
-            assert_eq!(path["defaultState"], expected.state);
-        }
+        let current = matrix["surfaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "current-exitbind")
+            .unwrap();
+        assert_eq!(current["callerBasename"], EXITBIND.caller);
+        assert_eq!(current["product"], EXITBIND.product);
+        assert_eq!(
+            current["installedCommands"],
+            serde_json::json!(EXITBIND.installed_commands)
+        );
+        let path = matrix["paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|path| path["id"] == current["pathId"])
+            .unwrap();
+        assert_eq!(path["defaultConfig"], EXITBIND.config);
+        assert_eq!(path["defaultControl"], EXITBIND.control);
+        assert_eq!(path["defaultState"], EXITBIND.state);
+        assert_eq!(matrix["surfaces"][1]["status"], "historical-only");
     }
 
     #[test]
@@ -193,7 +173,7 @@ mod tests {
             EXITBIND.config,
             EXITBIND.control,
             EXITBIND.state,
-            SOULMATE.config,
+            "soulmate.json",
         ] {
             assert!(!Path::new(path).is_absolute());
         }

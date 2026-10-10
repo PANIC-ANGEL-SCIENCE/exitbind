@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && format('{0}-pull-request-{1}', github.workflow, github.event.pull_request.number)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/') && format('{0}-feature-push-{1}', github.workflow, github.ref)) || format('{0}-protected-run-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) }}
 jobs:
   exit:
     runs-on: ubuntu-latest
@@ -16,9 +19,33 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
+      - name: Prepare dependency-cache target path
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import os
+          workspace = os.path.realpath(os.environ["GITHUB_WORKSPACE"])
+          target = os.path.realpath(os.environ["CARGO_TARGET_DIR"])
+          relative = os.path.relpath(target, workspace)
+          if os.path.isabs(relative) or not relative:
+              raise SystemExit("Cargo target cache path must be relative to the workspace")
+          print(f"EXITBIND_CACHE_TARGET={relative}")
+          PY
+      - name: Cache native Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> ${{ env.EXITBIND_CACHE_TARGET }}
+          cache-targets: true
+          cache-bin: false
+          cache-all-crates: false
+          cache-workspace-crates: false
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+          TMPDIR: ${{ runner.temp }}/exitbind-fixtures
+          CI_LOG_ROOT: ${{ runner.temp }}/exitbind-logs
+          CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -57,9 +84,33 @@ jobs:
           printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
             "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
             "${{ matrix.target }}" "$GITHUB_SHA"
+      - name: Prepare dependency-cache target path
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import os
+          workspace = os.path.realpath(os.environ["GITHUB_WORKSPACE"])
+          target = os.path.realpath(os.environ["CARGO_TARGET_DIR"])
+          relative = os.path.relpath(target, workspace)
+          if os.path.isabs(relative) or not relative:
+              raise SystemExit("Cargo target cache path must be relative to the workspace")
+          print(f"EXITBIND_CACHE_TARGET={relative}")
+          PY
+      - name: Cache native Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> ${{ env.EXITBIND_CACHE_TARGET }}
+          cache-targets: true
+          cache-bin: false
+          cache-all-crates: false
+          cache-workspace-crates: false
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
+          TMPDIR: ${{ runner.temp }}/exitbind-fixtures
+          CI_LOG_ROOT: ${{ runner.temp }}/exitbind-logs
+          CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

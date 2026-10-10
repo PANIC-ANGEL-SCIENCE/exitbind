@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 use serde_json::Value;
 mod support;
 use std::{
@@ -17,12 +16,12 @@ fn project() -> (PathBuf, String) {
         root.to_str().unwrap(),
     ]);
     assert!(output.status.success(), "{}", text(&output));
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     (root, config)
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -37,10 +36,10 @@ fn text(output: &Output) -> String {
 }
 
 fn configure(root: &Path, config: &str, agent: &str, cross_context: &str, max_bytes: u64) {
-    let path = root.join("soulmate.json");
+    let path = root.join("exitbind.json");
     let mut value: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     value["memory"] = serde_json::json!({
-        "root": ".soulmate/memory",
+        "root": ".exitbind/memory",
         "maxItems": 8,
         "maxBytes": max_bytes,
         "protocolScopes": ["invariants"],
@@ -58,7 +57,7 @@ fn configure(root: &Path, config: &str, agent: &str, cross_context: &str, max_by
         format!("{}\n", serde_json::to_string_pretty(&value).unwrap()),
     )
     .unwrap();
-    fs::create_dir_all(root.join(".soulmate/memory")).unwrap();
+    fs::create_dir_all(root.join(".exitbind/memory")).unwrap();
 }
 
 fn set_max_items(config: &str, max_items: u64) {
@@ -77,7 +76,7 @@ fn accepted(root: &Path, config: &str) -> String {
         root,
         config,
         "memory.md",
-        ".soulmate/memory/invariant.jsonl",
+        ".exitbind/memory/invariant.jsonl",
         "accepted invariant\n",
     )
 }
@@ -174,14 +173,14 @@ fn count_budget_diagnostic_reports_attempted_count_and_limits_without_content() 
         &root,
         &config,
         "first.md",
-        ".soulmate/memory/first.jsonl",
+        ".exitbind/memory/first.jsonl",
         "first invariant\n",
     );
     accepted_entry(
         &root,
         &config,
         "second.md",
-        ".soulmate/memory/second.jsonl",
+        ".exitbind/memory/second.jsonl",
         "second invariant\n",
     );
 
@@ -202,7 +201,7 @@ fn duplicate_items_are_rejected() {
     let ledger = accepted(&root, &config);
     fs::copy(
         root.join(ledger),
-        root.join(".soulmate/memory/duplicate.jsonl"),
+        root.join(".exitbind/memory/duplicate.jsonl"),
     )
     .unwrap();
     let output = invoke(&["memory", "resolve", "lead", "--json", "--config", &config]);
@@ -220,7 +219,7 @@ fn multiple_ledgers_resolve_in_stable_filename_order() {
         ("a-first.jsonl", "a-first.md"),
     ] {
         fs::write(root.join(source), format!("{source}\n")).unwrap();
-        let ledger = format!(".soulmate/memory/{ledger}");
+        let ledger = format!(".exitbind/memory/{ledger}");
         assert!(invoke(&[
             "memory",
             "propose",
@@ -272,7 +271,7 @@ fn run_reports_revocation_drift_without_blocking_next() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &config,
     ]);
@@ -285,7 +284,7 @@ fn run_reports_revocation_drift_without_blocking_next() {
     let next = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -310,7 +309,7 @@ fn unaccepted_and_time_expired_items_are_not_recalled() {
     let (root, config) = project();
     configure(&root, &config, "lead", "protocol-only", 32_768);
     fs::write(root.join("rejected.md"), "rejected candidate\n").unwrap();
-    let rejected = ".soulmate/memory/rejected.jsonl";
+    let rejected = ".exitbind/memory/rejected.jsonl";
     assert!(invoke(&[
         "memory",
         "propose",
@@ -337,7 +336,7 @@ fn unaccepted_and_time_expired_items_are_not_recalled() {
     );
 
     fs::write(root.join("expired.md"), "expired candidate\n").unwrap();
-    let expired = ".soulmate/memory/expired.jsonl";
+    let expired = ".exitbind/memory/expired.jsonl";
     assert!(invoke(&[
         "memory",
         "propose",
@@ -378,7 +377,7 @@ fn accepted_memory_survives_later_config_and_actor_profile_changes() {
     configure(&root, &config, "lead", "protocol-only", 32_768);
     let _ledger = accepted(&root, &config);
 
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut value: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     value["orchestration"]["maxParallel"] = serde_json::json!(1);
     fs::write(
@@ -387,7 +386,7 @@ fn accepted_memory_survives_later_config_and_actor_profile_changes() {
     )
     .unwrap();
     fs::write(
-        root.join("soulmate/agents/worker.md"),
+        root.join("exitbind/agents/worker.md"),
         "# Worker\n\nChanged after the memory was accepted.\n",
     )
     .unwrap();
@@ -421,13 +420,13 @@ fn recall_outputs_references_without_copying_memory_content() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &config,
     ]);
     assert!(started.status.success(), "{}", text(&started));
     assert!(!text(&started).contains("accepted invariant"));
-    assert!(!fs::read_to_string(root.join(".soulmate/run.jsonl"))
+    assert!(!fs::read_to_string(root.join(".exitbind/run.jsonl"))
         .unwrap()
         .contains("accepted invariant"));
     fs::remove_dir_all(root).unwrap();
@@ -440,16 +439,16 @@ fn malformed_and_symlinked_recall_evidence_fails_closed() {
 
     let (root, config) = project();
     configure(&root, &config, "lead", "protocol-only", 32_768);
-    fs::write(root.join(".soulmate/memory/broken.jsonl"), "not json\n").unwrap();
+    fs::write(root.join(".exitbind/memory/broken.jsonl"), "not json\n").unwrap();
     let malformed = invoke(&["memory", "resolve", "lead", "--json", "--config", &config]);
     assert!(!malformed.status.success());
     assert!(text(&malformed).contains("invalid memory ledger"));
 
-    fs::remove_file(root.join(".soulmate/memory/broken.jsonl")).unwrap();
-    fs::write(root.join(".soulmate/target.jsonl"), "not used\n").unwrap();
+    fs::remove_file(root.join(".exitbind/memory/broken.jsonl")).unwrap();
+    fs::write(root.join(".exitbind/target.jsonl"), "not used\n").unwrap();
     symlink(
-        root.join(".soulmate/target.jsonl"),
-        root.join(".soulmate/memory/linked.jsonl"),
+        root.join(".exitbind/target.jsonl"),
+        root.join(".exitbind/memory/linked.jsonl"),
     )
     .unwrap();
     let linked = invoke(&["memory", "resolve", "lead", "--json", "--config", &config]);
@@ -468,7 +467,7 @@ fn recall_source_rejects_a_symlinked_parent_directory() {
     let source_dir = root.join("memory-source");
     fs::create_dir(&source_dir).unwrap();
     fs::write(source_dir.join("invariant.md"), "accepted invariant\n").unwrap();
-    let ledger = ".soulmate/memory/parent-link.jsonl";
+    let ledger = ".exitbind/memory/parent-link.jsonl";
     assert!(invoke(&[
         "memory",
         "propose",
@@ -532,10 +531,10 @@ fn recall_source_rejects_a_fifo_without_blocking() {
 #[test]
 fn recall_policy_rejects_wildcards_overlap_and_project_root_scans() {
     let (root, config) = project();
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut value: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     value["memory"] = serde_json::json!({
-        "root": ".soulmate/memory",
+        "root": ".exitbind/memory",
         "maxItems": 8,
         "maxBytes": 32_768,
         "protocolScopes": ["invariants"],

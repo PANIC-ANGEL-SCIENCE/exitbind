@@ -606,7 +606,10 @@ fn escaped_descendant_holding_capture_streams_keeps_termination_unknown() {
     fs::write(f.root.join("escaped.py"), "import os, time\nfrom pathlib import Path\npid=os.fork()\nif pid == 0:\n    os.setsid()\n    Path('.exitbind/escaped.pid').write_text(str(os.getpid()))\n    time.sleep(10)\n    os._exit(0)\nfor _ in range(200):\n    if Path('.exitbind/escaped.pid').exists():\n        os._exit(0)\n    time.sleep(.005)\nos._exit(1)\n").unwrap();
     select_fixture_contract(&f);
     let work = f.begin();
-    let result = f.call(&["work", "check", &work, "--timeout-ms", "50"], b"");
+    // The deadline includes Python startup and fork readiness. Keep it below
+    // the escaped child's ten-second lifetime so unfinished readers still
+    // exercise unknown termination after the command itself exits successfully.
+    let result = f.call(&["work", "check", &work, "--timeout-ms", "1000"], b"");
     let pid: i32 = fs::read_to_string(f.root.join(".exitbind/escaped.pid"))
         .unwrap()
         .parse()

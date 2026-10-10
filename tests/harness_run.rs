@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -17,12 +17,12 @@ fn project() -> (PathBuf, String) {
         "portable",
     ]);
     assert!(initialized.status.success(), "{}", text(&initialized));
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     (root, config)
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -59,7 +59,7 @@ fn write_json(path: &Path, value: &Value) {
 
 fn create_receipt(root: &Path, config: &str) -> PathBuf {
     write_json(&root.join("harness-manifest.json"), &manifest());
-    let path = root.join(".soulmate/harness-receipt.json");
+    let path = root.join(".exitbind/harness-receipt.json");
     let output = invoke(&[
         "plan",
         "change",
@@ -80,7 +80,7 @@ fn create_receipt(root: &Path, config: &str) -> PathBuf {
 fn bound_run_persists_reference_and_keeps_v2_chain() {
     let (root, config) = project();
     let receipt = create_receipt(&root, &config);
-    let ledger = root.join(".soulmate/run.jsonl");
+    let ledger = root.join(".exitbind/run.jsonl");
     let started = invoke(&[
         "run",
         "start",
@@ -88,7 +88,7 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
         "--goal",
         "synthetic-v0.7-fixture",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--harness-receipt",
         receipt.to_str().unwrap(),
         "--config",
@@ -97,18 +97,18 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
     assert!(started.status.success(), "{}", text(&started));
     let first: Value =
         serde_json::from_str(fs::read_to_string(&ledger).unwrap().lines().next().unwrap()).unwrap();
-    assert_eq!(first["version"], 2);
+    assert_eq!(first["version"], 8);
     assert_eq!(first["harnessReceipt"]["version"], 2);
     assert_eq!(
         first["harnessReceipt"]["path"],
-        ".soulmate/harness-receipt.json"
+        ".exitbind/harness-receipt.json"
     );
     let reference = first["harnessReceipt"].clone();
 
     let next = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -122,7 +122,7 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
         "run",
         "submit",
         "lead",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--outcome",
         "scoped",
         "--artifact",
@@ -133,10 +133,10 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
     assert!(submitted.status.success(), "{}", text(&submitted));
     let lines = fs::read_to_string(&ledger).unwrap();
     let second: Value = serde_json::from_str(lines.lines().nth(1).unwrap()).unwrap();
-    assert_eq!(second["version"], 2);
+    assert_eq!(second["version"], 8);
     assert!(second.get("harnessReceipt").is_none());
 
-    let inspected = invoke(&["run", "inspect", ".soulmate/run.jsonl", "--config", &config]);
+    let inspected = invoke(&["run", "inspect", ".exitbind/run.jsonl", "--config", &config]);
     assert!(inspected.status.success(), "{}", text(&inspected));
     assert_eq!(
         serde_json::from_slice::<Value>(&inspected.stdout).unwrap()["valid"],
@@ -148,14 +148,14 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
     mixed["version"] = json!(1);
     mixed_lines[1] = serde_json::to_string(&mixed).unwrap();
     fs::write(
-        root.join(".soulmate/mixed.jsonl"),
+        root.join(".exitbind/mixed.jsonl"),
         format!("{}\n", mixed_lines.join("\n")),
     )
     .unwrap();
     let rejected = invoke(&[
         "run",
         "inspect",
-        ".soulmate/mixed.jsonl",
+        ".exitbind/mixed.jsonl",
         "--config",
         &config,
     ]);
@@ -170,14 +170,14 @@ fn bound_run_persists_reference_and_keeps_v2_chain() {
         .remove("eventSha256");
     missing_producer["eventSha256"] = json!(sha256_without_event_hash(&missing_producer));
     fs::write(
-        root.join(".soulmate/missing-producer.jsonl"),
+        root.join(".exitbind/missing-producer.jsonl"),
         format!("{}\n", serde_json::to_string(&missing_producer).unwrap()),
     )
     .unwrap();
     let rejected = invoke(&[
         "run",
         "inspect",
-        ".soulmate/missing-producer.jsonl",
+        ".exitbind/missing-producer.jsonl",
         "--config",
         &config,
     ]);
@@ -196,7 +196,7 @@ fn sha256_without_event_hash(value: &Value) -> String {
 fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
     let (root, config) = project();
     let receipt = create_receipt(&root, &config);
-    let ledger = root.join(".soulmate/run.jsonl");
+    let ledger = root.join(".exitbind/run.jsonl");
     let started = invoke(&[
         "run",
         "start",
@@ -204,7 +204,7 @@ fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--harness-receipt",
         receipt.to_str().unwrap(),
         "--config",
@@ -223,7 +223,7 @@ fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
     let symlink = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -240,7 +240,7 @@ fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
     let bytes = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -259,7 +259,7 @@ fn receipt_symlink_or_byte_substitution_is_refused_without_mutation() {
 fn wrong_receipt_is_rejected_before_start_ledger_creation() {
     let (root, config) = project();
     write_json(&root.join("harness-manifest.json"), &manifest());
-    let receipt = root.join(".soulmate/worker-receipt.json");
+    let receipt = root.join(".exitbind/worker-receipt.json");
     let brief = invoke(&[
         "brief",
         "worker",
@@ -273,7 +273,7 @@ fn wrong_receipt_is_rejected_before_start_ledger_creation() {
         &config,
     ]);
     assert!(brief.status.success(), "{}", text(&brief));
-    let ledger = root.join(".soulmate/run.jsonl");
+    let ledger = root.join(".exitbind/run.jsonl");
     let started = invoke(&[
         "run",
         "start",
@@ -281,7 +281,7 @@ fn wrong_receipt_is_rejected_before_start_ledger_creation() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--harness-receipt",
         receipt.to_str().unwrap(),
         "--config",
@@ -293,9 +293,9 @@ fn wrong_receipt_is_rejected_before_start_ledger_creation() {
 }
 
 #[test]
-fn unbound_run_remains_v1_and_supersession_can_opt_into_v2() {
+fn current_run_and_supersession_use_v8_while_receipt_keeps_v2_shape() {
     let (root, config) = project();
-    let old = root.join(".soulmate/old.jsonl");
+    let old = root.join(".exitbind/old.jsonl");
     let started = invoke(&[
         "run",
         "start",
@@ -303,7 +303,7 @@ fn unbound_run_remains_v1_and_supersession_can_opt_into_v2() {
         "--goal",
         "old bounded",
         "--ledger",
-        ".soulmate/old.jsonl",
+        ".exitbind/old.jsonl",
         "--config",
         &config,
     ]);
@@ -311,20 +311,20 @@ fn unbound_run_remains_v1_and_supersession_can_opt_into_v2() {
     let old_bytes = fs::read(&old).unwrap();
     let old_start: Value =
         serde_json::from_slice(old_bytes.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
-    assert_eq!(old_start["version"], 1);
+    assert_eq!(old_start["version"], 8);
     assert!(old_start.get("harnessReceipt").is_none());
 
     let receipt = create_receipt(&root, &config);
     let successor = invoke(&[
         "run",
         "supersede",
-        ".soulmate/old.jsonl",
+        ".exitbind/old.jsonl",
         "--workflow",
         "change",
         "--goal",
         "new bounded",
         "--ledger",
-        ".soulmate/new.jsonl",
+        ".exitbind/new.jsonl",
         "--harness-receipt",
         receipt.to_str().unwrap(),
         "--config",
@@ -333,14 +333,14 @@ fn unbound_run_remains_v1_and_supersession_can_opt_into_v2() {
     assert!(successor.status.success(), "{}", text(&successor));
     assert_eq!(fs::read(&old).unwrap(), old_bytes);
     let next: Value = serde_json::from_str(
-        fs::read_to_string(root.join(".soulmate/new.jsonl"))
+        fs::read_to_string(root.join(".exitbind/new.jsonl"))
             .unwrap()
             .lines()
             .next()
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(next["version"], 2);
+    assert_eq!(next["version"], 8);
     assert_eq!(next["harnessReceipt"]["version"], 2);
     assert!(next.get("supersedes").is_some());
     fs::remove_dir_all(root).unwrap();

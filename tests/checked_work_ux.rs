@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 
 use serde_json::{json, Value};
@@ -16,7 +16,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("checked UX's $(touch SHOULD_NOT_EXIST)");
-        let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -25,16 +25,16 @@ impl Fixture {
         assert!(stdout(&output).contains("--check-command"));
         Self {
             root,
-            ledger: ".soulmate/runs/task '$(touch SHOULD_NOT_EXIST).jsonl".into(),
+            ledger: ".exitbind/runs/task '$(touch SHOULD_NOT_EXIST).jsonl".into(),
         }
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
-            .arg(self.root.join("soulmate.json"))
+            .arg(self.root.join("exitbind.json"))
             .output()
             .unwrap()
     }
@@ -68,7 +68,7 @@ impl Fixture {
     }
 
     fn submit(&self, actor: &str, outcome: &str, name: &str, scalar: bool) -> Output {
-        let path = format!(".soulmate/artifacts/{name}.md");
+        let path = format!(".exitbind/artifacts/{name}.md");
         fs::write(self.root.join(&path), format!("Private {name} body\n")).unwrap();
         let mut args = vec![
             "run",
@@ -189,7 +189,7 @@ fn captured_submission_identity_stays_bound_through_rework_and_fresh_process_res
     let final_event = f.advance("lead", "accepted", "accepted");
     assert_eq!(final_event["status"], "accepted");
     assert_eq!(
-        fs::read_to_string(f.root.join(".soulmate/artifacts/first.md")).unwrap(),
+        fs::read_to_string(f.root.join(".exitbind/artifacts/first.md")).unwrap(),
         "Private first body\n"
     );
     let next = f.call(&["run", "next", &f.ledger, "--text"]);
@@ -269,11 +269,11 @@ fn follow_hint(f: &Fixture, label: &str) -> String {
         .lines()
         .find_map(|line| line.strip_prefix(label))
         .unwrap_or_else(|| panic!("missing {label}: {text}"));
-    // Use an isolated PATH alias to exercise the printed command exactly.
+    // Use an isolated PATH with the supported executable name to exercise the printed command exactly.
     let bin_dir = f.root.join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
-    if !bin_dir.join("soulmate").exists() {
-        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_soulmate"), bin_dir.join("soulmate"))
+    if !bin_dir.join("exitbind").exists() {
+        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_exitbind"), bin_dir.join("exitbind"))
             .unwrap();
     }
     let result = Command::new("/bin/sh")
@@ -296,7 +296,7 @@ fn quoted_next_hints_execute_as_data_and_drift_or_terminal_guides_to_inspect() {
     assert!(follow_hint(&f, "Next: ").contains("lead"));
     assert_eq!(f.bytes(), before);
     f.advance("lead", "scoped", "scope");
-    fs::write(f.root.join(".soulmate/artifacts/scope.md"), "drift").unwrap();
+    fs::write(f.root.join(".exitbind/artifacts/scope.md"), "drift").unwrap();
     let before = f.bytes();
     let next = f.call(&["run", "next", &f.ledger, "--text"]);
     assert!(next.status.success(), "{next:?}");
@@ -306,7 +306,7 @@ fn quoted_next_hints_execute_as_data_and_drift_or_terminal_guides_to_inspect() {
     assert!(follow_hint(&f, "Inspect: ").contains("submissions"));
     assert_eq!(f.bytes(), before);
     fs::write(
-        f.root.join(".soulmate/artifacts/scope.md"),
+        f.root.join(".exitbind/artifacts/scope.md"),
         "Private scope body\n",
     )
     .unwrap();
@@ -324,7 +324,7 @@ fn public_checked_work_demo_runs_with_the_built_binary() {
             env!("CARGO_MANIFEST_DIR"),
             "/scripts/demo-checked-work.sh"
         ))
-        .env("SOULMATE_BIN", env!("CARGO_BIN_EXE_soulmate"))
+        .env("EXITBIND_BIN", env!("CARGO_BIN_EXE_exitbind"))
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");

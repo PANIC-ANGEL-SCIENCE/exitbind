@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -47,75 +46,64 @@ fn version_json_names_build_and_local_executable_digest_without_authenticating()
 }
 
 #[test]
-fn copied_exitbind_keeps_identity_while_soulmate_target_stays_legacy() {
+fn pinned_exitbind_keeps_identity_and_soulmate_copy_refuses_before_cli_effects() {
     let root = support::temp("build-identity");
     let copied = root.join("exitbind-pinned");
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &copied);
     let soulmate_copy = root.join("soulmate");
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &soulmate_copy);
+    let renamed = support::run(support::git_topology::command(&copied).args(["version", "--json"]));
+    assert!(renamed.status.success(), "{renamed:?}");
+    let identity: Value = serde_json::from_slice(&renamed.stdout).unwrap();
+    assert_eq!(identity["name"], "exitbind");
 
-    let assert_identity = |binary: &Path, expected: &str| {
-        let output =
-            support::run(support::git_topology::command(binary).args(["version", "--json"]));
-        assert!(output.status.success(), "{output:?}");
-        let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(identity["name"], expected);
-    };
-    let assert_init = |binary: &Path, project: &Path, config: &str, skill: &str| {
-        std::fs::create_dir(project).unwrap();
-        assert!(support::git_topology::git(project)
-            .args(["init", "-q"])
-            .status()
-            .unwrap()
-            .success());
-        support::git_topology::assert_worktree(project, project);
-        let init = support::run(
+    let project = root.join("project");
+    std::fs::create_dir(&project).unwrap();
+    let config = project.join("exitbind.json");
+    std::fs::write(&config, b"this must not be parsed\n").unwrap();
+    let before = std::fs::read(&config).unwrap();
+    let refuse = |binary: &Path| {
+        support::run(
             support::git_topology::command(binary)
-                .args(["init", "--mode", "portable", "--root"])
-                .arg(project),
-        );
-        assert!(init.status.success(), "{init:?}");
-        assert!(project.join(config).is_file());
-        assert!(!project
-            .join(if config == "exitbind.json" {
-                "soulmate.json"
-            } else {
-                "exitbind.json"
-            })
-            .exists());
-        for base in [".agents/skills", ".claude/skills"] {
-            assert!(project.join(base).join(skill).join("SKILL.md").is_file());
-            let other = if skill == "exitbind" {
-                "soulmate"
-            } else {
-                "exitbind"
-            };
-            assert!(!project.join(base).join(other).join("SKILL.md").exists());
-        }
+                .current_dir(&project)
+                .args(["--config"])
+                .arg(&config)
+                .args(["run", "start", "change", "--json"]),
+        )
     };
+    let output = refuse(&soulmate_copy);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Soulmate is no longer supported"));
+    assert_eq!(std::fs::read(&config).unwrap(), before);
 
-    assert_identity(&copied, "exitbind");
-    assert_init(
-        &copied,
-        &root.join("versioned-project"),
-        "exitbind.json",
-        "exitbind",
-    );
-    assert_identity(&soulmate_copy, "soulmate");
-    assert_init(
-        &soulmate_copy,
-        &root.join("soulmate-project"),
-        "soulmate.json",
-        "soulmate",
-    );
-    let legacy = Path::new(env!("CARGO_BIN_EXE_soulmate"));
-    assert_identity(legacy, "soulmate");
-    assert_init(
-        legacy,
-        &root.join("built-soulmate-project"),
-        "soulmate.json",
-        "soulmate",
-    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let output = support::run(
+            Command::new(&soulmate_copy)
+                .arg0("exitbind")
+                .current_dir(&project)
+                .args(["--config"])
+                .arg(&config)
+                .args(["run", "start", "change", "--json"]),
+        );
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Soulmate is no longer supported"));
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let alias = root.join("alias").join("soulmate");
+        std::fs::create_dir_all(alias.parent().unwrap()).unwrap();
+        symlink(Path::new(env!("CARGO_BIN_EXE_exitbind")), &alias).unwrap();
+        let output = refuse(&alias);
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Soulmate is no longer supported"));
+        assert_eq!(std::fs::read(&config).unwrap(), before);
+    }
 
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -10,12 +10,17 @@ use std::{
 };
 
 const FORMAT_MARKER: &str = "x-soulmate-format-version";
-const SCHEMA_PATH: &str = "schema/run-event-v3.schema.json";
+const EXITBIND_FORMAT_MARKER: &str = "x-exitbind-format-version";
+const V3_SCHEMA_PATH: &str = "schema/run-event-v3.schema.json";
+const V4_SCHEMA_PATH: &str = "schema/run-event-v4.schema.json";
+const V5_SCHEMA_PATH: &str = "schema/run-event-v5.schema.json";
 const BASELINE_PATH: &str = "ledgers/baseline.jsonl";
 const BLOCKED_PATH: &str = "ledgers/blocked.jsonl";
 const FINAL_PATH: &str = "ledgers/final.jsonl";
 const MANIFEST_PATH: &str = "hash-manifest.json";
-const FIXTURE_CONFIG: &str = "fixtures/soulmate.json";
+const CURRENT_FIXTURE_CONFIG: &str = "fixtures/exitbind.json";
+const HISTORICAL_FIXTURE_CONFIG: &str = "fixtures/soulmate.json";
+const FIXTURE_CONFIGS: &[&str] = &[CURRENT_FIXTURE_CONFIG, HISTORICAL_FIXTURE_CONFIG];
 const FIXTURE_INVALID: &str = "fixtures/verification-invalid.json";
 const FIXTURE_VALID: &str = "fixtures/verification-valid.json";
 
@@ -73,7 +78,7 @@ fn exported_bundle_reconstructs_without_result_or_report() {
     let destination_text = destination
         .to_str()
         .expect("temporary output path should be UTF-8");
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["benchmark", "--output", destination_text, "--json"])
         .output()
         .expect("benchmark binary should start");
@@ -93,7 +98,7 @@ fn exported_bundle_reconstructs_without_result_or_report() {
         .iter()
         .find(|path| {
             let path = path.as_str();
-            path != FIXTURE_CONFIG
+            !FIXTURE_CONFIGS.contains(&path)
                 && path != FIXTURE_INVALID
                 && path != FIXTURE_VALID
                 && path.ends_with(".md")
@@ -111,48 +116,24 @@ fn exported_bundle_reconstructs_without_result_or_report() {
 }
 
 #[test]
-fn current_and_legacy_benchmarks_report_their_selected_surface() {
-    for (binary, product, producer, format_version, config, state, forbidden) in [
-        (
-            env!("CARGO_BIN_EXE_exitbind"),
-            "Exitbind",
-            "exitbind",
-            5,
-            "exitbind.json",
-            ".exitbind",
-            "Soulmate",
-        ),
-        (
-            env!("CARGO_BIN_EXE_soulmate"),
-            "Soulmate",
-            "soulmate",
-            4,
-            "soulmate.json",
-            ".soulmate",
-            "Exitbind",
-        ),
-    ] {
-        let output = Command::new(binary)
-            .args(["benchmark", "--json"])
-            .output()
-            .expect("benchmark binary should start");
-        assert!(
-            output.status.success(),
-            "benchmark failed: stdout={} stderr={}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let value: Value = serde_json::from_slice(&output.stdout).expect("benchmark JSON");
-        assert_eq!(value["product"], product);
-        assert_eq!(value["producer"], producer);
-        assert_eq!(value["formatVersion"], format_version);
-        assert_eq!(value["layout"]["config"], config);
-        assert_eq!(value["layout"]["state"], state);
-        assert!(
-            !String::from_utf8_lossy(&output.stdout).contains(forbidden),
-            "selected benchmark leaked the other product surface"
-        );
-    }
+fn benchmark_reports_the_current_exitbind_surface() {
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["benchmark", "--json"])
+        .output()
+        .expect("benchmark binary should start");
+    assert!(
+        output.status.success(),
+        "benchmark failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).expect("benchmark JSON");
+    assert_eq!(value["product"], "Exitbind");
+    assert_eq!(value["producer"], "exitbind");
+    assert_eq!(value["formatVersion"], 5);
+    assert_eq!(value["layout"]["config"], "exitbind.json");
+    assert_eq!(value["layout"]["state"], ".exitbind");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Soulmate"));
 }
 
 #[test]
@@ -193,13 +174,13 @@ fn current_away_surface_names_exitbind_configuration_and_state() {
 fn event_shapes_rejects_closed_all_of_fragment_missing_common_properties() {
     let schema = parse_json(
         include_bytes!("../schema/run-event-v3.schema.json"),
-        SCHEMA_PATH,
+        V3_SCHEMA_PATH,
     )
     .expect("checked-in event schema should be valid JSON");
     let mut mutated = schema;
     mutated["$defs"]["start"]["allOf"][1]["additionalProperties"] = Value::Bool(false);
 
-    let error = event_shapes(&mutated).expect_err(
+    let error = event_shapes(&mutated, 3).expect_err(
         "a closed action fragment that omits common fields must reject the composed schema",
     );
     assert!(
@@ -210,17 +191,58 @@ fn event_shapes_rejects_closed_all_of_fragment_missing_common_properties() {
 
 fn reconstruct_bundle(root: &Path) -> Result<BundleSnapshot, String> {
     let (entries, fixtures) = validate_manifest(root)?;
-    let schema_path = "schema/run-event-v4.schema.json";
+    let config_path = if fixtures.contains_key(CURRENT_FIXTURE_CONFIG) {
+        CURRENT_FIXTURE_CONFIG
+    } else if fixtures.contains_key(HISTORICAL_FIXTURE_CONFIG) {
+        HISTORICAL_FIXTURE_CONFIG
+    } else {
+        return Err("bundle has no supported product config fixture".into());
+    };
+    let (schema_path, schema_version, format_version, producer) = match config_path {
+        CURRENT_FIXTURE_CONFIG => (V5_SCHEMA_PATH, 5, 8, "exitbind"),
+        HISTORICAL_FIXTURE_CONFIG => (V4_SCHEMA_PATH, 4, 4, "soulmate"),
+        _ => unreachable!(),
+    };
+    if !entries.contains_key(schema_path) {
+        return Err(format!("hash manifest is missing {schema_path}"));
+    }
     let schema_bytes = manifest_bytes(root, &entries, schema_path)?;
     let schema = parse_json(&schema_bytes, schema_path)?;
-    let shapes = event_shapes(&schema)?;
+    let mut shapes = event_shapes(&schema, schema_version)?;
+    if format_version == 8 {
+        // The export retains historical schemas through v5. This independent
+        // reader adds only the fixed v8 synthetic scenario's closed fields;
+        // it neither claims an exported v8 schema nor derives fields from data.
+        for (action, required, allowed) in [
+            ("start", &["governor"][..], &["governor"][..]),
+            ("submit", &[][..], &["inputsSha256", "governorEvent"][..]),
+            ("check", &["inputsSha256"][..], &["inputsSha256"][..]),
+            ("protect", &["inputsSha256"][..], &["inputsSha256"][..]),
+        ] {
+            let (required_fields, allowed_fields) = shapes.get_mut(action).unwrap();
+            required_fields.extend(required.iter().map(|field| (*field).to_owned()));
+            allowed_fields.extend(allowed.iter().map(|field| (*field).to_owned()));
+        }
+    }
     let blocked_bytes = manifest_bytes(root, &entries, BLOCKED_PATH)?;
     let final_bytes = manifest_bytes(root, &entries, FINAL_PATH)?;
-    let blocked = validate_ledger(&blocked_bytes, &shapes, "blocked ledger")?;
-    let final_events = validate_ledger(&final_bytes, &shapes, "final ledger")?;
+    let blocked = validate_ledger(
+        &blocked_bytes,
+        &shapes,
+        format_version,
+        producer,
+        "blocked ledger",
+    )?;
+    let final_events = validate_ledger(
+        &final_bytes,
+        &shapes,
+        format_version,
+        producer,
+        "final ledger",
+    )?;
 
     let config = fixtures
-        .get(FIXTURE_CONFIG)
+        .get(config_path)
         .ok_or("bundle is missing its config fixture")?;
     let invalid = fixtures
         .get(FIXTURE_INVALID)
@@ -228,7 +250,7 @@ fn reconstruct_bundle(root: &Path) -> Result<BundleSnapshot, String> {
     let valid = fixtures
         .get(FIXTURE_VALID)
         .ok_or("bundle is missing its valid verification fixture")?;
-    if parse_json(config, FIXTURE_CONFIG)?.as_object().is_none()
+    if parse_json(config, config_path)?.as_object().is_none()
         || parse_json(invalid, FIXTURE_INVALID)?.as_object().is_none()
         || parse_json(valid, FIXTURE_VALID)?.as_object().is_none()
         || invalid == valid
@@ -307,27 +329,40 @@ fn validate_manifest(root: &Path) -> Result<(ManifestFiles, FixtureFiles), Strin
             return Err(format!("unexpected bundle path {path}"));
         }
     }
-    for required in [SCHEMA_PATH, BLOCKED_PATH, FINAL_PATH] {
+    for required in [BLOCKED_PATH, FINAL_PATH] {
         if !entries.contains_key(required) {
             return Err(format!("hash manifest is missing {required}"));
         }
     }
-    for required in [FIXTURE_CONFIG, FIXTURE_INVALID, FIXTURE_VALID] {
+    let config_path = if fixtures.contains_key(CURRENT_FIXTURE_CONFIG) {
+        CURRENT_FIXTURE_CONFIG
+    } else if fixtures.contains_key(HISTORICAL_FIXTURE_CONFIG) {
+        HISTORICAL_FIXTURE_CONFIG
+    } else {
+        return Err("hash manifest has no supported product config fixture".into());
+    };
+    if fixtures.contains_key(CURRENT_FIXTURE_CONFIG)
+        && fixtures.contains_key(HISTORICAL_FIXTURE_CONFIG)
+    {
+        return Err("hash manifest mixes current and historical product configs".into());
+    }
+    for required in [config_path, FIXTURE_INVALID, FIXTURE_VALID] {
         if !fixtures.contains_key(required) {
             return Err(format!("hash manifest is missing {required}"));
         }
     }
-    if !fixtures
-        .keys()
-        .any(|path| *path != FIXTURE_CONFIG && *path != FIXTURE_INVALID && *path != FIXTURE_VALID)
-    {
+    if !fixtures.keys().any(|path| {
+        !FIXTURE_CONFIGS.contains(&path.as_str())
+            && path != FIXTURE_INVALID
+            && path != FIXTURE_VALID
+    }) {
         return Err("hash manifest contains no fixture artifact".into());
     }
     Ok((entries, fixtures))
 }
 
 fn is_allowed(path: &str) -> bool {
-    path == SCHEMA_PATH
+    matches!(path, V3_SCHEMA_PATH | V4_SCHEMA_PATH | V5_SCHEMA_PATH)
         || path == BLOCKED_PATH
         || path == FINAL_PATH
         || path.starts_with("fixtures/")
@@ -393,13 +428,18 @@ fn collect_files(
     Ok(())
 }
 
-fn event_shapes(schema: &Value) -> Result<EventShapes, String> {
-    if !matches!(
-        schema.get(FORMAT_MARKER).and_then(Value::as_u64),
-        Some(3 | 4)
-    ) || schema.get("type") != Some(&Value::from("object"))
+fn event_shapes(schema: &Value, expected_version: u64) -> Result<EventShapes, String> {
+    let marker = if expected_version == 5 {
+        EXITBIND_FORMAT_MARKER
+    } else {
+        FORMAT_MARKER
+    };
+    if schema.get(marker).and_then(Value::as_u64) != Some(expected_version)
+        || schema.get("type") != Some(&Value::from("object"))
     {
-        return Err("exported run-event schema is not version 3".into());
+        return Err(format!(
+            "exported run-event schema does not match version {expected_version}"
+        ));
     }
     let one_of = schema
         .get("oneOf")
@@ -520,6 +560,8 @@ fn property_set(value: &Value, label: &str) -> Result<BTreeSet<String>, String> 
 fn validate_ledger(
     bytes: &[u8],
     shapes: &BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)>,
+    expected_version: u64,
+    expected_producer: &str,
     label: &str,
 ) -> Result<Vec<Value>, String> {
     let source =
@@ -542,7 +584,13 @@ fn validate_ledger(
         .to_owned();
     let mut previous: Option<String> = None;
     for (index, event) in events.iter().enumerate() {
-        validate_event(event, shapes, &format!("{label} event {}", index + 1))?;
+        validate_event(
+            event,
+            shapes,
+            expected_version,
+            expected_producer,
+            &format!("{label} event {}", index + 1),
+        )?;
         if event["runId"] != run_id {
             return Err(format!("{label} changed runId"));
         }
@@ -569,13 +617,17 @@ fn validate_ledger(
 fn validate_event(
     event: &Value,
     shapes: &BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)>,
+    expected_version: u64,
+    expected_producer: &str,
     label: &str,
 ) -> Result<(), String> {
     let object = object(event, label)?;
-    if !matches!(event.get("version").and_then(Value::as_u64), Some(3 | 4))
+    if event.get("version").and_then(Value::as_u64) != Some(expected_version)
         || event.get("kind") != Some(&Value::from("run"))
     {
-        return Err(format!("{label} is not a version 3 run event"));
+        return Err(format!(
+            "{label} is not a version {expected_version} run event"
+        ));
     }
     let action = event
         .get("action")
@@ -597,16 +649,21 @@ fn validate_event(
     {
         return Err(format!("{label} has an invalid identity hash"));
     }
-    if event["producer"]["name"] != "soulmate"
+    if event["producer"]["name"] != expected_producer
         || event["producer"]["version"]
             .as_str()
             .map_or(true, str::is_empty)
+        || (expected_producer == "exitbind"
+            && event["producer"]["version"] != env!("CARGO_PKG_VERSION"))
         || !(event["producer"]["commit"].is_null() || event["producer"]["commit"].is_string())
     {
         return Err(format!("{label} has invalid producer evidence"));
     }
     if event["timestamp"].as_str().map_or(true, str::is_empty) {
         return Err(format!("{label} has no timestamp"));
+    }
+    if expected_version == 8 {
+        validate_v8_scenario_fields(event, label)?;
     }
     match action {
         "start" => validate_start(event, label),
@@ -615,6 +672,87 @@ fn validate_event(
         "protect" => validate_protect(event, label),
         _ => Err(format!("{label} has unsupported action")),
     }
+}
+
+fn validate_v8_scenario_fields(event: &Value, label: &str) -> Result<(), String> {
+    if event["action"] == "start" {
+        let expected = serde_json::json!({"version": 1, "budget": 3,
+            "grantProtocol": 1, "noInformationLimit": 2, "postReplanLimit": 1,
+            "replanBinding": "assignment_packet_v1"});
+        if event["governor"] != expected {
+            return Err(format!("{label} changed the scenario governor defaults"));
+        }
+    } else if (event["action"] != "submit"
+        || matches!(event["role"].as_str(), Some("worker" | "reviewer"))
+        || event["outcome"] == "accepted")
+        && !valid_hash(event["inputsSha256"].as_str().unwrap_or(""))
+    {
+        return Err(format!("{label} has invalid current inputs identity"));
+    }
+    if event["role"] == "worker" {
+        let mutation = &event["governorEvent"];
+        let expected_keys = [
+            "action",
+            "attempt",
+            "authorizationMode",
+            "carryLineage",
+            "checkpoint",
+            "eventSha256",
+            "grantEventSha256s",
+            "inputSha256",
+            "lineageSha256",
+            "newEvidenceSha256",
+            "operation",
+            "previousSha256",
+            "runId",
+            "sourceInputsSha256s",
+            "subjectSha256",
+            "unit",
+            "version",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+        let keys = object(mutation, label)?
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if keys != expected_keys
+            || mutation["action"] != "mutation"
+            || mutation["version"] != 1
+            || mutation["authorizationMode"] != "implicit"
+            || mutation["carryLineage"] != true
+            || mutation["unit"] != "worker"
+            || mutation["operation"] != "completed_submission"
+            || mutation["attempt"] != event["attempt"]
+            || mutation["runId"] != event["runId"]
+            || mutation["checkpoint"]
+                .as_u64()
+                .map_or(true, |value| value == 0)
+            || mutation["grantEventSha256s"] != serde_json::json!([])
+            || mutation["sourceInputsSha256s"] != serde_json::json!([])
+            || mutation["eventSha256"]
+                != sha256(canonical(&canonical_without_event_hash(mutation)).as_bytes())
+        {
+            return Err(format!("{label} has invalid scenario governor mutation"));
+        }
+        for field in [
+            "inputSha256",
+            "lineageSha256",
+            "newEvidenceSha256",
+            "subjectSha256",
+        ] {
+            if !valid_hash(mutation[field].as_str().unwrap_or("")) {
+                return Err(format!("{label} has invalid governor {field}"));
+            }
+        }
+        if !mutation["previousSha256"].is_null()
+            && !valid_hash(mutation["previousSha256"].as_str().unwrap_or(""))
+        {
+            return Err(format!("{label} has invalid governor predecessor"));
+        }
+    }
+    Ok(())
 }
 
 fn validate_start(event: &Value, label: &str) -> Result<(), String> {
@@ -674,7 +812,7 @@ fn validate_submit(event: &Value, label: &str) -> Result<(), String> {
 }
 
 fn validate_check(event: &Value, label: &str) -> Result<(), String> {
-    if event["version"] == 4 {
+    if matches!(event["version"].as_u64(), Some(4 | 5 | 8)) {
         if !valid_hash(event["targetEventSha256"].as_str().unwrap_or(""))
             || event["checkCommand"].as_str().map_or(true, str::is_empty)
             || !valid_hash(event["checkCommandSha256"].as_str().unwrap_or(""))
@@ -698,7 +836,7 @@ fn validate_check(event: &Value, label: &str) -> Result<(), String> {
 }
 
 fn validate_protect(event: &Value, label: &str) -> Result<(), String> {
-    if event["version"] == 4 {
+    if matches!(event["version"].as_u64(), Some(4 | 5 | 8)) {
         let evidence = event["checkEvidence"]
             .as_array()
             .filter(|evidence| !evidence.is_empty())

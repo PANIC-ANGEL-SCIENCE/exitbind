@@ -3,21 +3,22 @@
 set -eu
 umask 077
 
-binary=${EXITBIND_BIN:-${SOULMATE_BIN:-soulmate}}
+binary=${EXITBIND_BIN:-${SOULMATE_BIN:-exitbind}}
 case "$binary" in
   /*) ;;
   */*) binary="$(pwd)/$binary" ;;
   *) binary=$(command -v "$binary") ;;
 esac
-project=$(mktemp -d "${TMPDIR:-/tmp}/soulmate checked.XXXXXX")
+project=$(mktemp -d "${TMPDIR:-/tmp}/exitbind checked.XXXXXX")
 trap 'rm -rf "$project"' EXIT HUP INT TERM
 cd "$project"
 
-case "$(basename "$binary")" in
-  exitbind) config=exitbind.json; state=.exitbind ;;
-  soulmate) config=soulmate.json; state=.soulmate ;;
-  *) printf 'Demo requires an exitbind or soulmate binary: %s\n' "$binary" >&2; exit 1 ;;
-esac
+test "$(basename "$binary")" = exitbind || {
+  printf 'Demo requires the current exitbind binary: %s\n' "$binary" >&2
+  exit 1
+}
+config=exitbind.json
+state=.exitbind
 
 ledger="$state/runs/change.jsonl"
 check_command='test "$(cat message.txt)" = ready'

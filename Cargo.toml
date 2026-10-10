@@ -13,16 +13,6 @@ autobins = false
 name = "exitbind"
 path = "src/main.rs"
 
-[[bin]]
-name = "soulmate"
-path = "src/main.rs"
-required-features = ["legacy-cli-test"]
-
-[features]
-# Historical CLI fixtures remain testable, but are absent from normal builds,
-# `cargo install`, and release packages.
-legacy-cli-test = []
-
 [dependencies]
 # serde/serde_json preserve the public JSON configuration, receipt, and JSONL schemas.
 serde = { version = "1.0", features = ["derive"] }

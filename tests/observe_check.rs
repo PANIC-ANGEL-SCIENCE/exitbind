@@ -1,7 +1,8 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 use std::process::{Output, Stdio};
@@ -9,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 fn call(root: &Path, args: &[&str]) -> Output {
-    support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .output()
@@ -48,7 +49,7 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
     support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
-    let ledger = format!(".soulmate/runs/{label}.jsonl");
+    let ledger = format!(".exitbind/runs/{label}.jsonl");
     let output = call(
         &root,
         &[
@@ -62,11 +63,11 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
             "--check-command",
             command,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
-    let artifact = format!(".soulmate/artifacts/{label}.md");
+    let artifact = format!(".exitbind/artifacts/{label}.md");
     fs::write(root.join(&artifact), "worker\n").unwrap();
     let output = call(
         &root,
@@ -82,7 +83,7 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -100,7 +101,7 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(worker_output.status.success(), "{}", text(&worker_output));
@@ -198,16 +199,16 @@ fn wait_for_path(path: &Path) {
 }
 
 fn configure_workers(root: &Path, workers: &[&str]) {
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     let base = config["agents"]["worker"].clone();
     for worker in workers.iter().copied().filter(|worker| *worker != "worker") {
         let mut agent = base.clone();
-        agent["profile"] = serde_json::json!(format!("soulmate/agents/{worker}.md"));
+        agent["profile"] = serde_json::json!(format!("exitbind/agents/{worker}.md"));
         agent["purpose"] = serde_json::json!(format!("Complete bounded work for {worker}."));
         config["agents"][worker] = agent;
         fs::write(
-            root.join(format!("soulmate/agents/{worker}.md")),
+            root.join(format!("exitbind/agents/{worker}.md")),
             format!("# {worker}\n\nComplete bounded work.\n"),
         )
         .unwrap();
@@ -228,10 +229,10 @@ fn process_exists(pid: i32) -> bool {
 fn observes_frozen_command_in_product_root_and_records_provenance() {
     let root = support::temp("observe-check");
     support::git_topology::repository(&root);
-    let config = root.join("soulmate.json");
+    let config = root.join("exitbind.json");
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
-    let ledger = ".soulmate/runs/observed.jsonl";
+    let ledger = ".exitbind/runs/observed.jsonl";
     run(
         &root,
         &[
@@ -243,12 +244,12 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
             "--ledger",
             ledger,
             "--check-command",
-            "printf child-stdout; printf child-stderr >&2; printf observed > observed.txt",
+            "printf child-stdout; printf child-stderr >&2; printf observed > .exitbind/artifacts/observed.txt; pwd > .exitbind/artifacts/observed.cwd",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
-    fs::write(root.join(".soulmate/artifacts/worker.md"), "worker\n").unwrap();
+    fs::write(root.join(".exitbind/artifacts/worker.md"), "worker\n").unwrap();
     run(
         &root,
         &[
@@ -259,11 +260,11 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
             "--outcome",
             "scoped",
             "--artifact",
-            ".soulmate/artifacts/worker.md",
+            ".exitbind/artifacts/worker.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let worker = run(
@@ -276,11 +277,11 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
             "--outcome",
             "completed",
             "--artifact",
-            ".soulmate/artifacts/worker.md",
+            ".exitbind/artifacts/worker.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let target = worker["event"]["eventSha256"].as_str().unwrap();
@@ -293,7 +294,7 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
             "--target",
             target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(
@@ -302,18 +303,26 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
         text(&observed_output)
     );
     let observed = json(&observed_output);
-    assert_eq!(observed["event"]["version"], 4);
+    assert_eq!(observed["event"]["version"], 8);
     assert_eq!(observed["event"]["acquisition"], "observed");
     assert_eq!(observed["event"]["result"]["kind"], "exit");
     assert_eq!(observed["event"]["result"]["code"], 0);
     assert_eq!(observed["checks"]["targets"][0]["acquisition"], "observed");
     assert_eq!(observed["checks"]["targets"][0]["result"]["code"], 0);
     assert!(!String::from_utf8_lossy(&observed_output.stdout).starts_with("child-stdout"));
-    assert!(String::from_utf8_lossy(&observed_output.stderr).contains("child-stdout"));
-    assert!(String::from_utf8_lossy(&observed_output.stderr).contains("child-stderr"));
+    for (stream, expected) in [("stdout", b"child-stdout"), ("stderr", b"child-stderr")] {
+        let artifact = &observed["event"][stream];
+        assert_eq!(artifact["root"], "state");
+        let bytes = fs::read(root.join(artifact["path"].as_str().unwrap())).unwrap();
+        assert_eq!(bytes, expected);
+        assert_eq!(artifact["sha256"], format!("{:x}", Sha256::digest(&bytes)));
+        assert_eq!(artifact["bytes"], bytes.len());
+        assert!(!String::from_utf8_lossy(&observed_output.stderr)
+            .contains(std::str::from_utf8(expected).unwrap()));
+    }
     let human = call(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     assert!(human.status.success(), "{}", text(&human));
     assert!(text(&human).contains("Locally observed check: passed"));
@@ -327,7 +336,7 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
             ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(report["groups"]["local_report"]["durationMsReported"], 0);
@@ -336,8 +345,14 @@ fn observes_frozen_command_in_product_root_and_records_provenance() {
         0
     );
     assert_eq!(
-        fs::read_to_string(root.join("observed.txt")).unwrap(),
+        fs::read_to_string(root.join(".exitbind/artifacts/observed.txt")).unwrap(),
         "observed"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join(".exitbind/artifacts/observed.cwd"))
+            .unwrap()
+            .trim(),
+        root.canonicalize().unwrap().to_str().unwrap()
     );
 
     let before = fs::read(root.join(ledger)).unwrap();
@@ -365,7 +380,7 @@ fn records_signal_without_fabricating_exit_code() {
     support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
-    let ledger = ".soulmate/runs/signal.jsonl";
+    let ledger = ".exitbind/runs/signal.jsonl";
     run(
         &root,
         &[
@@ -379,10 +394,10 @@ fn records_signal_without_fabricating_exit_code() {
             "--check-command",
             "kill -TERM $$",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
-    fs::write(root.join(".soulmate/artifacts/worker.md"), "worker\n").unwrap();
+    fs::write(root.join(".exitbind/artifacts/worker.md"), "worker\n").unwrap();
     run(
         &root,
         &[
@@ -393,11 +408,11 @@ fn records_signal_without_fabricating_exit_code() {
             "--outcome",
             "scoped",
             "--artifact",
-            ".soulmate/artifacts/worker.md",
+            ".exitbind/artifacts/worker.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let worker = run(
@@ -410,11 +425,11 @@ fn records_signal_without_fabricating_exit_code() {
             "--outcome",
             "completed",
             "--artifact",
-            ".soulmate/artifacts/worker.md",
+            ".exitbind/artifacts/worker.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let target = worker["event"]["eventSha256"].as_str().unwrap();
@@ -427,7 +442,7 @@ fn records_signal_without_fabricating_exit_code() {
             "--target",
             target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(observed["event"]["result"]["kind"], "signal");
@@ -448,7 +463,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(observed.status.success(), "{}", text(&observed));
@@ -465,11 +480,11 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             "--outcome",
             "approved",
             "--artifact",
-            ".soulmate/artifacts/observe-nonzero.md",
+            ".exitbind/artifacts/observe-nonzero.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(
@@ -485,7 +500,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let next = run(
@@ -496,7 +511,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(next["assignments"][0]["role"], "lead");
@@ -507,7 +522,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
     assert_eq!(pending["acceptance"]["status"], "absent");
     let pending_human = call(
         &root,
-        &["run", "status", &ledger, "--config", "soulmate.json"],
+        &["run", "status", &ledger, "--config", "exitbind.json"],
     );
     assert!(pending_human.status.success(), "{}", text(&pending_human));
     assert!(text(&pending_human).contains("Lead decision: pending"));
@@ -521,11 +536,11 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             "--outcome",
             "accepted",
             "--artifact",
-            ".soulmate/artifacts/observe-nonzero.md",
+            ".exitbind/artifacts/observe-nonzero.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!acceptance.status.success(), "{}", text(&acceptance));
@@ -538,14 +553,14 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(status["status"], "running");
     assert_eq!(status["acceptance"]["status"], "absent");
     let human = call(
         &root,
-        &["run", "status", &ledger, "--config", "soulmate.json"],
+        &["run", "status", &ledger, "--config", "exitbind.json"],
     );
     assert!(human.status.success(), "{}", text(&human));
     let human_text = text(&human);
@@ -559,7 +574,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let protection = inspected["events"]
@@ -578,7 +593,7 @@ fn nonzero_observation_is_recorded_and_acceptance_is_refused() {
             "--event",
             protection,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(explanation.status.success(), "{}", text(&explanation));
@@ -600,7 +615,7 @@ fn passing_observation_does_not_auto_review_or_accept() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(observed.status.success(), "{}", text(&observed));
@@ -612,7 +627,7 @@ fn passing_observation_does_not_auto_review_or_accept() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(status["checks"]["status"], "passed");
@@ -620,7 +635,7 @@ fn passing_observation_does_not_auto_review_or_accept() {
     assert_eq!(status["acceptance"]["status"], "absent");
     let human = call(
         &root,
-        &["run", "status", &ledger, "--config", "soulmate.json"],
+        &["run", "status", &ledger, "--config", "exitbind.json"],
     );
     let human = text(&human);
     assert!(human.contains("Locally observed check: passed"));
@@ -636,7 +651,7 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
     configure_workers(&root, &["worker", "worker_two"]);
-    let ledger = ".soulmate/runs/mixed.jsonl";
+    let ledger = ".exitbind/runs/mixed.jsonl";
     run(
         &root,
         &[
@@ -650,10 +665,10 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
             "--check-command",
             "exit 0",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
-    fs::write(root.join(".soulmate/artifacts/mixed.md"), "mixed\n").unwrap();
+    fs::write(root.join(".exitbind/artifacts/mixed.md"), "mixed\n").unwrap();
     run(
         &root,
         &[
@@ -664,11 +679,11 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
             "--outcome",
             "scoped",
             "--artifact",
-            ".soulmate/artifacts/mixed.md",
+            ".exitbind/artifacts/mixed.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let mut targets = Vec::new();
@@ -683,11 +698,11 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
                 "--outcome",
                 "completed",
                 "--artifact",
-                ".soulmate/artifacts/mixed.md",
+                ".exitbind/artifacts/mixed.md",
                 "--artifact-root",
                 "state",
                 "--config",
-                "soulmate.json",
+                "exitbind.json",
             ],
         );
         targets.push(
@@ -706,12 +721,12 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
             "--target",
             &targets[1],
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let observed_with_missing = call(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     let observed_with_missing = text(&observed_with_missing);
     assert!(observed_with_missing.contains("Locally observed check: not observed"));
@@ -721,7 +736,7 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
 
     let explained_with_missing = call(
         &root,
-        &["run", "explain", ledger, "--config", "soulmate.json"],
+        &["run", "explain", ledger, "--config", "exitbind.json"],
     );
     assert!(
         explained_with_missing.status.success(),
@@ -747,12 +762,12 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
             "--exit-code",
             "0",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     let human = call(
         &root,
-        &["run", "status", ledger, "--config", "soulmate.json"],
+        &["run", "status", ledger, "--config", "exitbind.json"],
     );
     let human = text(&human);
     assert!(human.contains("Configured check: passed (mixed acquisition; see targets)"));
@@ -763,7 +778,7 @@ fn human_status_distinguishes_reported_observed_and_mixed_acquisition() {
 
 #[test]
 fn advanced_help_documents_the_positive_observe_timeout() {
-    let output = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["help", "advanced"])
         .output()
         .unwrap();
@@ -867,7 +882,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             "--timeout-ms",
             "100",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     #[cfg(target_os = "linux")]
@@ -891,7 +906,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert_eq!(status["status"], "running");
@@ -899,7 +914,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
     assert_eq!(status["acceptance"]["status"], "absent");
     let human = call(
         &root,
-        &["run", "status", &ledger, "--config", "soulmate.json"],
+        &["run", "status", &ledger, "--config", "exitbind.json"],
     );
     assert!(text(&human).contains("local observe-check is available"));
 
@@ -915,7 +930,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             "--timeout-ms",
             "1000",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(recovered.status.success(), "{}", text(&recovered));
@@ -933,7 +948,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
                 "--timeout-ms",
                 timeout,
                 "--config",
-                "soulmate.json",
+                "exitbind.json",
             ],
         );
         assert!(!rejected.status.success());
@@ -947,7 +962,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
 fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
     let command = "printf started > observe-started; while [ ! -f observe-continue ]; do sleep 0.01; done; printf observed > observe-effect.txt; exit 7";
     let (root, ledger, target) = checked_worker("observe-race", command);
-    let observation = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
+    let observation = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",
@@ -958,7 +973,7 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
             "--timeout-ms",
             "2000",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -976,11 +991,11 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
             "--outcome",
             "approved",
             "--artifact",
-            ".soulmate/artifacts/observe-race.md",
+            ".exitbind/artifacts/observe-race.md",
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(reviewer.status.success(), "{}", text(&reviewer));
@@ -1006,7 +1021,7 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
             &ledger,
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(inspected["events"]
@@ -1025,7 +1040,7 @@ fn launch_failure_and_caller_overrides_do_not_append() {
     let bin = root.join("no-sh");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink("/usr/bin/git", bin.join("git")).unwrap();
-    let failed = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
+    let failed = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .env("PATH", &bin)
         .args([
@@ -1035,7 +1050,7 @@ fn launch_failure_and_caller_overrides_do_not_append() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ])
         .output()
         .unwrap();
@@ -1058,7 +1073,7 @@ fn launch_failure_and_caller_overrides_do_not_append() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ];
         args.extend(extra);
         let rejected = call(&root, &args);
@@ -1072,7 +1087,7 @@ fn launch_failure_and_caller_overrides_do_not_append() {
 #[test]
 fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
     let (root, ledger, target) = checked_worker("observe-stale", "printf launched > launched.txt");
-    let successor = ".soulmate/runs/observe-successor.jsonl";
+    let successor = ".exitbind/runs/observe-successor.jsonl";
     let supersede = call(
         &root,
         &[
@@ -1088,7 +1103,7 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
             "--check-command",
             "printf launched > launched.txt",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(supersede.status.success(), "{}", text(&supersede));
@@ -1101,13 +1116,13 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!rejected.status.success());
     assert!(!root.join("launched.txt").exists());
 
-    let (root, ledger, target) = checked_worker("observe-drift", "printf changed > soulmate.json");
+    let (root, ledger, target) = checked_worker("observe-drift", "printf changed > exitbind.json");
     let drifted = call(
         &root,
         &[
@@ -1117,18 +1132,18 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(drifted.status.success(), "{}", text(&drifted));
     let observed: Value = serde_json::from_slice(&drifted.stdout).unwrap();
     assert_eq!(observed["event"]["result"]["code"], 0);
-    assert_eq!(observed["warnings"][0]["classification"], "config_drift");
+    assert_eq!(observed["warnings"][0]["classification"], "input_drift");
     fs::remove_dir_all(root).unwrap();
 
     let (root, ledger, target) = checked_worker(
         "observe-artifact-drift",
-        "printf changed > .soulmate/artifacts/observe-artifact-drift.md",
+        "printf changed > .exitbind/artifacts/observe-artifact-drift.md",
     );
     let before = fs::read(root.join(&ledger)).unwrap();
     let drifted = call(
@@ -1140,7 +1155,7 @@ fn stale_target_after_supersede_and_post_execution_drift_do_not_append() {
             "--target",
             &target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!drifted.status.success());
@@ -1203,7 +1218,7 @@ fn reviewer_rework_makes_old_target_stale_before_observation_launch() {
         "observe-reviewer-rework",
         "printf launched > reviewer-rework-launched.txt",
     );
-    let rework_artifact = ".soulmate/artifacts/observe-reviewer-rework-request.md";
+    let rework_artifact = ".exitbind/artifacts/observe-reviewer-rework-request.md";
     fs::write(root.join(rework_artifact), "please rework\n").unwrap();
     let reviewer = call(
         &root,
@@ -1219,11 +1234,11 @@ fn reviewer_rework_makes_old_target_stale_before_observation_launch() {
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(reviewer.status.success(), "{}", text(&reviewer));
-    let fresh_artifact = ".soulmate/artifacts/observe-reviewer-rework-fresh.md";
+    let fresh_artifact = ".exitbind/artifacts/observe-reviewer-rework-fresh.md";
     fs::write(root.join(fresh_artifact), "fresh completion\n").unwrap();
     let worker = call(
         &root,
@@ -1239,7 +1254,7 @@ fn reviewer_rework_makes_old_target_stale_before_observation_launch() {
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(worker.status.success(), "{}", text(&worker));
@@ -1253,7 +1268,7 @@ fn reviewer_rework_makes_old_target_stale_before_observation_launch() {
             "--target",
             &old_target,
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!rejected.status.success(), "{}", text(&rejected));

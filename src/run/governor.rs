@@ -353,7 +353,7 @@ pub(crate) fn replan_for_assignment(
         super::check_observation::assert_current(loaded, &state)?;
         let assignment = crate::run::assignment::pending(&state)
             .into_iter()
-            .find(|item| item["agent"] == "worker")
+            .find(|item| item["agent"] == expected.agent && item["role"] == "worker")
             .ok_or("no pending worker assignment is available for re-plan")?;
         if !expected.matches(&assignment) {
             return Err(

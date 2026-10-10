@@ -81,7 +81,36 @@ pub(super) fn attach(
     if state == Some("blocked") {
         result["recovery"] = json!({"state":"blocked","reason":"governor blocked; inspect the owner boundary; no retry or re-plan grants authority"});
         result["choices"] = json!([]);
+        if held.is_empty() {
+            if let Ok(ledger) = crate::work::resolve(loaded, work) {
+                if let Ok(Some(candidate)) =
+                    crate::run::governor_recovery::draft(loaded, work, &ledger)
+                {
+                    let predecessor = candidate["decision"]["predecessor"]["ledgerPath"]
+                        .as_str()
+                        .unwrap_or_default();
+                    let workflow = candidate["workflow"].as_str().unwrap_or_default();
+                    let goal = candidate["goal"].as_str().unwrap_or_default();
+                    result["recovery"] = json!({
+                        "state":"blocked",
+                        "reason":"this owner recovery requires an explicit decision and verified no-effect evidence",
+                        "ownerRecoveryDraft":candidate["decision"],
+                        "effectsInventory":candidate["effectsInventory"],
+                        "ownerDecisionRequired":true,
+                        "command":command(loaded,vec![
+                            "run".into(),"supersede".into(),predecessor.into(),
+                            "--workflow".into(),workflow.into(),"--goal".into(),goal.into(),
+                            "--ledger".into(),"<SUCCESSOR_LEDGER>".into(),
+                            "--owner-recovery".into(),"<OWNER_RECOVERY_STATE_ARTIFACT>".into(),
+                        ]),
+                        "placeholders":["SUCCESSOR_LEDGER","OWNER_RECOVERY_STATE_ARTIFACT"],
+                        "meaning":"This read-only candidate records no approval or effect conclusion. The owner must verify exact invocation and complete effect evidence before executing the emitted successor command."
+                    });
+                }
+            }
+        }
         result.as_object_mut().unwrap().remove("beforeEditing");
+        result.as_object_mut().unwrap().remove("currentGrant");
         return;
     }
     if held.is_empty() {

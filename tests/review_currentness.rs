@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 #![cfg(unix)]
 
 mod support;

@@ -43,6 +43,18 @@ For a configured product-managed Codex worker/reviewer, follow `actionForms.prod
 
 For host-managed native agents, deliver the current complete detail through the host's own delegation. Inspect `actionForms`: execute `beforeEditing` only when that new-permit form is present; use `currentGrant` for its exact present mutation when supplied; and complete `nextRequest` before any later mutation request. `beforeEditing` appears only when a new permit is admissible. If a permit response is lost or uncertain, recover with the same request ID and inspect current detail/head before acting; never create a new request ID merely to recover. A grant gives no host permission. `replan_required` and `evidence_required` govern the next new mutation request and do not revoke a valid present grant. A validated sensor request or inert sensor result preserves it; a conservative sensor result or later semantic governor event makes it stale. Retained worker results take priority over editing and must be returned through the current recovery form first. Worker completion still requires the existing ready-governor state. The role returns its complete artifact through the emitted return form. A Reviewer and Lead retain their own decisions and do not use a worker permit. Ordinary host-managed results require no continuation initialization. Read [operator detail](references/operators.md) only for initialized cross-host continuation, explicit setup/review-policy revision or architecture selection.
 
+If a blocked Work detail exposes `recovery.ownerRecoveryDraft`, this is a
+separate owner decision path for one exact adjacent duplicate-permit refusal.
+It grants no permission by itself. The owner must verify the same invocation,
+fill the draft, and provide the separate complete StateRoot effect inventory
+before executing the emitted same-goal `run supersede --owner-recovery`
+command. Unknown effects, stale inputs, held results, or mismatched ledger,
+assignment, operation, or configuration stay blocked. The successor carries
+all governor accounting but no grant/check/review/acceptance; record fresh
+exact evidence in it before requesting a permit. The predecessor stays
+unchanged, and an older pinned executable can be used to read that exact old
+ledger when it cannot read the marked successor.
+
 Preserve the exact user-authorized check command. Run the emitted check action once; `--timeout-ms` selects 1..86,400,000 ms (default1,800,000). Process exit zero is check evidence, not semantic acceptance. A committed identical check request replays its event without another execution. A safely ended observation failure carries the Lead's actual repair/blocked/rejected choices. Unknown execution or live descendants block retry, repair, acceptance and supersession. Neither a deadline change nor replay resets spent authority.
 
 When a worker needs governor recovery, follow `actionForms.recovery` and its current choices from fresh detail. Supply the Lead's meaningful re-plan or exact new evidence; recovery keeps spent authority. After recovery, return a selected `recovery.heldResults` entry through its emitted command to preserve retained bytes, then check and review the current result. A blocked governor stays blocked.

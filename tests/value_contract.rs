@@ -888,3 +888,32 @@ fn schema_lock_rejects_unknown_or_unversioned_lock_paths() {
     write_json(&path, &unversioned);
     assert_reject(validate_schema_lock(fixture.path(), None));
 }
+
+#[test]
+fn current_receipt_verification_refusal_does_not_emit_lifecycle_labels() {
+    let fixture = TempDir::new("verify-operational-refusal");
+    let root = fixture.path();
+    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--mode", "portable", "--root"])
+        .arg(root)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args([
+            "verify",
+            ".exitbind/receipts/missing.json",
+            "--config",
+            "exitbind.json",
+            "--json",
+        ])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["error"].as_str().is_some(), "{value}");
+    assert!(value["outcome"].is_null(), "{value}");
+    assert!(value["reason"].is_null(), "{value}");
+}

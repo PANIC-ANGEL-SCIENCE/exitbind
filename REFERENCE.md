@@ -704,9 +704,10 @@ An oversized or non-UTF-8 recipient profile is also explicitly incomplete and
 names the existing profile reader; it is never silently truncated. Project
 rules are complete UTF-8 content with a 32 KiB per-rule and 48 KiB aggregate
 source limit. Ordinary detail also limits the JSON-encoded rule projection to
-48 KiB, leaving room within its 64 KiB response bound. Native current context
-remains bounded at 64 KiB and the Codex prompt at 256 KiB. Invalid UTF-8,
-unsafe paths, changed inputs and over-limit rules refuse without truncation.
+48 KiB, leaving room within the ordinary 256 KiB grouped Work detail bound.
+Native current context remains bounded at 64 KiB and the Codex prompt at 256 KiB.
+Invalid UTF-8, unsafe paths, changed inputs and over-limit rules refuse without
+truncation.
 
 Native launch performs the same grouped evidence validation before starting a
 provider and supplies the resolved exact assignment, evidence and task sections
@@ -939,9 +940,39 @@ exitbind run supersede .exitbind/runs/run.jsonl --workflow change --goal "New bo
 claims exactly one successor. `accepted` and `rejected` runs remain final and
 cannot be superseded.
 
+A blocked same-goal governor normally stays absorbing. One narrow successor
+route handles an immediately adjacent duplicate-permit grant and terminal
+evidence-required refusal when the exact worker, operation, inputs and nested
+governor chain still match and there are no unresolved check, sensor or held
+effects. `work detail WORK --json` may expose an unapproved
+`recovery.ownerRecoveryDraft` and the exact `run supersede` command for that
+case. The owner must verify the exact invocation and provide a separate,
+complete StateRoot effect inventory. Unknown effects, changed source or
+configuration, consumed grants, intervening events, or any identity mismatch
+remain blocked. The owner decision and inventory are explicit attestations;
+they do not mechanically prove that external effects did not occur.
+
+Use the emitted command only after filling the draft with the owner's decision
+and a bounded effects artifact:
+
+```text
+exitbind run supersede OLD_LEDGER --workflow WORKFLOW --goal "SAME GOAL" --ledger NEW_LEDGER --owner-recovery .exitbind/artifacts/OWNER_DECISION.json --config exitbind.json
+```
+
+The protocol-2 successor retains the predecessor's spent count and all other
+governor accounting, but begins without an inherited grant, mutation pointer,
+check result, review, or acceptance. Its current phase is `evidence_required`;
+record new exact evidence before requesting another permit. The blocked
+predecessor remains byte-identical and readable with its original producer.
+Old readers may refuse the new marked successor, so continue reading the
+predecessor directly with its frozen producer when needed. The ordinary
+`beforeEditing` form now supplies a stable `permit-{binding}` request ID;
+repeating that exact invocation recovers its result without spending again.
+
 The successor records the predecessor run ID, full ledger hash, verified head,
-and run-start config hash. Same-goal supersession of a governed run adds the
-marked v8 `carryProtocol` v1 accounting seed. Every current replay checks that
+and run-start config hash. Ordinary same-goal supersession of a governed run
+adds the marked v8 `carryProtocol` v1 accounting seed; the narrow owner
+recovery route below uses v2. Every current replay checks that
 seed against the verified predecessor ledger, preserving its phase, spent
 count, no-information streak, post-re-plan count, re-plan count, budget,
 defaults and non-content evidence fingerprints used to recognize repeated

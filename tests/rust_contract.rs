@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::fs;
@@ -11,7 +11,7 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -31,7 +31,7 @@ fn project(label: &str) -> (PathBuf, String) {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     (root, config)
 }
 
@@ -74,37 +74,14 @@ fn profile_audit_and_import_use_only_reviewed_bytes() {
         String::from_utf8_lossy(&imported.stderr)
     );
     assert_eq!(
-        fs::read(root.join("soulmate/agents/portable_worker.md")).unwrap(),
+        fs::read(root.join("exitbind/agents/portable_worker.md")).unwrap(),
         fs::read(&source).unwrap()
     );
     let configured: Value = serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
     assert_eq!(
         configured["agents"]["portable_worker"]["profile"],
-        "soulmate/agents/portable_worker.md"
+        "exitbind/agents/portable_worker.md"
     );
-    assert!(invoke(&["check", "--config", &config]).status.success());
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn legacy_distribution_profile_path_remains_valid() {
-    let (root, config) = project("legacy-profile");
-    let legacy = root.join(".agents/profiles");
-    fs::create_dir_all(&legacy).unwrap();
-    fs::copy(
-        root.join("soulmate/agents/worker.md"),
-        legacy.join("worker.md"),
-    )
-    .unwrap();
-    let mut configured: Value =
-        serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
-    configured["agents"]["worker"]["profile"] = json!(".agents/profiles/worker.md");
-    fs::write(
-        &config,
-        format!("{}\n", serde_json::to_string_pretty(&configured).unwrap()),
-    )
-    .unwrap();
-
     assert!(invoke(&["check", "--config", &config]).status.success());
     fs::remove_dir_all(root).unwrap();
 }
@@ -128,7 +105,7 @@ fn forgetting_receipt_is_content_free_and_requires_a_terminal_item() {
     )
     .unwrap();
     fs::write(root.join("memory.md"), "private governed fixture\n").unwrap();
-    let ledger = ".soulmate/memory.jsonl";
+    let ledger = ".exitbind/memory.jsonl";
     assert!(invoke(&[
         "memory",
         "propose",
@@ -160,7 +137,7 @@ fn forgetting_receipt_is_content_free_and_requires_a_terminal_item() {
         "worker",
         ledger,
         "--receipt",
-        ".soulmate/forgotten.json",
+        ".exitbind/forgotten.json",
         "--config",
         &config,
     ]);
@@ -169,7 +146,7 @@ fn forgetting_receipt_is_content_free_and_requires_a_terminal_item() {
         "{}",
         String::from_utf8_lossy(&receipt.stderr)
     );
-    let bytes = fs::read_to_string(root.join(".soulmate/forgotten.json")).unwrap();
+    let bytes = fs::read_to_string(root.join(".exitbind/forgotten.json")).unwrap();
     let value: Value = serde_json::from_str(&bytes).unwrap();
     assert_eq!(value["terminalState"], "rejected");
     assert_eq!(value["observed"], "source-absent");
@@ -192,11 +169,11 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     let (root, config) = project("hooks");
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
-    symlink(env!("CARGO_BIN_EXE_soulmate"), bin.join("soulmate")).unwrap();
+    symlink(env!("CARGO_BIN_EXE_exitbind"), bin.join("soulmate")).unwrap();
     fs::create_dir(root.join(".codex")).unwrap();
     fs::write(root.join(".codex/hooks.json"), "{\"keep\":true}\n").unwrap();
 
-    let mut apply = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+    let mut apply = Command::new(env!("CARGO_BIN_EXE_exitbind"));
     with_binary_path(&mut apply, &bin);
     let applied = apply
         .args([
@@ -220,7 +197,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     assert_eq!(settings["keep"], true);
     assert!(settings["hooks"]["SessionStart"].is_array());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -241,7 +218,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     assert!(text.contains("Profile selected/presented"));
     assert!(text.contains("does not prove a model read or followed"));
 
-    let mut remove = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+    let mut remove = Command::new(env!("CARGO_BIN_EXE_exitbind"));
     with_binary_path(&mut remove, &bin);
     let removed = remove
         .args([

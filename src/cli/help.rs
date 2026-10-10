@@ -74,7 +74,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "report"] => "run report LEDGER [LEDGER ...]",
         ["run", "explain"] => "run explain LEDGER [--event EVENT_SHA] [--themed]",
         ["run", "supersede"] => {
-            "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER"
+            "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER [--owner-recovery STATE_ARTIFACT_PATH]"
         }
         ["goal"] => "goal incorporate --goal-id ID --goal TEXT | goal status [--json] | goal close --goal-id ID --result-ref REF | goal usage --goal-id ID [--json] | goal <child> --help",
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
@@ -123,6 +123,8 @@ mod tests {
         assert!(validate.contains("--json"));
         let expand = scoped_help("work", &["expand".to_owned()]).unwrap();
         assert!(expand.contains("--json"));
+        let supersede = scoped_help("run", &["supersede".to_owned()]).unwrap();
+        assert!(supersede.contains("--owner-recovery STATE_ARTIFACT_PATH"));
     }
 
     #[test]

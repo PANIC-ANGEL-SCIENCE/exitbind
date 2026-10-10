@@ -48,6 +48,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "material-consequence",
     "name",
     "none-applicable",
+    "owner-recovery",
     "outcome",
     "operation",
     "output",

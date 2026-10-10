@@ -23,6 +23,17 @@ mod value_benchmark;
 mod work;
 
 fn main() {
+    let argv0 = std::env::args_os().next();
+    let current_exe = std::env::current_exe().ok();
+    if crate::compatibility::invoked_as_retired_soulmate(
+        argv0.as_deref(),
+        current_exe.as_deref().map(|path| path.as_os_str()),
+    ) {
+        eprintln!(
+            "Soulmate is no longer supported; run Exitbind from its current executable name."
+        );
+        std::process::exit(2);
+    }
     let raw = std::env::args_os().skip(1).collect::<Vec<_>>();
     let json_output = raw.iter().any(|argument| argument == "--json");
     let raw_for_error = raw.clone();

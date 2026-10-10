@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -21,15 +21,15 @@ fn project() -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
 }
 
 fn invoke_with_bindings(arguments: &[&str], bindings: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", bindings)
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
         .unwrap()
@@ -62,7 +62,7 @@ fn manifest() -> Value {
 #[test]
 fn older_manifest_schema_remains_advisory_after_release_bump() {
     let root = project();
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     let manifest_path = root.join("harness-manifest.json");
     let receipt_path = root.join("harness-receipt.json");
     write_json(&manifest_path, &manifest());
@@ -92,14 +92,14 @@ fn older_manifest_schema_remains_advisory_after_release_bump() {
 #[test]
 fn instruction_like_manifest_token_remains_non_authoritative_hashed_evidence() {
     let root = project();
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
-    let manifest_path = root.join("soulmate/harness/harness-manifest.json");
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
+    let manifest_path = root.join("exitbind/harness/harness-manifest.json");
     fs::write(
         manifest_path,
         include_str!("fixtures/instruction-like-harness.json"),
     )
     .unwrap();
-    let receipt_path = root.join(".soulmate/receipts/instruction-like.json");
+    let receipt_path = root.join(".exitbind/receipts/instruction-like.json");
     let planned = invoke(&[
         "plan",
         "change",
@@ -108,7 +108,7 @@ fn instruction_like_manifest_token_remains_non_authoritative_hashed_evidence() {
         "--receipt",
         receipt_path.to_str().unwrap(),
         "--harness-manifest",
-        "soulmate/harness/harness-manifest.json",
+        "exitbind/harness/harness-manifest.json",
         "--config",
         &config,
     ]);
@@ -122,7 +122,7 @@ fn instruction_like_manifest_token_remains_non_authoritative_hashed_evidence() {
     let receipt: Value = serde_json::from_str(&source).unwrap();
     assert_eq!(
         receipt["harness"]["path"],
-        "soulmate/harness/harness-manifest.json"
+        "exitbind/harness/harness-manifest.json"
     );
     assert_eq!(
         receipt["harness"]["activations"][0]["evidence"],
@@ -142,7 +142,7 @@ fn write_json(path: &Path, value: &Value) {
 #[test]
 fn v2_receipt_binds_bounded_harness_evidence_and_detects_drift() {
     let root = project();
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     let manifest_path = root.join("harness-manifest.json");
     let receipt_path = root.join("harness-receipt.json");
     write_json(&manifest_path, &manifest());
@@ -220,7 +220,7 @@ fn v2_receipt_binds_bounded_harness_evidence_and_detects_drift() {
 #[test]
 fn v2_receipt_integrity_precedes_missing_boundary_warning() {
     let root = project();
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let config = config_path.to_string_lossy().into_owned();
     fs::create_dir(root.join("src")).unwrap();
     fs::write(root.join("src/a.rs"), "pub fn a() {}\n").unwrap();
@@ -242,7 +242,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         }),
     );
     write_json(&root.join("harness-manifest.json"), &manifest());
-    let receipt = root.join(".soulmate/harness-receipt.json");
+    let receipt = root.join(".exitbind/harness-receipt.json");
     let planned = invoke(&[
         "plan",
         "change",
@@ -269,7 +269,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         "--goal",
         "boundary receipt regression",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--boundary",
         ".agents/boundaries/task.json",
         "--harness-receipt",
@@ -284,21 +284,21 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         String::from_utf8_lossy(&started.stderr)
     );
     let first: Value = serde_json::from_str(
-        fs::read_to_string(root.join(".soulmate/run.jsonl"))
+        fs::read_to_string(root.join(".exitbind/run.jsonl"))
             .unwrap()
             .lines()
             .next()
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(first["version"], 2);
+    assert_eq!(first["version"], 8);
     assert_eq!(first["harnessReceipt"]["version"], 2);
 
     fs::remove_file(&boundary).unwrap();
     let authentic = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -322,7 +322,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
     let rejected = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &config,
@@ -342,7 +342,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         vec![
             "run",
             "status",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.as_str(),
@@ -350,7 +350,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         vec![
             "run",
             "inspect",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.as_str(),
@@ -358,7 +358,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         vec![
             "run",
             "explain",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.as_str(),
@@ -366,7 +366,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         vec![
             "run",
             "report",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.as_str(),
@@ -374,14 +374,14 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
         vec![
             "run",
             "status",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             config.as_str(),
         ],
         vec![
             "run",
             "explain",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             config.as_str(),
         ],
@@ -408,7 +408,7 @@ fn v2_receipt_integrity_precedes_missing_boundary_warning() {
 #[test]
 fn manifest_rejects_private_or_unverifiable_fields_before_receipt_creation() {
     let root = project();
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
     let manifest_path = root.join("harness-manifest.json");
     let receipt_path = root.join("must-not-exist.json");
     for field in ["prompt", "transcript", "environment", "secret"] {
@@ -562,7 +562,7 @@ fn local_mode_manifest_cannot_claim_a_different_project() {
         String::from_utf8_lossy(&initialized.stderr)
     );
     write_json(&control.join("harness-manifest.json"), &manifest());
-    let config = control.join("soulmate.json").to_string_lossy().into_owned();
+    let config = control.join("exitbind.json").to_string_lossy().into_owned();
     let rejected = invoke_with_bindings(
         &[
             "plan",

@@ -39,6 +39,29 @@ selected exact retained bytes with no rewriting. Refresh detail and run the
 fresh applicable check and required review before Lead acceptance. A blocked
 governor or unresolved execution remains a truthful stop.
 
+One narrow exception exists for an owner-attested successor after the exact
+current worker's allowed permit is immediately followed by a terminal
+evidence-required duplicate refusal. If fresh `work detail WORK --json`
+contains `recovery.ownerRecoveryDraft`, inspect its exact ledger, assignment,
+operation, nested governor events and product snapshot. The draft is
+unapproved; it does not authorize a new action. The owner must confirm the
+same invocation and supply a complete, bounded StateRoot inventory covering
+product writes, process starts, network writes and other external effects.
+Unknown effects, changed inputs/configuration, held results, an intervening
+event or a consumed grant keep the old run blocked. These owner attestations
+remain evidence of the owner's review, not a mechanical proof about external
+services.
+
+After running the emitted `run supersede ... --owner-recovery` command, the
+same-goal successor preserves every governor counter and begins at
+`evidence_required` with no inherited grant, check result, review or
+acceptance. Record fresh exact evidence before requesting a permit. Keep the
+blocked predecessor unchanged; its original binary can still read that exact
+ledger even if it cannot read the new marked successor. Ordinary
+`beforeEditing` forms use a stable request ID derived from their current
+binding, so replaying the exact argv recovers the original response instead
+of creating another spend.
+
 The [first checked run](first-checked-run.md#3-record-the-review-and-lead-decision)
 contains the complete rework sequence. Exact supersession and drift rules live
 in [run and recovery](../REFERENCE.md#run-and-recovery).

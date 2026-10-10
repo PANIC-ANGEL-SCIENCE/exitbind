@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 //! Owner-selectable review policy remains explicit, current, and orthogonal to
 //! basis, preservation, findings, and receipt integrity.
 #![cfg(unix)]
@@ -529,13 +529,13 @@ fn receipt_tamper_is_rejected_and_historical_run_has_no_new_policy_marker() {
     assert_refused(&tampered, "receipt");
 
     let root = support::temp("review-policy-historical");
-    let init = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
     assert!(init.status.success(), "{}", text(&init));
-    let start = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let start = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",
@@ -544,14 +544,14 @@ fn receipt_tamper_is_rejected_and_historical_run_has_no_new_policy_marker() {
             "--goal",
             "historical policy meaning",
             "--ledger",
-            ".soulmate/runs/historical.jsonl",
+            ".exitbind/runs/historical.jsonl",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ])
         .output()
         .unwrap();
     assert!(start.status.success(), "{}", text(&start));
-    let historical = fs::read_to_string(root.join(".soulmate/runs/historical.jsonl"))
+    let historical = fs::read_to_string(root.join(".exitbind/runs/historical.jsonl"))
         .unwrap()
         .lines()
         .last()

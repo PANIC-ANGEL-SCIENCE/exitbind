@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 
 use sha2::{Digest, Sha256};
@@ -8,17 +8,16 @@ use std::{
     process::{Command, Output},
 };
 
-const SOULMATE_SKILL: &[u8] = include_bytes!("../skills/soulmate/SKILL.md");
-const SOULMATE_REFERENCE: &[u8] = include_bytes!("../skills/soulmate/references/manual.md");
-const COFFEE_SKILL: &[u8] = include_bytes!("../skills/coffee/SKILL.md");
+const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
+const EXITBIND_REFERENCE: &[u8] = include_bytes!("../skills/exitbind/references/operators.md");
 
 fn temp(label: &str) -> PathBuf {
     support::temp(&format!("skill-diagnostics-{label}"))
 }
 
 fn invoke(arguments: &[&str], bindings: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", bindings)
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
         .unwrap()
@@ -26,8 +25,8 @@ fn invoke(arguments: &[&str], bindings: &Path) -> Output {
 
 #[cfg(unix)]
 fn invoke_with_path(arguments: &[&str], bindings: &Path, path: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", bindings)
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", bindings)
         .env("PATH", path)
         .args(arguments)
         .output()
@@ -49,21 +48,17 @@ fn hash(bytes: &[u8]) -> String {
 
 #[test]
 fn cache_guidance_keeps_host_and_session_layers_unverified() {
-    let guidance = String::from_utf8_lossy(SOULMATE_REFERENCE).to_lowercase();
+    let guidance = String::from_utf8_lossy(EXITBIND_REFERENCE).to_lowercase();
     for phrase in [
-        "installed cli bytes",
-        "host's active materialization/cache",
-        "current session",
-        "active-session reload",
-        "supported refresh",
-        "if any selected host is stale",
-        "inactive cache may be labeled historical",
-        "current session without reload evidence remains unverified",
-        "diagnostic guidance only",
+        "ordinary host-managed workers/reviewers consume",
+        "read this only for an initialized same-work cross-host handoff",
+        "never search raw state",
+        "pass the `mutationcontext.token`",
+        "a preview never approves a proposal",
     ] {
         assert!(
             guidance.contains(phrase),
-            "missing cache guidance: {phrase}"
+            "missing current operator guidance: {phrase}"
         );
     }
 }
@@ -123,7 +118,7 @@ fn shell_quote(value: &str) -> String {
 #[test]
 fn check_reports_hashes_and_keeps_json_stdout_stable() {
     let (base, _product, control, bindings) = local_project("match");
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     let json = invoke(
         &["check", "--json", "--config", config.to_str().unwrap()],
         &bindings,
@@ -135,12 +130,12 @@ fn check_reports_hashes_and_keeps_json_stdout_stable() {
     let human = invoke(&["check", "--config", config.to_str().unwrap()], &bindings);
     assert!(human.status.success(), "{}", text(&human.stderr));
     let stdout = text(&human.stdout);
-    let embedded = hash(SOULMATE_SKILL);
-    assert!(stdout.contains(&format!("Soulmate package {}", env!("CARGO_PKG_VERSION"))));
+    let embedded = hash(EXITBIND_SKILL);
+    assert!(stdout.contains(&format!("Exitbind package {}", env!("CARGO_PKG_VERSION"))));
     assert!(stdout.contains(&format!("embedded SHA256 {embedded}")));
     assert!(stdout.contains(&format!("observed SHA256 {embedded}")));
-    assert!(stdout.contains(".agents/skills/soulmate/SKILL.md"));
-    assert!(stdout.contains(".claude/skills/soulmate/SKILL.md"));
+    assert!(stdout.contains(".agents/skills/exitbind/SKILL.md"));
+    assert!(stdout.contains(".claude/skills/exitbind/SKILL.md"));
     assert!(!stdout.contains("Coffee"));
 
     fs::remove_dir_all(base).unwrap();
@@ -149,9 +144,9 @@ fn check_reports_hashes_and_keeps_json_stdout_stable() {
 #[test]
 fn managed_drift_warns_on_stderr_without_editing_or_relabeling_version() {
     let (base, _product, control, bindings) = local_project("drift-older-newer");
-    let config = control.join("soulmate.json");
-    let skill = control.join(".agents/skills/soulmate/SKILL.md");
-    let edited = b"<!-- soulmate-managed-skill:v1 -->\noperator edit\n";
+    let config = control.join("exitbind.json");
+    let skill = control.join(".agents/skills/exitbind/SKILL.md");
+    let edited = b"<!-- exitbind-managed-skill:v1 -->\noperator edit\n";
     fs::write(&skill, edited).unwrap();
 
     let checked = invoke(
@@ -162,18 +157,18 @@ fn managed_drift_warns_on_stderr_without_editing_or_relabeling_version() {
     assert_eq!(checked.stdout, expected_json().as_bytes());
     let stderr = text(&checked.stderr);
     assert!(stderr.contains("differs from this binary's embedded skill"));
-    assert!(stderr.contains(&format!("Soulmate package {}", env!("CARGO_PKG_VERSION"))));
-    assert!(stderr.contains(&format!("embedded SHA256 {}", hash(SOULMATE_SKILL))));
+    assert!(stderr.contains(&format!("Exitbind package {}", env!("CARGO_PKG_VERSION"))));
+    assert!(stderr.contains(&format!("embedded SHA256 {}", hash(EXITBIND_SKILL))));
     assert!(stderr.contains(&format!("observed SHA256 {}", hash(edited))));
     assert!(stderr.contains("init --refresh-skills --root"));
     let shell_quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
     let expected_warning = format!(
-        "warning: Soulmate managed skill .agents/skills/soulmate/SKILL.md differs from this binary's embedded skill (Soulmate package {}; invoking binary {}; embedded SHA256 {}; observed SHA256 {}). Inspect the invoking binary version/path; Explicitly run matching binary {} init --refresh-skills --root {}. Install the intended release if needed.\n",
+        "warning: Exitbind managed skill .agents/skills/exitbind/SKILL.md differs from this binary's embedded skill (Exitbind package {}; invoking binary {}; embedded SHA256 {}; observed SHA256 {}). Inspect the invoking binary version/path; Explicitly run matching binary {} init --refresh-skills --root {}. Install the intended release if needed.\n",
         env!("CARGO_PKG_VERSION"),
-        shell_quote(env!("CARGO_BIN_EXE_soulmate")),
-        hash(SOULMATE_SKILL),
+        shell_quote(env!("CARGO_BIN_EXE_exitbind")),
+        hash(EXITBIND_SKILL),
         hash(edited),
-        shell_quote(env!("CARGO_BIN_EXE_soulmate")),
+        shell_quote(env!("CARGO_BIN_EXE_exitbind")),
         shell_quote(control.to_str().unwrap()),
     );
     assert_eq!(stderr, expected_warning);
@@ -192,10 +187,10 @@ fn managed_drift_warns_on_stderr_without_editing_or_relabeling_version() {
 #[test]
 fn hostile_control_root_paths_are_escaped_and_marked_non_copyable() {
     let (base, _product, control, bindings) = local_project("hostile-\u{1b}[31m");
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     fs::write(
-        control.join(".agents/skills/soulmate/SKILL.md"),
-        b"<!-- soulmate-managed-skill:v1 -->\noperator edit\n",
+        control.join(".agents/skills/exitbind/SKILL.md"),
+        b"<!-- exitbind-managed-skill:v1 -->\noperator edit\n",
     )
     .unwrap();
 
@@ -205,7 +200,7 @@ fn hostile_control_root_paths_are_escaped_and_marked_non_copyable() {
     assert!(!checked.stderr.contains(&0x1b));
     assert!(text(&checked.stderr).contains("\\u{1b}"));
     assert!(text(&checked.stderr).contains("No copyable refresh command is available"));
-    assert!(!text(&checked.stderr).contains("soulmate init --refresh-skills --root"));
+    assert!(!text(&checked.stderr).contains("exitbind init --refresh-skills --root"));
 
     let json = invoke(
         &["check", "--json", "--config", config.to_str().unwrap()],
@@ -221,20 +216,20 @@ fn hostile_control_root_paths_are_escaped_and_marked_non_copyable() {
 
 #[cfg(unix)]
 #[test]
-fn drift_warning_uses_exact_invoking_binary_when_path_has_another_soulmate() {
+fn drift_warning_uses_exact_invoking_binary_when_path_has_another_exitbind() {
     let (base, _product, control, bindings) = local_project("path-binary");
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     fs::write(
-        control.join(".agents/skills/soulmate/SKILL.md"),
-        b"<!-- soulmate-managed-skill:v1 -->\noperator edit\n",
+        control.join(".agents/skills/exitbind/SKILL.md"),
+        b"<!-- exitbind-managed-skill:v1 -->\noperator edit\n",
     )
     .unwrap();
     let fake_bin = base.join("other-bin");
     fs::create_dir(&fake_bin).unwrap();
-    let fake_soulmate = fake_bin.join("soulmate");
-    fs::write(&fake_soulmate, b"#!/bin/sh\nexit 77\n").unwrap();
+    let fake_exitbind = fake_bin.join("exitbind");
+    fs::write(&fake_exitbind, b"#!/bin/sh\nexit 77\n").unwrap();
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(&fake_soulmate, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&fake_exitbind, fs::Permissions::from_mode(0o755)).unwrap();
 
     let checked = invoke_with_path(
         &["check", "--json", "--config", config.to_str().unwrap()],
@@ -243,16 +238,16 @@ fn drift_warning_uses_exact_invoking_binary_when_path_has_another_soulmate() {
     );
     assert!(checked.status.success(), "{}", text(&checked.stderr));
     let stderr = text(&checked.stderr);
-    let exact_binary = shell_quote(env!("CARGO_BIN_EXE_soulmate"));
+    let exact_binary = shell_quote(env!("CARGO_BIN_EXE_exitbind"));
     let exact_root = shell_quote(control.to_str().unwrap());
     assert!(stderr.contains(&format!(
         "Explicitly run matching binary {exact_binary} init --refresh-skills --root {exact_root}."
     )));
     assert!(!stderr.contains(&format!(
         "Explicitly run matching binary {}",
-        shell_quote("soulmate")
+        shell_quote("exitbind")
     )));
-    assert!(!stderr.contains(fake_soulmate.to_str().unwrap()));
+    assert!(!stderr.contains(fake_exitbind.to_str().unwrap()));
 
     fs::remove_dir_all(base).unwrap();
 }
@@ -260,7 +255,7 @@ fn drift_warning_uses_exact_invoking_binary_when_path_has_another_soulmate() {
 #[test]
 fn check_does_not_create_absent_skill_directories() {
     let (base, _product, control, bindings) = local_project("absent");
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     let agents_skills = control.join(".agents/skills");
     let claude_skills = control.join(".claude/skills");
     fs::remove_dir_all(&agents_skills).unwrap();
@@ -280,14 +275,13 @@ fn check_does_not_create_absent_skill_directories() {
 }
 
 #[test]
-fn refresh_prints_version_and_selected_hashes_and_keeps_coffee_opt_in() {
+fn current_refresh_is_exitbind_only_and_refuses_the_retired_coffee_flag() {
     let (base, _product, control, bindings) = local_project("refresh-metadata");
-    let config_before = fs::read(control.join("soulmate.json")).unwrap();
+    let config_before = fs::read(control.join("exitbind.json")).unwrap();
     let refreshed = invoke(
         &[
             "init",
             "--refresh-skills",
-            "--with-coffee",
             "--root",
             control.to_str().unwrap(),
         ],
@@ -295,18 +289,31 @@ fn refresh_prints_version_and_selected_hashes_and_keeps_coffee_opt_in() {
     );
     assert!(refreshed.status.success(), "{}", text(&refreshed.stderr));
     let stdout = text(&refreshed.stdout);
-    assert!(stdout.contains(&format!("Soulmate {}", env!("CARGO_PKG_VERSION"))));
+    assert!(stdout.contains(&format!("Exitbind {}", env!("CARGO_PKG_VERSION"))));
     assert!(stdout.contains(&format!(
-        "soulmate embedded SHA256 {}",
-        hash(SOULMATE_SKILL)
+        "Exitbind embedded SHA256 {}",
+        hash(EXITBIND_SKILL)
     )));
-    assert!(stdout.contains(&format!("coffee embedded SHA256 {}", hash(COFFEE_SKILL))));
+    assert!(!stdout.contains("coffee embedded SHA256"));
     assert_eq!(
-        fs::read(control.join("soulmate.json")).unwrap(),
+        fs::read(control.join("exitbind.json")).unwrap(),
         config_before
     );
 
     let repeated = invoke(
+        &[
+            "init",
+            "--refresh-skills",
+            "--root",
+            control.to_str().unwrap(),
+        ],
+        &bindings,
+    );
+    assert!(repeated.status.success(), "{}", text(&repeated.stderr));
+    assert!(text(&repeated.stdout).contains("unchanged .agents/skills/exitbind/SKILL.md"));
+    assert!(!text(&repeated.stdout).contains("coffee"));
+
+    let refused_coffee = invoke(
         &[
             "init",
             "--refresh-skills",
@@ -316,25 +323,12 @@ fn refresh_prints_version_and_selected_hashes_and_keeps_coffee_opt_in() {
         ],
         &bindings,
     );
-    assert!(repeated.status.success(), "{}", text(&repeated.stderr));
-    assert!(text(&repeated.stdout).contains("unchanged .agents/skills/soulmate/SKILL.md"));
-    assert!(text(&repeated.stdout).contains("unchanged .agents/skills/coffee/SKILL.md"));
-
-    let without_coffee = invoke(
-        &[
-            "init",
-            "--refresh-skills",
-            "--root",
-            control.to_str().unwrap(),
-        ],
-        &bindings,
+    assert!(!refused_coffee.status.success());
+    assert!(text(&refused_coffee.stderr).contains("--with-coffee is retired"));
+    assert_eq!(
+        fs::read(control.join("exitbind.json")).unwrap(),
+        config_before
     );
-    assert!(
-        without_coffee.status.success(),
-        "{}",
-        text(&without_coffee.stderr)
-    );
-    assert!(!text(&without_coffee.stdout).contains("coffee embedded SHA256"));
 
     fs::remove_dir_all(base).unwrap();
 }
@@ -345,9 +339,9 @@ fn check_classifies_unmanaged_invalid_bytes_and_unsafe_paths_without_following_t
     use std::os::unix::fs::symlink;
 
     let (base, _product, control, bindings) = local_project("unsafe");
-    let config = control.join("soulmate.json");
-    let unmanaged = control.join(".agents/skills/soulmate/SKILL.md");
-    let invalid_utf8 = control.join(".claude/skills/soulmate/SKILL.md");
+    let config = control.join("exitbind.json");
+    let unmanaged = control.join(".agents/skills/exitbind/SKILL.md");
+    let invalid_utf8 = control.join(".claude/skills/exitbind/SKILL.md");
     fs::write(unmanaged, b"host-managed skill\n").unwrap();
     fs::write(&invalid_utf8, [0xff, 0xfe, 0x00]).unwrap();
 
@@ -392,11 +386,11 @@ fn check_classifies_symlink_ancestors_without_creating_or_traversing_them() {
     use std::os::unix::fs::symlink;
 
     let (base, _product, control, bindings) = local_project("ancestor");
-    let config = control.join("soulmate.json");
+    let config = control.join("exitbind.json");
     let outside = base.join("outside");
     let outside_skills = outside.join("skills");
-    fs::create_dir_all(outside_skills.join("soulmate")).unwrap();
-    let sentinel = outside_skills.join("soulmate/SKILL.md");
+    fs::create_dir_all(outside_skills.join("exitbind")).unwrap();
+    let sentinel = outside_skills.join("exitbind/SKILL.md");
     fs::write(&sentinel, b"outside bytes\n").unwrap();
     let agents_skills = control.join(".agents/skills");
     fs::remove_dir_all(&agents_skills).unwrap();

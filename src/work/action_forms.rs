@@ -22,6 +22,17 @@ pub(crate) fn current_detail_command(loaded: &Loaded, work: &str) -> Value {
     )
 }
 
+/// Forward the held-result admission check to its existing owner. Recovery
+/// must not create a successor while bytes for this exact assignment await
+/// return, and an unreadable held directory is also a refusal.
+pub(crate) fn has_held_result(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+) -> Result<bool, String> {
+    Ok(!super::held::discover(loaded, work, assignment)?.is_empty())
+}
+
 fn choice(
     loaded: &Loaded,
     suffix: Vec<String>,
@@ -394,10 +405,11 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         if grant.is_none() && governor_phase == Some("ready") && !held {
             result["beforeEditing"] = json!({
                 "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
-                    assignment.into(), "--operation".into(), "<OPERATION>".into()]),
+                    assignment.into(), "--operation".into(), "<OPERATION>".into(),
+                    "--request-id".into(), format!("permit-{binding}")]),
                 "placeholders": ["OPERATION"],
                 "required": true,
-                "meaning": "obtain allowed:true before editing; this form grants no host permission"
+                "meaning": "obtain allowed:true before editing; repeat this exact request ID only to recover its response; this form grants no host permission"
             });
         }
     }

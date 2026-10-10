@@ -1,12 +1,38 @@
 use super::*;
 
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    Ok(RunSnapshot::capture(loaded, ledger)?.inspect_view())
+    let mut view = RunSnapshot::capture(loaded, ledger)?.inspect_view();
+    attach_governor_recovery(&mut view);
+    Ok(view)
 }
 
 /// Read-only current-state view with artifact/config revalidation.
 pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    RunSnapshot::capture(loaded, ledger)?.status_view()
+    let snapshot = RunSnapshot::capture(loaded, ledger)?;
+    let mut status = snapshot.status_view()?;
+    let mut inspect = snapshot.inspect_view();
+    attach_governor_recovery(&mut inspect);
+    if let Some(recovery) = inspect.get("governorRecovery") {
+        status["governorRecovery"] = recovery.clone();
+    }
+    Ok(status)
+}
+
+fn attach_governor_recovery(view: &mut Value) {
+    let start = view
+        .get("events")
+        .and_then(Value::as_array)
+        .and_then(|events| events.first());
+    let Some(start) =
+        start.filter(|event| event["carryProtocol"] == crate::run::carry::RECOVERY_PROTOCOL)
+    else {
+        return;
+    };
+    view["governorRecovery"] = json!({
+        "protocol": crate::run::carry::RECOVERY_PROTOCOL,
+        "state": view["governor"]["state"],
+        "evidence": start["governorCarry"]["recovery"],
+    });
 }
 
 /// Read-only explanation for a run or one of its factual protection events.
@@ -146,6 +172,80 @@ pub fn supersede_with_policy(
     basis: Option<&str>,
     review_policy: Option<&str>,
 ) -> Result<Value, String> {
+    supersede_with_policy_and_recovery(
+        loaded,
+        old_ledger,
+        workflow,
+        goal,
+        new_ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn supersede_with_owner_recovery(
+    loaded: &Loaded,
+    old_ledger: &str,
+    workflow: &str,
+    goal: &str,
+    new_ledger: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    owner_recovery: Option<&str>,
+) -> Result<Value, String> {
+    supersede_with_policy_and_recovery(
+        loaded,
+        old_ledger,
+        workflow,
+        goal,
+        new_ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        owner_recovery,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn supersede_with_policy_and_recovery(
+    loaded: &Loaded,
+    old_ledger: &str,
+    workflow: &str,
+    goal: &str,
+    new_ledger: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    owner_recovery: Option<&str>,
+) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
     }
@@ -183,6 +283,9 @@ pub fn supersede_with_policy(
             boundary,
         )?;
         let extension = extension_from_cli(basis, review_policy)?;
+        if owner_recovery.is_some() && extension.is_some() {
+            return Err("owner recovery must preserve the predecessor basis and review decision; omit --basis and --review-policy".into());
+        }
         crate::project::architecture::bind_plan(loaded, &mut plan)?;
         let old_policy = old_state
             .get("checkPolicy")
@@ -247,7 +350,21 @@ pub fn supersede_with_policy(
         if preservation.is_some() && !crate::producer::exitbind_surface() {
             return Err("preservation requirements require Exitbind v6 runs".into());
         }
-        let carry_accounting = if old_state["governor"]["enabled"] == true
+        let carry_accounting = if let Some(recovery_path) = owner_recovery {
+            if old_state["governor"]["enabled"] != true {
+                return Err("owner recovery requires a governed predecessor".into());
+            }
+            let old_rel = config::rel(&loaded.state_root, &old.expected)?;
+            Some(crate::run::carry::make_recovery(
+                loaded,
+                &old_state,
+                &old_rel,
+                &old_source,
+                &old_events,
+                goal,
+                recovery_path,
+            )?)
+        } else if old_state["governor"]["enabled"] == true
             && old_state["subject"]["goalSha256"] == hash::text(goal)
         {
             let old_rel = config::rel(&loaded.state_root, &old.expected)?;
@@ -296,7 +413,12 @@ pub fn supersede_with_policy(
         });
         let carry_protocol = carry_accounting
             .as_ref()
-            .map(|_| crate::run::carry::PROTOCOL);
+            .map(|carry| {
+                carry["protocol"]
+                    .as_u64()
+                    .ok_or("governor carry has no supported protocol")
+            })
+            .transpose()?;
         let carry_sha = carry_accounting.as_ref().map(crate::evidence::hash::value);
         let mut wanted_claim = wanted_claim;
         if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {

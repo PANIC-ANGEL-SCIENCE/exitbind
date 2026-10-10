@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 use serde_json::{json, Value};
 mod support;
 use std::fs;
@@ -6,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -26,13 +25,15 @@ fn legacy_project(label: &str) -> (PathBuf, String, Vec<u8>) {
         "{}",
         String::from_utf8_lossy(&initialized.stderr)
     );
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let config = config_path.to_string_lossy().into_owned();
-    let target = root.join("soulmate/agents/worker.md");
+    let target = root.join("exitbind/agents/worker.md");
     let bytes = fs::read(&target).unwrap();
     let legacy = root.join(".agents/profiles");
     fs::create_dir_all(&legacy).unwrap();
     fs::rename(target, legacy.join("worker.md")).unwrap();
+    // Explicit old-layout migration retains its historical destination.
+    fs::create_dir_all(root.join("soulmate/agents")).unwrap();
     let mut value: Value =
         serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
     value["agents"]["worker"]["profile"] = json!(".agents/profiles/worker.md");
@@ -150,14 +151,14 @@ fn layout_migration_plans_tracked_files_but_refuses_to_apply() {
         &[
             "config",
             "user.email",
-            "soulmate-test@users.noreply.github.com"
+            "exitbind-test@users.noreply.github.com"
         ]
     )
     .status
     .success());
     assert!(git(
         &root,
-        &["add", "soulmate.json", ".agents/profiles/worker.md"]
+        &["add", "exitbind.json", ".agents/profiles/worker.md"]
     )
     .status
     .success());
@@ -185,7 +186,7 @@ fn layout_migration_refuses_symlinked_profile_sources() {
     let (root, config, _) = legacy_project("symlink");
     let source = root.join(".agents/profiles/worker.md");
     fs::remove_file(&source).unwrap();
-    symlink(root.join("soulmate/agents/lead.md"), &source).unwrap();
+    symlink(root.join("exitbind/agents/lead.md"), &source).unwrap();
     let old_config = fs::read(&config).unwrap();
 
     let refused = invoke(&["migrate", "layout", "--config", &config]);

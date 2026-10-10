@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 #[path = "support/agent_first_surface.rs"]
 mod agent_first_surface;
 mod support;
@@ -31,7 +31,7 @@ impl Fixture {
 
     fn with_label(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -44,12 +44,12 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
-            .arg(self.root.join("soulmate.json"))
+            .arg(self.root.join("exitbind.json"))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if input.is_some() {
@@ -68,7 +68,7 @@ impl Fixture {
     }
 
     fn blocked_return(&self, work: &str, assignment: &str, outcome: &str) -> (Child, ChildStdin) {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args([
@@ -80,7 +80,7 @@ impl Fixture {
                 outcome,
                 "--config",
             ])
-            .arg(self.root.join("soulmate.json"))
+            .arg(self.root.join("exitbind.json"))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::piped());
@@ -118,7 +118,7 @@ impl Drop for Fixture {
 
 #[derive(Debug, PartialEq, Eq)]
 struct WorkflowMetrics {
-    soulmate_calls: usize,
+    cli_calls: usize,
     raw_identifier_occurrences: usize,
     bookkeeping_inputs: usize,
     protocol_errors_or_retries: usize,
@@ -129,7 +129,7 @@ struct WorkflowMetrics {
 fn metrics(fixture: &Fixture) -> WorkflowMetrics {
     let trace = fixture.trace.borrow();
     WorkflowMetrics {
-        soulmate_calls: trace.len(),
+        cli_calls: trace.len(),
         raw_identifier_occurrences: trace
             .iter()
             .map(|call| raw_identifier_occurrences(&call.args))
@@ -166,11 +166,11 @@ fn bookkeeping_inputs(args: &[String]) -> usize {
 }
 
 fn is_ledger_path(value: &str) -> bool {
-    value.starts_with(".soulmate/runs/") && value.ends_with(".jsonl")
+    value.starts_with(".exitbind/runs/") && value.ends_with(".jsonl")
 }
 
 fn write_state_artifact(fixture: &Fixture, name: &str, contents: &[u8]) -> String {
-    let relative = format!(".soulmate/artifacts/{name}");
+    let relative = format!(".exitbind/artifacts/{name}");
     fs::write(fixture.root.join(&relative), contents).unwrap();
     relative
 }
@@ -283,7 +283,7 @@ fn checked_facade_hides_protocol_transport_and_preserves_core_binding() {
     assert_no_raw_protocol_fields(&done);
     assert_eq!(done["next"]["action"], "done");
 
-    let ledgers = std::fs::read_dir(fixture.root.join(".soulmate/runs"))
+    let ledgers = std::fs::read_dir(fixture.root.join(".exitbind/runs"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect::<Vec<_>>();
@@ -343,7 +343,7 @@ fn resume_is_explicit_for_zero_and_multiple_active_work_items() {
     assert_eq!(resumed["work"], second_begin["work"]);
     assert_eq!(resumed["history"]["running"], 1);
     // A legacy project without a focus keeps the explicit ambiguous answer.
-    let removed = [".exitbind", ".soulmate"]
+    let removed = [".exitbind", ".exitbind"]
         .iter()
         .filter(|state| {
             std::fs::remove_file(fixture.root.join(state).join("current-work.json")).is_ok()
@@ -413,9 +413,9 @@ fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
     assert_eq!(reworked["next"]["requiresExpansion"], true);
     assert!(reworked["next"]["packet"].is_null());
 
-    let artifact_dir = fixture.root.join(".soulmate/artifacts");
+    let artifact_dir = fixture.root.join(".exitbind/artifacts");
     let artifacts_before = fs::read_dir(&artifact_dir).unwrap().count();
-    let ledger_path = fs::read_dir(fixture.root.join(".soulmate/runs"))
+    let ledger_path = fs::read_dir(fixture.root.join(".exitbind/runs"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|path| path.is_file())
@@ -458,7 +458,7 @@ fn stale_blocked_work_return_cannot_submit_a_fresh_attempt() {
 #[test]
 fn matched_workflows_measure_protocol_transport_without_product_overclaim() {
     let low_level = Fixture::new();
-    let ledger = ".soulmate/runs/matched-low-level.jsonl";
+    let ledger = ".exitbind/runs/matched-low-level.jsonl";
     low_level.value(
         &[
             "run",
@@ -561,7 +561,7 @@ fn matched_workflows_measure_protocol_transport_without_product_overclaim() {
     assert_no_raw_protocol_fields(&facade_done);
     assert_eq!(facade_done["next"]["action"], "done");
 
-    let facade_ledger = fs::read_dir(facade.root.join(".soulmate/runs"))
+    let facade_ledger = fs::read_dir(facade.root.join(".exitbind/runs"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|path| path.is_file())
@@ -574,7 +574,7 @@ fn matched_workflows_measure_protocol_transport_without_product_overclaim() {
     let baseline = metrics(&low_level);
     let candidate = metrics(&facade);
     let expected_baseline = WorkflowMetrics {
-        soulmate_calls: 6,
+        cli_calls: 6,
         raw_identifier_occurrences: 11,
         bookkeeping_inputs: 10,
         protocol_errors_or_retries: 0,
@@ -582,7 +582,7 @@ fn matched_workflows_measure_protocol_transport_without_product_overclaim() {
         human_protocol_transfers: 0,
     };
     let expected_candidate = WorkflowMetrics {
-        soulmate_calls: 6,
+        cli_calls: 6,
         raw_identifier_occurrences: 0,
         bookkeeping_inputs: 0,
         protocol_errors_or_retries: 0,
@@ -591,14 +591,14 @@ fn matched_workflows_measure_protocol_transport_without_product_overclaim() {
     };
     assert_eq!(baseline, expected_baseline);
     assert_eq!(candidate, expected_candidate);
-    assert_eq!(baseline.soulmate_calls, candidate.soulmate_calls);
+    assert_eq!(baseline.cli_calls, candidate.cli_calls);
     assert!(baseline.raw_identifier_occurrences > candidate.raw_identifier_occurrences);
     assert!(baseline.bookkeeping_inputs > candidate.bookkeeping_inputs);
     for (label, baseline_value, candidate_value) in [
         (
             "Exitbind process calls",
-            baseline.soulmate_calls,
-            candidate.soulmate_calls,
+            baseline.cli_calls,
+            candidate.cli_calls,
         ),
         (
             "Raw protocol identifier occurrences in command inputs",

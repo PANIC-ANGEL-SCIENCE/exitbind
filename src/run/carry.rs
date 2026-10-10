@@ -5,6 +5,7 @@ use super::*;
 use std::collections::BTreeSet;
 
 pub(crate) const PROTOCOL: u64 = 1;
+pub(crate) const RECOVERY_PROTOCOL: u64 = 2;
 const MAX_LINEAGE: usize = 64;
 
 /// Initialize the run governor from its validated start marker and optional
@@ -28,6 +29,15 @@ pub(crate) fn initialize_governor(start: &Value, state: &mut Value) -> Result<bo
     }
     if let Some(carry) = start.get("governorCarry") {
         state["governorCarry"] = carry.clone();
+        if carry["protocol"] == RECOVERY_PROTOCOL {
+            // This is an internal replay seed projection, not the persisted
+            // accounting marker. The start event and claim retain the exact
+            // blocked predecessor accounting; the validated recovery carry
+            // starts its own event stream in evidence_required.
+            state["governorCarry"]["accounting"]["state"] = json!("evidence_required");
+            state["governor"]["state"] = json!("evidence_required");
+            state["governorRecovery"] = carry["recovery"].clone();
+        }
     }
     Ok(true)
 }
@@ -95,6 +105,52 @@ pub(crate) fn make(
     old_events: &[Value],
     goal: &str,
 ) -> Result<Value, String> {
+    make_inner(
+        old_state,
+        old_ledger_path,
+        old_source,
+        old_events,
+        goal,
+        None,
+    )
+}
+
+pub(crate) fn make_recovery(
+    loaded: &Loaded,
+    old_state: &Value,
+    old_ledger_path: &str,
+    old_source: &str,
+    old_events: &[Value],
+    goal: &str,
+    recovery_path: &str,
+) -> Result<Value, String> {
+    let evidence = super::governor_recovery::build_carry_evidence(
+        loaded,
+        recovery_path,
+        old_state,
+        old_events,
+        old_source,
+        old_ledger_path,
+        goal,
+    )?;
+    make_inner(
+        old_state,
+        old_ledger_path,
+        old_source,
+        old_events,
+        goal,
+        Some(evidence),
+    )
+}
+
+fn make_inner(
+    old_state: &Value,
+    old_ledger_path: &str,
+    old_source: &str,
+    old_events: &[Value],
+    goal: &str,
+    recovery: Option<Value>,
+) -> Result<Value, String> {
     if crate::run::state::check_observation::unresolved(old_state) {
         return Err("supersession refused unresolved check effects; no successor may retry uncertain execution".into());
     }
@@ -102,26 +158,11 @@ pub(crate) fn make(
         .get("governor")
         .filter(|value| value["enabled"] == true)
         .ok_or("governor carry requires an enabled predecessor governor")?;
-    if governor["state"] != "ready" {
+    if governor["state"] != "ready" && !(recovery.is_some() && governor["state"] == "blocked") {
         return Err("supersession refused an exhausted or unresolved governor phase".into());
     }
-    if let Some(request) = governor
-        .get("currentSensorRequest")
-        .filter(|v| v.is_object())
-    {
-        let key = crate::evidence::hash::value(&json!({
-            "runId": request["runId"],
-            "subjectSha256": request["subjectSha256"],
-            "attempt": request["attempt"],
-            "inputSha256": request["inputSha256"],
-            "requestDigest": request["requestDigest"],
-        }));
-        let resolved = governor["seenSensors"]
-            .as_array()
-            .is_some_and(|items| items.iter().any(|item| item["key"] == key));
-        if !resolved {
-            return Err("supersession refused unresolved governor sensor request".into());
-        }
+    if super::governor_recovery::unresolved_sensor_request(old_state, old_events) {
+        return Err("supersession refused unresolved governor sensor request".into());
     }
     let prior_goal = old_events
         .first()
@@ -133,8 +174,13 @@ pub(crate) fn make(
     let last = old_events
         .last()
         .ok_or("governor carry predecessor is empty")?;
-    Ok(json!({
-        "protocol": PROTOCOL,
+    let protocol = if recovery.is_some() {
+        RECOVERY_PROTOCOL
+    } else {
+        PROTOCOL
+    };
+    let mut carry = json!({
+        "protocol": protocol,
         "goalSha256": crate::evidence::hash::text(goal),
         "predecessor": {
             "ledgerPath": old_ledger_path,
@@ -147,7 +193,11 @@ pub(crate) fn make(
             old_state,
             &old_events[0]["governor"],
         )?,
-    }))
+    });
+    if let Some(recovery) = recovery {
+        carry["recovery"] = recovery;
+    }
+    Ok(carry)
 }
 
 pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
@@ -158,8 +208,9 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
         return Ok(());
     }
     let invalid = || format!("invalid run ledger line {line}: invalid governor carry");
+    let protocol = event["carryProtocol"].as_u64();
     if event["version"] != 8
-        || event["carryProtocol"].as_u64() != Some(PROTOCOL)
+        || !matches!(protocol, Some(PROTOCOL | RECOVERY_PROTOCOL))
         || event["governor"].as_object().is_none()
         || event["supersedes"].as_object().is_none()
         || event["governorCarry"].as_object().is_none()
@@ -172,13 +223,33 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     let Some(object) = carry.as_object() else {
         return Err(invalid());
     };
-    if object.len() != 4
-        || carry["protocol"].as_u64() != Some(PROTOCOL)
+    let carry_protocol = carry["protocol"].as_u64();
+    if !matches!(carry_protocol, Some(PROTOCOL | RECOVERY_PROTOCOL))
+        || event["carryProtocol"] != carry["protocol"]
+        || object.len()
+            != if carry_protocol == Some(RECOVERY_PROTOCOL) {
+                5
+            } else {
+                4
+            }
         || !valid_sha(carry["goalSha256"].as_str())
         || carry["goalSha256"] != crate::evidence::hash::text(event["goal"].as_str().unwrap_or(""))
         || carry["predecessor"] != event["supersedes"]
         || carry["accounting"].as_object().is_none()
     {
+        return Err(invalid());
+    }
+    if carry_protocol == Some(RECOVERY_PROTOCOL) {
+        let recovery = &carry["recovery"];
+        if recovery.as_object().is_none()
+            || recovery["protocol"] != super::governor_recovery::PROTOCOL
+            || recovery["currentConfigSha256"] != event["configSha256"]
+            || recovery["decision"].as_object().is_none()
+            || recovery["effectsEvidence"].as_object().is_none()
+        {
+            return Err(invalid());
+        }
+    } else if carry.get("recovery").is_some() {
         return Err(invalid());
     }
     let accounting = &carry["accounting"];
@@ -276,7 +347,11 @@ fn validate_edge(
         return Err("supersession lineage contains a cycle".into());
     }
     let claim = claim.ok_or("governor carry is missing its persisted successor claim")?;
-    if claim["carryProtocol"].as_u64() != Some(PROTOCOL)
+    // The persisted, validated claim is authoritative for which protocol the
+    // successor was issued under. The start marker is checked below so a
+    // stripped marker retains the dedicated refusal classification.
+    let carry_protocol = claim["carryProtocol"].as_u64();
+    if !matches!(carry_protocol, Some(PROTOCOL | RECOVERY_PROTOCOL))
         || !valid_sha(claim["governorCarrySha256"].as_str())
         || claim["oldLedgerPath"] != link["ledgerPath"]
         || claim["oldLedgerSha256"] != link["ledgerSha256"]
@@ -291,7 +366,7 @@ fn validate_edge(
         return Err("governor carry successor claim provenance mismatch".into());
     }
     if !marked
-        || start["carryProtocol"].as_u64() != Some(PROTOCOL)
+        || start["carryProtocol"].as_u64() != carry_protocol
         || claim["governorCarrySha256"] != start["governorCarrySha256"]
     {
         return Err("governor carry marker is missing or differs from its persisted claim".into());
@@ -323,6 +398,21 @@ fn validate_edge(
         != start["governorCarry"]["accounting"]
     {
         return Err("governor carry accounting differs from predecessor replay".into());
+    }
+    if carry_protocol == Some(RECOVERY_PROTOCOL) {
+        let binding = super::governor_recovery::RecoveryBinding {
+            loaded,
+            state: &predecessor_state,
+            events: &predecessor_events,
+            source: &source,
+            old_ledger_path: link["ledgerPath"].as_str().unwrap_or_default(),
+            goal: start["goal"].as_str().unwrap_or_default(),
+            successor_config_sha256: start["configSha256"].as_str().unwrap_or_default(),
+        };
+        super::governor_recovery::validate_carried_evidence(
+            &start["governorCarry"]["recovery"],
+            &binding,
+        )?;
     }
     validate_edge(
         loaded,

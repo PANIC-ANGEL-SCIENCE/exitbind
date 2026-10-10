@@ -5,8 +5,9 @@ name; this document exists for the cases that do — an old project, an old
 ledger, an old executable, or a rollback.
 
 The rule behind every entry below: compatibility reads the old world, and never
-relabels its evidence as new evidence. Active Soulmate distribution ends in
-`v0.25.0`; historical releases and records remain available.
+relabels its evidence as new evidence. Active Soulmate distribution ended in
+`v0.25.0`; historical releases and records remain available. This unreleased
+source line also retires its old executable profile and updater route.
 
 ## Rename history
 
@@ -23,12 +24,12 @@ For current executable changes and rollback limits, see
 
 | Historical surface | Current surface | Status |
 | --- | --- | --- |
-| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; retained only as a feature-gated historical test fixture |
+| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; this source line no longer builds or selects the old profile, and refuses copy or symlink invocations before CLI effects |
 | `soulmate.json` | `exitbind.json` | Read for existing projects; never created by a current install |
 | `.soulmate/` state | `.exitbind/` | Read for existing projects; never created by a current install |
 | `soulmate/` control tree | `exitbind/` | Read for existing projects; never created by a current install |
 | `.agents/skills/soulmate/`, `.claude/skills/soulmate/` | `.../skills/exitbind/` | Historical project files remain readable; current setup installs only Exitbind guidance |
-| `SOULMATE_*` environment controls | `EXITBIND_*` | A pinned historical installer route remains; the `v0.25.0` installer refuses a Soulmate install |
+| `SOULMATE_*` environment controls | `EXITBIND_*` | Historical installer compatibility inputs remain; the active updater follows only the Exitbind profile |
 | `systems.soulmate/` | `systems.exitbind/` | Retained for already-published plugin consumers; not referenced by current onboarding |
 
 A current Exitbind install creates none of the historical spellings. That is a
@@ -85,9 +86,10 @@ rendered as product identity anywhere in the interface.
 
 ## Retained compatibility boundaries
 
-- The `soulmate` executable is built only when the `legacy-cli-test` feature is
-  selected for historical regression tests. Default Cargo builds, installs and
-  release packages contain only `exitbind`.
+- No current source build, install or release package provides a `soulmate`
+  executable or selects a Soulmate updater profile. Frozen historical fixtures
+  preserve old producer, path and installer records without building that
+  executable.
 - The `systems.soulmate` plugin files remain in source for already
   published consumers, but current packaging contains only the Exitbind plugin.
 - The historical hook protocol token remains under the criterion above.

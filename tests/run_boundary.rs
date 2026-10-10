@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -12,8 +12,8 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .env("SOULMATE_BINDINGS_DIR", root.join("machine-bindings"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .env("EXITBIND_BINDINGS_DIR", root.join("machine-bindings"))
         .args(arguments)
         .output()
         .unwrap()
@@ -46,7 +46,7 @@ fn fixture() -> (PathBuf, PathBuf) {
     fs::write(root.join("docs/ADR.md"), "decision\n").unwrap();
     fs::write(root.join("src/a.rs"), "pub fn a() {}\n").unwrap();
     fs::write(root.join("src/b.rs"), "pub fn b() {}\n").unwrap();
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut config: Value =
         serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
     config["agents"]["worker"]["observe"] = json!(["docs/**", "src/**"]);
@@ -94,7 +94,7 @@ fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
             "--goal",
             "bounded",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--boundary",
             ".agents/boundaries/task.json",
             "--config",
@@ -104,14 +104,14 @@ fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
     assert!(started.status.success(), "{}", text(&started));
 
     let first: Value = serde_json::from_str(
-        fs::read_to_string(root.join(".soulmate/run.jsonl"))
+        fs::read_to_string(root.join(".exitbind/run.jsonl"))
             .unwrap()
             .lines()
             .next()
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(first["producer"]["name"], "soulmate");
+    assert_eq!(first["producer"]["name"], "exitbind");
     assert_eq!(first["producer"]["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(
         first["plan"]["boundaryManifest"]["path"],
@@ -136,7 +136,7 @@ fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
         &[
             "run",
             "next",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.to_str().unwrap(),
@@ -157,7 +157,7 @@ fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
         &[
             "run",
             "next",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             config.to_str().unwrap(),
@@ -190,7 +190,7 @@ fn run_boundary_narrows_assignment_and_reports_manifest_drift() {
             &[
                 "run",
                 "next",
-                ".soulmate/run.jsonl",
+                ".exitbind/run.jsonl",
                 "--json",
                 "--config",
                 config.to_str().unwrap(),
@@ -231,7 +231,7 @@ fn invalid_or_widening_boundaries_never_create_a_ledger() {
         ),
     ] {
         write_manifest(&root, manifest);
-        let ledger = format!(".soulmate/{name}.jsonl");
+        let ledger = format!(".exitbind/{name}.jsonl");
         let result = invoke(
             &root,
             &[
@@ -265,7 +265,7 @@ fn invalid_or_widening_boundaries_never_create_a_ledger() {
             "--goal",
             "read-only worker",
             "--ledger",
-            ".soulmate/empty-write.jsonl",
+            ".exitbind/empty-write.jsonl",
             "--boundary",
             ".agents/boundaries/task.json",
             "--config",
@@ -291,7 +291,7 @@ fn missing_later_stage_observe_path_refuses_before_ledger_creation() {
             }
         }),
     );
-    let ledger = ".soulmate/missing-later-stage.jsonl";
+    let ledger = ".exitbind/missing-later-stage.jsonl";
     let refused = invoke(
         &root,
         &[
@@ -320,9 +320,9 @@ fn parallel_workers_keep_their_independent_exact_boundaries() {
     let mut config: Value =
         serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
     config["agents"]["worker_two"] = config["agents"]["worker"].clone();
-    config["agents"]["worker_two"]["profile"] = json!("soulmate/agents/worker-two.md");
+    config["agents"]["worker_two"]["profile"] = json!("exitbind/agents/worker-two.md");
     fs::write(
-        root.join("soulmate/agents/worker-two.md"),
+        root.join("exitbind/agents/worker-two.md"),
         "Second bounded worker.\n",
     )
     .unwrap();
@@ -351,7 +351,7 @@ fn parallel_workers_keep_their_independent_exact_boundaries() {
             "--goal",
             "parallel",
             "--ledger",
-            ".soulmate/parallel.jsonl",
+            ".exitbind/parallel.jsonl",
             "--boundary",
             ".agents/boundaries/task.json",
             "--config",
@@ -366,7 +366,7 @@ fn parallel_workers_keep_their_independent_exact_boundaries() {
             "run",
             "submit",
             "lead",
-            ".soulmate/parallel.jsonl",
+            ".exitbind/parallel.jsonl",
             "--outcome",
             "scoped",
             "--artifact",
@@ -382,7 +382,7 @@ fn parallel_workers_keep_their_independent_exact_boundaries() {
         &[
             "run",
             "next",
-            ".soulmate/parallel.jsonl",
+            ".exitbind/parallel.jsonl",
             "--json",
             "--config",
             config_path.to_str().unwrap(),
@@ -405,7 +405,7 @@ fn parallel_workers_keep_their_independent_exact_boundaries() {
 #[test]
 fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
     let (root, config) = fixture();
-    let artifacts = root.join(".soulmate/artifacts");
+    let artifacts = root.join(".exitbind/artifacts");
     let started = invoke(
         &root,
         &[
@@ -415,7 +415,7 @@ fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
             "--goal",
             "rework",
             "--ledger",
-            ".soulmate/rework.jsonl",
+            ".exitbind/rework.jsonl",
             "--config",
             config.to_str().unwrap(),
         ],
@@ -424,14 +424,14 @@ fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
 
     let submit = |agent: &str, outcome: &str, name: &str, contents: &str| {
         fs::write(artifacts.join(name), contents).unwrap();
-        let path = format!(".soulmate/artifacts/{name}");
+        let path = format!(".exitbind/artifacts/{name}");
         let output = invoke(
             &root,
             &[
                 "run",
                 "submit",
                 agent,
-                ".soulmate/rework.jsonl",
+                ".exitbind/rework.jsonl",
                 "--outcome",
                 outcome,
                 "--artifact",
@@ -463,7 +463,7 @@ fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
         &[
             "run",
             "next",
-            ".soulmate/rework.jsonl",
+            ".exitbind/rework.jsonl",
             "--json",
             "--config",
             config.to_str().unwrap(),
@@ -510,7 +510,7 @@ fn rework_uses_fresh_state_artifacts_and_preserves_prior_bytes() {
         &[
             "run",
             "next",
-            ".soulmate/rework.jsonl",
+            ".exitbind/rework.jsonl",
             "--json",
             "--config",
             config.to_str().unwrap(),

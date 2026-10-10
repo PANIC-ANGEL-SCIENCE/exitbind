@@ -7,6 +7,7 @@ mod support;
 
 use serde_json::Value;
 use std::{
+    fs,
     io::Write,
     path::PathBuf,
     process::{Output, Stdio},
@@ -188,6 +189,63 @@ fn initial_scope_form_exposes_only_scoped_and_blocked_and_executes() {
         b"the complete scope artifact\n",
     );
     assert_eq!(result["next"]["role"], "worker");
+}
+
+#[test]
+fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
+    let fixture = Fixture::new("action-form-permit-id");
+    let (work, initial) = fixture.begin("true", false);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope agreed")],
+        b"scope\n",
+    );
+    let worker = fixture.next(&work);
+    let form = &worker["current"]["actionForm"]["beforeEditing"];
+    let binding = worker["current"]["binding"].as_str().unwrap();
+    let request_id = format!("permit-{binding}");
+    let argv = form["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(argv[1], "work");
+    assert_eq!(argv[2], "permit");
+    let request_index = argv
+        .iter()
+        .position(|argument| argument == "--request-id")
+        .unwrap();
+    assert_eq!(argv[request_index + 1], request_id);
+    let operation_index = argv
+        .iter()
+        .position(|argument| argument == "--operation")
+        .unwrap();
+    assert_eq!(argv[operation_index + 1], "<OPERATION>");
+    assert_eq!(
+        fixture.next(&work)["current"]["actionForm"]["beforeEditing"]["command"]["argv"],
+        form["command"]["argv"]
+    );
+
+    let mut executable = argv.clone();
+    executable[operation_index + 1] = "edit source".into();
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let first = fixture.run_argv(&executable, b"");
+    assert!(first.status.success(), "{}", text(&first));
+    let first: Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(first["allowed"], true);
+    let after_first = fs::read(fixture.root.join(&ledger)).unwrap();
+    let replay = fixture.run_argv(&executable, b"");
+    assert!(replay.status.success(), "{}", text(&replay));
+    let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["idempotent"], true);
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), after_first);
+    let current = fixture.next(&work)["current"]["actionForm"].clone();
+    assert!(current["currentGrant"].is_object());
+    assert!(current.get("beforeEditing").is_none());
 }
 
 #[test]

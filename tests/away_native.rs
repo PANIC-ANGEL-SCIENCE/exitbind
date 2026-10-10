@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -12,19 +11,19 @@ use std::{
 };
 
 fn invoke(arguments: &[&str], codex: Option<&Path>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_soulmate"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
     command.args(arguments);
     if let Some(codex) = codex {
-        command.env("SOULMATE_AWAY_CODEX_BIN", codex);
+        command.env("EXITBIND_AWAY_CODEX_BIN", codex);
     }
     command.output().unwrap()
 }
 
 fn invoke_with_tmux(arguments: &[&str], codex: &Path, tmux: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
-        .env("SOULMATE_AWAY_CODEX_BIN", codex)
-        .env("SOULMATE_AWAY_TMUX_BIN", tmux)
+        .env("EXITBIND_AWAY_CODEX_BIN", codex)
+        .env("EXITBIND_AWAY_TMUX_BIN", tmux)
         .output()
         .unwrap()
 }
@@ -50,7 +49,7 @@ fn project() -> (PathBuf, String) {
         None,
     );
     assert!(initialized.status.success(), "{}", text(&initialized));
-    let config = root.join("soulmate.json");
+    let config = root.join("exitbind.json");
     let mut value: Value = serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
     value["agents"]["lead"]["runtime"] = json!({"host":"codex", "fallback":"none"});
     fs::write(
@@ -73,7 +72,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "--goal",
             "bounded",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             &config,
         ],
@@ -97,7 +96,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "away",
             "start",
             "lead",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--require-harness-receipt",
             "--config",
             &config,
@@ -107,8 +106,8 @@ fn required_harness_refuses_before_any_codex_launch() {
     assert!(!away.status.success(), "{}", text(&away));
     assert!(text(&away).contains("requires a bound harness receipt"));
     assert!(!marker.exists());
-    assert!(root.join(".soulmate/away").is_dir());
-    assert!(fs::read_dir(root.join(".soulmate/away"))
+    assert!(root.join(".exitbind/away").is_dir());
+    assert!(fs::read_dir(root.join(".exitbind/away"))
         .unwrap()
         .next()
         .is_none());
@@ -119,7 +118,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "version":1,
             "project":{"id":"away-native","session":"drift"},
             "harness":{"name":"codex","version":"test"},
-            "activations":[{"kind":"skill","name":"soulmate","evidence":"presented"}]
+            "activations":[{"kind":"skill","name":"exitbind","evidence":"presented"}]
         }))
         .unwrap(),
     )
@@ -131,7 +130,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "--goal",
             "bounded",
             "--receipt",
-            ".soulmate/harness-receipt.json",
+            ".exitbind/harness-receipt.json",
             "--harness-manifest",
             "harness-manifest.json",
             "--config",
@@ -148,9 +147,9 @@ fn required_harness_refuses_before_any_codex_launch() {
             "--goal",
             "bounded",
             "--ledger",
-            ".soulmate/bound.jsonl",
+            ".exitbind/bound.jsonl",
             "--harness-receipt",
-            ".soulmate/harness-receipt.json",
+            ".exitbind/harness-receipt.json",
             "--config",
             &config,
         ],
@@ -158,9 +157,13 @@ fn required_harness_refuses_before_any_codex_launch() {
     );
     assert!(bound.status.success(), "{}", text(&bound));
     let fake_tmux = root.join("fake-tmux");
+    let tmux_marker = root.join("tmux-invoked");
     fs::write(
         &fake_tmux,
-        "#!/bin/sh\ncase \"$3\" in\n  has-session) exit 1 ;;\n  new-session) exit 0 ;;\n  *) exit 2 ;;\nesac\n",
+        format!(
+            "#!/bin/sh\ncase \"$3\" in\n  has-session) exit 1 ;;\n  new-session) printf invoked > '{}'; exit 0 ;;\n  *) exit 2 ;;\nesac\n",
+            tmux_marker.display()
+        ),
     )
     .unwrap();
     fs::set_permissions(&fake_tmux, fs::Permissions::from_mode(0o700)).unwrap();
@@ -176,7 +179,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "away",
             "start",
             "lead",
-            ".soulmate/bound.jsonl",
+            ".exitbind/bound.jsonl",
             "--require-harness-receipt",
             "--config",
             &config,
@@ -185,19 +188,25 @@ fn required_harness_refuses_before_any_codex_launch() {
         &fake_tmux,
     );
     assert!(
-        drifted_current.status.success(),
+        !drifted_current.status.success(),
         "{}",
         text(&drifted_current)
     );
     assert!(
-        text(&drifted_current).contains("config_drift"),
+        text(&drifted_current)
+            .contains("assignment context mismatch: current project configuration"),
         "{}",
         text(&drifted_current)
     );
-    let _ = fs::remove_file(&marker);
-    for entry in fs::read_dir(root.join(".soulmate/away")).unwrap() {
-        fs::remove_dir_all(entry.unwrap().path()).unwrap();
-    }
+    assert!(!marker.exists(), "Codex must not launch after config drift");
+    assert!(
+        !tmux_marker.exists(),
+        "tmux sidecar must not launch after config drift"
+    );
+    assert!(fs::read_dir(root.join(".exitbind/away"))
+        .unwrap()
+        .next()
+        .is_none());
     fs::write(&config, config_bytes).unwrap();
     let manifest_path = root.join("harness-manifest.json");
     let manifest_bytes = fs::read(&manifest_path).unwrap();
@@ -213,7 +222,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "away",
             "start",
             "lead",
-            ".soulmate/bound.jsonl",
+            ".exitbind/bound.jsonl",
             "--require-harness-receipt",
             "--config",
             &config,
@@ -232,13 +241,14 @@ fn required_harness_refuses_before_any_codex_launch() {
         text(&drifted_manifest)
     );
     let _ = fs::remove_file(&marker);
-    for entry in fs::read_dir(root.join(".soulmate/away")).unwrap() {
+    let _ = fs::remove_file(&tmux_marker);
+    for entry in fs::read_dir(root.join(".exitbind/away")).unwrap() {
         fs::remove_dir_all(entry.unwrap().path()).unwrap();
     }
     fs::write(&manifest_path, manifest_bytes).unwrap();
     writeln!(fs::OpenOptions::new()
         .append(true)
-        .open(root.join(".soulmate/harness-receipt.json"))
+        .open(root.join(".exitbind/harness-receipt.json"))
         .unwrap())
     .unwrap();
     let drifted = invoke(
@@ -246,7 +256,7 @@ fn required_harness_refuses_before_any_codex_launch() {
             "away",
             "start",
             "lead",
-            ".soulmate/bound.jsonl",
+            ".exitbind/bound.jsonl",
             "--require-harness-receipt",
             "--config",
             &config,
@@ -256,8 +266,8 @@ fn required_harness_refuses_before_any_codex_launch() {
     assert!(!drifted.status.success(), "{}", text(&drifted));
     assert!(text(&drifted).contains("harness receipt reference is not exact"));
     assert!(!marker.exists());
-    assert!(root.join(".soulmate/away").is_dir());
-    assert!(fs::read_dir(root.join(".soulmate/away"))
+    assert!(root.join(".exitbind/away").is_dir());
+    assert!(fs::read_dir(root.join(".exitbind/away"))
         .unwrap()
         .next()
         .is_none());
@@ -267,7 +277,7 @@ fn required_harness_refuses_before_any_codex_launch() {
 #[test]
 fn list_and_show_read_only_bounded_recovery_state() {
     let (root, config) = project();
-    let run = root.join(".soulmate/away/20260830T000000Z-0123456789abcdef-test");
+    let run = root.join(".exitbind/away/20260830T000000Z-0123456789abcdef-test");
     fs::create_dir_all(&run).unwrap();
     fs::write(run.join("status"), "completed\n").unwrap();
     fs::write(run.join("agent"), "lead\n").unwrap();
@@ -317,7 +327,7 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
             "project":{"id":"away-native","session":"tmux-e2e"},
             "harness":{"name":"codex","version":"test"},
             "activations":[
-                {"kind":"skill","name":"soulmate","evidence":"presented"},
+                {"kind":"skill","name":"exitbind","evidence":"presented"},
                 {"kind":"ponytail","name":"ponytail:ponytail","evidence":"hook_observed"}
             ]
         }))
@@ -331,7 +341,7 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
             "--goal",
             "tmux evidence",
             "--receipt",
-            ".soulmate/harness-receipt.json",
+            ".exitbind/harness-receipt.json",
             "--harness-manifest",
             "harness-manifest.json",
             "--config",
@@ -348,9 +358,9 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
             "--goal",
             "tmux evidence",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--harness-receipt",
-            ".soulmate/harness-receipt.json",
+            ".exitbind/harness-receipt.json",
             "--config",
             &config,
         ],
@@ -377,7 +387,7 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
             "away",
             "start",
             "lead",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--require-harness-receipt",
             "--name",
             "e2e",
@@ -404,7 +414,7 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
             "away",
             "start",
             "lead",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--require-harness-receipt",
             "--name",
             "duplicate",

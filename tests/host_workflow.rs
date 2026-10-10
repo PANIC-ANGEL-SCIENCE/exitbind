@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 #![cfg(unix)]
 
 mod support;
@@ -47,7 +47,7 @@ impl Fixture {
 
     fn run_owned(&mut self, arguments: Vec<String>) -> Output {
         self.calls.push(arguments.clone());
-        Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(arguments)
             .output()
@@ -98,7 +98,7 @@ impl Fixture {
             "--artifact-root".into(),
             packet["artifactRootHint"].as_str().unwrap().to_owned(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ]);
         (output, artifact)
     }
@@ -125,7 +125,7 @@ impl Fixture {
             "--exit-code".into(),
             exit_code.to_string(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ])
     }
 
@@ -154,7 +154,7 @@ impl Fixture {
             self.ledger.clone(),
             "--json".into(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ])
     }
 
@@ -165,7 +165,7 @@ impl Fixture {
             self.ledger.clone(),
             "--json".into(),
             "--config".into(),
-            "soulmate.json".into(),
+            "exitbind.json".into(),
         ])
     }
 }
@@ -245,13 +245,13 @@ fn run_actions(calls: &[Vec<String>]) -> Vec<String> {
 }
 
 #[test]
-fn clean_response_driven_checked_run_uses_nine_soulmate_calls() {
-    let mut fixture = Fixture::new("host-workflow-clean", ".soulmate/runs/clean.jsonl");
+fn clean_response_driven_checked_run_uses_nine_exitbind_calls() {
+    let mut fixture = Fixture::new("host-workflow-clean", ".exitbind/runs/clean.jsonl");
     let config = fixture.value(vec![
         "check".into(),
         "--json".into(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     assert_eq!(config["valid"], true);
 
@@ -266,7 +266,7 @@ fn clean_response_driven_checked_run_uses_nine_soulmate_calls() {
         "--ledger".into(),
         fixture.ledger.clone(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     assert_eq!(started["status"], "running");
     let lead = assignment(&started);
@@ -368,12 +368,12 @@ fn clean_response_driven_checked_run_uses_nine_soulmate_calls() {
 
 #[test]
 fn missing_check_report_is_recovered_without_worker_rework() {
-    let mut fixture = Fixture::new("host-workflow-missing", ".soulmate/runs/missing.jsonl");
+    let mut fixture = Fixture::new("host-workflow-missing", ".exitbind/runs/missing.jsonl");
     let config = fixture.value(vec![
         "check".into(),
         "--json".into(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     assert_eq!(config["valid"], true);
     let started = fixture.value(vec![
@@ -387,7 +387,7 @@ fn missing_check_report_is_recovered_without_worker_rework() {
         "--ledger".into(),
         fixture.ledger.clone(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     let lead = assignment(&started);
     verify_packet(&fixture, &lead, "lead", "lead", 1, 1);
@@ -402,9 +402,6 @@ fn missing_check_report_is_recovered_without_worker_rework() {
         .to_owned();
     let reviewer = assignment(&worker_response);
     verify_packet(&fixture, &reviewer, "reviewer", "reviewer", 3, 1);
-    let reviewed = fixture.submit(&reviewer, "approved", "review before report\n");
-    let lead_after_review = assignment(&reviewed);
-    verify_packet(&fixture, &lead_after_review, "lead", "lead", 4, 1);
 
     let before_reads = fs::read(fixture.root.join(&fixture.ledger)).unwrap();
     let fresh_next = fixture.fresh_next();
@@ -413,9 +410,9 @@ fn missing_check_report_is_recovered_without_worker_rework() {
         fs::read(fixture.root.join(&fixture.ledger)).unwrap(),
         before_reads
     );
-    let fresh_lead = assignment(&fresh_next);
-    verify_packet(&fixture, &fresh_lead, "lead", "lead", 4, 1);
-    let fresh_check_command = packet_check_command(&fresh_lead);
+    let fresh_reviewer = assignment(&fresh_next);
+    verify_packet(&fixture, &fresh_reviewer, "reviewer", "reviewer", 3, 1);
+    let fresh_check_command = packet_check_command(&fresh_reviewer);
     assert_eq!(fresh_check_command, worker_check_command);
     assert_eq!(fresh_status["checks"]["status"], "not_observed");
     assert_eq!(fresh_status["checks"]["missingCount"], 1);
@@ -431,8 +428,24 @@ fn missing_check_report_is_recovered_without_worker_rework() {
     let check = fixture.record_check(&fresh_worker_event, &fresh_check_command, 0);
     assert_eq!(check["event"]["targetEventSha256"], fresh_worker_event);
     assert_eq!(check["event"]["checkCommand"], fresh_check_command);
+    let reviewer_after_check = assignment(&fixture.fresh_next());
+    verify_packet(
+        &fixture,
+        &reviewer_after_check,
+        "reviewer",
+        "reviewer",
+        3,
+        1,
+    );
+    let reviewed_after_check = fixture.submit(
+        &reviewer_after_check,
+        "approved",
+        "review after current check\n",
+    );
+    let accepting_lead = assignment(&reviewed_after_check);
+    verify_packet(&fixture, &accepting_lead, "lead", "lead", 4, 1);
     assert_eq!(
-        fixture.submit(&fresh_lead, "accepted", "accept after report\n")["status"],
+        fixture.submit(&accepting_lead, "accepted", "accept after report\n")["status"],
         "accepted"
     );
 
@@ -447,19 +460,20 @@ fn missing_check_report_is_recovered_without_worker_rework() {
         .collect();
     assert_eq!(
         actions,
-        ["start", "submit", "submit", "submit", "check", "submit"]
+        ["start", "submit", "submit", "check", "submit", "submit"]
     );
-    assert_eq!(fixture.calls.len(), 11);
+    assert_eq!(fixture.calls.len(), 12);
     assert_eq!(
         run_actions(&fixture.calls),
         [
             "start",
             "submit",
             "submit",
-            "submit",
             "next",
             "status",
             "record-check",
+            "next",
+            "submit",
             "submit",
             "status",
         ]
@@ -477,12 +491,12 @@ fn missing_check_report_is_recovered_without_worker_rework() {
 
 #[test]
 fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
-    let mut fixture = Fixture::new("host-workflow-rework", ".soulmate/runs/rework.jsonl");
+    let mut fixture = Fixture::new("host-workflow-rework", ".exitbind/runs/rework.jsonl");
     let config = fixture.value(vec![
         "check".into(),
         "--json".into(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     assert_eq!(config["valid"], true);
 
@@ -497,7 +511,7 @@ fn rework_reads_fresh_state_and_keeps_failed_attempt_evidence() {
         "--ledger".into(),
         fixture.ledger.clone(),
         "--config".into(),
-        "soulmate.json".into(),
+        "exitbind.json".into(),
     ]);
     let lead = assignment(&started);
     verify_packet(&fixture, &lead, "lead", "lead", 1, 1);

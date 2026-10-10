@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
 use std::{
@@ -7,11 +7,11 @@ use std::{
     process::{Command, Output},
 };
 
-const CHECK: &str = "soulmate check --config verification.json";
+const CHECK: &str = "exitbind check --config verification.json";
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let output = invoke_soulmate(&root, &["init", "--mode", "portable", "--root", "."]);
+    let output = invoke_exitbind(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
 }
@@ -21,14 +21,6 @@ fn exitbind_project(label: &str) -> PathBuf {
     let output = invoke_exitbind(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
-}
-
-fn invoke_soulmate(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .current_dir(root)
-        .args(arguments)
-        .output()
-        .expect("soulmate binary should start")
 }
 
 fn invoke_exitbind(root: &Path, arguments: &[&str]) -> Output {
@@ -61,22 +53,22 @@ fn assert_operational_receipt_error(output: &Output) {
 }
 
 fn state_artifact(root: &Path, name: &str, content: &str) -> String {
-    let path = root.join(".soulmate/artifacts").join(name);
+    let path = root.join(".exitbind/artifacts").join(name);
     fs::write(path, content).expect("artifact should be written");
-    format!(".soulmate/artifacts/{name}")
+    format!(".exitbind/artifacts/{name}")
 }
 
 fn configure_workers(root: &Path, workers: &[&str]) {
-    let config_path = root.join("soulmate.json");
+    let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     let base = config["agents"]["worker"].clone();
     for worker in workers.iter().copied().filter(|worker| *worker != "worker") {
         let mut agent = base.clone();
-        agent["profile"] = json!(format!("soulmate/agents/{worker}.md"));
+        agent["profile"] = json!(format!("exitbind/agents/{worker}.md"));
         agent["purpose"] = json!(format!("Complete bounded work for {worker}."));
         config["agents"][worker] = agent;
         fs::write(
-            root.join(format!("soulmate/agents/{worker}.md")),
+            root.join(format!("exitbind/agents/{worker}.md")),
             format!("# {worker}\n\nComplete bounded work.\n"),
         )
         .unwrap();
@@ -100,7 +92,7 @@ fn submit(root: &Path, agent: &str, ledger: &str, outcome: &str, artifact: &str)
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -123,7 +115,7 @@ fn checked_start(root: &Path, ledger: &str) {
             "--proof-origin",
             "synthetic",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -144,7 +136,7 @@ fn record_check(root: &Path, ledger: &str, target: &str) {
             "0",
             "--json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -182,20 +174,20 @@ fn accepted_v5(root: &Path, ledger: &str, workers: &[&str]) -> String {
             ledger,
             "--json",
             "--output",
-            ".soulmate/receipts/exit.json",
+            ".exitbind/receipts/exit.json",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(output.status.success(), "{}", text(&output));
-    ".soulmate/receipts/exit.json".to_owned()
+    ".exitbind/receipts/exit.json".to_owned()
 }
 
 #[test]
 fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
     let root = project("value-receipt-review");
-    let ledger = ".soulmate/runs/review.jsonl";
-    let config_path = root.join("soulmate.json");
+    let ledger = ".exitbind/runs/review.jsonl";
+    let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["workflows"]["change"]["reviewers"] = json!([]);
     fs::write(config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
@@ -220,7 +212,7 @@ fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
             "--artifact-root",
             "state",
             "--config",
-            "soulmate.json",
+            "exitbind.json",
         ],
     );
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -231,10 +223,10 @@ fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
     );
 
     let valid_root = project("value-receipt-valid");
-    let receipt = accepted_v5(&valid_root, ".soulmate/runs/accepted.jsonl", &["worker"]);
+    let receipt = accepted_v5(&valid_root, ".exitbind/runs/accepted.jsonl", &["worker"]);
     let valid = invoke_exitbind(
         &valid_root,
-        &["verify", &receipt, "--json", "--config", "soulmate.json"],
+        &["verify", &receipt, "--json", "--config", "exitbind.json"],
     );
     assert!(valid.status.success(), "{}", text(&valid));
     let valid_value = json_output(&valid);
@@ -256,14 +248,14 @@ fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
         } else {
             mutated["review"] = review;
         }
-        let path = format!(".soulmate/receipts/{name}");
+        let path = format!(".exitbind/receipts/{name}");
         fs::write(
             valid_root.join(&path),
             serde_json::to_vec_pretty(&mutated).unwrap(),
         )
         .unwrap();
         let rejected =
-            invoke_exitbind(&valid_root, &["verify", &path, "--config", "soulmate.json"]);
+            invoke_exitbind(&valid_root, &["verify", &path, "--config", "exitbind.json"]);
         assert!(!rejected.status.success(), "{}", text(&rejected));
         assert!(text(&rejected).contains("receipt review binding changed"));
     }
@@ -272,61 +264,35 @@ fn v5_acceptance_requires_review_and_receipt_verification_fails_closed() {
 }
 
 #[test]
-fn v5_receipt_binds_all_current_worker_artifacts_and_legacy_receipts_keep_shape() {
+fn v5_receipt_binds_all_current_worker_artifacts() {
     let root = project("value-receipt-artifacts");
-    let receipt = accepted_v5(&root, ".soulmate/runs/multi.jsonl", &["worker", "worker2"]);
+    let receipt = accepted_v5(&root, ".exitbind/runs/multi.jsonl", &["worker", "worker2"]);
     let value: Value = serde_json::from_slice(&fs::read(root.join(receipt)).unwrap()).unwrap();
     assert_eq!(value["outcome"], "READY");
     assert_eq!(value["reason"]["code"], "accepted");
     let artifacts = value["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 4);
     for expected in [
-        ".soulmate/artifacts/receipt-worker.md",
-        ".soulmate/artifacts/receipt-worker2.md",
-        ".soulmate/artifacts/receipt-reviewer.md",
-        ".soulmate/artifacts/receipt-acceptance.md",
+        ".exitbind/artifacts/receipt-worker.md",
+        ".exitbind/artifacts/receipt-worker2.md",
+        ".exitbind/artifacts/receipt-reviewer.md",
+        ".exitbind/artifacts/receipt-acceptance.md",
     ] {
         assert!(artifacts
             .iter()
             .any(|artifact| artifact["path"] == expected));
     }
 
-    let legacy = project("value-receipt-legacy");
-    let created = invoke_soulmate(
-        &legacy,
-        &[
-            "plan",
-            "change",
-            "--goal",
-            "legacy receipt",
-            "--receipt",
-            "receipt.json",
-            "--config",
-            "soulmate.json",
-        ],
-    );
-    assert!(created.status.success(), "{}", text(&created));
-    let verified = invoke_soulmate(
-        &legacy,
-        &["verify", "receipt.json", "--config", "soulmate.json"],
-    );
-    assert!(verified.status.success(), "{}", text(&verified));
-    let legacy_value = json_output(&verified);
-    assert!(legacy_value.get("valid").is_some());
-    assert!(legacy_value.get("mismatches").is_some());
-    assert!(legacy_value.get("evidence").is_some());
-    assert!(legacy_value.get("format").is_none());
     fs::remove_dir_all(root).unwrap();
-    fs::remove_dir_all(legacy).unwrap();
 }
 
 #[test]
 fn operational_receipt_failures_do_not_emit_lifecycle_labels() {
     let root = project("value-receipt-operational-errors");
     for ledger in [
-        ".soulmate/runs/absent.jsonl",
-        ".soulmate/runs/malformed.jsonl",
-        ".soulmate/runs/unloadable.jsonl",
+        ".exitbind/runs/absent.jsonl",
+        ".exitbind/runs/malformed.jsonl",
+        ".exitbind/runs/unloadable.jsonl",
     ] {
         let path = root.join(ledger);
         if ledger.contains("malformed") {
@@ -336,7 +302,7 @@ fn operational_receipt_failures_do_not_emit_lifecycle_labels() {
         }
         let output = invoke_exitbind(
             &root,
-            &["receipt", ledger, "--json", "--config", "soulmate.json"],
+            &["receipt", ledger, "--json", "--config", "exitbind.json"],
         );
         assert_operational_receipt_error(&output);
         if path.is_dir() {

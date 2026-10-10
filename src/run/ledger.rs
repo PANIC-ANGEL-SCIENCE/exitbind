@@ -569,7 +569,8 @@ fn validate_claim(value: &Value) -> Result<(), String> {
         || legacy_fields.iter().any(|key| !object.contains_key(*key))
         || (object.len() != legacy_fields.len()
             && (carry_fields.iter().any(|key| !object.contains_key(*key))
-                || value["carryProtocol"] != crate::run::carry::PROTOCOL
+                || (value["carryProtocol"] != crate::run::carry::PROTOCOL
+                    && value["carryProtocol"] != crate::run::carry::RECOVERY_PROTOCOL)
                 || !sha(value["governorCarrySha256"].as_str())))
         || value["version"] != 1
         || [

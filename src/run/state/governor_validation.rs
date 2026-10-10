@@ -152,57 +152,72 @@ pub(super) fn validate_governor_event(event: &Value, line: usize) -> Result<(), 
             "invalid run ledger line {line}: governor operation is invalid"
         ));
     }
-    let request_id = event.get("requestId");
-    let request_digest = event.get("requestDigest");
-    if request_id.is_some() != request_digest.is_some()
-        || request_id.is_some_and(|value| {
-            value.as_str().map_or(true, |value| {
-                value.trim().is_empty()
-                    || value.len() > crate::run::REQUEST_ID_MAX_BYTES
-                    || value.contains('\0')
-            })
-        })
-        || request_digest.is_some_and(|value| !is_sha(value.as_str()))
-    {
-        return Err(format!(
-            "invalid run ledger line {line}: governor request identity is malformed"
-        ));
-    }
     let Some(governor_event) = event.get("governorEvent") else {
         return Err(format!(
             "invalid run ledger line {line}: governor event is missing"
         ));
     };
-    if governor_event.get("requestId") != request_id
-        || governor_event.get("requestDigest") != request_digest
-    {
-        return Err(format!(
-            "invalid run ledger line {line}: governor request identity does not bind to the action"
-        ));
-    }
-    if let (Some(request_id), Some(request_digest)) = (
-        request_id.and_then(Value::as_str),
-        request_digest.and_then(Value::as_str),
-    ) {
-        let expected = crate::run::governor_request_digest(
-            event["runId"].as_str().unwrap_or_default(),
-            event["stage"].as_u64().unwrap_or_default(),
-            event["attempt"].as_u64().unwrap_or_default(),
-            event["agent"].as_str().unwrap_or_default(),
-            event["role"].as_str().unwrap_or_default(),
-            event["subjectSha256"].as_str().unwrap_or_default(),
-            event["inputsSha256"].as_str().unwrap_or_default(),
-            event["assignmentSha256"].as_str().unwrap_or_default(),
-            event["operation"].as_str().unwrap_or_default(),
-            request_id,
-        );
-        if request_digest != expected {
+    let action = governor_event["action"].as_str().unwrap_or_default();
+    let request_id = event.get("requestId");
+    let request_digest = event.get("requestDigest");
+    let sensor_event = matches!(action, "sensor_request" | "sensor");
+    if sensor_event {
+        // Sensor requestDigest binds the question set (and for a result, the
+        // current request). It is not the mutation retry identity carried by
+        // the outer action. Keep sensor records out of that protocol entirely.
+        if request_id.is_some()
+            || request_digest.is_some()
+            || governor_event.get("requestId").is_some()
+        {
             return Err(format!(
-                "invalid run ledger line {line}: governor request digest does not match its binding"
+                "invalid run ledger line {line}: sensor event cannot use mutation retry identity"
             ));
         }
+    } else {
+        if request_id.is_some() != request_digest.is_some()
+            || request_id.is_some_and(|value| {
+                value.as_str().map_or(true, |value| {
+                    value.trim().is_empty()
+                        || value.len() > crate::run::REQUEST_ID_MAX_BYTES
+                        || value.contains('\0')
+                })
+            })
+            || request_digest.is_some_and(|value| !is_sha(value.as_str()))
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: governor request identity is malformed"
+            ));
+        }
+        if governor_event.get("requestId") != request_id
+            || governor_event.get("requestDigest") != request_digest
+        {
+            return Err(format!(
+                "invalid run ledger line {line}: governor request identity does not bind to the action"
+            ));
+        }
+        if let (Some(request_id), Some(request_digest)) = (
+            request_id.and_then(Value::as_str),
+            request_digest.and_then(Value::as_str),
+        ) {
+            let expected = crate::run::governor_request_digest(
+                event["runId"].as_str().unwrap_or_default(),
+                event["stage"].as_u64().unwrap_or_default(),
+                event["attempt"].as_u64().unwrap_or_default(),
+                event["agent"].as_str().unwrap_or_default(),
+                event["role"].as_str().unwrap_or_default(),
+                event["subjectSha256"].as_str().unwrap_or_default(),
+                event["inputsSha256"].as_str().unwrap_or_default(),
+                event["assignmentSha256"].as_str().unwrap_or_default(),
+                event["operation"].as_str().unwrap_or_default(),
+                request_id,
+            );
+            if request_digest != expected {
+                return Err(format!(
+                    "invalid run ledger line {line}: governor request digest does not match its binding"
+                ));
+            }
+        }
     }
-    let action = governor_event["action"].as_str().unwrap_or_default();
     if governor_event["runId"] != event["runId"]
         || governor_event["subjectSha256"] != event["subjectSha256"]
         || governor_event["attempt"] != event["attempt"]

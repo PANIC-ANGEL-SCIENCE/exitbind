@@ -1,4 +1,3 @@
-#![cfg(feature = "legacy-cli-test")]
 use serde_json::Value;
 use std::{
     fs,
@@ -8,7 +7,7 @@ use std::{
 };
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .expect("benchmark binary should start")

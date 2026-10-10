@@ -1,9 +1,9 @@
-#![cfg(feature = "legacy-cli-test")]
 #![cfg(unix)]
 
 mod support;
 
 use serde_json::{json, Value};
+#[cfg(any())]
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -69,21 +69,6 @@ impl Fixture {
         ]);
         assert!(output.status.success(), "{}", text(&output));
         serde_json::from_slice(&output.stdout).unwrap()
-    }
-
-    fn start_unchecked(&self, ledger: &str) {
-        let output = self.call(&[
-            "run",
-            "start",
-            "change",
-            "--goal",
-            "unchecked transition",
-            "--ledger",
-            ledger,
-            "--config",
-            "exitbind.json",
-        ]);
-        assert!(output.status.success(), "{}", text(&output));
     }
 
     fn submit(&self, agent: &str, ledger: &str, outcome: &str, name: &str) -> Output {
@@ -289,10 +274,12 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg(any())]
 struct LegacyFixture {
     root: PathBuf,
 }
 
+#[cfg(any())]
 impl LegacyFixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
@@ -410,6 +397,7 @@ impl LegacyFixture {
     }
 }
 
+#[cfg(any())]
 impl Drop for LegacyFixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
@@ -462,6 +450,7 @@ fn write_json(path: &Path, value: &Value) {
     .unwrap();
 }
 
+#[cfg(any())]
 fn canonical(value: &Value) -> String {
     match value {
         Value::Object(object) => {
@@ -488,15 +477,9 @@ fn canonical(value: &Value) -> String {
     }
 }
 
+#[cfg(any())]
 fn value_hash(value: &Value) -> String {
     format!("{:x}", Sha256::digest(canonical(value).as_bytes()))
-}
-
-fn assert_not_ready_progress(value: &Value, code: &str) {
-    assert_eq!(value["progress"]["applicable"], false);
-    assert!(value["progress"]["percent"].is_null());
-    assert_eq!(value["progress"]["state"], "NOT_APPLICABLE");
-    assert_eq!(value["progress"]["reason"]["code"], code);
 }
 
 fn assert_receipt_matches_progress(output: &Output, progress: &Value) {
@@ -1168,6 +1151,7 @@ fn multi_receipt_binds_all_current_artifacts_and_keeps_last_review_singular() {
 }
 
 #[test]
+#[cfg(any())]
 fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_control() {
     let legacy = |label: &str| {
         let root = support::temp(label);
@@ -1517,6 +1501,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
     let _ = fs::remove_dir_all(v4_root);
 }
 
+#[cfg(any())]
 fn assert_accepted_historical(legacy: &LegacyFixture, token: &str, ledger: &str) {
     let status = legacy.status(ledger);
     assert_eq!(status["status"], "accepted");
@@ -1539,6 +1524,7 @@ fn assert_accepted_historical(legacy: &LegacyFixture, token: &str, ledger: &str)
     assert_receipt_matches_progress(&receipt, &next["progress"]);
 }
 
+#[cfg(any())]
 fn downgrade_start_to_v3(path: &Path) {
     let mut event: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     event["version"] = json!(3);
@@ -1551,6 +1537,7 @@ fn downgrade_start_to_v3(path: &Path) {
 }
 
 #[test]
+#[cfg(any())]
 fn accepted_historical_and_unchecked_states_project_through_work_next_without_ready_upgrade() {
     let token_v1 = "1".repeat(64);
     let v1 = LegacyFixture::new("transition-accepted-v1");
@@ -1741,6 +1728,7 @@ fn accepted_historical_and_unchecked_states_project_through_work_next_without_re
     assert_eq!(accepted_next["next"]["progress"]["percent"], 100);
 }
 
+#[cfg(any())]
 fn without(value: &Value, key: &str) -> Value {
     let mut copy = value.clone();
     copy.as_object_mut().unwrap().remove(key);

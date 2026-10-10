@@ -193,6 +193,7 @@ pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         state["checkObservation"] = event["observation"].clone();
         state["checkObservation"]["eventSha256"] = event["eventSha256"].clone();
         state["checkObservation"]["producer"] = event["producer"].clone();
+        state["checkObservation"]["resumeStage"] = state["currentStage"].clone();
         state["currentStage"] = json!(lead_stage(state)?);
     } else {
         if state["checkObservation"]["state"] != "running"
@@ -227,6 +228,7 @@ pub(super) fn checked(state: &mut Value, event: &Value) -> Result<(), String> {
         {
             return Err("check does not complete its exact current observation".into());
         }
+        state["currentStage"] = current["resumeStage"].clone();
         state["checkObservation"] = Value::Null;
     } else if event.get("observationEventSha256").is_some() {
         return Err("check has no admitted observation".into());

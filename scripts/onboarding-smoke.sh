@@ -15,17 +15,11 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$root/home" "$root/project" "$root/bindings"
 
 name=$(basename "$bin")
-if test "$name" = exitbind; then
-  config="$root/project/exitbind.json"
-  namespace=.exitbind
-  skill_name=exitbind
-  binding_env=EXITBIND_BINDINGS_DIR
-else
-  config="$root/project/soulmate.json"
-  namespace=.soulmate
-  skill_name=soulmate
-  binding_env=SOULMATE_BINDINGS_DIR
-fi
+test "$name" = exitbind || { echo 'onboarding smoke: expected the current exitbind executable' >&2; exit 1; }
+config="$root/project/exitbind.json"
+namespace=.exitbind
+skill_name=exitbind
+binding_env=EXITBIND_BINDINGS_DIR
 core_words="$skill_name brief"
 
 activation="$root/activation.json"
@@ -75,8 +69,5 @@ grep -q '"work": "smw_' "$activation"
 grep -q '"action":' "$activation"
 test "$(find "$root/project/$namespace/runs" -type f -name 'work-*.jsonl' | wc -l | tr -d ' ')" = 1
 invoke check --config "$config" >/dev/null
-if test "$name" != exitbind; then
-  invoke benchmark >/dev/null
-fi
 
 printf '%s\n' "onboarding smoke passed"

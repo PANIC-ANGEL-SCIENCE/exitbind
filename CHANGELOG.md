@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Retire the source-built Soulmate executable, its selectable runtime profile,
+  and its updater route. Current Exitbind Run and Work behavior, historical
+  readers, hook tokens, and existing project data remain supported.
+- Keep the full default test suite, current native handoff, updater and
+  installer checks while retiring duplicate Soulmate-target compilation.
+- Add a stable request ID to ordinary worker permit forms so repeating the
+  exact current invocation returns its recorded result without another spend.
+- Add a narrow owner-attested, same-goal successor route for an exact adjacent
+  duplicate-permit terminal block. It preserves the predecessor's accounting,
+  requires verified no-effect evidence and fresh successor evidence, and never
+  transfers grants, checks, review or acceptance.
+- Keep pending worker stages available after a successful observed check, and
+  bind worker re-plans to the current configured worker name and assignment.
+
 ## 0.29.0
 
 Published stable release; the `v0.29.0` tag and release assets are available.

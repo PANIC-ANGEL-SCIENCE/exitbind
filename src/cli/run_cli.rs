@@ -50,6 +50,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             "preservation-proof-origin",
             "basis",
             "review-policy",
+            "owner-recovery",
             "json",
         ][..],
         _ => {
@@ -222,6 +223,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                 .options
                 .get("preservation-proof-origin")
                 .map(String::as_str);
+            let owner_recovery = a.options.get("owner-recovery").map(String::as_str);
             if check_command.is_none()
                 && proof_origin.is_none()
                 && preserve_requirement.is_none()
@@ -229,10 +231,11 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                 && preservation_proof_origin.is_none()
                 && a.options.get("basis").is_none()
                 && a.options.get("review-policy").is_none()
+                && owner_recovery.is_none()
             {
                 run::supersede(l, old_ledger, workflow, goal, ledger, boundary, receipt)
             } else {
-                run::supersede_with_policy(
+                run::supersede_with_owner_recovery(
                     l,
                     old_ledger,
                     workflow,
@@ -247,6 +250,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                     preservation_proof_origin,
                     a.options.get("basis").map(String::as_str),
                     a.options.get("review-policy").map(String::as_str),
+                    owner_recovery,
                 )
             }
         }

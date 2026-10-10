@@ -1,12 +1,8 @@
 use serde_json::{Map, Value};
-#[cfg(feature = "legacy-cli-test")]
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-#[cfg(feature = "legacy-cli-test")]
 use std::process::Command;
-#[cfg(feature = "legacy-cli-test")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MATRIX_PATH: &str = "compatibility/rename-matrix.json";
@@ -150,6 +146,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "producerId",
                 "pathId",
                 "installedCommands",
+                "status",
             ],
             &at,
         )?;
@@ -159,6 +156,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         let producer = text(object, "producerId", &at)?;
         let path = text(object, "pathId", &at)?;
         let commands = string_array(object, "installedCommands", &at)?;
+        let status = text(object, "status", &at)?;
         let expected = match id {
             "current-exitbind" => (
                 "exitbind",
@@ -176,6 +174,14 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             ),
             _ => return Err(format!("unknown surface {id}")),
         };
+        let expected_status = if id == "current-exitbind" {
+            "current"
+        } else {
+            "historical-only"
+        };
+        if status != expected_status {
+            return Err(format!("invalid surface support status at {at}"));
+        }
         if (caller, product, producer, path, commands)
             != (
                 expected.0,
@@ -234,6 +240,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "installPrefixEnv",
                 "api",
                 "rawInstaller",
+                "status",
             ],
             &at,
         )?;
@@ -242,6 +249,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         let install_prefix = text(object, "installPrefixEnv", &at)?;
         let api = text(object, "api", &at)?;
         let raw = text(object, "rawInstaller", &at)?;
+        let status = text(object, "status", &at)?;
         let expected = match id {
             "current-updater" => (
                 "current-exitbind",
@@ -260,8 +268,19 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         } else {
             "SOULMATE_INSTALL_PREFIX"
         };
-        if (caller, install_prefix, api, raw)
-            != (expected.0, expected_install_prefix, expected.1, expected.2)
+        let expected_status = if id == "current-updater" {
+            "current"
+        } else {
+            "historical-only"
+        };
+        if (caller, install_prefix, api, raw, status)
+            != (
+                expected.0,
+                expected_install_prefix,
+                expected.1,
+                expected.2,
+                expected_status,
+            )
         {
             return Err(format!("invalid updater origin at {at}"));
         }
@@ -284,6 +303,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "legacyConfig",
                 "legacyControl",
                 "legacyState",
+                "status",
             ],
             &at,
         )?;
@@ -295,6 +315,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             text(object, "legacyConfig", &at)?,
             text(object, "legacyControl", &at)?,
             text(object, "legacyState", &at)?,
+            text(object, "status", &at)?,
         );
         let expected = match id {
             "current-defaults" => (
@@ -304,6 +325,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "soulmate.json",
                 "soulmate",
                 ".soulmate",
+                "current",
             ),
             "legacy-defaults" => (
                 "soulmate.json",
@@ -312,6 +334,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "soulmate.json",
                 "soulmate",
                 ".soulmate",
+                "historical-only",
             ),
             _ => return Err(format!("unknown path {id}")),
         };
@@ -347,7 +370,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         );
         let expected = match id {
             "exitbind-v6" => ("exitbind", "v6", Some(false), Some(true)),
-            "soulmate-v1-write" => ("soulmate", "v1", Some(false), Some(true)),
+            "soulmate-v1-write" => ("soulmate", "v1", Some(true), Some(false)),
             "historical-soulmate-v1-v4" => ("soulmate", "v1-v4", Some(true), Some(false)),
             _ => return Err(format!("unknown producer {id}")),
         };
@@ -361,7 +384,6 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
     if producer_control_ids
         != BTreeSet::from([
             "producer-current-v6-write".into(),
-            "producer-legacy-v1-write".into(),
             "producer-historical-v1-v4-read".into(),
         ])
     {
@@ -397,9 +419,6 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         }
         let expected = match id {
             "producer-current-v6-write" => ("exitbind-v6", "current-exitbind", "write", vec![6]),
-            "producer-legacy-v1-write" => {
-                ("soulmate-v1-write", "legacy-soulmate", "write", vec![1])
-            }
             "producer-historical-v1-v4-read" => (
                 "historical-soulmate-v1-v4",
                 "legacy-soulmate",
@@ -433,12 +452,29 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
     }
     for (index, row) in release_lines.iter().enumerate() {
         let at = format!("releaseLines[{index}]");
-        let object = exact_object(
-            row,
-            &["id", "selectionRule", "versions", "assetPrefix"],
+        let id = text(
+            row.as_object()
+                .ok_or_else(|| format!("{at} must be an object"))?,
+            "id",
             &at,
         )?;
-        text(object, "id", &at)?;
+        let object = if id == "custom-legacy" {
+            let object = exact_object(
+                row,
+                &["id", "status", "selectionRule", "versions", "assetPrefix"],
+                &at,
+            )?;
+            if text(object, "status", &at)? != "historical-only" {
+                return Err(format!("{at}.status must be historical-only"));
+            }
+            object
+        } else {
+            exact_object(
+                row,
+                &["id", "selectionRule", "versions", "assetPrefix"],
+                &at,
+            )?
+        };
         text(object, "selectionRule", &at)?;
         if string_array(object, "versions", &at)?.is_empty() {
             return Err(format!("{at}.versions cannot be empty"));
@@ -487,6 +523,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
                 "assetPrefix",
                 "installedCommands",
                 "resultSurfaceId",
+                "status",
             ],
             &at,
         )?;
@@ -499,6 +536,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         let release = text(object, "releaseLineId", &at)?;
         let asset = text(object, "assetPrefix", &at)?;
         let result = text(object, "resultSurfaceId", &at)?;
+        let status = text(object, "status", &at)?;
         if !surface_ids.contains(caller)
             || !producer_ids.contains(producer)
             || !origin_ids.contains(origin)
@@ -526,6 +564,15 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
             return Err(format!(
                 "invalid caller/product/producer combination at {at}"
             ));
+        }
+        let expected_status = match object["id"].as_str() {
+            Some("current-canonical" | "custom-current" | "partial-exitbind-custom-legacy") => {
+                "current"
+            }
+            _ => "historical-only",
+        };
+        if status != expected_status {
+            return Err(format!("invalid route support status at {at}"));
         }
         let expected_origin = if caller == "legacy-soulmate" {
             "legacy-updater"
@@ -787,40 +834,6 @@ pub fn route(id: &str) -> Value {
     row("routes", id)
 }
 
-#[cfg(feature = "legacy-cli-test")]
-fn canonical(value: &Value) -> String {
-    match value {
-        Value::Object(map) => {
-            let mut keys = map.keys().collect::<Vec<_>>();
-            keys.sort();
-            let fields = keys
-                .into_iter()
-                .map(|key| {
-                    format!(
-                        "{}:{}",
-                        serde_json::to_string(key).unwrap(),
-                        canonical(&map[key])
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("{{{fields}}}")
-        }
-        Value::Array(values) => format!(
-            "[{}]",
-            values.iter().map(canonical).collect::<Vec<_>>().join(",")
-        ),
-        _ => serde_json::to_string(value).unwrap(),
-    }
-}
-
-#[cfg(feature = "legacy-cli-test")]
-fn rehash_event(event: &mut Value) {
-    event.as_object_mut().unwrap().remove("eventSha256");
-    let digest = Sha256::digest(canonical(event).as_bytes());
-    event["eventSha256"] = Value::String(format!("{digest:x}"));
-}
-
 #[test]
 fn valid_matrix_rejects_closed_mutations_without_reject_all_behavior() {
     let valid = matrix();
@@ -862,7 +875,7 @@ fn valid_matrix_rejects_closed_mutations_without_reject_all_behavior() {
     mutations.push(invalid_combination);
 
     let mut invalid_producer_format = valid.clone();
-    invalid_producer_format["producerControls"][2]["producerId"] =
+    invalid_producer_format["producerControls"][1]["producerId"] =
         Value::String("soulmate-v1-write".into());
     mutations.push(invalid_producer_format);
 
@@ -926,139 +939,58 @@ fn matrix_rows_bind_current_projection_sources() {
 }
 
 #[test]
-fn current_and_legacy_runtime_paths_remain_explicit() {
+fn current_exitbind_paths_are_active_and_legacy_paths_are_historical() {
     let current = row("paths", "current-defaults");
     assert_eq!(current["defaultConfig"], "exitbind.json");
     assert_eq!(current["defaultControl"], "exitbind");
     assert_eq!(current["defaultState"], ".exitbind");
-    assert_eq!(current["legacyConfig"], "soulmate.json");
-    assert_eq!(current["legacyControl"], "soulmate");
-    assert_eq!(current["legacyState"], ".soulmate");
+    assert_eq!(current["status"], "current");
     let legacy = row("paths", "legacy-defaults");
     assert_eq!(legacy["defaultConfig"], "soulmate.json");
     assert_eq!(legacy["defaultControl"], "soulmate");
     assert_eq!(legacy["defaultState"], ".soulmate");
-}
+    assert_eq!(legacy["status"], "historical-only");
 
-#[test]
-#[cfg(feature = "legacy-cli-test")]
-fn runtime_path_cases_execute_current_legacy_and_explicit_legacy_surfaces() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("exitbind-compatibility-matrix-{stamp}"));
-    let current_root = root.join("current");
-    let legacy_root = root.join("legacy");
-    fs::create_dir_all(&current_root).unwrap();
-    fs::create_dir_all(&legacy_root).unwrap();
-
-    let current = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let root = std::env::temp_dir().join(format!("exitbind-matrix-current-{stamp}"));
+    fs::create_dir_all(&root).unwrap();
+    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
-        .arg(&current_root)
+        .arg(&root)
         .output()
         .unwrap();
-    assert!(current.status.success(), "{current:?}");
-    let current_paths = row("paths", "current-defaults");
-    assert!(current_root
-        .join(current_paths["defaultConfig"].as_str().unwrap())
-        .is_file());
-    let current_control = current_paths["defaultControl"].as_str().unwrap();
-    let current_state = current_paths["defaultState"].as_str().unwrap();
-    assert!(current_root
-        .join(format!("{current_control}/agents"))
-        .is_dir());
-    assert!(current_root.join(format!("{current_state}/runs")).is_dir());
-    let current_default_check = Command::new(env!("CARGO_BIN_EXE_exitbind"))
-        .arg("check")
-        .current_dir(&current_root)
-        .output()
-        .unwrap();
-    assert!(
-        current_default_check.status.success(),
-        "{current_default_check:?}"
-    );
-    assert!(current_root
-        .join(current_paths["defaultControl"].as_str().unwrap())
-        .is_dir());
-    assert!(current_root
-        .join(current_paths["defaultState"].as_str().unwrap())
-        .is_dir());
-
-    let legacy = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args(["init", "--mode", "portable", "--root"])
-        .arg(&legacy_root)
-        .output()
-        .unwrap();
-    assert!(legacy.status.success(), "{legacy:?}");
-    let legacy_paths = row("paths", "legacy-defaults");
-    let legacy_config = legacy_root.join(legacy_paths["defaultConfig"].as_str().unwrap());
-    assert!(legacy_config.is_file());
-    let legacy_control = legacy_paths["defaultControl"].as_str().unwrap();
-    let legacy_state = legacy_paths["defaultState"].as_str().unwrap();
-    assert!(legacy_root
-        .join(format!("{legacy_control}/agents"))
-        .is_dir());
-    assert!(legacy_root.join(format!("{legacy_state}/runs")).is_dir());
-    let legacy_default_check = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .arg("check")
-        .current_dir(&legacy_root)
-        .output()
-        .unwrap();
-    assert!(
-        legacy_default_check.status.success(),
-        "{legacy_default_check:?}"
-    );
-    assert!(legacy_root
-        .join(legacy_paths["defaultControl"].as_str().unwrap())
-        .is_dir());
-    assert!(legacy_root
-        .join(legacy_paths["defaultState"].as_str().unwrap())
-        .is_dir());
-
-    let explicit = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    assert!(initialized.status.success(), "{initialized:?}");
+    assert!(root.join("exitbind.json").is_file());
+    assert!(root.join("exitbind/agents").is_dir());
+    assert!(root.join(".exitbind/runs").is_dir());
+    let checked = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["check", "--config"])
-        .arg(&legacy_config)
+        .arg(root.join("exitbind.json"))
         .output()
         .unwrap();
-    assert!(explicit.status.success(), "{explicit:?}");
-    assert!(legacy_config.is_file());
-    assert!(legacy_root
-        .join(current_paths["legacyControl"].as_str().unwrap())
-        .is_dir());
-    assert!(legacy_root
-        .join(current_paths["legacyState"].as_str().unwrap())
-        .is_dir());
+    assert!(checked.status.success(), "{checked:?}");
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-#[cfg(feature = "legacy-cli-test")]
-fn producer_cases_execute_persisted_identity_and_format_projections() {
+fn producer_projection_keeps_current_writes_and_reads_frozen_historical_bytes() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let root = std::env::temp_dir().join(format!("exitbind-producer-matrix-{stamp}"));
-    let current_root = root.join("current");
-    let legacy_root = root.join("legacy");
-    fs::create_dir_all(&current_root).unwrap();
-    fs::create_dir_all(&legacy_root).unwrap();
-
-    let current_paths = row("paths", "current-defaults");
-    let legacy_paths = row("paths", "legacy-defaults");
-    let current_config = current_root.join(current_paths["defaultConfig"].as_str().unwrap());
-    let current_ledger = format!(
-        "{}/runs/producer.jsonl",
-        current_paths["defaultState"].as_str().unwrap()
-    );
-    let current_init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    fs::create_dir_all(&root).unwrap();
+    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
-        .arg(&current_root)
+        .arg(&root)
         .output()
         .unwrap();
-    assert!(current_init.status.success(), "{current_init:?}");
-    let current_start = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    assert!(initialized.status.success(), "{initialized:?}");
+    let ledger = ".exitbind/runs/producer.jsonl";
+    let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args([
             "run",
             "start",
@@ -1066,187 +998,44 @@ fn producer_cases_execute_persisted_identity_and_format_projections() {
             "--goal",
             "producer matrix",
             "--ledger",
+            ledger,
+            "--config",
+            "exitbind.json",
         ])
-        .arg(&current_ledger)
-        .arg("--config")
-        .arg(&current_config)
+        .current_dir(&root)
         .output()
         .unwrap();
-    assert!(current_start.status.success(), "{current_start:?}");
+    assert!(started.status.success(), "{started:?}");
     let current_event: Value = serde_json::from_str(
-        fs::read_to_string(current_root.join(&current_ledger))
+        fs::read_to_string(root.join(ledger))
             .unwrap()
             .lines()
             .next()
             .unwrap(),
     )
     .unwrap();
-    let current_producer = row(
-        "producers",
-        row("producerControls", "producer-current-v6-write")["producerId"]
-            .as_str()
-            .unwrap(),
-    );
-    assert_eq!(current_event["producer"]["name"], current_producer["name"]);
+    assert_eq!(current_event["producer"]["name"], "exitbind");
     assert_eq!(current_event["version"], 8);
-
-    let legacy_config = legacy_root.join(legacy_paths["defaultConfig"].as_str().unwrap());
-    let legacy_ledger = format!(
-        "{}/runs/producer.jsonl",
-        legacy_paths["defaultState"].as_str().unwrap()
-    );
-    let legacy_init = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args(["init", "--mode", "portable", "--root"])
-        .arg(&legacy_root)
-        .output()
-        .unwrap();
-    assert!(legacy_init.status.success(), "{legacy_init:?}");
-    let legacy_start = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args([
-            "run",
-            "start",
-            "change",
-            "--goal",
-            "producer matrix",
-            "--ledger",
-        ])
-        .arg(&legacy_ledger)
-        .arg("--config")
-        .arg(&legacy_config)
-        .output()
-        .unwrap();
-    assert!(legacy_start.status.success(), "{legacy_start:?}");
-    let legacy_event: Value = serde_json::from_str(
-        fs::read_to_string(legacy_root.join(&legacy_ledger))
-            .unwrap()
-            .lines()
-            .next()
-            .unwrap(),
-    )
-    .unwrap();
-    let legacy_producer = row(
-        "producers",
-        row("producerControls", "producer-legacy-v1-write")["producerId"]
-            .as_str()
-            .unwrap(),
-    );
-    assert_eq!(legacy_event["producer"]["name"], legacy_producer["name"]);
-    assert_eq!(legacy_event["version"], 1);
-    let historical_v1_read = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args([
-            "run",
-            "inspect",
-            &legacy_ledger,
-            "--config",
-            "soulmate.json",
-        ])
-        .current_dir(&legacy_root)
-        .output()
-        .unwrap();
-    assert!(
-        historical_v1_read.status.success(),
-        "{historical_v1_read:?}"
-    );
-
-    let historical_control = row("producerControls", "producer-historical-v1-v4-read");
-    assert_eq!(historical_control["operation"], "read");
+    assert_eq!(row("producers", "exitbind-v6")["writable"], true);
+    assert_eq!(row("producers", "soulmate-v1-write")["writable"], false);
     assert_eq!(
-        historical_control["versions"],
-        serde_json::json!([1, 2, 3, 4])
+        row("producerControls", "producer-historical-v1-v4-read")["operation"],
+        "read"
     );
+
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/run-v3.jsonl");
-    let historical_ledger = format!(
-        "{}/runs/historical-v3.jsonl",
-        legacy_paths["defaultState"].as_str().unwrap()
-    );
-    let historical_path = legacy_root.join(&historical_ledger);
-    fs::copy(fixture, &historical_path).unwrap();
-    let historical_read = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args([
-            "run",
-            "inspect",
-            &historical_ledger,
-            "--config",
-            "soulmate.json",
-        ])
-        .current_dir(&legacy_root)
+    let historical = ".exitbind/runs/historical-v3.jsonl";
+    let fixture_bytes = fs::read(fixture).unwrap();
+    fs::write(root.join(historical), &fixture_bytes).unwrap();
+    let inspected = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["run", "inspect", historical, "--config", "exitbind.json"])
+        .current_dir(&root)
         .output()
         .unwrap();
-    assert!(historical_read.status.success(), "{historical_read:?}");
-    let historical_event: Value = serde_json::from_str(
-        fs::read_to_string(&historical_path)
-            .unwrap()
-            .lines()
-            .next()
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(historical_event["version"], 3);
-    assert_eq!(historical_event["producer"]["name"], "soulmate");
-    let manifest = serde_json::json!({
-        "version": 1,
-        "project": {"id": "compatibility-matrix", "session": "fixture"},
-        "harness": {"name": "test", "version": "1"},
-        "activations": [
-            {"kind": "skill", "name": "test", "evidence": "configured"}
-        ]
-    });
-    fs::write(
-        legacy_root.join("harness-manifest.json"),
-        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
-    )
-    .unwrap();
-    let state_dir = legacy_paths["defaultState"].as_str().unwrap();
-    let receipt_relative = format!("{state_dir}/harness-receipt.json");
-    let receipt_path = legacy_root.join(&receipt_relative);
-    let receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-        .args([
-            "plan",
-            "change",
-            "--goal",
-            "compatibility receipt",
-            "--receipt",
-        ])
-        .arg(&receipt_path)
-        .args(["--harness-manifest", "harness-manifest.json", "--config"])
-        .arg(&legacy_config)
-        .current_dir(&legacy_root)
-        .output()
-        .unwrap();
-    assert!(receipt.status.success(), "{receipt:?}");
-    let receipt_bytes = fs::read(receipt_path).unwrap();
-    let receipt_reference = serde_json::json!({
-        "path": receipt_relative,
-        "sha256": format!("{:x}", Sha256::digest(receipt_bytes)),
-        "version": 2
-    });
-    for version in [2, 4] {
-        let mut event = if version == 2 {
-            legacy_event.clone()
-        } else {
-            historical_event.clone()
-        };
-        event["version"] = Value::Number(version.into());
-        if version == 2 {
-            event["harnessReceipt"] = receipt_reference.clone();
-        }
-        rehash_event(&mut event);
-        let ledger = format!(
-            "{}/runs/historical-v{version}.jsonl",
-            legacy_paths["defaultState"].as_str().unwrap()
-        );
-        let path = legacy_root.join(&ledger);
-        fs::write(
-            &path,
-            format!("{}\n", serde_json::to_string(&event).unwrap()),
-        )
-        .unwrap();
-        let read = Command::new(env!("CARGO_BIN_EXE_soulmate"))
-            .args(["run", "inspect", &ledger, "--config", "soulmate.json"])
-            .current_dir(&legacy_root)
-            .output()
-            .unwrap();
-        assert!(read.status.success(), "historical v{version}: {read:?}");
-    }
+    assert!(inspected.status.success(), "{inspected:?}");
+    assert_eq!(fs::read(root.join(historical)).unwrap(), fixture_bytes);
+    let old: Value = serde_json::from_slice(fixture_bytes.strip_suffix(b"\n").unwrap()).unwrap();
+    assert_eq!(old["version"], 3);
+    assert_eq!(old["producer"]["name"], "soulmate");
     fs::remove_dir_all(root).unwrap();
 }

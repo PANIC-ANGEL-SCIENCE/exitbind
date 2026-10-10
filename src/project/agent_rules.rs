@@ -1,8 +1,8 @@
 //! Bounded delivery of complete project instruction files.
 //!
-//! The Work detail consumer has a 64 KiB response bound and the native
+//! Ordinary Work detail has a 256 KiB grouped-response bound; native current
 //! context has a separate 64 KiB bound. Keep rule input bounded before either
-//! projection; account for JSON escaping in the ordinary Work detail route.
+//! projection; account for JSON escaping in the grouped Work detail route.
 
 use crate::{config::Loaded, evidence::hash, project::path};
 use serde_json::{json, Value};

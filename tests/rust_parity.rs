@@ -1,4 +1,4 @@
-#![cfg(feature = "legacy-cli-test")]
+// Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::Value;
 mod support;
 use std::{
@@ -26,19 +26,19 @@ fn project() -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
 }
 
 fn config(path: &std::path::Path) -> String {
-    path.join("soulmate.json").to_string_lossy().into_owned()
+    path.join("exitbind.json").to_string_lossy().into_owned()
 }
 
 #[test]
 fn version_is_the_rust_release() {
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("version")
         .output()
         .unwrap();
@@ -59,7 +59,7 @@ fn entrypoint_help_and_version_forms_are_compatible() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(
-            String::from_utf8_lossy(&output.stdout).contains("Usage: soulmate"),
+            String::from_utf8_lossy(&output.stdout).contains("Usage: exitbind"),
             "arguments {arguments:?}"
         );
         let help = String::from_utf8_lossy(&output.stdout);
@@ -69,8 +69,8 @@ fn entrypoint_help_and_version_forms_are_compatible() {
         ));
         assert!(help.contains("init prepares portable project setup"));
         assert!(help.contains("the host runs project tests"));
-        assert!(help.contains("soulmate benchmark"));
-        assert!(help.contains("soulmate help advanced"));
+        assert!(help.contains("exitbind benchmark"));
+        assert!(help.contains("exitbind help advanced"));
         assert!(!help.contains("Do the next change"));
         assert!(!help.contains("--event-id"));
         assert!(output.stderr.is_empty(), "arguments {arguments:?}");
@@ -102,7 +102,7 @@ fn entrypoint_help_and_version_forms_are_compatible() {
 
 #[test]
 fn hook_protocol_is_stable() {
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-protocol")
         .output()
         .unwrap();
@@ -121,7 +121,7 @@ fn rust_inspects_frozen_v1_and_v2_run_ledgers() {
         ("tests/fixtures/v0.2.x-run.jsonl", 1),
         ("tests/fixtures/v0.7.x-run-v2.jsonl", 2),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(manifest)
             .args([
                 "run",
@@ -146,7 +146,7 @@ fn rust_inspects_frozen_v1_and_v2_run_ledgers() {
 #[test]
 fn rust_inspects_a_golden_v008_memory_ledger() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(manifest)
         .args([
             "memory",
@@ -180,12 +180,12 @@ fn unchanged_configuration_resumes() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &cfg,
     ]);
     assert!(started.status.success());
-    let resumed = invoke(&["run", "next", ".soulmate/run.jsonl", "--config", &cfg]);
+    let resumed = invoke(&["run", "next", ".exitbind/run.jsonl", "--config", &cfg]);
     assert!(resumed.status.success());
     fs::remove_dir_all(root).unwrap();
 }
@@ -202,7 +202,7 @@ fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
         "--goal",
         private_goal,
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &cfg
     ])
@@ -217,7 +217,7 @@ fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
     let drift = invoke(&[
         "run",
         "next",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &cfg,
@@ -246,7 +246,7 @@ fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
         "run next disclosed the goal: {}",
         String::from_utf8_lossy(&drift.stderr)
     );
-    let inspected = invoke(&["run", "inspect", ".soulmate/run.jsonl", "--config", &cfg]);
+    let inspected = invoke(&["run", "inspect", ".exitbind/run.jsonl", "--config", &cfg]);
     assert!(
         inspected.status.success(),
         "{}",
@@ -259,7 +259,7 @@ fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
 fn supersession_preserves_and_seals_predecessor() {
     let root = project();
     let cfg = config(&root);
-    let old = root.join(".soulmate/run.jsonl");
+    let old = root.join(".exitbind/run.jsonl");
     assert!(invoke(&[
         "run",
         "start",
@@ -267,7 +267,7 @@ fn supersession_preserves_and_seals_predecessor() {
         "--goal",
         "old",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &cfg
     ])
@@ -283,13 +283,13 @@ fn supersession_preserves_and_seals_predecessor() {
     assert!(invoke(&[
         "run",
         "supersede",
-        "./.soulmate/run.jsonl",
+        "./.exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "new",
         "--ledger",
-        ".soulmate/resume.jsonl",
+        ".exitbind/resume.jsonl",
         "--config",
         &cfg
     ])
@@ -300,11 +300,11 @@ fn supersession_preserves_and_seals_predecessor() {
         "run",
         "submit",
         "lead",
-        ".soulmate/../.soulmate/run.jsonl",
+        ".exitbind/../.exitbind/run.jsonl",
         "--outcome",
         "scoped",
         "--artifact",
-        "soulmate.json",
+        "exitbind.json",
         "--config",
         &cfg,
     ]);
@@ -313,13 +313,13 @@ fn supersession_preserves_and_seals_predecessor() {
     let retried = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "new",
         "--ledger",
-        ".soulmate/resume.jsonl",
+        ".exitbind/resume.jsonl",
         "--config",
         &cfg,
     ]);
@@ -327,20 +327,20 @@ fn supersession_preserves_and_seals_predecessor() {
     let competing = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "competing",
         "--ledger",
-        ".soulmate/other.jsonl",
+        ".exitbind/other.jsonl",
         "--config",
         &cfg,
     ]);
     assert!(!competing.status.success());
-    assert!(!root.join(".soulmate/other.jsonl").exists());
+    assert!(!root.join(".exitbind/other.jsonl").exists());
     fs::remove_file(&old).unwrap();
-    let orphaned = invoke(&["run", "inspect", ".soulmate/resume.jsonl", "--config", &cfg]);
+    let orphaned = invoke(&["run", "inspect", ".exitbind/resume.jsonl", "--config", &cfg]);
     assert!(!orphaned.status.success());
     fs::remove_dir_all(root).unwrap();
 }
@@ -356,42 +356,42 @@ fn supersession_conflict_does_not_orphan_a_predecessor_claim() {
         "--goal",
         "old",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &cfg,
     ])
     .status
     .success());
-    let successor = root.join(".soulmate/resume.jsonl");
+    let successor = root.join(".exitbind/resume.jsonl");
     fs::write(&successor, "conflicting successor\n").unwrap();
 
     let conflict = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "new",
         "--ledger",
-        ".soulmate/resume.jsonl",
+        ".exitbind/resume.jsonl",
         "--config",
         &cfg,
     ]);
     assert!(!conflict.status.success());
-    assert!(!root.join(".soulmate/run.jsonl.supersede").exists());
+    assert!(!root.join(".exitbind/run.jsonl.supersede").exists());
 
     fs::remove_file(successor).unwrap();
     let retry = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "new",
         "--ledger",
-        ".soulmate/resume.jsonl",
+        ".exitbind/resume.jsonl",
         "--config",
         &cfg,
     ]);
@@ -408,7 +408,7 @@ fn supersession_conflict_does_not_orphan_a_predecessor_claim() {
 fn blocked_terminal_run_can_be_superseded_once() {
     let root = project();
     let cfg = config(&root);
-    let old = root.join(".soulmate/run.jsonl");
+    let old = root.join(".exitbind/run.jsonl");
     assert!(invoke(&[
         "run",
         "start",
@@ -416,7 +416,7 @@ fn blocked_terminal_run_can_be_superseded_once() {
         "--goal",
         "blocked predecessor",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &cfg,
     ])
@@ -426,11 +426,11 @@ fn blocked_terminal_run_can_be_superseded_once() {
         "run",
         "submit",
         "lead",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--outcome",
         "blocked",
         "--artifact",
-        "soulmate.json",
+        "exitbind.json",
         "--config",
         &cfg,
     ])
@@ -447,13 +447,13 @@ fn blocked_terminal_run_can_be_superseded_once() {
     let successor = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "bounded continuation",
         "--ledger",
-        ".soulmate/resume.jsonl",
+        ".exitbind/resume.jsonl",
         "--config",
         &cfg,
     ]);
@@ -464,9 +464,9 @@ fn blocked_terminal_run_can_be_superseded_once() {
         String::from_utf8_lossy(&successor.stderr)
     );
     assert_eq!(fs::read(&old).unwrap(), terminal);
-    assert!(root.join(".soulmate/run.jsonl.supersede").is_file());
+    assert!(root.join(".exitbind/run.jsonl.supersede").is_file());
     assert!(
-        invoke(&["run", "inspect", ".soulmate/resume.jsonl", "--config", &cfg,])
+        invoke(&["run", "inspect", ".exitbind/resume.jsonl", "--config", &cfg,])
             .status
             .success()
     );
@@ -474,18 +474,18 @@ fn blocked_terminal_run_can_be_superseded_once() {
     let competing = invoke(&[
         "run",
         "supersede",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--workflow",
         "change",
         "--goal",
         "competing continuation",
         "--ledger",
-        ".soulmate/other.jsonl",
+        ".exitbind/other.jsonl",
         "--config",
         &cfg,
     ]);
     assert!(!competing.status.success());
-    assert!(!root.join(".soulmate/other.jsonl").exists());
+    assert!(!root.join(".exitbind/other.jsonl").exists());
     assert_eq!(fs::read(&old).unwrap(), terminal);
     fs::remove_dir_all(root).unwrap();
 }
@@ -502,7 +502,7 @@ fn accepted_and_rejected_runs_remain_final() {
             "--goal",
             "terminal predecessor",
             "--ledger",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--config",
             &cfg,
         ])
@@ -518,11 +518,11 @@ fn accepted_and_rejected_runs_remain_final() {
                 "run",
                 "submit",
                 agent,
-                ".soulmate/run.jsonl",
+                ".exitbind/run.jsonl",
                 "--outcome",
                 outcome,
                 "--artifact",
-                "soulmate.json",
+                "exitbind.json",
                 "--config",
                 &cfg,
             ])
@@ -533,21 +533,21 @@ fn accepted_and_rejected_runs_remain_final() {
         let refused = invoke(&[
             "run",
             "supersede",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--workflow",
             "change",
             "--goal",
             "must refuse",
             "--ledger",
-            ".soulmate/resume.jsonl",
+            ".exitbind/resume.jsonl",
             "--config",
             &cfg,
         ]);
         assert!(!refused.status.success());
         assert!(String::from_utf8_lossy(&refused.stderr)
             .contains("only a running or blocked run can be superseded"));
-        assert!(!root.join(".soulmate/resume.jsonl").exists());
-        assert!(!root.join(".soulmate/run.jsonl.supersede").exists());
+        assert!(!root.join(".exitbind/resume.jsonl").exists());
+        assert!(!root.join(".exitbind/run.jsonl.supersede").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }
@@ -575,7 +575,7 @@ fn receipt_round_trip_uses_the_rust_binary() {
     let receipt_value: Value =
         serde_json::from_str(&fs::read_to_string(&receipt).unwrap()).unwrap();
     assert_eq!(receipt_value["version"], 1);
-    assert_eq!(receipt_value["producer"]["name"], "soulmate");
+    assert_eq!(receipt_value["producer"]["name"], "exitbind");
     assert_eq!(
         receipt_value["producer"]["version"],
         env!("CARGO_PKG_VERSION")
@@ -616,7 +616,7 @@ fn memory_lifecycle_keeps_review_and_acceptance_separate() {
     )
     .unwrap();
     fs::write(root.join("memory.md"), "synthetic invariant\n").unwrap();
-    let ledger = ".soulmate/memory.jsonl";
+    let ledger = ".exitbind/memory.jsonl";
     assert!(invoke(&[
         "memory",
         "propose",
@@ -706,8 +706,8 @@ fn doctor_reports_npx_managed_dotagents_without_invoking_it() {
     fs::create_dir(&bin).unwrap();
     fs::write(home.join(".agents/agents.toml"), "").unwrap();
     fs::write(bin.join("npx"), "").unwrap();
-    let config = root.join("soulmate.json").to_string_lossy().into_owned();
-    let doctor = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let config = root.join("exitbind.json").to_string_lossy().into_owned();
+    let doctor = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .env("HOME", &home)
         .env("PATH", &bin)
         .args(["doctor", "--config", &config])
@@ -726,7 +726,7 @@ fn run_locks_fail_closed_and_recover_only_verifiable_stale_pids() {
 
     let active_root = project();
     let active_cfg = config(&active_root);
-    let active_lock = active_root.join(".soulmate/run.jsonl.lock");
+    let active_lock = active_root.join(".exitbind/run.jsonl.lock");
     fs::write(
         active_lock,
         format!(
@@ -742,17 +742,17 @@ fn run_locks_fail_closed_and_recover_only_verifiable_stale_pids() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &active_cfg,
     ]);
     assert!(!active.status.success());
-    assert!(!active_root.join(".soulmate/run.jsonl").exists());
+    assert!(!active_root.join(".exitbind/run.jsonl").exists());
     fs::remove_dir_all(active_root).unwrap();
 
     let stale_root = project();
     let stale_cfg = config(&stale_root);
-    let stale_lock = stale_root.join(".soulmate/run.jsonl.lock");
+    let stale_lock = stale_root.join(".exitbind/run.jsonl.lock");
     fs::write(
         &stale_lock,
         "{\"pid\":4000000,\"createdAt\":\"2026-08-29T00:00:00.000Z\"}",
@@ -765,7 +765,7 @@ fn run_locks_fail_closed_and_recover_only_verifiable_stale_pids() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &stale_cfg,
     ]);
@@ -775,7 +775,7 @@ fn run_locks_fail_closed_and_recover_only_verifiable_stale_pids() {
 
     let denied_root = project();
     let denied_cfg = config(&denied_root);
-    let denied_lock = denied_root.join(".soulmate/run.jsonl.lock");
+    let denied_lock = denied_root.join(".exitbind/run.jsonl.lock");
     fs::write(&denied_lock, "not-readable").unwrap();
     fs::set_permissions(&denied_lock, fs::Permissions::from_mode(0o000)).unwrap();
     let denied = invoke(&[
@@ -785,12 +785,12 @@ fn run_locks_fail_closed_and_recover_only_verifiable_stale_pids() {
         "--goal",
         "bounded",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--config",
         &denied_cfg,
     ]);
     assert!(!denied.status.success());
-    assert!(!denied_root.join(".soulmate/run.jsonl").exists());
+    assert!(!denied_root.join(".exitbind/run.jsonl").exists());
     fs::set_permissions(&denied_lock, fs::Permissions::from_mode(0o600)).unwrap();
     fs::remove_dir_all(denied_root).unwrap();
 }
@@ -803,9 +803,9 @@ fn malformed_and_truncated_golden_ledgers_are_rejected() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v0.0.8-run.jsonl"),
     )
     .unwrap();
-    let ledger = root.join(".soulmate/broken.jsonl");
+    let ledger = root.join(".exitbind/broken.jsonl");
     fs::write(ledger, &source[..source.len() / 2]).unwrap();
-    let inspected = invoke(&["run", "inspect", ".soulmate/broken.jsonl", "--config", &cfg]);
+    let inspected = invoke(&["run", "inspect", ".exitbind/broken.jsonl", "--config", &cfg]);
     assert!(!inspected.status.success());
     fs::remove_dir_all(root).unwrap();
 }
@@ -867,7 +867,7 @@ fn malformed_external_inputs_fail_cleanly_as_json() {
         vec![
             "run",
             "inspect",
-            ".soulmate/run.jsonl",
+            ".exitbind/run.jsonl",
             "--json",
             "--config",
             malformed_config,
@@ -887,7 +887,7 @@ fn malformed_external_inputs_fail_cleanly_as_json() {
         "--goal",
         "x",
         "--ledger",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--boundary",
         "boundary.json",
         "--json",
@@ -895,20 +895,20 @@ fn malformed_external_inputs_fail_cleanly_as_json() {
         &cfg,
     ]));
 
-    fs::write(root.join(".soulmate/run.jsonl"), b"{bad-ledger\n").unwrap();
+    fs::write(root.join(".exitbind/run.jsonl"), b"{bad-ledger\n").unwrap();
     assert_json_error(invoke(&[
         "run",
         "inspect",
-        ".soulmate/run.jsonl",
+        ".exitbind/run.jsonl",
         "--json",
         "--config",
         &cfg,
     ]));
-    fs::write(root.join(".soulmate/memory.jsonl"), b"{bad-ledger\n").unwrap();
+    fs::write(root.join(".exitbind/memory.jsonl"), b"{bad-ledger\n").unwrap();
     assert_json_error(invoke(&[
         "memory",
         "inspect",
-        ".soulmate/memory.jsonl",
+        ".exitbind/memory.jsonl",
         "--json",
         "--config",
         &cfg,
