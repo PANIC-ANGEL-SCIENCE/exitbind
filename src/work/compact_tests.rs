@@ -408,7 +408,7 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
         }
         response["presentation"]["oversized"] = json!("x".repeat(16_000));
         let compact = project(&response, Path::new(&config), "next").unwrap();
-        assert!(serde_json::to_vec(&compact).unwrap().len() + 1 <= MAX_RESPONSE_BYTES);
+        assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
         assert_eq!(
             compact["current"]["binding"],
             response["next"]["current"]["binding"]
