@@ -237,12 +237,27 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "preservation-proof-origin",
                     "basis",
                     "review-policy",
+                    "goal-id",
+                    "requirement",
+                    "artifact",
+                    "scope",
                     "json",
                     "detail",
                 ],
             )?;
             args::assert_positionals("work begin", a, 2)?;
-            let response = crate::work::begin(
+            let integration=match a.options.get("scope").map(String::as_str) {
+                None=>false, Some("integration")=>true, Some(_)=>return Err("named Work scope must be integration when supplied".into()),
+            };
+            let named = if ["goal-id","requirement","artifact","scope"].iter().any(|key|a.options.contains_key(*key)) {
+                Some(crate::session_goal::requirements::prepare(l,
+                    option(a,"goal-id","named Work requires --goal-id ID")?,
+                    option(a,"requirement","named Work requires --requirement IDs")?,
+                    option(a,"artifact","named Work requires --artifact PROJECT_CHECKER")?,
+                    option(a,"check-command","work begin requires --check-command COMMAND")?,
+                    a.options.get("basis").map(String::as_str),integration)?)
+            } else {None};
+            let mut response = crate::work::begin(
                 l,
                 crate::work::BeginOptions {
                     workflow: positional(a, 1, "work begin requires WORKFLOW")?,
@@ -264,10 +279,18 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                         .options
                         .get("preservation-proof-origin")
                         .map(String::as_str),
-                    basis: a.options.get("basis").map(String::as_str),
+                    basis: named.as_ref().map(|prepared|prepared.basis.as_str()).or_else(||a.options.get("basis").map(String::as_str)),
                     review_policy: a.options.get("review-policy").map(String::as_str),
                 },
             )?;
+            if let Some(prepared)=&named {
+                let work=response["work"].as_str().ok_or("recorded Work identity is missing")?.to_owned();
+                if let Err(error)=crate::session_goal::requirements::assign(l,&prepared.goal_id,&prepared.requirements,&work,false) {
+                    return Err(format!("Work {work} was recorded, but its goal mapping failed: {error}; recover with work detail and goal assign; do not repeat work begin"));
+                }
+                let current=crate::work::next(l,&work).map_err(|error|format!("Work {work} and its goal mapping were recorded, but context refresh failed: {error}; recover with work detail; do not repeat work begin"))?;
+                response["next"]=current["next"].clone();
+            }
             let response = if a.flags.contains_key("detail") {
                 crate::work::start_delivery::with_detail(l, response)
             } else {

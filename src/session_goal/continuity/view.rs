@@ -28,6 +28,9 @@ fn mutation_context(work_id: &str, goal_revision: &Value, binding_revision: u64)
 }
 
 pub(crate) fn has_unresolved(record: &Value) -> bool {
+    if crate::session_goal::requirements::named(record) {
+        return crate::session_goal::requirements::unresolved(record);
+    }
     let c = &record["continuation"];
     if c.is_null() {
         return false;
@@ -51,6 +54,9 @@ pub(crate) fn has_unresolved(record: &Value) -> bool {
 }
 
 pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, String> {
+    if crate::session_goal::requirements::named(record) {
+        return crate::session_goal::requirements::all_current(loaded, record);
+    }
     let c = &record["continuation"];
     if c.is_null() {
         return Ok(true);

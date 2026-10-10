@@ -5,6 +5,35 @@ use serde_json::json;
 use std::path::Path;
 
 #[test]
+fn minimum_recovery_retains_terminal_without_inventing_completion() {
+    let card = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
+    for terminal in [json!(card), serde_json::Value::Null] {
+        for config_bytes in [32, 6_000, 64_000] {
+            let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
+            let response = json!({
+                "work":"smw_work", "effect":"no-change",
+                "next":{"action":"done", "current":{"action":"done", "binding":"bound",
+                    "readiness":"READY", "details":{"summary":"x".repeat(6_400)},
+                    "actionForm":{"version":1,"state":"done"}}},
+                "presentation":{"terminal":terminal, "oversized":"x".repeat(16_000),
+                    "goalProgress":{"overall":"complete", "systemText":"s".repeat(3_000),
+                        "tasks":(0..32).map(|_|json!({"id":"x".repeat(500),
+                            "label":"x".repeat(500),"state":"complete"})).collect::<Vec<_>>()}}
+            });
+            let compact = project(&response, Path::new(&config), "next").unwrap();
+            assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
+            assert_eq!(compact["presentation"]["terminal"], terminal);
+            assert!(compact["presentation"].get("goalProgress").is_none());
+            if crate::producer::exitbind_surface() {
+                assert_eq!(compact["effectiveAction"]["exists"], false);
+            } else {
+                assert!(compact.get("effectiveAction").is_none());
+            }
+        }
+    }
+}
+
+#[test]
 fn emergency_resume_keeps_navigation_with_current_action_detail() {
     for config_bytes in [32, 512, 6_000, 64_000] {
         let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));

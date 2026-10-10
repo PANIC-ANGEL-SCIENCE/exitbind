@@ -32,14 +32,29 @@ pub(crate) fn export(payload: &Map<String, Value>, env_file: Option<&std::ffi::O
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     let Ok(mut file) = options.open(env_file) else {
         return;
     };
-    if file.metadata().is_ok_and(|metadata| metadata.is_file()) {
-        let _ = file.write_all(line.as_bytes());
+    let Ok(metadata) = file.metadata() else {
+        return;
+    };
+    if !metadata.is_file() {
+        return;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // This is a host-managed environment file. Never chmod it; decline to
+        // add private session state when its ownership or permissions differ.
+        if metadata.uid() != unsafe { libc::geteuid() } || metadata.mode() & 0o077 != 0 {
+            return;
+        }
+    }
+    let _ = file.write_all(line.as_bytes());
 }
 
 fn safe_id(value: &str) -> bool {
@@ -69,6 +84,11 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("env");
         std::fs::write(&file, "export KEPT=1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
         export(&payload("0f1e2d3c-demo-4a5b"), Some(file.as_os_str()));
         export(&payload("x; rm -rf /"), Some(file.as_os_str()));
         export(&payload("$(id)"), Some(file.as_os_str()));

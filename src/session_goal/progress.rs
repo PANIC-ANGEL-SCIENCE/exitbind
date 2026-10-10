@@ -51,6 +51,11 @@ fn project_with_limit(
         );
     };
     let overall_state = overall_state(record, rendered);
+    if super::requirements::named(record) {
+        if let Some(loaded) = loaded {
+            return named_progress(loaded, record, overall_state, result, task_limit);
+        }
+    }
     let Some(items) = record["obligations"].as_array() else {
         return unavailable(
             result,
@@ -154,6 +159,53 @@ fn overall_state(record: &Value, rendered: &Value) -> &'static str {
     } else {
         "in_progress"
     }
+}
+
+fn named_progress(
+    loaded: &Loaded,
+    record: &Value,
+    overall: &'static str,
+    result: Option<&Value>,
+    limit: usize,
+) -> Value {
+    let projection = match super::requirements::projection(loaded, record) {
+        Ok(value) => value,
+        Err(_) => {
+            return unavailable(
+                result,
+                "named_coverage_unavailable",
+                "named requirement evidence is unavailable",
+                record["goal"].as_str(),
+                overall,
+            )
+        }
+    };
+    let Some(rows) = projection["requirements"].as_array() else {
+        return unavailable(
+            result,
+            "named_coverage_unavailable",
+            "named requirement evidence is unavailable",
+            record["goal"].as_str(),
+            overall,
+        );
+    };
+    let complete = rows.iter().filter(|row| row["satisfied"] == true).count();
+    let tasks=rows.iter().take(limit).map(|row|json!({"id":row["id"],"taskId":crate::evidence::hash::text(row["id"].as_str().unwrap_or_default()),
+        "label":display(row["text"].as_str().unwrap_or_default()),"state":if row["satisfied"]==true {json!("complete")} else {row["state"].clone()},
+        "requirementRevision":row["revision"],"mapped":row["mapped"],"performed":row["satisfied"],"current":row["satisfied"],
+        "currentReason":row["state"],"nextAction":row["nextAction"]})).collect::<Vec<_>>();
+    let mut view = json!({"overall":overall,"goal":display(record["goal"].as_str().unwrap_or_default()),
+        "decomposition":{"available":true,"total":rows.len(),"complete":complete,"omitted":rows.len().saturating_sub(tasks.len())},
+        "tasks":tasks,"coverageConfirmed":projection["coverageConfirmed"],"nextAction":projection["nextAction"],"resultReadiness":readiness(result)});
+    view["systemText"] = json!(system_text(
+        overall,
+        record["goal"].as_str().unwrap_or_default(),
+        complete,
+        rows.len(),
+        &view["tasks"],
+        &view["resultReadiness"]
+    ));
+    view
 }
 
 fn has_open_blocker(record: &Value) -> bool {
@@ -370,8 +422,10 @@ pub(super) fn project_detail_for_work(
     )
 }
 
-fn record_bound_to_work(record: &Value, work: &str) -> bool {
-    record["goalId"].as_str() == Some(work) || record["continuation"]["work"].as_str() == Some(work)
+pub(super) fn record_bound_to_work(record: &Value, work: &str) -> bool {
+    record["goalId"].as_str() == Some(work)
+        || record["continuation"]["work"].as_str() == Some(work)
+        || super::requirements::bound(record, work)
 }
 
 #[cfg(test)]

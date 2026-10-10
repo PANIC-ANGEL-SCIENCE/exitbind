@@ -8,7 +8,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work"] => {
             "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
-        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--basis JSON] (--detail delivers current recipient context; a recorded start is recovered with work detail or work resume, never repeated)",
+        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--basis JSON] [--goal-id ID --requirement IDs --artifact PROJECT_CHECKER [--scope integration]] (--detail delivers current recipient context; a recorded start is recovered with work detail or work resume, never repeated)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
@@ -76,10 +76,13 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER [--owner-recovery STATE_ARTIFACT_PATH]"
         }
-        ["goal"] => "goal incorporate --goal-id ID --goal TEXT | goal status [--json] | goal close --goal-id ID --result-ref REF | goal usage --goal-id ID [--json] | goal <child> --help",
+        ["goal"] => "goal incorporate --goal-id ID --goal TEXT | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE | goal cover --goal-id ID | goal assign --goal-id ID --requirement IDs --result-ref WORK | goal status [--json] | goal close --goal-id ID --result-ref REF | goal usage --goal-id ID [--json] | goal <child> --help",
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
+        ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",
+        ["goal", "cover"] => "goal cover --goal-id ID [--json] (Lead confirms the agreed finite set; this does not prove complete interpretation of natural language)",
+        ["goal", "assign"] => "goal assign --goal-id ID --requirement IDs --result-ref WORK [--disposition add|replace] [--json] (IDs are comma-separated; replace retires old contributors for these IDs without removing requirements)",
         ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
-        ["goal", "status"] => "goal status [--themed]",
+        ["goal", "status"] => "goal status [--json] [--themed] (read-only requirement mapping, current evidence, exact revision and next action)",
         ["goal", "usage"] => "goal usage --goal-id ID [--json] [--config CONFIG] | goal usage --goal-id ID --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",

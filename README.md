@@ -93,6 +93,16 @@ walks through an inspectable example.
 
 ## Continue interrupted work
 
+For a goal with several requirements, ask your lead to retain the agreed source
+and meanings, assign useful work, and resume the remaining items. `goal status`
+shows each requirement's revision, mapped work, current evidence and next action.
+Missing or stale support keeps the goal open. Final closure needs a current
+checked integration covering every agreed item, with the selected review and
+Lead acceptance. See [Complete a goal with several requirements](docs/goal-requirements.md)
+for the supported commands and a reproducible three-item example. This capability
+is in the development source; the stable `v0.29.0` installer above retains its
+previous goal path.
+
 Ask your lead to resume the existing task in the same conversation. Exitbind
 can provide the current task details and available next steps, including a
 saved result that has not yet been returned. The lead still decides how to
@@ -126,6 +136,13 @@ commands and returned files can contain private information. Keep records
 private and read [Security](SECURITY.md) and the
 [authority boundary](REFERENCE.md#authority-boundary).
 
+## Intentional boundaries
+
+**Approval.** Exitbind adds no second approval channel or human-only secret. The configured lead records scope and acceptance; the host controls which process may do so. One session may implement and submit the lead's reason. That limits independence; it does not replace required review. Exitbind does not invent requirements or mark missing items complete.
+
+**Executable identity.** The installer checks the release archive. Archive attestations do not authenticate every later executable. `exitbind version --json` reports a digest, not a signature. Compare `executableSha256` with trusted evidence for those executable bytes. Startup does not require a match to the latest release. A scoped Work may retain an older or candidate executable.
+
+**Other checkouts.** Resume uses saved work in the configured project. It does not scan other checkouts or detect overlapping uncommitted files. No scheduler or shared dirty-file database is added. Coordinate separate working trees outside Exitbind. Resuming does not copy an older task's permission or check result.
 ## Update or roll back
 
 `exitbind update` refreshes the executable and managed host guidance. It does

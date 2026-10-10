@@ -2,6 +2,5 @@
 # A ceiling may only fall. Remove a line when the file drops under 32 KiB.
 35330 src/distribution/update.rs
 40087 src/host/away.rs
-39237 src/session_goal.rs
 61761 src/value_benchmark.rs
 37334 src/work/mod.rs

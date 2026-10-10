@@ -10,6 +10,22 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));
     value["currentReadiness"] = presentation["currentReadiness"].clone();
     value["goalProgress"] = presentation["goalProgress"].clone();
+    if record
+        .as_ref()
+        .is_some_and(crate::session_goal::requirements::named)
+    {
+        value["presentation"] = json!({"terminal": presentation["terminal"]});
+        value["requirements"] = crate::session_goal::requirements::projection(
+            l,
+            record.as_ref().expect("named record"),
+        )?;
+        if !a.flags.contains_key("json") {
+            if let Some(terminal) = presentation["terminal"].as_str() {
+                println!("{terminal}");
+                return Ok(());
+            }
+        }
+    }
     print_json(&value)?;
     if !a.flags.contains_key("json") {
         if let Some(card) = crate::presentation_events::session_goal_direct_card_for_human(
