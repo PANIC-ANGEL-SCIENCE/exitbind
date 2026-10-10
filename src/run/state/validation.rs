@@ -41,6 +41,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             | "review_policy"
             | "check_observation"
             | "check_observation_failed"
+            | "check_observation_recovered"
     ) {
         return Err(format!("invalid run ledger line {line}: invalid action"));
     }
@@ -92,6 +93,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
     }
     let shape = if event["action"] == "start" {
         validate_start_version(event, line, version.unwrap_or_default())
+    } else if action == "check_observation_recovered" {
+        crate::run::check_recovery::validate(event)
     } else if matches!(
         event["action"].as_str(),
         Some("check_observation" | "check_observation_failed")

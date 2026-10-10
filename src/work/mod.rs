@@ -4,6 +4,7 @@ pub(crate) mod action;
 pub(crate) mod action_forms;
 mod begin;
 mod check;
+pub(crate) mod check_recovery;
 pub(crate) use begin::{begin, BeginOptions};
 pub(crate) mod closeout;
 pub(crate) mod compact;
@@ -52,9 +53,7 @@ use recovery::{
 pub(crate) const DIAGNOSTIC_PREFIX: &str = "EXITBIND_WORK_DIAGNOSTIC:";
 pub(crate) use locator::locator_for_ledger;
 
-/// Read-only activation assessment used by the explicit `work classify`
-/// bridge. The caller supplies both typed consequence facts; local availability
-/// and activation are derived from the loaded project or current directory.
+/// Read-only assessment; caller facts do not establish local activation.
 pub(crate) fn classify(
     loaded: Option<&Loaded>,
     current_dir: &Path,

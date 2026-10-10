@@ -8,6 +8,7 @@ pub(super) fn apply_event(state: &mut Value, event: &Value) -> Result<(), String
         Some("govern") => apply_govern(state, event),
         Some("review_policy") => apply_review_policy(state, event),
         Some("check") => check_stage::apply_check(state, event),
+        Some("check_observation_recovered") => crate::run::check_recovery::apply(state, event),
         Some("check_observation" | "check_observation_failed") => {
             super::check_observation::apply(state, event)
         }

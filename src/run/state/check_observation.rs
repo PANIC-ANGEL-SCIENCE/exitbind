@@ -113,7 +113,7 @@ fn partial(value: &Value) -> bool {
         })
 }
 
-fn valid_facts(value: &Value) -> bool {
+pub(crate) fn valid_facts(value: &Value) -> bool {
     exact(
         value,
         &[

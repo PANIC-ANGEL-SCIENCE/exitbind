@@ -281,6 +281,11 @@ required review. An unresolved admission, live descendant or uncertain cleanup
 permits stopping but blocks repair, acceptance, retry and supersession. If
 failure storage is unavailable, the response says no durable failure was
 recorded and returns a bounded inspection route; the admission stays unresolved.
+For a retained known-ended storage-failure response, `work recover-check WORK`
+previews a configured-Lead decision. Its explicit apply records a reported
+failure only; ordinary Lead repair, a new worker result, checks and required
+review still follow. Unknown effects remain blocked. See
+[check recovery](docs/check-recovery.md) for exact-byte and reader requirements.
 These additive v8 fields/events require a reader that supports the marker;
 older v8 binaries refuse them. Markerless historical ledgers are unchanged.
 See [observation schema](schema/check-observation-v1.schema.json).

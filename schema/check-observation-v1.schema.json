@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:exitbind:check-observation:1",
-  "title": "Non-check observation body for marked v8 runs",
+  "title": "Check observation admission, failure and Lead-reported recovery",
   "description": "Canonical admission/failure facts; never check success, approval or authority. Header and stateful binding are validated by the run reducer.",
   "oneOf": [
     {
@@ -48,6 +48,27 @@
       "required": [
         "admissionEventSha256",
         "facts"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "admissionEventSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        },
+        "recovery": {
+          "$ref": "#/$defs/recoveryDecision"
+        }
+      },
+      "required": [
+        "admissionEventSha256",
+        "facts",
+        "recovery"
       ],
       "additionalProperties": false
     }
@@ -301,6 +322,88 @@
           }
         }
       ]
+    },
+    "recoveryDecision": {
+      "type": "object",
+      "description": "Explicit configured-Lead reported decision; exact raw prefix and stateful identity checked by the runtime. Entire UTF-8 decision is bounded to32768bytes.",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "work": {
+          "type": "string",
+          "pattern": "^smw_[0-9a-f]{64}$"
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "approved": {
+          "const": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "currentBinding": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "snapshot": {
+          "type": "object",
+          "properties": {
+            "admissionEventSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "ledgerSourceSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "binding": {
+              "$ref": "#/$defs/binding"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400000
+            },
+            "observer": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "admissionEventSha256",
+            "ledgerSourceSha256",
+            "binding",
+            "timeoutMs",
+            "observer"
+          ],
+          "additionalProperties": false
+        },
+        "response": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "responseSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "version",
+        "work",
+        "agent",
+        "approved",
+        "reason",
+        "currentBinding",
+        "snapshot",
+        "response",
+        "responseSha256"
+      ],
+      "additionalProperties": false
     }
   }
 }

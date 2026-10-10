@@ -8,7 +8,7 @@ pub(crate) const MAX_TIMEOUT_MS: u64 = 86_400_000;
 
 /// New marked observations execute only the run's frozen configuration and
 /// its still-current selected contract. Historical runs retain drift warnings.
-pub(super) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), String> {
+pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), String> {
     if state["checkObservationProtocol"] != PROTOCOL {
         return Ok(());
     }
@@ -31,7 +31,7 @@ pub(crate) fn timeout(value: Option<&str>) -> Result<u64, String> {
     Ok(value)
 }
 
-pub(super) fn event(
+pub(crate) fn event(
     state: &Value,
     last: &Value,
     action: &str,

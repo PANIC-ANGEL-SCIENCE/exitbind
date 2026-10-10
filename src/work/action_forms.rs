@@ -207,11 +207,29 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         "choices": [],
     });
     let choices: Vec<Value> = if state == "unresolved_check_observation" {
-        outcomes
+        let mut choices: Vec<Value> = outcomes
             .iter()
             .filter(|v| matches!(**v, "blocked" | "rejected"))
             .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
-            .collect()
+            .collect();
+        if next["packet"]["checkObservation"]["state"] == "running" {
+            let mut preview = choice(
+                loaded,
+                vec![
+                    "work".into(),
+                    "recover-check".into(),
+                    work.into(),
+                    "--json".into(),
+                ],
+                "preview_ended_failure_recovery",
+                &[],
+                no_input(),
+            );
+            preview["readOnly"] = json!(true);
+            preview["sideEffect"] = json!("no-change; previews an explicit Lead decision for a retained known-ended storage failure; unknown effects remain blocked");
+            choices.push(preview);
+        }
+        choices
     } else if matches!(state, "pending_review_finding" | "failed_check_observation") {
         let available = next["packet"]["pendingDisposition"]["decisions"]
             .as_array()

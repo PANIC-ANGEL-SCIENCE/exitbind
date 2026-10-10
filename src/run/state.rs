@@ -205,7 +205,10 @@ fn reject_unknown(
                     "invalid run ledger line {line}: unknown field '{key}'"
                 ))
             });
-    } else if matches!(action, "check_observation" | "check_observation_failed") {
+    } else if matches!(
+        action,
+        "check_observation" | "check_observation_failed" | "check_observation_recovered"
+    ) {
         return reject_unknown_fields(
             object,
             &[

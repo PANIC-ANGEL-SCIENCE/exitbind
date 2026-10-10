@@ -24,6 +24,14 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
     )?;
     match action {
+        "recover-check" => {
+            args::assert_options("work recover-check", a, &["config", "json", "apply", "current-binding"])?;
+            args::assert_positionals("work recover-check", a, 2)?;
+            print_work_json(&crate::work::check_recovery::recover(l,
+                positional(a, 1, "work recover-check requires WORK")?,
+                a.options.get("current-binding").map(String::as_str),
+                a.flags.contains_key("apply"))?)
+        }
         "file-serve" => {
             args::assert_options("work file-serve", a, &["config"])?;
             args::assert_positionals("work file-serve", a, 2)?;

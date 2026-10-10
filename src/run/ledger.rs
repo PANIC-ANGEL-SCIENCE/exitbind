@@ -93,6 +93,9 @@ pub(crate) fn load_at_unchecked(
         let event: Value = serde_json::from_str(line)
             .map_err(|error| format!("invalid run ledger line {}: {error}", index + 1))?;
         run_state::validate_event(&event, events.last(), index + 1)?;
+        if event["action"] == "check_observation_recovered" {
+            super::check_recovery::validate_prefix(&event, &lines[..index].join("\n"), ledger)?;
+        }
         events.push(event);
     }
     run_state::reduce(&events)?;

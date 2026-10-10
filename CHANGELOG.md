@@ -29,6 +29,11 @@
   identity with owned native check locks. Preserve current native platform,
   test, package, installer and handoff checks while retiring obsolete execution.
 
+- Add configured-Lead recovery for an exact known-ended check storage failure.
+  Bind the saved response and partial bytes to its original admission, record
+  failure without another execution or accounting reset, then resume ordinary
+  repair, fresh checks and required review. Uncertain outcomes remain blocked.
+
 Policy correction writes memory v3, which older readers refuse. Preserve old
 Work pins and retain a compatible memory reader during selector rollback.
 
