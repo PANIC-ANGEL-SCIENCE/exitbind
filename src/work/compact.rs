@@ -27,6 +27,52 @@ pub(crate) fn minimal_current(current: &Value) -> Value {
     value
 }
 
+fn bounded_current_routes(current: &Value, config_path: &Path) -> Value {
+    let mut value = minimal_current(current);
+    if let Some(details) = value["details"].as_object_mut() {
+        for route in details.values_mut() {
+            rebudget_route(route, "command", config_path);
+        }
+    }
+    for pointer in [
+        "/completion/detail/command",
+        "/completion/receipt/export/command",
+    ] {
+        if let Some(route) = value.pointer_mut(pointer) {
+            rebudget_route(route, "argv", config_path);
+        }
+    }
+    value
+}
+
+fn rebudget_route(route: &mut Value, argv_key: &str, config_path: &Path) {
+    let Some(mut suffix) = route[argv_key].as_array().and_then(|argv| {
+        argv.iter()
+            .map(|value| value.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+    }) else {
+        return;
+    };
+    if route["sameConfigRequired"] != true {
+        if suffix.last().map(String::as_str) != config_path.to_str() {
+            return;
+        }
+        suffix.pop();
+    }
+    if route["sameExecutableRequired"] != true && !suffix.is_empty() {
+        suffix.remove(0);
+    }
+    if suffix.first().map(String::as_str) != Some("work")
+        || suffix.last().map(String::as_str) != Some("--config")
+    {
+        return;
+    }
+    let command = bounded_argv(suffix, config_path.to_str(), 256);
+    route[argv_key] = command.argv;
+    route["sameConfigRequired"] = json!(command.same_config);
+    route["sameExecutableRequired"] = json!(command.same_executable);
+}
+
 pub(crate) fn continuation_route(config_path: &Path, mut suffix: Vec<String>) -> Value {
     suffix.push("--config".into());
     let recovery = bounded_argv(suffix, config_path.to_str(), 1024);
@@ -351,7 +397,7 @@ pub(crate) fn project(
             "presentation": {"terminal": response["presentation"]["terminal"]},
             "continuation": result["continuation"],
             "status": response["status"].as_str().unwrap_or("unresolved"),
-            "current": minimal_current(&response["next"]["current"]),
+            "current": bounded_current_routes(&response["next"]["current"], config_path),
             "work": work,
             "next": {"action": "inspect", "assignment": assignment},
             "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},

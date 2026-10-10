@@ -11,6 +11,9 @@
   navigation. Retain refusal, current binding, attempt and no-mutation checks.
 - Preserve the original resume status and small unreadable-candidate details
   in emergency responses while retaining bounded counts for oversized lists.
+- Preserve completed-goal details and all section references by sharing the
+  selected executable and configuration through explicit recovery flags when
+  repeated detail and receipt commands would exceed the response budget.
 
 The immutable 0.30.0 tag is retained. Its release checks failed before assets
 were published; this patch carries its accepted product changes forward.

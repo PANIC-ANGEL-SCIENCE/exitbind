@@ -361,3 +361,120 @@ fn config_path_over_budget_keeps_explicit_same_config_route() {
         "--config"
     );
 }
+
+#[test]
+fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
+    use super::super::response_recovery::bounded_argv;
+    let fixture = include_str!("../../tests/fixtures/compact-completed-goal.json");
+    for config_bytes in [32, 512, 6_000, 64_000] {
+        let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
+        let mut response: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        let work = response["work"].as_str().unwrap().to_owned();
+        for route in response["next"]["current"]["details"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+        {
+            let reference = route["reference"].as_str().unwrap().to_owned();
+            let command = bounded_argv(
+                vec![
+                    "work".into(),
+                    "expand".into(),
+                    work.clone(),
+                    reference,
+                    "--json".into(),
+                    "--config".into(),
+                ],
+                Some(&config),
+                1024,
+            );
+            route["command"] = command.argv;
+            route["sameConfigRequired"] = json!(command.same_config);
+            route["sameExecutableRequired"] = json!(command.same_executable);
+        }
+        for (pointer, export) in [
+            ("/next/current/completion/detail/command", false),
+            ("/next/current/completion/receipt/export/command", true),
+        ] {
+            let mut suffix = vec!["work".into(), "closeout".into(), work.clone()];
+            if export {
+                suffix.push("--export".into());
+            }
+            suffix.extend(["--json".into(), "--config".into()]);
+            let command = bounded_argv(suffix, Some(&config), 768);
+            *response.pointer_mut(pointer).unwrap() = json!({"argv":command.argv,
+                "sameConfigRequired":command.same_config,
+                "sameExecutableRequired":command.same_executable});
+        }
+        response["presentation"]["oversized"] = json!("x".repeat(16_000));
+        let compact = project(&response, Path::new(&config), "next").unwrap();
+        assert!(serde_json::to_vec(&compact).unwrap().len() + 1 <= MAX_RESPONSE_BYTES);
+        assert_eq!(
+            compact["current"]["binding"],
+            response["next"]["current"]["binding"]
+        );
+        let mut completion = compact["current"]["completion"].clone();
+        for (pointer, export) in [
+            ("/detail/command", false),
+            ("/receipt/export/command", true),
+        ] {
+            let command = completion.pointer(pointer).unwrap();
+            let mut argv = command["argv"].as_array().unwrap().clone();
+            if command["sameExecutableRequired"] == true {
+                argv.insert(0, json!(std::env::current_exe().unwrap().to_str().unwrap()));
+            }
+            if command["sameConfigRequired"] == true {
+                argv.push(json!(config));
+            }
+            let mut expected = vec![
+                json!(std::env::current_exe().unwrap().to_str().unwrap()),
+                json!("work"),
+                json!("closeout"),
+                json!(work),
+            ];
+            if export {
+                expected.push(json!("--export"));
+            }
+            expected.extend([json!("--json"), json!("--config"), json!(config)]);
+            assert_eq!(argv, expected);
+            *completion.pointer_mut(pointer).unwrap() = response["next"]["current"]["completion"]
+                .pointer(pointer)
+                .unwrap()
+                .clone();
+        }
+        assert_eq!(completion, response["next"]["current"]["completion"]);
+        assert_eq!(
+            compact["presentation"]["terminal"],
+            response["presentation"]["terminal"]
+        );
+        for (section, route) in compact["current"]["details"].as_object().unwrap() {
+            assert_eq!(
+                route["reference"],
+                response["next"]["current"]["details"][section]["reference"]
+            );
+            assert_eq!(route["readOnly"], true);
+            let mut argv = route["command"].as_array().unwrap().clone();
+            if route["sameExecutableRequired"] == true {
+                argv.insert(0, json!(std::env::current_exe().unwrap().to_str().unwrap()));
+            }
+            if route["sameConfigRequired"] == true {
+                argv.push(json!(config));
+            }
+            assert_eq!(
+                argv,
+                vec![
+                    json!(std::env::current_exe().unwrap().to_str().unwrap()),
+                    json!("work"),
+                    json!("expand"),
+                    json!(work),
+                    route["reference"].clone(),
+                    json!("--json"),
+                    json!("--config"),
+                    json!(config)
+                ],
+                "section {section}"
+            );
+        }
+        assert_eq!(compact["current"]["details"].as_object().unwrap().len(), 5);
+    }
+}

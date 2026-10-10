@@ -1,0 +1,266 @@
+{
+  "work": "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+  "next": {
+    "action": "done",
+    "current": {
+      "action": "done",
+      "actionForm": {
+        "binding": "e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3",
+        "choices": [],
+        "detail": {
+          "binding": "e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3",
+          "route": "current.details.grouped",
+          "summary": "follow the current grouped detail route for complete executable forms"
+        },
+        "leadChoiceRequired": false,
+        "mechanicalAction": null,
+        "state": "done",
+        "version": 1
+      },
+      "binding": "e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3",
+      "completeness": {
+        "binding": "complete",
+        "evidence": "requires_detail",
+        "instructions": "requires_detail",
+        "tasks": "requires_detail"
+      },
+      "completion": {
+        "detail": {
+          "command": {
+            "argv": [
+              "exitbind",
+              "work",
+              "closeout",
+              "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+              "--json",
+              "--config",
+              "exitbind.json"
+            ],
+            "sameConfigRequired": false,
+            "sameExecutableRequired": false
+          },
+          "readOnly": true
+        },
+        "goalProgress": {
+          "decomposition": {
+            "available": true,
+            "complete": 3,
+            "omitted": 0,
+            "total": 3
+          },
+          "goal": "Import names safely and show a count",
+          "overall": "complete",
+          "resultReadiness": {
+            "applicable": true,
+            "detail": "current checked evidence, review, and lead acceptance are bound",
+            "reason": "accepted",
+            "state": "READY"
+          },
+          "systemText": "Goal: COMPLETE | Import names safely and show a count | Tasks: 3/3 complete | R1=complete, R2=complete, R3=complete | Result readiness: READY",
+          "taskOmissions": 0,
+          "tasks": [
+            {
+              "current": true,
+              "currentReason": "current",
+              "disposition": null,
+              "id": "R1",
+              "label": "Reject invalid input before persistence.",
+              "performed": true,
+              "state": "complete",
+              "taskId": "a791366f6f6201254edcac9ec72017b12d8a69513b5e1e29a29a4048ffb16e27"
+            },
+            {
+              "current": true,
+              "currentReason": "current",
+              "disposition": null,
+              "id": "R2",
+              "label": "Persist each valid name only once.",
+              "performed": true,
+              "state": "complete",
+              "taskId": "d653b016db1da8f5b36f84a44465e5d6adffeb38ae46cc701e3462343727717b"
+            },
+            {
+              "current": true,
+              "currentReason": "current",
+              "disposition": null,
+              "id": "R3",
+              "label": "Show the number of distinct imported names.",
+              "performed": true,
+              "state": "complete",
+              "taskId": "021bbd75cf6530bd40f4ab8b131600e0188f4a8c51c9ebe112daef408a498e56"
+            }
+          ]
+        },
+        "receipt": {
+          "available": true,
+          "export": {
+            "advancesWork": false,
+            "command": {
+              "argv": [
+                "exitbind",
+                "work",
+                "closeout",
+                "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+                "--export",
+                "--json",
+                "--config",
+                "exitbind.json"
+              ],
+              "sameConfigRequired": false,
+              "sameExecutableRequired": false
+            },
+            "explicitRequestRequired": true
+          },
+          "reason": null,
+          "state": "not_requested"
+        },
+        "source": {
+          "ledgerProducer": {
+            "commit": null,
+            "name": "exitbind",
+            "version": "0.30.1"
+          },
+          "owner": "receipt::exit_path / verify_exit_path",
+          "recorder": {
+            "commit": null,
+            "name": "exitbind",
+            "version": "0.30.1"
+          },
+          "runId": "1c94c3cc73a360cd4f293843678507e546ff0c025c7b2596c44a188b7a5c6bf2"
+        },
+        "version": 1,
+        "work": "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+        "workAcceptance": {
+          "currentEvidence": true,
+          "state": "accepted",
+          "subjectSha256": "edf42a5b34359ab521e3646f1df43c9353b070adce275402dff728d855275484"
+        }
+      },
+      "details": {
+        "assignment": {
+          "command": [
+            "exitbind",
+            "work",
+            "expand",
+            "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+            "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:assignment:0",
+            "--json",
+            "--config",
+            "exitbind.json"
+          ],
+          "readOnly": true,
+          "reference": "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:assignment:0",
+          "sameConfigRequired": false,
+          "sameExecutableRequired": false
+        },
+        "evidence": {
+          "command": [
+            "exitbind",
+            "work",
+            "expand",
+            "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+            "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:evidence:0",
+            "--json",
+            "--config",
+            "exitbind.json"
+          ],
+          "readOnly": true,
+          "reference": "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:evidence:0",
+          "sameConfigRequired": false,
+          "sameExecutableRequired": false
+        },
+        "grouped": {
+          "command": [
+            "exitbind",
+            "work",
+            "expand",
+            "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+            "ref:work-detail:v1:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3",
+            "--json",
+            "--config",
+            "exitbind.json"
+          ],
+          "kind": "work_detail",
+          "readOnly": true,
+          "reference": "ref:work-detail:v1:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3",
+          "sameConfigRequired": false,
+          "sameExecutableRequired": false,
+          "version": 1
+        },
+        "recipient": {
+          "command": [
+            "exitbind",
+            "work",
+            "expand",
+            "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+            "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:recipient:0",
+            "--json",
+            "--config",
+            "exitbind.json"
+          ],
+          "readOnly": true,
+          "reference": "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:recipient:0",
+          "sameConfigRequired": false,
+          "sameExecutableRequired": false
+        },
+        "tasks": {
+          "command": [
+            "exitbind",
+            "work",
+            "expand",
+            "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4",
+            "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:tasks:0",
+            "--json",
+            "--config",
+            "exitbind.json"
+          ],
+          "readOnly": true,
+          "reference": "ref:work-section:v2:e2890aa253c81ce990689f99c1b2e7add736490514731813a6e9ab5996ef04a3:tasks:0",
+          "sameConfigRequired": false,
+          "sameExecutableRequired": false
+        }
+      },
+      "goal": {
+        "overallAvailable": true,
+        "overallGoalId": "e41a6cfb141ae7815fa4f59481b0295182a02757190bcbb79df19359d446d1ce",
+        "workGoalSha256": "0b192d47a8613fe01f2e9d5de7224cce1ae7cc9facad19e775387ff15013dcf6"
+      },
+      "missing": {
+        "count": 0,
+        "detail": "assignment",
+        "items": [],
+        "omitted": 0
+      },
+      "phase": {
+        "attempt": 1,
+        "stage": 4,
+        "status": "accepted"
+      },
+      "readiness": "READY",
+      "recipient": {
+        "actor": null,
+        "agent": null,
+        "assignment": null,
+        "role": null
+      },
+      "repair": null,
+      "result": {
+        "available": true,
+        "exists": true,
+        "historical": true,
+        "retainedPreviousResult": false,
+        "subject": {
+          "attempt": 1,
+          "sha256": "edf42a5b34359ab521e3646f1df43c9353b070adce275402dff728d855275484",
+          "workerArtifactSha256": "7d197b07418573e8ac04d4cbe1dfdaaccf76952b029f3bb088ef4b82f46b44e8"
+        }
+      },
+      "version": 1,
+      "work": "smw_bd2a59b2d3604f7852ebbfce082d66583fbda8e0edc48fa93abd579950b6ecb4"
+    }
+  },
+  "presentation": {
+    "terminal": "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY",
+    "oversized": "force detailed fallback"
+  }
+}
