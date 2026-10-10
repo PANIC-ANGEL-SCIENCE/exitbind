@@ -49,14 +49,14 @@ usual agent and Git workflow.
 ## Install and try a first result
 
 The candidate targets Linux x86_64 and macOS on Apple Silicon or Intel. Use the
-versioned installer below after the `v0.29.0` tag and release assets are
+versioned installer below after the `v0.30.0` tag and release assets are
 published. Until then, check the [published releases](https://github.com/envy404/exitbind/releases)
 for a version that is available. The installer checks the archive checksum;
 release archives also carry GitHub build attestations. Review the command and
 destination before approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.29.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.30.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -100,8 +100,8 @@ Missing or stale support keeps the goal open. Final closure needs a current
 checked integration covering every agreed item, with the selected review and
 Lead acceptance. See [Complete a goal with several requirements](docs/goal-requirements.md)
 for the supported commands and a reproducible three-item example. This capability
-is in the development source; the stable `v0.29.0` installer above retains its
-previous goal path.
+is included in the current release. Keep each older Work's compatible reader and
+configuration when upgrading.
 
 Ask your lead to resume the existing task in the same conversation. Exitbind
 can provide the current task details and available next steps, including a
@@ -166,3 +166,5 @@ project and record formats.
 - [Upgrade and rollback](docs/upgrade-and-rollback.md)
 - [Command reference](REFERENCE.md) and [terminology](docs/glossary.md)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
+
+For command output, bounded context and recovery, see [command consumption](docs/command-consumption.md).

@@ -5,6 +5,37 @@ use crate::memory::{self, forgetting};
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(a, 0, "memory requires an action")?;
     match action {
+        "correct-policy" => {
+            args::assert_options(
+                "memory correct-policy",
+                a,
+                &[
+                    "config",
+                    "from-config",
+                    "reason",
+                    "owner-decision",
+                    "apply",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("memory correct-policy", a, 2)?;
+            print_json(&memory::policy_correction::run(
+                l,
+                positional(a, 1, "memory correct-policy requires LEDGER")?,
+                option(
+                    a,
+                    "from-config",
+                    "memory correct-policy requires --from-config ORIGINAL_CONFIG",
+                )?,
+                option(
+                    a,
+                    "reason",
+                    "memory correct-policy requires --reason OWNER_REASON",
+                )?,
+                a.options.get("owner-decision").map(String::as_str),
+                a.flags.contains_key("apply"),
+            )?)
+        }
         "revalidate" => {
             args::assert_options(
                 "memory revalidate",
@@ -34,7 +65,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_positionals("memory resolve", a, 2)?;
             let agent = positional(a, 1, "memory resolve requires AGENT")?;
             let value = if let Some(task) = a.options.get("task") {
-                json!({"valid":true,"agent":agent,"references": memory::selection::resolve_for_task(l, agent, Some(task))?})
+                json!({"valid":true,"agent":agent,"references": memory::selection::resolve_for_task(l, agent, Some(task))?,"selection":memory::selection::diagnostics(l, agent)?})
             } else {
                 memory::resolve(l, agent)?
             };

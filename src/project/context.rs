@@ -7,6 +7,10 @@ use serde_json::{json, Value};
 const RULES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
 
 pub(crate) fn snapshot(loaded: &Loaded) -> Value {
+    snapshot_for_task(loaded, None)
+}
+
+pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
     let identity = match loaded.project_id.as_deref() {
         Some(id) => json!({"kind":"configured_id", "id":id}),
         None => json!({"kind":"location", "id":null}),
@@ -38,6 +42,7 @@ pub(crate) fn snapshot(loaded: &Loaded) -> Value {
                 _ => None,
             };
             json!({"agentId":id, "nativeName":agent.native_name(id),
+            "displayName":agent.display_name.as_deref().unwrap_or(id), "purpose":agent.purpose,
             "profilePath":agent.profile, "profileSha256":profile_hash})
         })
     });
@@ -58,8 +63,9 @@ pub(crate) fn snapshot(loaded: &Loaded) -> Value {
         }
     }).collect::<Vec<_>>();
     let memory = match loaded.lead() {
-        Some(id) => match memory::selection::resolve(loaded, id) {
-            Ok(references) => json!({"state":"current", "references":references}),
+        Some(id) => match memory::selection::resolve_for_task(loaded, id, task) {
+            Ok(references) => json!({"state":"current", "references":references,
+                "selection":memory::selection::diagnostics(loaded,id).ok()}),
             Err(reason) => json!({"state":"unavailable", "reason":reason, "references":[]}),
         },
         None => json!({"state":"unavailable", "reason":"no configured lead", "references":[]}),
@@ -89,9 +95,13 @@ pub(crate) fn snapshot(loaded: &Loaded) -> Value {
 }
 
 /// Full current content is read only for an eligible reference and checked again.
-pub(crate) fn memory_content(loaded: &Loaded, item_id: &str) -> Result<Value, String> {
+pub(crate) fn memory_content(
+    loaded: &Loaded,
+    item_id: &str,
+    task: Option<&str>,
+) -> Result<Value, String> {
     let lead = loaded.lead().ok_or("no configured lead")?;
-    let reference = memory::selection::resolve(loaded, lead)?
+    let reference = memory::selection::resolve_for_task(loaded, lead, task)?
         .into_iter()
         .find(|entry| entry["itemId"] == item_id)
         .ok_or("memory item is not currently eligible")?;
@@ -110,7 +120,7 @@ pub(crate) fn memory_content(loaded: &Loaded, item_id: &str) -> Result<Value, St
             "memory item exceeds the bounded detail route; read its named source file".into(),
         );
     }
-    let still_current = memory::selection::resolve(loaded, lead)?
+    let still_current = memory::selection::resolve_for_task(loaded, lead, task)?
         .into_iter()
         .any(|entry| entry == reference);
     if !still_current {

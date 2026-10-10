@@ -8,7 +8,7 @@ use super::ledger::{
     confined_target, project_file, relative_project_path, stable_bytes, stable_text, LedgerSnapshot,
 };
 
-pub(crate) const ACTIONS: [&str; 7] = [
+pub(crate) const ACTIONS: [&str; 8] = [
     "propose",
     "review",
     "promote",
@@ -16,6 +16,7 @@ pub(crate) const ACTIONS: [&str; 7] = [
     "revoke",
     "expire",
     "revalidate",
+    "correct-policy",
 ];
 const SHA256: &str = "0123456789abcdef";
 
@@ -47,6 +48,7 @@ pub(crate) fn validate_event(
         "expiresAt",
         "eventSha256",
         "revalidation",
+        "policyCorrection",
     ];
     for key in object.keys() {
         if !allowed.contains(&key.as_str()) {
@@ -55,10 +57,21 @@ pub(crate) fn validate_event(
             ));
         }
     }
-    if !(event["version"] == json!(1) && event.get("revalidation").is_none()
+    if !(event["version"] == json!(1)
+        && !matches!(
+            event["action"].as_str(),
+            Some("revalidate" | "correct-policy")
+        )
+        && event.get("revalidation").is_none()
+        && event.get("policyCorrection").is_none()
         || event["version"] == json!(2)
             && event["action"] == "revalidate"
-            && event["revalidation"].is_object())
+            && event["revalidation"].is_object()
+            && event.get("policyCorrection").is_none()
+        || event["version"] == json!(3)
+            && event["action"] == "correct-policy"
+            && event["policyCorrection"].is_object()
+            && event.get("revalidation").is_none())
         || event["kind"] != json!("memory")
         || !event["action"]
             .as_str()
@@ -188,6 +201,9 @@ pub(crate) fn validate_event(
     if action == "revalidate" {
         super::revalidation::validate_evidence(event, current)?;
     }
+    if action == "correct-policy" {
+        super::policy_correction::validate_evidence(event, current)?;
+    }
     next_state_for(
         action,
         current["state"]
@@ -269,7 +285,7 @@ pub(crate) fn apply_event(
         let action = event["action"]
             .as_str()
             .ok_or("memory event has no action")?;
-        if action != "revalidate" {
+        if action != "revalidate" && action != "correct-policy" {
             item["state"] = json!(state_for_action(action));
         }
         item["lastEventSha256"] = event["eventSha256"].clone();
@@ -302,7 +318,7 @@ pub(crate) fn validate_history_current(
     let first = ledger
         .events
         .iter()
-        .rposition(|event| event["action"] == "revalidate")
+        .rposition(|event| event["action"] == "revalidate" || event["action"] == "correct-policy")
         .unwrap_or(0);
     for event in &ledger.events[first..] {
         if event["configSha256"] != config_hash {
@@ -390,6 +406,9 @@ pub(crate) fn state_for_action(action: &str) -> &str {
 }
 
 pub(crate) fn next_state_for(action: &str, current: &str) -> Result<String, String> {
+    if action == "correct-policy" && current == "accepted" {
+        return Ok(current.to_owned());
+    }
     if action == "revalidate"
         && matches!(
             current,

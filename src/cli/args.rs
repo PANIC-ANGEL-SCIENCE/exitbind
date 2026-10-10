@@ -49,6 +49,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "name",
     "none-applicable",
     "owner-recovery",
+    "owner-decision",
     "outcome",
     "operation",
     "output",

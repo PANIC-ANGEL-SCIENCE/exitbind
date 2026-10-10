@@ -143,6 +143,33 @@ pub(crate) fn validate_references(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn diagnostics(loaded: &config::Loaded, name: &str) -> Result<Value, String> {
+    let agent = loaded
+        .agent(name)
+        .ok_or_else(|| format!("unknown agent '{name}'"))?;
+    let policy = policy::get(&loaded.config);
+    let scopes = policy
+        .as_ref()
+        .map(|p| eligible_scopes(agent, p))
+        .unwrap_or_default();
+    let reason = if policy.is_none() {
+        "memory_disabled"
+    } else if agent.memory_read.is_empty() {
+        "no_read_rights"
+    } else if agent.cross_context == "none" {
+        "cross_context_disabled"
+    } else if scopes.is_empty() {
+        "no_eligible_scopes"
+    } else {
+        "eligible_scopes_require_current_applicable_items"
+    };
+    Ok(
+        json!({"crossContext":agent.cross_context,"effectiveReadScopes":scopes,"reason":reason,
+        "meaning":"Storage and approval do not imply selection or recipient delivery. Empty recall remains valid for intentional storage-only use.",
+        "nextAction":if scopes.is_empty() {"Have the project owner review the intended read policy; preserve prior configuration for memory correct-policy if correction is needed."} else {"Use --task with the actual goal, then inspect the current recipient context to verify delivery."}}),
+    )
+}
+
 fn eligible_scopes(
     agent: &crate::config::types::AgentConfig,
     policy: &policy::MemoryPolicy,

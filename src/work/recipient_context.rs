@@ -39,6 +39,7 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     let rules = agent_rules::detail_projection(&agent_context::current_rules(loaded)?)?;
     let mut result = json!({"complete": content.is_some(), "available": true,
         "agent": name, "role": next["role"], "nativeName": agent.native_name(name),
+        "displayName": agent.display_name.as_deref().unwrap_or(name), "purpose":agent.purpose,
         "configurationSha256": hash::text(&loaded.source), "profile": profile,
         "rules": rules,
         "declaredBoundary": next["packet"]["declaredBoundary"],

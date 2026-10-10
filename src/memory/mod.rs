@@ -7,6 +7,7 @@ pub(crate) mod forgetting;
 pub(crate) mod ledger;
 pub(crate) mod lessons;
 pub(crate) mod policy;
+pub(crate) mod policy_correction;
 pub(crate) mod revalidation;
 pub(crate) mod selection;
 pub(crate) mod state;
@@ -20,6 +21,7 @@ pub fn resolve(loaded: &Loaded, agent: &str) -> Result<Value, String> {
         "valid": true,
         "agent": agent,
         "references": references,
+        "selection": selection::diagnostics(loaded, agent)?,
     }))
 }
 
@@ -32,7 +34,7 @@ pub fn action(
     ledger: &str,
     expires: Option<&str>,
 ) -> Result<Value, String> {
-    if !ACTIONS.contains(&act) {
+    if !ACTIONS.contains(&act) || matches!(act, "revalidate" | "correct-policy") {
         return Err(format!("unknown memory action '{act}'"));
     }
     ensure_config_current(loaded)?;

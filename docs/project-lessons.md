@@ -16,6 +16,11 @@ The owner opts in by including `project-lessons.v1` in `memory.protocolScopes`
 and granting the configured Lead the corresponding `memoryWrite`,
 `memoryReview`, `memoryPromote` and `memoryRevoke` rights. Consumers need
 `memoryRead` and compatible `crossContext`. Empty/default memory stays off.
+Before reporting memory as active, verify intended selection with
+`memory resolve AGENT --task ACTUAL_GOAL --json` and actual current recipient
+delivery. Its `selection` diagnostic explains effective scopes without exposing
+inaccessible items. `crossContext: none` permits intentional storage without
+recall. Check the selected Lead's retirement rights before authoring a lesson.
 Only the configured Lead can change a durable lesson, even if another role has
 generic memory mutation rights. The Lead still has to hold each configured right.
 
@@ -94,6 +99,42 @@ guard or transfers Work state, checks, review approval, acceptance or task grant
 Older binaries can read unchanged v1 ledgers, but refuse a revalidated v2 ledger;
 keep v2 ledgers intact during binary rollback and use the current reader for them.
 
+## Correct an owner-selected recall policy
+
+If an accepted lesson cannot be recalled because its original configuration
+disabled selection or omitted the Lead's revoke right, preserve that original
+configuration and prepare the owner's intended corrected configuration at the
+same project, control and state roots. Leave existing Work pins intact.
+
+```sh
+exitbind memory correct-policy MEMORY_ROOT/lesson.jsonl \
+  --from-config ORIGINAL_CONFIG.json --config CORRECTED_CONFIG.json \
+  --reason "Owner selected this lesson's recall and retirement"
+```
+
+This read-only preview returns the exact old/new configuration hashes, item,
+predecessor head and policy differences. Save its `ownerDecision` only after the
+project owner selected those differences, record `approved: true`, then follow
+the returned command with that decision file in `OWNER_DECISION`. No new owner
+confirmation is needed when the existing decision already covers this scope.
+The host controls who may author configuration and approval files; this is an
+explicit audited administrative transition, not human authentication or
+compatible revalidation by the old ineligible agent.
+
+Correction permits only additive project-lesson read access, selection from
+`none` to `protocol-only` for readers limited to that scope, and the same Lead's
+lesson revoke right. Unrelated policy changes, changed roots/ownership, stale
+configuration or predecessor head, changed source/profile and unapproved
+decisions refuse before append. Source, identity, expiry and all predecessor
+events remain. Changed guards stay excluded. An exact repeated apply at the
+same current head returns `existing_verified` without another event; after any
+later transition it refuses, so an old decision cannot revive a retired item.
+
+The new correction event uses memory format v3. Older readers refuse it without
+changing the ledger. Keep a compatible reader for corrected memory when rolling
+back an executable. Unchanged v1 and compatible v2 memory remain readable.
+This transition transfers no Work, grant, check, review or acceptance.
+
 ## Selection and bounds
 
 Agent names are explicit. An empty `taskTerms` list applies to all tasks for
@@ -109,6 +150,10 @@ explicit `omittedCount` and exact read-only command expose the remaining eligibl
 references; no omitted fact is silently treated as read. The existing overall
 memory policy budget still applies. `memory resolve AGENT --task CURRENT_GOAL
 --json` offers task-specific inspection.
+The normal project entry supports `project context --task CURRENT_GOAL --json`
+and `project context memory ITEM_ID --task CURRENT_GOAL --json` for the Lead's
+eligible references and complete current source. Without a task, task-specific
+lessons remain excluded instead of being injected into an unrelated session.
 
 Adding, correcting, revoking or invalidating selected memory changes the current
 Work's inputs. Existing running evidence may become stale and must be

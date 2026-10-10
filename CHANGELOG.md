@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.30.0
 
 - Retire the source-built Soulmate executable, its selectable runtime profile,
   and its updater route. Current Exitbind Run and Work behavior, historical
@@ -15,6 +15,20 @@
   transfers grants, checks, review or acceptance.
 - Keep pending worker stages available after a successful observed check, and
   bind worker re-plans to the current configured worker name and assignment.
+
+- Include the accepted adoption, named-goal/evidence and CI recovery changes.
+- Add explicit exact-item owner correction for a mistaken project-lesson recall
+  policy, with preserved lineage, expiry and idempotent lost-reply recovery.
+- Explain effective recall scopes and deliver configurable Lead display names,
+  purpose and canonical recipient identities through ordinary project context.
+- Ship outcome-first reporting and source-free recovery guidance, exact command
+  output contracts and bounded complete-context consumption.
+- Refuse held or foreign build targets during preflight and retain boot/process
+  identity with owned native check locks. Preserve current native platform,
+  test, package, installer and handoff checks while retiring obsolete execution.
+
+Policy correction writes memory v3, which older readers refuse. Preserve old
+Work pins and retain a compatible memory reader during selector rollback.
 
 ## 0.29.0
 

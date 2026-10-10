@@ -256,7 +256,10 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
     let text = if event == "SessionStart" {
-        let mut text = session_summary(&loaded.config);
+        let mut text = session_summary(
+            &loaded.config,
+            &crate::project::agent_display::lead(&loaded),
+        );
         if crate::producer::exitbind_surface() {
             let fixed = DIRECT_WORK.len() + RECEIVE_WORK.len() + 2;
             if text.len() + fixed + 128 > 3072 {
@@ -605,7 +608,7 @@ fn format_agent_context(
     Some(lines.join("\n"))
 }
 
-fn session_summary(config: &Value) -> String {
+fn session_summary(config: &Value, lead_display: &str) -> String {
     let compact = crate::producer::exitbind_surface();
     let names = |key: &str| {
         let Some(map) = config[key].as_object() else {
@@ -633,7 +636,7 @@ fn session_summary(config: &Value) -> String {
     } else {
         "Soulmate"
     };
-    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\nPreserve the existing root host conversation; {product} context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff.\nKeep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory.\nWhen a work response carries a non-null `presentation.terminal`, print that value on a line of its own, exactly as given, with nothing else on that line.\nNo model was selected or launched; declarations are not an OS sandbox.", safe_inline(config["orchestration"]["lead"].as_str().unwrap_or("")), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
+    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\nPreserve the existing root host conversation; {product} context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff.\nKeep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory.\nWhen a work response carries a non-null `presentation.terminal`, print that value on a line of its own, exactly as given, with nothing else on that line.\nNo model was selected or launched; declarations are not an OS sandbox.", safe_inline(lead_display), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
 }
 
 fn bounded(value: String) -> String {

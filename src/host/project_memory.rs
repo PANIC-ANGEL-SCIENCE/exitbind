@@ -27,7 +27,8 @@ pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
             |digest| format!("sha256 {digest}"),
         );
     let mut text = format!(
-        "Project role for this session: {lead} ({}), profile {} ({profile}).",
+        "Project role for this session: {} (lead, agent {lead}; {}), profile {} ({profile}).",
+        crate::project::agent_display::lead(loaded),
         inline(agent.purpose.trim()),
         agent.profile
     );

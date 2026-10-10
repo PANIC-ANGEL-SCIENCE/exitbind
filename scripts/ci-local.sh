@@ -102,6 +102,11 @@ target_lock="$CARGO_TARGET_DIR/.ci-local-lock"
 mkdir "$target_lock" || fail "cannot acquire target lock: $target_lock; inspect its owner and filesystem before retrying"
 owns_lock=true
 printf 'pid=%s\nroot=%s\nlogs=%s\n' "$$" "$root" "$run_dir" > "$target_lock/owner"
+printf 'started=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$target_lock/owner"
+if [ -r /proc/sys/kernel/random/boot_id ]; then
+  printf 'boot=%s\n' "$(cat /proc/sys/kernel/random/boot_id)" >> "$target_lock/owner"
+fi
+printf 'process-start=%s\n' "$(ps -p "$$" -o lstart=)" >> "$target_lock/owner"
 cache_owner="$CARGO_TARGET_DIR/.ci-local-checkout"
 if [ -e "$cache_owner" ]; then
   previous_root=$(cat "$cache_owner")

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.29.0/schema/exitbind-run-boundary.schema.json",
+  "$id": "https://raw.githubusercontent.com/envy404/exitbind/v0.30.0/schema/exitbind-run-boundary.schema.json",
   "title": "Exitbind run-scoped filesystem boundary",
   "type": "object",
   "required": ["version", "agents"],

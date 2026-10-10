@@ -416,6 +416,48 @@ fn preflight_resolves_cargo_once_and_refuses_product_target_log_or_temp() {
     let bad = run("CARGO", &outside.join("missing-cargo"));
     assert!(!bad.status.success());
     assert!(text(&bad).contains("CARGO must name an executable"));
+    let target = outside.join("target");
+    let lock = target.join(".ci-local-lock");
+    fs::create_dir(&lock).unwrap();
+    // Live, missing-owner and boot-uncertain records all stop admission. PID
+    // absence alone is deliberately insufficient to restart a check.
+    for owner in ["", "pid=1\nboot=current\n", "pid=999999999\nboot=old\n"] {
+        fs::write(lock.join("owner"), owner).unwrap();
+        let out = run("TMPDIR", &outside);
+        assert!(!out.status.success());
+        assert!(text(&out).contains("no build launched"));
+        assert!(lock.exists());
+        let launched = outside.join("dependent-launched");
+        let gate = Command::new("sh")
+            .args([
+                "-c",
+                "\"$1\" --preflight && printf launched > \"$2\"",
+                "admission-fixture",
+            ])
+            .arg(&script)
+            .arg(&launched)
+            .env("PATH", &command_path)
+            .env("CARGO", &cargo)
+            .env("CARGO_TARGET_DIR", &target)
+            .env("TMPDIR", &outside)
+            .env("CI_LOG_ROOT", outside.join("logs"))
+            .output()
+            .unwrap();
+        assert!(!gate.status.success());
+        assert!(!launched.exists());
+    }
+    // The fixture owns this nonexecuting lock and can prove no check was ever
+    // launched. Remove only that known fixture, then retry its no-effect preflight.
+    fs::remove_file(lock.join("owner")).unwrap();
+    fs::remove_dir(&lock).unwrap();
+    fs::write(target.join(".ci-local-checkout"), "another checkout").unwrap();
+    assert!(!run("TMPDIR", &outside).status.success());
+    fs::write(
+        target.join(".ci-local-checkout"),
+        env!("CARGO_MANIFEST_DIR"),
+    )
+    .unwrap();
+    assert!(run("TMPDIR", &outside).status.success());
     fs::remove_dir_all(outside).unwrap();
 }
 

@@ -50,7 +50,7 @@ pub(crate) fn export(payload: &Map<String, Value>, env_file: Option<&std::ffi::O
         use std::os::unix::fs::MetadataExt;
         // This is a host-managed environment file. Never chmod it; decline to
         // add private session state when its ownership or permissions differ.
-        if metadata.uid() != unsafe { libc::geteuid() } || metadata.mode() & 0o077 != 0 {
+        if !same_owner(&metadata, unsafe { libc::geteuid() }) || metadata.mode() & 0o077 != 0 {
             return;
         }
     }
@@ -65,10 +65,34 @@ fn safe_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+#[cfg(unix)]
+fn same_owner(metadata: &std::fs::Metadata, expected_uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    metadata.uid() == expected_uid
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[test]
+    fn descriptor_from_a_different_owner_is_not_a_private_session_target() {
+        use std::os::unix::fs::MetadataExt;
+        let descriptor = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
+        let metadata = descriptor.metadata().unwrap();
+        assert!(same_owner(&metadata, metadata.uid()));
+        assert!(!same_owner(&metadata, metadata.uid().wrapping_add(1)));
+        let system = std::fs::File::open("/etc/passwd")
+            .unwrap()
+            .metadata()
+            .unwrap();
+        let current = unsafe { libc::geteuid() };
+        if system.uid() != current {
+            assert!(!same_owner(&system, current));
+        }
+    }
 
     fn payload(session: &str) -> Map<String, Value> {
         json!({"hook_event_name":"SessionStart","session_id":session})

@@ -32,6 +32,14 @@ prepare_execution_roots() {
   outside_product TMPDIR "$TMPDIR"
   CI_LOG_ROOT=$(canonical_destination "${CI_LOG_ROOT:-$CARGO_TARGET_DIR/ci-local-runs}")
   outside_product CI_LOG_ROOT "$CI_LOG_ROOT"
+  # A held lock is not evidence that its process finished. In particular, an
+  # absent PID after a boot change does not authorize removal or another build.
+  test ! -e "$CARGO_TARGET_DIR/.ci-local-lock" ||
+    fail 'target lock is held; inspect its owner, boot/process identity and saved result before retrying; no build launched'
+  if [ -e "$CARGO_TARGET_DIR/.ci-local-checkout" ]; then
+    test "$(cat "$CARGO_TARGET_DIR/.ci-local-checkout")" = "$root" ||
+      fail 'target belongs to another checkout; choose a separate CARGO_TARGET_DIR; no build launched'
+  fi
   # Validate every destination before the first mkdir, including symlink parents.
   (umask 077; mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR" "$CI_LOG_ROOT")
   export CARGO_TARGET_DIR TMPDIR CI_LOG_ROOT

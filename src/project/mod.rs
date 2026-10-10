@@ -1,4 +1,5 @@
 pub(crate) mod agent_context;
+pub(crate) mod agent_display;
 pub(crate) mod agent_rules;
 pub(crate) mod architecture;
 mod binding_location;

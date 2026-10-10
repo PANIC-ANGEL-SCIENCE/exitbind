@@ -5,7 +5,7 @@ source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.
 A mapping records an assignment; it becomes current support only after actual
 checks, the selected review and Lead acceptance. This path is available in the
-development source; it does not change the stable v0.29.0 installation.
+development source; it does not change the stable v0.30.0 installation.
 
 ## Inspect and continue
 
