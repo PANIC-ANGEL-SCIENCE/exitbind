@@ -7,9 +7,11 @@ use crate::{config::Loaded, evidence::hash, run::RunSnapshot};
 use serde_json::{json, Value};
 
 const PAGE_BYTES: usize = 24 * 1024;
+const SMALL_PAGE_BYTES: usize = 4 * 1024;
 pub(crate) const MAX_DETAIL_BYTES: usize = 64 * 1024;
 const PREFIX: &str = "ref:work-section:";
-const SECTIONS: [&str; 3] = ["assignment", "evidence", "tasks"];
+const SMALL_PREFIX: &str = "ref:work-section:v2:";
+const SECTIONS: [&str; 4] = ["assignment", "evidence", "tasks", "recipient"];
 
 pub(crate) fn binding(
     loaded: &Loaded,
@@ -71,7 +73,7 @@ pub(crate) fn ensure_action_binding(
 }
 
 fn token(identity: &str, section: &str, page: usize) -> String {
-    format!("{PREFIX}{identity}:{section}:{page}")
+    format!("{SMALL_PREFIX}{identity}:{section}:{page}")
 }
 
 fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
@@ -85,7 +87,7 @@ fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
             "--config".into(),
         ],
         loaded.path.to_str(),
-        // Three legacy section routes share the bounded response with the
+        // Current section routes share the bounded response with the
         // grouped route and its effective-action projection. Preserve every
         // route and require exact invocation arguments when paths are long.
         768,
@@ -199,6 +201,7 @@ pub(crate) fn section_value(
             "residual": super::packet::project(work, snapshot, next)?})),
         "tasks" => crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"]),
         "evidence" => evidence(loaded, snapshot, next, false),
+        "recipient" => super::readable::recipient_context::section(loaded, next),
         _ => Err("unknown work section".into()),
     }
 }
@@ -355,11 +358,14 @@ pub(super) fn expand(
     requested: &str,
 ) -> Result<Value, String> {
     ensure_current_config(loaded)?;
+    let small = requested.starts_with(SMALL_PREFIX);
+    let prefix = if small { SMALL_PREFIX } else { PREFIX };
+    let page_bytes = if small { SMALL_PAGE_BYTES } else { PAGE_BYTES };
     let suffix = requested
-        .strip_prefix(PREFIX)
+        .strip_prefix(prefix)
         .ok_or("not a work section reference")?;
     let parts = suffix.split(':').collect::<Vec<_>>();
-    if parts.len() != 3 || !SECTIONS.contains(&parts[1]) {
+    if parts.len() != 3 || !SECTIONS.contains(&parts[1]) || (!small && parts[1] == "recipient") {
         return Err("malformed work section reference; refresh with work next".into());
     }
     let page: usize = parts[2].parse().map_err(|_| "invalid work section page")?;
@@ -369,7 +375,9 @@ pub(super) fn expand(
         .ok_or("current action unavailable")?
         .remove("current");
     let expected_binding = binding(loaded, work, snapshot, &canonical)?;
-    if parts[0] != expected_binding || requested != token(&expected_binding, parts[1], page) {
+    if parts[0] != expected_binding
+        || requested != format!("{prefix}{expected_binding}:{}:{page}", parts[1])
+    {
         return Err("work section reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
     }
     let value = section_value(loaded, work, snapshot, &canonical, parts[1])?;
@@ -382,21 +390,28 @@ pub(super) fn expand(
     if binding(loaded, work, &fresh_snapshot, &fresh)? != expected_binding {
         return Err("work section changed during expansion; refresh with work next".into());
     }
+    if parts[1] == "recipient"
+        && section_value(loaded, work, &fresh_snapshot, &fresh, "recipient")? != value
+    {
+        return Err(
+            "recipient instructions changed during expansion; refresh with work next".into(),
+        );
+    }
     let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
     let start = page
-        .checked_mul(PAGE_BYTES)
+        .checked_mul(page_bytes)
         .ok_or("work section page overflow")?;
     if start >= bytes.len() {
         return Err("work section page is outside the current section".into());
     }
-    let end = bytes.len().min(start.saturating_add(PAGE_BYTES));
+    let end = bytes.len().min(start.saturating_add(page_bytes));
     let more = end < bytes.len();
     let response = json!({"valid": true, "kind": "work_section", "reference": requested,
         "work": work, "binding": expected_binding, "section": parts[1],
         "encoding": "hex", "sectionSha256": hash::bytes(&bytes), "totalBytes": bytes.len(),
         "offset": start, "bytes": end-start, "contentHex": hex(&bytes[start..end]),
         "complete": !more && page == 0, "pageComplete": true,
-        "next": if more { route(loaded, work, &token(&expected_binding, parts[1], page+1)) } else { Value::Null },
+        "next": if more { route(loaded, work, &format!("{prefix}{expected_binding}:{}:{}",parts[1],page+1)) } else { Value::Null },
     });
     if serde_json::to_vec(&response)
         .map_err(|error| error.to_string())?

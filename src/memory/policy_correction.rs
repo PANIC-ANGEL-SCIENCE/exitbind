@@ -291,6 +291,8 @@ fn response(loaded: &Loaded, ledger: &str, event: &Value, status: &str) -> Resul
         json!({"effect":if status=="recorded" {"recorded"} else {"no-change"},
         "status":status,"itemId":event["itemId"],"event":event,
         "nextAction":super::revalidation::next_action(loaded, loaded.lead().ok_or("Lead missing")?, ledger, "accepted")?,
+        "activation":{"status":"requires_recipient_delivery_check",
+            "meaning":"A recorded correction is not completed activation. Use this corrected configuration for the intended next task and verify the original item in each intended recipient's relevant context. Empty required selection leaves activation unfinished."},
         "meaning":"Only this immutable project lesson's policy lineage changed. Source, expiry and predecessor history are preserved; no Work, grant, check, review or acceptance is transferred."}),
     )
 }

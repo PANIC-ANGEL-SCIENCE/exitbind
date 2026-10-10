@@ -18,6 +18,10 @@ const RELEASE_FILES: &[&str] = &[
     "CHANGELOG.md",
     "install.sh",
     "plugin.json",
+    "plugins/exitbind/plugin.json",
+    "plugins/exitbind/.codex-plugin/plugin.json",
+    "plugins/exitbind/.claude-plugin/plugin.json",
+    "scripts/check-plugin-distribution.py",
     "systems.soulmate/.codex-plugin/plugin.json",
     "systems.soulmate/.claude-plugin/plugin.json",
     "scripts/ci-wsl.sh",
@@ -107,6 +111,20 @@ fn current_release_and_historical_changelog_pass_with_installer_overrides() {
     text.push_str("\n## 0.1.0\n\nHistorical references such as v0.1.0 remain historical.\n");
     fs::write(path, text).unwrap();
     expect_success(gate("check-release-refs.sh", &fixture.0));
+}
+
+#[test]
+fn packaged_plugin_mirrors_and_validator_cannot_drift_from_the_release() {
+    for file in [
+        "plugins/exitbind/plugin.json",
+        "plugins/exitbind/.codex-plugin/plugin.json",
+        "plugins/exitbind/.claude-plugin/plugin.json",
+        "scripts/check-plugin-distribution.py",
+    ] {
+        let fixture = Fixture::release();
+        fixture.replace(file, VERSION, "99.98.97");
+        expect_failure(gate("check-release-refs.sh", &fixture.0), file);
+    }
 }
 
 #[test]

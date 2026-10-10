@@ -23,6 +23,8 @@
   purpose and canonical recipient identities through ordinary project context.
 - Ship outcome-first reporting and source-free recovery guidance, exact command
   output contracts and bounded complete-context consumption.
+- Recover a cut first response through current compact navigation and 4 KiB
+  exact section pages, including the current recipient's complete instructions.
 - Refuse held or foreign build targets during preflight and retain boot/process
   identity with owned native check locks. Preserve current native platform,
   test, package, installer and handoff checks while retiring obsolete execution.

@@ -8,6 +8,30 @@ use serde_json::{json, Value};
 
 const MAX_PROFILE_BYTES: usize = 16 * 1024;
 
+/// The current public section pages the complete instructions independently
+/// of the grouped response and its inline profile limit.
+pub(crate) fn section(loaded: &Loaded, next: &Value) -> Result<Value, String> {
+    let mut value = read(loaded, next)?;
+    if value["available"] != true || value["profile"]["complete"] == true {
+        return Ok(value);
+    }
+    let name = next["agent"].as_str().ok_or("current recipient missing")?;
+    let agent = loaded
+        .agent(name)
+        .ok_or("current recipient not configured")?;
+    let bytes = path::secure_bytes(&loaded.control_root, &agent.profile, "recipient profile")?;
+    if bytes.len() > 64 * 1024 || hash::bytes(&bytes) != value["profile"]["sha256"] {
+        return Err("recipient profile changed or exceeds the complete section bound".into());
+    }
+    let content = String::from_utf8(bytes).map_err(|_| "recipient profile is not UTF-8")?;
+    value["profile"]["content"] = json!(content);
+    value["profile"]["complete"] = json!(true);
+    value["profile"]["access"] = Value::Null;
+    value["profile"]["reason"] = Value::Null;
+    value["complete"] = json!(true);
+    Ok(value)
+}
+
 pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     let Some(name) = next["agent"].as_str() else {
         return Ok(json!({"complete": true, "available": false}));

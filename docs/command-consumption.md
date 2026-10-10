@@ -20,7 +20,7 @@ If a permit reply is lost, recover it with the exact same request ID.
 | `work detail WORK --json` | Current recipient, context and action forms | `next` belongs to the next/resume response; detail carries `actionForms`. Use its declared fields. |
 | `work permit` | JSON, including `allowed` | Execute the exact emitted argv. This operation does not accept an added `--json`. |
 | Memory transitions | JSON event and current `nextAction` | Follow that command; inspection's `--json` option is distinct from transition output. |
-| A refused operation | Nonzero status and error text on stderr | Preserve stdout, stderr and status. Inspect effects when the caller cannot determine whether an operation completed. |
+| A refused operation | Nonzero status; some operations return a structured refusal on stdout, while argument/load errors use stderr | Preserve both channels and status, then inspect that operation's contract. Inspect effects when the caller cannot determine whether an operation completed. |
 
 JSON values retain their declared types: a boolean is a boolean; an omitted or
 null object cannot be iterated. Parse only the response for the specific
@@ -44,6 +44,18 @@ pages before treating that section as complete. Missing mandatory instructions
 stay missing; an output limit never grants permission. Refresh a stale binding
 through the supported current route. Do not invent a private launcher or edit
 Exitbind source to finish an ordinary project.
+
+If the first response has already been cut and cannot be parsed, use
+`work next WORK --json` with the same executable/configuration when the Work
+is known, or `work resume --json` when its handle was lost. These are read-only
+recovery; do not repeat the original mutation. Follow `current.details` for
+assignment, evidence, tasks and **recipient** independently. The recipient
+section contains the current role profile, project rules and selected lessons.
+Current v2 section routes page 4 KiB of exact content, including profiles too
+large for inline detail. Verify every page's binding, offset and final hash.
+Historical section routes retain their 24 KiB paging. The host's output limit
+must still fit one page's encoded response; Exitbind cannot recover text a host
+discarded or change that host's limit.
 
 ## Report the requested outcome
 

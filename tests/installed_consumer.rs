@@ -3,6 +3,7 @@
 #![cfg(unix)]
 mod support;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
@@ -268,4 +269,103 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
     assert_eq!(section["complete"], true);
     assert_eq!(section["binding"], detail["binding"]);
     fs::remove_dir_all(capture).unwrap();
+}
+
+#[test]
+fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
+    let f = Fixture::new(Some("Mira"));
+    let rule = "Current rule: recover before retry; preserve required review.\n".repeat(300);
+    fs::write(f.root.join("AGENTS.md"), &rule).unwrap();
+    let config: Value =
+        serde_json::from_slice(&fs::read(f.root.join("exitbind.json")).unwrap()).unwrap();
+    let profile_path = f
+        .root
+        .join(config["agents"]["captain"]["profile"].as_str().unwrap());
+    let profile = "Own the selected goal; no worker label grants Lead authority.\n".repeat(300);
+    fs::write(&profile_path, &profile).unwrap();
+    let first = f.call(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "cut reply recovery",
+        "--check-command",
+        "true",
+        "--review-policy",
+        "required",
+        "--detail",
+    ]);
+    assert!(first.status.success(), "{first:?}");
+    assert!(first.stdout.len() > 16 * 1024);
+    let mut cut = first.stdout[..1000].to_vec();
+    cut.extend_from_slice(b"[host omitted the middle]");
+    cut.extend_from_slice(&first.stdout[first.stdout.len() - 1000..]);
+    drop(first); // Neither the full response nor its Work handle is retained.
+    assert!(serde_json::from_slice::<Value>(&cut).is_err());
+    drop(cut);
+    let resume = f.ok(&["work", "resume", "--json"]);
+    let work = resume["work"].as_str().unwrap();
+    let status = f.ok(&["work", "next", work, "--json"]);
+    let binding = &status["current"]["binding"];
+    let mut recovered_recipient = Value::Null;
+    for name in ["assignment", "evidence", "tasks", "recipient"] {
+        let mut route = status["current"]["details"][name].clone();
+        let mut bytes = Vec::new();
+        let mut expected_hash = Value::Null;
+        let mut pages = 0;
+        loop {
+            let argv = route["command"].as_array().unwrap();
+            let out = Command::new(argv[0].as_str().unwrap())
+                .current_dir(&f.root)
+                .args(argv[1..].iter().map(|v| v.as_str().unwrap()))
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{out:?}");
+            assert!(
+                out.stdout.len() < 12 * 1024,
+                "each page must fit independently"
+            );
+            let page: Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(&page["binding"], binding);
+            assert_eq!(page["offset"], bytes.len());
+            assert_eq!(page["pageComplete"], true);
+            assert_eq!(page["encoding"], "hex");
+            if pages == 0 {
+                expected_hash = page["sectionSha256"].clone();
+            }
+            assert_eq!(page["sectionSha256"], expected_hash);
+            let hex = page["contentHex"].as_str().unwrap();
+            let decoded: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap())
+                .collect();
+            assert_eq!(page["bytes"], decoded.len());
+            bytes.extend(decoded);
+            pages += 1;
+            if page["next"].is_null() {
+                assert_eq!(page["totalBytes"], bytes.len());
+                break;
+            }
+            route = page["next"].clone();
+        }
+        assert_eq!(expected_hash, format!("{:x}", Sha256::digest(&bytes)));
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        if name == "recipient" {
+            assert!(pages > 1);
+            recovered_recipient = value;
+        }
+    }
+    assert_eq!(recovered_recipient["complete"], true);
+    assert_eq!(recovered_recipient["profile"]["content"], profile);
+    assert_eq!(recovered_recipient["rules"][0]["content"], rule);
+    assert_eq!(recovered_recipient["agent"], "captain");
+    assert_eq!(recovered_recipient["role"], "lead");
+    let reference = status["current"]["details"]["recipient"]["reference"]
+        .as_str()
+        .unwrap();
+    fs::write(&profile_path, format!("{profile}Changed instruction\n")).unwrap();
+    assert!(!f
+        .call(&["work", "expand", work, reference, "--json"])
+        .status
+        .success());
 }

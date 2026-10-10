@@ -46,6 +46,13 @@ A reader that predates this marker deliberately refuses the newer state
 without mutating it. That refusal is a compatibility boundary, not transparent
 downgrade support. Historical markerless records retain their existing meaning.
 
+The 0.30.0 release also includes named requirements and memory policy-correction
+events. Keep a compatible producer for their completion and lifecycle commands.
+An older executable's raw goal-status display does not establish support for
+named-goal completion. Policy-corrected memory uses v3 events that older memory
+readers refuse. Switching the executable selector does not downgrade these
+saved formats or restore an earlier authority decision.
+
 ## Roll back the selected executable
 
 Rollback switches the executable selector to a version that can read the state

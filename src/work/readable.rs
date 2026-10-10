@@ -9,7 +9,7 @@ use crate::{config::Loaded, run::RunSnapshot};
 use serde_json::{json, Map, Value};
 
 #[path = "recipient_context.rs"]
-mod recipient_context;
+pub(super) mod recipient_context;
 
 pub(crate) const PREFIX: &str = "ref:work-detail:v1:";
 pub(crate) const MAX_GROUPED_BYTES: usize = 256 * 1024;

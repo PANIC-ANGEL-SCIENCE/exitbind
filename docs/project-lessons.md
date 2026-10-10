@@ -21,6 +21,9 @@ Before reporting memory as active, verify intended selection with
 delivery. Its `selection` diagnostic explains effective scopes without exposing
 inaccessible items. `crossContext: none` permits intentional storage without
 recall. Check the selected Lead's retirement rights before authoring a lesson.
+When activation was requested, an empty required selection is unfinished even
+when resolve succeeds. Agents carry out an already authorized correction and
+the delivery checks; they do not leave that selected work as a new owner task.
 Only the configured Lead can change a durable lesson, even if another role has
 generic memory mutation rights. The Lead still has to hold each configured right.
 
@@ -120,6 +123,15 @@ confirmation is needed when the existing decision already covers this scope.
 The host controls who may author configuration and approval files; this is an
 explicit audited administrative transition, not human authentication or
 compatible revalidation by the old ineligible agent.
+
+Use the corrected configuration for subsequent tasks and their emitted routes;
+an invocation that still selects the original store-only configuration retains
+its original policy. Preserve that original file for historical Work readers.
+After apply, verify the original item in each intended recipient's relevant
+context and its complete source, then verify unrelated-task exclusion. The
+response's activation status remains `requires_recipient_delivery_check` until
+those operational checks establish the requested result. Recording an event
+alone does not establish delivery.
 
 Correction permits only additive project-lesson read access, selection from
 `none` to `protocol-only` for readers limited to that scope, and the same Lead's
