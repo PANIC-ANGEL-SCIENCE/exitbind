@@ -69,23 +69,24 @@ pub(crate) fn recover(
         {
             return Err("no exact running admission awaits configured-Lead recovery".into());
         }
+        let snapshot = protocol::snapshot(&state, &source);
+        let request_binding =
+            protocol::request_binding(work, &state, &snapshot["ledgerSourceSha256"])?;
         let template = json!({"version": 1, "work": work, "agent": agent,
-            "approved": false, "reason": "<REASON>", "currentBinding": next["current"]["binding"],
-            "snapshot": protocol::snapshot(&state, &source),
+            "approved": false, "reason": "<REASON>", "currentBinding": request_binding,
+            "snapshot": snapshot,
             "response": "<COMPLETE_SAVED_STORAGE_FAILURE_RESPONSE>", "responseSha256": "<SHA256_OF_RESPONSE_BYTES>"});
         if !apply {
             return Ok((None, false, template));
         }
-        details::ensure_action_binding(
-            loaded,
-            work,
-            Some(binding.ok_or("--apply requires --current-binding")?),
-        )?;
+        details::ensure_current_config(loaded)?;
+        let binding = binding.ok_or("--apply requires --current-binding")?;
         let d = decision.as_ref().ok_or("missing decision")?;
         if d["snapshot"] != template["snapshot"]
             || d["work"] != work
             || d["agent"] != agent
-            || d["currentBinding"].as_str() != binding
+            || d["currentBinding"] != template["currentBinding"]
+            || d["currentBinding"].as_str() != Some(binding)
         {
             return Err("recovery decision or original observed inputs are stale".into());
         }

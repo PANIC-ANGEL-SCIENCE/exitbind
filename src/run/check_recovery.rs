@@ -18,6 +18,25 @@ pub(crate) fn snapshot(state: &Value, source: &str) -> Value {
         "timeoutMs": current["timeoutMs"], "observer": current["producer"]})
 }
 
+/// Recovery has a canonical request binding of its own. Reconstruct the
+/// admission and Lead assignment rather than trusting a submitted snapshot.
+pub(crate) fn request_binding(
+    work: &str,
+    state: &Value,
+    prefix_sha256: &Value,
+) -> Result<String, String> {
+    let lead = crate::run::assignment::pending(state)
+        .into_iter()
+        .find(|a| a["role"] == "lead")
+        .ok_or("recovery requires the current Lead assignment")?;
+    let mut admission = snapshot(state, "");
+    admission["ledgerSourceSha256"] = prefix_sha256.clone();
+    Ok(hash::value(&json!({"domain": "check_recovery_request_v1",
+        "work": work, "lead": {"agent": lead["agent"],
+            "assignment": crate::run::assignment::handle(work, &lead)?},
+        "snapshot": admission})))
+}
+
 pub(crate) fn decision(value: &Value) -> Result<Value, String> {
     if serde_json::to_vec(value).map_err(|e| e.to_string())?.len() > MAX_DECISION_BYTES {
         return Err("recovery decision exceeds 32768 bytes".into());
@@ -174,6 +193,12 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         || s["timeoutMs"] != current["timeoutMs"]
         || s["observer"] != current["producer"]
         || d["agent"] != lead["agent"]
+        || d["currentBinding"]
+            != request_binding(
+                d["work"].as_str().ok_or("invalid recovery Work")?,
+                state,
+                &s["ledgerSourceSha256"],
+            )?
     {
         return Err("recovery is not the exact current Lead/admission binding".into());
     }

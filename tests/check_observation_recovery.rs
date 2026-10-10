@@ -273,6 +273,7 @@ fn recovery_refuses_unapproved_foreign_stale_unknown_and_changed_evidence() {
     let mut cases = Vec::new();
     for (path, value) in [
         ("/approved", json!(false)),
+        ("/currentBinding", json!("b".repeat(64))),
         ("/agent", json!("worker")),
         ("/work", json!(format!("smw_{}", "a".repeat(64)))),
         ("/snapshot/admissionEventSha256", json!("a".repeat(64))),
@@ -317,6 +318,23 @@ fn recovery_refuses_unapproved_foreign_stale_unknown_and_changed_evidence() {
         assert!(!refused.status.success(), "{c}: {refused:?}");
         assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     }
+    let mut general = d.clone();
+    general["currentBinding"] = f.ok(&["work", "detail", &work, "--json"], b"")["binding"].clone();
+    assert!(!recover(&f, &work, &general).status.success());
+    let disagree = f.call(
+        &[
+            "work",
+            "recover-check",
+            &work,
+            "--apply",
+            "--current-binding",
+            &"c".repeat(64),
+            "--json",
+        ],
+        &serde_json::to_vec(&d).unwrap(),
+    );
+    assert!(!disagree.status.success());
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     let r: Value = serde_json::from_str(d["response"].as_str().unwrap()).unwrap();
     let partial = f.root.join(
         r["observation"]["partialCaptures"][0]["path"]
@@ -344,6 +362,10 @@ fn canonical_recovery_rejects_rehashed_changed_binding_facts_and_prefix() {
     assert!(recover(&f, &work, &d).status.success());
     let original = f.events(&work).last().unwrap().clone();
     for (path, v) in [
+        (
+            "/observation/recovery/currentBinding",
+            json!("b".repeat(64)),
+        ),
         (
             "/observation/recovery/snapshot/binding/observerExecutableSha256",
             json!("b".repeat(64)),

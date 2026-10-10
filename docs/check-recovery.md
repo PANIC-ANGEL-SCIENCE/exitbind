@@ -14,7 +14,11 @@ exitbind work recover-check WORK --json --config CONFIG
 ```
 
 The response is read-only and supplies `ownerDecision`. Preserve its exact
-current binding, admission snapshot, earlier observer identity and timeout.
+recovery request binding, admission snapshot, earlier observer identity and timeout.
+This binding is specific to this preview, with the `check_recovery_request_v1`
+domain, current Lead assignment and original admission. A general Work-detail
+binding cannot substitute for it. Canonical readers reconstruct the request
+binding from the pre-recovery state as well as checking the actual ledger prefix.
 After confirming the retained failure belongs to that attempt, set `approved`
 to true, supply the Lead's reason, put the complete saved response bytes in
 `response`, and set `responseSha256` to their SHA-256. Pass that complete JSON

@@ -349,7 +349,8 @@
         },
         "currentBinding": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Preview-specific check_recovery_request_v1 binding; reconstructed from pre-recovery Work, Lead assignment and admission snapshot; not a general Work detail binding."
         },
         "snapshot": {
           "type": "object",
