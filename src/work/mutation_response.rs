@@ -160,6 +160,14 @@ pub(super) fn bounded(
         value["current"] = super::compact::minimal_current(&value["current"]);
     }
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
+        // A mutation reply prioritizes its exact immutable-result readback.
+        // Fresh current navigation is already required before the next effect;
+        // keep its grouped route, without repeating every section route here.
+        if let Some(details) = value["current"]["details"].as_object_mut() {
+            details.retain(|name, _| name == "grouped");
+        }
+    }
+    if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         // The human channel still needs its bounded product-owned status.
         // Drop the larger structured task summary before that presentation.
         if value["presentation"].is_object() {
