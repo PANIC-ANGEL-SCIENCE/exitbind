@@ -1,14 +1,13 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.0
+Published stable tag: v0.31.10
 Source candidate tag: v0.31.10
 
-The published stable baseline is v0.31.0. The next prepared source candidate is
-0.31.10. A source version, feature build or passing CI is not an official
-release. README install links continue to name available published assets.
-The release-reference check validates these two declarations separately. Only
-the listed published user guides may retain the stable tag; source metadata,
-schemas and candidate installation defaults must match the candidate version.
+The published stable release and current source version are both 0.31.10.
+README install links name the available published assets. A source version or
+passing CI alone does not establish an official release. The release-reference
+check validates published and candidate declarations separately; source metadata,
+schemas and installation defaults must match the current source version.
 
 Future stable releases in this series use 0.31.10 through 0.31.99, increasing
 only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are
@@ -29,7 +28,7 @@ bound to its original configuration and producer. New optional child-intent
 metadata does not grant an older host permission. Compatible readers prepare
 and validate current approved content.
 
-Publication requires exact source review, native checks, hosted feature/main
-checks, actual WSL validation, tag checks, release attestations and installer
-proof. Official release and operator installation remain separate decisions.
-Published v0.31.0 tags and assets stay immutable.
+Publication requires exact source review, native checks, hosted checks on the
+selected publication ref, actual WSL validation, tag checks, release attestations
+and installer proof. Official release and operator installation remain separate decisions.
+Published tags and assets stay immutable.

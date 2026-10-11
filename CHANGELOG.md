@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.31.10 source candidate
+## 0.31.10
 
 - Deliver reviewed project skills and lenses to applicable configured recipients
   on their next compatible native launch, with bounded content and current hashes.
@@ -8,8 +8,8 @@
   after permit/edit and retain complete instruction and evidence section routes.
 - Explain project lesson source/fact bounds and stable correction identity before
   proposal; clarify singleton continuing-work obligations.
-- Adopt the deliberate 0.31.10..99 release series. Public release, attestation,
-  installer and platform gates remain separate from this source candidate.
+- Adopt the deliberate 0.31.10..99 release series, with immutable published
+  artifacts and required attestation, installer and platform gates.
 
 ## 0.31.0
 

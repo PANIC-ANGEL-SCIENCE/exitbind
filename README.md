@@ -56,13 +56,13 @@ Small reversible edits can stay in your usual agent and Git workflow.
 
 ## Install and try a first result
 
-The current [v0.31.0 release](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.0)
+The current [v0.31.10 release](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.10)
 provides Linux x86_64 and macOS Apple Silicon or Intel binaries. The installer
 checks the archive checksum. Review the command, destination and
 [release provenance](docs/public-history.md) before approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.10/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

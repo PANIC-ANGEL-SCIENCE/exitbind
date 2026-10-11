@@ -1,7 +1,7 @@
 # Approved project skills and lenses
 
-This path is available in the 0.31.10 source candidate. The published stable
-installation remains separate; see [release status](release-version-policy.md).
+This path is included in the published 0.31.10 release. See
+[release status](release-version-policy.md).
 
 An approved resource reaches a relevant configured agent on its next native
 launch. Registration grants no shell, memory, credential or host rights. The
