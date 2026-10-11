@@ -297,8 +297,9 @@ Published stable release; the `v0.28.0` tag and release assets are available.
 
 ## 0.24.0-rc.7
 
-- Canonicalize the public author identity as `envy404`; retain
-  `envy404` only for GitHub account and repository coordinates.
+- Align public author metadata and GitHub account coordinates with the
+  maintainer's current public identity. The organization import updates these
+  historical identity references; original source bytes remain private.
 - Add a deterministic `.mailmap` regression check and contributor guidance to
   prevent future identity drift without rewriting published history.
 

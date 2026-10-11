@@ -9,7 +9,7 @@ const PROFILES: [(&str, &str); 3] = [
     ("reviewer", "# Reviewer\n\nReview the checked-out artifact and returned work, not their summary. Every finding needs a file:line reference, measured number, or short quote. Check guards, documented limitations, and deliberate decisions before reporting. For a whole-repository review, run the repository's mechanical inventory first and report adoption, long-term ownership, and agent-consumer findings separately. When a finding recurs, recommend the mechanical gate that would have caught it. Return role-scoped evidence; do not silently expand scope or claim the lead's final authority. A finding can be valid without being in the current scope; say which, and present any suggested implementation as a proposal, not an instruction.\n"),
 ];
 const SOULMATE_SCHEMA: &str = concat!(
-    "https://raw.githubusercontent.com/envy404/soulmate/v",
+    "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v",
     env!("CARGO_PKG_VERSION"),
     "/schema/soulmate.schema.json"
 );

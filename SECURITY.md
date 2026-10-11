@@ -308,7 +308,8 @@ command reads only the host event stdin and emits bounded context for
 `SessionStart` and `SubagentStart`; it ignores other events and fails open.
 
 The historical `systems.soulmate/` directory preserves host-specific
-manifests and hooks as compatibility resources only. Its presence does not
+manifests and hooks under neutral public identifiers. It does not alias an old
+plugin registration. Its presence does not
 activate a hook.
 When a trusted, supported host consumes an explicitly installed resource,
 `SessionStart` emits the lead name plus configured agent and workflow names.

@@ -5,7 +5,7 @@ record.
 
 ## Baseline being compared
 
-The baseline is public commit
+The original baseline is privately retained commit
 [`2773dfc`](https://github.com/envy404/soulmate/commit/2773dfc98e07d59d2a1763cdc02c646d296325f9),
 whose product behavior matches the preceding 0.11.0 release. The intervening
 changes affect contributor release checks and documentation.

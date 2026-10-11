@@ -6,7 +6,7 @@ ledger, an old executable, or a rollback.
 
 The rule behind every entry below: compatibility reads the old world, and never
 relabels its evidence as new evidence. Active Soulmate distribution ended in
-`v0.25.0`; historical releases and records remain available.
+`v0.25.0`; original historical releases and records are privately retained.
 The current release also retires its old executable profile and updater route.
 
 ## Rename history
@@ -30,7 +30,7 @@ For current executable changes and rollback limits, see
 | `soulmate/` control tree | `exitbind/` | Read for existing projects; never created by a current install |
 | `.agents/skills/soulmate/`, `.claude/skills/soulmate/` | `.../skills/exitbind/` | Historical project files remain readable; current setup installs only Exitbind guidance |
 | `SOULMATE_*` environment controls | `EXITBIND_*` | Historical installer compatibility inputs remain; the active updater follows only the Exitbind profile |
-| `systems.soulmate/` | `systems.exitbind/` | Retained for already-published plugin consumers; not referenced by current onboarding |
+| `systems.soulmate/` | `systems.exitbind` plugin identifier | Retained Soulmate metadata uses neutral public identifiers; reinstall the current Exitbind plugin to replace an old registration |
 
 A current Exitbind install creates none of the historical spellings. That is a
 tested property, not an intention: see `tests/fresh_user_surface.rs`.
@@ -47,9 +47,12 @@ Checked runs written by Soulmate use run-event version 3; new Exitbind starts
 use version 8, while current readers retain historical versions 1 through 7.
 `REFERENCE.md` holds the exact reader and writer matrix.
 
-The immutable schema files `schema/soulmate.schema.json`,
-`schema/run-event-v3.schema.json`, and `schema/run-event-v4.schema.json` describe
-historical formats and are never edited.
+The schema files `schema/soulmate.schema.json`, `schema/run-event-v3.schema.json`,
+and `schema/run-event-v4.schema.json` describe historical formats. Their format
+constraints remain unchanged. Public schema-address annotations and maintainer
+identifiers were updated during the organization import; the exact original
+schema bytes remain in the private archive. Existing ledgers and their hashes
+are never rewritten.
 
 ## The hook protocol token
 
@@ -90,8 +93,10 @@ rendered as product identity anywhere in the interface.
   executable or selects a Soulmate updater profile. Frozen historical fixtures
   preserve old producer, path and installer records without building that
   executable.
-- The `systems.soulmate` plugin files remain in source for already
-  published consumers, but current packaging contains only the Exitbind plugin.
+- The `systems.soulmate` plugin files retain historical Soulmate metadata under
+  a neutral directory name. They do not alias an old host registration. Current
+  packaging contains only the Exitbind plugin; reinstall it through the
+  `exitbind-plugins` marketplace when replacing an earlier registration.
 - The historical hook protocol token remains under the criterion above.
 
 Historical readers and published evidence remain independent of active

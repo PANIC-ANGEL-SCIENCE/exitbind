@@ -4,15 +4,18 @@
 
 The organization repository begins at the single root commit
 [`cde4c003ad885b99ec8e405c8bc80e89935bb050`](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/commit/cde4c003ad885b99ec8e405c8bc80e89935bb050).
-It imports the source tree at the transition from Soulmate to Exitbind. Earlier
-development history is privately retained. Soulmate names, compatibility
-artifacts and historical release notes remain in the source where relevant.
+It imports the transition from Soulmate to Exitbind with retired maintainer
+branding removed from the public files and paths. Earlier development history
+and the unmodified source snapshots are privately retained. Soulmate product
+names and historical record formats remain where relevant.
 
-Subsequent Exitbind development commits remain individual commits. Their source
-trees and author and committer dates and timezones are retained. Commit messages
-are unchanged except for two maintainer Co-authored-by trailers normalized to
-the current public GitHub noreply identity. Other contributor attribution remains
-unchanged.
+Subsequent Exitbind development commits remain individual commits. Their author
+and committer dates and timezones are retained. Public source trees have updated
+maintainer names, repository coordinates and plugin identifiers. Commit messages
+also remove retired branding; two maintainer Co-authored-by trailers use the
+current public GitHub noreply identity. Other contributor attribution remains
+unchanged. These edited snapshots must not be described as byte-identical copies
+of the original source.
 Rewriting parentage and attribution changes commit and tag object IDs and
 invalidates earlier commit signatures. Original signed release archives are
 not evidence that a rewritten source commit produced those bytes.
@@ -25,7 +28,9 @@ checkouts fail the check.
 
 ## Releases and installed readers
 
-Historical tags identify retained source snapshots. Historical release notes
+Historical tags identify the corresponding edited source snapshots. Links to
+older evidence on the maintainer's account refer to the private original history
+and may require access. Historical release notes
 do not establish that binary assets are published in this repository. Newly
 published archives carry provenance for their actual organization repository,
 source commit and release tag; old attestations are never relabeled.

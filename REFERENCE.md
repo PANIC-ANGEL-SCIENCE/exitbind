@@ -1033,7 +1033,8 @@ or activate hooks merely because a plugin was installed. The portable Agent
 Plugins v1 manifest carries the root `skills/` bundle, which stable dotagents
 releases can install without activating the preserved host-hook extension. The
 historical `systems.soulmate/` directory keeps host-specific manifests
-and hooks as compatibility resources only. A successful dotagents install
+and hooks under neutral public identifiers. It does not alias an old plugin
+registration; reinstall the current plugin when replacing one. A successful dotagents install
 proves that the portable bundle was accepted, not that a host activated or
 executed a hook.
 
