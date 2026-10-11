@@ -310,6 +310,7 @@ fn validate_registry(root: &Path, registry: &Value) -> Result<(), String> {
             return Err(format!("duplicate claim id {id}"));
         }
         let statement = required_text(claim, "statement", &label)?;
+        let statement_words = statement.split_whitespace().collect::<Vec<_>>().join(" ");
         required_text(claim, "scope", &label)?;
         required_text(claim, "evidenceLevel", &label)?;
 
@@ -351,7 +352,8 @@ fn validate_registry(root: &Path, registry: &Value) -> Result<(), String> {
                 required_relative_file(root, &reference, &format!("{label}.publicDocsRefs"))?;
             let source = fs::read_to_string(&path)
                 .map_err(|error| format!("cannot read {reference}: {error}"))?;
-            if !source.contains(statement) {
+            let source_words = source.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !source_words.contains(&statement_words) {
                 return Err(format!(
                     "{label}.statement is absent from public document {reference}"
                 ));
@@ -727,6 +729,22 @@ fn registry_rejects_missing_limitation_or_statement() {
         .remove("statement");
     write_json(&path, &missing_statement);
     assert_reject(validate_registry(fixture.path(), &read_json(&path)));
+}
+
+#[test]
+fn registry_accepts_wrapped_claims_but_rejects_changed_words() {
+    let fixture = registry_fixture();
+    let registry = read_json(&fixture.path().join("proof/claims.json"));
+    let document = fixture.path().join("README.md");
+    let original = fs::read_to_string(&document).unwrap();
+    let wrapped = original.split_whitespace().collect::<Vec<_>>().join("\n");
+    fs::write(&document, wrapped).unwrap();
+    validate_registry(fixture.path(), &registry).unwrap();
+
+    let changed = original.replace("refuses acceptance", "permits acceptance");
+    assert_ne!(changed, original, "fixture must change the claim's meaning");
+    fs::write(&document, changed).unwrap();
+    assert_reject(validate_registry(fixture.path(), &registry));
 }
 
 #[test]
