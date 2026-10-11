@@ -342,7 +342,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         assert!(
             fs::read_to_string(&calls)
                 .unwrap()
-                .contains("repos/envy404/exitbind/releases"),
+                .contains("repos/PANIC-ANGEL-SCIENCE/exitbind/releases"),
             "{case_id}: updater repository route"
         );
         let calls_text = fs::read_to_string(&calls).unwrap();

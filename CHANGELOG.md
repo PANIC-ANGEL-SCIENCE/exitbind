@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.31.0
+
+- Move the canonical repository, installer, update feed, schemas and plugin
+  links to `PANIC-ANGEL-SCIENCE/exitbind`.
+- Start the organization repository with one imported legacy baseline and
+  retain subsequent Exitbind development commits individually. Retained
+  author, committer and tagger dates are unchanged; rewritten object IDs and
+  signatures differ. See [public history](docs/public-history.md).
+- Existing installations need a one-time installation from the new repository
+  to switch their update origin. Preserve pinned readers for active Work and
+  historical records. Current commands, hook tokens and record formats remain
+  compatible; Soulmate remains retired.
+- Publish newly built artifacts under a new version and source provenance;
+  earlier signed archives are not relabeled as builds of rewritten commits.
+
 ## 0.30.1
 
 - Keep complete recovery responses within the existing 8 KiB output budget

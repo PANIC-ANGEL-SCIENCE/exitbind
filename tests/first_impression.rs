@@ -56,10 +56,10 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
     let readme = include_str!("../README.md");
     assert!(readme.starts_with("# Exitbind\n"));
     assert!(readme.contains(&format!(
-        "https://raw.githubusercontent.com/envy404/exitbind/v{}/install.sh",
+        "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{}/install.sh",
         env!("CARGO_PKG_VERSION")
     )));
-    assert!(readme.contains("https://github.com/envy404/exitbind"));
+    assert!(readme.contains("https://github.com/PANIC-ANGEL-SCIENCE/exitbind"));
     assert!(readme.contains("URL-only"));
     assert!(readme.contains("A reported “done” is not an accepted result."));
     assert!(readme.contains("Make completion trustworthy"));

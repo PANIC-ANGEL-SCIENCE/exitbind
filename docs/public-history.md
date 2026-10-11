@@ -1,44 +1,45 @@
 # Public release history
 
-It verifies what you asked an agent to do and what came back, in the same
-record.
+## The organization import baseline
 
-For an older ledger, start with the
-[public tag and format reader map](../CHANGELOG.md#public-tags-and-format-readers).
-It distinguishes tagged source support from historical release notes and
-identifies the reader required for checked runs.
+The organization repository begins at the single root commit
+[`cde4c003ad885b99ec8e405c8bc80e89935bb050`](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/commit/cde4c003ad885b99ec8e405c8bc80e89935bb050).
+It imports the source tree at the transition from Soulmate to Exitbind. Earlier
+development history is privately retained. Soulmate names, compatibility
+artifacts and historical release notes remain in the source where relevant.
 
-## The retained history boundary
+Subsequent Exitbind development commits remain individual commits. Their source
+trees, messages, and author and committer dates and timezones are retained.
+Maintainer attribution uses the current public GitHub noreply identity.
+Rewriting parentage and attribution changes commit and tag object IDs and
+invalidates earlier commit signatures. Original signed release archives are
+not evidence that a rewritten source commit produced those bytes.
 
-The current public repository begins at commit
-[`a0b8be321d67cf81041d8cc8d49b13d86cbab4c0`](https://github.com/envy404/soulmate/commit/a0b8be321d67cf81041d8cc8d49b13d86cbab4c0),
-which carries package version 0.10.0 and has no parent.
-Earlier entries in CHANGELOG.md are historical release notes; they do not
-establish Git ancestry available in this repository. This boundary is disclosed
-rather than reconstructed from those notes.
+Contributor validation pins the import baseline and requires it to remain an
+ancestor of each checked candidate. Pull-request CI checks the original PR head
+as well as the tested merge commit. Replacement objects, grafts or a main-side
+merge parent cannot hide lost PR ancestry. Missing Git evidence and shallow
+checkouts fail the check.
 
-The 0.11.0 release commit
-[`7f1d0146694d6b049f60e6bfba968e2a8c3a104d`](https://github.com/envy404/soulmate/commit/7f1d0146694d6b049f60e6bfba968e2a8c3a104d)
-retains that root and adds two commits. Contributor history validation pins this
-published checkpoint and requires it to remain an ancestor of each checked
-candidate. Pull-request CI checks the original PR head as well as the tested
-merge commit, so a main-side parent cannot hide lost PR ancestry. Missing Git
-evidence fails the check, including an incomplete checkout that cannot establish
-ancestry.
+## Releases and installed readers
+
+Historical tags identify retained source snapshots. Historical release notes
+do not establish that binary assets are published in this repository. Newly
+published archives carry provenance for their actual organization repository,
+source commit and release tag; old attestations are never relabeled.
+
+For older record formats, consult the
+[tag and reader map](../CHANGELOG.md#public-tags-and-format-readers). Keep the
+compatible reader and configuration pinned for each active Work. See
+[upgrade and rollback](upgrade-and-rollback.md) for the installation cutover.
 
 ## Verify a specific observation
 
-Compare a reported README with a named commit or tag and record its blob ID.
-A moving branch URL, search result or cached rendering can refer to a different
-snapshot. Read the GitHub contents API for the selected ref and compare the
-README install command with Cargo.toml and install.sh in that same snapshot.
-The release-reference gate checks these source identities before publication;
-it cannot invalidate an external search cache.
+Compare documentation, Cargo.toml and install.sh at the same named commit or
+tag. A moving branch URL, search result or cached rendering may show another
+snapshot. The release-reference gate checks source consistency, while the
+history gate checks actual local ancestry. Provider protection is separate;
+an administrator who can change repository rules remains outside these checks.
 
-CI's ancestry check is local evidence. Provider rules must be verified
-separately before reporting them enforced. An administrator able to change
-rules or delete a repository remains outside these checks; neither a passing
-CI run nor these instructions proves universal history retention.
-
-Version selection remains defined in
+Version selection is defined in
 [REFERENCE.md](../REFERENCE.md#versioning-and-release-contract).

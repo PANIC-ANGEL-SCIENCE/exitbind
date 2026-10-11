@@ -1,10 +1,10 @@
 # Install the binary for your platform
 
-The `v0.30.1` candidate targets Linux x86_64 and macOS on
+The `v0.31.0` candidate targets Linux x86_64 and macOS on
 Apple Silicon and Intel. The public release workflow is the authoritative path
 for validating native builds, packaged installation, and public asset
 installation; check its result for this exact release. WSL uses the same Linux artifact inside Ubuntu. See the
-[public release workflow](https://github.com/envy404/exitbind/actions/workflows/release.yml).
+[public release workflow](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/release.yml).
 
 Once the tag and assets are available, use the pinned installer in the
 [README](../README.md#see-a-wrong-door-refused).

@@ -13,12 +13,11 @@ contract.
 
 ## Public identity
 
-Use `envy404` as the human-facing author, owner, and developer name.
-Use `envy404` only as the GitHub account or repository URL slug. Direct
-commits should use `envy404 <legacy-operator@users.noreply.github.com>`.
-GitHub-generated squash metadata may use the account slug; `.mailmap` maps that
-identity back to the canonical display name. Do not rewrite published history
-to change older metadata.
+The canonical repository is `PANIC-ANGEL-SCIENCE/exitbind`. The maintainer's
+public Git identity is `envy404 <287204764+envy404@users.noreply.github.com>`.
+Contributors should retain their own attribution and may use the GitHub noreply
+address shown in their account settings. Do not rewrite published history to
+change metadata or replace the [public history baseline](docs/public-history.md).
 
 ## Development setup
 

@@ -215,7 +215,7 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         let kind = text(object, "kind", &at)?;
         let value = text(object, "value", &at)?;
         let expected = match id {
-            "canonical-current" => ("canonical-current", "envy404/exitbind"),
+            "canonical-current" => ("canonical-current", "PANIC-ANGEL-SCIENCE/exitbind"),
             "canonical-legacy" => ("canonical-legacy", "envy404/soulmate"),
             "custom-example" => ("custom", "example/project"),
             _ => return Err(format!("unknown repository {id}")),
@@ -253,8 +253,8 @@ pub fn parse_matrix(value: &Value) -> Result<(), String> {
         let expected = match id {
             "current-updater" => (
                 "current-exitbind",
-                "https://api.github.com/repos/envy404/exitbind/releases?per_page=20",
-                "https://raw.githubusercontent.com/envy404/exitbind/",
+                "https://api.github.com/repos/PANIC-ANGEL-SCIENCE/exitbind/releases?per_page=20",
+                "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/",
             ),
             "legacy-updater" => (
                 "legacy-soulmate",

@@ -14,7 +14,7 @@ const SOULMATE_SCHEMA: &str = concat!(
     "/schema/soulmate.schema.json"
 );
 const EXITBIND_SCHEMA: &str = concat!(
-    "https://raw.githubusercontent.com/envy404/exitbind/v",
+    "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v",
     env!("CARGO_PKG_VERSION"),
     "/schema/exitbind.schema.json"
 );

@@ -39,7 +39,7 @@ equal_version Cargo.lock "$lock_version" "$plain"
 
 # A literal command inside an HTML comment is not an installation instruction.
 # Keep the whole-line command requirement while tracking only HTML comments.
-awk -v command="curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/$current/install.sh | sh" '
+awk -v command="curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/$current/install.sh | sh" '
   {
     if (!comment && $0 == command) found = 1
     line = $0

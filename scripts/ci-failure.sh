@@ -6,7 +6,7 @@ test "$#" -eq 1 || { echo 'usage: ci-failure.sh RUN_ID' >&2; exit 2; }
 case "$1" in ''|*[!0-9]*) echo 'RUN_ID must be numeric' >&2; exit 2 ;; esac
 command -v gh >/dev/null 2>&1 || { echo 'gh is required' >&2; exit 1; }
 run=$1
-repo=envy404/exitbind
+repo=PANIC-ANGEL-SCIENCE/exitbind
 jobs=$(gh run view "$run" -R "$repo" --json jobs \
   --jq '.jobs[] | select(.conclusion == "failure") | .databaseId')
 test -n "$jobs" || { echo "No failed jobs in run $run"; exit 0; }

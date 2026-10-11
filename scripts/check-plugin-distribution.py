@@ -11,9 +11,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-VERSION = "0.30.1"
+VERSION = "0.31.0"
 NAME = "exitbind"
-REPOSITORY = "https://github.com/envy404/exitbind"
+REPOSITORY = "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
 AUTHOR_URL = "https://github.com/envy404"
 DESCRIPTION = (
     "Exitbind — No result exits unbound. Bind the evidence to the exact result "

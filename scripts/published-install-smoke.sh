@@ -43,7 +43,7 @@ test -n "$expected_version" || fail 'expected same-workflow binary reported an e
 expected_tag="v$expected_version"
 version=${EXITBIND_VERSION:-$expected_tag}
 test "$version" = "$expected_tag" || fail "workflow release tag $version does not match expected binary $expected_tag"
-repository=${EXITBIND_REPOSITORY:-envy404/exitbind}
+repository=${EXITBIND_REPOSITORY:-PANIC-ANGEL-SCIENCE/exitbind}
 test -n "$repository" || fail 'release repository is empty'
 command -v curl >/dev/null 2>&1 || fail 'curl is required for real published-asset retrieval'
 

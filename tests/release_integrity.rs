@@ -190,7 +190,7 @@ fn stale_security_release_references_are_rejected() {
 
 #[test]
 fn stale_and_malformed_readme_install_commands_are_rejected() {
-    let current = format!("curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v{VERSION}/install.sh | sh");
+    let current = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{VERSION}/install.sh | sh");
     for replacement in [
         current.replace(&format!("v{VERSION}"), "v0.10.0"),
         current.replace("install.sh", "install.sh.invalid"),
@@ -205,7 +205,7 @@ fn stale_and_malformed_readme_install_commands_are_rejected() {
 
 #[test]
 fn html_comments_cannot_hide_the_readme_install_instruction() {
-    let command = format!("curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v{VERSION}/install.sh | sh");
+    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{VERSION}/install.sh | sh");
     let block = format!("```sh\n{command}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n```");
     for hidden in [
         format!("<!--\n{block}\n-->"),
@@ -623,7 +623,7 @@ fn published_checkpoint_and_descendants_pass_but_rewritten_parentage_fails() {
             "replace",
             "--graft",
             "HEAD",
-            "7f1d0146694d6b049f60e6bfba968e2a8c3a104d",
+            "cde4c003ad885b99ec8e405c8bc80e89935bb050",
         ],
     ));
     expect_failure(

@@ -579,7 +579,7 @@ fn remove_target(path: &Path) -> Result<(), String> {
 /// Ask the installed binary to install or refresh its own host bridge, and
 /// report what it said. A failure here never fails an otherwise successful
 /// binary update; it is reported so a stale or missing bridge stays visible.
-/// Report the managed bootstrap state without installing anything the operator
+/// Report bootstrap state without installing anything the operator
 /// may have removed on purpose. Only bytes Exitbind already manages are
 /// refreshed.
 fn bridge_health() -> Vec<String> {
@@ -728,7 +728,7 @@ pub fn explicit_update() -> Result<(), String> {
             .arg(&installer)
             .env("EXITBIND_VERSION", &version.tag)
             .env("EXITBIND_INSTALL_PREFIX", &prefix)
-            .env("EXITBIND_REPOSITORY", "envy404/exitbind")
+            .env("EXITBIND_REPOSITORY", "PANIC-ANGEL-SCIENCE/exitbind")
             .output()
             .map_err(|e| e.to_string())?;
         if !output.status.success() {

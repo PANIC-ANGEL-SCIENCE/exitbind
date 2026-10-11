@@ -3,8 +3,8 @@ agents = ["claude", "codex", "grok"]
 
 [[plugins]]
 name = "exitbind"
-source = "envy404/exitbind"
-ref = "v0.30.1"
+source = "PANIC-ANGEL-SCIENCE/exitbind"
+ref = "v0.31.0"
 path = "."
 targets = ["claude", "codex", "grok"]
 

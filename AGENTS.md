@@ -18,7 +18,7 @@ framework.
 
 ## Public surface
 
-When a user gives only `https://github.com/envy404/exitbind`, inspect this project and
+When a user gives only `https://github.com/PANIC-ANGEL-SCIENCE/exitbind`, inspect this project and
 the host capabilities, decide whether the governed path fits, and ask before
 installation, project writes, permission changes, or another owner-controlled
 action. After authorization, operate selectively inside the existing

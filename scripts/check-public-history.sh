@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Already-published identity; contributor checks do not authorize changing it.
-checkpoint=7f1d0146694d6b049f60e6bfba968e2a8c3a104d
+# Organization import baseline; contributor checks do not authorize replacing it.
+checkpoint=cde4c003ad885b99ec8e405c8bc80e89935bb050
 
 fail() {
   printf '%s\n' "public history check failed: $*" >&2

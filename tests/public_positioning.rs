@@ -19,8 +19,8 @@ const RESEARCH_HOSTS: &[&str] = &[
     "semanticscholar.org",
 ];
 const README_LINK_PREFIXES: &[&str] = &[
-    "https://github.com/envy404/exitbind/",
-    "https://raw.githubusercontent.com/envy404/exitbind/",
+    "https://github.com/PANIC-ANGEL-SCIENCE/exitbind/",
+    "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/",
     "https://img.shields.io/",
 ];
 
@@ -57,7 +57,7 @@ fn readme_links_only_exitbind_owned_or_badge_locations() {
     let text = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")).unwrap();
     for link in links(&text) {
         assert!(
-            link == "https://github.com/envy404/exitbind"
+            link == "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
                 || README_LINK_PREFIXES
                     .iter()
                     .any(|prefix| link.starts_with(prefix)),

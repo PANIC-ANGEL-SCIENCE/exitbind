@@ -56,7 +56,7 @@ chmod 0755 "$root/curl/curl"
 
 prefix="$root/prefix with spaces"
 path="$root/curl:${PATH:-/usr/bin:/bin}"
-repo=${EXITBIND_REPOSITORY:-envy404/exitbind}
+repo=${EXITBIND_REPOSITORY:-PANIC-ANGEL-SCIENCE/exitbind}
 if env \
   HOME="$root/home" \
   PATH="$path" \

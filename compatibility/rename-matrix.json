@@ -34,7 +34,7 @@
     }
   ],
   "repositories": [
-    {"id": "canonical-current", "kind": "canonical-current", "value": "envy404/exitbind"},
+    {"id": "canonical-current", "kind": "canonical-current", "value": "PANIC-ANGEL-SCIENCE/exitbind"},
     {"id": "canonical-legacy", "kind": "canonical-legacy", "value": "envy404/soulmate"},
     {"id": "custom-example", "kind": "custom", "value": "example/project"}
   ],
@@ -43,8 +43,8 @@
       "id": "current-updater",
       "callerSurfaceId": "current-exitbind",
       "installPrefixEnv": "EXITBIND_INSTALL_PREFIX",
-      "api": "https://api.github.com/repos/envy404/exitbind/releases?per_page=20",
-      "rawInstaller": "https://raw.githubusercontent.com/envy404/exitbind/",
+      "api": "https://api.github.com/repos/PANIC-ANGEL-SCIENCE/exitbind/releases?per_page=20",
+      "rawInstaller": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/",
       "status": "current"
     },
     {

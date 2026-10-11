@@ -1,5 +1,23 @@
 # Upgrade and rollback
 
+## Organization repository migration
+
+Existing Exitbind binaries use their original update feed. To switch to the
+organization distribution, run the versioned installer from the new repository
+after its release assets are available:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.0/install.sh | sh
+```
+
+This one-time installation gives subsequent `exitbind update` commands the new
+origin. Before replacing the working executable, preserve each active Work's
+compatible reader at a stable path, with its original configuration and records.
+The migration does not rewrite local ledgers, receipts, custom profiles or
+settings. Older source tags do not imply public binary downloads in the new
+repository. Soulmate's retired installation route stays retired.
+
+
 An update selects the executable and managed host guidance used for future
 work. It does not move project files or change what an active Work means.
 Before switching versions, keep the executable and configuration that govern

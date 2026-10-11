@@ -13,14 +13,14 @@ if test -z "${EXITBIND_REPOSITORY:-}" &&
     legacy_bridge=1
   fi
 fi
-repo="${EXITBIND_REPOSITORY:-envy404/exitbind}"
+repo="${EXITBIND_REPOSITORY:-PANIC-ANGEL-SCIENCE/exitbind}"
 if test -z "${EXITBIND_REPOSITORY:-}" && test -n "${SOULMATE_REPOSITORY:-}"; then
   repo="$SOULMATE_REPOSITORY"
 fi
 if test "$legacy_bridge" = 1; then
-  repo=envy404/exitbind
+  repo=PANIC-ANGEL-SCIENCE/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.30.1}"
+version="${EXITBIND_VERSION:-v0.31.0}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
 fi

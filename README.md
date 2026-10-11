@@ -9,8 +9,8 @@ still runs the agent and controls its tools and permissions.
 Local records and checks need no model, daemon or cloud service. Your host
 provides model access when an agent needs it.
 
-[![Exitbind / Exit](https://github.com/envy404/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/envy404/exitbind/actions/workflows/ci.yml)
-[![Stable release](https://img.shields.io/github/v/release/envy404/exitbind)](https://github.com/envy404/exitbind/releases/latest)
+[![Exitbind / Exit](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
+[![Stable release](https://img.shields.io/github/v/release/PANIC-ANGEL-SCIENCE/exitbind)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Give your lead one link
@@ -19,7 +19,7 @@ Paste this into the Codex or Claude conversation you already use, then describe
 the work in your own words:
 
 ```text
-https://github.com/envy404/exitbind
+https://github.com/PANIC-ANGEL-SCIENCE/exitbind
 
 Fix the interrupted-import bug, preserve existing imports, and show me the
 checked result. Continue the same task if the session is interrupted.
@@ -49,14 +49,14 @@ usual agent and Git workflow.
 ## Install and try a first result
 
 The candidate targets Linux x86_64 and macOS on Apple Silicon or Intel. Use the
-versioned installer below after the `v0.30.1` tag and release assets are
-published. Until then, check the [published releases](https://github.com/envy404/exitbind/releases)
+versioned installer below after the `v0.31.0` tag and release assets are
+published. Until then, check the [published releases](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases)
 for a version that is available. The installer checks the archive checksum;
 release archives also carry GitHub build attestations. Review the command and
 destination before approving installation.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/envy404/exitbind/v0.30.1/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.0/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
