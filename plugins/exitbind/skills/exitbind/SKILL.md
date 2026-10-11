@@ -17,6 +17,23 @@ records retain their recorded producer, including unresolved historical builds.
 
 Use the existing scope and owner review decision. A task with material or promotion consequences selects governance before mutation; read-only questions, disposable prototypes and tiny obvious reversible edits stay direct, with no initialization or review questionnaire. The Lead classifies actual effects and project policy; a filename or file count alone is not a trigger. If required activation fails, report the failing layer. URL-only onboarding requires inspection and consent before owner-controlled installation, writes or permission changes.
 
+Use Exitbind for your own project work. Exitbind source-contributor instructions
+belong in its optional CONTRIBUTING.md; do not import them into a consumer's
+project rules or require a source checkout to use an installed binary.
+
+After acquiring the complete current assignment and required instructions, use
+`work detail WORK --view action --json` for routine state and action inspection.
+Its decision metadata and exact section routes avoid repeating artifacts. It
+explicitly marks instructions incomplete: this is navigation, never review or
+acceptance evidence. On a changed recipient, binding or instruction/evidence
+source, acquire and consume the applicable complete current bytes before the
+next dependent effect. At substantive review or acceptance, inspect complete
+relevant artifacts and negative cases; earlier acquisition and an approval
+label do not substitute for current evidence. Retain full responses through
+protected host capture, then display the needed fields and one next command.
+Without complete capture, use exact expansion pages and verify every required
+byte. Never treat a truncated model-visible projection as complete delivery.
+
 ## Current route
 
 - Known Work in this conversation or an explicit `smw_…` locator: run the selected executable's `work detail WORK --json` directly. It validates the current recipient binding and delivers profile/rules, assignment, upstream evidence, task obligations and executable action forms. Do not rediscover that same route with another `work next` first.

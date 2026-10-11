@@ -80,6 +80,26 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
                 journal["provisionalFinalResultBytes"].as_str() == Some(hex_encode(bytes).as_str())
             })
     };
+    // Validate only exact retained provisional bytes. Completed results have
+    // an observation envelope and their existing replay gates remain
+    // authoritative. This diagnosis never grants recovery rights.
+    let validation = if result_state == "provisional" {
+        match result_bytes
+            .as_ref()
+            .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+        {
+            Some(value) => match result::validate_final_result(role, &value) {
+                Ok(_) => json!({"state": "valid", "reason": null}),
+                Err(reason) => json!({"state": "invalid", "reason": reason}),
+            },
+            None => json!({
+                "state": "unavailable",
+                "reason": "retained result integrity could not be verified",
+            }),
+        }
+    } else {
+        Value::Null
+    };
     let (reconciliation, next_action) = if matches!(status, "started" | "running")
         && journal
             .get("priorFailure")
@@ -172,6 +192,7 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         },
         "result": {
             "state": result_state,
+            "validation": validation,
             "sha256": result_bytes.as_ref().map(|bytes| hash::bytes(bytes)),
             "bytes": result_bytes.as_ref().map(Vec::len),
         },

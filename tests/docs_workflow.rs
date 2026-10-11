@@ -70,10 +70,11 @@ fn checked_work_journey_links_resolve_in_the_checkout() {
     for source in [
         "README.md",
         "CONTRIBUTING.md",
-        "AGENTS.md",
         "REFERENCE.md",
         "docs/onboarding.md",
         "docs/first-checked-run.md",
+        "docs/user-owned-agents.md",
+        "docs/project-capabilities.md",
         "docs/value-proof-methodology.md",
         "skills/soulmate/SKILL.md",
     ] {
@@ -86,7 +87,7 @@ fn contribution_audiences_and_coffee_contract_stay_separate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();
     let coffee = read("skills/coffee/SKILL.md");
-    let agents = read("AGENTS.md");
+    assert!(!root.join("AGENTS.md").exists());
     let contributing = read("CONTRIBUTING.md");
 
     for private_stack_term in [
@@ -120,13 +121,13 @@ fn contribution_audiences_and_coffee_contract_stay_separate() {
         );
     }
 
-    assert!(agents.contains("external coding agents modifying the Exitbind repository"));
-    assert!(agents.contains("[CONTRIBUTING.md](CONTRIBUTING.md)"));
-    assert!(agents.contains("For setup in another project instead of changes here"));
-    assert!(agents.contains("\"Give your lead one link\" path"));
-    assert!(!agents.contains("curl -fsSL"));
-    assert!(contributing.contains("This guide is for human contributors"));
-    assert!(contributing.contains("[AGENTS.md](AGENTS.md)"));
+    assert!(contributing.contains("canonical guide for human contributors and coding agents"));
+    assert!(contributing.contains("not\nan automatic host fallback"));
+    assert!(contributing.contains("Product use does not require contribution"));
+    assert!(contributing.contains("Read `README.md` before changing the project."));
+    assert!(contributing.contains("Persistent memory is opt-in, role-scoped"));
+    assert!(contributing.contains("recorded artifact bytes equal disk bytes"));
+    assert!(contributing.contains("Run `scripts/review-inventory.sh PREVIOUS_RELEASE`"));
     assert!(contributing
         .contains("This keeps contributor and CI\nformatting and lint behavior aligned"));
     assert!(contributing.contains("cargo clippy --locked --all-targets -- -D warnings"));

@@ -1,4 +1,4 @@
-use super::{Options, ReviewEvidence};
+use super::{result, Options, ReviewEvidence};
 use crate::config::Loaded;
 use crate::evidence::hash;
 use crate::host::codex_exec::{self, Request};
@@ -161,7 +161,8 @@ pub(super) fn build(
         (String::new(), String::new())
     };
     let prompt = format!(
-        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. Required assignment, evidence and goal/task conditions are resolved and verified below before this launch. No paging, hex decoding, checksum or JSON-join code is needed. Return only the JSON object required by the output schema; do not include markdown or commentary.\n\nPROFILE BYTES (reviewed role guidance; exact bytes):\n{profile}\n\n{mediator_instructions}\nCURRENT STABLE PROJECT RULES (verified complete current bytes):\n{stable}\nCURRENT VOLATILE NATIVE PROJECT CONTEXT (verified immediately before launch):\n{tool_binding}{volatile}\n\n{evidence_route}\nCURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; equal aliases are described by projection):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n",
+        "You are the native Codex {role} for one governed Exitbind assignment. Follow the supplied profile and verified assignment. Work only within the declared boundary. This packet is already bound; a continuation lookup is unnecessary. Required assignment, evidence and goal/task conditions are resolved and verified below before this launch. No paging, hex decoding, checksum or JSON-join code is needed. Return only the JSON object required by the output schema; do not include markdown or commentary. {result_text}\n\nPROFILE BYTES (reviewed role guidance; exact bytes):\n{profile}\n\n{mediator_instructions}\nCURRENT STABLE PROJECT RULES (verified complete current bytes):\n{stable}\nCURRENT VOLATILE NATIVE PROJECT CONTEXT (verified immediately before launch):\n{tool_binding}{volatile}\n\n{evidence_route}\nCURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS (canonical packet SHA-256 {canonical_sha}; context.digest belongs to the full canonical context; equal aliases are described by projection):\n{packet}\n\nCURRENT SCOPED READ ROUTES (read only; current binding):\n{current_binding}\n",
+        result_text = result::TEXT_GUIDANCE,
         canonical_sha = hash::value(assignment),
         current_binding = current["current"],
         mediator_instructions = mediator_route.0,

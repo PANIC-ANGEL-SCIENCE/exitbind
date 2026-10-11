@@ -410,6 +410,71 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn invalid_native_summary_is_inspectable_without_a_second_provider_attempt() {
+    let fixture = Fixture::new("native-invalid-summary");
+    let (work, worker) = fixture.pending_worker("recover bounded native summary");
+    let assignment = worker["assignment"].as_str().unwrap();
+    let executable = fixture.root.join("fake-invalid-summary-codex");
+    let capture = fixture.root.join("request-prompt");
+    let marker = fixture.root.join("provider-attempts");
+    let events = [
+        json!({"type":"thread.started","thread_id":"invalid-summary-thread"}),
+        json!({"type":"item.completed","item":{"type":"agent_message","text":
+            json!({"outcome":"completed","summary":"private first line\nprivate second line","reason":""}).to_string()}}),
+        json!({"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}),
+    ];
+    let script = format!(
+        "#!/bin/sh\ncat > '{}'\nprintf x >> '{}'\n{}",
+        capture.display(),
+        marker.display(),
+        events
+            .iter()
+            .map(|event| format!("printf '%s\\n' '{}'\n", event))
+            .collect::<String>()
+    );
+    fs::write(&executable, script).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let failed = fixture.call(
+        &[
+            "work",
+            "act",
+            &work,
+            "--codex-bin",
+            executable.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(!failed.status.success());
+    assert!(text(&failed).contains("summary contains control text"));
+    let path = fixture
+        .root
+        .join(".exitbind/native-actions")
+        .join(&work)
+        .join(format!("{assignment}.json"));
+    let retained = fs::read(&path).unwrap();
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    assert_eq!(inspected["observation"]["turn"], "completed");
+    assert_eq!(inspected["process"]["exitCode"], 0);
+    assert_eq!(inspected["result"]["state"], "provisional");
+    assert_eq!(inspected["nextAction"]["safe"], false);
+    assert_eq!(inspected["result"]["validation"]["state"], "invalid");
+    assert_eq!(
+        inspected["result"]["validation"]["reason"],
+        "native worker result summary contains control text"
+    );
+    assert!(!inspected.to_string().contains("private first line"));
+    let refused = fixture.call(&["work", "act", &work, "--resume"], b"");
+    assert!(!refused.status.success());
+    assert!(text(&refused).contains("control text"));
+    assert_eq!(fs::read(&marker).unwrap(), b"x");
+    assert_eq!(fs::read(&path).unwrap(), retained);
+    let prompt = fs::read_to_string(&capture).unwrap();
+    assert!(prompt.contains("single-line text"));
+    assert!(prompt.contains("8192 UTF-8 bytes"));
+    assert!(prompt.contains("Do not rewrite retained evidence"));
+}
+
 fn text(output: &Output) -> String {
     format!(
         "stdout={} stderr={}",

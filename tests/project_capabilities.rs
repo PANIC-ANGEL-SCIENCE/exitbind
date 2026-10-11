@@ -196,6 +196,95 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn user_owned_profiles_and_lens_use_confined_sources_without_migration() {
+    let f = Fixture::new();
+    let old_lead = fs::read(f.root.join("exitbind/agents/lead.md")).unwrap();
+    let old_worker = fs::read(f.root.join("exitbind/agents/worker.md")).unwrap();
+    let profile = "your.soulmate/agents/owned-checker/profile.md";
+    let lead = "your.soulmate/agents/my-lead/profile.md";
+    let lens = "your.soulmate/lenses/availability.md";
+    for path in [profile, lead, lens] {
+        fs::create_dir_all(f.root.join(path).parent().unwrap()).unwrap();
+    }
+    fs::write(
+        f.root.join(profile),
+        "Owner checker: preserve unknown values.\n",
+    )
+    .unwrap();
+    fs::write(
+        f.root.join(lead),
+        "Owner lead: own the acceptance decision.\n",
+    )
+    .unwrap();
+    fs::write(
+        f.root.join(lens),
+        "Distinguish missing values from measured zero.\n",
+    )
+    .unwrap();
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(f.root.join("exitbind.json")).unwrap()).unwrap();
+    config["agents"]["parcel-checker"]["profile"] = json!(profile);
+    config["agents"]["lead"]["profile"] = json!(lead);
+    config["agents"]["lead"]["displayName"] = json!("Owner lead");
+    fs::write(f.root.join("exitbind.json"), config.to_string()).unwrap();
+    let mut descriptor: Value =
+        serde_json::from_slice(&fs::read(f.root.join("lens.json")).unwrap()).unwrap();
+    descriptor["path"] = json!(lens);
+    fs::write(f.root.join("lens.json"), descriptor.to_string()).unwrap();
+    assert_eq!(f.register()["effect"], "applied");
+    let context = f.ok(&["project", "context", "--json"], b"");
+    assert_eq!(context["lead"]["agentId"], "lead");
+    assert_eq!(context["lead"]["displayName"], "Owner lead");
+    assert_eq!(context["lead"]["profilePath"], lead);
+    let (work, intent) = f.prepare();
+    let detail = f.ok(&["work", "detail", &work, "--json"], b"");
+    assert_eq!(detail["recipientContext"]["profile"]["path"], profile);
+    assert_eq!(
+        detail["recipientContext"]["profile"]["content"],
+        "Owner checker: preserve unknown values.\n"
+    );
+    let delivery = f.ok(&["work", "child", "context", &work, &intent], b"");
+    assert_eq!(
+        delivery["capabilities"]["items"][0]["content"],
+        "Distinguish missing values from measured zero.\n"
+    );
+    assert_eq!(
+        fs::read(f.root.join("exitbind/agents/lead.md")).unwrap(),
+        old_lead
+    );
+    assert_eq!(
+        fs::read(f.root.join("exitbind/agents/worker.md")).unwrap(),
+        old_worker
+    );
+    assert_eq!(
+        fs::read_to_string(f.root.join("custom-agent.md")).unwrap(),
+        "Keep this custom file.\n"
+    );
+
+    fs::write(f.root.join(profile), "Changed owner source.\n").unwrap();
+    assert!(!f
+        .call(
+            &[
+                "work",
+                "expand",
+                &work,
+                detail["reference"].as_str().unwrap()
+            ],
+            b""
+        )
+        .status
+        .success());
+    fs::write(f.root.join(lens), "Changed without renewed approval.\n").unwrap();
+    assert!(!f
+        .call(&["work", "child", "context", &work, &intent], b"")
+        .status
+        .success());
+    fs::remove_file(f.root.join(profile)).unwrap();
+    std::os::unix::fs::symlink(f.root.join("custom-agent.md"), f.root.join(profile)).unwrap();
+    assert!(!f.call(&["work", "detail", &work], b"").status.success());
+}
+
+#[test]
 fn reviewed_lens_selects_arbitrary_recipient_and_recovers_delivery_without_another_effect() {
     let f = Fixture::new();
     let old = fs::read(f.root.join("exitbind.json")).unwrap();

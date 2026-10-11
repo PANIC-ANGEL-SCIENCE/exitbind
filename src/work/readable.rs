@@ -125,6 +125,10 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     }
     let result = json!({"compact":true,"version":1,"kind":"work_action","work":work,"binding":binding,
         "actionForms":forms,"recipient":next["current"]["recipient"],
+        "decision": {"goal":next["current"]["goal"], "phase":next["current"]["phase"],
+            "result":next["current"]["result"], "readiness":next["current"]["readiness"],
+            "obligations":next["packet"]["context"]["obligations"],
+            "meaning":"current navigation metadata; inspect complete relevant evidence before deciding"},
         "details":routes,
         "instructions":{"complete":false,"meaning":"action view does not redeliver instructions; consume complete current recipient, assignment and evidence before dependent work"}});
     let fresh = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;

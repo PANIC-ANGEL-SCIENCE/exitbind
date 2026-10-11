@@ -4,6 +4,8 @@ use crate::host::codex_exec::{CoverageGap, DiagnosticStatus, Observation, Reques
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 
+pub(super) const TEXT_GUIDANCE: &str = "The summary and reason must be single-line text: no newline, carriage return, tab, or other control characters. The summary must be nonempty. Each field is limited to 8192 UTF-8 bytes, not characters. Keep multiline evidence in its original artifact and use the supplied evidence references where required. Do not rewrite retained evidence to make a result valid.";
+
 pub(super) fn role_schema(role: &str) -> Result<&'static str, String> {
     static WORKER: OnceLock<String> = OnceLock::new();
     static REVIEWER: OnceLock<String> = OnceLock::new();
@@ -177,4 +179,43 @@ pub(super) fn bounded_json(value: &Value, limit: usize, label: &str) -> Result<S
         return Err(format!("{label} exceeds its bound"));
     }
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_text_rejects_controls_without_normalizing_evidence() {
+        for control in ['\n', '\r', '\t', '\0', '\u{0085}'] {
+            for field in ["summary", "reason"] {
+                let mut result =
+                    json!({"outcome":"completed", "summary":"valid line", "reason":""});
+                result[field] = json!(format!("first{control}second"));
+                let retained = result.clone();
+                assert!(validate_final_result("worker", &result)
+                    .unwrap_err()
+                    .contains("control text"));
+                assert_eq!(result, retained);
+            }
+        }
+    }
+
+    #[test]
+    fn result_text_bounds_count_utf8_bytes() {
+        let mut result = json!({"outcome":"completed", "summary":"é".repeat(4096), "reason":""});
+        assert_eq!(
+            validate_final_result("worker", &result).unwrap(),
+            "completed"
+        );
+        result["summary"] = json!("é".repeat(4097));
+        assert!(validate_final_result("worker", &result)
+            .unwrap_err()
+            .contains("bounded summary"));
+        result["summary"] = json!("valid short line");
+        result["reason"] = json!("é".repeat(4097));
+        assert!(validate_final_result("worker", &result)
+            .unwrap_err()
+            .contains("bounded reason"));
+    }
 }

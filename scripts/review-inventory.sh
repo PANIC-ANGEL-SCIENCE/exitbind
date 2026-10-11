@@ -39,7 +39,7 @@ git log --oneline --regexp-ignore-case --grep='^fix' --grep='^security' -- 'src/
 
 echo
 echo "== 3. Normative claims to check against code =="
-grep -rhoE '[A-Z][^.]{15,140}\b(never|only|must|cannot|always|fail[- ]closed|canonical|refuses|is not)\b[^.]{0,100}\.' README.md SECURITY.md AGENTS.md docs/*.md 2>/dev/null |
+grep -rhoE '[A-Z][^.]{15,140}\b(never|only|must|cannot|always|fail[- ]closed|canonical|refuses|is not)\b[^.]{0,100}\.' README.md SECURITY.md CONTRIBUTING.md docs/*.md 2>/dev/null |
   sort -u ||
   true
 

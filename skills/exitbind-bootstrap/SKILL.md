@@ -37,6 +37,23 @@ Report observed checks, actual role decisions, currentness/refusals and requeste
 Run `exitbind host status` when asked whether setup is installed/current. An installed binary or skill alone is not an active lifecycle. For a native command or child still running, keep one handle and wait for completion or a meaningful state transition (normally 30–60 seconds). Do not start a fresh watch process or poll unchanged status at short intervals. A timeout is not a failure and never authorizes restarting. Answer an explicit human status request with the current truth.
 
 
+Use Exitbind for your own project work. Exitbind source-contributor instructions
+belong in its optional CONTRIBUTING.md; do not import them into a consumer's
+project rules or require a source checkout to use an installed binary.
+
+After acquiring the complete current assignment and required instructions, use
+`work detail WORK --view action --json` for routine state and action inspection.
+Its decision metadata and exact section routes avoid repeating artifacts. It
+explicitly marks instructions incomplete: this is navigation, never review or
+acceptance evidence. On a changed recipient, binding or instruction/evidence
+source, acquire and consume the applicable complete current bytes before the
+next dependent effect. At substantive review or acceptance, inspect complete
+relevant artifacts and negative cases; earlier acquisition and an approval
+label do not substitute for current evidence. Retain full responses through
+protected host capture, then display the needed fields and one next command.
+Without complete capture, use exact expansion pages and verify every required
+byte. Never treat a truncated model-visible projection as complete delivery.
+
 ## Consume safely and report the user outcome
 
 Keep the returned executable/configuration/project and native execution handle. Capture process status and complete stdout/stderr before decoding; parse the declared operation's output and exact field types. Follow emitted argv without a generic --json/--config suffix: init prints prose, version --json is flat and accepts no config, permit prints JSON without a --json option, and detail uses actionForms rather than next. A parser failure after an effect requires readback, never replay. Discover unknown paths and test targets once; require an actual nonzero selected test for a coverage claim.

@@ -8,6 +8,10 @@ launch. Registration grants no shell, memory, credential or host rights. The
 agent handles the descriptor and executable command; the owner supplies purpose
 and approval. Existing custom agent files stay in place.
 
+For project-owned profiles and resource paths under `your.soulmate/`, follow
+[your own project agents](user-owned-agents.md). Existing profile locations and
+Work pins are preserved.
+
 1. Inspect `exitbind project context --json` and configured native mappings.
 2. Put complete UTF-8 content in a confined project file (4096 bytes maximum).
    Create a descriptor using the current `project.memoryIdentity`.
@@ -57,3 +61,5 @@ projects cannot use the descriptor. After a lost registration reply, inspect
 and preview again; unchanged apply writes nothing. Repeated child context reads
 retain the same delivery ID and never start another child. Inspection, preview and apply
 require the Unix secure reader. Apply also requires POSIX file locking.
+On a non-Unix host, secure acquisition is unavailable even for preview; no
+unsafe read fallback is selected.

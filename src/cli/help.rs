@@ -59,7 +59,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
-        ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current bound commands and complete section routes without repeating instructions)",
+        ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands and complete section routes without repeating instructions)",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"

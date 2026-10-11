@@ -1,5 +1,21 @@
 # Consume the current command, then recover its result
 
+## Native result text and inspection
+
+Native `summary` and `reason` are single-line text without control characters.
+Each is bounded to 8192 UTF-8 bytes; the summary cannot be empty. Keep multiline
+evidence in its original artifact, using the required evidence references.
+Never rewrite retained evidence to make a result valid.
+
+`work act WORK --inspect --json` separates process exit and observed turn from
+the retained result and safe next action. A provisional result has a bounded
+`result.validation` diagnosis (`valid`, `invalid`, or `unavailable`) without
+revealing its text. Other result states have null validation; null does not
+mean valid. A valid result alone grants no retry: follow `nextAction` and the
+current assignment. Live or uncertain effects, an advanced assignment, reviewer
+ownership, and an already used bounded retry retain their existing refusals.
+Preserve original invalid results and use supported readback for a lost reply.
+
 Use the executable, configuration and project returned by the current action.
 The configured coordinator owns the task's meaning and final user report. A
 pending recipient identifies a particular role and assignment. It does not
@@ -56,6 +72,21 @@ large for inline detail. Verify every page's binding, offset and final hash.
 Historical section routes retain their 24 KiB paging. The host's output limit
 must still fit one page's encoded response; Exitbind cannot recover text a host
 discarded or change that host's limit.
+
+## Routine Lead decisions
+
+After acquiring the complete current assignment and required instructions, use
+`work detail WORK --view action --json` for routine state and action inspection.
+Its decision metadata and exact section routes avoid repeating artifacts. It
+explicitly marks instructions incomplete: this is navigation, never review or
+acceptance evidence. On a changed recipient, binding or instruction/evidence
+source, acquire and consume the applicable complete current bytes before the
+next dependent effect. At substantive review or acceptance, inspect complete
+relevant artifacts and negative cases; earlier acquisition and an approval
+label do not substitute for current evidence. Retain full responses through
+protected host capture, then display the needed fields and one next command.
+Without complete capture, use exact expansion pages and verify every required
+byte. Never treat a truncated model-visible projection as complete delivery.
 
 ## Report the requested outcome
 
