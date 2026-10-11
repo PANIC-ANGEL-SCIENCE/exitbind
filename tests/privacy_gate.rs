@@ -522,7 +522,7 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
         "envy404 <287204764+envy404@users.noreply.github.com>\n"
     );
 
-    let retired_identity = b"commit\0retired-operator\0287204764+retired-operator@users.noreply.github.com\0GitHub\0noreply@github.com\0";
+    let retired_identity = b"commit\0retired-operator\x00287204764+retired-operator@users.noreply.github.com\0GitHub\0noreply@github.com\0";
     let mut retired_identity_findings = Findings::new();
     scan_metadata(retired_identity, None, &mut retired_identity_findings);
     assert!(retired_identity_findings
