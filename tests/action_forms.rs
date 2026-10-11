@@ -15,11 +15,17 @@ use std::{
 
 struct Fixture {
     root: PathBuf,
+    cleanup_root: PathBuf,
 }
 
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
+        Self::at(root.clone(), root)
+    }
+
+    fn at(root: PathBuf, cleanup_root: PathBuf) -> Self {
+        fs::create_dir_all(&root).unwrap();
         support::git_topology::repository(&root);
         let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
@@ -27,7 +33,7 @@ impl Fixture {
             .output()
             .unwrap();
         assert!(output.status.success(), "{}", text(&output));
-        Self { root }
+        Self { root, cleanup_root }
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
@@ -143,6 +149,22 @@ impl Fixture {
         child.wait_with_output().unwrap()
     }
 
+    fn run_route(&self, route: &Value) -> Output {
+        let mut argv = route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        if route["sameExecutableRequired"] == true {
+            argv.insert(0, env!("CARGO_BIN_EXE_exitbind").into());
+        }
+        if route["sameConfigRequired"] == true {
+            argv.extend(["--config".into(), "exitbind.json".into()]);
+        }
+        self.run_argv(&argv, b"")
+    }
+
     fn choice(&self, next: &Value, label: &str) -> Value {
         next["current"]["actionForm"]["choices"]
             .as_array()
@@ -161,7 +183,7 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        let _ = std::fs::remove_dir_all(&self.cleanup_root);
     }
 }
 
@@ -260,6 +282,145 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
     assert!(!fixture.run_argv(&argv, b"result\n").status.success());
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), recorded);
     assert!(current["details"]["assignment"].is_object());
+}
+
+#[test]
+fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
+    let cleanup_root = support::temp("action-view-long-root");
+    let mut root = cleanup_root.clone();
+    for index in 0..8 {
+        root.push(format!(
+            "agent-host-managed-workspace-project-checkout-{index:02}"
+        ));
+    }
+    fs::create_dir_all(&root).unwrap();
+    assert!(root.to_str().unwrap().len() >= 400, "{}", root.display());
+    let fixture = Fixture::at(root, cleanup_root);
+    let project_rule = "Reviewer: keep the complete current evidence and instructions.\n";
+    fs::write(fixture.root.join("AGENTS.md"), project_rule).unwrap();
+
+    let (work, initial) = fixture.begin("true", true);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope agreed")],
+        b"scope\n",
+    );
+    let worker = fixture.next(&work);
+    let worker_artifact = "complete worker evidence for the reviewer\n";
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        worker_artifact.as_bytes(),
+    );
+    fixture.json(&["work", "check", &work], b"");
+    let reviewer = fixture.next(&work);
+    assert_eq!(reviewer["role"], "reviewer");
+
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let before_action = fs::read(fixture.root.join(&ledger)).unwrap();
+    let output = fixture.call(
+        &["work", "detail", &work, "--view", "action", "--json"],
+        b"",
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
+    let action: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(action["recipient"]["role"], "reviewer");
+    assert_eq!(action["binding"], reviewer["current"]["binding"]);
+    assert_eq!(action["decision"]["goal"], reviewer["current"]["goal"]);
+    assert_eq!(action["decision"]["result"], reviewer["current"]["result"]);
+    assert_eq!(
+        action["decision"]["obligations"],
+        reviewer["packet"]["context"]["obligations"]
+    );
+    assert_eq!(action["instructions"]["complete"], false);
+    assert_eq!(action["effectiveAction"]["formState"], "pending_assignment");
+    assert_eq!(
+        action["effectiveAction"]["choices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|choice| choice["label"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["approved", "rework", "blocked", "unavailable"]
+    );
+    assert_eq!(action["details"].as_object().unwrap().len(), 1);
+    assert_eq!(action["details"]["grouped"]["readOnly"], true);
+    assert_eq!(
+        action["details"]["grouped"],
+        reviewer["current"]["details"]["grouped"]
+    );
+    let mut original_navigation = action.clone();
+    original_navigation["details"] = reviewer["current"]["details"].clone();
+    original_navigation["details"]
+        .as_object_mut()
+        .unwrap()
+        .remove("grouped");
+    assert!(
+        serde_json::to_vec(&original_navigation).unwrap().len() + 1 > 8192,
+        "fixture no longer reproduces the oversized complete action view"
+    );
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before_action);
+
+    let grouped_route = action["details"]["grouped"].clone();
+    let expanded = fixture.run_route(&grouped_route);
+    assert!(expanded.status.success(), "{}", text(&expanded));
+    let grouped: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert_eq!(grouped["complete"], true);
+    assert_eq!(grouped["binding"], action["binding"]);
+    assert_eq!(grouped["recipient"]["role"], "reviewer");
+    assert_eq!(grouped["recipientContext"]["complete"], true);
+    let profile = &grouped["recipientContext"]["profile"];
+    assert_eq!(profile["complete"], true);
+    assert_eq!(profile["sha256"], reviewer["packet"]["profileSha256"]);
+    assert!(!profile["content"].as_str().unwrap().is_empty());
+    let rules = grouped["recipientContext"]["rules"].as_array().unwrap();
+    let delivered_rule = rules
+        .iter()
+        .find(|rule| rule["path"] == "AGENTS.md")
+        .unwrap();
+    assert_eq!(delivered_rule["content"], project_rule);
+    assert_eq!(delivered_rule["complete"], true);
+    assert!(rules.iter().all(|rule| rule["complete"] == true));
+    assert_eq!(grouped["sections"]["evidence"]["complete"], true);
+    assert!(grouped["sections"]["evidence"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["artifact"]["content"] == worker_artifact));
+    assert!(grouped["sections"]["evidence"]["checkEvidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|check| check["kind"] == "check" && check["status"] == "passed"));
+    assert_eq!(
+        grouped["actionForms"]["choices"],
+        action["effectiveAction"]["choices"]
+    );
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before_action);
+
+    fixture.execute_choice(
+        &fixture.choice(&reviewer, "approved"),
+        &[("<REASON>", "review completed")],
+        b"review completed\n",
+    );
+    let after_review = fs::read(fixture.root.join(&ledger)).unwrap();
+    let stale = fixture.run_route(&grouped_route);
+    assert!(
+        !stale.status.success(),
+        "stale route was accepted: {}",
+        text(&stale)
+    );
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), after_review);
 }
 
 #[test]

@@ -120,6 +120,7 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         .ok_or("current action binding unavailable")?;
     let forms = super::action_forms::full(loaded, work, &next, binding);
     let mut routes = next["current"]["details"].clone();
+    let grouped_route = routes.get("grouped").cloned();
     if let Some(routes) = routes.as_object_mut() {
         routes.remove("grouped");
     }
@@ -157,7 +158,19 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         + 1
         > super::compact::MAX_RESPONSE_BYTES
     {
-        return Err("action view exceeds 8192 bytes; use current work next section routes".into());
+        if let Some(grouped_route) = grouped_route.filter(|route| route.is_object()) {
+            result["details"] = json!({"grouped": grouped_route});
+        }
+        if serde_json::to_vec(&result)
+            .map_err(|e| e.to_string())?
+            .len()
+            + 1
+            > super::compact::MAX_RESPONSE_BYTES
+        {
+            return Err(
+                "action view exceeds 8192 bytes; use current work next section routes".into(),
+            );
+        }
     }
     Ok(result)
 }
