@@ -145,17 +145,21 @@ fn published_stable_is_separate_from_candidate_source_references() {
         gate("check-release-refs.sh", &fixture.0),
         "non-published install replaces the stable command",
     );
+    let non_current = if published_tag() == format!("v{VERSION}") {
+        unavailable
+    } else {
+        published_tag().to_owned()
+    };
+    assert_ne!(non_current, format!("v{VERSION}"));
     for name in [
         "schema/candidate.json",
         "src/candidate.rs",
         "docs/unlisted.md",
     ] {
         let fixture = Fixture::release();
-        fs::write(
-            fixture.0.join(name),
-            format!("release {}\n", published_tag()),
-        )
-        .unwrap();
+        fs::write(fixture.0.join(name), format!("release v{VERSION}\n")).unwrap();
+        expect_success(gate("check-release-refs.sh", &fixture.0));
+        fs::write(fixture.0.join(name), format!("release {non_current}\n")).unwrap();
         expect_failure(gate("check-release-refs.sh", &fixture.0), name);
     }
 }
