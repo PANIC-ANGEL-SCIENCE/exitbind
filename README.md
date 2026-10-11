@@ -9,9 +9,12 @@ still runs the agent and controls its tools and permissions.
 Local records and checks need no model, daemon or cloud service. Your host
 provides model access when an agent needs it.
 
+[![CI workflow](docs/assets/badges/exitbind-black-glass-ci.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
+[![Latest release](docs/assets/badges/exitbind-black-glass-release.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
+[![License: MIT](docs/assets/badges/exitbind-black-glass-license.svg)](LICENSE)
+
 [![Exitbind / Exit](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml/badge.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
 [![Stable release](https://img.shields.io/github/v/release/PANIC-ANGEL-SCIENCE/exitbind)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Give your lead one link
 
