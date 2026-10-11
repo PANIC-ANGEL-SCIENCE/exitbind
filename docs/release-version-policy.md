@@ -1,8 +1,14 @@
 # Release series and compatibility
 
+Published stable tag: v0.31.0
+Source candidate tag: v0.31.10
+
 The published stable baseline is v0.31.0. The next prepared source candidate is
 0.31.10. A source version, feature build or passing CI is not an official
 release. README install links continue to name available published assets.
+The release-reference check validates these two declarations separately. Only
+the listed published user guides may retain the stable tag; source metadata,
+schemas and candidate installation defaults must match the candidate version.
 
 Future stable releases in this series use 0.31.10 through 0.31.99, increasing
 only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are

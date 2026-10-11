@@ -1280,6 +1280,9 @@ authority.
 
 ## Approved next-launch capabilities and release policy
 
+The commands in this section require the 0.31.10 source candidate. They are
+separate from the published stable installation described above.
+
 Use [project capabilities](docs/project-capabilities.md) to register reviewed
 skills or lenses for relevant configured native recipients. Registration and
 projection grant no host rights. Current assignment, approval and complete

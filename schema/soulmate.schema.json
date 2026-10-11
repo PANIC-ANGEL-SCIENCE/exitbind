@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.10/schema/soulmate.schema.json",
+  "$id": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.0/schema/soulmate.schema.json",
   "title": "Soulmate project configuration",
   "type": "object",
   "required": ["version", "project", "orchestration", "agents", "workflows"],
@@ -14,57 +14,6 @@
         "root": { "type": "string" },
         "mode": { "enum": ["local", "portable"] },
         "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
-        "capabilities": {
-          "type": "array",
-          "maxItems": 8,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "revision",
-              "descriptorPath",
-              "descriptorSha256",
-              "contentSha256",
-              "approvedBy",
-              "approvalReason"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z0-9_-]{1,64}$"
-              },
-              "revision": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "descriptorPath": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256
-              },
-              "descriptorSha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "contentSha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "approvedBy": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "approvalReason": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 512
-              }
-            }
-          }
-        },
         "architectureContract": {
           "type": "object",
           "required": ["sourcePath", "sourceSha256", "revision"],

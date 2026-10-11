@@ -191,9 +191,18 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     let first = read("docs/first-checked-run.md");
     let methodology = read("docs/value-proof-methodology.md");
     let glossary = read("docs/glossary.md");
+    let policy = read("docs/release-version-policy.md");
+    let published = policy
+        .lines()
+        .find_map(|line| line.strip_prefix("Published stable tag: "))
+        .unwrap();
+    assert!(policy.contains(&format!(
+        "Source candidate tag: v{}",
+        env!("CARGO_PKG_VERSION")
+    )));
     let cli = format!("{}{}", read("src/cli/mod.rs"), read("src/cli/run_cli.rs"));
     for document in [&readme, &reference, &security] {
-        assert!(document.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))));
+        assert!(document.contains(published));
         assert!(!document.contains("unreleased v5"));
     }
     let legacy = read("docs/legacy-compatibility.md");
@@ -208,7 +217,7 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     assert!(glossary.contains("Observed check | v4–v8 source evidence"));
     assert!(glossary.contains("one permitted route in v4–v8"));
     assert!(security.contains("v3 supports caller-reported `run record-check` only"));
-    assert!(security.contains(&format!("`v{}`", env!("CARGO_PKG_VERSION"))));
+    assert!(security.contains(&format!("`{published}`")));
     assert!(reference.contains("1,800,000 ms (30 minute)\ndefault deadline"));
     assert!(reference.contains("positive `--timeout-ms MS` override"));
     assert!(
@@ -223,10 +232,7 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     );
     assert!(first.contains("historical v3 procedure"));
     assert!(methodology.contains("v3 `run record-check` is caller-reported-only"));
-    assert!(methodology.contains(&format!(
-        "`v{}` writes v8 records",
-        env!("CARGO_PKG_VERSION")
-    )));
+    assert!(methodology.contains(&format!("`{published}` writes v8 records")));
     assert!(glossary.contains("Exitbind progress"));
     assert!(cli.contains("Checked run: v8 acceptance"));
     assert!(cli.contains("Historical v1-v7 runs remain readable"));

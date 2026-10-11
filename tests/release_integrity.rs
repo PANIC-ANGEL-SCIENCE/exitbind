@@ -27,8 +27,16 @@ const RELEASE_FILES: &[&str] = &[
     "scripts/ci-wsl.sh",
     "docs/goal-requirements.md",
     "docs/legacy-compatibility.md",
+    "docs/release-version-policy.md",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
+
+fn published_tag() -> &'static str {
+    include_str!("../docs/release-version-policy.md")
+        .lines()
+        .find_map(|line| line.strip_prefix("Published stable tag: "))
+        .unwrap()
+}
 
 struct Fixture(PathBuf);
 
@@ -116,6 +124,80 @@ fn current_release_and_historical_changelog_pass_with_installer_overrides() {
 }
 
 #[test]
+fn published_stable_is_separate_from_candidate_source_references() {
+    let fixture = Fixture::release();
+    expect_success(gate("check-release-refs.sh", &fixture.0));
+    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{}/install.sh | sh", published_tag());
+    fixture.replace(
+        "README.md",
+        &command,
+        &command.replace(published_tag(), &format!("v{VERSION}")),
+    );
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "unpublished candidate install replaces the stable command",
+    );
+    for name in [
+        "schema/candidate.json",
+        "src/candidate.rs",
+        "docs/unlisted.md",
+    ] {
+        let fixture = Fixture::release();
+        fs::write(
+            fixture.0.join(name),
+            format!("release {}\n", published_tag()),
+        )
+        .unwrap();
+        expect_failure(gate("check-release-refs.sh", &fixture.0), name);
+    }
+}
+
+#[test]
+fn release_policy_must_bind_the_candidate_and_one_valid_stable_tag() {
+    let candidate = format!("Source candidate tag: v{VERSION}");
+    let published = format!("Published stable tag: {}", published_tag());
+    for (marker, replacement) in [
+        (
+            candidate.as_str(),
+            "Source candidate tag: v99.98.97".to_owned(),
+        ),
+        (
+            published.as_str(),
+            "Published stable tag: v0.31.01".to_owned(),
+        ),
+        (published.as_str(), format!("{published}\n{published}")),
+        (published.as_str(), String::new()),
+    ] {
+        let fixture = Fixture::release();
+        fixture.replace("docs/release-version-policy.md", marker, &replacement);
+        expect_failure(
+            gate("check-release-refs.sh", &fixture.0),
+            "missing, duplicate or drifted release policy",
+        );
+    }
+}
+
+#[test]
+fn numeric_version_fixture_literals_do_not_allow_other_stale_references() {
+    let fixture = Fixture::release();
+    let path = fixture
+        .0
+        .join("src/distribution/update/version_policy_tests.rs");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        "v(\"v0.31.0\"); v(\"v0.31.9\"); invalid(\"v0.31.01\");\n",
+    )
+    .unwrap();
+    expect_success(gate("check-release-refs.sh", &fixture.0));
+    fs::write(&path, "v(\"v99.98.97\");\n").unwrap();
+    expect_failure(
+        gate("check-release-refs.sh", &fixture.0),
+        "unrelated version in numeric fixture",
+    );
+}
+
+#[test]
 fn packaged_plugin_mirrors_and_validator_cannot_drift_from_the_release() {
     for file in [
         "plugins/exitbind/plugin.json",
@@ -181,7 +263,7 @@ fn closed_maintenance_packet_preserves_only_its_historical_release() {
 #[test]
 fn stale_security_release_references_are_rejected() {
     let fixture = Fixture::release();
-    fixture.replace("SECURITY.md", &format!("v{VERSION}"), "v0.10.0");
+    fixture.replace("SECURITY.md", published_tag(), "v0.10.0");
     expect_failure(
         gate("check-release-refs.sh", &fixture.0),
         "stale current security contract",
@@ -190,9 +272,10 @@ fn stale_security_release_references_are_rejected() {
 
 #[test]
 fn stale_and_malformed_readme_install_commands_are_rejected() {
-    let current = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{VERSION}/install.sh | sh");
+    let published = published_tag();
+    let current = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
     for replacement in [
-        current.replace(&format!("v{VERSION}"), "v0.10.0"),
+        current.replace(published, "v0.10.0"),
         current.replace("install.sh", "install.sh.invalid"),
         format!("# {current}"),
         String::new(),
@@ -205,7 +288,8 @@ fn stale_and_malformed_readme_install_commands_are_rejected() {
 
 #[test]
 fn html_comments_cannot_hide_the_readme_install_instruction() {
-    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{VERSION}/install.sh | sh");
+    let published = published_tag();
+    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
     let block = format!("```sh\n{command}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n```");
     for hidden in [
         format!("<!--\n{block}\n-->"),
@@ -325,7 +409,7 @@ fn absent_or_drifted_required_version_values_are_rejected() {
     let historical_manifest = "\"version\": \"0.25.0-rc.5\",";
     let installer = format!("version=\"${{EXITBIND_VERSION:-v{VERSION}}}\"");
     let wsl = format!("test \"$(exitbind version)\" = \"{VERSION}\"");
-    let changelog = format!("## {VERSION}\n");
+    let changelog = format!("## Unreleased — {VERSION} source candidate\n");
     for (file, marker) in [
         ("Cargo.toml", package.as_str()),
         ("Cargo.lock", lock.as_str()),
