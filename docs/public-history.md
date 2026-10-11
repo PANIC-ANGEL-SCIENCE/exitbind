@@ -9,8 +9,10 @@ development history is privately retained. Soulmate names, compatibility
 artifacts and historical release notes remain in the source where relevant.
 
 Subsequent Exitbind development commits remain individual commits. Their source
-trees, messages, and author and committer dates and timezones are retained.
-Maintainer attribution uses the current public GitHub noreply identity.
+trees and author and committer dates and timezones are retained. Commit messages
+are unchanged except for two maintainer Co-authored-by trailers normalized to
+the current public GitHub noreply identity. Other contributor attribution remains
+unchanged.
 Rewriting parentage and attribution changes commit and tag object IDs and
 invalidates earlier commit signatures. Original signed release archives are
 not evidence that a rewritten source commit produced those bytes.
