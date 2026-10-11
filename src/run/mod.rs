@@ -33,7 +33,8 @@ use self::governor::{canonical_work_for_ledger, GOVERNOR_COMPLETION_REFUSAL};
 pub(crate) use self::governor::{
     evidence_for_assignment, governor_request_digest, permit_for_assignment, replan_for_assignment,
     sensor_request_for_assignment, sensor_result_for_assignment, submission_refusal,
-    AssignmentIdentity, RecordedProtection, SubmissionRefusal, REQUEST_ID_MAX_BYTES,
+    AssignmentIdentity, RecordedProtection, SubmissionRefusal, OPERATION_MAX_BYTES,
+    REQUEST_ID_MAX_BYTES,
 };
 pub use self::lifecycle::{next, review_policy, start, start_with_policy};
 use self::reducer::{

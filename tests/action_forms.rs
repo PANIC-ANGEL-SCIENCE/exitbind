@@ -202,6 +202,12 @@ fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
     );
     let worker = fixture.next(&work);
     let form = &worker["current"]["actionForm"]["beforeEditing"];
+    let operation = &form["inputConstraints"]["OPERATION"];
+    assert_eq!(operation["type"], "string");
+    assert_eq!(operation["unit"], "UTF-8 bytes");
+    assert_eq!(operation["minimumBytes"], 1);
+    assert_eq!(operation["maximumBytes"], 120);
+    assert_eq!(operation["nonBlank"], true);
     let binding = worker["current"]["binding"].as_str().unwrap();
     let request_id = format!("permit-{binding}");
     let argv = form["command"]["argv"]
@@ -246,6 +252,61 @@ fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
     let current = fixture.next(&work)["current"]["actionForm"].clone();
     assert!(current["currentGrant"].is_object());
     assert!(current.get("beforeEditing").is_none());
+}
+
+#[test]
+fn permit_operation_bytes_refuse_before_effect_and_accept_exact_boundaries() {
+    for valid in ["x".to_owned(), "x".repeat(120), "가".repeat(40)] {
+        let fixture = Fixture::new("action-form-operation-bytes");
+        let (work, initial) = fixture.begin("true", false);
+        fixture.execute_choice(
+            &fixture.choice(&initial, "scoped"),
+            &[("<REASON>", "scope agreed")],
+            b"bounded operation test\n",
+        );
+        let worker = fixture.next(&work);
+        let form = &worker["current"]["actionForm"]["beforeEditing"];
+        let mut argv = form["command"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let index = argv.iter().position(|v| v == "--operation").unwrap() + 1;
+        let before = fixture.next(&work);
+        for rejected in [
+            "".to_owned(),
+            " \t".to_owned(),
+            "x".repeat(121),
+            format!("{}x", "가".repeat(40)),
+        ] {
+            argv[index] = rejected;
+            let out = fixture.run_argv(&argv, b"");
+            assert!(!out.status.success(), "{}", text(&out));
+            assert!(text(&out).contains("at most 120 bytes"));
+            assert_eq!(fixture.next(&work), before, "refusal recorded an effect");
+        }
+        let mut malformed = argv.clone();
+        malformed[4] = "sma_malformed".into();
+        malformed[index] = valid.clone();
+        assert!(!fixture.run_argv(&malformed, b"").status.success());
+        assert_eq!(fixture.next(&work), before);
+        argv[index] = valid;
+        let out = fixture.run_argv(&argv, b"");
+        assert!(out.status.success(), "{}", text(&out));
+        let admitted: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(admitted["allowed"], true);
+        let saved = fixture.next(&work);
+        let out = fixture.run_argv(&argv, b"");
+        assert!(out.status.success(), "{}", text(&out));
+        let replay: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(replay["idempotent"], true);
+        assert_eq!(
+            fixture.next(&work),
+            saved,
+            "lost-reply recovery repeated an effect"
+        );
+    }
 }
 
 #[test]

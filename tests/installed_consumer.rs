@@ -168,6 +168,21 @@ fn owner_chosen_names_reach_human_and_recipient_context_without_role_or_identity
         );
         assert_eq!(detail["recipientContext"]["agent"], "artisan");
         assert_eq!(detail["recipientContext"]["role"], "worker");
+        let profile = detail["recipientContext"]["profile"]["content"]
+            .as_str()
+            .unwrap();
+        for requirement in [
+            "inspect nearby production code and tests",
+            "existing responsibility owners",
+            "protect a real boundary",
+            "a small change need not grow into a refactor",
+            "investigation does not expand write authority",
+        ] {
+            assert!(
+                profile.contains(requirement),
+                "missing delivered guidance: {requirement}"
+            );
+        }
         assert!(detail["recipientContext"]["purpose"]
             .as_str()
             .unwrap()

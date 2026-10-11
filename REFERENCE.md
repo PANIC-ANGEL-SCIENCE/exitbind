@@ -41,7 +41,7 @@ new install.
 
 ## Quick start
 
-When the `v0.31.0` tag and assets are available, install it as a single Rust binary. Node.js,
+Install the published `v0.31.0` release as a single Rust binary. Node.js,
 npm, Python, and Cargo are not required after installation:
 
 ```sh

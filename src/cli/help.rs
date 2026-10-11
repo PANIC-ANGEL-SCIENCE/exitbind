@@ -102,6 +102,12 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
     };
     let command_name = crate::compatibility::profile().caller;
     let mut help = format!("Usage: {command_name} {usage}");
+    if matches!(path.as_slice(), ["work", "permit"]) {
+        help.push_str(&format!(
+            "\n\nOPERATION must contain non-whitespace text, contain no NUL, and use at most {} UTF-8 bytes. Example: --operation \"Update import parsing\". Obtain allowed:true before editing; a permit grants no host permission. Recover a lost response using the same request ID and the current Work readback.",
+            crate::run::OPERATION_MAX_BYTES
+        ));
+    }
     if matches!(path.as_slice(), ["goal", "usage"] | ["work", "usage"]) {
         help.push_str("\n\nInspect an existing goal or Work; --apply records one prospective observation (JSON on stdin, at most 8192 bytes). It launches no model and does not change task acceptance.\nExample for unavailable root counters (replace id for each distinct observation):\n{\"id\":\"root-setup-1\",\"source\":\"host_reported\",\"scope\":\"root\",\"phase\":\"setup\",\"status\":\"missing\",\"semantics\":\"delta\",\"lifetime\":\"invocation\"}\nMissing counters stay unknown. For actual non-overlapping invocation deltas, use status observed and values with inputTokens, cachedInputTokens and outputTokens. Cached input is part of input; total is input plus output. Never derive tokens from bytes or assume provider snapshots are additive.\nCounter lifetimes, cumulative baselines and parent/child overlap: REFERENCE.md, prospective usage observations in the goal section.");
     }

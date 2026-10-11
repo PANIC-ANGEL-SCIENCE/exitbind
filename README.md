@@ -48,10 +48,9 @@ usual agent and Git workflow.
 
 ## Install and try a first result
 
-The candidate targets Linux x86_64 and macOS on Apple Silicon or Intel. Use the
-versioned installer below after the `v0.31.0` tag and release assets are
-published. Until then, check the [published releases](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases)
-for a version that is available. The installer checks the archive checksum;
+The published v0.31.0 release supports Linux x86_64 and macOS on Apple Silicon
+or Intel. The versioned installer below uses that release. The installer checks
+the archive checksum;
 release archives also carry GitHub build attestations. Review the command and
 destination before approving installation.
 
@@ -86,6 +85,12 @@ permissions. Review the generated boundaries and worker/reviewer mapping. Empty
 starter boundaries are valid; they do not grant access. If your host already
 manages project guidance, use `--skip-skills`. Codex and Claude are exercised
 setup paths; OpenCode compatibility is experimental.
+
+When the task boundaries, check and review choice are already approved, your
+lead can preview them with `setup` and apply the same facts once. Setup returns
+the exact `work begin --detail` command; its response delivers the current actor,
+full role and rules, evidence and executable next action. Follow that action
+rather than assembling another command. See [approved setup facts](docs/onboarding.md#assemble-approved-facts-without-a-configuration-join).
 
 The [onboarding guide](docs/onboarding.md) covers local storage, setup previews,
 first-task boundaries and unsupported hosts. The [first checked run](docs/first-checked-run.md)

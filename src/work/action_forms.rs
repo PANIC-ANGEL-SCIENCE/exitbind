@@ -426,6 +426,17 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     assignment.into(), "--operation".into(), "<OPERATION>".into(),
                     "--request-id".into(), format!("permit-{binding}")]),
                 "placeholders": ["OPERATION"],
+                "inputConstraints": {
+                    "OPERATION": {
+                        "type": "string",
+                        "unit": "UTF-8 bytes",
+                        "minimumBytes": 1,
+                        "maximumBytes": crate::run::OPERATION_MAX_BYTES,
+                        "nonBlank": true,
+                        "forbiddenCharacters": ["NUL"],
+                        "example": "Update import parsing"
+                    }
+                },
                 "required": true,
                 "meaning": "obtain allowed:true before editing; repeat this exact request ID only to recover its response; this form grants no host permission"
             });

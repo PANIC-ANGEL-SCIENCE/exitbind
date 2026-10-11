@@ -174,6 +174,9 @@ pub fn parse(values: &[String]) -> Result<Arguments, String> {
         if !VALUE_OPTIONS.contains(&key) {
             return Err(format!("unknown option '--{key}'"));
         }
+        if arguments.options.contains_key(key) {
+            return Err(format!("option '--{key}' may only be supplied once"));
+        }
 
         let option_value = match inline {
             Some(value) => value.to_owned(),

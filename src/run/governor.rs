@@ -15,6 +15,7 @@ pub(crate) struct RecordedProtection {
 }
 
 pub(crate) const REQUEST_ID_MAX_BYTES: usize = 120;
+pub(crate) const OPERATION_MAX_BYTES: usize = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubmissionRefusal {
@@ -106,8 +107,13 @@ pub(crate) fn permit_for_assignment(
     operation: &str,
     request_id: Option<&str>,
 ) -> Result<Value, String> {
-    if operation.trim().is_empty() || operation.len() > 120 || operation.contains('\0') {
-        return Err("governor operation must be non-empty and at most 120 bytes".into());
+    if operation.trim().is_empty()
+        || operation.len() > OPERATION_MAX_BYTES
+        || operation.contains('\0')
+    {
+        return Err(format!(
+            "governor operation must be non-empty and at most {OPERATION_MAX_BYTES} bytes"
+        ));
     }
     if request_id.is_some_and(|value| {
         value.trim().is_empty() || value.len() > REQUEST_ID_MAX_BYTES || value.contains('\0')

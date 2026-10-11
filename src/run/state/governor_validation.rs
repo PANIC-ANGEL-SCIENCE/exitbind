@@ -144,10 +144,9 @@ pub(super) fn validate_governor_event(event: &Value, line: usize) -> Result<(), 
             ));
         }
     }
-    if event["operation"]
-        .as_str()
-        .map_or(true, |value| value.trim().is_empty() || value.len() > 120)
-    {
+    if event["operation"].as_str().map_or(true, |value| {
+        value.trim().is_empty() || value.len() > crate::run::OPERATION_MAX_BYTES
+    }) {
         return Err(format!(
             "invalid run ledger line {line}: governor operation is invalid"
         ));
