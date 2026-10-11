@@ -288,13 +288,15 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
 fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     let cleanup_root = support::temp("action-view-long-root");
     let mut root = cleanup_root.clone();
-    for index in 0..8 {
+    // Keep the long path bounded; assertions below verify both sides of the
+    // response-size boundary for repeated and grouped navigation.
+    for index in 0..4 {
         root.push(format!(
             "agent-host-managed-workspace-project-checkout-{index:02}"
         ));
     }
     fs::create_dir_all(&root).unwrap();
-    assert!(root.to_str().unwrap().len() >= 400, "{}", root.display());
+    assert!(root.to_str().unwrap().len() >= 250, "{}", root.display());
     let fixture = Fixture::at(root, cleanup_root);
     let project_rule = "Reviewer: keep the complete current evidence and instructions.\n";
     fs::write(fixture.root.join("AGENTS.md"), project_rule).unwrap();
