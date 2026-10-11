@@ -54,10 +54,13 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
     };
     let before = git_status();
     let readme = include_str!("../README.md");
+    let published = include_str!("../docs/release-version-policy.md")
+        .lines()
+        .find_map(|line| line.strip_prefix("Published stable tag: "))
+        .unwrap();
     assert!(readme.starts_with("# Exitbind\n"));
     assert!(readme.contains(&format!(
-        "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{}/install.sh",
-        env!("CARGO_PKG_VERSION")
+        "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh"
     )));
     assert!(readme.contains("https://github.com/PANIC-ANGEL-SCIENCE/exitbind"));
     assert!(readme.contains("URL-only"));
