@@ -57,6 +57,21 @@ Historical section routes retain their 24 KiB paging. The host's output limit
 must still fit one page's encoded response; Exitbind cannot recover text a host
 discarded or change that host's limit.
 
+## Routine Lead decisions
+
+After acquiring the complete current assignment and required instructions, use
+`work detail WORK --view action --json` for routine state and action inspection.
+Its decision metadata and exact section routes avoid repeating artifacts. It
+explicitly marks instructions incomplete: this is navigation, never review or
+acceptance evidence. On a changed recipient, binding or instruction/evidence
+source, acquire and consume the applicable complete current bytes before the
+next dependent effect. At substantive review or acceptance, inspect complete
+relevant artifacts and negative cases; earlier acquisition and an approval
+label do not substitute for current evidence. Retain full responses through
+protected host capture, then display the needed fields and one next command.
+Without complete capture, use exact expansion pages and verify every required
+byte. Never treat a truncated model-visible projection as complete delivery.
+
 ## Report the requested outcome
 
 Start the human report with the useful result and the checks actually completed,

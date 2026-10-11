@@ -1288,7 +1288,9 @@ projection grant no host rights. Current assignment, approval and complete
 bounded context remain required.
 
 `exitbind work detail WORK --view action --json` reads the current executable
-forms without redelivering consumed instructions. Its exact section routes
+forms and current decision metadata without redelivering consumed instructions.
+The metadata is navigation, not evidence of complete instruction delivery or
+review. Its exact section routes
 retain mandatory context. After a permit/edit, follow the permit response's
 current action route; do not reuse a pre-permit return binding.
 

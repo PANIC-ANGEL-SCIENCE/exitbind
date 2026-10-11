@@ -15,7 +15,8 @@ while test "$#" -gt 0; do
 done
 test "$before" = WORKTREE || git rev-parse --verify "$before^{commit}" >/dev/null 2>&1 || { printf '%s\n' 'before revision is not immutable' >&2; exit 2; }
 test "$after" = WORKTREE || git rev-parse --verify "$after^{commit}" >/dev/null 2>&1 || { printf '%s\n' 'after revision is not immutable' >&2; exit 2; }
-entries='AGENTS.md|bootstrap|root|none
+entries='AGENTS.md|retired-contributor|absent|CONTRIBUTING.md
+CONTRIBUTING.md|contributor-only|explicit|none
 skills/exitbind-bootstrap/SKILL.md|bootstrap|router|none
 skills/exitbind/SKILL.md|activated-skill|router|skills/exitbind/references/preservation.md
 skills/exitbind/references/preservation.md|delayed-reference|reference|none

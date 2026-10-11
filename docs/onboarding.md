@@ -1,5 +1,9 @@
 # Onboarding by environment
 
+Use Exitbind for your own work in your existing project and agent conversation.
+The optional [contributor guide](../CONTRIBUTING.md) applies when changing
+Exitbind source; it is not an installation or first-Work prerequisite.
+
 Start in the existing Codex or Claude root conversation. Describe the work in
 ordinary language; when a reviewed project preference makes it appropriate, the
 root lead handles authorized Exitbind setup, selection, records, checks,

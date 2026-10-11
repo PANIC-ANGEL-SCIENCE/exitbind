@@ -32,6 +32,10 @@ Fix the interrupted-import bug, preserve existing imports, and show me the
 checked result. Continue the same task if the session is interrupted.
 ```
 
+Use Exitbind for your own work. Source contribution is optional and has a
+separate [contributor guide](CONTRIBUTING.md). Your agent follows your project
+rules and the installed skill; it need not load Exitbind developer instructions.
+
 On a URL-only first contact, your lead inspects the project and asks before
 installation, project writes or permission changes. After approved setup,
 continue in the same conversation; the lead retrieves recorded work and
@@ -179,6 +183,7 @@ project and record formats.
 ## Read next
 
 - [Onboarding and setup options](docs/onboarding.md)
+- [Your own project agents](docs/user-owned-agents.md)
 - [First checked run](docs/first-checked-run.md)
 - [Repair or resume a run](docs/repair-a-run.md)
 - [Upgrade and rollback](docs/upgrade-and-rollback.md)

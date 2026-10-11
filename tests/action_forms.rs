@@ -210,6 +210,12 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
         .iter()
         .any(|c| c["label"] == "contradiction"));
     assert_eq!(before["instructions"]["complete"], false);
+    assert_eq!(before["decision"]["readiness"], "IN_PROGRESS");
+    assert_eq!(before["decision"]["result"]["exists"], false);
+    assert!(before["decision"]["goal"]["workGoalSha256"].is_string());
+    assert!(before["decision"]["obligations"].is_array());
+    assert!(before.get("sections").is_none());
+    assert!(before.get("recipientContext").is_none());
     let old_return = before["effectiveAction"]["choices"]
         .as_array()
         .unwrap()
