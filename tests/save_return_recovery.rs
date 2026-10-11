@@ -412,6 +412,8 @@ impl Drop for Fixture {
 
 #[test]
 fn invalid_native_summary_is_inspectable_without_a_second_provider_attempt() {
+    use std::fmt::Write as _;
+
     let fixture = Fixture::new("native-invalid-summary");
     let (work, worker) = fixture.pending_worker("recover bounded native summary");
     let assignment = worker["assignment"].as_str().unwrap();
@@ -424,14 +426,15 @@ fn invalid_native_summary_is_inspectable_without_a_second_provider_attempt() {
             json!({"outcome":"completed","summary":"private first line\nprivate second line","reason":""}).to_string()}}),
         json!({"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}),
     ];
+    let mut event_script = String::new();
+    for event in events {
+        writeln!(&mut event_script, "printf '%s\\n' '{event}'").unwrap();
+    }
     let script = format!(
         "#!/bin/sh\ncat > '{}'\nprintf x >> '{}'\n{}",
         capture.display(),
         marker.display(),
-        events
-            .iter()
-            .map(|event| format!("printf '%s\\n' '{}'\n", event))
-            .collect::<String>()
+        event_script
     );
     fs::write(&executable, script).unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
