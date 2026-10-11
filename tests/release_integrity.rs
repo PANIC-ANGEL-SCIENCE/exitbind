@@ -128,14 +128,22 @@ fn published_stable_is_separate_from_candidate_source_references() {
     let fixture = Fixture::release();
     expect_success(gate("check-release-refs.sh", &fixture.0));
     let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{}/install.sh | sh", published_tag());
+    // Once this candidate is published, substituting its tag is no mutation.
+    // Keep the negative install case distinct from the declared stable tag.
+    let unavailable = if published_tag() == format!("v{VERSION}") {
+        "v99.98.97".to_owned()
+    } else {
+        format!("v{VERSION}")
+    };
+    assert_ne!(unavailable, published_tag());
     fixture.replace(
         "README.md",
         &command,
-        &command.replace(published_tag(), &format!("v{VERSION}")),
+        &command.replace(published_tag(), &unavailable),
     );
     expect_failure(
         gate("check-release-refs.sh", &fixture.0),
-        "unpublished candidate install replaces the stable command",
+        "non-published install replaces the stable command",
     );
     for name in [
         "schema/candidate.json",
@@ -409,7 +417,12 @@ fn absent_or_drifted_required_version_values_are_rejected() {
     let historical_manifest = "\"version\": \"0.25.0-rc.5\",";
     let installer = format!("version=\"${{EXITBIND_VERSION:-v{VERSION}}}\"");
     let wsl = format!("test \"$(exitbind version)\" = \"{VERSION}\"");
-    let changelog = format!("## Unreleased — {VERSION} source candidate\n");
+    let unreleased = format!("## Unreleased — {VERSION} source candidate");
+    let released = format!("## {VERSION}");
+    let changelog = include_str!("../CHANGELOG.md")
+        .lines()
+        .find(|line| *line == unreleased || *line == released)
+        .expect("current released or unreleased version heading");
     for (file, marker) in [
         ("Cargo.toml", package.as_str()),
         ("Cargo.lock", lock.as_str()),
@@ -424,7 +437,7 @@ fn absent_or_drifted_required_version_values_are_rejected() {
         ),
         ("install.sh", installer.as_str()),
         ("scripts/ci-wsl.sh", wsl.as_str()),
-        ("CHANGELOG.md", changelog.as_str()),
+        ("CHANGELOG.md", changelog),
     ] {
         let malformed = if file.starts_with("systems.soulmate/") {
             marker.replace("0.25.0-rc.5", "1.2.3")
