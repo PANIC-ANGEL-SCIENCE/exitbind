@@ -3,7 +3,7 @@
 ## Product-owned goal and result status
 
 When a Lead has registered the external user's goal with `goal incorporate`
-and divided it with one or more `--obligation` entries, supported Work and run
+and supplied one `--obligation` value per command, supported Work and run
 responses include a bounded `goalProgress` projection. Its `systemText` names
 the overall goal state and the Lead's completed-task count and task states. The
 projection is generated from the canonical goal record; a model does not need
@@ -308,3 +308,7 @@ Application is explicitly `lead_reported_application_with_observed_check`:
 the later check supports the application claim, but does not independently
 prove the semantic cause. These features provide local behavioral evidence;
 they do not establish comparative superiority or external-user adoption.
+
+For several named requirements, use a separate `goal require` command for each
+item, then bind their declared IDs as described in [goal requirements](goal-requirements.md).
+Repeated singleton flags are refused; they do not create extra obligations.

@@ -5,6 +5,14 @@ use crate::memory::{self, forgetting};
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(a, 0, "memory requires an action")?;
     match action {
+        "form" => {
+            args::assert_options("memory form", a, &["config", "scope", "json"])?;
+            args::assert_positionals("memory form", a, 1)?;
+            if a.options.get("scope").map(String::as_str) != Some(memory::lessons::SCOPE) {
+                return Err("memory form requires --scope project-lessons.v1".into());
+            }
+            print_json(&memory::lessons::input_form(l)?)
+        }
         "correct-policy" => {
             args::assert_options(
                 "memory correct-policy",

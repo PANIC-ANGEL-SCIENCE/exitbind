@@ -82,6 +82,11 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
         "integration":{"version":env!("CARGO_PKG_VERSION"),
             "build":crate::producer::build_identity()},
     });
+    if !loaded.capabilities.is_empty() {
+        snapshot["capabilities"] = json!({"state":"registered", "count":loaded.capabilities.len(),
+            "route":"exitbind project capabilities --task TASK --host HOST --json",
+            "meaning":"read current applicability; no launch, acknowledgement or live refresh inferred"});
+    }
     match super::architecture::reference(loaded) {
         Ok(Some(reference)) => {
             snapshot["architectureContract"] = json!({"state": "current", "provenance": reference})

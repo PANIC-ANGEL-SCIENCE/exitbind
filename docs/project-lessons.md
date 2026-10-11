@@ -179,3 +179,16 @@ guards exclude or refuse; symlink and nonregular paths refuse. Guard heap storag
 does not grow with file size, while I/O still scales with the guarded bytes.
 These observations detect the exercised drift; they do not lock a file against
 changes after observation.
+
+## Prepare a bounded source and correction
+
+Before proposal, run `exitbind memory form --scope project-lessons.v1 --json`.
+The read-only form supplies the current project identity, required fields and
+limits. The complete UTF-8 JSON source may contain at most 2,048 bytes; its
+`fact` may contain at most 512 bytes. The form supplies no memory permission.
+
+For a correction, keep the same `id` and original `createdRevision`. Set
+`revalidatedRevision` to the newly reviewed revision and `supersedes` to the
+exact retired predecessor item ID. Propose a new immutable source and ledger,
+review it, retire the accepted predecessor, then promote the correction.
+A different creation revision is a different identity and is refused.

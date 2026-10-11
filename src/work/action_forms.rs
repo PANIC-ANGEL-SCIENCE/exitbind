@@ -175,7 +175,10 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "executionOptions": {"timeoutMs": {"option": "--timeout-ms", "default": 1_800_000, "minimum": 1, "maximum": crate::run::check_observation::MAX_TIMEOUT_MS}, "repeat": "an admitted observation is never automatically retried"}})
             } else { Value::Null }});
     };
-    let outcomes = allowed_outcomes(next);
+    let outcomes: Vec<_> = allowed_outcomes(next)
+        .into_iter()
+        .filter(|outcome| *outcome != "contradiction" || next["packet"]["basisSha256"].is_string())
+        .collect();
     let state = if super::check::unresolved(next) {
         "unresolved_check_observation"
     } else if next["packet"]["pendingDisposition"]["kind"] == "check_observation_failed" {

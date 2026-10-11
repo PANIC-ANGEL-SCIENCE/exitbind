@@ -79,6 +79,7 @@ fn project_parts_after_reads(
 
     let rules = current_rules(loaded)?;
     let architecture = super::architecture::delivery(loaded, packet)?;
+    let capabilities = super::capabilities::delivery(loaded, packet, binding.host)?;
     let references =
         memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
     let generic_references: Vec<_> = references
@@ -134,6 +135,13 @@ fn project_parts_after_reads(
         }
     }
     let mut volatile = String::new();
+    if let Some(capabilities) = &capabilities {
+        push_section(
+            &mut volatile,
+            "CURRENT APPROVED PROJECT CAPABILITIES",
+            capabilities,
+        )?;
+    }
     if let Some(architecture) = &architecture {
         push_section(
             &mut volatile,
@@ -192,6 +200,9 @@ fn project_parts_after_reads(
         )?;
     }
     after_reads()?;
+    if super::capabilities::delivery(loaded, packet, binding.host)? != capabilities {
+        return Err("approved capabilities changed before native launch".into());
+    }
     if super::architecture::delivery(loaded, packet)? != architecture {
         return Err("architecture contract changed before native launch".into());
     }

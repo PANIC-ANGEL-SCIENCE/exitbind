@@ -110,6 +110,54 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     read(loaded, work, &snapshot, &next)
 }
 
+/// A current executable form without repeating previously consumed rules and
+/// artifacts. Mandatory context stays available through exact section pages.
+pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> {
+    super::details::ensure_current_config(loaded)?;
+    let next = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
+    let binding = next["current"]["binding"]
+        .as_str()
+        .ok_or("current action binding unavailable")?;
+    let forms = super::action_forms::full(loaded, work, &next, binding);
+    let mut routes = next["current"]["details"].clone();
+    if let Some(routes) = routes.as_object_mut() {
+        routes.remove("grouped");
+    }
+    let result = json!({"compact":true,"version":1,"kind":"work_action","work":work,"binding":binding,
+        "actionForms":forms,"recipient":next["current"]["recipient"],
+        "details":routes,
+        "instructions":{"complete":false,"meaning":"action view does not redeliver instructions; consume complete current recipient, assignment and evidence before dependent work"}});
+    let fresh = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
+    super::details::ensure_current_config(loaded)?;
+    if fresh["current"]["binding"] != binding {
+        return Err("action changed during read; inspect current work detail before acting".into());
+    }
+    let mut result = result;
+    let mut effective = super::effective_action::project(&result);
+    let form = result
+        .as_object_mut()
+        .unwrap()
+        .remove("actionForms")
+        .unwrap();
+    effective["formState"] = form["state"].clone();
+    for (key, value) in form.as_object().unwrap() {
+        if !effective.as_object().unwrap().contains_key(key) {
+            effective[key] = value.clone();
+        }
+    }
+    effective["source"]["location"] = json!("effectiveAction");
+    result["effectiveAction"] = effective;
+    if serde_json::to_vec(&result)
+        .map_err(|e| e.to_string())?
+        .len()
+        + 1
+        > super::compact::MAX_RESPONSE_BYTES
+    {
+        return Err("action view exceeds 8192 bytes; use current work next section routes".into());
+    }
+    Ok(result)
+}
+
 pub(crate) fn expand(
     loaded: &Loaded,
     work: &str,

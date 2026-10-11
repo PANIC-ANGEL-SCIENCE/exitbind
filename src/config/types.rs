@@ -2,6 +2,16 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct WorkflowConfig {
+    #[serde(default)]
+    pub(crate) workers: Vec<String>,
+    #[serde(default)]
+    pub(crate) reviewers: Vec<String>,
+    #[serde(default)]
+    pub(crate) advisers: Vec<String>,
+}
+
 /// The validated, typed representation of one configured agent.
 ///
 /// Unknown fields are intentionally ignored here. `config::validate` is the

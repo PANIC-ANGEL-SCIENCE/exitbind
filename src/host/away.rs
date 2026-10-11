@@ -491,7 +491,6 @@ fn select_assignment(packet: &Value, agent: &str, require_harness: bool) -> Resu
         ));
     }
     let assignment = matches[0];
-    // Refuse unproven substitutions.
     if assignment.get("substitution").is_some() {
         return Err(
             "fallback substitution is not supported by the native away runner; run it interactively"
@@ -991,6 +990,8 @@ mod tests {
             agents: std::collections::BTreeMap::new(),
             lead: None,
             architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: std::collections::BTreeMap::new(),
             path: root.join("soulmate.json"),
             control_root: root.clone(),
             product_root: root.clone(),

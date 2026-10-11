@@ -9,6 +9,21 @@ const MAX_ENTRY: usize = 2048;
 const MAX_ITEMS: usize = 4;
 const MAX_DELIVERY: usize = 6 * 1024;
 
+pub(crate) fn input_form(loaded: &Loaded) -> Result<Value, String> {
+    Ok(json!({"version":1,"scope":SCOPE,"effect":"no-change",
+        "bounds":{"sourceMaximumBytes":MAX_ENTRY,"factMaximumBytes":512,"unit":"UTF-8 bytes"},
+        "template":{"version":1,"id":"stable-lesson-id","fact":"One bounded reviewed project fact.",
+            "projectIdentity":crate::host::assignment_context::project_identity(loaded)?,
+            "owner":loaded.lead(),"provenance":["Reviewed source and reason"],
+            "createdRevision":"<40-or-64-lowercase-hex-original-revision>",
+            "revalidatedRevision":"<40-or-64-lowercase-hex-current-reviewed-revision>",
+            "appliesTo":{"agents":["<configured-recipient>"],"taskTerms":["<relevant-term>"]},
+            "guards":[{"path":"<relative-project-file>","sha256":"<64-lowercase-hex-digest>"}]},
+        "correction":{"stableFields":["id","createdRevision"],"reviewedRevision":"revalidatedRevision",
+            "supersedes":"exact retired predecessor itemId; propose a new immutable source/ledger; review it; retire predecessor before promotion"},
+        "authority":"the template grants no memory rights; existing scoped rights, guards and explicit expires-at still apply"}))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub(crate) struct Lesson {
@@ -101,6 +116,12 @@ pub(crate) fn parse(loaded: &Loaded, bytes: &[u8]) -> Result<Lesson, String> {
     }
     let lesson: Lesson = serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid project lesson: {error}"))?;
+    if !text(&lesson.fact, 512) {
+        return Err("project lesson fact must be nonblank, without control characters, and at most 512 UTF-8 bytes; use memory form --scope project-lessons.v1".into());
+    }
+    if !revision(&lesson.created_revision) || !revision(&lesson.revalidated_revision) {
+        return Err("project lesson createdRevision and revalidatedRevision must be 40 or 64 lowercase hexadecimal characters; corrections retain the original createdRevision".into());
+    }
     let applies = &lesson.applies_to;
     if lesson.version != 1
         || !text(&lesson.id, 64)
@@ -263,7 +284,7 @@ pub(crate) fn validate_transition(
                 }
             }
             if !found {
-                return Err("lesson supersedes must reference its retired predecessor with the same stable identity".into());
+                return Err("lesson supersedes must reference its retired predecessor with the same id and original createdRevision; put the newly reviewed revision in revalidatedRevision".into());
             }
         }
     }

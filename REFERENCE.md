@@ -1277,3 +1277,20 @@ lifecycle and arrive in ordinary recipient context. Inspect applicable reference
 with `exitbind memory resolve AGENT --task CURRENT_GOAL --json`. Lead ownership,
 expiry, source guards and delivery bounds keep this context separate from Work
 authority.
+
+## Approved next-launch capabilities and release policy
+
+Use [project capabilities](docs/project-capabilities.md) to register reviewed
+skills or lenses for relevant configured native recipients. Registration and
+projection grant no host rights. Current assignment, approval and complete
+bounded context remain required.
+
+`exitbind work detail WORK --view action --json` reads the current executable
+forms without redelivering consumed instructions. Its exact section routes
+retain mandatory context. After a permit/edit, follow the permit response's
+current action route; do not reuse a pre-permit return binding.
+
+`exitbind memory form --scope project-lessons.v1 --json` reports the complete
+proposal shape, 2048-byte source and 512-byte UTF-8 fact bounds, and immutable
+correction identity. See [release series](docs/release-version-policy.md) for
+the prepared 0.31.10 candidate and publication gates.

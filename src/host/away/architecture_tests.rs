@@ -8,6 +8,8 @@ fn loaded(root: &Path) -> Loaded {
         agents: BTreeMap::new(),
         lead: None,
         architecture_contract: None,
+        capabilities: Vec::new(),
+        workflows: std::collections::BTreeMap::new(),
         path: root.join("exitbind.json"),
         control_root: root.to_owned(),
         product_root: root.to_owned(),

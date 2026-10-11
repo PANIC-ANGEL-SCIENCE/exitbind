@@ -15,6 +15,8 @@ pub struct Loaded {
     /// The validated `orchestration.lead` agent name.
     pub lead: Option<String>,
     pub(crate) architecture_contract: Option<crate::project::architecture::Selection>,
+    pub(crate) capabilities: Vec<crate::project::capabilities::Selection>,
+    pub(crate) workflows: BTreeMap<String, types::WorkflowConfig>,
     pub path: PathBuf,
     pub control_root: PathBuf,
     pub product_root: PathBuf,
@@ -31,6 +33,25 @@ impl Loaded {
 
     pub fn lead(&self) -> Option<&str> {
         self.lead.as_deref()
+    }
+
+    pub(crate) fn roles_for(&self, name: &str) -> BTreeSet<&'static str> {
+        let mut roles = BTreeSet::new();
+        if self.lead() == Some(name) {
+            roles.insert("lead");
+        }
+        for workflow in self.workflows.values() {
+            for (role, names) in [
+                ("worker", &workflow.workers),
+                ("reviewer", &workflow.reviewers),
+                ("adviser", &workflow.advisers),
+            ] {
+                if names.iter().any(|s| s == name) {
+                    roles.insert(role);
+                }
+            }
+        }
+        roles
     }
 }
 
@@ -111,11 +132,20 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
         .get("architectureContract")
         .map(crate::project::architecture::selection)
         .transpose()?;
+    let capabilities = config["project"]
+        .get("capabilities")
+        .map(crate::project::capabilities::selections)
+        .transpose()?
+        .unwrap_or_default();
+    let workflows = serde_json::from_value(config["workflows"].clone())
+        .map_err(|e| format!("invalid typed workflow: {e}"))?;
     Ok(Loaded {
         config,
         agents,
         lead,
         architecture_contract,
+        capabilities,
+        workflows,
         path,
         control_root: layout.control_root,
         product_root: layout.product_root,
@@ -200,12 +230,17 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
     };
     reject_unknown(
         project,
-        &["root", "mode", "id", "architectureContract"],
+        &["root", "mode", "id", "architectureContract", "capabilities"],
         "project",
         errors,
     );
     if let Some(selected) = project.get("architectureContract") {
         crate::project::architecture::validate_selection(selected, errors);
+    }
+    if let Some(selected) = project.get("capabilities") {
+        if let Err(error) = crate::project::capabilities::selections(selected) {
+            errors.push(format!("project.capabilities: {error}"));
+        }
     }
     match project.get("root").and_then(Value::as_str) {
         None => errors.push("project.root must be a string".into()),

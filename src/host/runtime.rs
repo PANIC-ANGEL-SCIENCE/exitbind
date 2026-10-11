@@ -360,6 +360,12 @@ pub fn run() -> Result<(), String> {
                         );
                     }
                     context.push_str("\nSelected task perspectives for this assignment:");
+                    if let Some(capabilities) = child.get("capabilities") {
+                        context.push_str("\nCurrent approved project capabilities (complete; native use remains separate):\n");
+                        context.push_str(
+                            &serde_json::to_string(capabilities).map_err(|e| e.to_string())?,
+                        );
+                    }
                     for perspective in child["perspectives"].as_array().into_iter().flatten() {
                         context.push_str(&format!(
                             "\nPerspective {} (source SHA-256 {}, presented SHA-256 {}, complete):\n{}",

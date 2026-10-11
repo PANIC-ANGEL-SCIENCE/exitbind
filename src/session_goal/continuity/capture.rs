@@ -151,7 +151,7 @@ pub(crate) fn prepare(
         let Some(session) = binding["session"].as_str().map(str::to_owned) else {
             return Err("bind the receiving session before preparing a child".into());
         };
-        let selected = if perspectives.is_empty() {
+        let selected = if perspectives.is_empty() && loaded.capabilities.is_empty() {
             Value::Null
         } else {
             let view = crate::work::next(loaded, work)?;
@@ -170,6 +170,17 @@ pub(crate) fn prepare(
                 "nativeTaskName":next["packet"]["nativeTaskName"],
                 "profileSha256":next["packet"]["profileSha256"]})
         };
+        let capability_binding = if selected.is_null() {
+            Value::Null
+        } else {
+            let view = crate::work::next(loaded, work)?;
+            let delivery = crate::project::capabilities::delivery(
+                loaded,
+                &view["next"]["packet"],
+                binding["host"].as_str().unwrap_or(""),
+            )?;
+            json!(hash::value(&json!(delivery)))
+        };
         let intent = json!({
             "work": work,
             "session": session,
@@ -179,6 +190,7 @@ pub(crate) fn prepare(
             "agentType": agent_type,
             "selected": selected,
             "perspectives": perspectives,
+            "capabilityBinding": capability_binding,
         });
         let id = hash::value(&intent);
         let mut effect = "prepared";
@@ -257,6 +269,16 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     let perspectives = perspective::current(loaded, &sources)?;
     let current = crate::work::next(loaded, work)?;
     let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
+    let capabilities = crate::project::capabilities::delivery(
+        loaded,
+        &current["next"]["packet"],
+        binding["host"].as_str().unwrap_or(""),
+    )?;
+    if !intent["capabilityBinding"].is_null()
+        && intent["capabilityBinding"] != hash::value(&json!(capabilities))
+    {
+        return Err("approved child capabilities changed or expired; prepare the current approved next launch".into());
+    }
     let mut result = json!({
         "work":work,"intent":intent_id,"assignment":selected["assignment"],
         "configuredAgent":agent_id,"nativeTaskName":selected["nativeTaskName"],
@@ -270,11 +292,19 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     if let Some(architecture) = &architecture {
         result["architectureContract"] = architecture.clone();
     }
+    if let Some(capabilities) = &capabilities {
+        result["capabilities"] = capabilities.clone();
+    }
     let fresh = crate::work::next(loaded, work)?;
     let (_, fresh_binding) = current_binding(loaded, work)?;
     if fresh["next"]["assignment"] != selected["assignment"]
         || fresh_binding != binding
         || crate::project::architecture::delivery(loaded, &fresh["next"]["packet"])? != architecture
+        || crate::project::capabilities::delivery(
+            loaded,
+            &fresh["next"]["packet"],
+            fresh_binding["host"].as_str().unwrap_or(""),
+        )? != capabilities
     {
         return Err("child context changed during delivery; refresh the current assignment".into());
     }

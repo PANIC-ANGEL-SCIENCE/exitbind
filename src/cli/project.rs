@@ -5,6 +5,58 @@ use crate::{config::Loaded, project::context};
 
 pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), String> {
     let action = arguments.positional.first().map(String::as_str);
+    if action == Some("capabilities") {
+        if arguments.positional.get(1).map(String::as_str) == Some("select") {
+            args::assert_options(
+                "project capabilities select",
+                arguments,
+                &[
+                    "config",
+                    "json",
+                    "decision",
+                    "reason",
+                    "current-binding",
+                    "apply",
+                ],
+            )?;
+            args::assert_positionals("project capabilities select", arguments, 3)?;
+            return print_json(&crate::project::capabilities::select(
+                loaded,
+                &arguments.positional[2],
+                arguments
+                    .options
+                    .get("decision")
+                    .map(String::as_str)
+                    .unwrap_or(""),
+                arguments
+                    .options
+                    .get("reason")
+                    .map(String::as_str)
+                    .unwrap_or(""),
+                arguments.options.get("current-binding").map(String::as_str),
+                arguments.flags.contains_key("apply"),
+            )?);
+        }
+        args::assert_options(
+            "project capabilities",
+            arguments,
+            &["config", "json", "task", "host"],
+        )?;
+        args::assert_positionals("project capabilities", arguments, 1)?;
+        return print_json(&crate::project::capabilities::inspect(
+            loaded,
+            arguments
+                .options
+                .get("task")
+                .map(String::as_str)
+                .unwrap_or(""),
+            arguments
+                .options
+                .get("host")
+                .map(String::as_str)
+                .unwrap_or("codex"),
+        )?);
+    }
     if action == Some("architecture") {
         if arguments.positional.get(1).map(String::as_str) == Some("select") {
             args::assert_options(
@@ -74,7 +126,7 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
     }
     args::assert_options("project context", arguments, &["config", "json", "task"])?;
     if action != Some("context") {
-        return Err("project requires context, agents or architecture".into());
+        return Err("project requires context, agents, capabilities or architecture".into());
     }
     match arguments.positional.get(1).map(String::as_str) {
         None => {

@@ -71,6 +71,13 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     if let Some(architecture) = crate::project::architecture::delivery(loaded, &next["packet"])? {
         result["architectureContract"] = architecture;
     }
+    if let Some(host) = agent.runtime.host.as_deref() {
+        if let Some(capabilities) =
+            crate::project::capabilities::delivery(loaded, &next["packet"], host)?
+        {
+            result["capabilities"] = capabilities;
+        }
+    }
     if let Some(lessons) = crate::memory::lessons::delivery(
         loaded,
         name,

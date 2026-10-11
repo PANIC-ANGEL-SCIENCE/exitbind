@@ -560,12 +560,15 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             )?)
         }
         "detail" => {
-            args::assert_options("work detail", a, &["config", "json"])?;
+            args::assert_options("work detail", a, &["config", "json", "view"])?;
             args::assert_positionals("work detail", a, 2)?;
-            print_work_json(&crate::work::readable::current(
-                l,
-                positional(a, 1, "work detail requires WORK")?,
-            )?)
+            let work = positional(a, 1, "work detail requires WORK")?;
+            let value = match a.options.get("view").map(String::as_str) {
+                None => crate::work::readable::current(l, work)?,
+                Some("action") => crate::work::readable::action_view(l, work)?,
+                _ => return Err("work detail --view accepts action; omit it for complete detail".into()),
+            };
+            print_work_json(&value)
         }
         "resume" => {
             args::assert_options("work resume", a, &["config", "json", "full", "history"])?;

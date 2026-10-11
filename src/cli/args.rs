@@ -41,6 +41,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "evidence-request",
     "scope-decision",
     "section",
+    "view",
     "blocker",
     "ledger",
     "mode",

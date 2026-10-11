@@ -70,8 +70,9 @@ pub(super) fn compact(
         },
         "nextAction": {
             "type": "read_work", "safe": true,
-            "commandSuffix": ["work", "next", work, "--full"],
+            "commandSuffix": ["work", "detail", work, "--view", "action", "--json"],
             "sameExecutableRequired": true, "sameConfigRequired": true,
+            "when": "after the permitted edit, or now to inspect an uncertain effect; never reuse the pre-permit return binding",
         },
         "audit": {
             "commandSuffix": ["run", "inspect", ledger, "--event", event_sha, "--json"],

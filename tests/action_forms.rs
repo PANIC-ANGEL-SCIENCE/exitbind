@@ -192,6 +192,107 @@ fn initial_scope_form_exposes_only_scoped_and_blocked_and_executes() {
 }
 
 #[test]
+fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_return() {
+    let fixture = Fixture::new("action-view-current");
+    let (work, initial) = fixture.begin("true", false);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope agreed")],
+        b"scope\n",
+    );
+    let before = fixture.json(
+        &["work", "detail", &work, "--view", "action", "--json"],
+        b"",
+    );
+    assert!(!before["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["label"] == "contradiction"));
+    assert_eq!(before["instructions"]["complete"], false);
+    let old_return = before["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["label"] == "completed")
+        .unwrap()
+        .clone();
+    let mut permit = before["effectiveAction"]["beforeEditing"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let i = permit.iter().position(|s| s == "<OPERATION>").unwrap();
+    permit[i] = "edit source".into();
+    let out = fixture.run_argv(&permit, b"");
+    assert!(out.status.success(), "{}", text(&out));
+    let permit: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let suffix = permit["nextAction"]["commandSuffix"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap())
+        .collect::<Vec<_>>();
+    let output = fixture.call(&suffix, b"");
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
+    let current: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ne!(current["binding"], before["binding"]);
+    assert!(current["effectiveAction"]["currentGrant"].is_object());
+    let ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let recorded = fs::read(fixture.root.join(&ledger)).unwrap();
+    let argv = old_return["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!fixture.run_argv(&argv, b"result\n").status.success());
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), recorded);
+    assert!(current["details"]["assignment"].is_object());
+}
+
+#[test]
+fn marked_basis_keeps_the_executable_contradiction_route() {
+    let fixture = Fixture::new("action-view-basis");
+    let basis = r#"{"version":1,"constraints":["preserve history"],"openZones":["worker implementation"],"decisiveCases":["return a contradiction"]}"#;
+    let begun = fixture.json(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "exercise marked basis",
+            "--check-command",
+            "true",
+            "--basis",
+            basis,
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = begun["work"].as_str().unwrap();
+    let initial = fixture.next(work);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope agreed")],
+        b"marked scope\n",
+    );
+    let worker = fixture.next(work);
+    let result = fixture.execute_choice(
+        &fixture.choice(&worker, "contradiction"),
+        &[],
+        b"The marked constraint is contradicted.\n",
+    );
+    assert_eq!(result["next"]["role"], "lead");
+}
+
+#[test]
 fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
     let fixture = Fixture::new("action-form-permit-id");
     let (work, initial) = fixture.begin("true", false);
@@ -243,6 +344,7 @@ fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
     assert!(first.status.success(), "{}", text(&first));
     let first: Value = serde_json::from_slice(&first.stdout).unwrap();
     assert_eq!(first["allowed"], true);
+    assert!(first["currentGrant"].is_object(), "{first}");
     let after_first = fs::read(fixture.root.join(&ledger)).unwrap();
     let replay = fixture.run_argv(&executable, b"");
     assert!(replay.status.success(), "{}", text(&replay));

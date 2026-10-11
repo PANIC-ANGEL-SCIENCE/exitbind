@@ -576,9 +576,7 @@ fn remove_target(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Ask the installed binary to install or refresh its own host bridge, and
-/// report what it said. A failure here never fails an otherwise successful
-/// binary update; it is reported so a stale or missing bridge stays visible.
+/// Report bridge state without changing a successful binary update.
 /// Report bootstrap state without installing anything the operator
 /// may have removed on purpose. Only bytes Exitbind already manages are
 /// refreshed.
@@ -770,7 +768,7 @@ pub fn explicit_update() -> Result<(), String> {
                 version.tag.trim_start_matches('v')
             );
             // The newly installed binary owns its own host bridge. This
-            // process is the older version: if it synchronized the bridge from
+            // Older process: if it synchronized the bridge from
             // its own embedded bootstrap it could write old bytes over the new
             // ones the installer just placed.
             for line in delegate_bridge_sync(&prefix.join("exitbind")) {
@@ -788,6 +786,10 @@ pub fn explicit_update() -> Result<(), String> {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "update/version_policy_tests.rs"]
+mod version_policy_tests;
 
 #[cfg(test)]
 mod tests {

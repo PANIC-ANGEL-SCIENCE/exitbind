@@ -3,6 +3,7 @@ pub(crate) mod agent_display;
 pub(crate) mod agent_rules;
 pub(crate) mod architecture;
 mod binding_location;
+pub(crate) mod capabilities;
 pub(crate) mod commands;
 pub(crate) mod context;
 pub(crate) mod git_preflight;

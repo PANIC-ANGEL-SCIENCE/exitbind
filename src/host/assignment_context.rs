@@ -205,6 +205,8 @@ mod tests {
             agents: BTreeMap::new(),
             lead: None,
             architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: std::collections::BTreeMap::new(),
             path: PathBuf::from("config.json"),
             control_root: PathBuf::from("fixture-root"),
             product_root: PathBuf::from("fixture-root"),

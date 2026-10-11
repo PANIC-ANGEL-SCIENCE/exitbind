@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — 0.31.10 source candidate
+
+- Deliver reviewed project skills and lenses to applicable configured recipients
+  on their next compatible native launch, with bounded content and current hashes.
+- Hide inapplicable contradiction choices; expose a bounded current action view
+  after permit/edit and retain complete instruction and evidence section routes.
+- Explain project lesson source/fact bounds and stable correction identity before
+  proposal; clarify singleton continuing-work obligations.
+- Adopt the deliberate 0.31.10..99 release series. Public release, attestation,
+  installer and platform gates remain separate from this source candidate.
+
 ## 0.31.0
 
 - Move the canonical repository, installer, update feed, schemas and plugin

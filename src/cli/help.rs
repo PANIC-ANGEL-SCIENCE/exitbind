@@ -26,9 +26,13 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
         ["project"] => "project context [memory ITEM_ID] [--task GOAL] [--json] | project agents [--apply] [--json] | project architecture [check] [--json]",
+        ["project", "capabilities"] => "project capabilities [--task GOAL] [--host codex|claude] [--json] | project capabilities select DESCRIPTOR --decision reviewed --reason TEXT (preview emits exact apply; existing Work stays frozen; live refresh is pending next launch)",
+        ["project", "capabilities", "select"] => "project capabilities select DESCRIPTOR --decision reviewed --reason TEXT [--current-binding SHA --apply] [--json] [--config CONFIG]",
         ["project", "context"] => "project context [memory ITEM_ID] [--task GOAL] [--json] [--config CONFIG] (task-specific lessons are selected only for the supplied relevant goal)",
         ["project", "architecture", "select"] => "project architecture select SOURCE --decision reviewed --reason TEXT [--current-binding SHA --apply] [--json] [--config CONFIG] (preview returns the exact apply command)",
         ["project", "architecture"] | ["project", "architecture", "check"] => "project architecture [check] [--json] [--config CONFIG] | project architecture select SOURCE --decision reviewed --reason TEXT",
+        ["memory", "form"] => "memory form --scope project-lessons.v1 [--json] [--config CONFIG] (read-only required shape, 2048 source bytes, 512 fact bytes and stable correction fields)",
+        ["memory", "propose"] => "memory propose AGENT SOURCE --scope SCOPE --ledger LEDGER --expires-at UTC_TIME [--config CONFIG] (project-lessons.v1: source <=2048 UTF-8 bytes, fact <=512; use memory form before proposal)",
         ["memory", "revalidate"] => "memory revalidate LEAD LEDGER --from-config ORIGINAL_CONFIG --reason REVIEWED_REASON [--apply] [--json]",
         ["memory", "correct-policy"] => "memory correct-policy LEDGER --from-config ORIGINAL_CONFIG --reason OWNER_REASON [--owner-decision APPROVED_DECISION --apply] [--json] [--config CONFIG] (preview returns the exact-item decision; apply records only the approved policy lineage and preserves source, expiry and Work pins)",
         ["setup"] => "setup [--apply] [--json] --mode local|portable --root ROOT --scope lead,worker,reviewer [--observe PATHS] [--write PATHS] [--commands FACTUAL_COMMAND] [--check-command CHECK_COMMAND] [--goal GOAL] [--review-policy required|omitted] [--hosts codex,claude]",
@@ -55,7 +59,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
-        ["work", "detail"] => "work detail WORK [--json]",
+        ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current bound commands and complete section routes without repeating instructions)",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"

@@ -116,6 +116,46 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn proposal_form_reports_utf8_bounds_and_refusals_leave_no_ledger() {
+    let f = Fixture::new();
+    let form = f.ok(&["memory", "form", "--scope", "project-lessons.v1", "--json"]);
+    assert_eq!(form["bounds"]["sourceMaximumBytes"], 2048);
+    assert_eq!(form["bounds"]["factMaximumBytes"], 512);
+    assert_eq!(
+        form["correction"]["stableFields"],
+        json!(["id", "createdRevision"])
+    );
+    let mut source: Value =
+        serde_json::from_slice(&fs::read(f.root.join("lesson.json")).unwrap()).unwrap();
+    source["fact"] = json!("가".repeat(171)); // 513 UTF-8 bytes.
+    fs::write(f.root.join("oversized-fact.json"), source.to_string()).unwrap();
+    fs::write(f.root.join("oversized-source.json"), " ".repeat(2049)).unwrap();
+    for (file, error) in [
+        ("oversized-fact.json", "512 UTF-8 bytes"),
+        ("oversized-source.json", "2048-byte"),
+    ] {
+        let out = f.call(&[
+            "memory",
+            "propose",
+            "lead",
+            file,
+            "--scope",
+            "project-lessons.v1",
+            "--expires-at",
+            "2100-01-01T00:00:00Z",
+            "--ledger",
+            ".exitbind/memory/refused.jsonl",
+        ]);
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(error),
+            "{out:?}"
+        );
+        assert!(!f.root.join(".exitbind/memory/refused.jsonl").exists());
+    }
+}
+
+#[test]
 fn reviewed_compatible_lineage_enables_retirement_and_correction_without_rewriting_history() {
     let f = Fixture::new();
     let ledger = f.root.join(".exitbind/memory/lesson.jsonl");
