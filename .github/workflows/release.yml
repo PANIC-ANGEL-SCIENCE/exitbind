@@ -1,6 +1,7 @@
 name: Exitbind stable release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v0.*"
