@@ -1,13 +1,17 @@
 # Exitbind
 
-**Help your coding agent start the right task, continue when work is interrupted, and show what was checked.**
+**Keep important coding work moving. Make “done” checkable.**
 
-Exitbind works with the Codex or Claude conversation you already use. For
-important changes, it keeps the goal, approved boundaries, work and evidence
-together so you can inspect the result and decide when it is ready. Your host
-still runs the agent and controls its tools and permissions.
-Local records and checks need no model, daemon or cloud service. Your host
-provides model access when an agent needs it.
+A session ends, a reviewer takes over, or the agent says the fix is finished.
+What still needs doing, and which result was actually checked?
+
+Exitbind keeps the recorded goal, approved scope, current result and evidence
+together. Your lead can pick up the remaining work, hand it to the right role,
+and show what supports acceptance. It works alongside the Codex or Claude
+conversation you already use; the host still runs the agent and controls its
+tools and permissions. Exitbind's local records and acceptance logic need no
+model, daemon or cloud service. Your host provides model access; configured
+checks may use other tools or services.
 
 [![CI workflow](docs/assets/badges/exitbind-black-glass-ci.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
 [![Latest release](docs/assets/badges/exitbind-black-glass-release.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
@@ -29,34 +33,33 @@ checked result. Continue the same task if the session is interrupted.
 ```
 
 On a URL-only first contact, your lead inspects the project and asks before
-installation, project writes or permission changes. Once setup is approved,
-you can keep working in the same conversation. You do not need to carry work
-IDs or record files between messages. A link gives your lead instructions; it
-does not prove that a host followed them. See the [onboarding guide](docs/onboarding.md).
+installation, project writes or permission changes. After approved setup,
+continue in the same conversation; the lead retrieves recorded work and
+available actions. The link supplies instructions, not proof of host compliance.
+See the [onboarding guide](docs/onboarding.md).
 
-For a change that matters, Exitbind helps your lead keep the important pieces
-together:
+For a change that matters, the supported path is:
 
-1. what you want done and which files or commands are in scope;
-2. the current project guidance and relevant evidence;
-3. the agent's result and any supported way to resume the same work;
-4. the check result, review decision and your lead's acceptance decision.
+1. **Agree on the task.** Your lead records the goal, boundaries and checks.
+   The lead recommends review; you decide whether it is required or omitted.
+2. **Do the work.** The worker gets the current assignment and project guidance.
+   If the session is interrupted, inspect the saved state and resume what remains.
+3. **Check and review the result.** Run the configured checks on the submitted
+   result, then obtain independent review when required.
+4. **Accept with evidence.** Your lead records its acceptance decision.
+   Verify the receipt linking the accepted result to its evidence.
 
-Your lead remains responsible for the task's meaning and affected users. Exitbind
-can show when required information or evidence is missing, but it cannot fill
-in missing requirements or make the first implementation correct by itself.
-Use it when a change needs a clear handoff, may span sessions, or benefits from
-separate implementation and review. Small reversible edits can stay in your
-usual agent and Git workflow.
+Your lead remains responsible for the requirements, useful checks, review
+and affected users.
+Use it when work spans sessions, needs a clear handoff or separate review.
+Small reversible edits can stay in your usual agent and Git workflow.
 
 ## Install and try a first result
 
-The candidate targets Linux x86_64 and macOS on Apple Silicon or Intel. Use the
-versioned installer below after the `v0.31.0` tag and release assets are
-published. Until then, check the [published releases](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases)
-for a version that is available. The installer checks the archive checksum;
-release archives also carry GitHub build attestations. Review the command and
-destination before approving installation.
+The current [v0.31.0 release](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.0)
+provides Linux x86_64 and macOS Apple Silicon or Intel binaries. The installer
+checks the archive checksum. Review the command, destination and
+[release provenance](docs/public-history.md) before approving installation.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.0/install.sh | sh
@@ -72,9 +75,9 @@ Try the model-free example:
 exitbind benchmark
 ```
 
-This model-free demonstration creates and removes a disposable Git project and
-shows a checked result reaching acceptance. It runs no agent and does not touch
-your project. To keep its records for inspection, pass `--output NEW_DIRECTORY`.
+The demonstration shows a checked result reaching acceptance in a disposable
+Git project. It runs no agent and leaves your project untouched. Pass
+`--output NEW_DIRECTORY` to retain its records.
 See the [proof method](docs/value-proof-methodology.md).
 
 From your project root, initialize Exitbind after approving project writes:
@@ -96,41 +99,47 @@ walks through an inspectable example.
 
 ## Continue interrupted work
 
-For a goal with several requirements, ask your lead to retain the agreed source
-and meanings, assign useful work, and resume the remaining items. `goal status`
-shows each requirement's revision, mapped work, current evidence and next action.
-Missing or stale support keeps the goal open. Final closure needs a current
-checked integration covering every agreed item, with the selected review and
-Lead acceptance. See [Complete a goal with several requirements](docs/goal-requirements.md)
-for the supported commands and a reproducible three-item example. This capability
-is included in the current release. Keep each older Work's compatible reader and
-configuration when upgrading.
+Ask your lead to resume the existing task. Exitbind can return the current
+assignment, applicable evidence and next steps from the configured project,
+including a saved result that has not yet been returned. Supported native
+handoffs deliver the current role, project rules and required evidence before
+the next agent starts.
 
-Ask your lead to resume the existing task in the same conversation. Exitbind
-can provide the current task details and available next steps, including a
-saved result that has not yet been returned. The lead still decides how to
-handle uncertain work; uncertainty does not authorize running an operation
-again. A resumed task uses its current approved scope. It does not inherit an
-older task's permission or check result.
-When a reply is lost, the lead can inspect the saved work before deciding
-whether to continue, return an existing result or ask you what should happen.
+If a reply is lost, inspect the saved work before deciding whether to continue
+or return an existing result. Uncertainty does not authorize repeating an
+operation. A resumed task uses its current approved scope; an older task's
+permission or check result does not carry over.
+
+For goals with several requirements, `goal status` shows each requirement,
+mapped work, current evidence and next action. Missing or stale support keeps
+the goal open. Closure needs a current checked integration covering every
+agreed item, with the selected review and Lead acceptance.
+See [Complete a goal with several requirements](docs/goal-requirements.md) for
+a reproducible three-item example.
 
 For direct operation, the command reference documents `exitbind work resume`
 and its recovery options. See [continuing native work](docs/continuing-native-work.md)
-for supported host handoffs.
+for supported host handoffs. Keep each older Work's compatible reader and
+configuration when upgrading.
 
 ## Make completion trustworthy
 
 **A reported “done” is not an accepted result.** A worker's completion, a
 passing check, reviewer approval and your lead's acceptance are separate
-events. In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
-When the result or covered files change, earlier check evidence remains historical.
+events. In checked runs, Exitbind refuses acceptance when the configured
+check result is missing or reports failure for the current worker artifact.
+When the recorded result or configured tested inputs change, earlier evidence
+remains historical and cannot stand in for current support.
 
-Your lead recommends whether a change needs independent review. You decide
-whether review is required, and an explicit omission stays an omission. A
-successful checked task can produce a receipt that records the result and its
-evidence. The receipt helps you inspect what was accepted; it does not prove
-that the code is correct. See [receipt limits](REFERENCE.md#exit-path-receipt-and-verification).
+The selected review route must be resolved before Lead acceptance.
+You may explicitly omit review; an omission stays visible and is never
+presented as approval. A successful checked task can produce a verifiable
+receipt tying the accepted result to its checks, review decision and acceptance.
+
+This gate controls Exitbind's own acceptance and `EXIT READY` state. It does
+not control every action or completion message in your host. A receipt shows
+what was accepted and why; it does not prove that the code meets every real-world
+requirement. See [receipt limits](REFERENCE.md#exit-path-receipt-and-verification).
 
 Exitbind's records are local and tamper-evident, not tamper-proof against
 someone who can rewrite every local file. The host owns native tools and
@@ -146,6 +155,7 @@ private and read [Security](SECURITY.md) and the
 **Executable identity.** The installer checks the release archive. Archive attestations do not authenticate every later executable. `exitbind version --json` reports a digest, not a signature. Compare `executableSha256` with trusted evidence for those executable bytes. Startup does not require a match to the latest release. A scoped Work may retain an older or candidate executable.
 
 **Other checkouts.** Resume uses saved work in the configured project. It does not scan other checkouts or detect overlapping uncommitted files. No scheduler or shared dirty-file database is added. Coordinate separate working trees outside Exitbind. Resuming does not copy an older task's permission or check result.
+
 ## Update or roll back
 
 `exitbind update` refreshes the executable and managed host guidance. It does
