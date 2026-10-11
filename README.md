@@ -132,8 +132,7 @@ configuration when upgrading.
 
 **A reported “done” is not an accepted result.** A worker's completion, a
 passing check, reviewer approval and your lead's acceptance are separate
-events. In checked runs, Exitbind refuses acceptance when the configured
-check result is missing or reports failure for the current worker artifact.
+events. In checked runs, Exitbind refuses acceptance when the configured check result is missing or reports failure for the current worker artifact.
 When the recorded result or configured tested inputs change, earlier evidence
 remains historical and cannot stand in for current support.
 

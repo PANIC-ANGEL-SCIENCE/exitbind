@@ -55,5 +55,5 @@ Review a new descriptor revision to update or revoke (set `revoked` to `true`),
 then register through preview/apply. Changed bytes refuse stale delivery. Other
 projects cannot use the descriptor. After a lost registration reply, inspect
 and preview again; unchanged apply writes nothing. Repeated child context reads
-retain the same delivery ID and never start another child. Apply requires POSIX
-file locking; other hosts can inspect and preview.
+retain the same delivery ID and never start another child. Inspection, preview and apply
+require the Unix secure reader. Apply also requires POSIX file locking.
