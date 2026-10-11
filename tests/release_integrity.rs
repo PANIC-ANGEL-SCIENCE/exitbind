@@ -58,6 +58,23 @@ impl Fixture {
         fixture
     }
 
+    fn candidate(published: &str) -> Self {
+        let fixture = Self::release();
+        assert_ne!(published, format!("v{VERSION}"));
+        fixture.replace(
+            "docs/release-version-policy.md",
+            &format!("Published stable tag: {}", published_tag()),
+            &format!("Published stable tag: {published}"),
+        );
+        let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{}/install.sh | sh", published_tag());
+        fixture.replace(
+            "README.md",
+            &command,
+            &command.replace(published_tag(), published),
+        );
+        fixture
+    }
+
     fn replace(&self, file: &str, old: &str, new: &str) {
         let path = self.0.join(file);
         let text = fs::read_to_string(&path).unwrap();
@@ -125,13 +142,14 @@ fn current_release_and_historical_changelog_pass_with_installer_overrides() {
 
 #[test]
 fn published_stable_is_separate_from_candidate_source_references() {
-    let fixture = Fixture::release();
+    let published = "v0.0.0";
+    let fixture = Fixture::candidate(published);
     expect_success(gate("check-release-refs.sh", &fixture.0));
-    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{}/install.sh | sh", published_tag());
+    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
     fixture.replace(
         "README.md",
         &command,
-        &command.replace(published_tag(), &format!("v{VERSION}")),
+        &command.replace(published, &format!("v{VERSION}")),
     );
     expect_failure(
         gate("check-release-refs.sh", &fixture.0),
@@ -142,12 +160,9 @@ fn published_stable_is_separate_from_candidate_source_references() {
         "src/candidate.rs",
         "docs/unlisted.md",
     ] {
-        let fixture = Fixture::release();
-        fs::write(
-            fixture.0.join(name),
-            format!("release {}\n", published_tag()),
-        )
-        .unwrap();
+        let fixture = Fixture::candidate(published);
+        expect_success(gate("check-release-refs.sh", &fixture.0));
+        fs::write(fixture.0.join(name), format!("release {published}\n")).unwrap();
         expect_failure(gate("check-release-refs.sh", &fixture.0), name);
     }
 }
@@ -409,7 +424,7 @@ fn absent_or_drifted_required_version_values_are_rejected() {
     let historical_manifest = "\"version\": \"0.25.0-rc.5\",";
     let installer = format!("version=\"${{EXITBIND_VERSION:-v{VERSION}}}\"");
     let wsl = format!("test \"$(exitbind version)\" = \"{VERSION}\"");
-    let changelog = format!("## Unreleased — {VERSION} source candidate\n");
+    let changelog = format!("{}\n", current_changelog_heading());
     for (file, marker) in [
         ("Cargo.toml", package.as_str()),
         ("Cargo.lock", lock.as_str()),
@@ -435,6 +450,30 @@ fn absent_or_drifted_required_version_values_are_rejected() {
             let fixture = Fixture::release();
             fixture.replace(file, marker, &replacement);
             expect_failure(gate("check-release-refs.sh", &fixture.0), file);
+        }
+    }
+}
+
+fn current_changelog_heading() -> &'static str {
+    include_str!("../CHANGELOG.md")
+        .lines()
+        .find(|line| line.starts_with("## "))
+        .unwrap()
+}
+
+#[test]
+fn released_and_candidate_changelog_versions_are_checked() {
+    for heading in [
+        format!("## {VERSION}"),
+        format!("## Unreleased — {VERSION} source candidate"),
+    ] {
+        let fixture = Fixture::release();
+        fixture.replace("CHANGELOG.md", current_changelog_heading(), &heading);
+        expect_success(gate("check-release-refs.sh", &fixture.0));
+        for replacement in [String::new(), heading.replace(VERSION, "1.2.3")] {
+            let fixture = Fixture::release();
+            fixture.replace("CHANGELOG.md", current_changelog_heading(), &replacement);
+            expect_failure(gate("check-release-refs.sh", &fixture.0), &replacement);
         }
     }
 }
