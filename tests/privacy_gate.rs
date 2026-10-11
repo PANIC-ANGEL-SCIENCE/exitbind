@@ -7,9 +7,7 @@ use std::process::Command;
 
 const IGNORED: &[&str] = &[".git", "node_modules", ".cache", "coverage", "target"];
 const ALLOWED_NAME: &str = "envy404";
-const ALLOWED_EMAIL: &str = "legacy-operator@users.noreply.github.com";
-const ALLOWED_ACCOUNT_ALIAS_NAME: &str = "envy404";
-const ALLOWED_ACCOUNT_ALIAS_EMAIL: &str = "287204764+envy404@users.noreply.github.com";
+const ALLOWED_EMAIL: &str = "287204764+envy404@users.noreply.github.com";
 const GITHUB_COMMITTER_NAME: &str = "GitHub";
 const GITHUB_COMMITTER_EMAIL: &str = "noreply@github.com";
 
@@ -370,12 +368,10 @@ fn scan_metadata(bytes: &[u8], ignored_commit: Option<&[u8]>, findings: &mut Fin
             let name = String::from_utf8_lossy(name);
             let email = String::from_utf8_lossy(email).trim().to_ascii_lowercase();
             let canonical = name.trim() == ALLOWED_NAME && email == ALLOWED_EMAIL;
-            let account_alias =
-                name.trim() == ALLOWED_ACCOUNT_ALIAS_NAME && email == ALLOWED_ACCOUNT_ALIAS_EMAIL;
             let github_committer = committer
                 && name.trim() == GITHUB_COMMITTER_NAME
                 && email == GITHUB_COMMITTER_EMAIL;
-            if !canonical && !account_alias && !github_committer {
+            if !canonical && !github_committer {
                 if name.trim() != ALLOWED_NAME {
                     add(
                         findings,
@@ -523,8 +519,18 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
     assert!(canonical.status.success());
     assert_eq!(
         String::from_utf8(canonical.stdout).unwrap(),
-        "envy404 <legacy-operator@users.noreply.github.com>\n"
+        "envy404 <287204764+envy404@users.noreply.github.com>\n"
     );
+
+    let retired_identity = b"commit\0retired-operator\0287204764+retired-operator@users.noreply.github.com\0GitHub\0noreply@github.com\0";
+    let mut retired_identity_findings = Findings::new();
+    scan_metadata(retired_identity, None, &mut retired_identity_findings);
+    assert!(retired_identity_findings
+        .iter()
+        .any(|(category, _)| category == "public-identity-name-mismatch"));
+    assert!(retired_identity_findings
+        .iter()
+        .any(|(category, _)| category == "public-identity-email-mismatch"));
 
     let github_author = format!(
         "commit\0{GITHUB_COMMITTER_NAME}\0{GITHUB_COMMITTER_EMAIL}\0{ALLOWED_NAME}\0{ALLOWED_EMAIL}\0"
@@ -608,7 +614,7 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
             "-c",
             "user.name=envy404",
             "-c",
-            "user.email=legacy-operator@users.noreply.github.com",
+            "user.email=287204764+envy404@users.noreply.github.com",
             "commit",
             "-qm",
             "fixture"
@@ -629,7 +635,7 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
             "-c",
             "user.name=envy404",
             "-c",
-            "user.email=legacy-operator@users.noreply.github.com",
+            "user.email=287204764+envy404@users.noreply.github.com",
             "commit",
             "-qm",
             "remove fixture"
@@ -667,7 +673,7 @@ fn verified_github_pull_merge_does_not_replace_parent_identity_checks() {
     let head = "1111111111111111111111111111111111111111";
     let parent = "2222222222222222222222222222222222222222";
     let metadata = format!(
-        "{head}\0external account\0external@example.com\0GitHub\0noreply@github.com\0\n{parent}\0envy404\0{ALLOWED_EMAIL}\0envy404\0{ALLOWED_EMAIL}\0"
+        "{head}\0external account\0external@example.com\0GitHub\0noreply@github.com\0\n{parent}\0{ALLOWED_NAME}\0{ALLOWED_EMAIL}\0{ALLOWED_NAME}\0{ALLOWED_EMAIL}\0"
     );
     let mut unfiltered = Findings::new();
     scan_metadata(metadata.as_bytes(), None, &mut unfiltered);
