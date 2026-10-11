@@ -6,7 +6,8 @@ ledger, an old executable, or a rollback.
 
 The rule behind every entry below: compatibility reads the old world, and never
 relabels its evidence as new evidence. Active Soulmate distribution ended in
-`v0.25.0`; original historical releases and records are privately retained.
+`v0.25.0`; historical releases and records remain available.
+Original releases and unmodified records are retained in the private archive.
 The current release also retires its old executable profile and updater route.
 
 ## Rename history
