@@ -1,6 +1,8 @@
 name: Exitbind / Exit
 on:
   push:
+    branches-ignore: [readme-badges]
+    tags: ["**"]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -9,7 +11,34 @@ concurrency:
   group: ${{ (github.event_name == 'pull_request' && format('{0}-pull-request-{1}', github.workflow, github.event.pull_request.number)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/') && format('{0}-feature-push-{1}', github.workflow, github.ref)) || format('{0}-protected-run-{1}', github.workflow, github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) }}
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.detect.outputs.scope }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 tooling/readme/ci_scope.py >> "$GITHUB_OUTPUT"
+  readme:
+    needs: scope
+    if: needs.scope.outputs.scope == 'readme'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Existing README rules
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/readme-target
+        run: sh tooling/readme/check-existing.sh
   exit:
+    needs: scope
+    if: needs.scope.outputs.scope != 'readme'
     runs-on: ubuntu-latest
     env:
       # Keep test runtime practical without changing the release profile or assertions.
@@ -47,6 +76,8 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Test README tooling
+        run: python3 -m unittest discover -s tooling/readme -v
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
@@ -66,6 +97,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
   macos:
+    needs: scope
+    if: needs.scope.outputs.scope != 'readme'
     env:
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
       CARGO_PROFILE_TEST_OPT_LEVEL: '1'
@@ -117,6 +150,8 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Test README tooling
+        run: python3 -m unittest discover -s tooling/readme -v
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
@@ -162,6 +197,8 @@ jobs:
           & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/scripts/ci-wsl.sh" "$workspace"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   audit:
+    needs: scope
+    if: needs.scope.outputs.scope != 'readme'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
