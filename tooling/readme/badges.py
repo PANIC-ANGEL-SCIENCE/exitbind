@@ -61,9 +61,21 @@ def license_status(data):
 
 
 def render(template, label, value, description):
-    return template.format(**{k: html.escape(v, quote=True) for k, v in {
-        "label": label, "value": value, "title": label + ": " + value,
-        "description": description}.items()})
+    # Monospace value cells remain legible: 10 characters fit within 68px.
+    # Long supported labels wrap without dropping or abbreviating characters.
+    if len(value) <= 10:
+        lines = [(26, 11, value)]
+    else:
+        midpoint = (len(value) + 1) // 2
+        lines = [(21, 10, value[:midpoint]), (31, 10, value[midpoint:])]
+    value_lines = "".join(
+        f'<text class="value" x="40" y="{y}" text-anchor="middle" fill="#ffffff" '
+        f'font-family="monospace" font-size="{size}" font-weight="bold">'
+        + html.escape(line, quote=True) + '</text>' for y, size, line in lines)
+    fields = {k: html.escape(v, quote=True) for k, v in {
+        "label": label, "title": label + ": " + value,
+        "description": description}.items()}
+    return template.format(**fields, value_lines=value_lines)
 
 
 def main():

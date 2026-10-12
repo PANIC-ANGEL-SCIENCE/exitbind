@@ -1,5 +1,9 @@
 # Exitbind
 
+[![CI status](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/ci.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
+[![Latest stable release](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/release.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
+[![License](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/license.svg)](LICENSE)
+
 **Keep important coding work moving. Make “done” checkable.**
 
 A session ends, a reviewer takes over, or the agent says the fix is finished.
@@ -12,10 +16,6 @@ conversation you already use; the host still runs the agent and controls its
 tools and permissions. Exitbind's local records and acceptance logic need no
 model, daemon or cloud service. Your host provides model access; configured
 checks may use other tools or services.
-
-[![CI status](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/ci.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/actions/workflows/ci.yml)
-[![Latest stable release](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/release.svg)](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest)
-[![License](https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/readme-badges/license.svg)](LICENSE)
 
 ## Give your lead one link
 

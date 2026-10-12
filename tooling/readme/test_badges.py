@@ -36,8 +36,19 @@ class Badges(unittest.TestCase):
         template = (Path(__file__).resolve().parents[2] / "assets/readme/black-glass.svg.template").read_text()
         svg = render(template, "Release", "<&\"", "untrusted <script>")
         node = ET.fromstring(svg)
-        self.assertEqual(node.attrib["width"], "203")
+        self.assertEqual(node.attrib["width"], "80")
         self.assertNotIn("<script>", svg)
+
+    def test_compact_values_preserve_text(self):
+        template = (Path(__file__).resolve().parents[2] / "assets/readme/black-glass.svg.template").read_text()
+        for value in ("unknown", "running", "failing", "cancelled", "failed start", "action req.", "v1234.5678.901", "GPL-3.0-or-later", "WWWWWWWWWWWWWWWW"):
+            root = ET.fromstring(render(template, "License", value, "checked"))
+            self.assertEqual((root.attrib["width"], root.attrib["height"]), ("80", "36"))
+            lines = [n for n in root.iter() if n.attrib.get("class") == "value"]
+            self.assertEqual("".join(n.text or "" for n in lines), value)
+            self.assertLessEqual(len(lines), 2)
+            self.assertTrue(all(len(n.text or "") <= 10 for n in lines))
+            self.assertTrue(all(int(n.attrib["font-size"]) >= 10 for n in lines))
 
     def test_narrow_scope(self):
         self.assertTrue(readme_only(["README.md"]))
