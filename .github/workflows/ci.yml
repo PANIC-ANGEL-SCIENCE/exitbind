@@ -78,6 +78,19 @@ jobs:
           cache-workspace-crates: false
       - name: Test README tooling
         run: python3 -m unittest discover -s tooling/readme -v
+      - name: Verify Cargo package excludes README presentation tooling
+        run: |
+          package_list=$(mktemp)
+          cargo package --list --locked > "$package_list"
+          test -s "$package_list"
+          for required in Cargo.toml Cargo.lock LICENSE src/main.rs; do
+            grep -Fx "$required" "$package_list" >/dev/null
+          done
+          if grep -E '^(assets/readme/|tooling/readme/|\.github/workflows/readme-badges\.yml$)' "$package_list"; then
+            echo 'README presentation files leaked into the Cargo package'
+            exit 1
+          fi
+          echo 'Cargo package excludes README assets and tooling'
       - name: Run shared native CI checks and packaging
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
