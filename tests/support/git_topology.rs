@@ -22,6 +22,13 @@ pub fn isolate(command: &mut Command) {
         "GIT_INDEX_FILE",
         "GIT_CEILING_DIRECTORIES",
         "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        "CODEX_THREAD_ID",
+        "CODEX_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ID",
+        "EXITBIND_NATIVE_SESSION_ID",
+        "EXITBIND_SESSION_GOALS_DIR",
+        "CLAUDE_ENV_FILE",
+        "XDG_STATE_HOME",
     ] {
         command.env_remove(name);
     }

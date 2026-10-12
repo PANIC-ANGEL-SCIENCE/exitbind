@@ -252,8 +252,16 @@ small verification needed to prove behavior.
   to see failed steps and bounded error lines. Keep full remote logs out of
   agent context; record the run ID, head SHA, failing step, and diagnosis.
 - For noisy verification in an agent session, use
-  `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: success is one labeled
-  line and failure preserves the command's complete output. The wrapper changes
+  `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: ordinary success remains
+  one labeled line, while recognized successful `cargo test` output is reduced
+  to test counts and any warning or unclassified lines are retained verbatim.
+  The child exit status is preserved. Captured output keeps combined, stdout,
+  and stderr originals with private argv, working-directory, producer hash,
+  Git source fingerprint (when available), status, and stream digest metadata;
+  existing paths and symlinks are never overwritten. Read a retained
+  stream without rerunning its command with
+  `python3 scripts/quiet-command.py read LOG [--stream combined|stdout|stderr]
+  [--offset N] [--limit N]` (each read is capped at 64 KiB). The wrapper changes
   presentation, never the command or its acceptance evidence.
 - Measure startup and command latency before claiming the tool is lightweight.
 - Update the plan when scope, authority, or a stop gate changes.

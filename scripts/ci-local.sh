@@ -2,6 +2,10 @@
 # Shared native CI checks; run from any working directory.
 set -eu
 
+# Raw Command::new test builders inherit from Cargo, so clear ambient host
+# identity and Goal storage before launching any sibling process.
+unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_CODE_SESSION_ID EXITBIND_NATIVE_SESSION_ID EXITBIND_SESSION_GOALS_DIR CLAUDE_ENV_FILE XDG_STATE_HOME
+
 fail() { printf 'ci-local: %s\n' "$*" >&2; exit 1; }
 checks_only=false
 preflight_only=false
@@ -131,7 +135,8 @@ run() {
   else
     stage_status=$?
   fi
-  printf '%s\n' "$stage_status" > "$run_dir/$current_stage.log.exit"
+  recorded_status=$(cat "$run_dir/$current_stage.log.exit") || fail "$current_stage has no captured child status"
+  test "$recorded_status" = "$stage_status" || fail "$current_stage wrapper status disagrees with its captured child status"
   printf 'stage=%s exit=%s seconds=%s\n' "$current_stage" "$stage_status" "$(($(date +%s) - started))" >> "$run_dir/stages"
   test "$stage_status" -eq 0 || exit "$stage_status"
 }
@@ -139,6 +144,7 @@ run() {
 run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}"
 run workflows ./scripts/check-workflows.sh
 run workflow-regression ./scripts/test-workflow-validation.sh
+run quiet-command-regression python3 ./scripts/test-quiet-command.py
 VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
 if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
   VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
