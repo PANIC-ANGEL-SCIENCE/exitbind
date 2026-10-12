@@ -4,6 +4,7 @@ use super::{
     LIFETIMES, MAX_JOURNAL_BYTES, MAX_USAGE_EVENTS, PHASES, SCOPES, SEMANTICS, SOURCES, STATUSES,
 };
 use serde_json::{json, Value};
+use std::path::Path;
 
 const NATIVE_GAPS: [&str; 9] = [
     "missing_thread_id",
@@ -200,7 +201,7 @@ pub(crate) fn record_numeric_event(
         }
         let mut linked = event.clone();
         linked["work"] = Value::String(work.to_owned());
-        return record_goal_numeric_event(loaded, &linked);
+        return record_goal_numeric_event(&loaded.state_root, loaded, &linked);
     }
     validate_optional_goal(loaded, event)?;
     let normalized = normalize_event(work, event)?;
@@ -239,12 +240,13 @@ pub(crate) fn record_numeric_event(
 }
 
 pub(crate) fn record_goal_numeric_event(
+    root: &Path,
     loaded: &crate::config::Loaded,
     event: &Value,
 ) -> Result<Value, String> {
     let goal_id = bounded_id(event.get("goalId"), "goalId")?
         .ok_or("goal usage observation requires goalId")?;
-    validate_goal(loaded, &goal_id)?;
+    validate_goal(root, &goal_id)?;
     match event.get("work") {
         None | Some(Value::Null) => {}
         Some(Value::String(work)) if crate::work::valid_work_handle(work) => {
@@ -288,10 +290,11 @@ pub(crate) fn record_goal_numeric_event(
 }
 
 pub(crate) fn goal_records(
+    root: &Path,
     loaded: &crate::config::Loaded,
     goal_id: &str,
 ) -> Result<Vec<Value>, String> {
-    let goal = crate::session_goal::read(&loaded.state_root)?
+    let goal = crate::session_goal::read(root)?
         .ok_or("goal usage observation requires an existing canonical goal")?;
     if goal["goalId"].as_str() != Some(goal_id) {
         return Err("goal usage observation is not bound to the current canonical goal".into());
@@ -332,8 +335,8 @@ fn goal_usage_ledger(
     )
 }
 
-fn validate_goal(loaded: &crate::config::Loaded, goal_id: &str) -> Result<(), String> {
-    let goal = crate::session_goal::read(&loaded.state_root)?
+fn validate_goal(root: &Path, goal_id: &str) -> Result<(), String> {
+    let goal = crate::session_goal::read(root)?
         .ok_or("goal usage observation requires an existing canonical goal")?;
     if goal["goalId"].as_str() != Some(goal_id) {
         return Err("goal usage observation is not bound to the current canonical goal".into());
@@ -345,7 +348,7 @@ fn validate_optional_goal(loaded: &crate::config::Loaded, event: &Value) -> Resu
     let Some(goal_id) = bounded_id(event.get("goalId"), "goalId")? else {
         return Ok(());
     };
-    validate_goal(loaded, &goal_id)
+    validate_goal(&loaded.state_root, &goal_id)
 }
 
 fn parse_goal_records(raw: Option<&str>) -> Result<Vec<Value>, String> {

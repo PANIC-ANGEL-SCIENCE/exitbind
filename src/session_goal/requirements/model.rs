@@ -116,7 +116,7 @@ fn validate_source(source: &Source) -> Result<(), String> {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct CheckerInput {
+pub(crate) struct CheckerInput {
     pub path: String,
     pub sha256: String,
 }

@@ -140,7 +140,7 @@ fn normalized_storage(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn owned_directory(root: &Path) -> Result<(), String> {
+pub(crate) fn owned_directory(root: &Path) -> Result<(), String> {
     normalized_storage(root)?;
     let mut current = PathBuf::new();
     for part in root.components() {
@@ -179,6 +179,58 @@ fn owned_directory(root: &Path) -> Result<(), String> {
         return Err("automatic storage is read-only".into());
     }
     Ok(())
+}
+
+/// Validate a pre-existing Unix directory as private, owned state without
+/// creating or changing anything. Session-scoped Goal state fails closed on
+/// platforms where these ownership and no-follow guarantees are unavailable.
+pub(crate) fn verify_private_directory(root: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        normalized_storage(root)?;
+        let mut current = PathBuf::new();
+        for part in root.components() {
+            current.push(part);
+            let info = fs::symlink_metadata(&current).map_err(|error| error.to_string())?;
+            if !info.is_dir() || info.file_type().is_symlink() {
+                return Err(
+                    "session Goal storage refuses symlinks or non-directory components".into(),
+                );
+            }
+        }
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let info = fs::symlink_metadata(root).map_err(|error| error.to_string())?;
+        if info.uid() != unsafe { libc::geteuid() } || info.permissions().mode() & 0o077 != 0 {
+            return Err(
+                "session Goal storage must be owned by the current user and private (0700)".into(),
+            );
+        }
+        if !writable(root) {
+            return Err("session Goal storage is read-only".into());
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err("session Goal storage privacy cannot be verified on this platform".into())
+    }
+}
+
+/// Create and validate the final private session directory. The directory
+/// helper already refuses symlink components and creates new directories
+/// with mode 0700; validation checks the final existing directory as well.
+pub(crate) fn create_private_directory(root: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        owned_directory(root)?;
+        verify_private_directory(root)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err("session Goal storage privacy cannot be verified on this platform".into())
+    }
 }
 
 pub(crate) fn discover_config() -> Result<Option<PathBuf>, String> {

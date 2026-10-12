@@ -17,6 +17,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 a,
                 &[
                     "config",
+                    "project",
                     "goal-id",
                     "requirement",
                     "obligation",
@@ -25,7 +26,10 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 ],
             )?;
             args::assert_positionals("goal require", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
             print_json(&crate::session_goal::requirements::require(
+                &scope.root,
                 l,
                 option(a, "goal-id", "goal require requires --goal-id ID")?,
                 option(a, "requirement", "goal require requires --requirement ID")?,
@@ -42,9 +46,12 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         "cover" => {
-            args::assert_options("goal cover", a, &["config", "goal-id", "json"])?;
+            args::assert_options("goal cover", a, &["config", "project", "goal-id", "json"])?;
             args::assert_positionals("goal cover", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
             print_json(&crate::session_goal::requirements::cover(
+                &scope.root,
                 l,
                 option(a, "goal-id", "goal cover requires --goal-id ID")?,
             )?)
@@ -55,6 +62,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 a,
                 &[
                     "config",
+                    "project",
                     "goal-id",
                     "requirement",
                     "result-ref",
@@ -63,6 +71,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 ],
             )?;
             args::assert_positionals("goal assign", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
             let disposition = a
                 .options
                 .get("disposition")
@@ -72,6 +82,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 return Err("goal assign disposition must be add or replace".into());
             }
             print_json(&crate::session_goal::requirements::assign(
+                &scope.root,
                 l,
                 option(a, "goal-id", "goal assign requires --goal-id ID")?,
                 option(a, "requirement", "goal assign requires --requirement IDs")?,
@@ -85,6 +96,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 a,
                 &[
                     "config",
+                    "project",
                     "goal-id",
                     "goal",
                     "obligation",
@@ -103,6 +115,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 ],
             )?;
             args::assert_positionals("goal incorporate", a, 1)?;
+            let scope = journal_scope(l, a, true)?;
+            scope.require_owner()?;
             let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
             let goal = option(a, "goal", "goal incorporate requires --goal")?;
             let direct = a.flags.contains_key("direct");
@@ -120,15 +134,18 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let value = if direct && selected.len() == 1 {
                 let (category, item) = selected[0];
                 crate::session_goal::direct_complete(
+                    &scope.root,
                     l,
                     goal_id,
                     goal,
                     category,
                     item,
                     a.options.get("external-scope").map(String::as_str),
+                    scope.is_session(),
                 )?
             } else {
                 crate::session_goal::incorporate(
+                    &scope.root,
                     l,
                     goal_id,
                     goal,
@@ -142,6 +159,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     a.options.get("result-ref").map(String::as_str),
                     a.options.get("consider").map(String::as_str),
                     a.options.get("none-applicable").map(String::as_str),
+                    scope.is_session(),
                 )?
             };
             print_json(&value)
@@ -150,18 +168,29 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_options(
                 "goal close",
                 a,
-                &["config", "goal-id", "result-ref", "direct", "json"],
+                &[
+                    "config",
+                    "project",
+                    "goal-id",
+                    "result-ref",
+                    "direct",
+                    "json",
+                ],
             )?;
             args::assert_positionals("goal close", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
             let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
             let mut value = if a.flags.contains_key("direct") {
                 crate::session_goal::close_direct(
+                    &scope.root,
                     l,
                     goal_id,
                     a.options.get("result-ref").map(String::as_str),
                 )?
             } else {
                 crate::session_goal::close(
+                    &scope.root,
                     l,
                     goal_id,
                     option(a, "result-ref", "goal close requires --result-ref")?,
@@ -180,8 +209,14 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             print_json(&value)
         }
         "usage" => {
-            args::assert_options("goal usage", a, &["config", "goal-id", "apply", "json"])?;
+            args::assert_options(
+                "goal usage",
+                a,
+                &["config", "project", "goal-id", "apply", "json"],
+            )?;
             args::assert_positionals("goal usage", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
             let goal_id = option(a, "goal-id", "goal usage requires --goal-id ID")?;
             if goal_id.trim().is_empty() || goal_id.len() > 128 || goal_id.contains('\0') {
                 return Err("goal usage requires a non-empty goal identity of at most 128 bytes without NUL".into());
@@ -192,9 +227,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     return Err("usage observation goal identity does not match --goal-id".into());
                 }
                 event["goalId"] = json!(goal_id);
-                crate::session_goal::usage::record_goal_numeric_event(l, &event)?
+                crate::session_goal::usage::record_goal_numeric_event(&scope.root, l, &event)?
             } else {
-                crate::session_goal::usage::details_for_goal(l, goal_id)
+                crate::session_goal::usage::details_for_goal(&scope.root, l, goal_id)
             };
             print_json(&value)
         }
@@ -202,6 +237,18 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         _ => {
             Err("goal requires incorporate, require, cover, assign, close, status, or usage".into())
         }
+    }
+}
+
+pub(super) fn journal_scope(
+    loaded: &config::Loaded,
+    args: &Arguments,
+    establish_owner: bool,
+) -> Result<crate::session_goal::native::Scope, String> {
+    if args.flags.contains_key("project") {
+        Ok(crate::session_goal::native::project_scope(loaded))
+    } else {
+        crate::session_goal::native::scope(loaded, establish_owner)
     }
 }
 

@@ -1,43 +1,87 @@
 # Complete a goal with several requirements
 
-## Ordinary Work and current Goal context
+## Native conversation Goal and Work context
 
-An ordinary `work begin` in a configured project records a context-only link to
-that project's current open canonical Goal when one exists. The Work can have a
-narrower or otherwise different task scope; the link makes the agreed session
-context available in its Work projection. It does not create a Goal, infer
-named requirements, add a requirement mapping, count coverage, or close the
-Goal. A Work accepted on its own still cannot close the overall Goal.
+When Exitbind runs with one unambiguous host-reported native session identity,
+Goal operations use that conversation's canonical Goal journal. Codex
+`CODEX_THREAD_ID` or `CODEX_SESSION_ID` and Claude Code
+`CLAUDE_CODE_SESSION_ID` are treated as correlation locators. If multiple
+selectors are present they must agree and identify one host; a conflict or
+malformed selector declines native lookup. These values identify a journal;
+they do not authenticate the caller or grant host authority. Session journals
+are private user-state data, separate from configured project Work/evidence
+state, and are fixed to the project that first incorporates the Goal.
 
-Use `work begin ... --standalone` when the Work should not receive the current
-Goal context. `--standalone` cannot be combined with the explicit named-requirement
+With no recognized native identity, Goal commands keep their existing
+configured-project behavior. Under a native identity, use `goal ... --project`
+to explicitly select that project's legacy Goal journal. Native lookup never
+falls back to the project journal when the session Goal is absent, closed, or
+unavailable. A project other than the fixed owner may read a bounded
+context-only Goal preview, but cannot edit its requirements, map named
+coverage, evaluate owner evidence, or close it.
+
+An ordinary `work begin` in a native conversation links the new Work to the
+current conversation Goal when one exists, even if the Work belongs to a
+different configured project or has a narrower task scope. Before starting the
+Work, Exitbind records a bounded pending admission under the Goal's journal
+lock. The admission reopens an earlier closure and blocks a new whole-journey
+terminal until the exact immutable Work start and context link are verified.
+It is an unresolved intention, never evidence that a Work started or finished.
+Work checks and evidence remain in the Work's configured project. Without a
+usable native identity or a current conversation Goal, the Work starts without
+a session link; a Goal created later does not retroactively attach it. Existing
+single-Work continuations are not claimed by new ordinary Works. Same-Goal
+updates retain admissions; a successor Goal carries the same conversation's
+members and unresolved admissions with their original Goal bindings.
+
+Use `work begin ... --standalone` when a Work should not receive conversation
+context. `--standalone` cannot be combined with the explicit named-requirement
 contract options (`--goal-id`, `--requirement`, `--artifact`, or `--scope`).
-Those options retain their existing frozen admission and explicit assignment
-behavior. If no open canonical Goal exists, a Work starts without a link; a Goal
-created later does not retroactively attach to that Work. Existing single-Work
-continuations are not claimed by a new ordinary Work. Same-Goal updates retain
-the context links, while a successor Goal begins without its predecessor's
-links. No cross-project or session-wide parent is inferred.
+Those options retain frozen admission and explicit assignment behavior. By
+default, a named contract selects the conversation Goal when a valid native
+identity is present. Add `--project-goal` to select a project-local named
+contract while keeping the ordinary conversation context link. Named mappings
+and their evidence always stay within the selected contract's configured
+project boundary.
 
-The canonical Goal record stores these links under the versioned
-`workAssociationProtocol: 1` extension, with a bounded list of exact Work and
-start-event identities. Records without that extension remain readable. A
-reader that encounters an unknown or malformed extension refuses the Goal
-record. Older readers that ignore unknown fields do not understand these
-links; writing the Goal with a reader that does not preserve this extension can
-drop them, so use a version that understands the protocol when updating an
-associated Goal.
+The owner Goal record stores context links under the versioned
+`workAssociationProtocol: 1` extension and journey membership/admissions under
+`journeyMembershipProtocol: 2`. Both use bounded exact Work and start identities.
+Membership protocol 1 remains historically readable, but it cannot establish
+admission coverage or whole-journey readiness. Each linked Work also gets an
+immutable private locator bound to its exact start. The locator helps resolve
+the owner journal; it grants no authority. An unknown or malformed Goal
+extension is refused. Older readers may ignore these fields, and an older
+writer may drop them; mixed-version mutation is unsupported. Work start records
+remain unchanged, so older readers can still read the Work but will not display
+the new session context.
+
+Native journey membership is a closure dependency: each admitted task must have
+an accepted, current result or be covered by a separately selected, final-
+current journey integration. A context-only link does not satisfy a named
+requirement, create a mapping, or import another project's acceptance. Named
+requirement coverage remains explicit and project-bound.
+
+If a begin reply reports an unresolved native admission, inspect Goal status and
+the exact Work detail. Run `work link-session WORK` only after the actual Work
+start exists. This recovery verifies the current host-reported session, fixed
+owner, configured project and immutable start, then writes only the missing
+context link; repeated exact recovery is idempotent. It does not repeat begin,
+check, accept, grant a permit, or contact a provider. An absent or invalid Work
+start remains unresolved and blocks whole-journey closure. This release has no
+automatic cancellation or withdrawal for a no-start admission.
 
 Give your lead the goal in your usual conversation. The lead keeps the agreed
 source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.
 A mapping records an assignment; it becomes current support only after actual
-checks, the selected review and Lead acceptance. This path is included in the
-stable v0.31.10 installation.
+checks, the selected review and Lead acceptance. The pre-existing project-local
+named-requirement path is included in the stable v0.31.10 installation; the
+native conversation linkage described above is available in the current source.
 
 ## Inspect and continue
 
-Use `exitbind goal status --json` in the configured project. Its `requirements`
+Use `exitbind goal status --json` in the selected Goal journal. Its `requirements`
 view shows the exact goal revision, source references, requirement IDs/revisions,
 active mappings, supporting subject, check/event identities, observed acquisition,
 acceptance and the next available action. States distinguish `unmapped`, `pending`,
@@ -45,20 +89,21 @@ acceptance and the next available action. States distinguish `unmapped`, `pendin
 are separate. A fresh CLI process can inspect this same saved state; it does not
 renew a grant or change a Work's review choice.
 
-For direct operation, retain an agreed request in a regular project file and
-incorporate its goal through the existing entry. For example:
+For a project-local requirement contract, retain the agreed request in a
+regular project file and explicitly select the project journal with
+`--project`. For example:
 
 ```sh
-exitbind goal incorporate --goal-id import --goal 'Import names safely and show a count' \
+exitbind goal incorporate --project --goal-id import --goal 'Import names safely and show a count' \
   --none-applicable findings,blockers,decisions,externalActions
-exitbind goal require --goal-id import --requirement R1 \
+exitbind goal require --project --goal-id import --requirement R1 \
   --obligation 'Reject invalid input before persistence.' --artifact request.txt
-exitbind goal require --goal-id import --requirement R2 \
+exitbind goal require --project --goal-id import --requirement R2 \
   --obligation 'Persist each valid name only once.' --artifact request.txt
-exitbind goal require --goal-id import --requirement R3 \
+exitbind goal require --project --goal-id import --requirement R3 \
   --obligation 'Show the number of distinct imported names.' --artifact request.txt
-exitbind goal cover --goal-id import
-exitbind goal status --json
+exitbind goal cover --project --goal-id import
+exitbind goal status --project --json
 ```
 
 The three texts must be exact excerpts of `request.txt`. `goal cover` records the
@@ -74,7 +119,7 @@ assumes `check.sh` checks R1 and R2:
 exitbind work begin change --goal 'Validate input and duplicate-safe persistence' \
   --goal-id import --requirement R1,R2 --artifact check.sh \
   --check-command 'sh check.sh R1 && sh check.sh R2' \
-  --review-policy required --detail
+  --review-policy required --project-goal --detail
 ```
 
 Follow the returned current context and action forms for scope, implementation,
@@ -94,7 +139,7 @@ IDs and exercising their interaction:
 ```sh
 exitbind work begin change --goal 'Validate the complete import behavior' \
   --goal-id import --requirement R1,R2,R3 --artifact check.sh \
-  --check-command 'sh check.sh all' --scope integration --review-policy required --detail
+  --check-command 'sh check.sh all' --scope integration --review-policy required --project-goal --detail
 ```
 
 After its actual checks, selected review and Lead acceptance, use the returned
@@ -102,10 +147,10 @@ Work identifier as `NEW_ACCEPTED_WORK` below. When it replaces earlier validatio
 contributors, make that decision explicit:
 
 ```sh
-exitbind goal assign --goal-id import --requirement R1,R2,R3 \
+exitbind goal assign --project --goal-id import --requirement R1,R2,R3 \
   --result-ref NEW_ACCEPTED_WORK --disposition replace
-exitbind goal close --goal-id import --result-ref NEW_ACCEPTED_WORK
-exitbind goal status --json
+exitbind goal close --project --goal-id import --result-ref NEW_ACCEPTED_WORK
+exitbind goal status --project --json
 ```
 
 Replacement retires the selected items' earlier active mappings and retains

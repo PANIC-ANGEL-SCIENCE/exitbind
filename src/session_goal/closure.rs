@@ -1,24 +1,24 @@
 //! Canonical goal closure through existing accepted-result authority.
 
 use super::*;
+use std::path::Path;
 
 pub(crate) fn close(
+    root: &Path,
     loaded: &crate::config::Loaded,
     goal_id: &str,
     result_ref: &str,
 ) -> Result<Value, String> {
-    if read(&loaded.state_root)?
-        .as_ref()
-        .is_some_and(requirements::named)
-    {
-        return requirements::close(loaded, goal_id, result_ref);
+    if read(root)?.as_ref().is_some_and(requirements::named) {
+        return requirements::close(root, loaded, goal_id, result_ref);
     }
     let result_ref = text(Some(result_ref), "result-ref")?;
-    mutate(&loaded.state_root, |previous| {
+    mutate(root, |previous| {
         let previous = previous.ok_or("no canonical session goal is open")?;
         if previous["goalId"].as_str() != Some(goal_id) {
             return Err("session goal identity does not match the current revision".into());
         }
+        super::journey::require_close_ready(loaded, root, previous)?;
         if unresolved(previous) {
             return Err("session goal has unresolved or unconsidered obligations, findings, blockers, decisions, or external actions".into());
         }
@@ -80,14 +80,12 @@ pub(crate) fn close(
 /// Close a goal from explicit Lead-reported direct facts.  A governed result
 /// may be supplied for a mixed goal; when it is absent, no run is required.
 pub(crate) fn close_direct(
+    root: &Path,
     loaded: &crate::config::Loaded,
     goal_id: &str,
     result_ref: Option<&str>,
 ) -> Result<Value, String> {
-    if read(&loaded.state_root)?
-        .as_ref()
-        .is_some_and(requirements::named)
-    {
+    if read(root)?.as_ref().is_some_and(requirements::named) {
         return Err(
             "named requirements need observed checked Work evidence; direct closure is unavailable"
                 .into(),
@@ -96,11 +94,12 @@ pub(crate) fn close_direct(
     let result_ref = result_ref
         .map(|value| text(Some(value), "result-ref"))
         .transpose()?;
-    mutate(&loaded.state_root, |previous| {
+    mutate(root, |previous| {
         let previous = previous.ok_or("no canonical session goal is open")?;
         if previous["goalId"].as_str() != Some(goal_id) {
             return Err("session goal identity does not match the current revision".into());
         }
+        super::journey::require_close_ready(loaded, root, previous)?;
         if unresolved(previous) {
             return Err("session goal has unresolved or unconsidered obligations, findings, blockers, decisions, or external actions".into());
         }

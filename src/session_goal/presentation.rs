@@ -36,6 +36,34 @@ pub(crate) fn presentation(value: Option<&Value>) -> Value {
     })
 }
 
+/// Display a cross-project native Goal without importing its closure or
+/// owner evidence into the caller's configured project.
+pub(crate) fn context_summary(
+    value: Option<&Value>,
+    owner: Option<&super::native::Owner>,
+) -> Value {
+    let Some(record) = value else {
+        return json!({
+            "contextOnly":true,
+            "authority":"none",
+            "ownerRequired":true,
+            "goalProgress":progress::unavailable(None,"native_session_goal_unavailable","no native session Goal has been incorporated",None,"unavailable"),
+        });
+    };
+    let goal_id = record["goalId"].as_str().unwrap_or_default();
+    let progress = progress::context_only(record, None);
+    json!({
+        "contextOnly":true,
+        "authority":"none",
+        "ownerRequired":true,
+        "goalIdSha256":crate::evidence::hash::text(goal_id),
+        "goal":record["goal"],
+        "revision":record["revision"],
+        "ownerProjectId":owner.and_then(|value|value.project_id.clone()),
+        "goalProgress":progress,
+    })
+}
+
 fn pending_items(record: &Value, key: &str, label: &str) -> Vec<Value> {
     let unavailable = || vec![json!(format!("session goal {label} unavailable"))];
     let Some(category) = record["categories"][key].as_str() else {
@@ -93,7 +121,13 @@ pub(crate) fn terminal_for_work(
     if standalone.is_none() {
         return Ok(None);
     }
-    let record = read(&loaded.state_root)?;
+    let record = match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::Owner(record) => Some(record),
+        super::association::WorkContext::Session(_)
+        | super::association::WorkContext::Unavailable
+        | super::association::WorkContext::Invalid => return Ok(standalone),
+        super::association::WorkContext::Local => read(&loaded.state_root)?,
+    };
     let Some(record) = record.filter(|record| progress::record_bound_to_work(record, work)) else {
         return Ok(standalone);
     };
@@ -127,16 +161,55 @@ pub(crate) fn progress_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
+    match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::Owner(record) => {
+            progress_from_record(loaded, work, result, Some(&record))
+        }
+        super::association::WorkContext::Session(record) => {
+            Ok(context_progress(&record, work, result, false))
+        }
+        super::association::WorkContext::Unavailable => Ok(progress::unavailable(
+            Some(result),
+            "native_session_goal_unavailable",
+            "no verified native session Goal association",
+            None,
+            "unavailable",
+        )),
+        super::association::WorkContext::Invalid => Ok(progress::unavailable(
+            Some(result),
+            "native_session_goal_context_invalid",
+            "native session Goal context could not be verified",
+            None,
+            "unavailable",
+        )),
+        super::association::WorkContext::Local => local_progress_for_work(loaded, work, result),
+    }
+}
+
+fn local_progress_for_work(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+) -> Result<Value, String> {
     let record = read(&loaded.state_root)?;
-    let mut rendered = presentation(record.as_ref());
-    let readiness = current::evaluate(loaded, record.as_ref());
+    progress_from_record(loaded, work, result, record.as_ref())
+}
+
+fn progress_from_record(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+    record: Option<&Value>,
+) -> Result<Value, String> {
+    let mut rendered = presentation(record);
+    let readiness = current::evaluate(loaded, record);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
     Ok(progress::project_for_work(
         loaded,
         work,
-        record.as_ref(),
+        record,
         &rendered,
         Some(result),
     ))
@@ -149,19 +222,105 @@ pub(crate) fn progress_detail_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
+    match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::Owner(record) => {
+            progress_detail_from_record(loaded, work, result, Some(&record))
+        }
+        super::association::WorkContext::Session(record) => {
+            Ok(context_progress(&record, work, result, true))
+        }
+        super::association::WorkContext::Unavailable => Ok(progress::unavailable(
+            Some(result),
+            "native_session_goal_unavailable",
+            "no verified native session Goal association",
+            None,
+            "unavailable",
+        )),
+        super::association::WorkContext::Invalid => Ok(progress::unavailable(
+            Some(result),
+            "native_session_goal_context_invalid",
+            "native session Goal context could not be verified",
+            None,
+            "unavailable",
+        )),
+        super::association::WorkContext::Local => {
+            local_progress_detail_for_work(loaded, work, result)
+        }
+    }
+}
+
+fn local_progress_detail_for_work(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+) -> Result<Value, String> {
     let record = read(&loaded.state_root)?;
-    let mut rendered = presentation(record.as_ref());
-    let readiness = current::evaluate(loaded, record.as_ref());
+    progress_detail_from_record(loaded, work, result, record.as_ref())
+}
+
+fn progress_detail_from_record(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    result: &Value,
+    record: Option<&Value>,
+) -> Result<Value, String> {
+    let mut rendered = presentation(record);
+    let readiness = current::evaluate(loaded, record);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
     Ok(progress::project_detail_for_work(
         loaded,
         work,
-        record.as_ref(),
+        record,
         &rendered,
         Some(result),
     ))
+}
+
+fn context_progress(record: &Value, work: &str, result: &Value, detail: bool) -> Value {
+    let mut view = progress::context_only(record, Some(result));
+    if detail {
+        view["detailRoute"] = json!({
+            "state":"preview",
+            "reason":"owner_project_evidence_required",
+        });
+    }
+    if let Some(association) = super::association::for_work(record, work) {
+        view["workAssociation"] = json!({
+            "kind":"context_only",
+            "protocol":super::association::PROTOCOL,
+            "work":association["work"],
+            "startEventSha256":association["startEventSha256"],
+        });
+    }
+    view["goalIdentitySha256"] = json!(crate::evidence::hash::value(&record["goalId"]));
+    view
+}
+
+pub(crate) fn record_for_work(loaded: &crate::config::Loaded, work: &str) -> Option<Value> {
+    match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::Owner(record)
+        | super::association::WorkContext::Session(record) => {
+            Some(super::association::public_record(&record))
+        }
+        super::association::WorkContext::Local => read(&loaded.state_root).ok().flatten(),
+        super::association::WorkContext::Unavailable | super::association::WorkContext::Invalid => {
+            None
+        }
+    }
+}
+
+/// Preserve a separately selected project-local named contract when the
+/// current native session also supplies its independent parent Goal context.
+pub(crate) fn project_goal_progress_for_work(
+    loaded: &crate::config::Loaded,
+    work: &str,
+) -> Result<Option<Value>, String> {
+    // Legacy named Works are project scoped too. The named-scope companion
+    // selects project or session independently from the optional parent
+    // context; absence of a parent companion must not hide a local contract.
+    super::requirements::project_progress_for_work(loaded, work)
 }
 
 #[cfg(test)]

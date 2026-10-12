@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 mod ingest;
 pub(crate) use ingest::{goal_records, record_goal_numeric_event, record_numeric_event};
@@ -36,8 +37,12 @@ pub(crate) fn details_for_work(loaded: &crate::config::Loaded, work: &str) -> Va
     for_work_with_limit(loaded, work, MAX_RECORDS)
 }
 
-pub(crate) fn details_for_goal(loaded: &crate::config::Loaded, goal_id: &str) -> Value {
-    let events = match goal_records(loaded, goal_id) {
+pub(crate) fn details_for_goal(
+    root: &Path,
+    loaded: &crate::config::Loaded,
+    goal_id: &str,
+) -> Value {
+    let events = match goal_records(root, loaded, goal_id) {
         Ok(events) => events,
         Err(error) => {
             return json!({"status":"unknown", "scope":"goal", "goalId":goal_id, "reason":error, "totals":Value::Null, "records":[]})
@@ -207,7 +212,7 @@ fn for_work_with_limit(loaded: &crate::config::Loaded, work: &str, display_limit
     match crate::session_goal::read(&loaded.state_root) {
         Ok(Some(goal)) => {
             if let Some(goal_id) = goal["goalId"].as_str() {
-                match goal_records(loaded, goal_id) {
+                match goal_records(&loaded.state_root, loaded, goal_id) {
                     Ok(events) => {
                         for event in events {
                             if event["work"].as_str() != Some(work) {

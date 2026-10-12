@@ -21,6 +21,33 @@ pub(super) fn project(
     project_with_limit(loaded, record, rendered, result, MAX_TASKS, false)
 }
 
+/// A bounded Goal preview for a non-owner project. It deliberately has no
+/// evidence evaluator, named-coverage projection, or whole-Goal terminal.
+pub(super) fn context_only(record: &Value, result: Option<&Value>) -> Value {
+    let mut rendered = super::presentation(Some(record));
+    rendered["explicitLeadClosure"] = json!(false);
+    let mut view = project(None, Some(record), &rendered, result);
+    view["overall"] = json!("context_only");
+    view["contextOnly"] = json!({
+        "kind":"native_session_goal",
+        "authority":"none",
+        "ownerEvidence":"not_evaluated",
+    });
+    view.as_object_mut()
+        .expect("Goal progress projection is an object")
+        .remove("coverageConfirmed");
+    view.as_object_mut()
+        .expect("Goal progress projection is an object")
+        .remove("nextAction");
+    view["systemText"] = json!(format!(
+        "Session Goal context only; owner evidence is not evaluated | {}",
+        view["systemText"]
+            .as_str()
+            .unwrap_or("Goal preview unavailable")
+    ));
+    view
+}
+
 fn project_with_limit(
     loaded: Option<&Loaded>,
     record: Option<&Value>,
@@ -38,40 +65,62 @@ fn project_with_limit(
             "unavailable",
         );
     };
+    let journey =
+        loaded.and_then(|loaded| super::journey::progress_for_record(Some(loaded), record));
     let Some(goal) = record["goal"]
         .as_str()
         .filter(|value| !value.trim().is_empty())
     else {
-        return unavailable(
-            result,
-            "overall_goal_unavailable",
-            "canonical Lead goal is missing",
-            None,
-            "unavailable",
+        return include_journey(
+            unavailable(
+                result,
+                "overall_goal_unavailable",
+                "canonical Lead goal is missing",
+                None,
+                "unavailable",
+            ),
+            journey,
         );
     };
-    let overall_state = overall_state(record, rendered);
+    let mut overall_state = overall_state(record, rendered);
+    if overall_state == "complete"
+        && journey
+            .as_ref()
+            .is_some_and(|value| value["state"] != "current")
+    {
+        overall_state = "in_progress";
+    }
     if super::requirements::named(record) {
         if let Some(loaded) = loaded {
-            return named_progress(loaded, record, overall_state, result, task_limit);
+            let mut view = named_progress(loaded, record, overall_state, result, task_limit);
+            if let Some(journey) = journey {
+                view["journeyCompletion"] = journey;
+            }
+            return view;
         }
     }
     let Some(items) = record["obligations"].as_array() else {
-        return unavailable(
-            result,
-            "task_decomposition_unavailable",
-            "Lead task decomposition is unavailable",
-            Some(goal),
-            overall_state,
+        return include_journey(
+            unavailable(
+                result,
+                "task_decomposition_unavailable",
+                "Lead task decomposition is unavailable",
+                Some(goal),
+                overall_state,
+            ),
+            journey,
         );
     };
     if items.is_empty() {
-        return unavailable(
-            result,
-            "task_decomposition_unavailable",
-            "Lead has not divided the goal into tasks",
-            Some(goal),
-            overall_state,
+        return include_journey(
+            unavailable(
+                result,
+                "task_decomposition_unavailable",
+                "Lead has not divided the goal into tasks",
+                Some(goal),
+                overall_state,
+            ),
+            journey,
         );
     }
 
@@ -148,6 +197,16 @@ fn project_with_limit(
         &view["tasks"],
         &view["resultReadiness"],
     ));
+    if let Some(journey) = journey {
+        view["journeyCompletion"] = journey;
+    }
+    view
+}
+
+fn include_journey(mut view: Value, journey: Option<Value>) -> Value {
+    if let Some(journey) = journey {
+        view["journeyCompletion"] = journey;
+    }
     view
 }
 
@@ -214,7 +273,7 @@ fn has_open_blocker(record: &Value) -> bool {
         .is_some_and(|items| items.iter().any(|item| item["disposition"] == "open"))
 }
 
-fn unavailable(
+pub(super) fn unavailable(
     result: Option<&Value>,
     code: &str,
     detail: &str,
@@ -344,10 +403,18 @@ fn task_current(loaded: Option<&Loaded>, record: &Value, item: &Value) -> Option
         let evidence = crate::run::result_ref_evidence(loaded, reference)
             .ok()
             .flatten()?;
+        let supported = evidence.inputs_current != Some(true)
+            && super::journey::result_ref_current_or_supported(
+                loaded,
+                record,
+                reference,
+                evidence.inputs_current,
+            )
+            .unwrap_or(false);
         current &= evidence.accepted
             && evidence.artifact_current
             && evidence.drift.is_none()
-            && evidence.inputs_current == Some(true);
+            && (evidence.inputs_current == Some(true) || supported);
     }
     Some(current)
 }

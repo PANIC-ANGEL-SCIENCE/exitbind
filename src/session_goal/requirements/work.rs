@@ -1,14 +1,57 @@
 //! Bind declared requirements before Work execution, then inspect its evidence.
 
 use super::*;
+use std::path::Path;
+
+const SCOPE_KIND: &str = "named_goal_scope";
+const SCOPE_PROTOCOL: u64 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ContractScope {
+    Project,
+    Session,
+}
+
+impl ContractScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Session => "session",
+        }
+    }
+}
 
 pub(crate) struct Prepared {
     pub(crate) basis: String,
     pub(crate) goal_id: String,
     pub(crate) requirements: String,
+    pub(crate) scope: ContractScope,
+    pub(crate) project_identity: String,
+}
+
+/// Validate a declared checker with the same path, coverage and command-name
+/// rules used by named requirement Works. Journey integration reuses this
+/// owner instead of introducing a second checker policy.
+pub(crate) fn checker_input(
+    loaded: &Loaded,
+    checker: &str,
+    command: &str,
+) -> Result<CheckerInput, String> {
+    let checker_source = source(loaded, checker)?;
+    if !crate::run::inputs::covered_file(loaded, checker)? {
+        return Err("checker input is outside tested product-file coverage; use a non-ignored project checker".into());
+    }
+    if !command.contains(checker) {
+        return Err("check command must name its declared project checker input".into());
+    }
+    Ok(CheckerInput {
+        path: checker.into(),
+        sha256: checker_source.sha256,
+    })
 }
 
 pub(crate) fn prepare(
+    root: &Path,
     loaded: &Loaded,
     goal_id: &str,
     ids: &str,
@@ -16,10 +59,16 @@ pub(crate) fn prepare(
     command: &str,
     basis: Option<&str>,
     integration: bool,
+    scope: ContractScope,
 ) -> Result<Prepared, String> {
-    let record = super::super::read(&loaded.state_root)?.ok_or("no canonical goal is open")?;
+    let record = super::super::read(root)?.ok_or("no canonical goal is open")?;
     if record["goalId"] != goal_id {
         return Err("canonical goal identity does not match".into());
+    }
+    if record["closure"]["closed"] != false {
+        return Err(
+            "named Goal is closed; incorporate an explicit successor before assigning work".into(),
+        );
     }
     let goal = Goal::read(&record)?;
     if goal.project_identity != identity(loaded)? {
@@ -30,23 +79,14 @@ pub(crate) fn prepare(
             "confirm the agreed requirement set with goal cover before assigning work".into(),
         );
     }
-    let checker_source = source(loaded, checker)?;
-    if !crate::run::inputs::covered_file(loaded, checker)? {
-        return Err("checker input is outside tested product-file coverage; use a non-ignored project checker".into());
-    }
-    if !command.contains(checker) {
-        return Err("check command must name its declared project checker input".into());
-    }
+    let checker_input = checker_input(loaded, checker, command)?;
     let references = selected(&goal, ids)?;
     let contract = Contract {
         goal_id: goal_id.into(),
-        project_identity: goal.project_identity,
+        project_identity: goal.project_identity.clone(),
         integration,
         requirements: vec![],
-        checker_input: CheckerInput {
-            path: checker.into(),
-            sha256: checker_source.sha256,
-        },
+        checker_input,
     };
     let marker = format!(
         "{PREFIX}header:{}",
@@ -84,10 +124,107 @@ pub(crate) fn prepare(
         basis: serde_json::to_string(&value).map_err(|e| e.to_string())?,
         goal_id: goal_id.into(),
         requirements: ids.into(),
+        scope,
+        project_identity: contract.project_identity,
     })
 }
 
-pub(super) fn contract(loaded: &Loaded, work_id: &str) -> Result<Contract, String> {
+/// Persist the chosen named-Goal journal separately from the immutable Work
+/// start event. The record is a locator only; every later projection rechecks
+/// the Work start, exact frozen contract, Goal identity, mapping and evidence.
+pub(crate) fn write_scope_companion(
+    loaded: &Loaded,
+    work_id: &str,
+    start_event_sha256: &str,
+    prepared: &Prepared,
+) -> Result<(), String> {
+    if !valid_hash(start_event_sha256) || !valid_hash(&prepared.project_identity) {
+        return Err("named Goal scope companion identity is malformed".into());
+    }
+    let fields = json!({
+        "scope": prepared.scope.label(),
+        "goalId": prepared.goal_id,
+        "projectIdentitySha256": prepared.project_identity,
+    });
+    crate::session_goal::association::write_private_companion(
+        loaded,
+        work_id,
+        ".named-goal-scope.json",
+        "named Goal scope companion",
+        SCOPE_KIND,
+        SCOPE_PROTOCOL,
+        start_event_sha256,
+        fields,
+    )
+}
+
+/// Resolve the frozen scope from its exact Work-local companion. Older named
+/// Works predate the companion and retain their project-local Goal behavior.
+fn scope_companion(
+    loaded: &Loaded,
+    work_id: &str,
+    start: &Value,
+    contract: &Contract,
+) -> Result<Option<ContractScope>, String> {
+    let Some(value) = crate::session_goal::association::read_private_companion(
+        loaded,
+        work_id,
+        ".named-goal-scope.json",
+        "named Goal scope companion",
+        SCOPE_KIND,
+        SCOPE_PROTOCOL,
+        &["scope", "goalId", "projectIdentitySha256"],
+    )?
+    else {
+        return Ok(None);
+    };
+    validate_scope_companion(&value)?;
+    let start_sha = start["eventSha256"]
+        .as_str()
+        .ok_or("Work start event identity is missing")?;
+    if value["work"] != work_id
+        || value["startEventSha256"] != start_sha
+        || value["goalId"] != contract.goal_id
+        || value["projectIdentitySha256"] != contract.project_identity
+    {
+        return Err("named Goal scope companion does not match the frozen Work contract".into());
+    }
+    match value["scope"].as_str() {
+        Some("project") => Ok(Some(ContractScope::Project)),
+        Some("session") => Ok(Some(ContractScope::Session)),
+        _ => Err("named Goal scope companion selects an unsupported scope".into()),
+    }
+}
+
+fn validate_scope_companion(value: &Value) -> Result<(), String> {
+    let object = value
+        .as_object()
+        .ok_or("named Goal scope companion is malformed")?;
+    if object.len() != 8
+        || value["kind"] != SCOPE_KIND
+        || value["protocol"].as_u64() != Some(SCOPE_PROTOCOL)
+        || value["work"].as_str().is_none()
+        || value["goalId"].as_str().map_or(true, |id| {
+            id.trim().is_empty() || id.len() > 128 || id.contains('\0')
+        })
+        || value["projectIdentitySha256"]
+            .as_str()
+            .map_or(true, |hash| !valid_hash(hash))
+        || !matches!(value["scope"].as_str(), Some("project" | "session"))
+    {
+        return Err("named Goal scope companion is invalid or unsupported".into());
+    }
+    Ok(())
+}
+
+fn valid_hash(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn parse_contract(loaded: &Loaded, work_id: &str) -> Result<(Contract, Value), String> {
     let ledger = crate::work::resolve(loaded, work_id)?;
     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
     let start = events.first().ok_or("Work has no start event")?;
@@ -130,7 +267,171 @@ pub(super) fn contract(loaded: &Loaded, work_id: &str) -> Result<Contract, Strin
     if contract.requirements.is_empty() || contract.requirements.len() > MAX_REQUIREMENTS {
         return Err("Work requirement coverage is empty or oversized".into());
     }
+    Ok((contract, start.clone()))
+}
+
+pub(super) fn contract(loaded: &Loaded, work_id: &str) -> Result<Contract, String> {
+    let (contract, start) = parse_contract(loaded, work_id)?;
+    let _ = contract_scope_for_start(loaded, work_id, &start, &contract)?;
     Ok(contract)
+}
+
+pub(crate) fn contract_scope(loaded: &Loaded, work_id: &str) -> Result<ContractScope, String> {
+    let (contract, start) = parse_contract(loaded, work_id)?;
+    contract_scope_for_start(loaded, work_id, &start, &contract)
+}
+
+fn contract_scope_for_start(
+    loaded: &Loaded,
+    work_id: &str,
+    start: &Value,
+    contract: &Contract,
+) -> Result<ContractScope, String> {
+    if let Some(scope) = scope_companion(loaded, work_id, start, contract)? {
+        return Ok(scope);
+    }
+    match crate::session_goal::association::context_for_work(loaded, work_id) {
+        crate::session_goal::association::WorkContext::Local => Ok(ContractScope::Project),
+        _ => Err(
+            "named Goal journal selector is missing; refusing to infer project or session scope"
+                .into(),
+        ),
+    }
+}
+
+pub(crate) fn scope_matches_root(
+    loaded: &Loaded,
+    work_id: &str,
+    root: &Path,
+) -> Result<bool, String> {
+    match contract_scope(loaded, work_id)? {
+        ContractScope::Project => Ok(root == loaded.state_root),
+        ContractScope::Session => {
+            let scope = crate::session_goal::native::scope(loaded, false)?;
+            scope.require_owner()?;
+            Ok(scope.is_session() && root == scope.root)
+        }
+    }
+}
+
+pub(crate) fn project_progress_for_work(
+    loaded: &Loaded,
+    work_id: &str,
+) -> Result<Option<Value>, String> {
+    let ledger = crate::work::resolve(loaded, work_id)?;
+    let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+    let start = events.first().ok_or("Work has no start event")?;
+    let Some(contract) = contract_if_named(loaded, work_id, start)? else {
+        return Ok(None);
+    };
+    let selected_scope = match contract_scope_for_start(loaded, work_id, start, &contract) {
+        Ok(scope) => scope,
+        Err(error) => {
+            return Ok(Some(
+                json!({"kind":"project_named_contract","state":"unavailable",
+                "reason":"named_goal_scope_unavailable","detail":error,"readOnly":true}),
+            ))
+        }
+    };
+    if selected_scope != ContractScope::Project {
+        return Ok(None);
+    }
+    if contract.project_identity != identity(loaded)? {
+        return Ok(Some(
+            json!({"kind":"project_named_contract","scope":"project",
+            "state":"unavailable","reason":"named_goal_belongs_to_another_configured_project",
+            "readOnly":true}),
+        ));
+    }
+    let Some(record) = super::super::read(&loaded.state_root)? else {
+        return Ok(Some(
+            json!({"kind":"project_named_contract","scope":"project",
+            "goalId":contract.goal_id,"state":"stale","reason":"project_goal_unavailable",
+            "readOnly":true}),
+        ));
+    };
+    if record["goalId"] != contract.goal_id {
+        return Ok(Some(
+            json!({"kind":"project_named_contract","scope":"project",
+            "goalId":contract.goal_id,"state":"stale","reason":"project_goal_identity_changed",
+            "readOnly":true}),
+        ));
+    }
+    let goal = Goal::read(&record)?;
+    if goal.project_identity != contract.project_identity {
+        return Ok(Some(
+            json!({"kind":"project_named_contract","scope":"project",
+            "goalId":contract.goal_id,"state":"stale","reason":"project_goal_owner_changed",
+            "readOnly":true}),
+        ));
+    }
+    let start_sha = start["eventSha256"]
+        .as_str()
+        .ok_or("Work start event identity is missing")?;
+    let observed = evidence(loaded, work_id, &contract)?;
+    let mut rows = Vec::new();
+    for bound in &contract.requirements {
+        let current = goal
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == bound.id);
+        let current_ref =
+            current.map(|requirement| BoundRequirement::from(&requirement.reference()));
+        let mappings = goal
+            .mappings
+            .iter()
+            .filter(|mapping| {
+                mapping.active
+                    && mapping.work == work_id
+                    && mapping.start_event_sha256 == start_sha
+                    && mapping.requirement.id == bound.id
+            })
+            .collect::<Vec<_>>();
+        let exact_mapping = mappings.iter().any(|mapping| {
+            current.is_some_and(|requirement| mapping.requirement == requirement.reference())
+        });
+        let state = if current_ref.as_ref() != Some(bound) {
+            "stale"
+        } else if !exact_mapping {
+            if mappings.is_empty() {
+                "unmapped"
+            } else {
+                "stale"
+            }
+        } else {
+            observed["state"].as_str().unwrap_or("unknown")
+        };
+        rows.push(json!({"id":bound.id,"revision":bound.revision,
+            "state":state,"mapped":exact_mapping,"support":observed}));
+    }
+    let current =
+        goal.source.coverage_confirmed && rows.iter().all(|row| row["state"] == "current");
+    Ok(Some(
+        json!({"kind":"project_named_contract","scope":"project",
+        "authority":"project_goal_owner","goalId":contract.goal_id,
+        "work":work_id,"startEventSha256":start_sha,"integration":contract.integration,
+        "coverageConfirmed":goal.source.coverage_confirmed,"contractCurrent":current,
+        "requirements":rows,"readOnly":true,
+        "closureAuthority":"goal close in the configured project; this projection never closes the session Goal"}),
+    ))
+}
+
+fn contract_if_named(
+    loaded: &Loaded,
+    work_id: &str,
+    start: &Value,
+) -> Result<Option<Contract>, String> {
+    let constraints = start["basis"]["constraints"]
+        .as_array()
+        .ok_or("Work basis constraints are malformed")?;
+    if !constraints
+        .iter()
+        .filter_map(Value::as_str)
+        .any(|value| value.starts_with(&format!("{PREFIX}header:")))
+    {
+        return Ok(None);
+    }
+    parse_contract(loaded, work_id).map(|(contract, _)| Some(contract))
 }
 
 pub(super) fn evidence(
@@ -138,13 +439,49 @@ pub(super) fn evidence(
     work_id: &str,
     contract: &Contract,
 ) -> Result<Value, String> {
+    let mut view = current_checker_evidence(loaded, work_id, &contract.checker_input)?;
+    view["integration"] = json!(contract.integration);
+    Ok(view)
+}
+
+/// Read the exact accepted result and its observed passing check for a frozen
+/// checker. Both named and session journey integration use this evidence
+/// owner; neither may replace it with a new capture or acceptance mechanism.
+pub(crate) fn current_checker_evidence(
+    loaded: &Loaded,
+    work_id: &str,
+    checker_input: &CheckerInput,
+) -> Result<Value, String> {
     let ledger = crate::work::resolve(loaded, work_id)?;
     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
     let state = crate::run::state::reduce(&events)?;
     let mut view = json!({"work":work_id,"state":"unknown","accepted":false,"subject":state["subject"],
-        "integration":contract.integration,"checkerInput":contract.checker_input,
+        "checkerInput":checker_input,
         "check":null,"acceptance":events.last().map(|item|item["eventSha256"].clone()),
         "inputCoverage":crate::run::inputs::COVERAGE,"limits":"Environment, ignored files, outside files, remote services and time are not covered."});
+    let check = events.iter().rev().find(|event| {
+        event["action"] == "check"
+            && event["requirementId"].is_null()
+            && event["subjectSha256"] == state["subject"]["sha256"]
+    });
+    if let Some(check) = check {
+        view["check"] = json!({"event":check["eventSha256"],"checker":check["checkCommandSha256"],"command":check["checkCommand"],
+            "acquisition":check["acquisition"],"producer":check["producer"],"inputs":check["inputsSha256"],"result":check["result"]});
+    }
+    let accepted = state["status"] == "accepted"
+        && events.last().is_some_and(|event| {
+            event["action"] == "submit" && event["role"] == "lead" && event["outcome"] == "accepted"
+        });
+    if !accepted {
+        if check
+            .is_some_and(|event| event["result"]["kind"] != "exit" || event["result"]["code"] != 0)
+        {
+            view["state"] = json!("failed");
+        } else {
+            view["state"] = json!("pending");
+        }
+        return Ok(view);
+    }
     let current = crate::run::result_ref_evidence(loaded, work_id)?
         .ok_or("Work result cannot be inspected")?;
     if current.drift.is_some() || current.inputs_current == Some(false) {
@@ -154,25 +491,25 @@ pub(super) fn evidence(
     if current.inputs_current.is_none() {
         return Ok(view);
     }
-    if source(loaded, &contract.checker_input.path)?.sha256 != contract.checker_input.sha256
-        || !crate::run::inputs::covered_file(loaded, &contract.checker_input.path)?
+    if source(loaded, &checker_input.path)?.sha256 != checker_input.sha256
+        || !crate::run::inputs::covered_file(loaded, &checker_input.path)?
     {
         view["state"] = json!("stale");
         return Ok(view);
     }
-    let check = events.iter().rev().find(|event| {
-        event["action"] == "check"
-            && event["requirementId"].is_null()
-            && event["subjectSha256"] == state["subject"]["sha256"]
-    });
     let Some(check) = check else {
         view["state"] = json!("pending");
         return Ok(view);
     };
-    view["check"] = json!({"event":check["eventSha256"],"checker":check["checkCommandSha256"],"command":check["checkCommand"],
-        "acquisition":check["acquisition"],"producer":check["producer"],"inputs":check["inputsSha256"],"result":check["result"]});
     if check["result"]["kind"] != "exit" || check["result"]["code"] != 0 {
         view["state"] = json!("failed");
+        return Ok(view);
+    }
+    if !check["checkCommand"]
+        .as_str()
+        .is_some_and(|command| command.contains(&checker_input.path))
+    {
+        view["state"] = json!("stale");
         return Ok(view);
     }
     let event_id = check["eventSha256"]

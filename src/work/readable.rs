@@ -138,8 +138,8 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         return Err("action changed during read; inspect current work detail before acting".into());
     }
     let mut result = result;
-    if next["presentation"]["goalProgress"]["workAssociation"].is_object() {
-        result["goalAssociation"] = next["presentation"]["goalProgress"]["workAssociation"].clone();
+    if next["goalProgress"]["workAssociation"].is_object() {
+        result["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
     }
     let mut effective = super::effective_action::project(&result);
     let form = result
@@ -283,8 +283,11 @@ fn response(
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });
-    if next["presentation"]["goalProgress"]["workAssociation"].is_object() {
-        value["goalAssociation"] = next["presentation"]["goalProgress"]["workAssociation"].clone();
+    if next["goalProgress"]["workAssociation"].is_object() {
+        value["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
+    }
+    if next["projectGoalProgress"].is_object() {
+        value["projectGoalProgress"] = next["projectGoalProgress"].clone();
     }
     if next["action"] == "done" {
         value["completion"] = super::closeout::projection(loaded, work, snapshot, next);

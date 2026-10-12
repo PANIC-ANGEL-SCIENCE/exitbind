@@ -172,6 +172,145 @@ pub fn start_with_policy(
     result(&[event])
 }
 
+/// Stable identity for the frozen request fields of a new start. Dynamic
+/// ledger fields such as runId, timestamp, subject and event hash are omitted;
+/// every caller-selected plan, checker, basis, review and receipt field is
+/// included. Native session admission stores this before the start exists and
+/// verifies it against the eventual immutable start event.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn start_intent_sha256(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+) -> Result<String, String> {
+    if workflow.trim().is_empty() {
+        return Err("workflow is required".into());
+    }
+    if goal.trim().is_empty() {
+        return Err("--goal requires a non-empty value".into());
+    }
+    let mut plan = crate::config::boundary::apply(
+        loaded,
+        selected_plan(envelope::plan(loaded, workflow, goal)?)?,
+        boundary,
+    )?;
+    let check_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+    crate::project::architecture::bind_plan(loaded, &mut plan)?;
+    let preservation = crate::run_value::preservation_from_cli(
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+    )?;
+    let extension = extension_from_cli(basis, review_policy)?;
+    if check_policy.is_some() && !has_worker_stage(&plan) {
+        return Err("checked run requires a workflow with at least one worker stage".into());
+    }
+    if preservation.is_some() && !has_worker_stage(&plan) {
+        return Err("preservation requires a workflow with at least one worker stage".into());
+    }
+    if preservation.is_some() && check_policy.is_none() {
+        return Err("preservation requirements require a checked run with --check-command".into());
+    }
+    if preservation.is_some() && !crate::producer::exitbind_surface() {
+        return Err("preservation requirements require Exitbind v6 runs".into());
+    }
+    let harness_reference = harness_receipt
+        .map(|receipt| crate::evidence::receipt::for_run(loaded, receipt, &plan))
+        .transpose()?;
+    let version = if crate::producer::exitbind_surface() {
+        8
+    } else if check_policy.is_some() {
+        4
+    } else if harness_reference.is_some() {
+        2
+    } else {
+        1
+    };
+    let mut value = json!({
+        "version": version,
+        "kind": "run",
+        "producer": crate::producer::evidence_for_version(version),
+        "action": "start",
+        "workflow": workflow,
+        "goal": goal,
+        "configSha256": hash::text(&loaded.source),
+        "plan": plan,
+    });
+    if let Some(reference) = harness_reference {
+        value["harnessReceipt"] = reference;
+    }
+    if let Some(policy) = &check_policy {
+        value["checkPolicy"] = policy.value();
+    }
+    if let Some(preservation) = &preservation {
+        value["preservation"] = preservation.value();
+    }
+    if let Some(extension) = &extension {
+        value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+        if check_policy.is_some() {
+            value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+            value["checkObservationProtocol"] = json!(crate::run::check_observation::PROTOCOL);
+        }
+        if let Some(basis) = &extension.basis {
+            value["basis"] = basis.value();
+        }
+        value["reviewPolicy"] = extension.review.value();
+    }
+    if version >= 6 {
+        value["governor"] = json!({
+            "version": crate::context::GOVERNOR_VERSION,
+            "budget": crate::context::HARD_ITERATION_BUDGET,
+            "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
+            "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
+            "grantProtocol": crate::context::GRANT_PROTOCOL_VERSION,
+            "replanBinding": "assignment_packet_v1",
+        });
+    }
+    Ok(hash::value(&value))
+}
+
+/// Hash the same stable field projection from a validated start event.
+pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String> {
+    const FIELDS: &[&str] = &[
+        "version",
+        "kind",
+        "producer",
+        "action",
+        "workflow",
+        "goal",
+        "configSha256",
+        "plan",
+        "harnessReceipt",
+        "checkPolicy",
+        "preservation",
+        "basisProtocol",
+        "recoveryProtocol",
+        "checkObservationProtocol",
+        "basis",
+        "reviewPolicy",
+        "governor",
+    ];
+    if event["action"] != "start" {
+        return Err("Work ledger does not begin with a start event".into());
+    }
+    let mut projection = serde_json::Map::new();
+    for field in FIELDS {
+        if let Some(value) = event.get(*field) {
+            projection.insert((*field).to_owned(), value.clone());
+        }
+    }
+    Ok(hash::value(&Value::Object(projection)))
+}
+
 /// Record the owner-controlled review choice for the current marked run.
 /// This is a ledger transition, so a later choice is explicitly chained to
 /// the prior decision and cannot be inferred from a missing review.

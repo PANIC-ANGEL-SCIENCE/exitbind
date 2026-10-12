@@ -42,11 +42,16 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
     {
         return Err("governed activation is unavailable".into());
     }
-    let goal_candidate = if options.auto_goal_context {
-        crate::session_goal::association::prepare(loaded)?
+    let goal_scope = if options.auto_goal_context {
+        crate::session_goal::native::optional_work_scope(loaded)
     } else {
         None
     };
+    let goal_candidate = goal_scope
+        .as_ref()
+        .map(crate::session_goal::association::prepare)
+        .transpose()?
+        .flatten();
     let token = hash::text(&format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
         options.workflow,
@@ -57,7 +62,35 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         timestamp_nanos()
     ));
     let ledger = format!("{}/work-{token}.jsonl", runs_dir());
-    let _started = run::start_with_policy(
+    let work = format!("{WORK_PREFIX}{token}");
+    if let Some(candidate) = goal_candidate.as_ref() {
+        let intent = run::start_intent_sha256(
+            loaded,
+            options.workflow,
+            options.goal,
+            options.boundary,
+            options.harness_receipt,
+            Some(options.check_command),
+            options.proof_origin,
+            options.preserve_requirement,
+            options.preservation_check_command,
+            options.preservation_proof_origin,
+            options.basis,
+            options.review_policy,
+        )?;
+        let scope = goal_scope
+            .as_ref()
+            .ok_or("native session Goal scope disappeared before Work admission")?;
+        crate::session_goal::association::admit(
+            &scope.root,
+            loaded,
+            candidate,
+            &work,
+            &intent,
+            options.goal,
+        )?;
+    }
+    if let Err(error) = run::start_with_policy(
         loaded,
         options.workflow,
         options.goal,
@@ -71,29 +104,18 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         options.preservation_proof_origin,
         options.basis,
         options.review_policy,
-    )?;
-    let work = format!("{WORK_PREFIX}{token}");
-    if let Some(candidate) = goal_candidate {
-        let association = (|| {
-            let (_, events, _) = run::ledger::load(loaded, &ledger)?;
-            let start = events.first().ok_or("Work ledger has no start event")?;
-            if start["action"] != "start" {
-                return Err("Work ledger does not begin with a start event".into());
-            }
-            let start_event_sha256 = start["eventSha256"]
-                .as_str()
-                .ok_or("Work start event identity is missing")?;
-            crate::session_goal::association::record(
-                loaded,
-                &candidate,
-                &work,
-                start_event_sha256,
-            )?;
-            Ok::<(), String>(())
-        })();
-        if let Err(error) = association {
+    ) {
+        if goal_candidate.is_some() {
             return Err(format!(
-                "Work {work} was recorded, but its context-only Goal association failed: {error}; inspect with `exitbind work detail {work} --json`; do not repeat work begin"
+                "native journey admission remains unresolved for Work {work}; Work start may or may not exist: {error}. Inspect the native Goal status; if an exact Work start exists, recover only with `exitbind work link-session {work} --json`. Do not repeat work begin"
+            ));
+        }
+        return Err(error);
+    }
+    if goal_candidate.is_some() {
+        if let Err(error) = crate::session_goal::association::link_session(loaded, &work) {
+            return Err(format!(
+                "Work {work} was started, but its native journey admission remains unresolved: {error}; inspect with `exitbind work detail {work} --json` and recover only with `exitbind work link-session {work} --json`; do not repeat work begin"
             ));
         }
     }

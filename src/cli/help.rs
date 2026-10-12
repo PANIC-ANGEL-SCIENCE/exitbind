@@ -6,9 +6,10 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["init"] => "init [--mode local|portable|auto] [--root ROOT] [--project-id ID] [--control-root ROOT] [--state-root ROOT] [--skip-skills | --refresh-skills] [--with-coffee] (creates project configuration and managed guidance; review placement and boundaries before use)",
         ["update"] => "update (checks for a stable release and may replace the current executable; an existing regular binary is required for rollback)",
         ["work"] => {
-            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
+            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work link-session WORK [--json] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
-        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--standalone] [--basis JSON] [--goal-id ID --requirement IDs --artifact PROJECT_CHECKER [--scope integration]] (--standalone opts out of automatic context-only association to the current open project Goal; --detail delivers current recipient context; a recorded start is recovered with work detail or work resume, never repeated)",
+        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--standalone] [--journey-integration --artifact CHECKER] [--goal-id ID --requirement IDs --artifact CHECKER [--scope integration] [--project-goal]] [--basis JSON] (an available native-host identity links ordinary Work context to the current conversation Goal; --standalone opts out; --journey-integration freezes accepted conversation tasks for a final-current checker; --project-goal selects a project-local named contract while retaining conversation context; --detail delivers current recipient context; after an interrupted native association, inspect status/detail and use work link-session only for the exact recorded admission and actual Work start; never repeat begin)",
+        ["work", "link-session"] => "work link-session WORK [--config CONFIG] [--json] (recovers only a matching native-session Goal admission after verifying the actual immutable Work start; performs no Work, check, acceptance, or provider mutation)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
@@ -83,13 +84,13 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER [--owner-recovery STATE_ARTIFACT_PATH]"
         }
-        ["goal"] => "goal incorporate --goal-id ID --goal TEXT | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE | goal cover --goal-id ID | goal assign --goal-id ID --requirement IDs --result-ref WORK | goal status [--json] | goal close --goal-id ID --result-ref REF | goal usage --goal-id ID [--json] | goal <child> --help",
-        ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT",
-        ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",
-        ["goal", "cover"] => "goal cover --goal-id ID [--json] (Lead confirms the agreed finite set; this does not prove complete interpretation of natural language)",
-        ["goal", "assign"] => "goal assign --goal-id ID --requirement IDs --result-ref WORK [--disposition add|replace] [--json] (IDs are comma-separated; replace retires old contributors for these IDs without removing requirements)",
-        ["goal", "close"] => "goal close --goal-id ID --result-ref REF",
-        ["goal", "status"] => "goal status [--json] [--themed] (read-only requirement mapping, current evidence, exact revision and next action)",
+        ["goal"] => "goal incorporate --goal-id ID --goal TEXT [--project] | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] | goal cover --goal-id ID [--project] | goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] | goal status [--project] [--json] | goal close --goal-id ID --result-ref REF [--project] | goal usage --goal-id ID [--json] | goal <child> --help",
+        ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT [--project] (--project selects the configured project's legacy Goal journal; otherwise a valid native host identity selects its conversation Goal)",
+        ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",
+        ["goal", "cover"] => "goal cover --goal-id ID [--project] [--json] (Lead confirms the agreed finite set; this does not prove complete interpretation of natural language)",
+        ["goal", "assign"] => "goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] [--disposition add|replace] [--json] (IDs are comma-separated; replace retires old contributors for these IDs without removing requirements)",
+        ["goal", "close"] => "goal close --goal-id ID --result-ref REF [--project]",
+        ["goal", "status"] => "goal status [--project] [--json] [--themed] (read-only requirement mapping, current evidence, exact revision and next action; under a native host identity this reads the conversation Goal unless --project is supplied)",
         ["goal", "usage"] => "goal usage --goal-id ID [--json] [--config CONFIG] | goal usage --goal-id ID --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",
@@ -127,8 +128,20 @@ mod tests {
         let help = scoped_help("work", &["next".to_owned()]).unwrap();
         assert!(help.contains("Usage: "));
         assert!(help.contains("work next WORK"));
+        let begin = scoped_help("work", &["begin".to_owned()]).unwrap();
+        assert!(begin.contains("conversation Goal"));
+        assert!(begin.contains("--project-goal"));
+        assert!(begin.contains("--standalone"));
+        assert!(begin.contains("--journey-integration"));
         let recovery = scoped_help("work", &["return".to_owned()]).unwrap();
         assert!(recovery.contains("--result-ref HELD_REFERENCE"));
+    }
+
+    #[test]
+    fn goal_help_explains_explicit_legacy_project_selection() {
+        let help = scoped_help("goal", &["incorporate".to_owned()]).unwrap();
+        assert!(help.contains("--project"));
+        assert!(help.contains("conversation Goal"));
     }
 
     #[test]

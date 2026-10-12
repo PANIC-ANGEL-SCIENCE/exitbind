@@ -21,7 +21,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
     let action = positional(
         a,
         0,
-        "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume",
+        "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, resume, or link-session",
     )?;
     match action {
         "recover-check" => {
@@ -229,6 +229,14 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 l, positional(a, 1, "work record requires WORK")?,
             )?)
         }
+        "link-session" => {
+            args::assert_options("work link-session", a, &["config", "json"])?;
+            args::assert_positionals("work link-session", a, 2)?;
+            print_work_json(&crate::session_goal::association::link_session(
+                l,
+                positional(a, 1, "work link-session requires WORK")?,
+            )?)
+        }
         "begin" => {
             args::assert_options(
                 "work begin",
@@ -246,10 +254,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "basis",
                     "review-policy",
                     "goal-id",
+                    "project-goal",
                     "requirement",
                     "artifact",
                     "scope",
                     "standalone",
+                    "journey-integration",
                     "json",
                     "detail",
                 ],
@@ -258,18 +268,54 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let integration=match a.options.get("scope").map(String::as_str) {
                 None=>false, Some("integration")=>true, Some(_)=>return Err("named Work scope must be integration when supplied".into()),
             };
-            let named_requested = ["goal-id","requirement","artifact","scope"].iter().any(|key|a.options.contains_key(*key));
             let standalone = a.flags.contains_key("standalone");
-            if standalone && named_requested {
-                return Err("--standalone cannot be combined with named goal requirements".into());
+            let journey_integration = a.flags.contains_key("journey-integration");
+            let named_requested = ["goal-id","requirement","scope"]
+                .iter()
+                .any(|key| a.options.contains_key(*key))
+                || (a.options.contains_key("artifact") && !journey_integration);
+            let project_goal = a.flags.contains_key("project-goal");
+            if standalone && (named_requested || journey_integration) {
+                return Err("--standalone cannot be combined with named Goal or journey integration contracts".into());
             }
+            if project_goal && !named_requested {
+                return Err("--project-goal requires a named goal requirement contract".into());
+            }
+            let named_scope = if named_requested {
+                let scope = if project_goal {
+                    crate::session_goal::native::project_scope(l)
+                } else {
+                    crate::session_goal::native::scope(l, false)?
+                };
+                scope.require_owner()?;
+                Some(scope)
+            } else {
+                None
+            };
+            let named_contract_scope = named_scope.as_ref().map_or(
+                crate::session_goal::requirements::ContractScope::Project,
+                |scope| if scope.is_session() {
+                    crate::session_goal::requirements::ContractScope::Session
+                } else {
+                    crate::session_goal::requirements::ContractScope::Project
+                },
+            );
             let named = if named_requested {
-                Some(crate::session_goal::requirements::prepare(l,
+                Some(crate::session_goal::requirements::prepare(&named_scope.as_ref().expect("named scope").root, l,
                     option(a,"goal-id","named Work requires --goal-id ID")?,
                     option(a,"requirement","named Work requires --requirement IDs")?,
                     option(a,"artifact","named Work requires --artifact PROJECT_CHECKER")?,
                     option(a,"check-command","work begin requires --check-command COMMAND")?,
-                    a.options.get("basis").map(String::as_str),integration)?)
+                    a.options.get("basis").map(String::as_str),integration,named_contract_scope)?)
+            } else {None};
+            let journey = if journey_integration {
+                Some(crate::session_goal::journey::prepare(
+                    l,
+                    named.as_ref().map(|prepared| prepared.basis.as_str())
+                        .or_else(|| a.options.get("basis").map(String::as_str)),
+                    option(a, "artifact", "--journey-integration requires --artifact PROJECT_CHECKER")?,
+                    option(a, "check-command", "work begin requires --check-command COMMAND")?,
+                )?)
             } else {None};
             let mut response = crate::work::begin(
                 l,
@@ -293,14 +339,28 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                         .options
                         .get("preservation-proof-origin")
                         .map(String::as_str),
-                    basis: named.as_ref().map(|prepared|prepared.basis.as_str()).or_else(||a.options.get("basis").map(String::as_str)),
+                    basis: journey.as_ref().map(|prepared| prepared.basis.as_str())
+                        .or_else(|| named.as_ref().map(|prepared| prepared.basis.as_str()))
+                        .or_else(|| a.options.get("basis").map(String::as_str)),
                     review_policy: a.options.get("review-policy").map(String::as_str),
-                    auto_goal_context: !standalone && named.is_none(),
+                    auto_goal_context: !standalone,
                 },
             )?;
             if let Some(prepared)=&named {
                 let work=response["work"].as_str().ok_or("recorded Work identity is missing")?.to_owned();
-                if let Err(error)=crate::session_goal::requirements::assign(l,&prepared.goal_id,&prepared.requirements,&work,false) {
+                let root = &named_scope.as_ref().expect("named scope").root;
+                let ledger = crate::work::resolve(l, &work)?;
+                let (_, events, _) = crate::run::ledger::load(l, &ledger)?;
+                let start = events.first().ok_or("Work ledger has no start event")?;
+                let start_event_sha256 = start["eventSha256"]
+                    .as_str()
+                    .ok_or("Work start event identity is missing")?;
+                if let Err(error)=crate::session_goal::requirements::write_scope_companion(
+                    l, &work, start_event_sha256, prepared,
+                ) {
+                    return Err(format!("Work {work} was recorded, but its named Goal scope selector could not be saved: {error}; recover with work detail and inspect the local Goal before repeating any action; do not repeat work begin"));
+                }
+                if let Err(error)=crate::session_goal::requirements::assign(root,l,&prepared.goal_id,&prepared.requirements,&work,false) {
                     return Err(format!("Work {work} was recorded, but its goal mapping failed: {error}; recover with work detail and goal assign; do not repeat work begin"));
                 }
                 let current=crate::work::next(l,&work).map_err(|error|format!("Work {work} and its goal mapping were recorded, but context refresh failed: {error}; recover with work detail; do not repeat work begin"))?;

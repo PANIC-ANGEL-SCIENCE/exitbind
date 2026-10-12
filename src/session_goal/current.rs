@@ -34,6 +34,17 @@ pub(super) fn evaluate(loaded: &Loaded, record: Option<&Value>) -> Readiness {
     if presentation(Some(record))["explicitLeadClosure"] != true {
         return Readiness::Stale("whole_goal_not_closed");
     }
+    match super::journey::readiness_for_record(loaded, record) {
+        Ok(Some(readiness)) if !readiness.ready() => {
+            return if readiness.state == "unavailable" {
+                Readiness::Unknown("journey_completion_unavailable")
+            } else {
+                Readiness::Stale("journey_members_unresolved")
+            };
+        }
+        Err(_) => return Readiness::Unknown("journey_completion_unavailable"),
+        _ => {}
+    }
     let Some(closure_refs) = record["closure"]["resultRefs"].as_array() else {
         return Readiness::Unknown("closure_references_unavailable");
     };
@@ -53,7 +64,7 @@ pub(super) fn evaluate(loaded: &Loaded, record: Option<&Value>) -> Readiness {
         let Some(reference) = reference.as_str() else {
             return Readiness::Unknown("closure_reference_invalid");
         };
-        if let Some(result) = reference_current(loaded, reference) {
+        if let Some(result) = reference_current(loaded, record, reference) {
             return result;
         }
     }
@@ -81,7 +92,7 @@ pub(super) fn evaluate(loaded: &Loaded, record: Option<&Value>) -> Readiness {
                 let Some(reference) = reference.as_str() else {
                     return Readiness::Unknown("goal_item_reference_invalid");
                 };
-                if let Some(result) = reference_current(loaded, reference) {
+                if let Some(result) = reference_current(loaded, record, reference) {
                     return result;
                 }
             }
@@ -95,7 +106,7 @@ pub(super) fn evaluate(loaded: &Loaded, record: Option<&Value>) -> Readiness {
 }
 
 /// Returns a non-current finding, or None for a currently valid result.
-fn reference_current(loaded: &Loaded, reference: &str) -> Option<Readiness> {
+fn reference_current(loaded: &Loaded, record: &Value, reference: &str) -> Option<Readiness> {
     let evidence = match crate::run::result_ref_evidence(loaded, reference) {
         Ok(Some(evidence)) => evidence,
         Ok(None) => return Some(Readiness::Stale("governed_result_missing")),
@@ -106,6 +117,17 @@ fn reference_current(loaded: &Loaded, reference: &str) -> Option<Readiness> {
     }
     match evidence.inputs_current {
         Some(true) => None,
+        Some(false)
+            if super::journey::result_ref_current_or_supported(
+                loaded,
+                record,
+                reference,
+                evidence.inputs_current,
+            )
+            .unwrap_or(false) =>
+        {
+            None
+        }
         Some(false) => Some(Readiness::Stale("governed_inputs_changed")),
         None => Some(Readiness::Unknown("governed_inputs_unverifiable")),
     }

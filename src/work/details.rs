@@ -32,8 +32,9 @@ pub(crate) fn binding(
             "assignment": next["assignment"]},
         "packet": next["packet"],
         "taskConditions": crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"] )?,
-        "goalRevision": crate::session_goal::read(&loaded.state_root)?
-            .map(|value| hash::value(&value)),
+        "goalRevision": crate::session_goal::record_for_work(loaded, work)
+            .as_ref()
+            .map(hash::value),
     })))
 }
 
@@ -111,6 +112,21 @@ pub(super) fn attach(
     let progress = crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
     next["goalProgress"] = progress.clone();
     next["goalProgress"]["usageAccount"] = crate::session_goal::usage::for_work(loaded, work);
+    match crate::session_goal::project_goal_progress_for_work(loaded, work) {
+        Ok(Some(project_progress)) => next["projectGoalProgress"] = project_progress,
+        Ok(None) => {}
+        Err(error) => {
+            // A named-contract locator is optional display metadata for Work
+            // recovery. Keep mandatory Work detail readable if it is damaged.
+            next["projectGoalProgress"] = json!({
+                "kind":"project_named_contract",
+                "state":"unavailable",
+                "reason":"named_goal_projection_unavailable",
+                "detail":error,
+                "readOnly":true,
+            });
+        }
+    }
     let view = snapshot.inspect_view();
     let subject = if next["packet"]["context"]["subject"].is_object() {
         next["packet"]["context"]["subject"].clone()
@@ -160,7 +176,7 @@ pub(super) fn attach(
         "version": 1, "work": work,
         "binding": binding,
         "goal": {"workGoalSha256": subject["goalSha256"],
-            "overallGoalId": if next["goalProgress"]["goal"].is_string() { crate::session_goal::read(&loaded.state_root)?.map(|record| hash::value(&record["goalId"])) } else { None },
+            "overallGoalId": if next["goalProgress"]["goal"].is_string() { crate::session_goal::record_for_work(loaded, work).map(|record| hash::value(&record["goalId"])) } else { None },
             "overallAvailable": next["goalProgress"]["goal"].is_string()},
         "result": {"available": subject.is_object(),
             "exists": if subject.is_object() { json!(artifact_exists && current_attempt) } else { Value::Null },

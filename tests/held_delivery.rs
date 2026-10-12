@@ -13,6 +13,7 @@ use std::{
 struct Fixture {
     root: PathBuf,
     config: PathBuf,
+    native_session: Option<(String, PathBuf)>,
 }
 
 impl Fixture {
@@ -22,11 +23,32 @@ impl Fixture {
         command
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root);
+        for name in [
+            "CODEX_THREAD_ID",
+            "CODEX_SESSION_ID",
+            "CLAUDE_CODE_SESSION_ID",
+            "EXITBIND_NATIVE_SESSION_ID",
+            "EXITBIND_SESSION_GOALS_DIR",
+        ] {
+            command.env_remove(name);
+        }
         permissive_umask(&mut command);
         let output = command.output().unwrap();
         assert!(output.status.success(), "{output:?}");
         let config = root.join("exitbind.json");
-        Self { root, config }
+        Self {
+            root,
+            config,
+            native_session: None,
+        }
+    }
+
+    fn with_native_session(mut self, identity: &str) -> Self {
+        self.native_session = Some((
+            identity.to_owned(),
+            self.root.join("test-native-session-goals"),
+        ));
+        self
     }
 
     fn call(&self, args: &[&str]) -> Output {
@@ -36,6 +58,17 @@ impl Fixture {
             .args(args)
             .arg("--config")
             .arg(&self.config);
+        command
+            .env_remove("CODEX_THREAD_ID")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("EXITBIND_SESSION_GOALS_DIR");
+        if let Some((identity, store)) = &self.native_session {
+            command
+                .env("CODEX_THREAD_ID", identity)
+                .env("EXITBIND_SESSION_GOALS_DIR", store);
+        }
         permissive_umask(&mut command);
         command.output().unwrap()
     }
@@ -60,6 +93,11 @@ impl Fixture {
                 "--config",
             ])
             .arg(&self.config)
+            .env_remove("CODEX_THREAD_ID")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("EXITBIND_SESSION_GOALS_DIR")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -317,4 +355,49 @@ fn every_current_assignment_held_result_is_discoverable() {
             .count(),
         2
     );
+}
+
+#[test]
+fn corrupt_optional_session_context_does_not_hide_held_delivery_or_change_its_ledger() {
+    let fixture = Fixture::new("held-context-isolation")
+        .with_native_session("held-context-isolation-session");
+    fixture.json(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "held-context",
+        "--goal",
+        "Optional context cannot own held results",
+        "--none-applicable",
+        "obligations,findings,blockers,decisions,externalActions",
+    ]);
+    let (work, _assignment, body, first) = fixture.refusal();
+    let reference = first["held"]["reference"].as_str().unwrap();
+    let held_path = fixture
+        .root
+        .join(".exitbind/held")
+        .join(format!("{reference}.bin"));
+    let held_before = fs::read(&held_path).unwrap();
+    let ledger_before = fs::read(fixture.ledger(&work)).unwrap();
+
+    let token = work.strip_prefix("smw_").unwrap();
+    let companion = fixture
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{token}.session-goal.json"));
+    let mut value: Value = serde_json::from_slice(&fs::read(&companion).unwrap()).unwrap();
+    value["protocol"] = serde_json::json!(99);
+    fs::write(&companion, serde_json::to_vec(&value).unwrap()).unwrap();
+
+    let detail = fixture.call(&["work", "detail", &work, "--json"]);
+    assert!(detail.status.success(), "{detail:?}");
+    let detail: Value = serde_json::from_slice(&detail.stdout).unwrap();
+    assert_eq!(detail["complete"], true);
+    assert!(detail["goalAssociation"].is_null());
+
+    let next = fixture.json(&["work", "next", &work]);
+    assert_eq!(next["next"]["held"]["reference"], reference);
+    assert_eq!(fs::read(&held_path).unwrap(), held_before);
+    assert_eq!(held_before, body);
+    assert_eq!(fs::read(fixture.ledger(&work)).unwrap(), ledger_before);
 }

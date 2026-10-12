@@ -11,10 +11,15 @@ mod work;
 use crate::{config::Loaded, evidence::hash};
 use model::*;
 use serde_json::{json, Value};
+use std::path::Path;
+
+pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};
 pub(crate) use view::{all_current, projection};
-pub(crate) use work::prepare;
+pub(crate) use work::{prepare, project_progress_for_work, write_scope_companion, ContractScope};
+
+pub(crate) use work::{checker_input, current_checker_evidence};
 
 pub(crate) fn named(record: &Value) -> bool {
     record["continuation"]["kind"] == "goal_requirements"
@@ -41,7 +46,7 @@ pub(crate) fn unresolved(record: &Value) -> bool {
         })
 }
 
-fn identity(loaded: &Loaded) -> Result<String, String> {
+pub(crate) fn identity(loaded: &Loaded) -> Result<String, String> {
     let root = loaded
         .product_root
         .canonicalize()
@@ -121,17 +126,28 @@ fn next_record(previous: &Value, goal_id: &str) -> Result<Value, String> {
     Ok(record)
 }
 
-pub(crate) fn close(loaded: &Loaded, goal_id: &str, result_ref: &str) -> Result<Value, String> {
-    super::mutate(&loaded.state_root, |previous| {
+pub(crate) fn close(
+    root: &Path,
+    loaded: &Loaded,
+    goal_id: &str,
+    result_ref: &str,
+) -> Result<Value, String> {
+    super::mutate(root, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         let goal = Goal::read(previous)?;
         if previous["goalId"] != goal_id {
             return Err("canonical goal identity does not match".into());
         }
+        super::journey::require_close_ready(loaded, root, previous)?;
         if !all_current(loaded, previous)? {
             return Err("required goal coverage is missing, failed, stale or unknown".into());
         }
         let contract = work::contract(loaded, result_ref)?;
+        if !work::scope_matches_root(loaded, result_ref, root)? {
+            return Err(
+                "integration Work's frozen named contract selects a different Goal journal".into(),
+            );
+        }
         if !contract.integration
             || contract.goal_id != goal_id
             || contract.project_identity != identity(loaded)?
@@ -169,7 +185,13 @@ pub(crate) fn close(loaded: &Loaded, goal_id: &str, result_ref: &str) -> Result<
                     if !evidence.accepted
                         || !evidence.artifact_current
                         || evidence.drift.is_some()
-                        || evidence.inputs_current != Some(true)
+                        || (evidence.inputs_current != Some(true)
+                            && !super::journey::result_ref_current_or_supported(
+                                loaded,
+                                previous,
+                                reference,
+                                evidence.inputs_current,
+                            )?)
                     {
                         return Err("additional goal result is stale or unknown".into());
                     }

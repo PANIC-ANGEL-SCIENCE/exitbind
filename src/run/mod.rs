@@ -37,6 +37,7 @@ pub(crate) use self::governor::{
     REQUEST_ID_MAX_BYTES,
 };
 pub use self::lifecycle::{next, review_policy, start, start_with_policy};
+pub(crate) use self::lifecycle::{start_event_intent_sha256, start_intent_sha256};
 use self::reducer::{
     action_drift_warning, artifact_current, extension_from_cli, fallback_provenance,
     has_worker_stage, live_inputs, nondecreasing, selected_plan,

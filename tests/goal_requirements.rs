@@ -19,6 +19,7 @@ const TERMINAL: &str = "+----------------------------+\n| This room remains noth
 
 struct Project {
     root: PathBuf,
+    native_session: Option<(String, PathBuf)>,
 }
 impl Project {
     fn new(label: &str) -> Self {
@@ -27,9 +28,34 @@ impl Project {
         init.args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .arg("--skip-skills");
+        for name in [
+            "CODEX_THREAD_ID",
+            "CODEX_SESSION_ID",
+            "CLAUDE_CODE_SESSION_ID",
+            "EXITBIND_NATIVE_SESSION_ID",
+            "EXITBIND_SESSION_GOALS_DIR",
+        ] {
+            init.env_remove(name);
+        }
         let output = support::run(&mut init);
         assert!(output.status.success(), "{output:?}");
-        Self { root }
+        Self {
+            root,
+            native_session: None,
+        }
+    }
+    fn with_native_session(mut self, identity: &str) -> Self {
+        let name = self
+            .root
+            .file_name()
+            .expect("fixture project directory name")
+            .to_string_lossy();
+        self.native_session = Some((
+            identity.to_owned(),
+            self.root
+                .with_file_name(format!("{name}-native-session-goals")),
+        ));
+        self
     }
     fn call(&self, args: &[&str], input: Option<&str>) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
@@ -39,8 +65,18 @@ impl Project {
             .arg("--config")
             .arg(self.root.join("exitbind.json"))
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_THREAD_ID")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("EXITBIND_SESSION_GOALS_DIR")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if let Some((identity, store)) = &self.native_session {
+            command
+                .env("CODEX_THREAD_ID", identity)
+                .env("EXITBIND_SESSION_GOALS_DIR", store);
+        }
         if let Some(input) = input {
             command.stdin(Stdio::piped());
             let mut child = command.spawn().unwrap();
@@ -199,6 +235,21 @@ esac
         );
         work
     }
+    fn begin_ordinary(&self, goal: &str, command: &str, extra: &[&str]) -> String {
+        let mut args = vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            goal,
+            "--check-command",
+            command,
+            "--review-policy",
+            "required",
+        ];
+        args.extend_from_slice(extra);
+        self.value(&args, None)["work"].as_str().unwrap().to_owned()
+    }
     fn return_stage(&self, work: &str, next: &Value, outcome: &str) {
         self.value(
             &[
@@ -259,6 +310,11 @@ esac
 impl Drop for Project {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.root).unwrap();
+        if let Some((_, store)) = &self.native_session {
+            if store.exists() {
+                fs::remove_dir_all(store).unwrap();
+            }
+        }
     }
 }
 fn row(status: &Value, id: &str) -> Value {
@@ -546,6 +602,237 @@ fn correction_retains_meaning_history_and_refuses_unrelated_or_old_work() {
         &["goal", "close", "--goal-id", "import", "--direct"],
         "named requirements",
     );
+}
+
+#[test]
+fn journey_integration_refreshes_only_the_frozen_accepted_member_set() {
+    let p = Project::new("journey-integration-freeze")
+        .with_native_session("journey-integration-session");
+    p.setup();
+
+    let first = p.begin("R1", "sh check.sh R1");
+    p.drive(&first, true);
+    assert_eq!(
+        p.status()["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+
+    // A later source change makes the accepted first Work historically valid
+    // but no longer current against this project's checked inputs.
+    p.file("format.txt", "|");
+    p.file("data.txt", "alpha|x\nalpha|y\nbeta|x\n");
+    let integration = p.begin_ordinary(
+        "Revalidate the accepted conversation work on current inputs",
+        "sh check.sh all",
+        &[
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--scope",
+            "integration",
+            "--journey-integration",
+        ],
+    );
+    p.drive(&integration, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &integration,
+            "--disposition",
+            "replace",
+        ],
+        None,
+    );
+    let supported = p.status()["goalProgress"]["journeyCompletion"].clone();
+    assert_eq!(
+        supported["state"], "current",
+        "journey after integration: {supported}"
+    );
+    assert_eq!(supported["members"]["total"], 1);
+    assert_eq!(supported["members"]["current"], 0);
+    assert_eq!(supported["members"]["integrationSupported"], 1);
+    assert_eq!(supported["integrationWork"], integration);
+
+    // A later ordinary side Work is new membership, so the earlier frozen
+    // integration no longer covers the complete journey.
+    let second = p.begin_ordinary(
+        "Complete a separate side task in the same conversation",
+        "true",
+        &[],
+    );
+    p.drive(&second, true);
+    let expanded = p.status()["goalProgress"]["journeyCompletion"].clone();
+    assert_eq!(expanded["state"], "blocked");
+    assert_eq!(expanded["members"]["total"], 2);
+    p.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+        ],
+        "journey",
+    );
+
+    let updated = p.begin_ordinary(
+        "Revalidate every accepted member after the side task",
+        "sh check.sh all",
+        &[
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--scope",
+            "integration",
+            "--journey-integration",
+        ],
+    );
+    p.drive(&updated, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &updated,
+            "--disposition",
+            "replace",
+        ],
+        None,
+    );
+    let current = p.status()["goalProgress"]["journeyCompletion"].clone();
+    assert_eq!(current["state"], "current");
+    assert_eq!(current["members"]["total"], 2);
+    assert_eq!(current["members"]["integrationSupported"], 1);
+    assert_eq!(current["integrationWork"], updated);
+    let closed = p.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &updated,
+        ],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["presentation"]["terminal"], TERMINAL);
+
+    // A new unaccepted member cannot be included by starting integration.
+    let pending = p.begin_ordinary("A final side task still needs acceptance", "false", &[]);
+    p.drive(&pending, false);
+    let blocked = p.status()["goalProgress"]["journeyCompletion"].clone();
+    assert_eq!(blocked["state"], "blocked");
+    let after_pending = p.status();
+    assert_eq!(after_pending["closure"]["closed"], false);
+    assert!(after_pending["presentation"]["terminal"].is_null());
+    p.reject(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "This must not invent acceptance for the pending task",
+            "--check-command",
+            "sh check.sh all",
+            "--artifact",
+            "check.sh",
+            "--journey-integration",
+            "--review-policy",
+            "required",
+        ],
+        "no terminal accepted result",
+    );
+}
+
+#[test]
+fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorporated() {
+    let p = Project::new("journey-successor-suppresses-old-room")
+        .with_native_session("journey-successor-session");
+    p.setup();
+    let work = p.begin("R1,R2,R3", "sh check.sh all");
+    p.drive(&work, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &work,
+            "--disposition",
+            "replace",
+        ],
+        None,
+    );
+    let closed = p.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &work,
+        ],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["presentation"]["terminal"], TERMINAL);
+    assert_eq!(p.status()["presentation"]["terminal"], TERMINAL);
+    let prior_next = p.value(&["work", "next", &work, "--json", "--full"], None);
+    assert_eq!(prior_next["presentation"]["terminal"], TERMINAL);
+
+    let successor = p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "successor",
+            "--goal",
+            "A later unresolved side request in the same conversation",
+            "--obligation",
+            "The later request still needs work",
+        ],
+        None,
+    );
+    assert_eq!(successor["journeyMembers"].as_array().unwrap().len(), 1);
+    assert_eq!(successor["journeyMembers"][0]["work"], work);
+    assert_eq!(successor["journeyMembers"][0]["parentGoalId"], "import");
+
+    let old_next = p.value(&["work", "next", &work, "--json", "--full"], None);
+    let old_detail = p.value(&["work", "detail", &work, "--json"], None);
+    assert!(old_next["presentation"]["terminal"].is_null());
+    assert_eq!(
+        old_next["presentation"]["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert_eq!(old_detail["goalAssociation"]["kind"], "context_only");
+    assert_eq!(
+        old_detail["sections"]["tasks"]["goal"],
+        "Import names safely and show a count"
+    );
+    assert_eq!(old_detail["sections"]["tasks"]["overall"], "in_progress");
+    assert_eq!(p.status()["goalId"], "successor");
+    assert!(p.status()["presentation"]["terminal"].is_null());
 }
 
 #[test]

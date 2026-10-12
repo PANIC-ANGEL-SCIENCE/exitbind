@@ -7,14 +7,17 @@ use std::path::Path;
 pub(crate) mod association;
 mod closure;
 mod continuity;
+pub(crate) mod journey;
+pub(crate) mod native;
 pub(crate) mod requirements;
 pub(crate) use closure::{close, close_direct};
 mod current;
 mod presentation;
 mod progress;
 pub(crate) use presentation::{
-    presentation, presentation_for_loaded, progress_detail_for_work, progress_for_loaded,
-    progress_for_work, terminal_for_work,
+    context_summary, presentation, presentation_for_loaded, progress_detail_for_work,
+    progress_for_loaded, progress_for_work, project_goal_progress_for_work, record_for_work,
+    terminal_for_work,
 };
 pub(crate) mod usage;
 pub(crate) use continuity::{
@@ -123,6 +126,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
         ));
     }
     association::validate_record(value, line)?;
+    journey::validate_record(value, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -193,6 +197,7 @@ fn history_ledger(root: &Path) -> Result<crate::run::ledger::LedgerPath, String>
 pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     if let Some(previous) = previous {
         association::preserve_same_goal(previous, &mut value);
+        journey::preserve_same_goal(previous, &mut value);
     }
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())
@@ -426,7 +431,8 @@ fn external_item(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn incorporate(
-    loaded: &crate::config::Loaded,
+    root: &Path,
+    _loaded: &crate::config::Loaded,
     goal_id: &str,
     goal: &str,
     obligation: Option<&str>,
@@ -439,6 +445,7 @@ pub(crate) fn incorporate(
     result_ref: Option<&str>,
     considered: Option<&str>,
     none_applicable: Option<&str>,
+    native_session: bool,
 ) -> Result<Value, String> {
     let goal_id = text(Some(goal_id), "goal-id")?;
     let goal = text(Some(goal), "goal")?;
@@ -451,7 +458,7 @@ pub(crate) fn incorporate(
         return Err("a category cannot be both considered and none-applicable".into());
     }
     let refs = result_refs(result_ref)?;
-    mutate(&loaded.state_root, |previous| {
+    mutate(root, |previous| {
         let revision = previous
             .and_then(|value| value["revision"].as_u64())
             .unwrap_or(0)
@@ -545,27 +552,26 @@ pub(crate) fn incorporate(
         let successor_of = previous
             .filter(|value| value["goalId"] != goal_id)
             .map(|value| json!({"goalId": value["goalId"], "revision": value["revision"]}));
-        Ok(sealed(
-            json!({
-                "kind": "lead_session_goal",
-                "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
-                "goalId": goal_id,
-                "revision": revision,
-                "goal": goal,
-                "source": {"owner": "lead", "kind": "explicit_incorporation"},
-                "predecessor": predecessor,
-                "successorOf": successor_of,
-                "obligations": obligations,
-                "findings": findings,
-                "blockers": blockers,
-                "decisions": decisions,
-                "externalActions": external_actions,
-                "categories": category_state,
-                "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
-                "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
-            }),
-            previous,
-        ))
+        let mut next = json!({
+            "kind": "lead_session_goal",
+            "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
+            "goalId": goal_id,
+            "revision": revision,
+            "goal": goal,
+            "source": {"owner": "lead", "kind": "explicit_incorporation"},
+            "predecessor": predecessor,
+            "successorOf": successor_of,
+            "obligations": obligations,
+            "findings": findings,
+            "blockers": blockers,
+            "decisions": decisions,
+            "externalActions": external_actions,
+            "categories": category_state,
+            "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
+            "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
+        });
+        journey::transition(previous, &mut next, native_session)?;
+        Ok(sealed(next, previous))
     })
 }
 
@@ -573,12 +579,14 @@ pub(crate) fn incorporate(
 /// separate from governed result references: the claim is bound to the
 /// current product inputs and goal revision, but it is not check evidence.
 pub(crate) fn direct_complete(
+    root: &Path,
     loaded: &crate::config::Loaded,
     goal_id: &str,
     goal: &str,
     category: &str,
     item: &str,
     external_scope: Option<&str>,
+    native_session: bool,
 ) -> Result<Value, String> {
     let goal_id = text(Some(goal_id), "goal-id")?;
     let goal = text(Some(goal), "goal")?;
@@ -586,7 +594,7 @@ pub(crate) fn direct_complete(
     if !CATEGORIES.contains(&category) {
         return Err(format!("unknown session-goal category '{category}'"));
     }
-    mutate(&loaded.state_root, |previous| {
+    mutate(root, |previous| {
         let revision = previous
             .and_then(|value| value["revision"].as_u64())
             .unwrap_or(0)
@@ -653,27 +661,26 @@ pub(crate) fn direct_complete(
         let successor_of = previous
             .filter(|value| value["goalId"] != goal_id)
             .map(|value| json!({"goalId": value["goalId"], "revision": value["revision"]}));
-        Ok(sealed(
-            json!({
-                "kind": "lead_session_goal",
-                "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
-                "goalId": goal_id,
-                "revision": revision,
-                "goal": goal,
-                "source": {"owner": "lead", "kind": "explicit_direct_completion"},
-                "predecessor": predecessor,
-                "successorOf": successor_of,
-                "obligations": obligations,
-                "findings": findings,
-                "blockers": blockers,
-                "decisions": decisions,
-                "externalActions": external_actions,
-                "categories": category_state,
-                "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
-                "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
-            }),
-            previous,
-        ))
+        let mut next = json!({
+            "kind": "lead_session_goal",
+            "version": if previous.is_some_and(|record| record["goalId"] == goal_id && !record["continuation"].is_null()) { 3 } else { 2 },
+            "goalId": goal_id,
+            "revision": revision,
+            "goal": goal,
+            "source": {"owner": "lead", "kind": "explicit_direct_completion"},
+            "predecessor": predecessor,
+            "successorOf": successor_of,
+            "obligations": obligations,
+            "findings": findings,
+            "blockers": blockers,
+            "decisions": decisions,
+            "externalActions": external_actions,
+            "categories": category_state,
+            "closure": {"closed": false, "revision": Value::Null, "resultRefs": []},
+            "continuation": previous.filter(|record| record["goalId"] == goal_id).map_or(Value::Null, |record| record["continuation"].clone()),
+        });
+        journey::transition(previous, &mut next, native_session)?;
+        Ok(sealed(next, previous))
     })
 }
 

@@ -1,8 +1,10 @@
 //! Revisioned intake, explicit coverage and idempotent Work mapping.
 
 use super::*;
+use std::path::Path;
 
 pub(crate) fn require(
+    root: &Path,
     loaded: &Loaded,
     goal_id: &str,
     id: &str,
@@ -19,7 +21,7 @@ pub(crate) fn require(
         return Err("requirement must be an exact excerpt of the approved source file".into());
     }
     let project = identity(loaded)?;
-    super::super::mutate(&loaded.state_root, |previous| {
+    super::super::mutate(root, |previous| {
         let previous =
             previous.ok_or("incorporate the agreed goal before adding named requirements")?;
         if previous["goalId"] != goal_id {
@@ -80,8 +82,8 @@ pub(crate) fn require(
     })
 }
 
-pub(crate) fn cover(loaded: &Loaded, goal_id: &str) -> Result<Value, String> {
-    super::super::mutate(&loaded.state_root, |previous| {
+pub(crate) fn cover(root: &Path, loaded: &Loaded, goal_id: &str) -> Result<Value, String> {
+    super::super::mutate(root, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         if previous["goalId"] != goal_id {
             return Err("canonical goal identity does not match".into());
@@ -103,6 +105,7 @@ pub(crate) fn cover(loaded: &Loaded, goal_id: &str) -> Result<Value, String> {
 /// Add contributors, or explicitly replace the selected requirements' active
 /// contributors. Retired mappings stay in history; requirements never shrink.
 pub(crate) fn assign(
+    root: &Path,
     loaded: &Loaded,
     goal_id: &str,
     ids: &str,
@@ -110,13 +113,16 @@ pub(crate) fn assign(
     replace: bool,
 ) -> Result<Value, String> {
     let contract = work::contract(loaded, work_id)?;
+    if !work::scope_matches_root(loaded, work_id, root)? {
+        return Err("Work's frozen named contract selects a different Goal journal".into());
+    }
     let ledger = crate::work::resolve(loaded, work_id)?;
     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
     let start = events.first().ok_or("Work has no start event")?["eventSha256"]
         .as_str()
         .ok_or("Work start identity is missing")?
         .to_owned();
-    super::super::mutate(&loaded.state_root, |previous| {
+    super::super::mutate(root, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         if previous["goalId"] != goal_id || contract.goal_id != goal_id {
             return Err("Work belongs to a different goal".into());
