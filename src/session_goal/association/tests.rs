@@ -155,10 +155,22 @@ fn capacity_member(
         "ownerProjectId": owner.project_id,
         "projectIdentitySha256": super::super::requirements::identity(loaded).unwrap(),
         "localIdentitySha256": owner.identity_sha256,
-        "configPath": std::fs::canonicalize(&loaded.path).unwrap().to_string_lossy(),
+        "configPath": std::fs::canonicalize(&loaded.path)
+            .unwrap()
+            .to_str()
+            .expect("canonical configuration path is UTF-8")
+            .to_owned(),
         "configSha256": crate::evidence::hash::text(&loaded.source),
-        "productRoot": std::fs::canonicalize(&loaded.product_root).unwrap().to_string_lossy(),
-        "stateRoot": std::fs::canonicalize(&loaded.state_root).unwrap().to_string_lossy(),
+        "productRoot": std::fs::canonicalize(&loaded.product_root)
+            .unwrap()
+            .to_str()
+            .expect("canonical product root is UTF-8")
+            .to_owned(),
+        "stateRoot": std::fs::canonicalize(&loaded.state_root)
+            .unwrap()
+            .to_str()
+            .expect("canonical state root is UTF-8")
+            .to_owned(),
     })
 }
 
@@ -182,10 +194,22 @@ fn capacity_admission(
         "ownerProjectId": owner.project_id,
         "projectIdentitySha256": super::super::requirements::identity(loaded).unwrap(),
         "localIdentitySha256": owner.identity_sha256,
-        "configPath": std::fs::canonicalize(&loaded.path).unwrap().to_string_lossy(),
+        "configPath": std::fs::canonicalize(&loaded.path)
+            .unwrap()
+            .to_str()
+            .expect("canonical configuration path is UTF-8")
+            .to_owned(),
         "configSha256": crate::evidence::hash::text(&loaded.source),
-        "productRoot": std::fs::canonicalize(&loaded.product_root).unwrap().to_string_lossy(),
-        "stateRoot": std::fs::canonicalize(&loaded.state_root).unwrap().to_string_lossy(),
+        "productRoot": std::fs::canonicalize(&loaded.product_root)
+            .unwrap()
+            .to_str()
+            .expect("canonical product root is UTF-8")
+            .to_owned(),
+        "stateRoot": std::fs::canonicalize(&loaded.state_root)
+            .unwrap()
+            .to_str()
+            .expect("canonical state root is UTF-8")
+            .to_owned(),
     })
 }
 
