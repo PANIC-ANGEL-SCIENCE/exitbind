@@ -126,6 +126,25 @@ pub(super) fn marker(prefix: &str, value: &impl Serialize) -> Result<String, Str
     Ok(marker)
 }
 
+fn reject_reserved_constraints(basis: &Value) -> Result<(), String> {
+    let constraints = basis["constraints"]
+        .as_array()
+        .ok_or("basis constraints are malformed")?;
+    if constraints.iter().any(|item| {
+        item.as_str()
+            .is_some_and(|text| text.starts_with(RESERVED_PREFIX))
+    }) {
+        return Err("journey integration scope must be selected through --journey-integration, not an injected basis marker".into());
+    }
+    Ok(())
+}
+
+/// Refuse caller-controlled journey markers at the shared Work-start boundary.
+pub(crate) fn reject_unprepared_markers(basis_text: &str) -> Result<(), String> {
+    let basis = crate::kernel::basis::parse_basis_text(basis_text, "basis")?.value();
+    reject_reserved_constraints(&basis)
+}
+
 fn parse_contract(start: &Value) -> Result<Option<Contract>, String> {
     let Some(basis) = start.get("basis") else {
         return Ok(None);
@@ -222,6 +241,9 @@ pub(crate) fn prepare(
     checker: &str,
     command: &str,
 ) -> Result<Prepared, String> {
+    if let Some(basis) = supplied_basis {
+        reject_unprepared_markers(basis)?;
+    }
     let (scope, session, owner) = current_scope(loaded)?;
     let record =
         super::super::read(&scope.root)?.ok_or("no native session Goal is incorporated")?;
@@ -284,12 +306,6 @@ pub(crate) fn prepare(
     let constraints = basis["constraints"]
         .as_array_mut()
         .ok_or("basis constraints are malformed")?;
-    if constraints.iter().any(|item| {
-        item.as_str()
-            .is_some_and(|text| text.starts_with(RESERVED_PREFIX))
-    }) {
-        return Err("journey integration scope must be selected through --journey-integration, not an injected basis marker".into());
-    }
     constraints.extend(
         member_contract_marker(&contract)?
             .into_iter()

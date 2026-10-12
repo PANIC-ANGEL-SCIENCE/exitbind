@@ -140,7 +140,13 @@ pub(super) struct JourneyState {
 }
 
 pub(crate) struct Prepared {
-    pub(crate) basis: String,
+    basis: String,
+}
+
+impl Prepared {
+    pub(crate) fn basis(&self) -> &str {
+        &self.basis
+    }
 }
 
 #[derive(Debug)]
@@ -339,7 +345,13 @@ fn validate_admission(value: &Admission) -> Result<(), String> {
 }
 
 pub(crate) fn ensure_member_capacity(record: &Value) -> Result<(), String> {
-    if state(record)?.is_some_and(|journey| journey.members.len() >= MAX_MEMBERS) {
+    if state(record)?.is_some_and(|journey| {
+        journey
+            .members
+            .len()
+            .saturating_add(journey.admissions.len())
+            >= MAX_MEMBERS
+    }) {
         return Err("native journey Work bound reached; no Work was started".into());
     }
     Ok(())
@@ -602,7 +614,7 @@ use integration::{
 #[path = "journey/tests.rs"]
 mod tests;
 
-pub(crate) use integration::{append_work, prepare};
+pub(crate) use integration::{append_work, prepare, reject_unprepared_markers};
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{

@@ -1,5 +1,43 @@
 use serde_json::json;
 
+fn basis_text(constraints: Vec<String>) -> String {
+    json!({
+        "version": 1,
+        "constraints": constraints,
+        "openZones": ["fixture zone"],
+        "decisiveCases": ["fixture case"],
+    })
+    .to_string()
+}
+
+#[test]
+fn caller_reserved_marker_variants_are_refused_but_ordinary_basis_is_valid() {
+    let header = format!("{}v1.header:{{}}", super::RESERVED_PREFIX);
+    let member = format!("{}v1.member:{{}}", super::RESERVED_PREFIX);
+    let cases = [
+        vec![header.clone()],
+        vec![member],
+        vec![header.clone(), header.clone()],
+        vec![format!("{}v1.header:{{", super::RESERVED_PREFIX)],
+        vec![format!(
+            "{}v1.header:{}",
+            super::RESERVED_PREFIX,
+            "x".repeat(super::MAX_MARKER_BYTES)
+        )],
+        vec![format!("{}v9.future:{{}}", super::RESERVED_PREFIX)],
+    ];
+    for constraints in cases {
+        assert!(
+            super::reject_unprepared_markers(&basis_text(constraints)).is_err(),
+            "caller-controlled reserved marker must be rejected"
+        );
+    }
+    assert!(super::reject_unprepared_markers(&basis_text(vec![
+        "ordinary review constraint".to_owned()
+    ]))
+    .is_ok());
+}
+
 #[test]
 fn journey_protocol_refuses_unknown_fields_and_preserves_empty_native_extension() {
     let record =

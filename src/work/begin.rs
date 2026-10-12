@@ -12,12 +12,28 @@ pub(crate) struct BeginOptions<'a> {
     pub(crate) preserve_requirement: Option<&'a str>,
     pub(crate) preservation_check_command: Option<&'a str>,
     pub(crate) preservation_proof_origin: Option<&'a str>,
-    pub(crate) basis: Option<&'a str>,
+    pub(crate) basis: BasisOrigin<'a>,
     pub(crate) review_policy: Option<&'a str>,
     pub(crate) auto_goal_context: bool,
 }
 
+/// Distinguishes caller-controlled text from the opaque basis produced by the
+/// explicit native journey integration preparation path.
+pub(crate) enum BasisOrigin<'a> {
+    Caller(Option<&'a str>),
+    PreparedJourney(crate::session_goal::journey::Prepared),
+}
+
 pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value, String> {
+    let basis = match &options.basis {
+        BasisOrigin::Caller(basis) => {
+            if let Some(basis) = basis {
+                crate::session_goal::journey::reject_unprepared_markers(basis)?;
+            }
+            *basis
+        }
+        BasisOrigin::PreparedJourney(prepared) => Some(prepared.basis()),
+    };
     // `work begin` is the governed activation boundary. Direct, harmless work
     // never enters this path. Availability is read from the loaded project
     // preconditions before any ledger mutation; the final boolean means those
@@ -75,7 +91,7 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
             options.preserve_requirement,
             options.preservation_check_command,
             options.preservation_proof_origin,
-            options.basis,
+            basis,
             options.review_policy,
         )?;
         let scope = goal_scope
@@ -102,7 +118,7 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         options.preserve_requirement,
         options.preservation_check_command,
         options.preservation_proof_origin,
-        options.basis,
+        basis,
         options.review_policy,
     ) {
         if goal_candidate.is_some() {
@@ -126,4 +142,126 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         Err(error) => focus::recovery(loaded, &work, &error),
     };
     Ok(json!({"work": work, "next": next, "focus": focus}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::{fs, path::PathBuf};
+
+    struct RemoveProjectOnDrop(PathBuf);
+
+    impl Drop for RemoveProjectOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn caller_basis_cannot_inject_native_journey_markers_at_common_begin_boundary() {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-work-begin-basis-origin-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).expect("create private test project root");
+        let _cleanup = RemoveProjectOnDrop(root.clone());
+        let config_path = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().expect("UTF-8 test project path"),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .expect("initialize isolated fixture project");
+        let loaded = crate::config::load(Some(
+            config_path.to_str().expect("UTF-8 fixture config path"),
+        ))
+        .expect("load isolated fixture project");
+        let basis = json!({
+            "version": 1,
+            "constraints": ["exitbind.session-journey-integration.v1.header:{}"],
+            "openZones": ["fixture zone"],
+            "decisiveCases": ["fixture case"]
+        })
+        .to_string();
+
+        let result = begin(
+            &loaded,
+            BeginOptions {
+                workflow: "change",
+                goal: "reject an injected journey marker",
+                check_command: "true",
+                boundary: None,
+                harness_receipt: None,
+                proof_origin: None,
+                preserve_requirement: None,
+                preservation_check_command: None,
+                preservation_proof_origin: None,
+                basis: BasisOrigin::Caller(Some(&basis)),
+                review_policy: Some("required"),
+                auto_goal_context: false,
+            },
+        );
+        assert!(result
+            .unwrap_err()
+            .contains("journey integration scope must be selected through --journey-integration"));
+        let runs = loaded
+            .state_root
+            .join(crate::project::layout_types::state_namespace())
+            .join("runs");
+        assert_eq!(
+            fs::read_dir(runs).expect("read Work run directory").count(),
+            0,
+            "caller-controlled reserved markers must be rejected before any Work start"
+        );
+
+        let ordinary_basis = json!({
+            "version": 1,
+            "constraints": ["Preserve the ordinary caller review constraint."],
+            "openZones": ["fixture zone"],
+            "decisiveCases": ["fixture case"]
+        })
+        .to_string();
+        let started = begin(
+            &loaded,
+            BeginOptions {
+                workflow: "change",
+                goal: "accept an ordinary nonreserved basis",
+                check_command: "true",
+                boundary: None,
+                harness_receipt: None,
+                proof_origin: None,
+                preserve_requirement: None,
+                preservation_check_command: None,
+                preservation_proof_origin: None,
+                basis: BasisOrigin::Caller(Some(&ordinary_basis)),
+                review_policy: Some("required"),
+                auto_goal_context: false,
+            },
+        )
+        .expect("ordinary caller basis remains supported");
+        let work = started["work"].as_str().expect("ordinary Work handle");
+        let ledger = loaded
+            .state_root
+            .join(crate::work::resolve(&loaded, work).expect("resolve ordinary Work ledger"));
+        let start: serde_json::Value = serde_json::from_str(
+            fs::read_to_string(ledger)
+                .expect("read ordinary Work ledger")
+                .lines()
+                .next()
+                .expect("ordinary Work start event"),
+        )
+        .expect("parse ordinary Work start event");
+        assert_eq!(
+            start["basis"]["constraints"][0], "Preserve the ordinary caller review constraint.",
+            "nonreserved caller basis must still reach the immutable Work start"
+        );
+    }
 }

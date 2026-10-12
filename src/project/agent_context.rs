@@ -523,7 +523,7 @@ mod tests {
                 preserve_requirement: None,
                 preservation_check_command: None,
                 preservation_proof_origin: None,
-                basis: None,
+                basis: crate::work::BasisOrigin::Caller(None),
                 review_policy: None,
                 auto_goal_context: false,
             },

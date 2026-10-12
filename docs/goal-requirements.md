@@ -62,6 +62,13 @@ current journey integration. A context-only link does not satisfy a named
 requirement, create a mapping, or import another project's acceptance. Named
 requirement coverage remains explicit and project-bound.
 
+The `exitbind.session-journey-integration.*` basis constraints are reserved for
+the explicit `--journey-integration` path. Do not copy or author these markers
+in `--basis`; Exitbind rejects caller-supplied reserved markers before starting
+the Work or recording its admission. Pending admissions reserve slots within
+the existing 32-member journey bound, so a Work is not started when no member
+slot remains.
+
 If a begin reply reports an unresolved native admission, inspect Goal status and
 the exact Work detail. Run `work link-session WORK` only after the actual Work
 start exists. This recovery verifies the current host-reported session, fixed

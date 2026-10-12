@@ -91,6 +91,7 @@ pub(crate) fn admit(
         }
         entries(previous)?;
         super::super::journey::ensure_admission_capacity(previous)?;
+        super::super::journey::ensure_member_capacity(previous)?;
         let revision = previous["revision"]
             .as_u64()
             .ok_or("canonical Goal revision is missing")?

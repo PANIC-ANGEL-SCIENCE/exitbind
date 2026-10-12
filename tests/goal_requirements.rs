@@ -34,6 +34,8 @@ impl Project {
             "CLAUDE_CODE_SESSION_ID",
             "EXITBIND_NATIVE_SESSION_ID",
             "EXITBIND_SESSION_GOALS_DIR",
+            "CLAUDE_ENV_FILE",
+            "XDG_STATE_HOME",
         ] {
             init.env_remove(name);
         }
@@ -73,6 +75,8 @@ impl Project {
             .env_remove("CLAUDE_CODE_SESSION_ID")
             .env_remove("EXITBIND_NATIVE_SESSION_ID")
             .env_remove("EXITBIND_SESSION_GOALS_DIR")
+            .env_remove("CLAUDE_ENV_FILE")
+            .env_remove("XDG_STATE_HOME")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if let Some((identity, store)) = &self.native_session {
@@ -120,6 +124,57 @@ impl Project {
     }
     fn file(&self, name: &str, contents: &str) {
         fs::write(self.root.join(name), contents).unwrap();
+    }
+    fn run_entries(&self) -> Vec<String> {
+        let mut entries = fs::read_dir(self.root.join(".exitbind/runs"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        entries.sort();
+        entries
+    }
+    fn goal_journal(&self) -> Option<Vec<u8>> {
+        fs::read(self.root.join(".exitbind/session-goal.jsonl")).ok()
+    }
+    fn native_goal_journal(&self) -> Option<Vec<u8>> {
+        self.native_session
+            .as_ref()
+            .and_then(|(_, store)| fs::read(store.join(".exitbind/session-goal.jsonl")).ok())
+    }
+    fn start_basis(&self, work: &str) -> String {
+        let token = work.strip_prefix("smw_").expect("Work handle prefix");
+        let ledger =
+            fs::read_to_string(self.root.join(format!(".exitbind/runs/work-{token}.jsonl")))
+                .expect("read actual Work ledger");
+        let start: Value = serde_json::from_str(ledger.lines().next().expect("Work start line"))
+            .expect("parse immutable Work start");
+        serde_json::to_string(&start["basis"]).expect("serialize exact recorded basis")
+    }
+    fn assert_marker_refusal_without_effects(&self, args: &[&str]) {
+        let runs = self.run_entries();
+        let project_goal = self.goal_journal();
+        let native_goal = self.native_goal_journal();
+        let output = self.call(args, None);
+        assert!(!output.status.success(), "{args:?} unexpectedly succeeded");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(
+                "journey integration scope must be selected through --journey-integration"
+            ) || String::from_utf8_lossy(&output.stdout).contains(
+                "journey integration scope must be selected through --journey-integration"
+            ),
+            "{output:?}"
+        );
+        assert_eq!(self.run_entries(), runs, "refusal must precede Work start");
+        assert_eq!(
+            self.goal_journal(),
+            project_goal,
+            "refusal must not mutate project Goal"
+        );
+        assert_eq!(
+            self.native_goal_journal(),
+            native_goal,
+            "refusal must precede native admission"
+        );
     }
     fn setup(&self) {
         self.file(
@@ -1006,6 +1061,175 @@ fn journey_integration_refreshes_only_the_frozen_accepted_member_set() {
         ],
         "no terminal accepted result",
     );
+}
+
+#[test]
+fn copied_journey_basis_markers_are_rejected_before_any_work_or_goal_mutation() {
+    let p = Project::new("journey-marker-origin-boundary")
+        .with_native_session("journey-marker-origin-session");
+    p.file(
+        "request.txt",
+        "R1: reject invalid input before persistence.\n",
+    );
+    p.file("check.sh", "set -eu\nexit 0\n");
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Validate input safely",
+            "--none-applicable",
+            "findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    p.value(
+        &[
+            "goal",
+            "require",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--obligation",
+            "R1: reject invalid input before persistence.",
+            "--artifact",
+            "request.txt",
+        ],
+        None,
+    );
+    p.value(&["goal", "cover", "--goal-id", "import"], None);
+
+    let first = p.begin_ordinary("Accepted main conversation task", "sh check.sh", &[]);
+    p.drive(&first, true);
+    let integration = p.begin_ordinary(
+        "Create a legitimate frozen journey integration basis",
+        "sh check.sh",
+        &["--artifact", "check.sh", "--journey-integration"],
+    );
+    let basis = p.start_basis(&integration);
+    let parsed_basis: Value = serde_json::from_str(&basis).unwrap();
+    let constraints = parsed_basis["constraints"].as_array().unwrap();
+    assert!(constraints.iter().any(|item| item
+        .as_str()
+        .is_some_and(|value| { value.starts_with("exitbind.session-journey-integration.") })));
+    assert!(constraints.iter().all(|item| !item
+        .as_str()
+        .is_some_and(|value| value.starts_with("exitbind.goal-support.v1:"))));
+
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            "legacy",
+            "--goal",
+            "Project-local named contract",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    p.value(
+        &[
+            "goal",
+            "require",
+            "--project",
+            "--goal-id",
+            "legacy",
+            "--requirement",
+            "P1",
+            "--obligation",
+            "R1: reject invalid input before persistence.",
+            "--artifact",
+            "request.txt",
+        ],
+        None,
+    );
+    p.value(&["goal", "cover", "--project", "--goal-id", "legacy"], None);
+
+    let ordinary = [
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Reject a copied reserved marker",
+        "--check-command",
+        "true",
+        "--review-policy",
+        "required",
+        "--basis",
+        basis.as_str(),
+    ];
+    p.assert_marker_refusal_without_effects(&ordinary);
+
+    let standalone = [
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Reject a copied reserved marker",
+        "--check-command",
+        "true",
+        "--review-policy",
+        "required",
+        "--standalone",
+        "--basis",
+        basis.as_str(),
+    ];
+    p.assert_marker_refusal_without_effects(&standalone);
+
+    let native_named = [
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Reject a copied reserved marker",
+        "--goal-id",
+        "import",
+        "--requirement",
+        "R1",
+        "--artifact",
+        "check.sh",
+        "--check-command",
+        "sh check.sh R1",
+        "--review-policy",
+        "required",
+        "--basis",
+        basis.as_str(),
+    ];
+    p.assert_marker_refusal_without_effects(&native_named);
+
+    let project_named = [
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Reject a copied reserved marker",
+        "--goal-id",
+        "legacy",
+        "--requirement",
+        "P1",
+        "--artifact",
+        "check.sh",
+        "--check-command",
+        "sh check.sh R1",
+        "--review-policy",
+        "required",
+        "--project-goal",
+        "--basis",
+        basis.as_str(),
+    ];
+    p.assert_marker_refusal_without_effects(&project_named);
+
+    let no_identity = Project::new("journey-marker-no-native-identity");
+    no_identity.assert_marker_refusal_without_effects(&ordinary);
+    let native_without_goal = Project::new("journey-marker-native-without-goal")
+        .with_native_session("journey-marker-native-without-goal-session");
+    native_without_goal.assert_marker_refusal_without_effects(&ordinary);
 }
 
 #[test]

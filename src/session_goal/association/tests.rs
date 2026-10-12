@@ -1,5 +1,42 @@
 use serde_json::{json, Value};
-use std::fs;
+use std::{env, ffi::OsString, fs};
+
+struct NativeEnvironmentGuard(Vec<(&'static str, Option<OsString>)>);
+
+impl NativeEnvironmentGuard {
+    fn codex(identity: &str, store: &std::path::Path) -> Self {
+        let names = [
+            "CODEX_THREAD_ID",
+            "CODEX_SESSION_ID",
+            "CLAUDE_CODE_SESSION_ID",
+            "EXITBIND_NATIVE_SESSION_ID",
+            "EXITBIND_SESSION_GOALS_DIR",
+            "CLAUDE_ENV_FILE",
+            "XDG_STATE_HOME",
+        ];
+        let saved = names
+            .iter()
+            .map(|name| (*name, env::var_os(name)))
+            .collect::<Vec<_>>();
+        for name in names {
+            env::remove_var(name);
+        }
+        env::set_var("CODEX_THREAD_ID", identity);
+        env::set_var("EXITBIND_SESSION_GOALS_DIR", store);
+        Self(saved)
+    }
+}
+
+impl Drop for NativeEnvironmentGuard {
+    fn drop(&mut self) {
+        for (name, value) in self.0.drain(..) {
+            match value {
+                Some(value) => env::set_var(name, value),
+                None => env::remove_var(name),
+            }
+        }
+    }
+}
 
 fn goal(goal_id: &str, revision: u64) -> Value {
     json!({
@@ -16,6 +53,299 @@ fn goal(goal_id: &str, revision: u64) -> Value {
 
 fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     super::super::sealed(value.take(), previous)
+}
+
+fn capacity_fixture(
+    sequence: u64,
+) -> (
+    std::path::PathBuf,
+    crate::config::Loaded,
+    std::path::PathBuf,
+    super::super::native::Session,
+    super::super::native::Owner,
+    Value,
+    String,
+    std::path::PathBuf,
+) {
+    let project_root = std::env::temp_dir().join(format!(
+        "exitbind-session-capacity-{}-{sequence}",
+        std::process::id()
+    ));
+    fs::create_dir(&project_root).expect("create private test project root");
+    let config_path =
+        crate::project::onboarding::init_with_options(crate::project::onboarding::InitOptions {
+            product_root: project_root.to_str().expect("UTF-8 test project path"),
+            coffee: false,
+            skip_skills: true,
+            mode: Some("portable"),
+            project_id: None,
+            control_root: None,
+            state_root: None,
+        })
+        .expect("initialize isolated fixture project");
+    let loaded = crate::config::load(Some(
+        config_path.to_str().expect("UTF-8 fixture config path"),
+    ))
+    .expect("load isolated fixture project");
+    let identity = format!("capacity-session-{sequence}");
+    let session_store = project_root.join("native-session-store");
+    crate::project::portability::create_private_directory(&session_store)
+        .expect("create isolated private native session store");
+    let _environment = NativeEnvironmentGuard::codex(&identity, &session_store);
+    let scope = super::super::native::scope(&loaded, true)
+        .expect("resolve and own isolated native session");
+    let session = scope.session.expect("fixture native session");
+    let owner = scope.owner.expect("fixture native owner");
+    let session_root = session.root.clone();
+    let goal = super::super::incorporate(
+        &session_root,
+        &loaded,
+        "main",
+        "Complete the conversation journey",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some("obligations,findings,blockers,decisions,externalActions"),
+        true,
+    )
+    .expect("incorporate native session Goal");
+    (
+        project_root,
+        loaded,
+        session_root,
+        session,
+        owner,
+        goal,
+        identity,
+        session_store,
+    )
+}
+
+struct RemoveProjectOnDrop(std::path::PathBuf);
+
+impl Drop for RemoveProjectOnDrop {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn capacity_member(
+    index: usize,
+    loaded: &crate::config::Loaded,
+    session: &super::super::native::Session,
+    owner: &super::super::native::Owner,
+    parent_goal_id: &str,
+    parent_event_sha256: &str,
+) -> Value {
+    json!({
+        "work": format!("smw_{index:064x}"),
+        "startEventSha256": "a".repeat(64),
+        "parentGoalId": parent_goal_id,
+        "parentObservedGoalEventSha256": parent_event_sha256,
+        "workGoalSha256": "b".repeat(64),
+        "host": session.host,
+        "sessionKey": session.key,
+        "ownerIdentitySha256": owner.identity_sha256,
+        "ownerProjectId": owner.project_id,
+        "projectIdentitySha256": super::super::requirements::identity(loaded).unwrap(),
+        "localIdentitySha256": owner.identity_sha256,
+        "configPath": std::fs::canonicalize(&loaded.path).unwrap().to_string_lossy(),
+        "configSha256": crate::evidence::hash::text(&loaded.source),
+        "productRoot": std::fs::canonicalize(&loaded.product_root).unwrap().to_string_lossy(),
+        "stateRoot": std::fs::canonicalize(&loaded.state_root).unwrap().to_string_lossy(),
+    })
+}
+
+fn capacity_admission(
+    index: usize,
+    loaded: &crate::config::Loaded,
+    session: &super::super::native::Session,
+    owner: &super::super::native::Owner,
+    parent_goal_id: &str,
+    parent_event_sha256: &str,
+) -> Value {
+    json!({
+        "work": format!("smw_{index:064x}"),
+        "startIntentSha256": "c".repeat(64),
+        "parentGoalId": parent_goal_id,
+        "parentObservedGoalEventSha256": parent_event_sha256,
+        "workGoalSha256": "d".repeat(64),
+        "host": session.host,
+        "sessionKey": session.key,
+        "ownerIdentitySha256": owner.identity_sha256,
+        "ownerProjectId": owner.project_id,
+        "projectIdentitySha256": super::super::requirements::identity(loaded).unwrap(),
+        "localIdentitySha256": owner.identity_sha256,
+        "configPath": std::fs::canonicalize(&loaded.path).unwrap().to_string_lossy(),
+        "configSha256": crate::evidence::hash::text(&loaded.source),
+        "productRoot": std::fs::canonicalize(&loaded.product_root).unwrap().to_string_lossy(),
+        "stateRoot": std::fs::canonicalize(&loaded.state_root).unwrap().to_string_lossy(),
+    })
+}
+
+fn install_capacity_state(
+    root: &std::path::Path,
+    loaded: &crate::config::Loaded,
+    session: &super::super::native::Session,
+    owner: &super::super::native::Owner,
+    members: usize,
+    admissions: usize,
+) -> Value {
+    super::super::mutate(root, |previous| {
+        let previous = previous.ok_or("canonical Goal is missing")?;
+        let parent_goal_id = previous["goalId"].as_str().ok_or("Goal id is missing")?;
+        let parent_event_sha256 = previous["eventSha256"]
+            .as_str()
+            .ok_or("Goal event identity is missing")?;
+        let mut next = previous.clone();
+        next["journeyMembershipProtocol"] = json!(2);
+        next["journeyMembers"] = json!((0..members)
+            .map(|index| capacity_member(
+                index,
+                loaded,
+                session,
+                owner,
+                parent_goal_id,
+                parent_event_sha256
+            ))
+            .collect::<Vec<_>>());
+        next["journeyIntegrations"] = json!([]);
+        next["journeyAdmissions"] = json!((members..members + admissions)
+            .map(|index| capacity_admission(
+                index,
+                loaded,
+                session,
+                owner,
+                parent_goal_id,
+                parent_event_sha256
+            ))
+            .collect::<Vec<_>>());
+        let revision = previous["revision"]
+            .as_u64()
+            .ok_or("Goal revision is missing")?;
+        next.as_object_mut()
+            .ok_or("Goal record is malformed")?
+            .remove("eventSha256");
+        next["revision"] = json!(revision + 1);
+        next["predecessor"] = json!({"goalId":previous["goalId"],"revision":revision});
+        next["successorOf"] = Value::Null;
+        Ok(super::super::sealed(next, Some(previous)))
+    })
+    .expect("install bounded synthetic journey occupancy")
+}
+
+#[test]
+fn pending_admissions_reserve_the_last_member_slot_before_start() {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (project_root, loaded, session_root, session, owner, _, identity, session_store) =
+        capacity_fixture(sequence);
+    let _cleanup = RemoveProjectOnDrop(project_root);
+    let current = install_capacity_state(&session_root, &loaded, &session, &owner, 31, 1);
+    let scope = super::super::native::Scope {
+        root: session_root.clone(),
+        session: Some(session.clone()),
+        owner: Some(owner.clone()),
+        owner_matches: true,
+    };
+
+    assert!(
+        super::prepare(&scope).is_err(),
+        "31 members plus one pending admission must reserve the final member slot before another Work starts"
+    );
+
+    let candidate = super::Candidate {
+        goal_id: current["goalId"].as_str().unwrap().to_owned(),
+        revision: current["revision"].as_u64().unwrap(),
+        event_sha256: current["eventSha256"].as_str().unwrap().to_owned(),
+        session_key: session.key.clone(),
+        host: session.host,
+        owner_project_id: owner.project_id.clone(),
+        owner_identity_sha256: owner.identity_sha256.clone(),
+    };
+    let attempted = format!("smw_{}", "f".repeat(64));
+    assert!(
+        super::admit(
+            &session_root,
+            &loaded,
+            &candidate,
+            &attempted,
+            &"1".repeat(64),
+            "A side task must not overbook the bounded journey",
+        )
+        .is_err(),
+        "the locked admission must recheck member capacity"
+    );
+    assert_eq!(
+        super::super::read(&session_root).unwrap().as_ref(),
+        Some(&current),
+        "a refused admission must leave the Goal journal unchanged"
+    );
+
+    // With one fewer pending admission, the actual common Work-start path
+    // reserves the last slot, starts, and links member 32 in one operation.
+    install_capacity_state(&session_root, &loaded, &session, &owner, 31, 0);
+    let _environment = NativeEnvironmentGuard::codex(&identity, &session_store);
+    let started = crate::work::begin(
+        &loaded,
+        crate::work::BeginOptions {
+            workflow: "change",
+            goal: "Use the final bounded conversation member slot",
+            check_command: "true",
+            boundary: None,
+            harness_receipt: None,
+            proof_origin: None,
+            preserve_requirement: None,
+            preservation_check_command: None,
+            preservation_proof_origin: None,
+            basis: crate::work::BasisOrigin::Caller(None),
+            review_policy: Some("required"),
+            auto_goal_context: true,
+        },
+    )
+    .expect("the final reserved member slot remains usable");
+    let work = started["work"].as_str().expect("actual Work handle");
+    let linked_record = super::super::read(&session_root)
+        .unwrap()
+        .expect("linked capacity Goal");
+    assert_eq!(
+        linked_record["journeyMembers"].as_array().unwrap().len(),
+        32
+    );
+    assert_eq!(
+        linked_record["journeyAdmissions"].as_array().unwrap().len(),
+        0
+    );
+    let ledger = loaded
+        .state_root
+        .join(crate::work::resolve(&loaded, work).expect("resolve actual Work ledger"));
+    let ledger_before_relink = fs::read(&ledger).expect("read immutable Work start ledger");
+    let journal_before_relink = fs::read(
+        session_root
+            .join(crate::project::layout_types::state_namespace())
+            .join("session-goal.jsonl"),
+    )
+    .expect("read linked Goal journal");
+    let relinked = super::link_session(&loaded, work).expect("exact slot-32 relink is idempotent");
+    assert_eq!(relinked["state"], "linked");
+    assert_eq!(relinked["workLedger"], "unchanged");
+    assert_eq!(fs::read(&ledger).unwrap(), ledger_before_relink);
+    assert_eq!(
+        fs::read(
+            session_root
+                .join(crate::project::layout_types::state_namespace())
+                .join("session-goal.jsonl")
+        )
+        .unwrap(),
+        journal_before_relink,
+        "relinking the exact member must not mutate its Goal or Work"
+    );
 }
 
 #[test]

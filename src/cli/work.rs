@@ -346,9 +346,17 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                         .options
                         .get("preservation-proof-origin")
                         .map(String::as_str),
-                    basis: journey.as_ref().map(|prepared| prepared.basis.as_str())
-                        .or_else(|| named.as_ref().map(|prepared| prepared.basis.as_str()))
-                        .or_else(|| a.options.get("basis").map(String::as_str)),
+                    basis: match journey {
+                        Some(prepared) => {
+                            crate::work::BasisOrigin::PreparedJourney(prepared)
+                        }
+                        None => crate::work::BasisOrigin::Caller(
+                            named
+                                .as_ref()
+                                .map(|prepared| prepared.basis.as_str())
+                                .or_else(|| a.options.get("basis").map(String::as_str)),
+                        ),
+                    },
                     review_policy: a.options.get("review-policy").map(String::as_str),
                     auto_goal_context: !standalone,
                 },

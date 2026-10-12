@@ -5,7 +5,7 @@ pub(crate) mod action_forms;
 mod begin;
 mod check;
 pub(crate) mod check_recovery;
-pub(crate) use begin::{begin, BeginOptions};
+pub(crate) use begin::{begin, BasisOrigin, BeginOptions};
 pub(crate) mod closeout;
 pub(crate) mod compact;
 pub(crate) mod details;
