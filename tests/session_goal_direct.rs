@@ -94,7 +94,7 @@ fn goal_status_automatically_emits_goal_and_task_progress_without_model_formatti
 }
 
 #[test]
-fn unrelated_canonical_goal_is_not_projected_into_a_work_packet() {
+fn standalone_work_keeps_an_unrelated_canonical_goal_private() {
     let project = Project::new("goal-progress-work-binding");
     project.value(&[
         "goal",
@@ -114,6 +114,7 @@ fn unrelated_canonical_goal_is_not_projected_into_a_work_packet() {
         "Different Work goal",
         "--check-command",
         "true",
+        "--standalone",
     ]);
     assert!(started["next"]["packet"].get("goalProgress").is_none());
     assert!(!started.to_string().contains("Private external goal"));
@@ -125,6 +126,280 @@ fn unrelated_canonical_goal_is_not_projected_into_a_work_packet() {
     assert_eq!(
         progress["decomposition"]["reason"],
         "overall_goal_unavailable"
+    );
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn ordinary_work_gets_context_for_the_open_goal_without_completing_its_task() {
+    let project = Project::new("goal-context-work-association");
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "session",
+        "--goal",
+        "Ship the user's broader session request",
+        "--obligation",
+        "Implement the shared behavior",
+    ]);
+    let started = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "A different but related implementation task",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap();
+    let association = &started["next"]["goalProgress"]["workAssociation"];
+    assert_eq!(association["kind"], "context_only");
+    assert_eq!(association["protocol"], 1);
+    assert_eq!(association["work"], work);
+    assert_eq!(association["startEventSha256"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        started["next"]["goalProgress"]["goal"],
+        "Ship the user's broader session request"
+    );
+    assert_eq!(
+        started["next"]["goalProgress"]["decomposition"]["complete"],
+        0
+    );
+    assert_eq!(
+        started["next"]["goalProgress"]["tasks"][0]["disposition"],
+        "open"
+    );
+    let status = project.value(&["goal", "status", "--json"]);
+    assert_eq!(status["goalProgress"]["decomposition"]["complete"], 0);
+
+    let standalone = project.call(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Must not inherit context",
+        "--check-command",
+        "true",
+        "--standalone",
+    ]);
+    assert!(standalone.status.success());
+    let standalone: Value = serde_json::from_slice(&standalone.stdout).unwrap();
+    assert_eq!(standalone["next"]["goalProgress"]["overall"], "unavailable");
+    assert!(standalone["next"]["goalProgress"]
+        .get("workAssociation")
+        .is_none());
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn a_goal_added_after_work_start_is_not_attached_retroactively() {
+    let project = Project::new("goal-context-no-retroactive-link");
+    let started = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Start before the Lead has a canonical Goal",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap();
+    assert_eq!(started["next"]["goalProgress"]["overall"], "unavailable");
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "later",
+        "--goal",
+        "A later session request",
+        "--obligation",
+        "A later task",
+    ]);
+    let detail = project.value(&["work", "detail", work, "--json"]);
+    assert_eq!(detail["goalProgress"]["overall"], "unavailable");
+    assert!(detail["goalProgress"].get("workAssociation").is_none());
+    assert!(!detail.to_string().contains("A later session request"));
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn context_associations_survive_same_goal_updates_and_do_not_follow_successors() {
+    let project = Project::new("goal-context-goal-lifecycle");
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "original",
+        "--goal",
+        "Original goal",
+        "--obligation",
+        "Original task",
+    ]);
+    let started = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Context only",
+        "--check-command",
+        "true",
+    ]);
+    let work = started["work"].as_str().unwrap();
+    let original_association = started["next"]["goalProgress"]["workAssociation"].clone();
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "original",
+        "--goal",
+        "Revised original goal",
+        "--obligation",
+        "Revised original task",
+    ]);
+    let same_goal = project.value(&["work", "detail", work, "--json"]);
+    assert_eq!(same_goal["goalProgress"]["goal"], "Revised original goal");
+    assert_eq!(
+        same_goal["goalProgress"]["workAssociation"],
+        original_association
+    );
+
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--direct",
+        "--goal-id",
+        "original",
+        "--goal",
+        "Revised original goal",
+        "--finding",
+        "Lead recorded a finding",
+    ]);
+    let direct_update = project.value(&["work", "detail", work, "--json"]);
+    assert_eq!(
+        direct_update["goalProgress"]["workAssociation"],
+        original_association
+    );
+
+    let successor = project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "successor",
+        "--goal",
+        "Successor goal",
+        "--obligation",
+        "Successor task",
+    ]);
+    assert!(successor.get("workAssociationProtocol").is_none());
+    assert!(successor.get("workAssociations").is_none());
+    let old_work = project.value(&["work", "detail", work, "--json"]);
+    assert_eq!(old_work["goalProgress"]["overall"], "unavailable");
+    assert!(!old_work.to_string().contains("Successor goal"));
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn context_association_does_not_create_named_requirement_coverage() {
+    let project = Project::new("goal-context-named-coverage");
+    fs::write(
+        project.root.join("request.txt"),
+        "The accepted behavior is precise.\n",
+    )
+    .unwrap();
+    project.value(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "named",
+        "--goal",
+        "Named coverage remains explicit",
+    ]);
+    project.value(&[
+        "goal",
+        "require",
+        "--goal-id",
+        "named",
+        "--requirement",
+        "R1",
+        "--obligation",
+        "The accepted behavior is precise.",
+        "--artifact",
+        "request.txt",
+    ]);
+    project.value(&["goal", "cover", "--goal-id", "named"]);
+    let refused = project.call(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Named requirement contract",
+        "--check-command",
+        "true",
+        "--goal-id",
+        "named",
+        "--requirement",
+        "R1",
+        "--artifact",
+        "request.txt",
+        "--standalone",
+    ]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("cannot be combined"));
+    assert_eq!(
+        fs::read_dir(project.root.join(".exitbind/runs"))
+            .unwrap()
+            .count(),
+        0
+    );
+    let started = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Unmapped ordinary Work",
+        "--check-command",
+        "true",
+    ]);
+    assert_eq!(
+        started["next"]["goalProgress"]["workAssociation"]["kind"],
+        "context_only"
+    );
+    assert_eq!(started["next"]["goalProgress"]["coverageConfirmed"], true);
+    assert_eq!(
+        started["next"]["goalProgress"]["decomposition"]["complete"],
+        0
+    );
+    assert_eq!(started["next"]["goalProgress"]["tasks"][0]["mapped"], false);
+    assert_eq!(
+        started["next"]["goalProgress"]["tasks"][0]["performed"],
+        false
+    );
+    let explicitly_named = project.value(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "Explicitly cover the named requirement",
+        "--check-command",
+        "true",
+        "--goal-id",
+        "named",
+        "--requirement",
+        "R1",
+        "--artifact",
+        "request.txt",
+    ]);
+    assert!(explicitly_named["next"]["goalProgress"]
+        .get("workAssociation")
+        .is_none());
+    assert_eq!(
+        explicitly_named["next"]["goalProgress"]["tasks"][0]["mapped"],
+        true
+    );
+    assert_eq!(
+        explicitly_named["next"]["goalProgress"]["tasks"][0]["performed"],
+        false
     );
     fs::remove_dir_all(project.root).unwrap();
 }

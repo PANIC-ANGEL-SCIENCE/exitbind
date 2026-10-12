@@ -4,6 +4,7 @@
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub(crate) mod association;
 mod closure;
 mod continuity;
 pub(crate) mod requirements;
@@ -121,6 +122,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
             "invalid canonical session goal line {line}: event hash mismatch"
         ));
     }
+    association::validate_record(value, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -189,6 +191,9 @@ fn history_ledger(root: &Path) -> Result<crate::run::ledger::LedgerPath, String>
 }
 
 pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
+    if let Some(previous) = previous {
+        association::preserve_same_goal(previous, &mut value);
+    }
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())
         .map_or(Value::Null, |hash| json!(hash));

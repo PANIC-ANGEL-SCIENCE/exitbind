@@ -14,6 +14,7 @@ pub(crate) struct BeginOptions<'a> {
     pub(crate) preservation_proof_origin: Option<&'a str>,
     pub(crate) basis: Option<&'a str>,
     pub(crate) review_policy: Option<&'a str>,
+    pub(crate) auto_goal_context: bool,
 }
 
 pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value, String> {
@@ -41,6 +42,11 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
     {
         return Err("governed activation is unavailable".into());
     }
+    let goal_candidate = if options.auto_goal_context {
+        crate::session_goal::association::prepare(loaded)?
+    } else {
+        None
+    };
     let token = hash::text(&format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
         options.workflow,
@@ -67,6 +73,30 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         options.review_policy,
     )?;
     let work = format!("{WORK_PREFIX}{token}");
+    if let Some(candidate) = goal_candidate {
+        let association = (|| {
+            let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+            let start = events.first().ok_or("Work ledger has no start event")?;
+            if start["action"] != "start" {
+                return Err("Work ledger does not begin with a start event".into());
+            }
+            let start_event_sha256 = start["eventSha256"]
+                .as_str()
+                .ok_or("Work start event identity is missing")?;
+            crate::session_goal::association::record(
+                loaded,
+                &candidate,
+                &work,
+                start_event_sha256,
+            )?;
+            Ok::<(), String>(())
+        })();
+        if let Err(error) = association {
+            return Err(format!(
+                "Work {work} was recorded, but its context-only Goal association failed: {error}; inspect with `exitbind work detail {work} --json`; do not repeat work begin"
+            ));
+        }
+    }
     let next = next_for(loaded, &work, &ledger)?;
     // Preserve the committed Work even if navigation fails.
     let focus = match focus::write(loaded, &work) {

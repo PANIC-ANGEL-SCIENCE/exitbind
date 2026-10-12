@@ -138,6 +138,9 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         return Err("action changed during read; inspect current work detail before acting".into());
     }
     let mut result = result;
+    if next["presentation"]["goalProgress"]["workAssociation"].is_object() {
+        result["goalAssociation"] = next["presentation"]["goalProgress"]["workAssociation"].clone();
+    }
     let mut effective = super::effective_action::project(&result);
     let form = result
         .as_object_mut()
@@ -280,6 +283,9 @@ fn response(
         "actionForms": super::action_forms::full(loaded, work, next, binding),
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });
+    if next["presentation"]["goalProgress"]["workAssociation"].is_object() {
+        value["goalAssociation"] = next["presentation"]["goalProgress"]["workAssociation"].clone();
+    }
     if next["action"] == "done" {
         value["completion"] = super::closeout::projection(loaded, work, snapshot, next);
     }
@@ -368,6 +374,7 @@ mod tests {
                 preservation_proof_origin: None,
                 basis: None,
                 review_policy: Some("required"),
+                auto_goal_context: false,
             },
         )
         .unwrap();

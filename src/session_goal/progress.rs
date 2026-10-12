@@ -377,14 +377,23 @@ pub(super) fn project_for_work(
             "unavailable",
         );
     }
-    project_with_limit(
+    let mut projection = project_with_limit(
         Some(loaded),
         Some(record),
         rendered,
         result,
         MAX_TASKS,
         false,
-    )
+    );
+    if let Some(association) = super::association::for_work(record, work) {
+        projection["workAssociation"] = json!({
+            "kind": "context_only",
+            "protocol": super::association::PROTOCOL,
+            "work": association["work"],
+            "startEventSha256": association["startEventSha256"],
+        });
+    }
+    projection
 }
 
 pub(super) fn project_detail_for_work(
@@ -412,19 +421,29 @@ pub(super) fn project_detail_for_work(
             "unavailable",
         );
     }
-    project_with_limit(
+    let mut projection = project_with_limit(
         Some(loaded),
         Some(record),
         rendered,
         result,
         usize::MAX,
         true,
-    )
+    );
+    if let Some(association) = super::association::for_work(record, work) {
+        projection["workAssociation"] = json!({
+            "kind": "context_only",
+            "protocol": super::association::PROTOCOL,
+            "work": association["work"],
+            "startEventSha256": association["startEventSha256"],
+        });
+    }
+    projection
 }
 
 pub(super) fn record_bound_to_work(record: &Value, work: &str) -> bool {
     record["goalId"].as_str() == Some(work)
         || record["continuation"]["work"].as_str() == Some(work)
+        || super::association::for_work(record, work).is_some()
         || super::requirements::bound(record, work)
 }
 

@@ -287,16 +287,28 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
 #[test]
 fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     let cleanup_root = support::temp("action-view-long-root");
+    // Calibrate total path bytes instead of relying on a fixed number of
+    // components: short TMPDIR values otherwise make this boundary fixture
+    // stop exercising the complete pre-compression response.
+    let mut components = (0..3)
+        .map(|index| format!("agent-host-managed-workspace-project-checkout-{index:02}"))
+        .collect::<Vec<_>>();
+    let fixed_len = cleanup_root.to_str().unwrap().len()
+        + components.iter().map(String::len).sum::<usize>()
+        + components.len();
+    let target_len = fixed_len.max(250);
+    components[2].push_str(&"x".repeat(target_len - fixed_len));
     let mut root = cleanup_root.clone();
-    // Keep the long path bounded; assertions below verify both sides of the
-    // response-size boundary for repeated and grouped navigation.
-    for index in 0..4 {
-        root.push(format!(
-            "agent-host-managed-workspace-project-checkout-{index:02}"
-        ));
+    for component in components {
+        root.push(component);
     }
     fs::create_dir_all(&root).unwrap();
-    assert!(root.to_str().unwrap().len() >= 250, "{}", root.display());
+    assert_eq!(
+        root.to_str().unwrap().len(),
+        target_len,
+        "{}",
+        root.display()
+    );
     let fixture = Fixture::at(root, cleanup_root);
     let project_rule = "Reviewer: keep the complete current evidence and instructions.\n";
     fs::write(fixture.root.join("AGENTS.md"), project_rule).unwrap();
@@ -597,6 +609,12 @@ fn stale_form_binding_rejects_same_assignment_after_goal_revision() {
         b"",
     );
     let (work, initial) = fixture.begin("true", false);
+    let action_view = fixture.json(
+        &["work", "detail", &work, "--view", "action", "--json"],
+        b"",
+    );
+    assert_eq!(action_view["goalAssociation"]["kind"], "context_only");
+    assert_eq!(action_view["goalAssociation"]["work"], work);
     let old_assignment = initial["assignment"].clone();
     let stale = fixture.choice(&initial, "scoped");
     fixture.json(

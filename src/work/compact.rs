@@ -684,7 +684,12 @@ fn compact_presentation(presentation: &Value) -> Value {
 
 pub(crate) fn compact_goal_progress(goal: &Value) -> Value {
     let mut compact = Map::new();
-    for key in ["overall", "decomposition", "resultReadiness"] {
+    for key in [
+        "overall",
+        "decomposition",
+        "resultReadiness",
+        "workAssociation",
+    ] {
         if let Some(value) = goal.get(key) {
             compact.insert(key.into(), value.clone());
         }

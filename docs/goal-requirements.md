@@ -1,5 +1,33 @@
 # Complete a goal with several requirements
 
+## Ordinary Work and current Goal context
+
+An ordinary `work begin` in a configured project records a context-only link to
+that project's current open canonical Goal when one exists. The Work can have a
+narrower or otherwise different task scope; the link makes the agreed session
+context available in its Work projection. It does not create a Goal, infer
+named requirements, add a requirement mapping, count coverage, or close the
+Goal. A Work accepted on its own still cannot close the overall Goal.
+
+Use `work begin ... --standalone` when the Work should not receive the current
+Goal context. `--standalone` cannot be combined with the explicit named-requirement
+contract options (`--goal-id`, `--requirement`, `--artifact`, or `--scope`).
+Those options retain their existing frozen admission and explicit assignment
+behavior. If no open canonical Goal exists, a Work starts without a link; a Goal
+created later does not retroactively attach to that Work. Existing single-Work
+continuations are not claimed by a new ordinary Work. Same-Goal updates retain
+the context links, while a successor Goal begins without its predecessor's
+links. No cross-project or session-wide parent is inferred.
+
+The canonical Goal record stores these links under the versioned
+`workAssociationProtocol: 1` extension, with a bounded list of exact Work and
+start-event identities. Records without that extension remain readable. A
+reader that encounters an unknown or malformed extension refuses the Goal
+record. Older readers that ignore unknown fields do not understand these
+links; writing the Goal with a reader that does not preserve this extension can
+drop them, so use a version that understands the protocol when updating an
+associated Goal.
+
 Give your lead the goal in your usual conversation. The lead keeps the agreed
 source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.

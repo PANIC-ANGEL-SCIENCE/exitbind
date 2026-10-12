@@ -249,6 +249,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "requirement",
                     "artifact",
                     "scope",
+                    "standalone",
                     "json",
                     "detail",
                 ],
@@ -257,7 +258,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let integration=match a.options.get("scope").map(String::as_str) {
                 None=>false, Some("integration")=>true, Some(_)=>return Err("named Work scope must be integration when supplied".into()),
             };
-            let named = if ["goal-id","requirement","artifact","scope"].iter().any(|key|a.options.contains_key(*key)) {
+            let named_requested = ["goal-id","requirement","artifact","scope"].iter().any(|key|a.options.contains_key(*key));
+            let standalone = a.flags.contains_key("standalone");
+            if standalone && named_requested {
+                return Err("--standalone cannot be combined with named goal requirements".into());
+            }
+            let named = if named_requested {
                 Some(crate::session_goal::requirements::prepare(l,
                     option(a,"goal-id","named Work requires --goal-id ID")?,
                     option(a,"requirement","named Work requires --requirement IDs")?,
@@ -289,6 +295,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                         .map(String::as_str),
                     basis: named.as_ref().map(|prepared|prepared.basis.as_str()).or_else(||a.options.get("basis").map(String::as_str)),
                     review_policy: a.options.get("review-policy").map(String::as_str),
+                    auto_goal_context: !standalone && named.is_none(),
                 },
             )?;
             if let Some(prepared)=&named {

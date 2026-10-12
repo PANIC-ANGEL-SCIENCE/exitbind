@@ -129,6 +129,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "refresh-skills",
     "require-harness-receipt",
     "session-closed",
+    "standalone",
     "themed",
     "history",
     "replace",

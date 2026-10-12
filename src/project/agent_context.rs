@@ -525,6 +525,7 @@ mod tests {
                 preservation_proof_origin: None,
                 basis: None,
                 review_policy: None,
+                auto_goal_context: false,
             },
         )
         .unwrap();

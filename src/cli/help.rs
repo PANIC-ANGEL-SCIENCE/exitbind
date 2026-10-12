@@ -8,7 +8,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work"] => {
             "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
-        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--basis JSON] [--goal-id ID --requirement IDs --artifact PROJECT_CHECKER [--scope integration]] (--detail delivers current recipient context; a recorded start is recovered with work detail or work resume, never repeated)",
+        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--standalone] [--basis JSON] [--goal-id ID --requirement IDs --artifact PROJECT_CHECKER [--scope integration]] (--standalone opts out of automatic context-only association to the current open project Goal; --detail delivers current recipient context; a recorded start is recovered with work detail or work resume, never repeated)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
         ["work", "next"] => "work next WORK [--json] [--full]",
         ["work", "continuation"] => {
