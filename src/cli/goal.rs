@@ -136,12 +136,14 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 crate::session_goal::direct_complete(
                     &scope.root,
                     l,
-                    goal_id,
-                    goal,
-                    category,
-                    item,
-                    a.options.get("external-scope").map(String::as_str),
-                    scope.is_session(),
+                    crate::session_goal::DirectCompletionRequest {
+                        goal_id,
+                        goal,
+                        category,
+                        item,
+                        external_scope: a.options.get("external-scope").map(String::as_str),
+                        native_session: scope.is_session(),
+                    },
                 )?
             } else {
                 crate::session_goal::incorporate(

@@ -74,6 +74,29 @@ pub(crate) struct Admission {
     pub(crate) state_root: String,
 }
 
+/// Inputs that bind a Work admission to the observed native Goal and owner.
+pub(crate) struct AdmissionRequest<'a> {
+    pub(crate) work: &'a str,
+    pub(crate) start_intent_sha256: &'a str,
+    pub(crate) work_goal: &'a str,
+    pub(crate) parent_goal_id: &'a str,
+    pub(crate) parent_event_sha256: &'a str,
+    pub(crate) session: &'a super::native::Session,
+    pub(crate) owner: &'a super::native::Owner,
+}
+
+/// Exact Work/start and parent identities used when linking a verified start.
+#[derive(Clone, Copy)]
+pub(crate) struct WorkLink<'a> {
+    pub(crate) work: &'a str,
+    pub(crate) start_event_sha256: &'a str,
+    pub(crate) work_goal: &'a str,
+    pub(crate) parent_goal_id: &'a str,
+    pub(crate) parent_event_sha256: &'a str,
+    pub(crate) session: &'a super::native::Session,
+    pub(crate) owner: &'a super::native::Owner,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Header {
@@ -352,14 +375,17 @@ pub(crate) fn find_admission(record: &Value, work: &str) -> Result<Option<Admiss
 
 pub(crate) fn new_admission(
     loaded: &Loaded,
-    work: &str,
-    start_intent_sha256: &str,
-    work_goal: &str,
-    parent_goal_id: &str,
-    parent_event_sha256: &str,
-    session: &super::native::Session,
-    owner: &super::native::Owner,
+    request: AdmissionRequest<'_>,
 ) -> Result<Admission, String> {
+    let AdmissionRequest {
+        work,
+        start_intent_sha256,
+        work_goal,
+        parent_goal_id,
+        parent_event_sha256,
+        session,
+        owner,
+    } = request;
     let admission = Admission {
         work: work.to_owned(),
         start_intent_sha256: start_intent_sha256.to_owned(),
@@ -527,16 +553,16 @@ fn member_identity(member: &Member) -> String {
     hash::value(&serde_json::to_value(member).expect("journey member serializes"))
 }
 
-fn new_member(
-    loaded: &Loaded,
-    work: &str,
-    start_event_sha256: &str,
-    work_goal: &str,
-    parent_goal_id: &str,
-    parent_event_sha256: &str,
-    session: &super::native::Session,
-    owner: &super::native::Owner,
-) -> Result<Member, String> {
+fn new_member(loaded: &Loaded, request: WorkLink<'_>) -> Result<Member, String> {
+    let WorkLink {
+        work,
+        start_event_sha256,
+        work_goal,
+        parent_goal_id,
+        parent_event_sha256,
+        session,
+        owner,
+    } = request;
     let member = Member {
         work: work.to_owned(),
         start_event_sha256: start_event_sha256.to_owned(),
@@ -563,14 +589,15 @@ fn new_member(
 pub(crate) fn append_work(
     record: &mut Value,
     loaded: &Loaded,
-    work: &str,
-    start_event_sha256: &str,
-    work_goal: &str,
-    parent_goal_id: &str,
-    parent_event_sha256: &str,
-    session: &super::native::Session,
-    owner: &super::native::Owner,
+    request: WorkLink<'_>,
 ) -> Result<(), String> {
+    let WorkLink {
+        work,
+        start_event_sha256,
+        session,
+        owner,
+        ..
+    } = request;
     let Some(mut journey) = state(record)? else {
         return Ok(());
     };
@@ -598,16 +625,7 @@ pub(crate) fn append_work(
                 "journey integration snapshot changed before its Work start was linked".into(),
             );
         }
-        let member = new_member(
-            loaded,
-            work,
-            start_event_sha256,
-            work_goal,
-            parent_goal_id,
-            parent_event_sha256,
-            session,
-            owner,
-        )?;
+        let member = new_member(loaded, request)?;
         if journey.integrations.len() >= MAX_INTEGRATIONS
             || journey
                 .integrations
@@ -621,16 +639,7 @@ pub(crate) fn append_work(
             contract_sha256: contract_sha256(&contract),
         });
     } else {
-        let member = new_member(
-            loaded,
-            work,
-            start_event_sha256,
-            work_goal,
-            parent_goal_id,
-            parent_event_sha256,
-            session,
-            owner,
-        )?;
+        let member = new_member(loaded, request)?;
         if journey.members.len() >= MAX_MEMBERS
             || journey.members.iter().any(|item| item.work == work)
             || journey
@@ -1146,7 +1155,7 @@ fn current_integration_for_project(
 
 fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded, String> {
     if canonical_path(&loaded.path, "configured project path")? == member.config_path {
-        return Ok(crate::config::load(Some(member.config_path.as_str()))?);
+        return crate::config::load(Some(member.config_path.as_str()));
     }
     crate::config::load(Some(member.config_path.as_str()))
 }

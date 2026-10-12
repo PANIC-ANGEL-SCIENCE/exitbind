@@ -32,16 +32,28 @@ const VERIFIED_CONTEXT_FIELD: &str = "__verifiedContextOnlyWork";
 
 /// Shared immutable sidecar writer for native context and named-Goal scope.
 /// Common Work/start binding, size, privacy and digest rules live here.
+pub(crate) struct PrivateCompanionWrite<'a> {
+    pub(crate) suffix: &'a str,
+    pub(crate) label: &'a str,
+    pub(crate) kind: &'a str,
+    pub(crate) protocol: u64,
+    pub(crate) start_event_sha256: &'a str,
+    pub(crate) fields: Value,
+}
+
 pub(crate) fn write_private_companion(
     loaded: &crate::config::Loaded,
     work: &str,
-    suffix: &str,
-    label: &str,
-    kind: &str,
-    protocol: u64,
-    start_event_sha256: &str,
-    fields: Value,
+    companion: PrivateCompanionWrite<'_>,
 ) -> Result<(), String> {
+    let PrivateCompanionWrite {
+        suffix,
+        label,
+        kind,
+        protocol,
+        start_event_sha256,
+        fields,
+    } = companion;
     if !valid_work(work) || !valid_sha(start_event_sha256) {
         return Err("Work companion identity is malformed".into());
     }
@@ -274,13 +286,15 @@ pub(crate) fn admit(
     };
     let admission = super::journey::new_admission(
         loaded,
-        work,
-        start_intent_sha256,
-        work_goal,
-        &candidate.goal_id,
-        &candidate.event_sha256,
-        &session,
-        &owner,
+        super::journey::AdmissionRequest {
+            work,
+            start_intent_sha256,
+            work_goal,
+            parent_goal_id: &candidate.goal_id,
+            parent_event_sha256: &candidate.event_sha256,
+            session: &session,
+            owner: &owner,
+        },
     )?;
     super::mutate(root, |previous| {
         let previous = previous.ok_or("canonical Goal disappeared before Work admission")?;
@@ -372,12 +386,14 @@ fn verify_or_write_companion(
     match write_private_companion(
         loaded,
         work,
-        ".session-goal.json",
-        "Work Goal context companion",
-        COMPANION_KIND,
-        PROTOCOL,
-        start_event_sha256,
-        fields.clone(),
+        PrivateCompanionWrite {
+            suffix: ".session-goal.json",
+            label: "Work Goal context companion",
+            kind: COMPANION_KIND,
+            protocol: PROTOCOL,
+            start_event_sha256,
+            fields: fields.clone(),
+        },
     ) {
         Ok(()) => Ok(()),
         Err(write_error) => {
@@ -483,13 +499,15 @@ fn link_admitted(
             super::journey::append_work(
                 &mut next,
                 loaded,
-                work,
-                &start_sha,
-                start["goal"].as_str().unwrap_or_default(),
-                &admission.parent_goal_id,
-                &admission.parent_observed_goal_event_sha256,
-                session,
-                owner,
+                super::journey::WorkLink {
+                    work,
+                    start_event_sha256: &start_sha,
+                    work_goal: start["goal"].as_str().unwrap_or_default(),
+                    parent_goal_id: &admission.parent_goal_id,
+                    parent_event_sha256: &admission.parent_observed_goal_event_sha256,
+                    session,
+                    owner,
+                },
             )?;
             commit_link(previous, next)
         } else if let Some(member) = journey_member {

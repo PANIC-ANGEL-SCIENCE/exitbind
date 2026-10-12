@@ -301,12 +301,19 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 },
             );
             let named = if named_requested {
-                Some(crate::session_goal::requirements::prepare(&named_scope.as_ref().expect("named scope").root, l,
-                    option(a,"goal-id","named Work requires --goal-id ID")?,
-                    option(a,"requirement","named Work requires --requirement IDs")?,
-                    option(a,"artifact","named Work requires --artifact PROJECT_CHECKER")?,
-                    option(a,"check-command","work begin requires --check-command COMMAND")?,
-                    a.options.get("basis").map(String::as_str),integration,named_contract_scope)?)
+                Some(crate::session_goal::requirements::prepare(
+                    crate::session_goal::requirements::PrepareRequest {
+                        root: &named_scope.as_ref().expect("named scope").root,
+                        loaded: l,
+                        goal_id: option(a, "goal-id", "named Work requires --goal-id ID")?,
+                        ids: option(a, "requirement", "named Work requires --requirement IDs")?,
+                        checker: option(a, "artifact", "named Work requires --artifact PROJECT_CHECKER")?,
+                        command: option(a, "check-command", "work begin requires --check-command COMMAND")?,
+                        basis: a.options.get("basis").map(String::as_str),
+                        integration,
+                        scope: named_contract_scope,
+                    },
+                )?)
             } else {None};
             let journey = if journey_integration {
                 Some(crate::session_goal::journey::prepare(

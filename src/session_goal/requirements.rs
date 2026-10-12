@@ -17,7 +17,9 @@ pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};
 pub(crate) use view::{all_current, projection};
-pub(crate) use work::{prepare, project_progress_for_work, write_scope_companion, ContractScope};
+pub(crate) use work::{
+    prepare, project_progress_for_work, write_scope_companion, ContractScope, PrepareRequest,
+};
 
 pub(crate) use work::{checker_input, current_checker_evidence};
 

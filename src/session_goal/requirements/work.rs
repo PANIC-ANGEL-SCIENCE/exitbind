@@ -29,6 +29,18 @@ pub(crate) struct Prepared {
     pub(crate) project_identity: String,
 }
 
+pub(crate) struct PrepareRequest<'a> {
+    pub(crate) root: &'a Path,
+    pub(crate) loaded: &'a Loaded,
+    pub(crate) goal_id: &'a str,
+    pub(crate) ids: &'a str,
+    pub(crate) checker: &'a str,
+    pub(crate) command: &'a str,
+    pub(crate) basis: Option<&'a str>,
+    pub(crate) integration: bool,
+    pub(crate) scope: ContractScope,
+}
+
 /// Validate a declared checker with the same path, coverage and command-name
 /// rules used by named requirement Works. Journey integration reuses this
 /// owner instead of introducing a second checker policy.
@@ -50,17 +62,18 @@ pub(crate) fn checker_input(
     })
 }
 
-pub(crate) fn prepare(
-    root: &Path,
-    loaded: &Loaded,
-    goal_id: &str,
-    ids: &str,
-    checker: &str,
-    command: &str,
-    basis: Option<&str>,
-    integration: bool,
-    scope: ContractScope,
-) -> Result<Prepared, String> {
+pub(crate) fn prepare(request: PrepareRequest<'_>) -> Result<Prepared, String> {
+    let PrepareRequest {
+        root,
+        loaded,
+        goal_id,
+        ids,
+        checker,
+        command,
+        basis,
+        integration,
+        scope,
+    } = request;
     let record = super::super::read(root)?.ok_or("no canonical goal is open")?;
     if record["goalId"] != goal_id {
         return Err("canonical goal identity does not match".into());
@@ -149,12 +162,14 @@ pub(crate) fn write_scope_companion(
     crate::session_goal::association::write_private_companion(
         loaded,
         work_id,
-        ".named-goal-scope.json",
-        "named Goal scope companion",
-        SCOPE_KIND,
-        SCOPE_PROTOCOL,
-        start_event_sha256,
-        fields,
+        crate::session_goal::association::PrivateCompanionWrite {
+            suffix: ".named-goal-scope.json",
+            label: "named Goal scope companion",
+            kind: SCOPE_KIND,
+            protocol: SCOPE_PROTOCOL,
+            start_event_sha256,
+            fields,
+        },
     )
 }
 

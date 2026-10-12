@@ -578,16 +578,28 @@ pub(crate) fn incorporate(
 /// Record one explicit Lead-reported direct completion.  This is deliberately
 /// separate from governed result references: the claim is bound to the
 /// current product inputs and goal revision, but it is not check evidence.
+pub(crate) struct DirectCompletionRequest<'a> {
+    pub(crate) goal_id: &'a str,
+    pub(crate) goal: &'a str,
+    pub(crate) category: &'a str,
+    pub(crate) item: &'a str,
+    pub(crate) external_scope: Option<&'a str>,
+    pub(crate) native_session: bool,
+}
+
 pub(crate) fn direct_complete(
     root: &Path,
     loaded: &crate::config::Loaded,
-    goal_id: &str,
-    goal: &str,
-    category: &str,
-    item: &str,
-    external_scope: Option<&str>,
-    native_session: bool,
+    request: DirectCompletionRequest<'_>,
 ) -> Result<Value, String> {
+    let DirectCompletionRequest {
+        goal_id,
+        goal,
+        category,
+        item,
+        external_scope,
+        native_session,
+    } = request;
     let goal_id = text(Some(goal_id), "goal-id")?;
     let goal = text(Some(goal), "goal")?;
     let item = text(Some(item), category)?;
