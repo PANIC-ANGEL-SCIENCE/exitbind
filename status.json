@@ -1,0 +1,18 @@
+{
+  "main_sha": "73cf1c3476181e03cb0d9da74d24be29eb47bf5a",
+  "ci": {
+    "label": "running",
+    "run_id": 38276889789,
+    "sha": "73cf1c3476181e03cb0d9da74d24be29eb47bf5a"
+  },
+  "release": {
+    "label": "v0.31.11",
+    "tag": "v0.31.11",
+    "release_id": 410679246
+  },
+  "license": {
+    "label": "MIT",
+    "spdx": "MIT"
+  },
+  "checked_at": "2026-10-12T16:22:09.641919+00:00"
+}
