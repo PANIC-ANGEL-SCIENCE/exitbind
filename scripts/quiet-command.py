@@ -20,10 +20,11 @@ MAX_MODEL_BYTES = 16 * 1024
 MAX_FAILURE_BYTES = 8 * 1024
 MAX_DETAIL_BYTES = 64 * 1024
 RUNNING = re.compile(r"running (\d+) tests?\Z")
-TEST = re.compile(r"test (.+) \.\.\. (ok|ignored|FAILED)(?:, .*)?\Z")
+TEST = re.compile(r"test (.+) \.\.\. (ok|FAILED|ignored(?:, .+)?)\Z")
 RESULT = re.compile(
     r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; "
-    r"(\d+) ignored; (\d+) measured; (\d+) filtered out; finished in .+\Z"
+    r"(\d+) ignored; (\d+) measured; (\d+) filtered out; "
+    r"finished in [0-9]+(?:\.[0-9]+)?s\Z"
 )
 PACKAGE = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 VERSION = r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?"
@@ -266,7 +267,14 @@ def parse_cargo_output(raw):
             if expected is None:
                 uncertain = "a test record appeared outside a recognized test suite"
                 break
-            observed[match.group(2)] += 1
+            status = match.group(2)
+            if status.startswith("ignored"):
+                observed["ignored"] += 1
+                if status != "ignored":
+                    # Keep the explanatory text visible; it is not a suppressible Cargo status.
+                    details.append(line.encode("utf-8"))
+            else:
+                observed[status] += 1
             continue
 
         match = RESULT.fullmatch(body)
@@ -314,6 +322,8 @@ def parse_cargo_output(raw):
 
 
 def clipped_utf8(data, limit, prefix):
+    if limit <= 0:
+        return b""
     if len(data) <= limit:
         return data
     if prefix:
@@ -344,67 +354,176 @@ def paths_text(paths):
     )
 
 
-def output_projection(label, paths, counts, details):
-    summary = (
-        "ok: " + label + " (Cargo test confirmed: " + str(counts["passed"]) + " passed, "
-        + str(counts["failed"]) + " failed, " + str(counts["ignored"]) + " ignored, "
-        + str(counts["filtered"]) + " filtered, " + str(counts["suites"]) + " suites)\n"
-        + paths_text(paths)
-    ).encode("utf-8")
-    if not details:
-        sys.stdout.buffer.write(summary)
-        return len(summary)
+def compact_paths_text():
+    return "raw stdout, stderr and metadata use the combined log's .stdout, .stderr and .meta.json suffixes\n"
 
-    header = summary + b"additional output retained verbatim:\n"
-    available = max(0, MAX_MODEL_BYTES - len(header) - 100)
-    if len(details) <= available:
-        rendered = details
-    else:
-        first_size = available // 2
-        last_size = available - first_size
-        first = clipped_utf8(details, first_size, True)
-        last = clipped_utf8(details, last_size, False)
-        omitted = max(0, len(details) - len(first) - len(last))
-        rendered = first + ("\n[omitted " + str(omitted) + " bytes of additional output; use the bounded read command below]\n").encode("utf-8") + last
-    read_hint = (
-        "bounded detail read: python3 scripts/quiet-command.py read "
-        + shlex.quote(str(paths["combined"]))
-        + " --stream combined --offset 0 --limit 8192\n"
+
+def read_hint(paths):
+    command = [
+        sys.executable,
+        str(pathlib.Path(__file__).resolve()),
+        "read",
+        str(paths["combined"]),
+        "--stream",
+        "combined",
+        "--offset",
+        "0",
+        "--limit",
+        "8192",
+    ]
+    return (
+        "bounded detail read: "
+        + " ".join(shlex.quote(argument) for argument in command)
+        + "\n"
     ).encode("utf-8")
-    output = header + rendered + (b"\n" if not rendered.endswith(b"\n") else b"") + read_hint
-    if len(output) > MAX_MODEL_BYTES:
-        output = output[:MAX_MODEL_BYTES]
+
+
+def clipped_excerpt(data, limit, marker):
+    if len(data) <= limit:
+        return data
+
+    content_budget = limit
+    while content_budget >= 0:
+        first_budget = content_budget // 2
+        last_budget = content_budget - first_budget
+        first = clipped_utf8(data, first_budget, True)
+        last = clipped_utf8(data, last_budget, False)
+        omitted = max(0, len(data) - len(first) - len(last))
+        rendered = first + marker(omitted) + last
+        if len(rendered) <= limit:
+            return rendered
+        excess = len(rendered) - limit
+        next_budget = content_budget - max(1, excess)
+        if next_budget >= content_budget:
+            next_budget = content_budget - 1
+        content_budget = next_budget
+    return None
+
+
+def framing_unavailable(label, hint=None):
+    prefixes = []
+    if label:
+        prefixes.append(
+            (
+                "unverified: " + label + "; no test success is inferred. The success summary is "
+                "omitted to preserve the complete bounded read command below. Exact paths remain "
+                "in retained metadata.\n"
+            ).encode("utf-8", "replace")
+        )
+    prefixes.append(
+        b"unverified: success summary omitted; no test success is inferred. "
+        + (b"The complete bounded read command follows.\n" if hint else b"Exact paths remain in retained metadata.\n")
+    )
+    output = None
+    for prefix in prefixes:
+        candidate = prefix + (hint or b"")
+        if len(candidate) <= MAX_MODEL_BYTES:
+            output = candidate
+            break
+    if output is None:
+        output = b"unverified: complete read command exceeds the " + str(MAX_MODEL_BYTES).encode("ascii")
+        output += b"-byte output limit; no success summary or partial command is shown.\n"
     sys.stdout.buffer.write(output)
     return len(output)
 
 
+def output_projection(label, paths, counts, details):
+    try:
+        hint = read_hint(paths)
+    except UnicodeEncodeError:
+        return None
+    count_text = (
+        "ok: " + label + " (Cargo test confirmed: " + str(counts["passed"]) + " passed, "
+        + str(counts["failed"]) + " failed, " + str(counts["ignored"]) + " ignored, "
+        + str(counts["filtered"]) + " filtered, " + str(counts["suites"]) + " suites)\n"
+    )
+    for path_detail in (paths_text(paths), compact_paths_text()):
+        try:
+            summary = (count_text + path_detail).encode("utf-8")
+        except UnicodeEncodeError:
+            continue
+        if not details:
+            if len(summary) <= MAX_MODEL_BYTES:
+                if path_detail == compact_paths_text():
+                    summary += hint
+                if len(summary) <= MAX_MODEL_BYTES and summary.endswith(b"\n"):
+                    return summary
+            continue
+
+        header = summary + b"additional output retained verbatim:\n"
+        body_limit = MAX_MODEL_BYTES - len(header) - 1 - len(hint)
+        if body_limit < 0:
+            continue
+        if len(details) <= body_limit:
+            rendered = details
+        else:
+            rendered = clipped_excerpt(
+                details,
+                body_limit,
+                lambda omitted: (
+                    "\n[omitted " + str(omitted)
+                    + " bytes of additional output; use the bounded read command below]\n"
+                ).encode("utf-8"),
+            )
+            if rendered is None:
+                continue
+        output = header + rendered + b"\n" + hint
+        if len(output) <= MAX_MODEL_BYTES and output.endswith(b"\n"):
+            return output
+    return None
+
+
 def fallback_projection(label, paths, raw, reason, status):
     digest = sha256_file(paths["combined"])
-    header = (
-        "unverified: " + label + "; Cargo output was not projected (" + reason + "); child exit=" + str(status) + "\n"
-        + "No test success is inferred. Read the protected original with the bounded command below.\n"
-        + paths_text(paths)
-        + "combined bytes: " + str(len(raw)) + " sha256: " + digest + "\n"
-        + "bounded detail read: python3 scripts/quiet-command.py read "
-        + shlex.quote(str(paths["combined"]))
-        + " --stream combined --offset 0 --limit 8192\n"
-    ).encode("utf-8")
-    limit = max(0, MAX_MODEL_BYTES - len(header) - 100)
+    try:
+        hint = read_hint(paths)
+    except UnicodeEncodeError:
+        framing_unavailable(label)
+        return
+    header = None
+    for label_text, path_detail in ((label, paths_text(paths)), (label, compact_paths_text()), (None, compact_paths_text())):
+        if label_text is None:
+            title = "unverified: Cargo output was not projected; label is retained in metadata"
+        else:
+            title = "unverified: " + label_text + "; Cargo output was not projected"
+        try:
+            candidate = (
+                title + " (" + reason + "); child exit=" + str(status) + "\n"
+                + "No test success is inferred. Read the protected original with the bounded command below.\n"
+                + path_detail
+                + "combined bytes: " + str(len(raw)) + " sha256: " + digest + "\n"
+            ).encode("utf-8") + hint + b"raw excerpt:\n"
+        except UnicodeEncodeError:
+            continue
+        if len(candidate) < MAX_MODEL_BYTES:
+            header = candidate
+            break
+    if header is None:
+        framing_unavailable(label, hint)
+        return
+    limit = MAX_MODEL_BYTES - len(header) - 1
     try:
         raw.decode("utf-8")
         if len(raw) <= limit:
             excerpt = raw
         else:
-            first = clipped_utf8(raw, limit // 2, True)
-            last = clipped_utf8(raw, limit - len(first), False)
-            omitted = len(raw) - len(first) - len(last)
-            excerpt = first + ("\n[omitted " + str(omitted) + " bytes; protected raw file is complete]\n").encode() + last
+            excerpt = clipped_excerpt(
+                raw,
+                limit,
+                lambda omitted: ("\n[omitted " + str(omitted) + " bytes; protected raw file is complete]\n").encode(),
+            )
+            if excerpt is None:
+                framing_unavailable(label, hint)
+                return
     except UnicodeDecodeError:
-        encoded = base64.b64encode(raw[: min(4096, max(0, limit // 2))])
-        excerpt = b"raw prefix (base64):\n" + encoded + b"\n"
-    output = header + b"raw excerpt:\n" + excerpt
+        binary_header = b"raw prefix (base64):\n"
+        base64_limit = max(0, (limit - len(binary_header)) // 4 * 4)
+        encoded = base64.b64encode(raw[: min(4096, (base64_limit // 4) * 3)])
+        excerpt = binary_header + encoded
+    output = header + excerpt + (b"" if excerpt.endswith(b"\n") else b"\n")
     if len(output) > MAX_MODEL_BYTES:
-        output = output[:MAX_MODEL_BYTES]
+        framing_unavailable(label, hint)
+        return
     sys.stdout.buffer.write(output)
     return len(output)
 
@@ -481,9 +600,16 @@ def run(label, argv):
                 write_json(handles["meta"], metadata)
                 fallback_projection(label, paths, combined, reason, command_status)
             else:
-                metadata["projection"] = {"state": "projected", "counts": counts, "additionalOutputBytes": len(details)}
-                write_json(handles["meta"], metadata)
-                output_projection(label, paths, counts, details)
+                projected = output_projection(label, paths, counts, details)
+                if projected is None:
+                    reason = "mandatory bounded recovery framing exceeds the model output limit"
+                    metadata["projection"] = {"state": "unverified", "reason": reason}
+                    write_json(handles["meta"], metadata)
+                    fallback_projection(label, paths, combined, reason, command_status)
+                else:
+                    metadata["projection"] = {"state": "projected", "counts": counts, "additionalOutputBytes": len(details)}
+                    write_json(handles["meta"], metadata)
+                    sys.stdout.buffer.write(projected)
             return command_status
 
         metadata["projection"] = {"state": "not_applicable"}
