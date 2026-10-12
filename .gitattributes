@@ -2,3 +2,6 @@
 skills/exitbind/SKILL.md text eol=lf
 skills/exitbind/references/preservation.md text eol=lf
 skills/soulmate/SKILL.md text eol=lf
+assets/readme export-ignore
+tooling/readme export-ignore
+.github/workflows/readme-badges.yml export-ignore
