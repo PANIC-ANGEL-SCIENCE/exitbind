@@ -7,15 +7,38 @@ mod support;
 
 use serde_json::Value;
 use std::{
+    ffi::OsStr,
     fs,
     io::Write,
     path::PathBuf,
-    process::{Output, Stdio},
+    process::{Command, Output, Stdio},
 };
 
 struct Fixture {
     root: PathBuf,
     cleanup_root: PathBuf,
+    native_session: Option<NativeSession>,
+}
+
+struct NativeSession {
+    identity: String,
+    store: PathBuf,
+}
+
+const NATIVE_SESSION_ENV: [&str; 5] = [
+    "CODEX_THREAD_ID",
+    "CODEX_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "EXITBIND_NATIVE_SESSION_ID",
+    "EXITBIND_SESSION_GOALS_DIR",
+];
+
+fn isolated_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = support::git_topology::command(program);
+    for name in NATIVE_SESSION_ENV {
+        command.env_remove(name);
+    }
+    command
 }
 
 impl Fixture {
@@ -27,17 +50,54 @@ impl Fixture {
     fn at(root: PathBuf, cleanup_root: PathBuf) -> Self {
         fs::create_dir_all(&root).unwrap();
         support::git_topology::repository(&root);
-        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        let output = isolated_command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
             .unwrap();
         assert!(output.status.success(), "{}", text(&output));
-        Self { root, cleanup_root }
+        Self {
+            root,
+            cleanup_root,
+            native_session: None,
+        }
+    }
+
+    fn with_codex_session(mut self) -> Self {
+        let name = self
+            .root
+            .file_name()
+            .expect("fixture root has a final component")
+            .to_string_lossy()
+            .into_owned();
+        let store = self
+            .root
+            .with_file_name(format!("{name}-native-session-goals"));
+        assert!(
+            !store.exists(),
+            "fixture native session store already exists: {}",
+            store.display()
+        );
+        self.native_session = Some(NativeSession {
+            identity: format!("action-forms-{name}"),
+            store,
+        });
+        self
+    }
+
+    fn command(&self, program: impl AsRef<OsStr>) -> Command {
+        let mut command = isolated_command(program);
+        if let Some(session) = &self.native_session {
+            command
+                .env("CODEX_THREAD_ID", &session.identity)
+                .env("EXITBIND_SESSION_GOALS_DIR", &session.store);
+        }
+        command
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = self
+            .command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -137,7 +197,8 @@ impl Fixture {
     }
 
     fn run_argv(&self, argv: &[String], input: &[u8]) -> Output {
-        let mut child = support::git_topology::command(&argv[0])
+        let mut child = self
+            .command(argv[0].as_str())
             .current_dir(&self.root)
             .args(&argv[1..])
             .stdin(Stdio::piped())
@@ -183,6 +244,9 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        if let Some(session) = &self.native_session {
+            let _ = std::fs::remove_dir_all(&session.store);
+        }
         let _ = std::fs::remove_dir_all(&self.cleanup_root);
     }
 }
@@ -594,7 +658,7 @@ fn permit_operation_bytes_refuse_before_effect_and_accept_exact_boundaries() {
 
 #[test]
 fn stale_form_binding_rejects_same_assignment_after_goal_revision() {
-    let fixture = Fixture::new("action-form-binding");
+    let fixture = Fixture::new("action-form-binding").with_codex_session();
     fixture.json(
         &[
             "goal",
