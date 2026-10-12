@@ -1,8 +1,6 @@
 name: Exitbind / Exit
 on:
   push:
-    branches-ignore: [readme-badges]
-    tags: ["**"]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -12,6 +10,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) }}
 jobs:
   scope:
+    if: github.ref != 'refs/heads/readme-badges'
     runs-on: ubuntu-latest
     outputs:
       scope: ${{ steps.detect.outputs.scope }}
