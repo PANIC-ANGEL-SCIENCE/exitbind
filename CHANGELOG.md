@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.31.11
+
+- Inspect and recover retained native action results through a bounded, read-only route
+  without replaying the completed provider call; refuse recovery when process or effect
+  evidence is uncertain.
+- Attach optional context from an identified provider-host conversation Goal to ordinary
+  main and side Works, while keeping cross-project Goal evidence separate and completion
+  output concise.
+- Preserve exact current context and evidence routes when an action view exceeds the
+  response budget, so the complete material remains reachable through current detail.
+
 ## 0.31.10
 
 - Deliver reviewed project skills and lenses to applicable configured recipients

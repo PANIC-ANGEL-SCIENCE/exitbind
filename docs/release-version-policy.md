@@ -1,9 +1,9 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.10
-Source candidate tag: v0.31.10
+Published stable tag: v0.31.11
+Source candidate tag: v0.31.11
 
-The published stable release and current source version are both 0.31.10.
+The published stable release and current source version are both 0.31.11.
 README install links name the available published assets. A source version or
 passing CI alone does not establish an official release. The release-reference
 check validates published and candidate declarations separately; source metadata,

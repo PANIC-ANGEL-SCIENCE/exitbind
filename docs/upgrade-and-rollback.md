@@ -7,7 +7,7 @@ organization distribution, run the versioned installer from the new repository
 after its release assets are available:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.10/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.11/install.sh | sh
 ```
 
 This one-time installation gives subsequent `exitbind update` commands the new

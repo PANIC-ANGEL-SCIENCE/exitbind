@@ -1,6 +1,6 @@
 {
   "name": "exitbind",
-  "version": "0.31.10",
+  "version": "0.31.11",
   "description": "Exitbind — No result exits unbound. Bind the evidence to the exact result before exit. For your existing Codex or Claude lead; this skills-only plugin installs guidance, not the separate Exitbind CLI.",
   "author": {
     "name": "envy404",
