@@ -45,6 +45,10 @@ impl Project {
         }
     }
     fn with_native_session(mut self, identity: &str) -> Self {
+        self.set_native_session(identity);
+        self
+    }
+    fn set_native_session(&mut self, identity: &str) {
         let name = self
             .root
             .file_name()
@@ -55,7 +59,6 @@ impl Project {
             self.root
                 .with_file_name(format!("{name}-native-session-goals")),
         ));
-        self
     }
     fn call(&self, args: &[&str], input: Option<&str>) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
@@ -325,6 +328,249 @@ fn row(status: &Value, id: &str) -> Value {
         .find(|item| item["id"] == id)
         .unwrap()
         .clone()
+}
+
+fn incorporate_native_generic_goal(project: &Project, goal_id: &str, goal: &str) -> Value {
+    project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            goal_id,
+            "--goal",
+            goal,
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    )
+}
+
+#[test]
+fn native_generic_owner_close_and_status_render_only_verified_main_and_side_work() {
+    let mut p = Project::new("native-generic-owner-terminal");
+
+    // This accepted Work predates the Goal and remains an explicit closure
+    // result only; it is never retroactively inserted into journey membership.
+    p.file("history.txt", "original evidence\n");
+    let historical = p.begin_ordinary(
+        "Validate the existing main-task evidence",
+        "test \"$(cat history.txt)\" = 'original evidence'",
+        &[],
+    );
+    p.drive(&historical, true);
+    p.set_native_session("native-generic-owner-terminal-session");
+    let empty = p.status();
+    assert!(empty["presentation"]["terminal"].is_null());
+
+    let incorporated = incorporate_native_generic_goal(
+        &p,
+        "native-main",
+        "Complete the main task and all side tasks in this conversation",
+    );
+    assert_eq!(incorporated["journeyMembershipProtocol"], 2);
+    assert!(incorporated["journeyMembers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(incorporated.get("requirements").is_none());
+
+    let side = p.begin_ordinary("Complete a side task in this conversation", "true", &[]);
+    p.drive(&side, true);
+    let current = p.status();
+    let journey = &current["goalProgress"]["journeyCompletion"];
+    assert_eq!(journey["state"], "current");
+    assert_eq!(journey["members"]["total"], 1);
+    assert_eq!(journey["members"]["current"], 1);
+    let members = current["journeyMembers"].as_array().unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["work"], side);
+    assert!(!members.iter().any(|member| member["work"] == historical));
+    assert!(current.get("requirements").is_none());
+
+    let close = p.call(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "native-main",
+            "--result-ref",
+            &historical,
+        ],
+        None,
+    );
+    assert!(close.status.success(), "{close:?}");
+    assert_eq!(
+        String::from_utf8(close.stdout).unwrap(),
+        format!("{TERMINAL}\n")
+    );
+    let closed = p.status();
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["currentReadiness"]["state"], "current");
+    assert_eq!(closed["presentation"]["terminal"], TERMINAL);
+    assert!(closed.get("requirements").is_none());
+    let status = p.call(&["goal", "status"], None);
+    assert!(status.status.success(), "{status:?}");
+    assert_eq!(
+        String::from_utf8(status.stdout).unwrap(),
+        format!("{TERMINAL}\n")
+    );
+
+    // The explicit legacy selector keeps project-local status and closure
+    // separate from this native session journal.
+    let local = p.value(&["goal", "status", "--project", "--json"], None);
+    assert!(local["presentation"]["terminal"].is_null());
+    p.reject(
+        &[
+            "goal",
+            "close",
+            "--project",
+            "--goal-id",
+            "native-main",
+            "--result-ref",
+            &historical,
+        ],
+        "no canonical session goal is open",
+    );
+
+    // A different configured project can read only the context summary and
+    // cannot close the owner journal.
+    let (identity, store) = p.native_session.as_ref().unwrap();
+    let mut child = Project::new("native-generic-nonowner");
+    child.native_session = Some((identity.clone(), store.clone()));
+    let child_status = child.value(&["goal", "status", "--json"], None);
+    assert_eq!(child_status["contextOnly"], true);
+    assert_eq!(child_status["authority"], "none");
+    assert!(child_status["presentation"]["terminal"].is_null());
+    child.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "native-main",
+            "--result-ref",
+            &historical,
+        ],
+        "owned by another configured project",
+    );
+    child.native_session = None;
+
+    // Starting a later failed side task reopens whole-journey readiness;
+    // the prior closure remains historical and cannot emit the terminal.
+    let pending = p.begin_ordinary("A later side task remains unfinished", "false", &[]);
+    p.drive(&pending, false);
+    let blocked = p.status();
+    assert_eq!(blocked["closure"]["closed"], false);
+    assert_eq!(
+        blocked["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert!(blocked["presentation"]["terminal"].is_null());
+    p.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "native-main",
+            "--result-ref",
+            &historical,
+        ],
+        "journey",
+    );
+}
+
+#[test]
+fn native_generic_owner_terminal_suppresses_stale_unadmitted_result_proof() {
+    let mut p = Project::new("native-generic-stale-proof");
+    p.file("proof.txt", "original\n");
+    let historical = p.begin_ordinary(
+        "Validate the original proof source",
+        "test \"$(cat proof.txt)\" = original",
+        &[],
+    );
+    p.drive(&historical, true);
+    p.set_native_session("native-generic-stale-proof-session");
+
+    let incorporated = incorporate_native_generic_goal(
+        &p,
+        "proof-goal",
+        "Finish the main task using current accepted evidence",
+    );
+    assert!(incorporated["journeyMembers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let closed = p.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "proof-goal",
+            "--result-ref",
+            &historical,
+        ],
+        None,
+    );
+    assert_eq!(closed["presentation"]["terminal"], TERMINAL);
+    assert_eq!(
+        p.status()["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+
+    p.file("proof.txt", "changed after acceptance\n");
+    let stale = p.status();
+    assert_eq!(stale["closure"]["closed"], true);
+    assert_eq!(stale["currentReadiness"]["state"], "stale");
+    assert_eq!(
+        stale["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    assert!(stale["presentation"]["terminal"].is_null());
+}
+
+#[test]
+fn native_direct_closure_does_not_expose_the_governed_terminal() {
+    let p = Project::new("native-direct-terminal-boundary")
+        .with_native_session("native-direct-terminal-boundary-session");
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete this direct task",
+            "--finding",
+            "The lead completed the direct task",
+        ],
+        None,
+    );
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete this direct task",
+            "--none-applicable",
+            "obligations,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    let closed = p.value(
+        &["goal", "close", "--direct", "--goal-id", "direct-goal"],
+        None,
+    );
+    assert_eq!(closed["closure"]["kind"], "direct");
+    assert!(closed["presentation"]["terminal"].is_null());
+    let status = p.status();
+    assert_eq!(status["closure"]["kind"], "direct");
+    assert!(status["presentation"]["terminal"].is_null());
+    assert!(!serde_json::to_string(&status)
+        .unwrap()
+        .contains("EXIT READY"));
 }
 
 #[test]

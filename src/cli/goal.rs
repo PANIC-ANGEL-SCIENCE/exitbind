@@ -198,7 +198,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     option(a, "result-ref", "goal close requires --result-ref")?,
                 )?
             };
-            if crate::session_goal::requirements::named(&value) {
+            let named = crate::session_goal::requirements::named(&value);
+            let native_governed = scope.is_session() && value["closure"]["kind"] != "direct";
+            if named || native_governed {
                 let rendered = crate::session_goal::presentation_for_loaded(l, Some(&value))?;
                 value["presentation"] = json!({"terminal": rendered["terminal"]});
                 if !a.flags.contains_key("json") {

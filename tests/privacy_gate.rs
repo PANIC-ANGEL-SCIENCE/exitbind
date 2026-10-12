@@ -265,6 +265,9 @@ fn credential_assignment(text: &str) -> bool {
             let Some(value) = tail.strip_prefix(':').or_else(|| tail.strip_prefix('=')) else {
                 return false;
             };
+            if rust_let_method_assignment(&lower, key, index) {
+                return false;
+            }
             value
                 .trim_start_matches([' ', '\t', '"', '\''])
                 .chars()
@@ -273,6 +276,144 @@ fn credential_assignment(text: &str) -> bool {
                 >= 12
         })
     })
+}
+
+fn rust_let_method_assignment(source: &str, key: &str, occurrence: usize) -> bool {
+    let line_start = source[..occurrence]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let mut declaration = &source[line_start..occurrence + key.len()];
+    declaration = declaration.trim_start();
+    if let Some(after_patch_marker) = declaration
+        .strip_prefix('+')
+        .or_else(|| declaration.strip_prefix('-'))
+    {
+        if !after_patch_marker.starts_with(['+', '-']) {
+            declaration = after_patch_marker.trim_start();
+        }
+    }
+    let Some(after_let) = declaration.strip_prefix("let") else {
+        return false;
+    };
+    if !after_let.chars().next().is_some_and(char::is_whitespace) {
+        return false;
+    }
+    let mut declaration = after_let.trim_start();
+    if let Some(after_mut) = declaration.strip_prefix("mut") {
+        if after_mut
+            .chars()
+            .next()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphanumeric())
+        {
+            return false;
+        }
+        declaration = after_mut.trim_start();
+    }
+
+    let name_len = declaration
+        .find(|character: char| character != '_' && !character.is_ascii_alphanumeric())
+        .unwrap_or(declaration.len());
+    if name_len != key.len() || declaration.len() != name_len || &declaration[..name_len] != key {
+        return false;
+    }
+    let assignment = source[occurrence + key.len()..].trim_start();
+    let Some(rhs) = assignment.strip_prefix('=') else {
+        return false;
+    };
+    if rhs.starts_with('=') {
+        return false;
+    }
+    let rhs = rhs.trim_start();
+    if rhs.starts_with(['"', '\'']) {
+        return false;
+    }
+    rust_method_call(rhs.lines().next().unwrap_or(""))
+}
+
+fn rust_method_call(value: &str) -> bool {
+    let Some(open_paren) = value.find('(') else {
+        return false;
+    };
+    let callee = &value[..open_paren];
+    let identifier = |part: &str| {
+        let mut chars = part.chars();
+        chars
+            .next()
+            .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+            && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    };
+    let parts = callee.split('.').collect::<Vec<_>>();
+    if parts.len() < 2 || !parts.iter().all(|part| identifier(part)) {
+        return false;
+    }
+
+    let Some(mut end) = rust_call_end(value, open_paren) else {
+        return false;
+    };
+    loop {
+        let tail = value[end..].trim_start();
+        let whitespace = value[end..].len() - tail.len();
+        end += whitespace;
+        if let Some(after_dot) = value[end..].strip_prefix('.') {
+            let method_len = after_dot
+                .find(|character: char| character != '_' && !character.is_ascii_alphanumeric())
+                .unwrap_or(after_dot.len());
+            if method_len == 0 || !identifier(&after_dot[..method_len]) {
+                return false;
+            }
+            let call = after_dot[method_len..].trim_start();
+            if !call.starts_with('(') {
+                return false;
+            }
+            let open = value.len() - call.len();
+            let Some(next_end) = rust_call_end(value, open) else {
+                return false;
+            };
+            end = next_end;
+            continue;
+        }
+        let mut suffix = value[end..].trim();
+        if let Some(after_try) = suffix.strip_prefix('?') {
+            suffix = after_try.trim();
+        }
+        if let Some(after_semicolon) = suffix.strip_prefix(';') {
+            suffix = after_semicolon.trim();
+        }
+        return suffix.is_empty();
+    }
+}
+
+fn rust_call_end(value: &str, open_paren: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, character) in value
+        .char_indices()
+        .skip_while(|(index, _)| *index < open_paren)
+    {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => in_string = true,
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index + character.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn private_filename(path: &Path) -> bool {
@@ -648,6 +789,95 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
         |(category, source)| category == "credential-token-signature"
             && source == "git-history:patches"
     ));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn credential_assignment_distinguishes_method_expressions_and_retains_history_checks() {
+    let root = temp("credential-assignment-lexical");
+    let name = ["to", "ken"].concat();
+    let benign = format!("let {name} = work.strip_prefix(\"smw_\").unwrap();\n");
+    fs::write(root.join("notes.txt"), benign.as_bytes()).unwrap();
+    assert!(scan(&root).is_empty(), "method-call candidate was flagged");
+
+    fn git_ok(root: &Path, arguments: &[&str]) {
+        let status = Command::new("git")
+            .args(["-C", root.to_str().unwrap()])
+            .args(arguments)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {arguments:?} failed");
+    }
+    fn commit_notes(root: &Path, message: &str) {
+        git_ok(root, &["add", "notes.txt"]);
+        git_ok(
+            root,
+            &[
+                "-c",
+                "user.name=envy404",
+                "-c",
+                "user.email=287204764+envy404@users.noreply.github.com",
+                "commit",
+                "-qm",
+                message,
+            ],
+        );
+    }
+
+    git_ok(&root, &["init", "-q"]);
+    commit_notes(&root, "benign expression fixture");
+    fs::write(root.join("notes.txt"), "clean\n").unwrap();
+    commit_notes(&root, "remove benign expression fixture");
+    assert!(scan(&root).is_empty(), "benign history was flagged");
+
+    let name = ["TO", "KEN"].concat();
+    let value = ["ordinary", "_fixture", "_value"].concat();
+    let generic = format!("{name}={value}\n");
+    let quoted = format!("let {name} = \"{value}\";\n");
+    let receiver = ["recei", "ver"].concat();
+    let method = ["long_", "method"].concat();
+    let argument = ["safe_", "fixture_", "value"].concat();
+    let environment_call = format!("{name}={receiver}.{method}({argument})\n");
+    let quoted_environment_call = format!("{name}=\"{receiver}.{method}({argument})\"\n");
+    let multiline_quoted = format!("let {name}\n = \"{value}\";\n");
+    let same_line_assignment =
+        format!("let {name} = {receiver}.{method}({argument}); // {name}={value}\n");
+    let same_line_method_assignment = format!(
+        "let {name} = {receiver}.{method}({argument}); // {name}={receiver}.{method}({argument})\n"
+    );
+    assert!(credential_assignment(&generic));
+    assert!(credential_assignment(&quoted));
+    assert!(credential_assignment(&environment_call));
+    assert!(credential_assignment(&quoted_environment_call));
+    assert!(credential_assignment(&multiline_quoted));
+    assert!(credential_assignment(&same_line_assignment));
+    assert!(credential_assignment(&same_line_method_assignment));
+    fs::write(
+        root.join("notes.txt"),
+        format!(
+            "{generic}{quoted}{environment_call}{quoted_environment_call}{multiline_quoted}{same_line_assignment}{same_line_method_assignment}"
+        ),
+    )
+    .unwrap();
+    let current = scan(&root);
+    assert!(current.iter().any(|(category, source)| {
+        category == "credential-assignment" && source == "tracked-file"
+    }));
+
+    fs::write(
+        root.join("notes.txt"),
+        format!(
+            "{generic}{quoted}{environment_call}{quoted_environment_call}{same_line_assignment}{same_line_method_assignment}"
+        ),
+    )
+    .unwrap();
+    commit_notes(&root, "assignment-shaped fixtures");
+    fs::write(root.join("notes.txt"), "clean\n").unwrap();
+    commit_notes(&root, "remove assignment-shaped fixtures");
+    let historical = scan(&root);
+    assert!(historical.iter().any(|(category, source)| {
+        category == "credential-assignment" && source == "git-history:patches"
+    }));
     fs::remove_dir_all(root).unwrap();
 }
 
