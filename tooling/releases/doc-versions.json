@@ -1,0 +1,375 @@
+{
+  "archive": {
+    "CHANGELOG.md": "Append-only release history; its newest source heading is checked by check-release-refs.sh."
+  },
+  "files": {
+    "CONTRIBUTING.md": [
+      {
+        "pinned": "pinned actionlint 1.7.12 from a task-local archive cache, with ambient shell/Python",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      },
+      {
+        "pinned": "The [v0.25.1 maintenance entry](docs/maintenance/v0.25.1/README.md) preserves",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      }
+    ],
+    "README.md": [
+      {
+        "template": "The current [v{stable} release](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v{stable})",
+        "count": 1
+      },
+      {
+        "template": "curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/install.sh | sh",
+        "count": 1
+      }
+    ],
+    "REFERENCE.md": [
+      {
+        "template": "Install the published `v{stable}` release as a single Rust binary. Node.js,",
+        "count": 1
+      },
+      {
+        "template": "curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/install.sh | sh",
+        "count": 1
+      },
+      {
+        "template": "`v{stable}` includes the `--event-id`/`--text` forms below. Older",
+        "count": 1
+      },
+      {
+        "pinned": "0.12.0 binaries retain the JSON workflow but do not recognize these flags.",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "template": "v{stable} targets Linux x86_64 and native macOS on",
+        "count": 1
+      },
+      {
+        "template": "New checked runs in `v{stable}` use run-event format 8. The",
+        "count": 1
+      },
+      {
+        "template": "After installing `v{stable}`, update project skill copies after upgrading the",
+        "count": 1
+      },
+      {
+        "template": "curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/install.sh | EXITBIND_VERSION=v{stable} sh",
+        "count": 1
+      },
+      {
+        "pinned": "before this feature cannot self-notify, so install `0.20.0` once to enable",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "template": "dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v{stable}",
+        "count": 2
+      },
+      {
+        "pinned": "- `1.0.0` requires external-use evidence that the documented CLI and persisted",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "`0.26.0` adds current readable assignment/evidence/task delivery and optional",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "`0.25.2` corrects saved-result recovery in the existing `work act` path on the",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "`0.9.3` is a patch release because it removes an unsupported experimental",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "template": "  \"$schema\": \"https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/schema/exitbind-harness-manifest.schema.json\",",
+        "count": 1
+      },
+      {
+        "pinned": "  \"harness\": { \"name\": \"my-harness\", \"version\": \"2026.08.30\" },",
+        "reason": "Example third-party harness identity; unrelated to the Exitbind version."
+      },
+      {
+        "pinned": "[the design boundary](docs/post-0.3.0-harness-evidence.md). OTel or Langfuse may",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "template": "The commands in this section are included in the published {stable} release.",
+        "count": 1
+      },
+      {
+        "template": "the {stable} release series and publication gates.",
+        "count": 1
+      }
+    ],
+    "SECURITY.md": [
+      {
+        "template": "In `v{stable}`, `run observe-check` executes only the frozen command",
+        "count": 1
+      },
+      {
+        "template": "run; v3 supports caller-reported `run record-check` only. `v{stable}`",
+        "count": 1
+      }
+    ],
+    "docs/check-recovery.md": [
+      {
+        "pinned": "In 0.30.1, the configured Lead can recover a retained storage-failure response",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "The distinct v8 recovery event requires a compatible 0.30.1 reader for the",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      }
+    ],
+    "docs/controlled-file-effects.md": [
+      {
+        "pinned": "| Linux, Codex 0.160.0, host-writable source, explicit controlled launch, capability preflight passes | **enforced** for this file effect |",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      }
+    ],
+    "docs/first-checked-run.md": [
+      {
+        "template": "In `v{stable}`, new checked runs use run-event format 8. Exitbind binds each submission, check,",
+        "count": 1
+      },
+      {
+        "pinned": "`EXITBIND_BIN=target/debug/exitbind`. The older stable 0.12.0 binary lacks the",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "template": "For `v{stable}`, `run observe-check` can execute only the frozen",
+        "count": 1
+      }
+    ],
+    "docs/goal-requirements.md": [
+      {
+        "template": "named-requirement path is included in the stable v{stable} installation; the",
+        "count": 1
+      },
+      {
+        "template": "native conversation linkage described above is also included in the stable v{stable} installation.",
+        "count": 1
+      }
+    ],
+    "docs/holytail-workload-findings.md": [
+      {
+        "pinned": "and the released Soulmate 0.12.1-rc.2 binary. Four independent source copies",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      }
+    ],
+    "docs/legacy-compatibility.md": [
+      {
+        "pinned": "`v0.25.0`; historical releases and records remain available.",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "resetting to `0.0.1`. The published tag line, the release assets, and the",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; the current release no longer builds or selects the old profile, and refuses copy or symlink invocations before CLI effects |",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "  retains its original layout; the `v0.25.0` package does not ship it.",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      }
+    ],
+    "docs/maintenance/v0.25.1/03_VALIDATION_AND_ADAPTER.md": [
+      {
+        "pinned": "End with `RECOMMEND v0.25.1` or `HOLD v0.25.1: <exact product blocker>`. Keep",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      }
+    ],
+    "docs/maintenance/v0.25.1/README.md": [
+      {
+        "pinned": "# v0.25.1 follow-up: reviewer handoff and R14 closeout",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      },
+      {
+        "pinned": "Status: v0.25.1 patch candidate; recommendation remains on hold while required host validation is unverified",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      },
+      {
+        "pinned": "- branch: `fix/r13-v0.25.1-hardening`;",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      },
+      {
+        "pinned": "Finish with `RECOMMEND v0.25.1` or `HOLD v0.25.1: <exact product blocker>`, plus",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      },
+      {
+        "pinned": "Recommendation: `HOLD v0.25.1: normal non-publishing WSL validation remains",
+        "reason": "Closed maintenance packet identity and evidence; retain the historical release and branch."
+      }
+    ],
+    "docs/onboarding.md": [
+      {
+        "template": "`v{stable}` includes optional `--event-id` and `--text` conveniences; they are not",
+        "count": 1
+      },
+      {
+        "pinned": "Host releases still matter. A [reported Copilot CLI 1.0.5",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      },
+      {
+        "pinned": "in its [0.24.0 release",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      },
+      {
+        "pinned": "needs projections for several hosts. In a disposable project, version 3.0.1",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      },
+      {
+        "template": "`v{stable}` includes the `--event-id` and `--text` options used",
+        "count": 1
+      },
+      {
+        "template": "In `v{stable}`, `check` reports the invoking binary version and hashes of",
+        "count": 1
+      },
+      {
+        "pinned": "Already-distributed 0.12.0 binaries cannot show these new diagnostics; inspect",
+        "reason": "Pinned host/tool evidence or minimum historical binary capability; not the Exitbind stable pointer."
+      }
+    ],
+    "docs/participation-validation.md": [
+      {
+        "pinned": "Soulmate 0.12.0 and native coding agents. They are not an external user study or",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      },
+      {
+        "pinned": "uses the released 0.12.1-rc.2 binary and four independently reviewed task",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      }
+    ],
+    "docs/platform-support.md": [
+      {
+        "template": "The `v{stable}` release targets Linux x86_64 and macOS on",
+        "count": 1
+      }
+    ],
+    "docs/post-0.3.0-harness-evidence.md": [
+      {
+        "pinned": "# Post-0.3.0 harness evidence follow-up",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      },
+      {
+        "pinned": "Status: introduced as the opt-in receipt v2 path in 0.4.0 and hardened in 0.5.0;",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      },
+      {
+        "pinned": "not part of 0.3.0.",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      },
+      {
+        "pinned": "In 0.3.0, a native agent may record those facts in its existing submitted",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      },
+      {
+        "pinned": "## 0.4.0 decision",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      }
+    ],
+    "docs/project-capabilities.md": [
+      {
+        "template": "This path is included in the published {stable} release. See",
+        "count": 1
+      }
+    ],
+    "docs/project-lessons.md": [
+      {
+        "template": "The input-preparation command below is included in the {stable} release.",
+        "count": 1
+      }
+    ],
+    "docs/release-version-policy.md": [
+      {
+        "template": "Published stable tag: v{stable}",
+        "count": 1
+      },
+      {
+        "template": "Source candidate tag: v{candidate}",
+        "count": 1
+      },
+      {
+        "template": "The published stable release is {stable}.",
+        "count": 1
+      },
+      {
+        "template": "The current source version is {candidate}.",
+        "count": 1
+      },
+      {
+        "pinned": "Future stable releases in this series use 0.31.10 through 0.31.99, increasing",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "intentionally skipped. Core numbers have no leading zeroes: 0.31.01 is invalid.",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "The updater compares numbers, so 0.31.10 follows both 0.31.0 and 0.31.9. Passing",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      },
+      {
+        "pinned": "such as 0.32.10.",
+        "reason": "Fixed version-policy example or rationale for an earlier release, not a current-version claim."
+      }
+    ],
+    "docs/upgrade-and-rollback.md": [
+      {
+        "template": "curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/install.sh | sh",
+        "count": 1
+      },
+      {
+        "pinned": "The 0.29.0 line writes a marked v8 `carryProtocol` version 1 accounting seed",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "The 0.30.1 release also includes named requirements and memory policy-correction",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "Explicit known-ended check recovery in 0.30.1 appends a distinct v8",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      },
+      {
+        "pinned": "For a rollback to the 0.28.0 line, set `ROLLBACK_TAG` to that published tag.",
+        "reason": "Fixed compatibility, reader or format milestone, migration example, or historical design link."
+      }
+    ],
+    "docs/v0.19-evidence-priorities-review.md": [
+      {
+        "pinned": "This review predates the 0.23.1-rc.2 line. Later releases change update, install,",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      }
+    ],
+    "docs/value-baseline.md": [
+      {
+        "pinned": "whose product behavior matches the preceding 0.11.0 release. The intervening",
+        "reason": "Historical report, experiment baseline or original design milestone; evidence must not be relabeled."
+      }
+    ],
+    "docs/value-proof-methodology.md": [
+      {
+        "template": "producer identity and semantics. `v{stable}` writes v8 records",
+        "count": 1
+      }
+    ],
+    "docs/windows-wsl.md": [
+      {
+        "template": "To install the published `v{stable}` release, open the Ubuntu terminal.",
+        "count": 1
+      },
+      {
+        "template": "curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{stable}/install.sh | sh",
+        "count": 1
+      }
+    ]
+  }
+}
