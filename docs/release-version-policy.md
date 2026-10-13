@@ -1,14 +1,13 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.11
+Published stable tag: v0.31.12
 Source candidate tag: v0.31.12
 
-The latest published stable release is 0.31.11; the current source candidate is
-0.31.12. README install links continue to name the available published assets.
-A source version or passing CI alone does not establish an official release.
-The release-reference check validates published and candidate declarations
-separately; source metadata, schemas and installation defaults must match the
-current source version.
+The published stable release and current source version are both 0.31.12.
+README install links name the available published assets. A source version or
+passing CI alone does not establish an official release. The release-reference
+check validates published and candidate declarations separately; source metadata,
+schemas and installation defaults must match the current source version.
 
 Future stable releases in this series use 0.31.10 through 0.31.99, increasing
 only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are
