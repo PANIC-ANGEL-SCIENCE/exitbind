@@ -212,11 +212,8 @@ fn recover_with_preview(f: &Fixture, preview: &Value, d: &Value) -> Output {
     assert_eq!(preview["ownerDecision"]["approved"], false);
     let apply = &preview["apply"];
     assert_eq!(apply["stdin"]["required"], true);
-    assert_eq!(apply["command"]["sameConfigRequired"].is_boolean(), true);
-    assert_eq!(
-        apply["command"]["sameExecutableRequired"].is_boolean(),
-        true
-    );
+    assert!(apply["command"]["sameConfigRequired"].is_boolean());
+    assert!(apply["command"]["sameExecutableRequired"].is_boolean());
     let argv = apply["command"]["argv"].as_array().unwrap();
     assert!(argv.iter().any(|arg| arg == "--apply"));
     let binding_index = argv
@@ -236,13 +233,12 @@ fn ended_storage_failure_recovers_once_without_check_credit_or_accounting_reset(
     let preview = f.ok(&["work", "recover-check", &work, "--json"], b"");
     assert_eq!(preview["ownerDecision"]["approved"], false);
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
-    assert_eq!(
+    assert!(
         preview["apply"]["command"]["argv"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|arg| arg == "--apply"),
-        true
+            .any(|arg| arg == "--apply")
     );
     let before = f.next(&work)["packet"]["context"]["loop"].clone();
     let recovered = recover(&f, &work, &d);
