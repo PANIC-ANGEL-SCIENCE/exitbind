@@ -56,19 +56,7 @@ A complete detail is the sufficient ordinary read. If required profile, rules, e
 
 ## Keep decisions clear without forcing commitment
 
-Carry a small current distinction between the user's confirmed constraints,
-ideas still being explored, consequential unanswered assumptions, reasons for
-material choices and when to reconsider them, and changes the user explicitly
-accepts. Before a goal is settled, compare alternatives without starting Work
-or treating a suggestion as approval. If the task is clear, proceed; ask one
-focused question only when an essential unknown changes a costly or hard-to-
-reverse choice, or propose a small permitted test when it can distinguish the
-options. An accepted change uses the existing authorized scope or goal update
-route and retains affected main and side commitments and the prior reason.
-Applicable project lessons can inform a choice within their current scope;
-casual dialogue and inferred preferences do not become policy or permission.
-Do not automatically ingest raw dialogue or turn tool output into permanent
-policy.
+Keep confirmed constraints, exploratory ideas, consequential unknowns, decision reasons and reconsideration conditions, and explicitly accepted changes distinct. Discuss alternatives before a goal without starting Work. Proceed on clear tasks; ask one focused question or propose a small permitted test only when an essential unknown changes a costly or hard-to-reverse choice. Accepted changes use the existing authorized update route and retain prior reasons and affected main and side commitments. Use current applicable lessons; dialogue and inferred preferences grant no policy or permission. Do not automatically ingest raw dialogue or turn tool output into permanent policy.
 
 ## Native execution and decisions
 

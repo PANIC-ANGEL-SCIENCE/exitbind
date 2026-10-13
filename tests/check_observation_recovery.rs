@@ -233,13 +233,11 @@ fn ended_storage_failure_recovers_once_without_check_credit_or_accounting_reset(
     let preview = f.ok(&["work", "recover-check", &work, "--json"], b"");
     assert_eq!(preview["ownerDecision"]["approved"], false);
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
-    assert!(
-        preview["apply"]["command"]["argv"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|arg| arg == "--apply")
-    );
+    assert!(preview["apply"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--apply"));
     let before = f.next(&work)["packet"]["context"]["loop"].clone();
     let recovered = recover(&f, &work, &d);
     assert!(recovered.status.success(), "{recovered:?}");

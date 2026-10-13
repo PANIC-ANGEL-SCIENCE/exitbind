@@ -81,15 +81,7 @@ to carry protocol JSON or event hashes between turns.
 
 ### Explore before committing to a goal
 
-Your Lead can discuss alternatives before a goal is settled; asking a question
-or mentioning an idea does not start Work. It keeps confirmed constraints
-separate from ideas still under discussion, consequential unknowns, reasons for
-material choices and when to reconsider them, and changes you explicitly
-accept. A clear task proceeds directly. The Lead asks one focused question
-when an essential missing fact changes a costly or hard-to-reverse choice, or
-may suggest a small permitted test that distinguishes the options. An accepted
-change follows the existing authorized scope or goal update route and carries
-forward affected main and side commitments and the earlier reason.
+Keep confirmed constraints, ideas, costly unknowns, decision reasons and when to reconsider, and accepted changes distinct. Discuss options before a goal without starting Work; clear tasks proceed directly. The Lead asks one focused question or suggests a small permitted test only when an essential unknown affects a costly or hard-to-reverse choice. Accepted changes use the existing authorized route and retain the earlier reason and affected main and side commitments. Use only current applicable lessons; dialogue and inferred preferences grant no policy or permission, and raw dialogue or tool output is not automatically retained as policy.
 
 ### Review the starter setup once
 

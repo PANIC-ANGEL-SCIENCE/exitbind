@@ -233,9 +233,20 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(lead_profile.contains("completing one part does not complete the whole"));
     assert!(lead_profile.contains("impact map as provisional"));
     assert!(lead_profile.contains("no fixed thinking sequence or model choice"));
-    assert!(lead_profile.contains("ideas still being explored"));
-    assert!(lead_profile.contains("reasons for material choices and when to reconsider them"));
-    assert!(lead_profile.contains("without starting Work or treating a suggestion as approval"));
+    assert!(
+        lead_profile.contains("confirmed constraints, exploratory ideas, consequential unknowns")
+    );
+    assert!(lead_profile.contains("decision reasons and reconsideration conditions"));
+    assert!(lead_profile.contains("explicitly accepted changes distinct"));
+    assert!(lead_profile.contains("Discuss alternatives before a goal without starting Work"));
+    assert!(lead_profile.contains("one focused question or propose a small permitted test"));
+    assert!(lead_profile.contains("authorized update route and retain prior reasons"));
+    assert!(lead_profile.contains("affected main and side commitments"));
+    assert!(lead_profile.contains("current applicable lessons"));
+    assert!(
+        lead_profile.contains("dialogue and inferred preferences grant no policy or permission")
+    );
+    assert!(lead_profile.contains("Do not automatically ingest raw dialogue"));
     let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
     assert!(skill.contains("`work detail WORK --json` directly"));
     assert!(skill.contains("Unknown Work or project focus: use `work resume --json`"));
@@ -266,8 +277,10 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     let delivered_profile = delivered["recipientContext"]["profile"]["content"]
         .as_str()
         .unwrap();
-    assert!(delivered_profile.contains("ideas still being explored"));
-    assert!(delivered_profile.contains("one focused question only when an essential unknown"));
+    assert!(delivered_profile
+        .contains("consequential unknowns, decision reasons and reconsideration conditions"));
+    assert!(delivered_profile.contains("Proceed on clear tasks; ask one focused question"));
+    assert!(delivered_profile.contains("authorized update route and retain prior reasons"));
     assert!(delivered_profile.contains("affected main and side commitments"));
     let lead = call(&root, &["work", "next", work, "--full"]);
     let lead_assignment = lead["next"]["assignment"].as_str().unwrap();

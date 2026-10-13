@@ -22,6 +22,8 @@ struct Project {
     fixture_store: PathBuf,
     native_session: Option<(String, PathBuf)>,
 }
+
+type NativeStoreSnapshot = (bool, Vec<(String, Option<Vec<u8>>)>);
 impl Project {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
@@ -144,7 +146,7 @@ impl Project {
     fn goal_journal(&self) -> Option<Vec<u8>> {
         fs::read(self.root.join(".exitbind/session-goal.jsonl")).ok()
     }
-    fn native_store_inventory(&self) -> Vec<(String, Option<Vec<u8>>)> {
+    fn native_store_snapshot(&self) -> NativeStoreSnapshot {
         fn visit(
             root: &Path,
             path: &Path,
@@ -174,11 +176,12 @@ impl Project {
             .map(|(_, store)| store)
             .unwrap_or(&self.fixture_store);
         let mut output = Vec::new();
-        if root.exists() {
+        let root_exists = root.exists();
+        if root_exists {
             visit(root, root, &mut output).unwrap();
         }
         output.sort_by(|left, right| left.0.cmp(&right.0));
-        output
+        (root_exists, output)
     }
     fn start_basis(&self, work: &str) -> String {
         let token = work.strip_prefix("smw_").expect("Work handle prefix");
@@ -192,7 +195,7 @@ impl Project {
     fn assert_marker_refusal_without_effects(&self, args: &[&str]) {
         let runs = self.run_entries();
         let project_goal = self.goal_journal();
-        let native_store = self.native_store_inventory();
+        let native_store = self.native_store_snapshot();
         let output = self.call(args, None);
         assert!(!output.status.success(), "{args:?} unexpectedly succeeded");
         assert!(
@@ -210,7 +213,7 @@ impl Project {
             "refusal must not mutate project Goal"
         );
         assert_eq!(
-            self.native_store_inventory(),
+            self.native_store_snapshot(),
             native_store,
             "refusal must leave the entire native store unchanged, even without a synthetic identity"
         );
@@ -1103,6 +1106,18 @@ fn journey_integration_refreshes_only_the_frozen_accepted_member_set() {
         ],
         "no terminal accepted result",
     );
+}
+
+#[test]
+fn native_store_snapshot_distinguishes_missing_and_empty_roots() {
+    let project = Project::new("native-store-empty-root-snapshot");
+    let missing = project.native_store_snapshot();
+    assert_eq!(missing, (false, Vec::new()));
+
+    fs::create_dir_all(&project.fixture_store).unwrap();
+    let empty = project.native_store_snapshot();
+    assert_eq!(empty, (true, Vec::new()));
+    assert_ne!(missing, empty);
 }
 
 #[test]
