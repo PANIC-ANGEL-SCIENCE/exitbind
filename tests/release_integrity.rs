@@ -66,12 +66,41 @@ impl Fixture {
     }
 
     fn candidate(published: &str) -> Self {
+        Self::candidate_with_stable(published_tag(), published)
+    }
+
+    fn candidate_with_stable(stable: &str, published: &str) -> Self {
         let fixture = Self::release();
-        assert_ne!(published, format!("v{VERSION}"));
-        for guide in PUBLISHED_GUIDES {
-            fixture.replace_all(guide, published_tag(), published);
-        }
+        fixture.replace_published_tag(published_tag(), stable);
+        fixture.replace_published_tag(stable, published);
         fixture
+    }
+
+    fn replace_published_tag(&self, old: &str, new: &str) {
+        for guide in PUBLISHED_GUIDES {
+            if *guide == "docs/release-version-policy.md" {
+                let path = self.0.join(guide);
+                let text = fs::read_to_string(&path).unwrap();
+                let mut replaced = false;
+                let text = text
+                    .split_inclusive('\n')
+                    .map(|line| {
+                        if line.starts_with("Source candidate tag: ") {
+                            line.to_owned()
+                        } else if line.contains(old) {
+                            replaced = true;
+                            line.replace(old, new)
+                        } else {
+                            line.to_owned()
+                        }
+                    })
+                    .collect::<String>();
+                assert!(replaced, "fixture did not contain {old} in {guide}");
+                fs::write(path, text).unwrap();
+            } else {
+                self.replace_all(guide, old, new);
+            }
+        }
     }
 
     fn replace(&self, file: &str, old: &str, new: &str) {
@@ -174,6 +203,16 @@ fn published_stable_is_separate_from_candidate_source_references() {
         fs::write(fixture.0.join(name), format!("release {published}\n")).unwrap();
         expect_failure(gate("check-release-refs.sh", &fixture.0), name);
     }
+}
+
+#[test]
+fn equal_published_and_candidate_versions_keep_candidate_declaration() {
+    let candidate = format!("v{VERSION}");
+    let fixture = Fixture::candidate_with_stable(&candidate, "v0.0.0");
+    let policy = fs::read_to_string(fixture.0.join("docs/release-version-policy.md")).unwrap();
+    assert!(policy.contains("Published stable tag: v0.0.0"));
+    assert!(policy.contains(&format!("Source candidate tag: {candidate}")));
+    expect_success(gate("check-release-refs.sh", &fixture.0));
 }
 
 #[test]
