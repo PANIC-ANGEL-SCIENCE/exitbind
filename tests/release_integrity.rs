@@ -30,6 +30,13 @@ const RELEASE_FILES: &[&str] = &[
     "docs/release-version-policy.md",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
+const PUBLISHED_GUIDES: &[&str] = &[
+    "README.md",
+    "REFERENCE.md",
+    "SECURITY.md",
+    "docs/goal-requirements.md",
+    "docs/release-version-policy.md",
+];
 
 fn published_tag() -> &'static str {
     include_str!("../docs/release-version-policy.md")
@@ -61,17 +68,9 @@ impl Fixture {
     fn candidate(published: &str) -> Self {
         let fixture = Self::release();
         assert_ne!(published, format!("v{VERSION}"));
-        fixture.replace(
-            "docs/release-version-policy.md",
-            &format!("Published stable tag: {}", published_tag()),
-            &format!("Published stable tag: {published}"),
-        );
-        let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{}/install.sh | sh", published_tag());
-        fixture.replace(
-            "README.md",
-            &command,
-            &command.replace(published_tag(), published),
-        );
+        for guide in PUBLISHED_GUIDES {
+            fixture.replace_all(guide, published_tag(), published);
+        }
         fixture
     }
 
@@ -83,6 +82,16 @@ impl Fixture {
             "fixture did not contain {old} in {file}"
         );
         fs::write(path, text.replacen(old, new, 1)).unwrap();
+    }
+
+    fn replace_all(&self, file: &str, old: &str, new: &str) {
+        let path = self.0.join(file);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(old),
+            "fixture did not contain {old} in {file}"
+        );
+        fs::write(path, text.replace(old, new)).unwrap();
     }
 }
 
