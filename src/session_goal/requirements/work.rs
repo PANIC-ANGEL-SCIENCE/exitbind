@@ -436,6 +436,11 @@ fn contract_if_named(
     work_id: &str,
     start: &Value,
 ) -> Result<Option<Contract>, String> {
+    // A Work begun without --basis records no basis, so it cannot carry a
+    // named-contract header; only a recorded basis can be malformed.
+    if start["basis"].is_null() {
+        return Ok(None);
+    }
     let constraints = start["basis"]["constraints"]
         .as_array()
         .ok_or("Work basis constraints are malformed")?;

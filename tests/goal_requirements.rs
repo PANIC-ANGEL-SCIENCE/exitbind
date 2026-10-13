@@ -1487,3 +1487,17 @@ fn full_mapping_of_individual_passes_is_not_an_integration_declaration() {
         .iter()
         .any(|item| item == "integration"));
 }
+
+#[test]
+fn ordinary_work_without_basis_has_no_named_projection_diagnostic() {
+    let p = Project::new("ordinary-work-without-basis");
+    let work = p.begin_ordinary("Make an ordinary change", "true", &[]);
+    let detail = p.value(&["work", "detail", &work, "--json"], None);
+    assert_eq!(detail["valid"], true);
+    assert_eq!(detail["complete"], true);
+    assert!(
+        detail.get("projectGoalProgress").is_none(),
+        "absent optional named-contract metadata is not malformed: {}",
+        detail["projectGoalProgress"]
+    );
+}
