@@ -1031,6 +1031,10 @@ fn owner_recovery_preserves_old_ledger_accounting_and_requires_new_evidence() {
     let evidence_path = fixture.root.join(".exitbind/artifacts/fresh.md");
     fs::write(evidence_path, b"new exact evidence\n").unwrap();
     let evidence_form = Fixture::choice(&worker_detail["actionForms"]["choices"], "evidence");
+    assert_eq!(
+        evidence_form["inputConstraints"]["ARTIFACT_ROOT"]["allowedValues"],
+        json!(["product", "state"])
+    );
     let evidence = fixture.execute_form(&evidence_form, b"");
     assert!(evidence.status.success(), "{}", display(&evidence));
     let after_evidence: Value = serde_json::from_str(

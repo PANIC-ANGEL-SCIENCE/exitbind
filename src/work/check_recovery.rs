@@ -73,11 +73,43 @@ pub(crate) fn recover(
         let request_binding =
             protocol::request_binding(work, &state, &snapshot["ledgerSourceSha256"])?;
         let template = json!({"version": 1, "work": work, "agent": agent,
-            "approved": false, "reason": "<REASON>", "currentBinding": request_binding,
+            "approved": false, "reason": "<REASON>", "currentBinding": request_binding.clone(),
             "snapshot": snapshot,
             "response": "<COMPLETE_SAVED_STORAGE_FAILURE_RESPONSE>", "responseSha256": "<SHA256_OF_RESPONSE_BYTES>"});
         if !apply {
-            return Ok((None, false, template));
+            let apply_command = super::action_forms::command(
+                loaded,
+                vec![
+                    "work".into(),
+                    "recover-check".into(),
+                    work.into(),
+                    "--apply".into(),
+                    "--current-binding".into(),
+                    request_binding,
+                    "--json".into(),
+                ],
+            );
+            return Ok((
+                None,
+                false,
+                json!({
+                    "ownerDecision": template,
+                    "apply": {
+                        "command": apply_command,
+                        "stdin": {
+                            "required": true,
+                            "kind": "ownerDecision_json",
+                            "encoding": "UTF-8 JSON",
+                            "description": "Pass the complete ownerDecision object after explicitly setting approved, reason, and the retained known-ended response and its digest."
+                        },
+                        "meaning": "executes only the configured Lead's current bound decision; records reported failure without check credit or rerunning the check"
+                    },
+                    "readback": {
+                        "command": super::action_forms::current_detail_command(loaded, work),
+                        "meaning": "refresh current Work detail after apply; inspect the recorded failure and next owner action"
+                    }
+                }),
+            ));
         }
         details::ensure_current_config(loaded)?;
         let binding = binding.ok_or("--apply requires --current-binding")?;
@@ -106,10 +138,9 @@ pub(crate) fn recover(
         Ok((Some(event), false, Value::Null))
     })?;
     let Some(event) = event else {
-        return Ok(
-            json!({"work": work, "effect": "no-change", "ownerDecision": template,
-        "meaning": "Preview only. The configured Lead must approve and bind the complete retained known-ended response. This records reported failure, not a passing check or execution."}),
-        );
+        return Ok(json!({"work": work, "effect": "no-change",
+        "ownerDecision": template["ownerDecision"], "apply": template["apply"], "readback": template["readback"],
+        "meaning": "Preview only. The configured Lead must approve and bind the complete retained known-ended response. This records reported failure, not a passing check or execution."}));
     };
     let mut response = json!({"work": work, "observationFailure": event, "checkRecorded": false, "recovered": replay});
     match next_for(loaded, work, &ledger_name) {

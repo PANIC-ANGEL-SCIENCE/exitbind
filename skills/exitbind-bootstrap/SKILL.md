@@ -13,6 +13,19 @@ Exitbind is installed. It supplies local exact-result checks, review and Lead ac
 
 Classify actual effects and existing project policy before setup. For read-only questions, disposable prototypes and tiny obvious reversible edits, do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. Material or promotion consequences select governance before mutation. The Lead recommends review and the owner chooses required/omitted; reuse existing scoped decisions. Failed required activation stays an explicit blocker.
 
+Keep decision context small and current: distinguish confirmed constraints,
+ideas still being explored, consequential unknowns, reasons for material
+choices and when to reconsider them, and changes the user explicitly accepts.
+Before a goal is settled, discuss alternatives without starting Work or treating
+a suggestion as approval. Clear tasks proceed directly; ask one focused
+question only when an essential unknown changes a costly or hard-to-reverse
+choice, or propose a small permitted test when it can distinguish options.
+Explicit changes follow the existing authorized update route and retain
+affected main and side commitments and the earlier reason. Current applicable
+project lessons may inform decisions; casual dialogue and inferred preferences
+do not become policy or permission. Do not automatically ingest raw dialogue
+or turn tool output into permanent policy.
+
 For a known Work or explicit `smw_…` locator, use the selected executable's `work detail WORK --json` directly: current profile/rules, assignment, evidence, tasks and exact action forms. Unknown project work uses `work resume --json`, then its emitted current detail route. Stale/incomplete detail needs its supported refresh/expansion before dependent action. Focus is navigation, never authority. Keep exact executable/config arguments on routes marked `sameExecutableRequired`/`sameConfigRequired`; do not guess ledger paths, flags or placeholders.
 
 In an unconfigured project, inspect first and obtain owner consent for `exitbind init --mode portable --root .` (or preview approved facts with `exitbind setup` before `--apply`). Use `--skip-skills` when owner-selected host guidance is managed elsewhere; preserve custom or symlinked files. Init writes config/private state/profiles/project guidance, starts no model and grants no permission. Select the intended producer once with that path's `version --json` and independently verify its executable hash; equal version strings do not identify a development commit.

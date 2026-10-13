@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 mod repair;
 
-fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
+pub(super) fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
     suffix.push("--config".into());
     let command = super::response_recovery::bounded_argv(suffix, loaded.path.to_str(), 16 * 1024);
     json!({
@@ -40,13 +40,23 @@ fn choice(
     placeholders: &[&str],
     input: Value,
 ) -> Value {
-    json!({
+    let mut form = json!({
         "label": label,
         "command": command(loaded, suffix),
         "placeholders": placeholders,
         "stdin": input,
         "sideEffect": "records only after the selected actor supplies the placeholders and executes the bound command",
-    })
+    });
+    if placeholders.contains(&"ARTIFACT_ROOT") {
+        form["inputConstraints"] = json!({
+            "ARTIFACT_ROOT": {
+                "type": "string",
+                "allowedValues": ["product", "state"],
+                "example": "product"
+            }
+        });
+    }
+    form
 }
 
 fn return_input() -> Value {

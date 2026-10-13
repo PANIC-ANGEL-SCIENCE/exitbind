@@ -233,6 +233,9 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(lead_profile.contains("completing one part does not complete the whole"));
     assert!(lead_profile.contains("impact map as provisional"));
     assert!(lead_profile.contains("no fixed thinking sequence or model choice"));
+    assert!(lead_profile.contains("ideas still being explored"));
+    assert!(lead_profile.contains("reasons for material choices and when to reconsider them"));
+    assert!(lead_profile.contains("without starting Work or treating a suggestion as approval"));
     let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
     assert!(skill.contains("`work detail WORK --json` directly"));
     assert!(skill.contains("Unknown Work or project focus: use `work resume --json`"));
@@ -259,6 +262,13 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
         ],
     );
     let work = begun["work"].as_str().unwrap();
+    let delivered = call(&root, &["work", "detail", work, "--json"]);
+    let delivered_profile = delivered["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    assert!(delivered_profile.contains("ideas still being explored"));
+    assert!(delivered_profile.contains("one focused question only when an essential unknown"));
+    assert!(delivered_profile.contains("affected main and side commitments"));
     let lead = call(&root, &["work", "next", work, "--full"]);
     let lead_assignment = lead["next"]["assignment"].as_str().unwrap();
     call(

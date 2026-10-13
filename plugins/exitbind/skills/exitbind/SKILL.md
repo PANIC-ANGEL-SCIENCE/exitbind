@@ -54,6 +54,22 @@ with the same configuration. Never repeat `work begin` to recover a lost reply.
 
 A complete detail is the sufficient ordinary read. If required profile, rules, evidence or sections are incomplete, follow the exact emitted expansion before action. Expert `work next --full`, saved-packet `work validate` and scoped sections remain available when needed. Missing information is never permission to act. Follow `sameExecutableRequired`/`sameConfigRequired` with the exact current arguments when long paths yield a partial argv; never execute placeholders, substitute a PATH binary or invent flags. Supply only meaningful task intent, complete result, reason and decisions your role owns.
 
+## Keep decisions clear without forcing commitment
+
+Carry a small current distinction between the user's confirmed constraints,
+ideas still being explored, consequential unanswered assumptions, reasons for
+material choices and when to reconsider them, and changes the user explicitly
+accepts. Before a goal is settled, compare alternatives without starting Work
+or treating a suggestion as approval. If the task is clear, proceed; ask one
+focused question only when an essential unknown changes a costly or hard-to-
+reverse choice, or propose a small permitted test when it can distinguish the
+options. An accepted change uses the existing authorized scope or goal update
+route and retains affected main and side commitments and the prior reason.
+Applicable project lessons can inform a choice within their current scope;
+casual dialogue and inferred preferences do not become policy or permission.
+Do not automatically ingest raw dialogue or turn tool output into permanent
+policy.
+
 ## Native execution and decisions
 
 For a configured product-managed Codex worker/reviewer, follow `actionForms.productManaged.command`; its bound `work act WORK` delivers its current packet/profile, executes the configured provider and records its result. This path needs no manual binding, child preparation or result copying. Use `--resume` only for a recorded resumable worker turn; an uncertain journal is not retry permission. Later `work act` can run the frozen check or record the Lead's explicit `--outcome`/`--reason` decision.

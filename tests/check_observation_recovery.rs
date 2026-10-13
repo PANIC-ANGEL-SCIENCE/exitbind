@@ -46,6 +46,25 @@ impl Fixture {
         child.stdin.take().unwrap().write_all(body).unwrap();
         child.wait_with_output().unwrap()
     }
+    fn emitted(&self, command: &Value, body: &[u8]) -> Output {
+        let argv = command["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(argv.len() > 1, "{command}");
+        let mut child = support::git_topology::command(argv[0])
+            .current_dir(&self.root)
+            .args(&argv[1..])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(body).unwrap();
+        child.wait_with_output().unwrap()
+    }
     fn ok(&self, args: &[&str], body: &[u8]) -> Value {
         let output = self.call(args, body);
         assert!(output.status.success(), "{args:?}: {output:?}");
@@ -184,23 +203,47 @@ fn response_hash(d: &mut Value) {
 }
 
 fn recover(f: &Fixture, work: &str, d: &Value) -> Output {
-    f.call(
-        &[
-            "work",
-            "recover-check",
-            work,
-            "--apply",
-            "--current-binding",
-            d["currentBinding"].as_str().unwrap(),
-            "--json",
-        ],
-        &serde_json::to_vec(d).unwrap(),
-    )
+    let preview = f.ok(&["work", "recover-check", work, "--json"], b"");
+    recover_with_preview(f, &preview, d)
+}
+
+fn recover_with_preview(f: &Fixture, preview: &Value, d: &Value) -> Output {
+    assert_eq!(preview["effect"], "no-change");
+    assert_eq!(preview["ownerDecision"]["approved"], false);
+    let apply = &preview["apply"];
+    assert_eq!(apply["stdin"]["required"], true);
+    assert_eq!(apply["command"]["sameConfigRequired"].is_boolean(), true);
+    assert_eq!(
+        apply["command"]["sameExecutableRequired"].is_boolean(),
+        true
+    );
+    let argv = apply["command"]["argv"].as_array().unwrap();
+    assert!(argv.iter().any(|arg| arg == "--apply"));
+    let binding_index = argv
+        .iter()
+        .position(|arg| arg == "--current-binding")
+        .unwrap();
+    assert_eq!(
+        argv[binding_index + 1],
+        preview["ownerDecision"]["currentBinding"]
+    );
+    f.emitted(&apply["command"], &serde_json::to_vec(d).unwrap())
 }
 
 #[test]
 fn ended_storage_failure_recovers_once_without_check_credit_or_accounting_reset() {
     let (f, work, d, prefix) = storage_interruption();
+    let preview = f.ok(&["work", "recover-check", &work, "--json"], b"");
+    assert_eq!(preview["ownerDecision"]["approved"], false);
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
+    assert_eq!(
+        preview["apply"]["command"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "--apply"),
+        true
+    );
     let before = f.next(&work)["packet"]["context"]["loop"].clone();
     let recovered = recover(&f, &work, &d);
     assert!(recovered.status.success(), "{recovered:?}");
@@ -231,17 +274,23 @@ fn ended_storage_failure_recovers_once_without_check_credit_or_accounting_reset(
         fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
         b"ran"
     );
-    let replay = recover(&f, &work, &d);
+    let readback = f.emitted(&preview["readback"]["command"], b"");
+    assert!(readback.status.success(), "{readback:?}");
+    let readback: Value = serde_json::from_slice(&readback.stdout).unwrap();
+    assert_eq!(readback["work"], work);
+    let replay = recover_with_preview(&f, &preview, &d);
     assert!(replay.status.success(), "{replay:?}");
     assert_eq!(value(&replay)["effect"], "no-change");
     assert_eq!(value(&replay)["eventSha256"], result["eventSha256"]);
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), bytes);
     let mut changed = d.clone();
     changed["reason"] = json!("different request");
-    assert!(!recover(&f, &work, &changed).status.success());
+    assert!(!recover_with_preview(&f, &preview, &changed)
+        .status
+        .success());
     let worker = f.repair(&work);
     assert_eq!(worker["role"], "worker");
-    assert!(!recover(&f, &work, &d).status.success());
+    assert!(!recover_with_preview(&f, &preview, &d).status.success());
     let permit = f.ok(
         &[
             "work",
@@ -270,6 +319,8 @@ fn ended_storage_failure_recovers_once_without_check_credit_or_accounting_reset(
 #[test]
 fn recovery_refuses_unapproved_foreign_stale_unknown_and_changed_evidence() {
     let (f, work, d, prefix) = storage_interruption();
+    let preview = f.ok(&["work", "recover-check", &work, "--json"], b"");
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     let mut cases = Vec::new();
     for (path, value) in [
         ("/approved", json!(false)),
@@ -314,13 +365,15 @@ fn recovery_refuses_unapproved_foreign_stale_unknown_and_changed_evidence() {
         cases.push(c);
     }
     for c in cases {
-        let refused = recover(&f, &work, &c);
+        let refused = recover_with_preview(&f, &preview, &c);
         assert!(!refused.status.success(), "{c}: {refused:?}");
         assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     }
     let mut general = d.clone();
     general["currentBinding"] = f.ok(&["work", "detail", &work, "--json"], b"")["binding"].clone();
-    assert!(!recover(&f, &work, &general).status.success());
+    assert!(!recover_with_preview(&f, &preview, &general)
+        .status
+        .success());
     let disagree = f.call(
         &[
             "work",
@@ -343,11 +396,11 @@ fn recovery_refuses_unapproved_foreign_stale_unknown_and_changed_evidence() {
     );
     let saved = fs::read(&partial).unwrap();
     fs::write(&partial, b"changed").unwrap();
-    assert!(!recover(&f, &work, &d).status.success());
+    assert!(!recover_with_preview(&f, &preview, &d).status.success());
     fs::write(partial, saved).unwrap();
     let checker = fs::read(f.root.join("checker.sh")).unwrap();
     fs::write(f.root.join("checker.sh"), b"exit 0 # changed input\n").unwrap();
-    assert!(!recover(&f, &work, &d).status.success());
+    assert!(!recover_with_preview(&f, &preview, &d).status.success());
     fs::write(f.root.join("checker.sh"), checker).unwrap();
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     assert_eq!(

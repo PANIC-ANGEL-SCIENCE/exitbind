@@ -79,6 +79,18 @@ definitions and host permissions. In local mode, the root lead can use the
 printed ControlRoot paths because they are outside the product; you do not need
 to carry protocol JSON or event hashes between turns.
 
+### Explore before committing to a goal
+
+Your Lead can discuss alternatives before a goal is settled; asking a question
+or mentioning an idea does not start Work. It keeps confirmed constraints
+separate from ideas still under discussion, consequential unknowns, reasons for
+material choices and when to reconsider them, and changes you explicitly
+accept. A clear task proceeds directly. The Lead asks one focused question
+when an essential missing fact changes a costly or hard-to-reverse choice, or
+may suggest a small permitted test that distinguishes the options. An accepted
+change follows the existing authorized scope or goal update route and carries
+forward affected main and side commitments and the earlier reason.
+
 ### Review the starter setup once
 
 When task facts are already approved, use `setup` to preview and apply them

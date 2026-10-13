@@ -344,6 +344,21 @@ fn emitted_evidence_form_binds_exact_new_evidence_without_another_grant() {
         "literal required value: correct",
     )
     .unwrap();
+    let evidence_form = Fixture::chosen(&f.detail(), "evidence");
+    assert_eq!(
+        evidence_form["inputConstraints"]["ARTIFACT_ROOT"]["allowedValues"],
+        json!(["product", "state"])
+    );
+    let ledger_before_refusal = fs::read(f.ledger()).unwrap();
+    let mut invalid_root = evidence_form.clone();
+    for arg in invalid_root["command"]["argv"].as_array_mut().unwrap() {
+        if arg == "<ARTIFACT_ROOT>" {
+            *arg = json!("elsewhere");
+        }
+    }
+    let refused = f.execute(&invalid_root, b"");
+    assert!(!refused.status.success(), "{refused:?}");
+    assert_eq!(fs::read(f.ledger()).unwrap(), ledger_before_refusal);
     let before = f.events();
     let result = f.choose("evidence", b"");
     assert_eq!(result["event"]["governorEvent"]["action"], "evidence");

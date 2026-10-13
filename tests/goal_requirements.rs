@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Output, Stdio},
 };
 
@@ -19,6 +19,7 @@ const TERMINAL: &str = "+----------------------------+\n| This room remains noth
 
 struct Project {
     root: PathBuf,
+    fixture_store: PathBuf,
     native_session: Option<(String, PathBuf)>,
 }
 impl Project {
@@ -41,7 +42,12 @@ impl Project {
         }
         let output = support::run(&mut init);
         assert!(output.status.success(), "{output:?}");
+        let name = root
+            .file_name()
+            .expect("fixture project directory name")
+            .to_string_lossy();
         Self {
+            fixture_store: root.with_file_name(format!("{name}-native-session-goals")),
             root,
             native_session: None,
         }
@@ -83,6 +89,8 @@ impl Project {
             command
                 .env("CODEX_THREAD_ID", identity)
                 .env("EXITBIND_SESSION_GOALS_DIR", store);
+        } else {
+            command.env("EXITBIND_SESSION_GOALS_DIR", &self.fixture_store);
         }
         if let Some(input) = input {
             command.stdin(Stdio::piped());
@@ -136,10 +144,41 @@ impl Project {
     fn goal_journal(&self) -> Option<Vec<u8>> {
         fs::read(self.root.join(".exitbind/session-goal.jsonl")).ok()
     }
-    fn native_goal_journal(&self) -> Option<Vec<u8>> {
-        self.native_session
+    fn native_store_inventory(&self) -> Vec<(String, Option<Vec<u8>>)> {
+        fn visit(
+            root: &Path,
+            path: &Path,
+            output: &mut Vec<(String, Option<Vec<u8>>)>,
+        ) -> std::io::Result<()> {
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let path = entry.path();
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                let file_type = entry.file_type().unwrap();
+                if file_type.is_dir() {
+                    output.push((relative, None));
+                    visit(root, &path, output)?;
+                } else {
+                    output.push((relative, Some(fs::read(&path).unwrap())));
+                }
+            }
+            Ok(())
+        }
+        let root = self
+            .native_session
             .as_ref()
-            .and_then(|(_, store)| fs::read(store.join(".exitbind/session-goal.jsonl")).ok())
+            .map(|(_, store)| store)
+            .unwrap_or(&self.fixture_store);
+        let mut output = Vec::new();
+        if root.exists() {
+            visit(root, root, &mut output).unwrap();
+        }
+        output.sort_by(|left, right| left.0.cmp(&right.0));
+        output
     }
     fn start_basis(&self, work: &str) -> String {
         let token = work.strip_prefix("smw_").expect("Work handle prefix");
@@ -153,7 +192,7 @@ impl Project {
     fn assert_marker_refusal_without_effects(&self, args: &[&str]) {
         let runs = self.run_entries();
         let project_goal = self.goal_journal();
-        let native_goal = self.native_goal_journal();
+        let native_store = self.native_store_inventory();
         let output = self.call(args, None);
         assert!(!output.status.success(), "{args:?} unexpectedly succeeded");
         assert!(
@@ -171,9 +210,9 @@ impl Project {
             "refusal must not mutate project Goal"
         );
         assert_eq!(
-            self.native_goal_journal(),
-            native_goal,
-            "refusal must precede native admission"
+            self.native_store_inventory(),
+            native_store,
+            "refusal must leave the entire native store unchanged, even without a synthetic identity"
         );
     }
     fn setup(&self) {
@@ -368,10 +407,13 @@ esac
 impl Drop for Project {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.root).unwrap();
-        if let Some((_, store)) = &self.native_session {
-            if store.exists() {
-                fs::remove_dir_all(store).unwrap();
-            }
+        let store = self
+            .native_session
+            .as_ref()
+            .map(|(_, store)| store)
+            .unwrap_or(&self.fixture_store);
+        if store.exists() {
+            fs::remove_dir_all(store).unwrap();
         }
     }
 }
