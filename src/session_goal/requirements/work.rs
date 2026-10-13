@@ -550,3 +550,55 @@ pub(crate) fn current_checker_evidence(
     view["state"] = json!("current");
     Ok(view)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    fn loaded() -> Loaded {
+        Loaded {
+            config: json!({}),
+            agents: BTreeMap::new(),
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: BTreeMap::new(),
+            path: PathBuf::from("config.json"),
+            control_root: PathBuf::from("fixture-root"),
+            product_root: PathBuf::from("fixture-root"),
+            state_root: PathBuf::from("fixture-root"),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: String::new(),
+        }
+    }
+
+    #[test]
+    fn absent_basis_has_no_named_contract() {
+        let start = json!({"action": "start"});
+        assert!(contract_if_named(&loaded(), "work", &start)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn recorded_basis_without_constraints_array_stays_malformed() {
+        let start = json!({"basis": {"version": 1, "constraints": "not-an-array"}});
+        assert_eq!(
+            contract_if_named(&loaded(), "work", &start)
+                .err()
+                .as_deref(),
+            Some("Work basis constraints are malformed")
+        );
+    }
+
+    #[test]
+    fn recorded_basis_without_named_header_has_no_named_contract() {
+        let start = json!({"basis": {"version": 1, "constraints": ["preserve history"]}});
+        assert!(contract_if_named(&loaded(), "work", &start)
+            .unwrap()
+            .is_none());
+    }
+}
