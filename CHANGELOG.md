@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.31.12
+
+- Help the default Lead distinguish settled constraints, provisional ideas and
+  consequential unknowns, and resolve costly uncertainty with one focused
+  question or a small test while preserving accepted changes and side work.
+- Provide an exact, explicitly approved recovery route for known-ended check
+  responses without repeating the provider call or crediting a successful check.
+- Refresh README release and CI status through isolated, ref-bound automation
+  while preserving the existing CI trigger contract and packaged files.
+
 ## 0.31.11
 
 - Inspect and recover retained native action results through a bounded, read-only route
