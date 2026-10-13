@@ -7,6 +7,8 @@ description = "Bounded exact-subject acceptance and evidence binding before exit
 license = "MIT"
 repository = "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
 
+exclude = ["assets/readme/**", "tooling/readme/**", ".github/workflows/readme-badges.yml"]
+
 autobins = false
 
 [[bin]]
