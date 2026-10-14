@@ -143,6 +143,8 @@ run() {
 
 run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}"
 run workflows ./scripts/check-workflows.sh
+run documentation-versions python3 tooling/releases/sync_docs.py
+run documentation-version-regression python3 -B -m unittest discover -s tooling/releases -v
 run workflow-regression ./scripts/test-workflow-validation.sh
 run quiet-command-regression python3 ./scripts/test-quiet-command.py
 VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
