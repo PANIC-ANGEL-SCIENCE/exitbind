@@ -475,6 +475,31 @@ pub(crate) fn member_for_work(record: &Value, work: &str) -> Result<Option<Value
         .transpose()
 }
 
+/// Resolve the original journey member for this Work, following only fully
+/// validated same-goal successor claims already in the run ledger.
+pub(crate) fn member_for_work_with_lineage(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<Option<Value>, String> {
+    let Some(journey) = state(record)? else {
+        return Ok(None);
+    };
+    let candidates = journey
+        .members
+        .into_iter()
+        .chain(journey.integrations.into_iter().map(|entry| entry.member))
+        .collect::<Vec<_>>();
+    for member in candidates {
+        if member.work == work || integration::descends_from_member(loaded, &member, work)? {
+            return serde_json::to_value(member)
+                .map(Some)
+                .map_err(|error| error.to_string());
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) fn validate_member_for_session(
     loaded: &Loaded,
     value: &Value,
@@ -618,5 +643,6 @@ pub(crate) use integration::{append_work, prepare, reject_unprepared_markers};
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{
-    progress_for_record, readiness_for_record, require_close_ready, result_ref_current_or_supported,
+    progress_for_record, readiness_for_record, require_close_ready,
+    require_resolved_replacement_admissions, result_ref_current_or_supported,
 };

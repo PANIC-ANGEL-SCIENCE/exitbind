@@ -124,13 +124,17 @@ pub(crate) fn terminal_for_work(
     let record = match super::association::context_for_work(loaded, work) {
         super::association::WorkContext::Owner(record) => Some(record),
         super::association::WorkContext::Session(_)
+        | super::association::WorkContext::NotRequested
         | super::association::WorkContext::Unavailable
         | super::association::WorkContext::Invalid => return Ok(standalone),
         super::association::WorkContext::Local => read(&loaded.state_root)?,
     };
-    let Some(record) = record.filter(|record| progress::record_bound_to_work(record, work)) else {
+    let Some(record) = record else {
         return Ok(standalone);
     };
+    if !progress::record_bound_to_work_with_lineage(loaded, &record, work)? {
+        return Ok(standalone);
+    }
     let rendered = presentation_for_loaded(loaded, Some(&record))?;
     Ok(crate::presentation_events::whole_goal_terminal(&rendered))
 }
@@ -162,6 +166,7 @@ pub(crate) fn progress_for_work(
     result: &Value,
 ) -> Result<Value, String> {
     match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
             progress_from_record(loaded, work, result, Some(&record))
         }
@@ -223,6 +228,7 @@ pub(crate) fn progress_detail_for_work(
     result: &Value,
 ) -> Result<Value, String> {
     match super::association::context_for_work(loaded, work) {
+        super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
             progress_detail_from_record(loaded, work, result, Some(&record))
         }
@@ -305,9 +311,9 @@ pub(crate) fn record_for_work(loaded: &crate::config::Loaded, work: &str) -> Opt
             Some(super::association::public_record(&record))
         }
         super::association::WorkContext::Local => read(&loaded.state_root).ok().flatten(),
-        super::association::WorkContext::Unavailable | super::association::WorkContext::Invalid => {
-            None
-        }
+        super::association::WorkContext::NotRequested
+        | super::association::WorkContext::Unavailable
+        | super::association::WorkContext::Invalid => None,
     }
 }
 

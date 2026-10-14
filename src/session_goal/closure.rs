@@ -56,6 +56,12 @@ pub(crate) fn close(
             }
         }
         close_result_ref(loaded, &result_ref)?;
+        if previous["closure"]["closed"] == true
+            && previous["closure"]["kind"] != "direct"
+            && previous["closure"]["resultRefs"] == json!([result_ref])
+        {
+            return Ok(previous.clone());
+        }
         let revision = previous["revision"]
             .as_u64()
             .ok_or("session goal revision is missing")?;
@@ -147,6 +153,16 @@ pub(crate) fn close_direct(
             close_result_ref(loaded, result_ref)?;
         }
         let inputs_sha256 = current_inputs(loaded)?;
+        if previous["closure"]["closed"] == true
+            && previous["closure"]["kind"] == "direct"
+            && previous["closure"]["inputsSha256"] == inputs_sha256
+            && previous["closure"]["resultRefs"]
+                == result_ref
+                    .as_ref()
+                    .map_or_else(|| json!([]), |value| json!([value]))
+        {
+            return Ok(previous.clone());
+        }
         let revision = previous["revision"]
             .as_u64()
             .ok_or("session goal revision is missing")?;

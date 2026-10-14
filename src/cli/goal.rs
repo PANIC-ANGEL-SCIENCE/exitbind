@@ -177,12 +177,17 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "result-ref",
                     "direct",
                     "json",
+                    "view",
                 ],
             )?;
             args::assert_positionals("goal close", a, 1)?;
+            if a.options.get("view").is_some_and(|view| view != "event") {
+                return Err("goal close --view accepts only event".into());
+            }
             let scope = journal_scope(l, a, false)?;
             scope.require_owner()?;
             let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
+            let previous = crate::session_goal::read(&scope.root)?;
             let mut value = if a.flags.contains_key("direct") {
                 crate::session_goal::close_direct(
                     &scope.root,
@@ -198,6 +203,16 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     option(a, "result-ref", "goal close requires --result-ref")?,
                 )?
             };
+            if a.options.get("view").is_some() {
+                let newly_closed = previous.as_ref().map(|record| &record["eventSha256"])
+                    != Some(&value["eventSha256"]);
+                return print_json(&super::goal_completion::response(
+                    l,
+                    Some(&value),
+                    newly_closed,
+                    a.flags.contains_key("project"),
+                )?);
+            }
             let named = crate::session_goal::requirements::named(&value);
             let native_governed = scope.is_session() && value["closure"]["kind"] != "direct";
             if named || native_governed {

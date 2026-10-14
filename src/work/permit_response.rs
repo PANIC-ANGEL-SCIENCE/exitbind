@@ -26,15 +26,30 @@ pub(crate) fn permit(
     let permission = run::permit_for_assignment(
         loaded, &ledger, work, assignment, expected, operation, request_id,
     )?;
-    let next = next_for(loaded, work, &ledger)?;
-    Ok(agent_response(compact(
-        work,
-        assignment,
-        operation,
-        &ledger,
-        &permission,
-        &next,
-    )))
+    let next = match next_for(loaded, work, &ledger) {
+        Ok(next) => next,
+        Err(error) => {
+            let mut response = compact(
+                work,
+                assignment,
+                operation,
+                &ledger,
+                &permission,
+                &Value::Null,
+            );
+            response["projectionError"] = json!(error);
+            response["recovery"] = json!({
+                "kind":"read_only",
+                "route":super::compact::continuation_route(&loaded.path,
+                    vec!["work".into(),"detail".into(),work.into(),"--view".into(),"action".into(),"--json".into()]),
+                "meaning":"The permit response retains its recorded event. Read current Work state; do not repeat the mutation or request a new permit to recover this display.",
+            });
+            return Ok(agent_response(response));
+        }
+    };
+    let mut response = compact(work, assignment, operation, &ledger, &permission, &next);
+    super::refreshed_action::attach(loaded, work, &next, &mut response);
+    Ok(agent_response(response))
 }
 
 pub(super) fn compact(

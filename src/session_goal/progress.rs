@@ -12,6 +12,19 @@ const MAX_DISPLAY_CHARS: usize = 180;
 const SYSTEM_TEXT_MAX_GOAL_CHARS: usize = 64;
 const SYSTEM_TEXT_MAX_TASK_CHARS: usize = 32;
 
+/// Work can be governed without opting into a separate native session Goal.
+/// This projection is only for verified absence, never failed association reads.
+pub(super) fn not_requested(result: &Value) -> Value {
+    let result_readiness = readiness(Some(result));
+    json!({
+        "overall":"not_requested", "goal":null,
+        "decomposition":{"available":false,"reason":"native_session_goal_not_requested"},
+        "tasks":[], "resultReadiness":result_readiness,
+        "systemText":format!("Session Goal: not requested | Result readiness: {}",
+            result_readiness["state"].as_str().unwrap_or("unavailable")),
+    })
+}
+
 pub(super) fn project(
     loaded: Option<&Loaded>,
     record: Option<&Value>,
@@ -435,14 +448,26 @@ pub(super) fn project_for_work(
             "unavailable",
         );
     };
-    if !record_bound_to_work(record, work) {
-        return unavailable(
-            result,
-            "overall_goal_unavailable",
-            "canonical Lead goal is not bound to this Work",
-            None,
-            "unavailable",
-        );
+    match record_bound_to_work_with_lineage(loaded, record, work) {
+        Ok(true) => {}
+        Ok(false) => {
+            return unavailable(
+                result,
+                "overall_goal_unavailable",
+                "canonical Lead goal is not bound to this Work",
+                None,
+                "unavailable",
+            )
+        }
+        Err(error) => {
+            return unavailable(
+                result,
+                "successor_lineage_unavailable",
+                &error,
+                None,
+                "unavailable",
+            )
+        }
     }
     let mut projection = project_with_limit(
         Some(loaded),
@@ -452,13 +477,29 @@ pub(super) fn project_for_work(
         MAX_TASKS,
         false,
     );
-    if let Some(association) = super::association::for_work(record, work) {
-        projection["workAssociation"] = json!({
-            "kind": "context_only",
-            "protocol": super::association::PROTOCOL,
-            "work": association["work"],
-            "startEventSha256": association["startEventSha256"],
-        });
+    let association = match work_association_with_lineage(loaded, record, work) {
+        Ok(value) => value,
+        Err(error) => {
+            return unavailable(
+                result,
+                "successor_lineage_unavailable",
+                &error,
+                None,
+                "unavailable",
+            )
+        }
+    };
+    if let Some(association) = association {
+        projection["workAssociation"] = if association["kind"] == "verified_successor_lineage" {
+            association
+        } else {
+            json!({
+                "kind": "context_only",
+                "protocol": super::association::PROTOCOL,
+                "work": association["work"],
+                "startEventSha256": association["startEventSha256"],
+            })
+        };
     }
     projection
 }
@@ -479,14 +520,26 @@ pub(super) fn project_detail_for_work(
             "unavailable",
         );
     };
-    if !record_bound_to_work(record, work) {
-        return unavailable(
-            result,
-            "overall_goal_unavailable",
-            "canonical Lead goal is not bound to this Work",
-            None,
-            "unavailable",
-        );
+    match record_bound_to_work_with_lineage(loaded, record, work) {
+        Ok(true) => {}
+        Ok(false) => {
+            return unavailable(
+                result,
+                "overall_goal_unavailable",
+                "canonical Lead goal is not bound to this Work",
+                None,
+                "unavailable",
+            )
+        }
+        Err(error) => {
+            return unavailable(
+                result,
+                "successor_lineage_unavailable",
+                &error,
+                None,
+                "unavailable",
+            )
+        }
     }
     let mut projection = project_with_limit(
         Some(loaded),
@@ -496,13 +549,29 @@ pub(super) fn project_detail_for_work(
         usize::MAX,
         true,
     );
-    if let Some(association) = super::association::for_work(record, work) {
-        projection["workAssociation"] = json!({
-            "kind": "context_only",
-            "protocol": super::association::PROTOCOL,
-            "work": association["work"],
-            "startEventSha256": association["startEventSha256"],
-        });
+    let association = match work_association_with_lineage(loaded, record, work) {
+        Ok(value) => value,
+        Err(error) => {
+            return unavailable(
+                result,
+                "successor_lineage_unavailable",
+                &error,
+                None,
+                "unavailable",
+            )
+        }
+    };
+    if let Some(association) = association {
+        projection["workAssociation"] = if association["kind"] == "verified_successor_lineage" {
+            association
+        } else {
+            json!({
+                "kind": "context_only",
+                "protocol": super::association::PROTOCOL,
+                "work": association["work"],
+                "startEventSha256": association["startEventSha256"],
+            })
+        };
     }
     projection
 }
@@ -512,6 +581,37 @@ pub(super) fn record_bound_to_work(record: &Value, work: &str) -> bool {
         || record["continuation"]["work"].as_str() == Some(work)
         || super::association::for_work(record, work).is_some()
         || super::requirements::bound(record, work)
+}
+
+pub(super) fn record_bound_to_work_with_lineage(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<bool, String> {
+    if record_bound_to_work(record, work) {
+        return Ok(true);
+    }
+    Ok(super::journey::member_for_work_with_lineage(loaded, record, work)?.is_some())
+}
+
+fn work_association_with_lineage(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<Option<Value>, String> {
+    if let Some(association) = super::association::for_work(record, work) {
+        return Ok(Some(association));
+    }
+    Ok(
+        super::journey::member_for_work_with_lineage(loaded, record, work)?.map(|member| {
+            json!({
+                "kind":"verified_successor_lineage",
+                "work":work,
+                "originalMemberWork":member["work"],
+                "originalStartEventSha256":member["startEventSha256"],
+            })
+        }),
+    )
 }
 
 #[cfg(test)]

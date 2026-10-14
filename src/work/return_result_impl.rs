@@ -312,13 +312,9 @@ pub(crate) fn return_result_with(
     if let Some(error) = held_cleanup_warning {
         response["heldCleanupWarning"] = json!(error);
     }
-    Ok(bounded_mutation(
-        &response,
-        work,
-        Some(assignment),
-        &ledger,
-        config_path,
-    ))
+    let mut result = bounded_mutation(&response, work, Some(assignment), &ledger, config_path);
+    super::refreshed_action::attach(loaded, work, &response["next"], &mut result);
+    Ok(result)
 }
 
 fn return_outcomes(action: &Value, role: Role) -> String {

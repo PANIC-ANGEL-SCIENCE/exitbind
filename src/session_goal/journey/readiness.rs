@@ -209,6 +209,29 @@ pub(crate) fn require_close_ready(
     }
 }
 
+/// Replacement may continue a failed member, but never bypass an unfinished
+/// admission or attach that member to a newer conversation commitment.
+pub(crate) fn require_resolved_replacement_admissions(record: &Value) -> Result<(), String> {
+    let session = super::super::native::current()?
+        .ok_or("native session identity is unavailable for check replacement")?;
+    let history = super::super::records(&session.root)?;
+    if !history
+        .iter()
+        .any(|item| item["eventSha256"] == record["eventSha256"])
+    {
+        return Err("check replacement Goal observation is absent from the native session".into());
+    }
+    let current = history.last().ok_or("native Goal history is unavailable")?;
+    if current["goalId"] != record["goalId"] {
+        return Err("check replacement belongs to an older native Goal".into());
+    }
+    let state = state(current)?.ok_or("native Goal admission coverage is unavailable")?;
+    if state.protocol != MEMBERSHIP_PROTOCOL || !state.admissions.is_empty() {
+        return Err("check replacement is blocked by unresolved native Goal admissions".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn progress_for_record(loaded: Option<&Loaded>, record: &Value) -> Option<Value> {
     let loaded = loaded?;
     readiness_for_record(loaded, record)

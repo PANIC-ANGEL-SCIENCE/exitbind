@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — 0.31.13 source candidate
+
+- Continue a defective frozen check through an explicitly approved linked Work,
+  retaining the predecessor, same-Goal accounting and fresh check/review gates.
+- Return current bound actions after mutations and distinguish genuinely absent
+  optional Goal context from damaged or expected associations.
+- Deliver whole-session completion as a compact event in the normal Lead response,
+  with stable event identity and one read-only recovery route.
+- Check installation pointers against exact available stable assets, and reuse
+  native CI dependency builds while retaining platform and release checks.
+- Include the inherited absent-basis discriminator and check-recovery wording fixes.
+
 ## 0.31.12
 
 - Help the default Lead distinguish settled constraints, provisional ideas and

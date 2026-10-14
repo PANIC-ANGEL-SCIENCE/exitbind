@@ -196,12 +196,67 @@ pub(super) fn attach(
         "details": routes,
     });
     crate::work::readable::attach(loaded, work, &binding, &mut next["current"]);
+    if let Some(relation) = replacement_relation(loaded, work, &events)? {
+        next["current"]["checkReplacement"] = relation;
+    }
     next["current"]["actionForm"] =
         crate::work::action_forms::project(loaded, work, next, &binding);
     if next["action"] == "done" {
         next["current"]["completion"] = super::closeout::projection(loaded, work, snapshot, next);
     }
     Ok(())
+}
+
+fn replacement_relation(
+    loaded: &Loaded,
+    work: &str,
+    events: &[Value],
+) -> Result<Option<Value>, String> {
+    let start = events.first().ok_or("Work ledger has no start")?;
+    if let Some(marker) = start.get("checkReplacement") {
+        let predecessor = start["supersedes"]["ledgerPath"]
+            .as_str()
+            .unwrap_or_default();
+        let previous_work = crate::work::locator_for_ledger(predecessor);
+        return Ok(Some(json!({"state":"verified","direction":"successor",
+            "predecessor":{"work":previous_work,"ledger":predecessor,
+                "runId":start["supersedes"]["runId"],"headEventSha256":start["supersedes"]["headEventSha256"],
+                "checkPolicy":marker["oldPolicy"]},
+            "successor":{"work":work,"runId":start["runId"],"checkPolicy":marker["newPolicy"]},
+            "source":marker["source"],"reason":marker["reason"],"classification":marker["classification"],"leadOwner":marker["leadOwner"],
+            "meaning":"The predecessor is immutable; the successor has a new check contract and receives no prior check, review or grant credit."})));
+    }
+    let ledger = super::resolve(loaded, work)?;
+    let ledger_path = crate::run::ledger::load(loaded, &ledger)?.0;
+    let Some(claim) =
+        crate::run::ledger::valid_claim(&crate::run::ledger::claim_path(&ledger_path))?
+    else {
+        return Ok(None);
+    };
+    let Some(marker) = claim.get("checkReplacement") else {
+        return Ok(None);
+    };
+    let successor_ledger = claim["newLedgerPath"].as_str().unwrap_or_default();
+    let verified = crate::run::ledger::load(loaded, successor_ledger)
+        .ok()
+        .is_some_and(|(_, successor_events, _)| {
+            successor_events.first().is_some_and(|successor| {
+                successor["checkReplacement"] == *marker
+                    && successor["supersedes"]["ledgerPath"] == claim["oldLedgerPath"]
+                    && successor["supersedes"]["headEventSha256"] == claim["oldHeadEventSha256"]
+            })
+        });
+    if !verified {
+        return Ok(Some(json!({"state":"unverified","direction":"predecessor",
+            "predecessor":{"work":work,"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"]},
+            "successor":{"work":crate::work::locator_for_ledger(successor_ledger),"ledger":successor_ledger,"runId":claim["newRunId"]},
+            "reason":"successor ledger or provenance could not be verified; no continuation is authorized"})));
+    }
+    Ok(Some(json!({"state":"verified","direction":"predecessor",
+        "predecessor":{"work":work,"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"],"checkPolicy":marker["oldPolicy"]},
+        "successor":{"work":crate::work::locator_for_ledger(successor_ledger),"ledger":successor_ledger,"runId":claim["newRunId"],"checkPolicy":marker["newPolicy"]},
+        "source":marker["source"],"reason":marker["reason"],"classification":marker["classification"],"leadOwner":marker["leadOwner"],
+        "meaning":"This predecessor remains immutable; its successor has a new check contract and receives no prior check, review or grant credit."})))
 }
 
 pub(crate) fn section_value(

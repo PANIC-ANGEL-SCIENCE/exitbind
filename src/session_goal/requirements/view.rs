@@ -194,6 +194,9 @@ pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, Strin
                     record["goalId"].as_str().unwrap_or_default().into(),
                     "--result-ref".into(),
                     work,
+                    "--view".into(),
+                    "event".into(),
+                    "--json".into(),
                 ],
             )
         } else {

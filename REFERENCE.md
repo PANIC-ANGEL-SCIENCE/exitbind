@@ -945,6 +945,15 @@ exitbind run supersede .exitbind/runs/run.jsonl --workflow change --goal "New bo
 claims exactly one successor. `accepted` and `rejected` runs remain final and
 cannot be superseded.
 
+When the configured Lead explicitly determines that a frozen check contract
+cannot assess the intended task, use the preview-first, current-binding
+`work replace-check` route. It binds the changed policy to the exact
+predecessor head, failed-check or blocked-worker source event, reason and
+configured Lead owner. The predecessor remains unchanged; no old pass, review
+or grant transfers. See [continue after a defective frozen check](docs/check-replacement.md)
+for the command and refusal boundaries. Ordinary assertion, environment,
+timeout and uncertain-effect failures do not establish a defective contract.
+
 A blocked same-goal governor normally stays absorbing. One narrow successor
 route handles an immediately adjacent duplicate-permit grant and terminal
 evidence-required refusal when the exact worker, operation, inputs and nested

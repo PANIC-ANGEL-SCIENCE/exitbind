@@ -14,6 +14,7 @@ use crate::{
 mod activity;
 pub(crate) mod args;
 mod goal;
+mod goal_completion;
 mod help;
 mod memory_cli;
 mod project;
@@ -21,6 +22,7 @@ mod replan_input;
 mod run_cli;
 mod status;
 mod work;
+mod work_check_replacement;
 
 use args::Arguments;
 use run_cli::map_run_error;

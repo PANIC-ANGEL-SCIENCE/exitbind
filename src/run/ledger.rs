@@ -465,6 +465,9 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
                     return Err("a different successor is already claimed".into());
                 }
             }
+            if value.get("checkReplacement") != wanted.get("checkReplacement") {
+                return Err("a different successor is already claimed".into());
+            }
             Ok(SupersessionClaim {
                 value,
                 created_inode: None,
@@ -567,14 +570,22 @@ fn validate_claim(value: &Value) -> Result<(), String> {
         "timestamp",
     ];
     let carry_fields = ["carryProtocol", "governorCarrySha256"];
-    if (object.len() != legacy_fields.len()
-        && object.len() != legacy_fields.len() + carry_fields.len())
+    let has_replacement = value.get("checkReplacement").is_some();
+    let has_carry =
+        value.get("carryProtocol").is_some() || value.get("governorCarrySha256").is_some();
+    let expected_len = legacy_fields.len()
+        + usize::from(has_carry) * carry_fields.len()
+        + usize::from(has_replacement);
+    if object.len() != expected_len
         || legacy_fields.iter().any(|key| !object.contains_key(*key))
-        || (object.len() != legacy_fields.len()
+        || (has_carry
             && (carry_fields.iter().any(|key| !object.contains_key(*key))
                 || (value["carryProtocol"] != crate::run::carry::PROTOCOL
                     && value["carryProtocol"] != crate::run::carry::RECOVERY_PROTOCOL)
                 || !sha(value["governorCarrySha256"].as_str())))
+        || (has_replacement
+            && crate::run::check_replacement::validate_marker(&value["checkReplacement"], 1)
+                .is_err())
         || value["version"] != 1
         || [
             "oldLedgerSha256",

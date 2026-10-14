@@ -185,6 +185,29 @@ fn establish_direct_goal(project: &Project) {
     ]);
 }
 
+fn establish_native_direct_goal(project: &Project, session: &str) {
+    project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "direct-event",
+            "--goal",
+            "Finish the whole conversation request",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+    );
+}
+
+fn native_goal_journal(project: &Project, session: &str) -> std::path::PathBuf {
+    native_session_root(&project.session_store, "codex", session)
+        .join(".exitbind/session-goal.jsonl")
+}
+
 fn canonical(value: &Value) -> String {
     match value {
         Value::Object(object) => {
@@ -816,7 +839,7 @@ fn a_goal_added_after_work_start_is_not_attached_retroactively() {
         ],
     );
     let work = started["work"].as_str().unwrap();
-    assert_eq!(started["next"]["goalProgress"]["overall"], "unavailable");
+    assert_eq!(started["next"]["goalProgress"]["overall"], "not_requested");
     project.value_in_session(
         "codex",
         session,
@@ -1348,7 +1371,7 @@ fn invalid_or_unavailable_native_identity_never_falls_back_and_does_not_block_or
             "true",
         ],
     );
-    assert_eq!(started["next"]["goalProgress"]["overall"], "unavailable");
+    assert_eq!(started["next"]["goalProgress"]["overall"], "not_requested");
     assert!(started["next"]["goalProgress"]
         .get("workAssociation")
         .is_none());
@@ -1604,6 +1627,159 @@ fn direct_goal_closes_and_emits_exact_card_without_a_run() {
     assert_eq!(second.matches(CARD).count(), 0, "{second}");
     assert_no_run_files(&project);
     fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn direct_completion_event_is_immediate_idempotent_and_recoverable_once() {
+    let project = Project::new("direct-goal-completion-event");
+    let session = "direct-goal-completion-event-session";
+    establish_native_direct_goal(&project, session);
+    let journal = native_goal_journal(&project, session);
+
+    let first_output = project.call_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "direct-event",
+            "--view",
+            "event",
+            "--json",
+        ],
+    );
+    assert!(first_output.status.success(), "{first_output:?}");
+    assert!(
+        first_output.stdout.len() <= 4096,
+        "{} bytes",
+        first_output.stdout.len()
+    );
+    let first: Value = serde_json::from_slice(&first_output.stdout).unwrap();
+    assert_eq!(first["kind"], "goal_completion_response");
+    assert_eq!(first["effect"], "committed");
+    assert_eq!(first["completionEvent"]["kind"], "session_goal_completed");
+    assert_eq!(first["completionEvent"]["mode"], "direct");
+    assert_eq!(
+        first["presentation"]["terminal"],
+        "This room remains nothing."
+    );
+    assert!(!first["presentation"]["terminal"]
+        .as_str()
+        .unwrap()
+        .contains("EXIT READY"));
+    let event_id = first["completionEvent"]["id"].as_str().unwrap();
+    let committed_journal = fs::read(&journal).unwrap();
+
+    let duplicate = project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "direct-event",
+            "--view",
+            "event",
+            "--json",
+        ],
+    );
+    assert_eq!(duplicate["effect"], "no-change");
+    assert_eq!(duplicate["completionEvent"]["id"], event_id);
+    assert_eq!(duplicate["presentation"]["terminal"], Value::Null);
+    assert_eq!(fs::read(&journal).unwrap(), committed_journal);
+
+    let recovered = project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--view", "event", "--json"],
+    );
+    assert_eq!(recovered["completionEvent"]["id"], event_id);
+    assert_eq!(recovered["recovery"]["readOnly"], true);
+    assert_eq!(
+        recovered["presentation"]["terminal"],
+        "This room remains nothing."
+    );
+    assert_eq!(fs::read(&journal).unwrap(), committed_journal);
+    assert_no_run_files(&project);
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn completion_event_is_suppressed_for_unfinished_stale_and_foreign_goals() {
+    let unfinished = Project::new("direct-goal-event-unfinished");
+    let unfinished_session = "direct-goal-event-unfinished-session";
+    unfinished.value_in_session(
+        "codex",
+        unfinished_session,
+        &unfinished.session_store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "unfinished",
+            "--goal",
+            "Leave one agreed obligation open",
+            "--obligation",
+            "Finish the remaining task",
+        ],
+    );
+    let unfinished_journal = native_goal_journal(&unfinished, unfinished_session);
+    let before_unfinished = fs::read(&unfinished_journal).unwrap();
+    let unfinished_status = unfinished.value_in_session(
+        "codex",
+        unfinished_session,
+        &unfinished.session_store,
+        &["goal", "status", "--view", "event", "--json"],
+    );
+    assert_eq!(unfinished_status["completionEvent"], Value::Null);
+    assert_eq!(unfinished_status["presentation"]["terminal"], Value::Null);
+    assert_eq!(fs::read(&unfinished_journal).unwrap(), before_unfinished);
+    fs::remove_dir_all(unfinished.root).unwrap();
+
+    let stale = Project::new("direct-goal-event-stale");
+    let stale_session = "direct-goal-event-stale-session";
+    fs::write(stale.root.join("source.txt"), b"before-close\n").unwrap();
+    establish_native_direct_goal(&stale, stale_session);
+    let stale_journal = native_goal_journal(&stale, stale_session);
+    stale.value_in_session(
+        "codex",
+        stale_session,
+        &stale.session_store,
+        &["goal", "close", "--direct", "--goal-id", "direct-event"],
+    );
+    fs::write(stale.root.join("source.txt"), b"changed-after-close\n").unwrap();
+    let before_stale_read = fs::read(&stale_journal).unwrap();
+    let stale_status = stale.value_in_session(
+        "codex",
+        stale_session,
+        &stale.session_store,
+        &["goal", "status", "--view", "event", "--json"],
+    );
+    assert_eq!(stale_status["completionEvent"], Value::Null);
+    assert_eq!(stale_status["presentation"]["terminal"], Value::Null);
+    assert_eq!(fs::read(&stale_journal).unwrap(), before_stale_read);
+
+    let foreign = Project::new("direct-goal-event-foreign");
+    let before_foreign_read = fs::read(&stale_journal).unwrap();
+    let foreign_status = foreign.value_in_session(
+        "codex",
+        stale_session,
+        &stale.session_store,
+        &["goal", "status", "--view", "event", "--json"],
+    );
+    assert_eq!(foreign_status["contextOnly"], true);
+    assert!(foreign_status.get("completionEvent").is_none());
+    assert!(foreign_status.get("presentation").is_none());
+    assert_eq!(fs::read(&stale_journal).unwrap(), before_foreign_read);
+    assert_no_run_files(&stale);
+    fs::remove_dir_all(stale.root).unwrap();
+    fs::remove_dir_all(foreign.root).unwrap();
 }
 
 #[test]

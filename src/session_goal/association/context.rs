@@ -23,12 +23,24 @@ pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> Wo
         Ok(Some(value)) => value,
         Ok(None) => {
             return match super::super::native::current() {
-                Ok(None) => WorkContext::Local,
-                Ok(Some(_)) => {
-                    if legacy_goal_is_bound(loaded, work) {
+                Ok(None) => match super::super::read(&loaded.state_root) {
+                    Ok(None) => WorkContext::NotRequested,
+                    Ok(Some(_)) => WorkContext::Local,
+                    Err(_) => WorkContext::Invalid,
+                },
+                Ok(Some(session)) => {
+                    let legacy_bound = match legacy_goal_is_bound(loaded, work, &session) {
+                        Ok(bound) => bound,
+                        Err(_) => return WorkContext::Invalid,
+                    };
+                    if legacy_bound {
                         WorkContext::Local
                     } else {
-                        WorkContext::Unavailable
+                        match (session.owner(), super::super::read(&session.root)) {
+                            (Ok(None), Ok(None)) => WorkContext::NotRequested,
+                            (Err(_), _) | (_, Err(_)) => WorkContext::Invalid,
+                            _ => WorkContext::Unavailable,
+                        }
                     }
                 }
                 Err(_) => WorkContext::Invalid,
@@ -43,14 +55,38 @@ pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> Wo
     }
 }
 
-fn legacy_goal_is_bound(loaded: &crate::config::Loaded, work: &str) -> bool {
-    super::super::read(&loaded.state_root)
-        .ok()
-        .flatten()
-        .is_some_and(|record| {
-            super::super::progress::record_bound_to_work(&record, work)
-                || record["continuation"]["work"].as_str() == Some(work)
-        })
+fn legacy_goal_is_bound(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    session: &super::super::native::Session,
+) -> Result<bool, String> {
+    let Some(record) = super::super::read(&loaded.state_root)? else {
+        return Ok(false);
+    };
+    if super::super::progress::record_bound_to_work(&record, work)
+        || record["continuation"]["work"].as_str() == Some(work)
+    {
+        return Ok(true);
+    }
+    let Some(member) = super::super::journey::member_for_work_with_lineage(loaded, &record, work)?
+    else {
+        return Ok(false);
+    };
+    let owner = session
+        .owner()?
+        .ok_or("native session Goal owner is unavailable")?;
+    super::super::journey::validate_member_for_session(loaded, &member, session, &owner)?;
+    let history = super::super::records(&session.root)?;
+    if !history.iter().any(|item| {
+        item["goalId"] == member["parentGoalId"]
+            && item["eventSha256"] == member["parentObservedGoalEventSha256"]
+    }) {
+        return Err(
+            "original Goal observation for the successor Work is absent from this native session"
+                .into(),
+        );
+    }
+    Ok(true)
 }
 
 fn resolve_companion(

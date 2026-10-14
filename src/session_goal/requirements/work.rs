@@ -595,6 +595,28 @@ mod tests {
     }
 
     #[test]
+    fn recorded_basis_with_missing_constraints_stays_malformed() {
+        let start = json!({"basis": {"version": 1}});
+        assert_eq!(
+            contract_if_named(&loaded(), "work", &start)
+                .err()
+                .as_deref(),
+            Some("Work basis constraints are malformed")
+        );
+    }
+
+    #[test]
+    fn recorded_basis_with_null_constraints_stays_malformed() {
+        let start = json!({"basis": {"version": 1, "constraints": null}});
+        assert_eq!(
+            contract_if_named(&loaded(), "work", &start)
+                .err()
+                .as_deref(),
+            Some("Work basis constraints are malformed")
+        );
+    }
+
+    #[test]
     fn recorded_basis_without_named_header_has_no_named_contract() {
         let start = json!({"basis": {"version": 1, "constraints": ["preserve history"]}});
         assert!(contract_if_named(&loaded(), "work", &start)

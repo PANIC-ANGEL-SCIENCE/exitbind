@@ -10,6 +10,7 @@ pub(crate) mod capture;
 pub(crate) mod carry;
 pub(crate) mod check_observation;
 pub(crate) mod check_recovery;
+pub(crate) mod check_replacement;
 pub(crate) mod disposition;
 pub(crate) mod error;
 mod event_detail;
@@ -48,6 +49,7 @@ pub(crate) use self::reducer::{
 };
 pub use self::submission::submit;
 pub(crate) use self::submission::submit_for_assignment;
+pub use self::view::replace_check_contract;
 pub use self::view::{
     explain, inspect, report, report_markdown, status, supersede, supersede_with_owner_recovery,
 };

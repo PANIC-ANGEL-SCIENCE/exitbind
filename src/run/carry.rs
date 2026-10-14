@@ -322,13 +322,15 @@ fn validate_edge(
         .as_str()
         .ok_or("invalid superseded predecessor path")?;
     let marked = has_carry_fields(start);
+    let replacement = start.get("checkReplacement");
+    let needs_claim = marked || replacement.is_some();
     let predecessor = match ledger_path(&loaded.state_root, relative, true) {
         Ok(predecessor) => predecessor,
-        Err(_) if !marked => return Ok(()),
+        Err(_) if !needs_claim => return Ok(()),
         Err(error) => return Err(error),
     };
     let claim_result = super::ledger::valid_claim(&super::ledger::claim_path(&predecessor));
-    let claim = if marked {
+    let claim = if needs_claim {
         claim_result?
     } else {
         // Legacy starts never depended on a claim. Ignore absent or malformed
@@ -338,7 +340,7 @@ fn validate_edge(
             _ => return Ok(()),
         }
     };
-    if !marked && claim.is_none() {
+    if !needs_claim && claim.is_none() {
         // Preserve historical unmarked replay: old starts did not require
         // their predecessor file or claim to remain available.
         return Ok(());
@@ -346,13 +348,14 @@ fn validate_edge(
     if !seen.insert(relative.to_owned()) {
         return Err("supersession lineage contains a cycle".into());
     }
-    let claim = claim.ok_or("governor carry is missing its persisted successor claim")?;
+    let claim = claim.ok_or("successor lineage is missing its persisted predecessor claim")?;
     // The persisted, validated claim is authoritative for which protocol the
     // successor was issued under. The start marker is checked below so a
     // stripped marker retains the dedicated refusal classification.
     let carry_protocol = claim["carryProtocol"].as_u64();
-    if !matches!(carry_protocol, Some(PROTOCOL | RECOVERY_PROTOCOL))
-        || !valid_sha(claim["governorCarrySha256"].as_str())
+    if (marked
+        && (!matches!(carry_protocol, Some(PROTOCOL | RECOVERY_PROTOCOL))
+            || !valid_sha(claim["governorCarrySha256"].as_str())))
         || claim["oldLedgerPath"] != link["ledgerPath"]
         || claim["oldLedgerSha256"] != link["ledgerSha256"]
         || claim["oldRunId"] != link["runId"]
@@ -365,9 +368,9 @@ fn validate_edge(
     {
         return Err("governor carry successor claim provenance mismatch".into());
     }
-    if !marked
-        || start["carryProtocol"].as_u64() != carry_protocol
-        || claim["governorCarrySha256"] != start["governorCarrySha256"]
+    if marked
+        && (start["carryProtocol"].as_u64() != carry_protocol
+            || claim["governorCarrySha256"] != start["governorCarrySha256"])
     {
         return Err("governor carry marker is missing or differs from its persisted claim".into());
     }
@@ -382,6 +385,59 @@ fn validate_edge(
         || predecessor_events[0]["configSha256"] != link["configSha256"]
     {
         return Err("superseded predecessor provenance mismatch".into());
+    }
+    if let Some(replacement) = replacement {
+        if claim.get("checkReplacement") != Some(replacement)
+            || replacement["predecessorHeadEventSha256"] != head["eventSha256"]
+        {
+            return Err("check replacement claim does not bind the exact predecessor head".into());
+        }
+        let old_policy = predecessor_events[0]
+            .get("checkPolicy")
+            .ok_or("check replacement predecessor has no frozen check policy")?;
+        if replacement["oldPolicy"]["commandSha256"] != old_policy["commandSha256"]
+            || replacement["oldPolicy"]["origin"] != old_policy["origin"]
+        {
+            return Err("check replacement does not bind the predecessor check policy".into());
+        }
+        let evidence_sha = replacement["source"]["eventSha256"]
+            .as_str()
+            .ok_or("check replacement source evidence is invalid")?;
+        let evidence = predecessor_events
+            .iter()
+            .find(|event| event["eventSha256"] == evidence_sha)
+            .ok_or("check replacement source evidence is absent from predecessor")?;
+        let valid_source = match replacement["source"]["kind"].as_str() {
+            Some("failed_check") => {
+                evidence["action"] == "check"
+                    && (evidence["result"]["signal"].is_number()
+                        || evidence["result"]["code"]
+                            .as_i64()
+                            .is_some_and(|code| code != 0)
+                        || evidence["exitCode"].as_i64().is_some_and(|code| code != 0))
+            }
+            Some("blocked_worker") => {
+                evidence["action"] == "submit"
+                    && evidence["role"] == "worker"
+                    && evidence["outcome"] == "blocked"
+            }
+            _ => false,
+        };
+        if !valid_source {
+            return Err(
+                "check replacement source is not a failed check or blocked worker event".into(),
+            );
+        }
+    }
+    if !marked {
+        validate_edge(
+            loaded,
+            &predecessor,
+            &predecessor_events[0],
+            seen,
+            depth + 1,
+        )?;
+        return Ok(());
     }
     if start["governorCarry"]["predecessor"] != *link
         || start["governorCarry"]["goalSha256"]

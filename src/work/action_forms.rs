@@ -149,12 +149,20 @@ fn return_choice(
 
 pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     let mut result = full(loaded, work, next, binding);
+    let replacement_choice = |choice: &Value| {
+        choice["label"].as_str().is_some_and(|label| {
+            label.contains("replacement of an explicitly defective frozen check")
+                || label == "replace an explicitly defective frozen check"
+        })
+    };
     if let Some(choices) = result.get_mut("choices").and_then(Value::as_array_mut) {
         for choice in choices {
-            if let Some(object) = choice.as_object_mut() {
-                object.remove("command");
-                object.remove("sideEffect");
-                object.remove("stdin");
+            if !replacement_choice(choice) {
+                if let Some(object) = choice.as_object_mut() {
+                    object.remove("command");
+                    object.remove("sideEffect");
+                    object.remove("stdin");
+                }
             }
         }
     }
@@ -177,6 +185,62 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
 
 pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     let Some(assignment) = next["assignment"].as_str() else {
+        if next["action"] == "done" && next["status"] == "blocked" {
+            let suffix = vec![
+                "work".into(),
+                "replace-check".into(),
+                work.into(),
+                "--check-command".into(),
+                "<NEW_CHECK_COMMAND>".into(),
+                "--reason".into(),
+                "<REASON>".into(),
+                "--classification".into(),
+                "defective-contract".into(),
+                "--current-binding".into(),
+                binding.into(),
+                "--apply".into(),
+            ];
+            return json!({
+                "version": 1, "state": "blocked_lead_check_replacement",
+                "binding": binding, "leadChoiceRequired": true,
+                "choices": [{
+                    "label": "replace an explicitly defective frozen check",
+                    "command": command(loaded, suffix),
+                    "placeholders": ["NEW_CHECK_COMMAND", "REASON"],
+                    "stdin": {"required": false, "kind": "none"},
+                    "sideEffect": "creates one immutable successor only after the configured Lead chooses the new check and records a defective-contract reason; the blocked predecessor stays unchanged"
+                }],
+                "mechanicalAction": Value::Null,
+                "constraints": {"classification": "defective-contract", "sourceKind": "blocked_worker", "binding": binding}
+            });
+        }
+        if next["action"] == "lead_decision"
+            && matches!(
+                next["progress"]["reason"]["code"].as_str(),
+                Some("check_failed" | "preservation_failed")
+            )
+        {
+            let suffix = vec![
+                "work".into(),
+                "replace-check".into(),
+                work.into(),
+                "--check-command".into(),
+                "<NEW_CHECK_COMMAND>".into(),
+                "--reason".into(),
+                "<REASON>".into(),
+                "--classification".into(),
+                "defective-contract".into(),
+                "--current-binding".into(),
+                binding.into(),
+            ];
+            return json!({"version":1,"state":"lead_check_replacement_preview",
+                "binding":binding,"leadChoiceRequired":true,
+                "choices":[{"label":"preview replacement of an explicitly defective frozen check",
+                    "command":command(loaded,suffix),"placeholders":["NEW_CHECK_COMMAND","REASON"],
+                    "stdin":{"required":false,"kind":"none"},
+                    "sideEffect":"preview only; no predecessor or successor ledger is changed"}],
+                "mechanicalAction":Value::Null});
+        }
         return json!({"version": 1, "state": next["action"], "binding": binding,
             "leadChoiceRequired": false, "choices": [],
             "mechanicalAction": if next["action"] == "check" {
@@ -219,7 +283,7 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         "leadChoiceRequired": state != "pending_assignment",
         "choices": [],
     });
-    let choices: Vec<Value> = if state == "unresolved_check_observation" {
+    let mut choices: Vec<Value> = if state == "unresolved_check_observation" {
         let mut choices: Vec<Value> = outcomes
             .iter()
             .filter(|v| matches!(**v, "blocked" | "rejected"))
@@ -386,6 +450,27 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
             .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
             .collect()
     };
+    if state == "failed_check" {
+        choices.push(choice(
+            loaded,
+            vec![
+                "work".into(),
+                "replace-check".into(),
+                work.into(),
+                "--check-command".into(),
+                "<NEW_CHECK_COMMAND>".into(),
+                "--reason".into(),
+                "<REASON>".into(),
+                "--classification".into(),
+                "defective-contract".into(),
+                "--current-binding".into(),
+                binding.into(),
+            ],
+            "preview replacement of an explicitly defective frozen check",
+            &["NEW_CHECK_COMMAND", "REASON"],
+            no_input(),
+        ));
+    }
     result["choices"] = json!(choices);
     if next["action"] == "spawn"
         && matches!(next["role"].as_str(), Some("worker" | "reviewer"))
