@@ -107,7 +107,7 @@ class DocumentationVersions(unittest.TestCase):
 
     def test_readme_only_gate_rejects_drift_before_rust_checks(self):
         helper = self.root / "tooling/readme/check-existing.sh"
-        helper.parent.mkdir(parents=True)
+        helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "tooling/readme/check-existing.sh", helper)
         readme = self.root / "README.md"
         readme.write_text(readme.read_text().replace(self.stable[1:], "0.0.1"))
