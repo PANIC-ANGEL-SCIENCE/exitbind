@@ -207,7 +207,7 @@ pub(super) fn attach(
     Ok(())
 }
 
-fn replacement_relation(
+pub(super) fn replacement_relation(
     loaded: &Loaded,
     work: &str,
     events: &[Value],

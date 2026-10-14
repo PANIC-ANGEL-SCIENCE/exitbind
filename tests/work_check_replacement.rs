@@ -520,7 +520,20 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
                     && agent["nativeTaskName"] == lead_owner["nativeTaskName"])),
         "the marker owner is exactly one configured Lead"
     );
-    assert_eq!(start["reviewPolicy"], "required");
+    assert_eq!(
+        start["reviewPolicy"], predecessor_start["reviewPolicy"],
+        "the predecessor's full review decision is preserved without reconstruction"
+    );
+    assert_eq!(
+        start.get("basis"),
+        predecessor_start.get("basis"),
+        "replacement preserves the exact optional basis"
+    );
+    assert_eq!(
+        start.get("preservation"),
+        predecessor_start.get("preservation"),
+        "replacement preserves the exact optional preservation contract"
+    );
     assert_eq!(
         start["budget"],
         fs::read_to_string(f.ledger(&work))
@@ -1553,6 +1566,25 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
             .filter_map(|line| serde_json::from_str::<Value>(line).ok())
             .any(|event| event["action"] == "check" && event["result"]["code"] != 0),
         "fixture must retain an actual failed check before preparing a child"
+    );
+    let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
+    let token = continuation["mutationContext"]["token"].as_str().unwrap();
+    f.ok_in_session(
+        session,
+        &store,
+        &[
+            "work",
+            "bind",
+            &work,
+            "--context",
+            token,
+            "--host",
+            "codex",
+            "--session",
+            session,
+            "--host-version",
+            "0.1-test",
+        ],
     );
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let token = continuation["mutationContext"]["token"].as_str().unwrap();

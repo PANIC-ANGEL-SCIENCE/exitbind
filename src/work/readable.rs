@@ -289,8 +289,16 @@ fn response(
     if next["goalProgress"]["workAssociation"].is_object() {
         value["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
     }
-    if next["current"]["checkReplacement"].is_object() {
-        value["checkReplacement"] = next["current"]["checkReplacement"].clone();
+    let view = snapshot.inspect_view();
+    if let Some(relation) = super::details::replacement_relation(
+        loaded,
+        work,
+        view["events"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    )? {
+        value["checkReplacement"] = relation;
     }
     if next["projectGoalProgress"].is_object() {
         value["projectGoalProgress"] = next["projectGoalProgress"].clone();
