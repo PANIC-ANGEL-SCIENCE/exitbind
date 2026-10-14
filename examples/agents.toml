@@ -4,7 +4,7 @@ agents = ["claude", "codex", "grok"]
 [[plugins]]
 name = "exitbind"
 source = "PANIC-ANGEL-SCIENCE/exitbind"
-ref = "v0.31.13"
+ref = "v0.31.14"
 path = "."
 targets = ["claude", "codex", "grok"]
 
