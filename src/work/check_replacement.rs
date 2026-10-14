@@ -61,14 +61,11 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         }
         _ => {}
     }
-    let continuation = crate::session_goal::continuation_view(loaded, work)?;
-    if continuation["preparedChildren"]["error"].is_string() {
+    let prepared = crate::session_goal::prepared_children_for_work(loaded, work);
+    if prepared["error"].is_string() {
         return Err("prepared child state is unreadable; check replacement is blocked".into());
     }
-    let children = continuation["preparedChildren"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+    let children = prepared.as_array().map(Vec::as_slice).unwrap_or(&[]);
     if children.iter().any(|child| {
         !matches!(
             child["state"].as_str(),

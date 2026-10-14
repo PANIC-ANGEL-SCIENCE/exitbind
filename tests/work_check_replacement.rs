@@ -6,6 +6,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
+    io::Write,
     path::PathBuf,
     process::{Command, Output, Stdio},
 };
@@ -45,6 +46,23 @@ impl Fixture {
         clear_native_selectors(&mut command);
         command.output().unwrap()
     }
+    fn call_with_input(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .current_dir(&self.root)
+            .args(command_args(args))
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if !args.contains(&"--config") {
+            command.args(["--config", "exitbind.json"]);
+        }
+        clear_native_selectors(&mut command);
+        let mut child = command.spawn().unwrap();
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        child.wait_with_output().unwrap()
+    }
     fn call_in_session(&self, session: &str, store: &std::path::Path, args: &[&str]) -> Output {
         let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
@@ -83,6 +101,34 @@ impl Fixture {
         self.begin_failed_check_with("exec sh checker.sh", "repair the checker")
     }
     fn begin_failed_check_with(&self, check_command: &str, goal: &str) -> (String, Value) {
+        let work = self.begin_completed_worker(check_command, goal);
+        let failed = self.call(&["work", "check", &work, "--timeout-ms", "2000"]);
+        assert!(
+            !failed.status.success(),
+            "failed checker should remain a failed observation: {failed:?}"
+        );
+        let event = fs::read_to_string(self.ledger(&work))
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find(|event| event["action"] == "check")
+            .unwrap_or_else(|| {
+                panic!(
+                    "durable failed check event missing; work check stdout={} stderr={} ledger={}",
+                    String::from_utf8_lossy(&failed.stdout),
+                    String::from_utf8_lossy(&failed.stderr),
+                    fs::read_to_string(self.ledger(&work)).unwrap_or_default()
+                )
+            });
+        assert!(
+            event["result"]["code"]
+                .as_i64()
+                .is_some_and(|code| code != 0)
+                || event["result"]["signal"].is_number()
+        );
+        (work, event)
+    }
+    fn begin_completed_worker(&self, check_command: &str, goal: &str) -> String {
         let begin = self.ok(&[
             "work",
             "begin",
@@ -107,24 +153,7 @@ impl Fixture {
             "--outcome",
             "completed",
         ]);
-        let failed = self.call(&["work", "check", &work, "--timeout-ms", "2000"]);
-        assert!(
-            !failed.status.success(),
-            "failed checker should remain a failed observation: {failed:?}"
-        );
-        let event = fs::read_to_string(self.ledger(&work))
-            .unwrap()
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .find(|event| event["action"] == "check")
-            .expect("durable failed check event");
-        assert!(
-            event["result"]["code"]
-                .as_i64()
-                .is_some_and(|code| code != 0)
-                || event["result"]["signal"].is_number()
-        );
-        (work, event)
+        work
     }
 }
 fn command_args<'a>(args: &'a [&str]) -> &'a [&'a str] {
@@ -366,10 +395,7 @@ fn native_failed_work(f: &Fixture, session: &str, store: &std::path::Path) -> (S
         "expected fixture checker failure: {failed:?}"
     );
     let current = f.ok_in_session(session, store, &["work", "next", &work, "--json"]);
-    let binding = current["next"]["current"]["binding"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let binding = current["current"]["binding"].as_str().unwrap().to_owned();
     (work, binding)
 }
 
@@ -388,10 +414,7 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
     let (work, source) = f.begin_failed_check();
     fs::write(f.root.join("preserved-evidence"), b"retain").unwrap();
     let lead = f.ok(&["work", "next", &work, "--json"]);
-    let binding = lead["next"]["current"]["binding"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let source_sha = source["eventSha256"].as_str().unwrap();
     let before = fs::read(f.ledger(&work)).unwrap();
     let predecessor_start: Value =
@@ -563,16 +586,17 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
 #[test]
 fn nonexistent_cargo_test_target_is_recorded_and_continued_as_a_new_contract() {
     let f = Fixture::new();
-    fs::create_dir_all(f.root.join("src")).unwrap();
+    let package = f.root.join(".exitbind/r46-missing-target-package");
+    fs::create_dir_all(package.join("src")).unwrap();
     fs::write(
-        f.root.join("Cargo.toml"),
+        package.join("Cargo.toml"),
         "[package]\nname = \"r46-missing-target-fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
-    fs::write(f.root.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    fs::write(package.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
 
     let (work, failed) = f.begin_failed_check_with(
-        "cargo test --offline --manifest-path Cargo.toml --test absent_r46_target",
+        "cargo test --offline --manifest-path .exitbind/r46-missing-target-package/Cargo.toml --test absent_r46_target",
         "the configured test target is absent",
     );
     assert_eq!(
@@ -581,7 +605,7 @@ fn nonexistent_cargo_test_target_is_recorded_and_continued_as_a_new_contract() {
     );
     let before = fs::read(f.ledger(&work)).unwrap();
     let lead = f.ok(&["work", "next", &work, "--json"]);
-    let binding = lead["next"]["current"]["binding"].as_str().unwrap();
+    let binding = lead["current"]["binding"].as_str().unwrap();
     let preview = f.ok(&[
         "work",
         "replace-check",
@@ -622,24 +646,26 @@ fn nonexistent_cargo_test_target_is_recorded_and_continued_as_a_new_contract() {
 #[test]
 fn destructive_count_check_is_exercised_once_and_its_source_stays_immutable() {
     let f = Fixture::new();
-    fs::write(f.root.join("count-evidence"), b"1\n").unwrap();
+    let evidence_dir = f.root.join(".exitbind/r46-destructive-count");
+    fs::create_dir_all(&evidence_dir).unwrap();
+    fs::write(evidence_dir.join("count-evidence"), b"1\n").unwrap();
     fs::write(
-        f.root.join("destroy-count.sh"),
-        "rm -f count-evidence\ntest \"$(cat count-evidence)\" = 1\n",
+        evidence_dir.join("destroy-count.sh"),
+        "rm -f .exitbind/r46-destructive-count/count-evidence\ntest \"$(cat .exitbind/r46-destructive-count/count-evidence)\" = 1\n",
     )
     .unwrap();
     let (work, failed) = f.begin_failed_check_with(
-        "exec sh destroy-count.sh",
+        "exec sh .exitbind/r46-destructive-count/destroy-count.sh",
         "the count checker destroys the evidence before reading it",
     );
     assert_eq!(failed["result"]["code"], 1);
     assert!(
-        !f.root.join("count-evidence").exists(),
+        !evidence_dir.join("count-evidence").exists(),
         "the controlled reproduction records the check's known destructive side effect"
     );
     let before = fs::read(f.ledger(&work)).unwrap();
     let lead = f.ok(&["work", "next", &work, "--json"]);
-    let binding = lead["next"]["current"]["binding"].as_str().unwrap();
+    let binding = lead["current"]["binding"].as_str().unwrap();
     let preview = f.ok(&[
         "work",
         "replace-check",
@@ -670,7 +696,7 @@ fn destructive_count_check_is_exercised_once_and_its_source_stays_immutable() {
         "the successor checker is not run during replacement"
     );
     assert!(
-        !f.root.join("count-evidence").exists(),
+        !evidence_dir.join("count-evidence").exists(),
         "replacement never replays the destructive predecessor check"
     );
     assert_eq!(
@@ -681,15 +707,87 @@ fn destructive_count_check_is_exercised_once_and_its_source_stays_immutable() {
 }
 
 #[test]
+fn destructive_bound_input_observation_never_becomes_replacement_source_credit() {
+    let f = Fixture::new();
+    let evidence_dir = f.root.join(".exitbind/r46-destructive-bound-input");
+    fs::create_dir_all(&evidence_dir).unwrap();
+    fs::write(f.root.join("count-evidence"), b"1\n").unwrap();
+    fs::write(
+        evidence_dir.join("destroy-count.sh"),
+        "printf x >> .exitbind/r46-destructive-bound-input/attempts\nrm -f count-evidence\ntest \"$(cat count-evidence)\" = 1\n",
+    )
+    .unwrap();
+
+    let work = f.begin_completed_worker(
+        "exec sh .exitbind/r46-destructive-bound-input/destroy-count.sh",
+        "the checker mutates its bound product input before counting",
+    );
+    let failed = f.call(&["work", "check", &work, "--timeout-ms", "2000"]);
+    assert_eq!(failed.status.code(), Some(1), "{failed:?}");
+    assert!(failed.stdout.is_empty(), "{failed:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&failed.stderr),
+        "exitbind: observation binding changed before commit; no check was recorded\n",
+        "the checker ran, but input drift prevents it from becoming check evidence"
+    );
+    assert_eq!(fs::read(evidence_dir.join("attempts")).unwrap(), b"x");
+    assert!(!f.root.join("count-evidence").exists());
+
+    let ledger_after_observation = fs::read(f.ledger(&work)).unwrap();
+    let events: Vec<Value> = std::str::from_utf8(&ledger_after_observation)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        events
+            .iter()
+            .any(|event| event["action"] == "check_observation"),
+        "the execution admission remains durable and unresolved: {events:?}"
+    );
+    assert!(
+        !events.iter().any(|event| event["action"] == "check"),
+        "input-mutating execution has no failed-check source credit: {events:?}"
+    );
+
+    let entries_before = run_entries(&f);
+    let current = f.ok(&["work", "next", &work, "--json"]);
+    let binding = current["current"]["binding"].as_str().unwrap();
+    for apply in [false, true] {
+        let mut args = replacement_args(&work, binding);
+        if apply {
+            args.push("--apply".into());
+        }
+        let refused = f.call(&refs(&args));
+        assert_eq!(refused.status.code(), Some(1), "{refused:?}");
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            stderr.contains(
+                "predecessor contains no exact failed-check or blocked-worker source evidence"
+            ),
+            "{stderr}"
+        );
+        assert_eq!(fs::read(f.ledger(&work)).unwrap(), ledger_after_observation);
+        assert_eq!(
+            run_entries(&f),
+            entries_before,
+            "no successor or claim is created"
+        );
+        assert_eq!(
+            fs::read(evidence_dir.join("attempts")).unwrap(),
+            b"x",
+            "replacement must not replay the destructive check"
+        );
+    }
+}
+
+#[test]
 fn stale_binding_and_non_defective_or_missing_sources_refuse_without_mutation() {
     let f = Fixture::new();
     let (work, source) = f.begin_failed_check();
     fs::write(f.root.join("preserved-evidence"), b"retain").unwrap();
     let lead = f.ok(&["work", "next", &work, "--json"]);
-    let binding = lead["next"]["current"]["binding"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let before = fs::read(f.ledger(&work)).unwrap();
 
     for (args, description) in [(
@@ -785,7 +883,7 @@ fn blocked_worker_has_a_bound_sibling_lead_replacement_without_fake_submission()
         .or(detail["current"]["binding"].as_str())
         .unwrap()
         .to_owned();
-    let action_form = &detail["current"]["actionForm"];
+    let action_form = &detail["actionForms"];
     assert_eq!(action_form["state"], "blocked_lead_check_replacement");
     assert_eq!(action_form["leadChoiceRequired"], true);
     assert_eq!(action_form["choices"].as_array().unwrap().len(), 1);
@@ -886,10 +984,7 @@ fn accepted_predecessor_and_unclassified_failure_are_refused() {
         "accepted",
     ]);
     let terminal = f.ok(&["work", "next", &work, "--json"]);
-    let binding = terminal["next"]["current"]["binding"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let binding = terminal["current"]["binding"].as_str().unwrap().to_owned();
     let before = fs::read(f.ledger(&work)).unwrap();
     let rejected = f.call(&[
         "work",
@@ -914,7 +1009,7 @@ fn accepted_predecessor_and_unclassified_failure_are_refused() {
 
     let (failed_work, _) = f.begin_failed_check();
     let failed_lead = f.ok(&["work", "next", &failed_work, "--json"]);
-    let failed_binding = failed_lead["next"]["current"]["binding"].as_str().unwrap();
+    let failed_binding = failed_lead["current"]["binding"].as_str().unwrap();
     let unclassified = f.call(&[
         "work",
         "replace-check",
@@ -950,7 +1045,7 @@ fn missing_environment_tool_is_not_silently_classified_as_a_defective_contract()
     );
     let before = fs::read(f.ledger(&work)).unwrap();
     let lead = f.ok(&["work", "next", &work, "--json"]);
-    let binding = lead["next"]["current"]["binding"].as_str().unwrap();
+    let binding = lead["current"]["binding"].as_str().unwrap();
     let refused = f.call(&[
         "work",
         "replace-check",
@@ -1053,7 +1148,7 @@ fn native_goal_work_cannot_be_replaced_from_a_foreign_session() {
     let current = f.call_in_session(owner_session, &store, &["work", "next", &work, "--json"]);
     assert!(current.status.success(), "{current:?}");
     let current: Value = serde_json::from_slice(&current.stdout).unwrap();
-    let binding = current["next"]["current"]["binding"].as_str().unwrap();
+    let binding = current["current"]["binding"].as_str().unwrap();
 
     let foreign = f.call_in_session(
         "r46-unrelated-session",
@@ -1235,6 +1330,17 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
     let (work, _) = f.begin_failed_check();
     let session = "r46-prepared-child-session";
     let store = f.root.join(".exitbind/native-test-session-goals");
+    let initialization = serde_json::json!({
+        "action":"init",
+        "sourceRef":"owner:r46-child-review",
+        "sourceText":"Inspect unresolved child ownership before replacing a check.",
+        "requirements":[{"id":"child-review","text":"Inspect unresolved child ownership."}]
+    });
+    let initialized = f.call_with_input(
+        &["work", "record", &work],
+        initialization.to_string().as_bytes(),
+    );
+    assert!(initialized.status.success(), "{initialized:?}");
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let token = continuation["mutationContext"]["token"].as_str().unwrap();
     f.ok_in_session(
@@ -1272,7 +1378,7 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
     let children = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     assert_eq!(children["preparedChildren"][0]["state"], "prepared");
     let current = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
-    let binding = current["next"]["current"]["binding"].as_str().unwrap();
+    let binding = current["current"]["binding"].as_str().unwrap();
     let before = fs::read(f.ledger(&work)).unwrap();
     let refused = f.call_in_session(
         session,
