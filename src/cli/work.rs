@@ -24,6 +24,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, resume, or link-session",
     )?;
     match action {
+        "replace-check" => work_check_replacement::command(l, a),
         "recover-check" => {
             args::assert_options("work recover-check", a, &["config", "json", "apply", "current-binding"])?;
             args::assert_positionals("work recover-check", a, 2)?;

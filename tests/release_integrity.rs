@@ -28,6 +28,7 @@ const RELEASE_FILES: &[&str] = &[
     "docs/goal-requirements.md",
     "docs/legacy-compatibility.md",
     "docs/release-version-policy.md",
+    "scripts/check-installation-pointer.py",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
 const PUBLISHED_GUIDES: &[&str] = &[
@@ -166,6 +167,155 @@ fn expect_failure(output: Output, context: &str) {
         !output.stderr.is_empty(),
         "missing failure detail: {context}"
     );
+}
+
+#[test]
+fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
+    const PRODUCER: &str = "0123456789abcdef0123456789abcdef01234567";
+    let stable = published_tag();
+    let fixture = Fixture::new("installation-pointer");
+    let project_root = fixture.0.join("project");
+    fs::create_dir_all(project_root.join("docs")).unwrap();
+    let set_source_pointer = |tag: &str| {
+        fs::write(
+            project_root.join("docs/release-version-policy.md"),
+            format!("Published stable tag: {tag}\nSource candidate tag: v99.98.97\n"),
+        )
+        .unwrap();
+        fs::write(
+            project_root.join("README.md"),
+            format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{tag}/install.sh | sh\n"),
+        )
+        .unwrap();
+    };
+    set_source_pointer(stable);
+    let assets = [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    ]
+    .into_iter()
+    .flat_map(|target| {
+        let archive = format!("exitbind-{target}.tar.gz");
+        [
+            format!("exitbind-{target}"),
+            archive.clone(),
+            format!("{archive}.sha256"),
+        ]
+    })
+    .map(|name| {
+        serde_json::json!({
+            "name":name,
+            "digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        })
+    })
+    .collect::<Vec<_>>();
+    let mut metadata = serde_json::json!({
+        "tag_name":stable,
+        "draft":false,
+        "prerelease":false,
+        "published_at":"2026-10-14T00:00:00Z",
+        "producer_commit":PRODUCER,
+        "assets":assets.clone(),
+    });
+    let metadata_path = fixture.0.join("release.json");
+    let check = |metadata: &Value, version: &str, producer: &str| {
+        fs::write(&metadata_path, serde_json::to_vec(metadata).unwrap()).unwrap();
+        Command::new("python3")
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/check-installation-pointer.py"),
+            )
+            .args([
+                "--metadata",
+                metadata_path.to_str().unwrap(),
+                "--root",
+                project_root.to_str().unwrap(),
+                "--expected-version",
+                version,
+                "--expected-producer",
+                producer,
+            ])
+            .output()
+            .unwrap()
+    };
+    assert!(check(&metadata, stable, PRODUCER).status.success());
+
+    let candidate = "v99.98.97";
+    let mut delivered = metadata.clone();
+    delivered["tag_name"] = serde_json::json!(candidate);
+    expect_failure(
+        check(&delivered, candidate, PRODUCER),
+        "post-delivery release with stale published pointer",
+    );
+    set_source_pointer(candidate);
+    assert!(check(&delivered, candidate, PRODUCER).status.success());
+    set_source_pointer(stable);
+
+    let mut other_tag = metadata.clone();
+    other_tag["tag_name"] = serde_json::json!(format!("{stable}-candidate"));
+    expect_failure(
+        check(&other_tag, stable, PRODUCER),
+        "different selected tag",
+    );
+    expect_failure(
+        check(
+            &metadata,
+            stable,
+            "1123456789abcdef0123456789abcdef01234567",
+        ),
+        "different producer",
+    );
+    let mut draft = metadata.clone();
+    draft["draft"] = serde_json::json!(true);
+    expect_failure(check(&draft, stable, PRODUCER), "draft release");
+    let mut unpublished = metadata.clone();
+    unpublished["published_at"] = serde_json::Value::Null;
+    expect_failure(
+        check(&unpublished, stable, PRODUCER),
+        "unpublished source candidate",
+    );
+
+    metadata["prerelease"] = serde_json::json!(true);
+    expect_failure(check(&metadata, stable, PRODUCER), "prerelease pointer");
+    metadata["prerelease"] = serde_json::json!(false);
+    let _ = metadata["assets"].as_array_mut().unwrap().pop();
+    expect_failure(check(&metadata, stable, PRODUCER), "missing release asset");
+    metadata["assets"] = serde_json::json!(assets.clone());
+    metadata["assets"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name":"unselected.tar.gz",
+            "digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }));
+    expect_failure(
+        check(&metadata, stable, PRODUCER),
+        "unexpected release asset",
+    );
+    metadata["assets"] = serde_json::json!(assets.clone());
+    metadata["assets"][0]["digest"] = serde_json::json!("unknown");
+    expect_failure(
+        check(&metadata, stable, PRODUCER),
+        "unverified asset digest",
+    );
+
+    let missing_metadata = fixture.0.join("missing-release.json");
+    let unavailable = Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/check-installation-pointer.py"))
+        .args([
+            "--metadata",
+            missing_metadata.to_str().unwrap(),
+            "--root",
+            project_root.to_str().unwrap(),
+            "--expected-version",
+            stable,
+            "--expected-producer",
+            PRODUCER,
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(unavailable.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&unavailable.stderr).contains("verification unavailable"));
 }
 
 #[test]
@@ -1073,7 +1223,10 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
         assert!(workflow.contains(&format!("runner: {runner}")));
         assert!(workflow.contains(&format!("host_arch: {arch}")));
         assert!(workflow.contains(&format!("target: {target}")));
-        assert!(workflow.contains(concat!("target/$", "{{ matrix.target }}/release/exitbind")));
+        assert!(workflow.contains(concat!(
+            "$CARGO_TARGET_DIR/$",
+            "{{ matrix.target }}/release/exitbind"
+        )));
     }
     assert!(workflow.contains("installer-smoke.sh"));
     assert!(workflow.contains("github.sha"));

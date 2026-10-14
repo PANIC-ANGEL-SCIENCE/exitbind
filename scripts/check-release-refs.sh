@@ -11,7 +11,8 @@ equal_version() {
     fail "$1 version is '$2'; expected '$3'"
 }
 
-for source in Cargo.toml Cargo.lock README.md REFERENCE.md SECURITY.md CHANGELOG.md install.sh docs/release-version-policy.md \
+for source in Cargo.toml Cargo.lock README.md REFERENCE.md SECURITY.md CHANGELOG.md install.sh \
+  docs/release-version-policy.md scripts/check-installation-pointer.py \
   plugin.json systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json scripts/ci-wsl.sh \
   docs examples schema scripts src

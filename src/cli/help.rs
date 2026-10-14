@@ -6,7 +6,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["init"] => "init [--mode local|portable|auto] [--root ROOT] [--project-id ID] [--control-root ROOT] [--state-root ROOT] [--skip-skills | --refresh-skills] [--with-coffee] (creates project configuration and managed guidance; review placement and boundaries before use)",
         ["update"] => "update (checks for a stable release and may replace the current executable; an existing regular binary is required for rollback)",
         ["work"] => {
-            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work link-session WORK [--json] | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
+            "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work link-session WORK [--json] | work replace-check WORK ... | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
         ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--standalone] [--journey-integration --artifact CHECKER] [--goal-id ID --requirement IDs --artifact CHECKER [--scope integration] [--project-goal]] [--basis JSON] (an available native-host identity links ordinary Work context to the current conversation Goal; --standalone opts out; --journey-integration freezes accepted conversation tasks for a final-current checker; --project-goal selects a project-local named contract while retaining conversation context; --detail delivers current recipient context; after an interrupted native association, inspect status/detail and use work link-session only for the exact recorded admission and actual Work start; never repeat begin)",
         ["work", "link-session"] => "work link-session WORK [--config CONFIG] [--json] (recovers only a matching native-session Goal admission after verifying the actual immutable Work start; performs no Work, check, acceptance, or provider mutation)",
@@ -54,6 +54,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (preview by default; configured Lead attests exact known-ended storage failure; records failure only, never reruns a check)",
+        ["work", "replace-check"] => "work replace-check WORK --check-command COMMAND --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; derives Lead owner, exact source event, check origin, and deterministic successor identity; preserves the predecessor)",
         ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file-serve"] => "work file-serve SESSION --config CONFIG (host-owned stdio MCP transport)",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
@@ -89,8 +90,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",
         ["goal", "cover"] => "goal cover --goal-id ID [--project] [--json] (Lead confirms the agreed finite set; this does not prove complete interpretation of natural language)",
         ["goal", "assign"] => "goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] [--disposition add|replace] [--json] (IDs are comma-separated; replace retires old contributors for these IDs without removing requirements)",
-        ["goal", "close"] => "goal close --goal-id ID --result-ref REF [--project]",
-        ["goal", "status"] => "goal status [--project] [--json] [--themed] (read-only requirement mapping, current evidence, exact revision and next action; under a native host identity this reads the conversation Goal unless --project is supplied)",
+        ["goal", "close"] => "goal close --goal-id ID [--result-ref REF] [--direct] [--project] [--view event --json] (when closure is current, event view returns compact completion; after a lost reply, read once with goal status --view event --json; direct completion has no EXIT READY)",
+        ["goal", "status"] => "goal status [--project] [--json] [--themed] [--view event --json] (event view is read-only recovery for the same current completion after a lost close reply; under a native host identity this reads the conversation Goal unless --project is supplied)",
         ["goal", "usage"] => "goal usage --goal-id ID [--json] [--config CONFIG] | goal usage --goal-id ID --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["context", "reduce"] => "context reduce --events FILE",
         ["context", "checkpoint"] => "context checkpoint --state FILE --proposal FILE",

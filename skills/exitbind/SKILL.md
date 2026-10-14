@@ -1,6 +1,6 @@
 ---
 name: exitbind
-description: This project is governed by Exitbind: use it for material coding work here - changes with authority, trust, security, data-loss, release, lifecycle, evidence, compatibility, or check/review consequences. Bind each check, review, and acceptance to the exact current result so stale evidence cannot be reused. Keep read-only questions and tiny obvious reversible edits direct.
+description: 'This project is governed by Exitbind: use it for material coding work here - changes with authority, trust, security, data-loss, release, lifecycle, evidence, compatibility, or check/review consequences. Bind each check, review, and acceptance to the exact current result so stale evidence cannot be reused. Keep read-only questions and tiny obvious reversible edits direct.'
 ---
 
 <!-- exitbind-managed-skill:v1 -->
@@ -83,6 +83,8 @@ When a worker needs governor recovery, follow `actionForms.recovery` and its cur
 A review finding is evidence, not a requirement. Consume the Lead's current disposition forms; repair/supersede retain explicit repair boundaries and regressions, and supersede retains its basis decision. A deferred or rejected finding is not approval. For a clear defect within accepted scope, choose the supported repair without asking the owner again; changed authority, scope, review choice or irreversible decisions need the owner. Architecture detail carries the selected role slice and exact provenance; proposals and previews are not approval, and a contract grants no permission. Custom profiles remain custom.
 
 ## Completion
+
+For an explicitly selected whole-session Goal, keep every actual approved outcome in its existing Goal path. Follow its current closure route with `--view event --json` when all obligations and checks are satisfied. Print non-null `presentation.terminal` once per `completionEvent.id` from that normal response, without status polling. The response supplies one read-only route for a lost reply; a Work acceptance alone cannot close the session Goal.
 
 Terminal `effectiveAction.exists=false` means no Work advancement. Its separate `completion` projection (also in terminal compact `current.completion`) keeps recorded Work acceptance, current evidence availability and canonical goal/task readiness distinct. An accepted historical Work may have stale current inputs; a Work READY cannot close an unmodeled publication/install obligation.
 

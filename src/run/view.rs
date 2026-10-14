@@ -194,6 +194,54 @@ pub fn supersede_with_policy(
         basis,
         review_policy,
         None,
+        None,
+        None,
+    )
+}
+
+/// Continue an explicitly defective frozen check contract under the same
+/// Work/Goal lineage. The caller must supply the exact predecessor evidence
+/// and Lead decision; ordinary supersession never accepts this marker.
+#[allow(clippy::too_many_arguments)]
+pub fn replace_check_contract(
+    loaded: &Loaded,
+    old_ledger: &str,
+    workflow: &str,
+    goal: &str,
+    new_ledger: &str,
+    check_command: &str,
+    proof_origin: Option<&str>,
+    reason: &str,
+    source_kind: &str,
+    source_event_sha256: &str,
+    expected_head_event_sha256: &str,
+    lead_agent: &str,
+    lead_native_task_name: &str,
+) -> Result<Value, String> {
+    supersede_with_policy_and_recovery(
+        loaded,
+        old_ledger,
+        workflow,
+        goal,
+        new_ledger,
+        None,
+        None,
+        Some(check_command),
+        proof_origin,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(expected_head_event_sha256),
+        Some(json!({
+            "protocol": 1,
+            "classification": "defective_contract",
+            "reason": reason,
+            "source": {"kind": source_kind, "eventSha256": source_event_sha256},
+            "leadOwner": {"agent": lead_agent, "nativeTaskName": lead_native_task_name},
+        })),
     )
 }
 
@@ -231,6 +279,8 @@ pub fn supersede_with_owner_recovery(
         basis,
         review_policy,
         owner_recovery,
+        None,
+        None,
     )
 }
 
@@ -251,6 +301,8 @@ fn supersede_with_policy_and_recovery(
     basis: Option<&str>,
     review_policy: Option<&str>,
     owner_recovery: Option<&str>,
+    expected_head_event_sha256: Option<&str>,
+    mut check_replacement: Option<Value>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -274,6 +326,23 @@ fn supersede_with_policy_and_recovery(
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, old_events, old_source) = load_at(loaded, &old)?;
         let old_state = run_state::reduce(&old_events)?;
+        if check_replacement.is_some()
+            && old_events
+                .last()
+                .and_then(|event| event["eventSha256"].as_str())
+                != expected_head_event_sha256
+        {
+            return Err(
+                "predecessor changed after replacement preview; refresh current Work detail".into(),
+            );
+        }
+        if check_replacement.is_some()
+            && (old_events[0]["workflow"] != workflow || old_events[0]["goal"] != goal)
+        {
+            return Err(
+                "check replacement must preserve the predecessor workflow and human Goal".into(),
+            );
+        }
         if crate::run::state::check_observation::unresolved(&old_state) {
             return Err("supersession refused unresolved check effects; no successor may retry uncertain execution".into());
         }
@@ -283,22 +352,94 @@ fn supersede_with_policy_and_recovery(
         if fs::read_to_string(&loaded.path).map_err(|error| error.to_string())? != loaded.source {
             return Err("configuration changed while superseding; reload configuration".into());
         }
-        let mut plan = crate::config::boundary::apply(
-            loaded,
-            selected_plan(envelope::plan(loaded, workflow, goal)?)?,
-            boundary,
-        )?;
+        let plan = if check_replacement.is_some() {
+            crate::run::check_replacement::frozen_plan(loaded, &old_events[0])?
+        } else {
+            let mut plan = crate::config::boundary::apply(
+                loaded,
+                selected_plan(envelope::plan(loaded, workflow, goal)?)?,
+                boundary,
+            )?;
+            crate::project::architecture::bind_plan(loaded, &mut plan)?;
+            plan
+        };
         let extension = extension_from_cli(basis, review_policy)?;
         if owner_recovery.is_some() && extension.is_some() {
             return Err("owner recovery must preserve the predecessor basis and review decision; omit --basis and --review-policy".into());
         }
-        crate::project::architecture::bind_plan(loaded, &mut plan)?;
         let old_policy = old_state
             .get("checkPolicy")
             .map(|policy| crate::run_value::policy_from_value(policy, 0))
             .transpose()
             .map_err(|error| error.replacen("line 0", "state", 1))?;
         let requested_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+        if let Some(replacement) = check_replacement.as_mut() {
+            if replacement["classification"] != "defective_contract"
+                || replacement["reason"]
+                    .as_str()
+                    .map_or(true, |value| value.trim().is_empty())
+            {
+                return Err("check replacement requires an explicit defective-contract classification and reason".into());
+            }
+            let source_kind = replacement["source"]["kind"].as_str().unwrap_or_default();
+            let source_sha = replacement["source"]["eventSha256"]
+                .as_str()
+                .unwrap_or_default();
+            let source = old_events
+                .iter()
+                .find(|event| event["eventSha256"] == source_sha)
+                .ok_or("check replacement source evidence is not in the predecessor ledger")?;
+            let source_valid = match source_kind {
+                "failed_check" => {
+                    source["action"] == "check"
+                        && (source["result"]["signal"].is_number()
+                            || source["result"]["code"]
+                                .as_i64()
+                                .is_some_and(|code| code != 0)
+                            || source["exitCode"].as_i64().is_some_and(|code| code != 0))
+                }
+                "blocked_worker" => {
+                    source["action"] == "submit"
+                        && source["role"] == "worker"
+                        && source["outcome"] == "blocked"
+                }
+                _ => false,
+            };
+            if !source_valid {
+                return Err("check replacement source must be an exact failed-check or blocked-worker event".into());
+            }
+            if old_state.get("checkPolicy").is_none() || requested_policy.is_none() {
+                return Err(
+                    "check replacement requires frozen predecessor and successor check policies"
+                        .into(),
+                );
+            }
+            let previous = crate::run_value::policy_from_value(&old_state["checkPolicy"], 0)?;
+            let successor = requested_policy.as_ref().expect("checked above");
+            if previous == *successor {
+                return Err("check replacement must identify a changed successor policy".into());
+            }
+            replacement["predecessorHeadEventSha256"] = old_events
+                .last()
+                .map(|event| event["eventSha256"].clone())
+                .unwrap_or(Value::Null);
+            replacement["oldPolicy"] = json!({
+                "commandSha256": previous.command_sha256,
+                "origin": previous.origin.as_str(),
+            });
+            replacement["newPolicy"] = json!({
+                "commandSha256": successor.command_sha256,
+                "origin": successor.origin.as_str(),
+            });
+            for field in ["agent", "nativeTaskName"] {
+                if replacement["leadOwner"][field]
+                    .as_str()
+                    .map_or(true, |value| value.trim().is_empty())
+                {
+                    return Err("check replacement must name the configured Lead owner".into());
+                }
+            }
+        }
         let old_preservation = old_state
             .get("preservation")
             .map(|value| crate::run_value::preservation_from_value(value, 0))
@@ -316,13 +457,17 @@ fn supersede_with_policy_and_recovery(
             (Some(old), None) => Some(old),
             (None, requested) => requested,
             (Some(old), Some(requested)) => {
-                if old != requested {
+                if old != requested && check_replacement.is_none() {
                     return Err(
                         "successor check policy differs from predecessor; choose an explicit new checked run"
                             .into(),
                     );
                 }
-                Some(old)
+                Some(if check_replacement.is_some() {
+                    requested
+                } else {
+                    old
+                })
             }
         };
         let preservation = match (old_preservation, requested_preservation) {
@@ -427,6 +572,9 @@ fn supersede_with_policy_and_recovery(
             .transpose()?;
         let carry_sha = carry_accounting.as_ref().map(crate::evidence::hash::value);
         let mut wanted_claim = wanted_claim;
+        if let Some(replacement) = &check_replacement {
+            wanted_claim["checkReplacement"] = replacement.clone();
+        }
         if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {
             wanted_claim["carryProtocol"] = json!(protocol);
             wanted_claim["governorCarrySha256"] = json!(sha);
@@ -482,6 +630,9 @@ fn supersede_with_policy_and_recovery(
         if let Some(policy) = &check_policy {
             event_value["checkPolicy"] = policy.value();
         }
+        if let Some(replacement) = &check_replacement {
+            event_value["checkReplacement"] = replacement.clone();
+        }
         if let Some(preservation) = &preservation {
             event_value["preservation"] = preservation.value();
         }
@@ -503,7 +654,12 @@ fn supersede_with_policy_and_recovery(
                 .as_ref()
                 .and_then(|x| x.basis.as_ref())
                 .map(|x| x.sha256.as_str())
-                .or_else(|| carry_protocol.and_then(|_| old_state["basis"]["sha256"].as_str()));
+                .or_else(|| carry_protocol.and_then(|_| old_state["basis"]["sha256"].as_str()))
+                .or_else(|| {
+                    check_replacement
+                        .as_ref()
+                        .and_then(|_| old_state["basis"]["sha256"].as_str())
+                });
             event_value["subject"] = subject(
                 goal,
                 &event_value["plan"],
@@ -531,7 +687,7 @@ fn supersede_with_policy_and_recovery(
                 }
             }
         }
-        if extension.is_none() && carry_protocol.is_some() {
+        if extension.is_none() && (carry_protocol.is_some() || check_replacement.is_some()) {
             if let Some(review) = old_state.get("reviewPolicy") {
                 event_value["reviewPolicy"] = review.clone();
             }
@@ -561,6 +717,7 @@ fn supersede_with_policy_and_recovery(
                 "supersedes",
                 "carryProtocol",
                 "governorCarrySha256",
+                "checkReplacement",
             ];
             let mismatched = existing.first().map(|current| {
                 request_fields

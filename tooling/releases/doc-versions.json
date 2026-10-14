@@ -1,6 +1,6 @@
 {
   "archive": {
-    "CHANGELOG.md": "Append-only release history; its newest source heading is checked by check-release-refs.sh."
+    "CHANGELOG.md": "Historical body is preserved; only the exact verified selected source-candidate heading may be promoted by --published."
   },
   "files": {
     "CONTRIBUTING.md": [
@@ -293,11 +293,11 @@
         "count": 1
       },
       {
-        "template": "The published stable release is {stable}.",
+        "template": "The selected published stable release is {stable}.",
         "count": 1
       },
       {
-        "template": "The current source version is {candidate}.",
+        "template": "The current source candidate is {candidate}.",
         "count": 1
       },
       {

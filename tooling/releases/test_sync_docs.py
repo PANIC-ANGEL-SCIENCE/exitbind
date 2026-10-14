@@ -1,6 +1,5 @@
 import copy
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,7 +8,7 @@ import tempfile
 import tomllib
 import unittest
 
-from sync_docs import INVENTORY, POLICY, REPOSITORY, TARGETS, plan, published_tag, verify_release
+from sync_docs import INVENTORY, POLICY, REPOSITORY, TARGETS, plan, published_tag
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,7 +30,8 @@ class DocumentationVersions(unittest.TestCase):
         for source in ROOT.rglob("*"):
             if ".git" not in source.relative_to(ROOT).parts and source.is_file() and (
                     source.suffix == ".md" or source.relative_to(ROOT).as_posix() in
-                    (INVENTORY, "Cargo.toml", "tooling/releases/sync_docs.py")):
+                    (INVENTORY, "Cargo.toml", "tooling/releases/sync_docs.py",
+                     "scripts/check-installation-pointer.py")):
                 target = self.root / source.relative_to(ROOT)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
@@ -39,6 +39,13 @@ class DocumentationVersions(unittest.TestCase):
         numbers = list(map(int, self.stable[1:].split(".")))
         numbers[-1] += 1
         self.next = "v" + ".".join(map(str, numbers))
+        # Publication fixtures remain valid after the checkout itself is promoted.
+        changelog = self.root / "CHANGELOG.md"
+        pending = "## Unreleased — " + self.next[1:] + " source candidate"
+        if pending not in changelog.read_text().splitlines():
+            with changelog.open("a") as stream:
+                stream.write("\n" + pending + "\n\n- Fixture candidate.\n")
+
 
     def render(self, stable=None):
         changes = plan(self.root, stable)
@@ -61,7 +68,7 @@ class DocumentationVersions(unittest.TestCase):
     def test_next_stable_transition_is_complete_and_repeatable(self):
         before = self.snapshot()
         candidate = (self.root / "Cargo.toml").read_bytes()
-        self.render(verify_release(release(self.next), self.stable))
+        self.render(self.next)
         self.assertEqual(published_tag(self.root), self.next)
         self.assertEqual(plan(self.root), {})
         self.assertEqual(self.render(), {})
@@ -73,7 +80,8 @@ class DocumentationVersions(unittest.TestCase):
                 if "pinned" in rule:
                     self.assertIn(rule["pinned"], text)
                 elif "{stable}" in rule["template"]:
-                    self.assertIn(rule["template"].replace("{stable}", self.next[1:]), text)
+                    self.assertIn(rule["template"].replace("{stable}", self.next[1:]).replace(
+                        "{candidate}", tomllib.loads(candidate.decode())["package"]["version"]), text)
         for name in inventory["archive"]:
             self.assertEqual((self.root / name).read_bytes(), before[name])
         for name in before:
@@ -166,111 +174,144 @@ class DocumentationVersions(unittest.TestCase):
         inventory_path.write_text(json.dumps(inventory))
         self.assertEqual(plan(self.root, self.next)[name], template.replace("{stable}", self.next[1:]) + "\n")
 
-    def test_release_requires_stable_publication_and_complete_assets(self):
-        valid = release(self.next)
-        variants = [dict(draft=True), dict(prerelease=True), dict(published_at=None),
-                    dict(tag_name=self.next + "-rc.1"), dict(tag_name="v0.031.13"),
-                    dict(html_url="https://github.com/example/other/releases/tag/" + self.next),
-                    dict(assets=valid["assets"][:-1])]
-        for change in variants:
-            with self.subTest(change=change):
-                with self.assertRaises(ValueError):
-                    verify_release(dict(valid, **change), self.stable)
-        with self.assertRaisesRegex(ValueError, "backwards"):
-            verify_release(release(self.stable), self.next)
-        self.assertEqual(verify_release(release(self.stable), self.stable), self.stable)
-        bad = copy.deepcopy(valid)
-        bad["assets"][0]["state"] = "new"
-        with self.assertRaises(ValueError):
-            verify_release(bad, self.stable)
+    def selected(self, tag=None, metadata=None, producer="a" * 40):
+        tag = tag or self.next
+        payload = release(tag) if metadata is None else metadata
+        if metadata is None:
+            payload["producer_commit"] = producer
+            for asset in payload["assets"]:
+                asset["digest"] = "sha256:" + "b" * 64
+        path = Path(self.temp.name) / "selected.json"
+        path.write_text(json.dumps(payload))
+        return self.cli("--write", "--published", "--metadata", str(path),
+                        "--expected-version", tag, "--expected-producer", producer)
 
-    def test_verified_github_command_and_api_failure(self):
-        bin_dir = Path(self.temp.name) / "bin"
-        bin_dir.mkdir()
-        gh = bin_dir / "gh"
-        gh.write_text('#!/bin/sh\ntest "$*" = "api repos/PANIC-ANGEL-SCIENCE/exitbind/releases/latest" || exit 99\ncat "$RELEASE_JSON"\n')
-        gh.chmod(0o755)
-        payload = Path(self.temp.name) / "release.json"
-        payload.write_text(json.dumps(release(self.next)))
-        env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], RELEASE_JSON=str(payload))
-        self.assertEqual(self.cli("--write", "--from-github", env=env).returncode, 0)
+    def test_selected_release_promotes_only_matching_heading_and_is_repeatable(self):
+        changelog = self.root / "CHANGELOG.md"
+        before = changelog.read_bytes()
+        self.assertIn(("## Unreleased — " + self.next[1:] + " source candidate").encode(), before)
+        result = self.selected()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        expected = before.replace(("## Unreleased — " + self.next[1:] + " source candidate").encode(),
+                                  ("## " + self.next[1:]).encode(), 1)
+        self.assertEqual(changelog.read_bytes(), expected)
         self.assertEqual(published_tag(self.root), self.next)
+        after = self.snapshot()
+        self.assertEqual(self.selected().returncode, 0)
+        self.assertEqual(self.snapshot(), after)
+
+    def test_selected_older_stable_is_valid_and_preserves_newer_candidate(self):
         before = self.snapshot()
-        gh.write_text("#!/bin/sh\nexit 1\n")
-        self.assertNotEqual(self.cli("--write", "--from-github", env=env).returncode, 0)
+        result = self.selected(self.stable)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.snapshot(), before)
+        # Explicit stable selection may move back, without relabeling history.
+        self.assertEqual(self.selected().returncode, 0)
+        changelog = (self.root / "CHANGELOG.md").read_bytes()
+        result = self.selected(self.stable)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(published_tag(self.root), self.stable)
+        self.assertEqual((self.root / "CHANGELOG.md").read_bytes(), changelog)
+
+    def test_promotion_preserves_newer_candidate_and_crlf_history(self):
+        path = self.root / "CHANGELOG.md"
+        newer = "## Unreleased — 99.98.97 source candidate\n\n- New work.\n\n"
+        before = path.read_bytes().replace(b"## Unreleased", newer.encode() + b"## Unreleased", 1)
+        before = before.replace(b"\n", b"\r\n")
+        path.write_bytes(before)
+        cargo = self.root / "Cargo.toml"
+        candidate = tomllib.loads(cargo.read_text())["package"]["version"]
+        cargo.write_text(cargo.read_text().replace(f'version = "{candidate}"', 'version = "99.98.97"', 1))
+        result = self.selected()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(path.read_bytes(), before.replace(
+            ("## Unreleased — " + self.next[1:] + " source candidate").encode(),
+            ("## " + self.next[1:]).encode(), 1))
+        self.assertIn("Source candidate tag: v99.98.97", (self.root / POLICY).read_text())
+
+    def test_unverified_metadata_refuses_all_document_and_changelog_writes(self):
+        valid = release(self.next)
+        valid["producer_commit"] = "a" * 40
+        for asset in valid["assets"]:
+            asset["digest"] = "sha256:" + "b" * 64
+        variants = [dict(draft=True), dict(prerelease=True), dict(published_at=None),
+                    dict(tag_name=self.stable), dict(producer_commit="c" * 40),
+                    dict(assets=valid["assets"][:-1]),
+                    dict(assets=valid["assets"] + [valid["assets"][0]]),
+                    dict(assets=valid["assets"] + [dict(name="extra", digest="sha256:" + "b" * 64)])]
+        bad = copy.deepcopy(valid["assets"])
+        bad[0]["digest"] = "unknown"
+        variants.append(dict(assets=bad))
+        before = self.snapshot()
+        for variant in variants:
+            with self.subTest(variant=variant):
+                result = self.selected(metadata=dict(valid, **variant))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(before, self.snapshot())
+
+    def test_missing_readback_stays_unavailable_without_writes(self):
+        before = self.snapshot()
+        result = self.cli("--write", "--published", "--metadata", str(self.root / "missing.json"),
+                          "--expected-version", self.next, "--expected-producer", "a" * 40)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("verification unavailable", result.stderr)
         self.assertEqual(before, self.snapshot())
 
+    def test_ambiguous_or_missing_selected_heading_refuses_all_writes(self):
+        path = self.root / "CHANGELOG.md"
+        original = path.read_text()
+        heading = "## Unreleased — " + self.next[1:] + " source candidate"
+        for content in (original + "\n" + heading + "\n", original.replace(heading, "## Pending"),
+                        original + "\n## " + self.next[1:] + "\n"):
+            path.write_text(content)
+            before = self.snapshot()
+            result = self.selected()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unambiguous changelog", result.stderr)
+            self.assertEqual(before, self.snapshot())
 
-    def test_release_preparation_is_repeatable_and_does_not_publish(self):
+    def test_ci_rejects_selected_stable_with_unreleased_heading_without_relabeling(self):
+        # Simulate a manual pointer-only update that forgot publication status.
+        self.render(self.next)
+        before = self.snapshot()
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unreleased heading", result.stderr)
+        self.assertEqual(before, self.snapshot())
+        self.assertEqual(self.selected().returncode, 0)
+        self.assertEqual(self.cli().returncode, 0)
+
+    def test_preparation_wrapper_uses_caller_metadata_path_and_checks_result(self):
         for directory in ("scripts", "plugins", "systems.soulmate", "schema", "src", "examples"):
             shutil.copytree(ROOT / directory, self.root / directory, dirs_exist_ok=True)
         for name in ("Cargo.lock", "install.sh", "plugin.json", "tooling/releases/prepare_docs.sh"):
             shutil.copyfile(ROOT / name, self.root / name)
-        self.env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
-                        GITHUB_REPOSITORY=REPOSITORY)
-
-        def git(*args, cwd=None):
-            result = subprocess.run(["git", *args], cwd=cwd or self.root, env=self.env,
-                                    text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            return result.stdout.strip()
-
-        git("init", "-b", "main")
-        git("config", "user.name", "Fixture")
-        git("config", "user.email", "fixture@example.invalid")
-        git("add", ".")
-        git("commit", "-m", "fixture")
-        remote = Path(self.temp.name) / "remote.git"
-        git("init", "--bare", str(remote))
-        git("remote", "add", "origin", str(remote))
-        git("push", "origin", "main")
-        bin_dir = Path(self.temp.name) / "bin"
-        bin_dir.mkdir()
-        gh = bin_dir / "gh"
-        gh.write_text('#!/bin/sh\ncat "$RELEASE_JSON"\n')
-        gh.chmod(0o755)
-        payload = Path(self.temp.name) / "release.json"
-        payload.write_text(json.dumps(release(self.next)))
-        self.env.update(PATH=str(bin_dir) + os.pathsep + self.env["PATH"], RELEASE_JSON=str(payload))
-        patch = Path(self.temp.name) / "docs.patch"
-
-        def prepare(*args):
-            return subprocess.run(["sh", "tooling/releases/prepare_docs.sh", *args],
-                                  cwd=self.root, env=self.env, text=True, capture_output=True)
-
-        head = git("rev-parse", "HEAD")
-        # Candidate preparation repairs drift in a dirty working tree without GitHub.
-        policy = self.root / POLICY
-        policy.write_text(policy.read_text().replace("Source candidate tag: " + self.stable,
-                                                    "Source candidate tag: v0.0.1"))
-        gh.write_text("#!/bin/sh\nexit 99\n")
-        candidate = prepare()
-        self.assertEqual(candidate.returncode, 0, candidate.stdout + candidate.stderr)
-        self.assertEqual(git("status", "--porcelain"), "")
+        helper = self.root / "tooling/releases/prepare_docs.sh"
+        payload = release(self.next)
+        payload["producer_commit"] = "a" * 40
+        for asset in payload["assets"]:
+            asset["digest"] = "sha256:" + "b" * 64
+        (Path(self.temp.name) / "readback.json").write_text(json.dumps(payload))
+        result = subprocess.run(["sh", str(helper)], cwd=self.temp.name, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(published_tag(self.root), self.stable)
-        gh.write_text('#!/bin/sh\ncat "$RELEASE_JSON"\n')
-        first = prepare("--published")
-        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        self.assertEqual(head, git("rev-parse", "refs/heads/main", cwd=remote))
-        self.assertEqual(head, git("rev-parse", "HEAD"))
-        patch.write_text(git("diff", "--binary") + "\n")
-        self.assertIn(self.next, patch.read_text())
-        before_refusal = self.snapshot()
-        self.assertNotEqual(prepare("--published").returncode, 0)
-        self.assertEqual(before_refusal, self.snapshot())
-        expected = self.snapshot()
-        patch_bytes = patch.read_bytes()
-        git("restore", ".")
-        git("apply", "--check", str(patch))
-        git("apply", str(patch))
-        for name in json.loads((self.root / INVENTORY).read_text())["files"]:
-            self.assertEqual((self.root / name).read_bytes(), expected[name])
-        git("restore", ".")
-        second = prepare("--published")
-        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertEqual((git("diff", "--binary") + "\n").encode(), patch_bytes)
-        self.assertEqual(head, git("rev-parse", "refs/heads/main", cwd=remote))
-        self.assertEqual(head, git("rev-parse", "HEAD"))
+        result = subprocess.run(["sh", str(helper), "--published", "--metadata", "readback.json",
+                                 "--expected-version", self.next, "--expected-producer", "a" * 40],
+                                cwd=self.temp.name, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(published_tag(self.root), self.next)
+        self.assertNotIn("## Unreleased — " + self.next[1:] + " source candidate",
+                         (self.root / "CHANGELOG.md").read_text())
+
+    def test_plain_candidate_sync_does_not_promote_unreleased_heading(self):
+        path = self.root / "CHANGELOG.md"
+        before = path.read_bytes()
+        self.assertEqual(self.cli("--write").returncode, 0)
+        self.assertEqual(path.read_bytes(), before)
+        for args in (("--write", "--published"), ("--expected-version", self.next),
+                     ("--write", "--from-github")):
+            self.assertNotEqual(self.cli(*args).returncode, 0)
+        self.assertEqual(path.read_bytes(), before)
 
 
 if __name__ == "__main__":

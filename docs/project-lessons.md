@@ -182,7 +182,7 @@ changes after observation.
 
 ## Prepare a bounded source and correction
 
-The input-preparation command below is included in the 0.31.12 release.
+The input-preparation command below is included in the 0.31.14 release.
 Existing proposal and correction rights remain unchanged.
 
 Before proposal, run `exitbind memory form --scope project-lessons.v1 --json`.

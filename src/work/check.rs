@@ -41,7 +41,8 @@ pub(crate) fn check_with_timeout(
         Ok(next) => response["next"] = next,
         Err(error) => response["projectionError"] = json!(error),
     }
-    let bounded = bounded_mutation(&response, work, None, &ledger, config_path);
+    let mut bounded = bounded_mutation(&response, work, None, &ledger, config_path);
+    super::refreshed_action::attach(loaded, work, &response["next"], &mut bounded);
     if observed.get("observationFailure").is_some()
         || mutation_response::check_result_failed(&bounded["result"])
     {

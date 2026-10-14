@@ -273,11 +273,10 @@ small verification needed to prove behavior.
 
 ## Preparing a version update
 
-After editing the source release metadata, run
-`sh tooling/releases/prepare_docs.sh` before the shared native CI sequence and
-commit the rendered documents with the version update. Follow the
-[release preparation and publication checkpoint](docs/release-version-policy.md#release-preparation-and-publication-checkpoint)
-for the separate verified stable-documentation update after publication.
+Run `sh tooling/releases/prepare_docs.sh` after editing source release metadata,
+then run the shared native CI sequence and review the combined diff. Follow the
+[documentation preparation checkpoint](docs/release-version-policy.md#preparing-documentation-references)
+for the separate selected-release verification and manual commit after delivery.
 
 ## Historical maintenance evidence
 

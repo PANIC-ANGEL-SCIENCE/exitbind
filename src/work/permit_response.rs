@@ -26,15 +26,50 @@ pub(crate) fn permit(
     let permission = run::permit_for_assignment(
         loaded, &ledger, work, assignment, expected, operation, request_id,
     )?;
-    let next = next_for(loaded, work, &ledger)?;
-    Ok(agent_response(compact(
+    let next = match next_for(loaded, work, &ledger) {
+        Ok(next) => next,
+        Err(error) => {
+            return Ok(projection_failure(
+                &loaded.path,
+                work,
+                assignment,
+                operation,
+                &ledger,
+                &permission,
+                &error,
+            ));
+        }
+    };
+    let mut response = compact(work, assignment, operation, &ledger, &permission, &next);
+    super::refreshed_action::attach(loaded, work, &next, &mut response);
+    Ok(agent_response(response))
+}
+
+fn projection_failure(
+    config_path: &std::path::Path,
+    work: &str,
+    assignment: &str,
+    operation: &str,
+    ledger: &str,
+    permission: &Value,
+    error: &str,
+) -> Value {
+    let mut response = compact(
         work,
         assignment,
         operation,
-        &ledger,
-        &permission,
-        &next,
-    )))
+        ledger,
+        permission,
+        &Value::Null,
+    );
+    response["projectionError"] = json!(error.chars().take(512).collect::<String>());
+    response["recovery"] = json!({
+        "kind":"read_only",
+        "route":super::compact::continuation_route(config_path,
+            vec!["work".into(),"detail".into(),work.into(),"--view".into(),"action".into(),"--json".into()]),
+        "meaning":"The permit response retains its recorded event. Read current Work state; do not repeat the mutation or request a new permit to recover this display.",
+    });
+    agent_response(response)
 }
 
 pub(super) fn compact(
@@ -160,6 +195,46 @@ fn is_current_grant(permission: &Value, next: &Value, assignment: &str) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_post_commit_read_keeps_event_and_only_read_only_recovery() {
+        let permission = json!({
+            "allowed": true,
+            "event": {"action":"govern", "eventSha256":"recorded-permit-event"},
+            "governor": {"enabled":true,"state":"ready"},
+        });
+        let response = projection_failure(
+            std::path::Path::new("exitbind.json"),
+            "work-a",
+            "worker-a",
+            "edit",
+            "runs/work-a.jsonl",
+            &permission,
+            &"projection failure".repeat(2_000),
+        );
+        assert_eq!(response["allowed"], true);
+        assert_eq!(response["effect"], "recorded");
+        assert_eq!(response["eventSha256"], "recorded-permit-event");
+        assert_eq!(
+            response["reference"]["eventSha256"],
+            "recorded-permit-event"
+        );
+        assert_eq!(response["recovery"]["kind"], "read_only");
+        let route = response["recovery"]["route"]["command"].as_array().unwrap();
+        assert!(route
+            .windows(2)
+            .any(|args| args == [json!("work"), json!("detail")]));
+        assert!(route
+            .windows(2)
+            .any(|args| args == [json!("--view"), json!("action")]));
+        assert!(!route.iter().any(|arg| arg == "permit" || arg == "return"));
+        assert!(response.get("currentGrant").is_none());
+        assert_ne!(response["effectiveAction"]["exists"], true);
+        assert!(
+            serde_json::to_vec(&response).unwrap().len()
+                <= super::super::compact::MAX_RESPONSE_BYTES
+        );
+    }
 
     #[test]
     fn permit_result_is_bounded_and_keeps_decisive_fields() {

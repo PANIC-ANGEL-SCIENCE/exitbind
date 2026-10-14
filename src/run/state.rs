@@ -196,6 +196,7 @@ fn reject_unknown(
             allowed.push("carryProtocol");
             allowed.push("governorCarry");
             allowed.push("governorCarrySha256");
+            allowed.push("checkReplacement");
         }
         return object
             .keys()

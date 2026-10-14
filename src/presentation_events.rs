@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 /// A cache holds at most one small document; anything larger is not ours.
 const CACHE_LIMIT: u64 = 64 * 1024;
+mod completion;
 mod room;
+pub(crate) use completion::goal_completion;
 pub(crate) mod world;
 #[cfg(test)]
 use room::{

@@ -219,6 +219,7 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
 }
 
 mod capture;
+pub(crate) use capture::summary as prepared_children_for_work;
 mod perspective;
 mod record;
 mod requirements;

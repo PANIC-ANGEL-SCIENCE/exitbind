@@ -330,7 +330,9 @@ fn current_proof_and_drift_warning_gates_use_the_exitbind_binary() {
 #[test]
 fn primary_ci_and_release_keep_the_accepted_wsl_cadence() {
     let ci = source(".github/workflows/ci.yml");
-    assert!(ci.contains("on:\n  push:\n  pull_request:\n  workflow_dispatch:"));
+    assert!(ci.contains(
+        "on:\n  push:\n    branches:\n      - '**'\n  pull_request:\n  workflow_dispatch:"
+    ));
 
     let exit = ci
         .split_once("  exit:\n")

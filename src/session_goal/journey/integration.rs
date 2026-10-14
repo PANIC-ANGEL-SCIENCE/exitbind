@@ -423,6 +423,67 @@ pub(super) fn accepted_endpoint(
     Ok(None)
 }
 
+/// Resolve a Work to an existing journey member through verified run
+/// supersession claims. This is read-only lineage; it never creates members.
+pub(super) fn descends_from_member(
+    loaded: &Loaded,
+    member: &Member,
+    requested_work: &str,
+) -> Result<bool, String> {
+    const MAX_SUCCESSORS: usize = 64;
+    let mut current_work = member.work.clone();
+    let mut expected_start = Some(member.start_event_sha256.clone());
+    let mut expected_claim: Option<Value> = None;
+    let mut seen = BTreeSet::new();
+    for depth in 0..=MAX_SUCCESSORS {
+        let relative = crate::work::resolve(loaded, &current_work)?;
+        if !seen.insert(relative.clone()) {
+            return Err("journey member successor lineage contains a cycle".into());
+        }
+        let (ledger, events, source) = crate::run::ledger::load(loaded, &relative)?;
+        let start = events
+            .first()
+            .ok_or("journey Work ledger has no start event")?;
+        if start["action"] != "start"
+            || expected_start
+                .as_deref()
+                .is_some_and(|expected| start["eventSha256"] != expected)
+            || start["configSha256"] != member.config_sha256
+            || hash::text(start["goal"].as_str().unwrap_or_default()) != member.work_goal_sha256
+        {
+            return Err(
+                "journey Work start, configuration or frozen task Goal identity changed".into(),
+            );
+        }
+        if let Some(claim) = expected_claim.take() {
+            validate_successor(&claim, &relative, &ledger, &events)?;
+        }
+        if current_work == requested_work {
+            return Ok(true);
+        }
+        let claim_path = crate::run::ledger::claim_path(&ledger);
+        let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
+            return Ok(false);
+        };
+        if depth == MAX_SUCCESSORS {
+            return Err("journey member successor lineage exceeds the supported bound".into());
+        }
+        validate_predecessor_claim(&claim, &relative, &events, &source)?;
+        let successor = claim["newLedgerPath"]
+            .as_str()
+            .ok_or("journey successor claim has no successor ledger")?;
+        let work = crate::work::locator_for_ledger(successor)
+            .ok_or("journey successor claim names a non-Work ledger")?;
+        if crate::work::resolve(loaded, &work)? != successor {
+            return Err("journey successor claim does not bind the exact Work ledger path".into());
+        }
+        current_work = work;
+        expected_start = None;
+        expected_claim = Some(claim);
+    }
+    Ok(false)
+}
+
 fn validate_predecessor_claim(
     claim: &Value,
     relative: &str,

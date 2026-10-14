@@ -86,7 +86,16 @@ relevant artifacts and negative cases; earlier acquisition and an approval
 label do not substitute for current evidence. Retain full responses through
 protected host capture, then display the needed fields and one next command.
 Without complete capture, use exact expansion pages and verify every required
-byte. Never treat a truncated model-visible projection as complete delivery.
+byte. Start with one complete `--detail` response, then use the action view for
+routine navigation and expand changed required sections as needed. Never treat
+a truncated model-visible projection as complete delivery.
+
+For a compact completion response, close the whole conversation Goal with
+`goal close --direct --goal-id ID --view event --json`. The response carries the
+completion event and `presentation.terminal`; direct completion has no `EXIT
+READY`. If the close reply is lost, read `goal status --view event --json` once
+to recover the same event ID and terminal text without changing the journal.
+On a repeated close, the event view is idempotent and omits the terminal.
 
 ## Report the requested outcome
 

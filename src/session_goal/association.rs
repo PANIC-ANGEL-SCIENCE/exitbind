@@ -20,6 +20,7 @@ pub(crate) struct Candidate {
 
 #[derive(Clone, Debug)]
 pub(crate) enum WorkContext {
+    NotRequested,
     Local,
     Owner(Value),
     Session(Value),

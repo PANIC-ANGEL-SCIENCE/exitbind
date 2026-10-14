@@ -3,14 +3,28 @@
 use super::*;
 
 pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    args::assert_options("goal status", a, &["config", "project", "json", "themed"])?;
+    args::assert_options(
+        "goal status",
+        a,
+        &["config", "project", "json", "themed", "view"],
+    )?;
     args::assert_positionals("goal status", a, 1)?;
+    if a.options.get("view").is_some_and(|view| view != "event") {
+        return Err("goal status --view accepts only event".into());
+    }
     let scope = super::goal::journal_scope(l, a, false)?;
     let record = crate::session_goal::read(&scope.root)?;
     if scope.is_session() && !scope.owner_matches {
         let value = crate::session_goal::context_summary(record.as_ref(), scope.owner.as_ref());
         print_json(&value)?;
         return Ok(());
+    }
+    if a.options.get("view").is_some() {
+        return print_json(&super::goal_completion::read_response(
+            l,
+            record.as_ref(),
+            a.flags.contains_key("project"),
+        )?);
     }
     let presentation = crate::session_goal::presentation_for_loaded(l, record.as_ref())?;
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));

@@ -154,6 +154,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         ));
     }
     validate_basis_extension(event, line, version)?;
+    crate::run::check_replacement::validate_start(event, line)?;
     let plan = &event["plan"];
     if let Some(selection) = plan.get("architectureContract") {
         crate::project::architecture::selection(selection)

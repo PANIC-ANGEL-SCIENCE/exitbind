@@ -23,12 +23,31 @@ pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> Wo
         Ok(Some(value)) => value,
         Ok(None) => {
             return match super::super::native::current() {
-                Ok(None) => WorkContext::Local,
-                Ok(Some(_)) => {
-                    if legacy_goal_is_bound(loaded, work) {
+                Ok(None) => match super::super::read(&loaded.state_root) {
+                    Ok(None) => WorkContext::NotRequested,
+                    Ok(Some(_)) => WorkContext::Local,
+                    Err(_) => WorkContext::Invalid,
+                },
+                Ok(Some(session)) => {
+                    let legacy_bound = match legacy_goal_is_bound(loaded, work, &session) {
+                        Ok(bound) => bound,
+                        Err(_) => return WorkContext::Invalid,
+                    };
+                    if legacy_bound {
                         WorkContext::Local
                     } else {
-                        WorkContext::Unavailable
+                        match (session.owner(), super::super::read(&session.root)) {
+                            (Ok(None), Ok(None)) => WorkContext::NotRequested,
+                            (Err(_), _) | (_, Err(_)) => WorkContext::Invalid,
+                            (Ok(Some(_)), Ok(Some(_))) => {
+                                match native_successor_context(loaded, work, &session) {
+                                    Ok(Some(context)) => context,
+                                    Ok(None) => WorkContext::Unavailable,
+                                    Err(_) => WorkContext::Invalid,
+                                }
+                            }
+                            _ => WorkContext::Unavailable,
+                        }
                     }
                 }
                 Err(_) => WorkContext::Invalid,
@@ -43,14 +62,101 @@ pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> Wo
     }
 }
 
-fn legacy_goal_is_bound(loaded: &crate::config::Loaded, work: &str) -> bool {
-    super::super::read(&loaded.state_root)
-        .ok()
-        .flatten()
-        .is_some_and(|record| {
-            super::super::progress::record_bound_to_work(&record, work)
-                || record["continuation"]["work"].as_str() == Some(work)
+/// Verified successors reuse their original native member without writing a
+/// companion, creating an admission or attaching an ordinary unbound Work.
+fn native_successor_context(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    session: &super::super::native::Session,
+) -> Result<Option<WorkContext>, String> {
+    let ledger = crate::work::resolve(loaded, work)?;
+    let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+    if events
+        .first()
+        .and_then(|event| event.get("supersedes"))
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let owner = session
+        .owner()?
+        .ok_or("native session owner is unavailable")?;
+    let history = super::super::records(&session.root)?;
+    let mut found = None;
+    for record in history.iter().rev() {
+        if let Some(member) =
+            super::super::journey::member_for_work_with_lineage(loaded, record, work)?
+        {
+            found = Some(member);
+            break;
+        }
+    }
+    let Some(member) = found else {
+        return Ok(None);
+    };
+    super::super::journey::validate_member_for_session(loaded, &member, session, &owner)?;
+    let observed = history
+        .iter()
+        .position(|record| {
+            record["goalId"] == member["parentGoalId"]
+                && record["eventSha256"] == member["parentObservedGoalEventSha256"]
         })
+        .ok_or("original native Goal observation is absent")?;
+    let mut parent = history[observed..]
+        .iter()
+        .take_while(|record| record["goalId"] == member["parentGoalId"])
+        .last()
+        .cloned()
+        .ok_or("native parent Goal is unavailable")?;
+    let scope = super::super::native::scope(loaded, false)?;
+    Ok(Some(if scope.owner_matches {
+        WorkContext::Owner(parent)
+    } else {
+        let start = events.first().ok_or("successor start is unavailable")?;
+        if start["action"] != "start" {
+            return Err("successor start is malformed".into());
+        }
+        parent[VERIFIED_CONTEXT_FIELD] = json!({
+            "kind":"context_only",
+            "work":work,
+            "startEventSha256":start["eventSha256"],
+        });
+        WorkContext::Session(parent)
+    }))
+}
+
+fn legacy_goal_is_bound(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    session: &super::super::native::Session,
+) -> Result<bool, String> {
+    let Some(record) = super::super::read(&loaded.state_root)? else {
+        return Ok(false);
+    };
+    if super::super::progress::record_bound_to_work(&record, work)
+        || record["continuation"]["work"].as_str() == Some(work)
+    {
+        return Ok(true);
+    }
+    let Some(member) = super::super::journey::member_for_work_with_lineage(loaded, &record, work)?
+    else {
+        return Ok(false);
+    };
+    let owner = session
+        .owner()?
+        .ok_or("native session Goal owner is unavailable")?;
+    super::super::journey::validate_member_for_session(loaded, &member, session, &owner)?;
+    let history = super::super::records(&session.root)?;
+    if !history.iter().any(|item| {
+        item["goalId"] == member["parentGoalId"]
+            && item["eventSha256"] == member["parentObservedGoalEventSha256"]
+    }) {
+        return Err(
+            "original Goal observation for the successor Work is absent from this native session"
+                .into(),
+        );
+    }
+    Ok(true)
 }
 
 fn resolve_companion(

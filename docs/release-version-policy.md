@@ -1,14 +1,28 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.12
-Source candidate tag: v0.31.12
+Published stable tag: v0.31.14
+Source candidate tag: v0.31.14
 
-The published stable release is 0.31.12.
-The current source version is 0.31.12.
-README install links name the available published assets. A source version or
+The selected published stable release is 0.31.14.
+The current source candidate is 0.31.14.
+The published release is available; README install links name its published assets. A source version or
 passing CI alone does not establish an official release. The release-reference
 check validates published and candidate declarations separately; source metadata,
 schemas and installation defaults must match the current source version.
+
+After an authorized delivery, validate the exact selected tag's offline release
+readback with `python3 scripts/check-installation-pointer.py --metadata FILE
+--root PROJECT --expected-version TAG --expected-producer COMMIT`. Supply the
+release JSON, the peeled tag commit as `producer_commit`, and asset names with
+their GitHub SHA-256 digests. The checker requires the published stable state,
+the matching `Published stable tag` policy line, one visible README install
+command for that tag, and the exact three-platform inventory of binaries,
+archives and checksum files. An available stable tag may differ from a newer
+source candidate when release assets have not yet been published. Verify
+attestations as part of delivery before recording its result. Obtain and
+authenticate that readback through the delivery process; the checker performs
+no network or `latest` lookup and does not authenticate its input file. Missing
+readback files return `verification unavailable`, separately from mismatches.
 
 Future stable releases in this series use 0.31.10 through 0.31.99, increasing
 only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are
@@ -34,67 +48,46 @@ selected publication ref, actual WSL validation, tag checks, release attestation
 and installer proof. Official release and operator installation remain separate decisions.
 Published tags and assets stay immutable.
 
-## Automatic documentation references
+## Preparing documentation references
 
-`Published stable tag` above is the checked-in stable checkpoint; `Cargo.toml`
-is the candidate authority. Run `python3 tooling/releases/sync_docs.py --write`
-(Python 3.11+) to render references, or omit flags to check them. A candidate
-bump never promotes stable installation links. `--write --from-github` first
-verifies the canonical latest stable release, its published/non-draft status,
-and all nine native assets. Both the checker and regression tests run in
-`scripts/ci-local.sh`.
+`Cargo.toml` remains the source-candidate authority. After editing release
+metadata, run `sh tooling/releases/prepare_docs.sh`, then the shared native CI
+sequence. The command renders inventoried document references from the saved
+stable selection and candidate version. Review and commit the changes with the
+version preparation. Ordinary preparation leaves changelog history and
+Unreleased headings unchanged; a newer candidate does not promote install links.
 
-`tooling/releases/doc-versions.json` inventories exact version-bearing lines.
-A `template` uses `{stable}` or `{candidate}` without the leading `v`; its
-`count` catches missing or duplicated references. A `pinned` line and reason
-preserve historical evidence, compatibility examples and host versions. The
-changelog is the only whole-file archive exception; its source heading remains
-checked by the existing release-reference gate. All Markdown, MDX,
-reStructuredText and AsciiDoc files are scanned, including language variants
-and guides outside `docs`. New version-bearing lines must join the inventory,
-even when their values equal today's stable release. Add the exact template
-or justified pinned line, render, then check. New formats need scanner tests.
-
-## Release preparation and publication checkpoint
-
-When updating the source version, keep the existing preparation sequence:
-update `Cargo.toml`, its lockfile, installation defaults, plugin metadata and
-validator, WSL expectation, and the source-candidate changelog entry. Then run:
+After an authorized publication, the existing release actor explicitly selects
+the verified delivery readback described above:
 
 ```sh
-sh tooling/releases/prepare_docs.sh
+sh tooling/releases/prepare_docs.sh --published --metadata /path/to/readback.json \
+  --expected-version SELECTED_TAG --expected-producer PEELED_COMMIT
 ./scripts/ci-local.sh
 ```
 
-The preparation command renders all inventoried document references and runs
-the release-reference gate. It accepts the in-progress version edits and uses
-the checked-in stable checkpoint, so a candidate bump leaves published install
-links unchanged. Review and commit the metadata and document changes together.
-CI checks the rendered documents without writing them and rejects stale or
-unclassified references. It checks the saved stable checkpoint offline; it
-does not poll GitHub for a newer release.
+The renderer stages the prospective README and policy in a temporary directory
+and invokes `scripts/check-installation-pointer.py` unchanged, before writing
+any document. It then promotes only the single exact selected version's
+`## Unreleased — VERSION source candidate` heading to `## VERSION`. Other
+headings, newer candidates, entry bodies and historical bytes are preserved.
+An already-published matching heading is a no-op; duplicate or missing matching
+headings require review. Missing readback remains `verification unavailable`.
+An explicitly selected older stable is valid; this command never looks up latest.
 
-After the release workflow publishes the assets and the existing release actor
-verifies publication, that actor must run this on a clean, current review branch:
+The actor must inspect the resulting diff and commit it through normal review.
+This manual publication checkpoint creates no commit, PR, tag or release and
+needs no workflow write permission. The saved documentation may intentionally
+continue to select an older stable during ongoing preparation.
 
-```sh
-sh tooling/releases/prepare_docs.sh --published
-./scripts/ci-local.sh
-```
-
-This reads the canonical latest stable release with the actor's existing `gh`
-access and verifies published status and all nine native asset entries before
-advancing the stable checkpoint and documentation. Asset metadata validation
-is not archive checksum, attestation, or installed-binary proof; the existing
-release gates retain those responsibilities. An API error, draft, prerelease,
-missing asset or backward version stops synchronization.
-
-The actor must review and commit this post-publication update through the normal
-review process. Until that commit is integrated, documents continue to name the
-previous published stable release. This remaining step is manual; neither the
-release workflow nor these commands create a branch, commit, PR, or merge.
-No Actions PR-creation permission or documentation write permission is needed.
-Keep published tags and their documents immutable.
-
-This implementation remains a draft on top of `fix/fr45-residuals`; integration
-into main still requires review.
+`tooling/releases/doc-versions.json` classifies version-bearing lines as stable
+or candidate templates, or pinned historical/tool references with reasons.
+Markdown, MDX, reStructuredText and AsciiDoc documents are checked, including
+language variants and files outside `docs`. Unknown lines and missing or
+duplicated current references fail the offline checker. Add an exact template
+or a justified historical pin for new references; do not relabel old evidence.
+Changelog entry bodies remain archived, with only the verified heading promotion
+above allowed. A saved stable selection still marked Unreleased fails the check
+and requires the verified publication command. CI runs `python3 tooling/releases/sync_docs.py` without writing;
+it checks the saved selection, including the README-only path, and does not
+claim the saved selection is the newest published release.
