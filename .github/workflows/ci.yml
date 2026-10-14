@@ -19,7 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
+      - name: Complete selected Git history
+        env:
+          GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: ./scripts/ci-selected-history.sh
       - id: detect
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -32,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Existing README rules
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/readme-target
@@ -51,9 +57,15 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Complete selected Git history
+        env:
+          GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: ./scripts/ci-selected-history.sh
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
       - name: Prepare dependency-cache target path
@@ -132,9 +144,15 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Complete selected Git history
+        env:
+          GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: ./scripts/ci-selected-history.sh
       - name: Verify native macOS host and target
         run: |
           test "$(uname -s)" = Darwin

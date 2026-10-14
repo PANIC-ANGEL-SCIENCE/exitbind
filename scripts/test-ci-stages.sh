@@ -108,4 +108,5 @@ for stage in $(ci_stage_order); do
     fail "selected stage has no command dispatch: $stage"
 done
 
+"$root/scripts/test-ci-selected-history.sh"
 printf 'ci-stage contract passed\n'
