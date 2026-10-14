@@ -8,6 +8,8 @@ pub struct Arguments {
 }
 
 const VALUE_OPTIONS: &[&str] = &[
+    "agent",
+    "role",
     "artifact",
     "artifact-root",
     "basis",
