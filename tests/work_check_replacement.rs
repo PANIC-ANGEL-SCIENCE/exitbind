@@ -480,8 +480,8 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
         "defective_contract"
     );
     assert_eq!(
-        start["checkPolicy"]["commandSha256"],
-        applied["successor"]["checkPolicy"]["commandSha256"]
+        start["checkPolicy"]["commandSha256"], preview["decision"]["newPolicy"]["commandSha256"],
+        "the committed start policy matches the previewed replacement decision"
     );
     assert_eq!(
         start["checkReplacement"]["oldPolicy"]["commandSha256"],
@@ -941,11 +941,21 @@ fn blocked_worker_has_a_bound_sibling_lead_replacement_without_fake_submission()
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert!(
-        !events
+    let previous_events: Vec<Value> = std::str::from_utf8(&before)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let lead_submissions = |events: &[Value]| {
+        events
             .iter()
-            .any(|event| event["action"] == "submit" && event["role"] == "lead"),
-        "blocked predecessor receives no synthetic Lead submission"
+            .filter(|event| event["action"] == "submit" && event["role"] == "lead")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        lead_submissions(&events) == lead_submissions(&previous_events),
+        "replacement adds no Lead submission; the original Lead scope decision remains"
     );
 }
 
@@ -1458,24 +1468,42 @@ fn same_session_corrupt_native_companion_blocks_check_replacement() {
 #[test]
 fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
     let f = Fixture::new();
-    let begin = f.ok(&[
-        "work",
-        "begin",
-        "change",
-        "--goal",
-        "inspect unresolved child ownership",
-        "--check-command",
-        "exec sh checker.sh",
-        "--review-policy",
-        "required",
-        "--preserve-requirement",
-        "child-review:Inspect unresolved child ownership.",
-        "--preservation-check-command",
-        "true",
-    ]);
-    let work = begin["work"].as_str().unwrap().to_owned();
     let session = "r46-prepared-child-session";
     let store = f.root.join(".exitbind/native-test-session-goals");
+    f.ok_in_session(
+        session,
+        &store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "r46-prepared-child-goal",
+            "--goal",
+            "Keep this native Goal bound while child work is prepared",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+    );
+    let begin = f.ok_in_session(
+        session,
+        &store,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "inspect unresolved child ownership",
+            "--check-command",
+            "exec sh checker.sh",
+            "--review-policy",
+            "required",
+            "--preserve-requirement",
+            "child-review:Inspect unresolved child ownership.",
+            "--preservation-check-command",
+            "true",
+        ],
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
     let initialization = serde_json::json!({
         "action":"init",
         "sourceRef":"owner:r46-child-review",
@@ -1487,24 +1515,36 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
         initialization.to_string().as_bytes(),
     );
     assert!(initialized.status.success(), "{initialized:?}");
-    f.ok(&[
-        "work",
-        "return",
-        &work,
-        begin["next"]["assignment"].as_str().unwrap(),
-        "--outcome",
-        "scoped",
-    ]);
-    let worker = f.ok(&["work", "next", &work, "--json"]);
-    f.ok(&[
-        "work",
-        "return",
-        &work,
-        worker["next"]["assignment"].as_str().unwrap(),
-        "--outcome",
-        "completed",
-    ]);
-    let failed = f.call(&["work", "check", &work, "--timeout-ms", "2000"]);
+    f.ok_in_session(
+        session,
+        &store,
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+    );
+    let worker = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
+    f.ok_in_session(
+        session,
+        &store,
+        &[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+    );
+    let failed = f.call_in_session(
+        session,
+        &store,
+        &["work", "check", &work, "--timeout-ms", "2000"],
+    );
     assert!(!failed.status.success(), "{failed:?}");
     assert!(
         fs::read_to_string(f.ledger(&work))
@@ -1513,25 +1553,6 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
             .filter_map(|line| serde_json::from_str::<Value>(line).ok())
             .any(|event| event["action"] == "check" && event["result"]["code"] != 0),
         "fixture must retain an actual failed check before preparing a child"
-    );
-    let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
-    let token = continuation["mutationContext"]["token"].as_str().unwrap();
-    f.ok_in_session(
-        session,
-        &store,
-        &[
-            "work",
-            "bind",
-            &work,
-            "--context",
-            token,
-            "--host",
-            "codex",
-            "--session",
-            session,
-            "--host-version",
-            "0.1-test",
-        ],
     );
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let token = continuation["mutationContext"]["token"].as_str().unwrap();
@@ -1575,7 +1596,13 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
         !refused.status.success(),
         "a prepared child is an unresolved live continuation: {refused:?}"
     );
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("live, prepared, or retained child"));
+    let diagnostic = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        diagnostic
+            .contains("check replacement is blocked by a live, prepared, or retained child result"),
+        "unexpected earlier replacement guard; stderr={diagnostic}; stdout={}",
+        String::from_utf8_lossy(&refused.stdout)
+    );
     assert_eq!(
         fs::read(f.ledger(&work)).unwrap(),
         before,

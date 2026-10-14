@@ -141,6 +141,9 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     if next["goalProgress"]["workAssociation"].is_object() {
         result["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
     }
+    if next["current"]["checkReplacement"].is_object() {
+        result["checkReplacement"] = next["current"]["checkReplacement"].clone();
+    }
     let mut effective = super::effective_action::project(&result);
     let form = result
         .as_object_mut()
@@ -285,6 +288,9 @@ fn response(
     });
     if next["goalProgress"]["workAssociation"].is_object() {
         value["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
+    }
+    if next["current"]["checkReplacement"].is_object() {
+        value["checkReplacement"] = next["current"]["checkReplacement"].clone();
     }
     if next["projectGoalProgress"].is_object() {
         value["projectGoalProgress"] = next["projectGoalProgress"].clone();
