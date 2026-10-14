@@ -11,6 +11,7 @@ const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
 const EXITBIND_REFERENCE: &[u8] = include_bytes!("../skills/exitbind/references/operators.md");
 const AWAY_GUIDE: &str = include_str!("../docs/codex-tmux-away.md");
 const REFERENCE: &str = include_str!("../REFERENCE.md");
+const RUN_RECOVERY_REFERENCE: &str = include_str!("../docs/reference-run-and-recovery.md");
 const EXTERNAL_SENTINEL: &[u8] = b"host-owned sentinel\n";
 
 fn temp(label: &str) -> PathBuf {
@@ -101,7 +102,8 @@ fn attended_work_uses_native_spawn_without_away_fallback() {
     assert!(reference.contains("exitbind work child prepare work"));
     assert!(reference.contains("never search raw state"));
 
-    for document in [AWAY_GUIDE, REFERENCE] {
+    let reference_corpus = format!("{REFERENCE}\n{RUN_RECOVERY_REFERENCE}");
+    for document in [AWAY_GUIDE, reference_corpus.as_str()] {
         let document = normalize(document);
         assert!(document.contains("nativeTaskName"));
         assert!(document.contains("work act"));
