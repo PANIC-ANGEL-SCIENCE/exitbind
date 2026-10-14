@@ -48,7 +48,7 @@ class DocumentationVersions(unittest.TestCase):
 
     def snapshot(self):
         return {str(p.relative_to(self.root)): p.read_bytes()
-                for p in self.root.rglob("*") if p.is_file()}
+                for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
 
     def cli(self, *args, env=None):
         return subprocess.run([sys.executable, str(ROOT / "tooling/releases/sync_docs.py"),
@@ -104,6 +104,16 @@ class DocumentationVersions(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         self.assertEqual(self.cli("--write").returncode, 0)
         self.assertEqual(plan(self.root), {})
+
+    def test_readme_only_gate_rejects_drift_before_rust_checks(self):
+        helper = self.root / "tooling/readme/check-existing.sh"
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "tooling/readme/check-existing.sh", helper)
+        readme = self.root / "README.md"
+        readme.write_text(readme.read_text().replace(self.stable[1:], "0.0.1"))
+        result = subprocess.run(["sh", str(helper)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale documentation versions", result.stderr)
 
     def test_new_language_and_guide_references_require_inventory(self):
         for name in ("README.ko.md", "README.ja.md", "guides/install.rst", "guide.mdx", "guide.adoc"):
@@ -191,7 +201,7 @@ class DocumentationVersions(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
 
 
-    def test_automatic_patch_is_repeatable_applicable_and_does_not_publish(self):
+    def test_release_preparation_is_repeatable_and_does_not_publish(self):
         for directory in ("scripts", "plugins", "systems.soulmate", "schema", "src", "examples"):
             shutil.copytree(ROOT / directory, self.root / directory, dirs_exist_ok=True)
         for name in ("Cargo.lock", "install.sh", "plugin.json", "tooling/releases/prepare_docs.sh"):
@@ -224,16 +234,30 @@ class DocumentationVersions(unittest.TestCase):
         self.env.update(PATH=str(bin_dir) + os.pathsep + self.env["PATH"], RELEASE_JSON=str(payload))
         patch = Path(self.temp.name) / "docs.patch"
 
-        def publish():
-            return subprocess.run(["sh", "tooling/releases/prepare_docs.sh", str(patch)],
+        def prepare(*args):
+            return subprocess.run(["sh", "tooling/releases/prepare_docs.sh", *args],
                                   cwd=self.root, env=self.env, text=True, capture_output=True)
 
         head = git("rev-parse", "HEAD")
-        first = publish()
+        # Candidate preparation repairs drift in a dirty working tree without GitHub.
+        policy = self.root / POLICY
+        policy.write_text(policy.read_text().replace("Source candidate tag: " + self.stable,
+                                                    "Source candidate tag: v0.0.1"))
+        gh.write_text("#!/bin/sh\nexit 99\n")
+        candidate = prepare()
+        self.assertEqual(candidate.returncode, 0, candidate.stdout + candidate.stderr)
+        self.assertEqual(git("status", "--porcelain"), "")
+        self.assertEqual(published_tag(self.root), self.stable)
+        gh.write_text('#!/bin/sh\ncat "$RELEASE_JSON"\n')
+        first = prepare("--published")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertEqual(head, git("rev-parse", "refs/heads/main", cwd=remote))
         self.assertEqual(head, git("rev-parse", "HEAD"))
+        patch.write_text(git("diff", "--binary") + "\n")
         self.assertIn(self.next, patch.read_text())
+        before_refusal = self.snapshot()
+        self.assertNotEqual(prepare("--published").returncode, 0)
+        self.assertEqual(before_refusal, self.snapshot())
         expected = self.snapshot()
         patch_bytes = patch.read_bytes()
         git("restore", ".")
@@ -242,9 +266,9 @@ class DocumentationVersions(unittest.TestCase):
         for name in json.loads((self.root / INVENTORY).read_text())["files"]:
             self.assertEqual((self.root / name).read_bytes(), expected[name])
         git("restore", ".")
-        second = publish()
+        second = prepare("--published")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertEqual(patch.read_bytes(), patch_bytes)
+        self.assertEqual((git("diff", "--binary") + "\n").encode(), patch_bytes)
         self.assertEqual(head, git("rev-parse", "refs/heads/main", cwd=remote))
         self.assertEqual(head, git("rev-parse", "HEAD"))
 

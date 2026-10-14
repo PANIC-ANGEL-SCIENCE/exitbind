@@ -1,12 +1,19 @@
 #!/bin/sh
-# Called on trusted main after assets are uploaded. Produce a reviewable patch.
+# Render documentation during release preparation; never commit or publish.
 set -eu
-patch=${1:?usage: prepare_docs.sh PATCH_PATH}
-test "${GITHUB_REPOSITORY:-}" = PANIC-ANGEL-SCIENCE/exitbind
-test -z "$(git status --porcelain)" || { echo 'Documentation checkout must be clean' >&2; exit 1; }
-python3 tooling/releases/sync_docs.py --write --from-github
-git diff --binary > "$patch"
+cd "$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+case "${1:-}" in
+  '')
+    test "$#" -eq 0 || { echo 'usage: prepare_docs.sh [--published]' >&2; exit 1; }
+    python3 tooling/releases/sync_docs.py --write
+    ;;
+  --published)
+    test "$#" -eq 1 || { echo 'usage: prepare_docs.sh [--published]' >&2; exit 1; }
+    test -z "$(git status --porcelain)" || { echo 'Published documentation checkout must be clean' >&2; exit 1; }
+    python3 tooling/releases/sync_docs.py --write --from-github
+    ;;
+  *) echo 'usage: prepare_docs.sh [--published]' >&2; exit 1 ;;
+esac
 python3 tooling/releases/sync_docs.py
 sh scripts/check-release-refs.sh
-printf 'Documentation patch prepared from %s: %s\n' "$(git rev-parse HEAD)" "$patch"
-printf '%s\n' 'Remote publication requires the normal authorized review path; no branch or protection was changed.'
+printf '%s\n' 'Documentation prepared. Review and commit the changes through the existing release review process.'

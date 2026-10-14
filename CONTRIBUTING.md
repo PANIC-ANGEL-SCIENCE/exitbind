@@ -271,6 +271,14 @@ small verification needed to prove behavior.
   A second occurrence of a finding must add the mechanical gate that would have
   caught it; on a third occurrence, failure to adopt the gate is the finding.
 
+## Preparing a version update
+
+After editing the source release metadata, run
+`sh tooling/releases/prepare_docs.sh` before the shared native CI sequence and
+commit the rendered documents with the version update. Follow the
+[release preparation and publication checkpoint](docs/release-version-policy.md#release-preparation-and-publication-checkpoint)
+for the separate verified stable-documentation update after publication.
+
 ## Historical maintenance evidence
 
 The [v0.25.1 maintenance entry](docs/maintenance/v0.25.1/README.md) preserves

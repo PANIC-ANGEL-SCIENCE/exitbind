@@ -3,6 +3,7 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$root"
+python3 tooling/releases/sync_docs.py
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT HUP INT TERM
 while read -r target name; do

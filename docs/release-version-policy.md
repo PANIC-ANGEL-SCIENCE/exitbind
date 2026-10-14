@@ -55,37 +55,46 @@ and guides outside `docs`. New version-bearing lines must join the inventory,
 even when their values equal today's stable release. Add the exact template
 or justified pinned line, render, then check. New formats need scanner tests.
 
-After asset publication, the release workflow checks out trusted main and
-prepares a documentation patch. Its separate publication job uses the existing
-GitHub token with contents and pull-request write permissions, limited to that
-job. It only pushes `automation/stable-docs` and opens or reuses a draft PR to
-main. It never merges a PR, pushes main, force-pushes, deletes branches, changes
-rules or uses the badge branch. Existing PR discussion and metadata are retained.
-The repository must permit this exact branch through its branch lock and allow
-GitHub Actions to create PRs. An installation requiring an additional permission
-or policy change must obtain that authorization separately; no new credential
-is required or created by this workflow.
+## Release preparation and publication checkpoint
 
-GitHub-token pushes do not trigger push workflows. PR opened, synchronized or
-reopened events can create approval-required workflow runs; a reviewer with
-write access can approve them. See GitHub's
-[token event behavior](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs).
-This job runs the documentation and release-reference gates before publication;
-it does not dispatch duplicate CI or create another credential to trigger it.
-Run any additional required review checks through the authorized CI route.
+When updating the source version, keep the existing preparation sequence:
+update `Cargo.toml`, its lockfile, installation defaults, plugin metadata and
+validator, WSL expectation, and the source-candidate changelog entry. Then run:
 
-Reruns with the same rendered tree create no commit or duplicate PR. Pending
-bot version updates may be extended, preserving main's current tree and the
-previous branch head as parents. Unexpected branch edits, a PR with another
-base, a changed main, or a rejected non-force push stop publication. No branch
-code is executed. Squash-merged implementation changes are reusable only when
-Git's computed merge tree is exactly current main; otherwise review is required.
-Review the saved patch and job error on failure; published
-installer checks remain independent. A PR creation error is followed only by a
-read to determine whether it succeeded; it is not blindly retried.
+```sh
+sh tooling/releases/prepare_docs.sh
+./scripts/ci-local.sh
+```
 
-The initial automation implementation is reviewed on top of `fix/fr45-residuals`
-so its product fixes, tests and changelog are preserved without merging them as
-a setup step. Once the implementation reaches main through review, recurring
-PRs target main. A still-open initial PR with the stacked base blocks automated
-branch reuse until that review is resolved.
+The preparation command renders all inventoried document references and runs
+the release-reference gate. It accepts the in-progress version edits and uses
+the checked-in stable checkpoint, so a candidate bump leaves published install
+links unchanged. Review and commit the metadata and document changes together.
+CI checks the rendered documents without writing them and rejects stale or
+unclassified references. It checks the saved stable checkpoint offline; it
+does not poll GitHub for a newer release.
+
+After the release workflow publishes the assets and the existing release actor
+verifies publication, that actor must run this on a clean, current review branch:
+
+```sh
+sh tooling/releases/prepare_docs.sh --published
+./scripts/ci-local.sh
+```
+
+This reads the canonical latest stable release with the actor's existing `gh`
+access and verifies published status and all nine native asset entries before
+advancing the stable checkpoint and documentation. Asset metadata validation
+is not archive checksum, attestation, or installed-binary proof; the existing
+release gates retain those responsibilities. An API error, draft, prerelease,
+missing asset or backward version stops synchronization.
+
+The actor must review and commit this post-publication update through the normal
+review process. Until that commit is integrated, documents continue to name the
+previous published stable release. This remaining step is manual; neither the
+release workflow nor these commands create a branch, commit, PR, or merge.
+No Actions PR-creation permission or documentation write permission is needed.
+Keep published tags and their documents immutable.
+
+This implementation remains a draft on top of `fix/fr45-residuals`; integration
+into main still requires review.

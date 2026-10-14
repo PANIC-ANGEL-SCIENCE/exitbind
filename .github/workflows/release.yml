@@ -299,47 +299,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/publish-release-assets.sh
 
-  documentation:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    concurrency:
-      group: published-stable-documentation
-      cancel-in-progress: false
-    steps:
-      - name: Check out current main for documentation synchronization
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Prepare published stable documentation patch
-        id: documentation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: sh tooling/releases/prepare_docs.sh "$RUNNER_TEMP/stable-docs.patch"
-      - name: Open or refresh the documentation draft PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 -B tooling/releases/publish_pr.py
-      - name: Preserve generated documentation patch for review
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: stable-documentation-patch-${{ github.sha }}
-          path: ${{ runner.temp }}/stable-docs.patch
-          if-no-files-found: ignore
-      - name: Report documentation synchronization result
-        if: always()
-        env:
-          DOCUMENTATION_OUTCOME: ${{ steps.documentation.outcome }}
-        run: |
-          printf 'Documentation preparation: %s. Review the documentation PR or saved patch; main was not updated.\n' "$DOCUMENTATION_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          if test "$DOCUMENTATION_OUTCOME" != success; then
-            echo '::warning::Stable documentation preparation failed; inspect the step log before using any patch.'
-          fi
-
   installed:
     needs: publish
     strategy:
