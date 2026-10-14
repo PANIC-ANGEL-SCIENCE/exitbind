@@ -1316,9 +1316,27 @@ fn native_goal_replacement_keeps_original_member_and_resolves_successor_lineage_
     assert_eq!(detail["checkReplacement"]["successor"]["work"], successor);
 
     let next = f.ok_in_session(session, &store, &["work", "next", &successor, "--json"]);
-    let association = &next["presentation"]["goalProgress"]["workAssociation"];
-    assert_eq!(association["kind"], "verified_successor_lineage");
-    assert_eq!(association["originalMemberWork"], work);
+    assert_eq!(next["current"]["checkReplacement"]["state"], "verified");
+    assert_eq!(
+        next["current"]["checkReplacement"]["predecessor"]["work"],
+        work
+    );
+    assert_eq!(next["current"]["goal"]["overallAvailable"], true);
+    // A bounded next response can omit optional progress details. Its current
+    // relation and exact section route survive; ordinary action detail carries
+    // the verified original member without another full instruction read.
+    assert!(next["current"]["details"]["tasks"]["readOnly"] == true);
+    let action = f.ok_in_session(
+        session,
+        &store,
+        &["work", "detail", &successor, "--view", "action", "--json"],
+    );
+    assert_eq!(action["checkReplacement"]["state"], "verified");
+    assert_eq!(
+        action["goalAssociation"]["kind"],
+        "verified_successor_lineage"
+    );
+    assert_eq!(action["goalAssociation"]["originalMemberWork"], work);
 }
 
 #[test]
