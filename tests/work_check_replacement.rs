@@ -724,11 +724,24 @@ fn destructive_bound_input_observation_never_becomes_replacement_source_credit()
     );
     let failed = f.call(&["work", "check", &work, "--timeout-ms", "2000"]);
     assert_eq!(failed.status.code(), Some(1), "{failed:?}");
-    assert!(failed.stdout.is_empty(), "{failed:?}");
+    let failure: Value = serde_json::from_slice(&failed.stdout)
+        .unwrap_or_else(|error| panic!("{error}: {failed:?}"));
+    assert_eq!(
+        failure["observationFailure"]["facts"]["diagnostic"],
+        "observation binding changed before commit; no check was recorded"
+    );
+    assert_eq!(failure["observationFailure"]["facts"]["process"]["code"], 1);
+    assert_eq!(
+        failure["observationFailure"]["facts"]["termination"],
+        "ended"
+    );
+    assert_eq!(
+        failure["observationFailure"]["facts"]["storage"],
+        "not_committed"
+    );
     assert_eq!(
         String::from_utf8_lossy(&failed.stderr),
-        "exitbind: observation binding changed before commit; no check was recorded\n",
-        "the checker ran, but input drift prevents it from becoming check evidence"
+        "Session Goal: not requested | Result readiness: BLOCKED | Next: lead_decision\n"
     );
     assert_eq!(fs::read(evidence_dir.join("attempts")).unwrap(), b"x");
     assert!(!f.root.join("count-evidence").exists());
@@ -743,7 +756,13 @@ fn destructive_bound_input_observation_never_becomes_replacement_source_credit()
         events
             .iter()
             .any(|event| event["action"] == "check_observation"),
-        "the execution admission remains durable and unresolved: {events:?}"
+        "the execution admission remains durable: {events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event["action"] == "check_observation_failed"),
+        "the ended execution failure is durably classified: {events:?}"
     );
     assert!(
         !events.iter().any(|event| event["action"] == "check"),
@@ -1333,7 +1352,7 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
     let initialization = serde_json::json!({
         "action":"init",
         "sourceRef":"owner:r46-child-review",
-        "sourceText":"Inspect unresolved child ownership before replacing a check.",
+        "sourceText":"Inspect unresolved child ownership.",
         "requirements":[{"id":"child-review","text":"Inspect unresolved child ownership."}]
     });
     let initialized = f.call_with_input(

@@ -14,8 +14,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "classification",
         ],
     )?;
-    args::assert_positionals("work replace-check", a, 3)?;
-    let work = positional(a, 2, "work replace-check requires WORK")?;
+    args::assert_positionals("work replace-check", a, 2)?;
+    let work = positional(a, 1, "work replace-check requires WORK")?;
     let response = crate::work::check_replacement::replace(
         l,
         work,
