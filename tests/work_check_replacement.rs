@@ -585,6 +585,28 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
         relation["checkReplacement"]["source"]["eventSha256"],
         source_sha
     );
+    let successor_ledger = f.ledger(&successor);
+    let original_successor = fs::read(&successor_ledger).unwrap();
+    let mut stripped = start.clone();
+    stripped.as_object_mut().unwrap().remove("checkReplacement");
+    stripped.as_object_mut().unwrap().remove("eventSha256");
+    stripped["eventSha256"] = json!(digest_value(&stripped));
+    fs::write(
+        &successor_ledger,
+        format!("{}\n", serde_json::to_string(&stripped).unwrap()),
+    )
+    .unwrap();
+    let rejected = f.call(&["work", "detail", &successor, "--json"]);
+    assert!(
+        !rejected.status.success(),
+        "a rehashed successor cannot discard its claimed check replacement marker"
+    );
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("check replacement marker is missing or differs"),
+        "{rejected:?}"
+    );
+    fs::write(&successor_ledger, original_successor).unwrap();
     let retry = f.ok(&refs(&apply_args));
     assert_eq!(retry["state"], "existing_successor_recovered");
     let mut changed = apply_args.clone();

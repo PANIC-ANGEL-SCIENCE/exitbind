@@ -755,8 +755,19 @@ fn failed_check_form_offers_rework_without_reviewer_disposition() {
             .iter()
             .map(|choice| choice["label"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["rework", "blocked"]
+        [
+            "rework",
+            "blocked",
+            "preview replacement of an explicitly defective frozen check"
+        ]
     );
+    let preview = &form["choices"][2]["command"]["argv"];
+    let preview = preview.as_array().unwrap();
+    assert!(preview.iter().any(|arg| arg == "replace-check"));
+    assert!(preview
+        .windows(2)
+        .any(|args| args == [json!("--classification"), json!("defective-contract")]));
+    assert!(!preview.iter().any(|arg| arg == "--apply"));
     assert!(lead["packet"].get("pendingDisposition").is_none());
     let reworked = fixture.execute_choice(
         &fixture.choice(&lead, "rework"),

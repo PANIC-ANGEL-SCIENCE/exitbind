@@ -343,7 +343,10 @@ fn rust_method_call(value: &str) -> bool {
             && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
     };
     let parts = callee.split('.').collect::<Vec<_>>();
-    if parts.len() < 2 || !parts.iter().all(|part| identifier(part)) {
+    if parts.len() < 2
+        || !rust_indexed_receiver(parts[0])
+        || !parts[1..].iter().all(|part| identifier(part))
+    {
         return false;
     }
 
@@ -381,6 +384,36 @@ fn rust_method_call(value: &str) -> bool {
         }
         return suffix.is_empty();
     }
+}
+
+// A structured lookup is a computed expression, like a simple method receiver.
+// Accept only identifier bases and literal identifier keys, never a quoted RHS.
+fn rust_indexed_receiver(value: &str) -> bool {
+    let identifier = |part: &str| {
+        let mut chars = part.chars();
+        chars
+            .next()
+            .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+            && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    };
+    let end = value.find('[').unwrap_or(value.len());
+    if !identifier(&value[..end]) {
+        return false;
+    }
+    let mut tail = &value[end..];
+    while !tail.is_empty() {
+        let Some(after) = tail.strip_prefix("[\"") else {
+            return false;
+        };
+        let Some((key, rest)) = after.split_once("\"]") else {
+            return false;
+        };
+        if !identifier(key) {
+            return false;
+        }
+        tail = rest;
+    }
+    true
 }
 
 fn rust_call_end(value: &str, open_paren: usize) -> Option<usize> {
@@ -796,7 +829,7 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
 fn credential_assignment_distinguishes_method_expressions_and_retains_history_checks() {
     let root = temp("credential-assignment-lexical");
     let name = ["to", "ken"].concat();
-    let benign = format!("let {name} = work.strip_prefix(\"smw_\").unwrap();\n");
+    let benign = format!("let {name} = work.strip_prefix(\"smw_\").unwrap();\nlet {name} = continuation[\"mutationContext\"][\"{name}\"].as_str().unwrap();\n");
     fs::write(root.join("notes.txt"), benign.as_bytes()).unwrap();
     assert!(scan(&root).is_empty(), "method-call candidate was flagged");
 
@@ -845,6 +878,13 @@ fn credential_assignment_distinguishes_method_expressions_and_retains_history_ch
     let same_line_method_assignment = format!(
         "let {name} = {receiver}.{method}({argument}); // {name}={receiver}.{method}({argument})\n"
     );
+    let indexed_environment = format!("{name}=continuation[\"field\"].as_str().unwrap();\n");
+    let indexed_quoted = format!("let {name} = \"continuation[\\\"field\\\"].as_str()\";\n");
+    let indexed_comment =
+        format!("let {name} = continuation[\"field\"].as_str(); // {name}={value}\n");
+    assert!(credential_assignment(&indexed_environment));
+    assert!(credential_assignment(&indexed_quoted));
+    assert!(credential_assignment(&indexed_comment));
     assert!(credential_assignment(&generic));
     assert!(credential_assignment(&quoted));
     assert!(credential_assignment(&environment_call));

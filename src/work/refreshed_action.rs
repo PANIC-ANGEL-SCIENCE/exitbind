@@ -6,7 +6,10 @@ pub(super) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut V
     let Some(binding) = next["current"]["binding"].as_str() else {
         return;
     };
-    if response["projectionError"].is_string() || response["diagnostic"].is_object() {
+    if next["action"] == "done"
+        || response["projectionError"].is_string()
+        || response["diagnostic"].is_object()
+    {
         return;
     }
     let mut candidate = response.clone();

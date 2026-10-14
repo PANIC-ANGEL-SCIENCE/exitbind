@@ -336,7 +336,13 @@ fn validate_edge(
         // Legacy starts never depended on a claim. Ignore absent or malformed
         // historical claims unless a valid claim identifies a carry edge.
         match claim_result {
-            Ok(claim) if claim.as_ref().is_some_and(has_carry_fields) => claim,
+            Ok(claim)
+                if claim.as_ref().is_some_and(|claim| {
+                    has_carry_fields(claim) || claim.get("checkReplacement").is_some()
+                }) =>
+            {
+                claim
+            }
             _ => return Ok(()),
         }
     };
@@ -367,6 +373,14 @@ fn validate_edge(
         || claim["goalSha256"] != crate::evidence::hash::text(start["goal"].as_str().unwrap_or(""))
     {
         return Err("governor carry successor claim provenance mismatch".into());
+    }
+    if has_carry_fields(&claim) && !marked {
+        return Err("governor carry marker is missing or differs from its persisted claim".into());
+    }
+    if claim.get("checkReplacement") != replacement {
+        return Err(
+            "check replacement marker is missing or differs from its persisted claim".into(),
+        );
     }
     if marked
         && (start["carryProtocol"].as_u64() != carry_protocol
