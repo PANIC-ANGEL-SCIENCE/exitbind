@@ -601,8 +601,11 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
         !rejected.status.success(),
         "a rehashed successor cannot discard its claimed check replacement marker"
     );
+    let rejected_json: Value = serde_json::from_slice(&rejected.stdout).unwrap();
     assert!(
-        String::from_utf8_lossy(&rejected.stderr)
+        rejected_json["error"]
+            .as_str()
+            .unwrap()
             .contains("check replacement marker is missing or differs"),
         "{rejected:?}"
     );
