@@ -506,172 +506,172 @@ Published stable release; the `v0.28.0` tag and release assets are available.
   regression test proves a fresh install and project show no previous-product
   identity while a historical ledger stays readable under its own.
 
-Older entries are preserved in the [0.20.0 and earlier archive](docs/changelog-0.20-and-earlier.md).
+Older entries are preserved in the [0.20.0 and earlier archive](CHANGELOG-0.20-and-earlier.md).
 
 ## 0.20.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0200).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0200).
 
 ## 0.19.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0191).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0191).
 
 ## 0.19.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0190).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0190).
 
 ## 0.18.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0180).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0180).
 
 ## 0.17.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0170).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0170).
 
 ## 0.16.0-rc.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0160-rc1).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0160-rc1).
 
 ## 0.15.0-rc.3
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0150-rc3).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0150-rc3).
 
 ## 0.15.0-rc.2
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0150-rc2).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0150-rc2).
 
 ## 0.15.0-rc.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0150-rc1).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0150-rc1).
 
 ## 0.14.0-rc.4
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0140-rc4).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0140-rc4).
 
 ## 0.14.0-rc.3
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0140-rc3).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0140-rc3).
 
 ## 0.14.0-rc.2
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0140-rc2).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0140-rc2).
 
 ## 0.14.0-rc.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0140-rc1).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0140-rc1).
 
 ## 0.13.0-rc.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0130-rc1).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0130-rc1).
 
 ## 0.12.1-rc.3
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0121-rc3).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0121-rc3).
 
 ## Public tags and format readers
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#public-tags-and-format-readers).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#public-tags-and-format-readers).
 
 ## 0.12.1-rc.2
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0121-rc2).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0121-rc2).
 
 ## 0.12.1-rc.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0121-rc1).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0121-rc1).
 
 ## 0.12.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0120).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0120).
 
 ## 0.11.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0110).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0110).
 
 ## 0.10.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#0100).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#0100).
 
 ## 0.9.3
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#093).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#093).
 
 ## 0.9.2
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#092).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#092).
 
 ## 0.9.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#091).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#091).
 
 ## 0.9.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#090).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#090).
 
 ## 0.8.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#080).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#080).
 
 ## 0.7.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#070).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#070).
 
 ## 0.6.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#060).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#060).
 
 ## 0.5.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#050).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#050).
 
 ## 0.4.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#040).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#040).
 
 ## 0.3.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#030).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#030).
 
 ## 0.2.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#021).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#021).
 
 ## 0.2.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#020).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#020).
 
 ## 0.1.0
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#010).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#010).
 
 ## 0.0.8
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#008).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#008).
 
 ## 0.0.7
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#007).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#007).
 
 ## 0.0.6
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#006).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#006).
 
 ## 0.0.5
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#005).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#005).
 
 ## 0.0.4
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#004).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#004).
 
 ## 0.0.3
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#003).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#003).
 
 ## 0.0.2
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#002).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#002).
 
 ## 0.0.1
 
-See [the archived entry](docs/changelog-0.20-and-earlier.md#001).
+See [the archived entry](CHANGELOG-0.20-and-earlier.md#001).

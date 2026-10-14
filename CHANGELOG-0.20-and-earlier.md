@@ -1,6 +1,6 @@
 # Changelog — 0.20.0 and earlier
 
-[Current changelog](../CHANGELOG.md) continues this release history. Historical entries retain their original release claims and identifiers.
+[Current changelog](CHANGELOG.md) continues this release history. Historical entries retain their original release claims and identifiers.
 
 ## 0.20.0
 
@@ -185,7 +185,7 @@
 
 ## 0.12.1-rc.3
 
-- Ship the `v0.12.1-rc.3` prerelease from source snapshot `4199ebd`, with native builds, packaged installation, and public asset installation validated for Linux x86_64 and both Mac architectures; WSL exercises the same Linux artifact inside Ubuntu. See [platform support details](platform-support.md) and [public release workflow](https://github.com/envy404/soulmate/actions/runs/34094355184).
+- Ship the `v0.12.1-rc.3` prerelease from source snapshot `4199ebd`, with native builds, packaged installation, and public asset installation validated for Linux x86_64 and both Mac architectures; WSL exercises the same Linux artifact inside Ubuntu. See [platform support details](docs/platform-support.md) and [public release workflow](https://github.com/envy404/soulmate/actions/runs/34094355184).
 - Show current worker claims, host-reported checks, reviewer findings, and actual lead decisions in the human status and explanation views. A protocol refusal remains distinct from lead rejection; machine JSON and persisted records retain their existing shape.
 - Add read-only skill diagnostics and documentation navigation and guidance. No schema, authority, or stable-policy change is claimed; no persisted migration is required.
 - Frame the preview as a conditional choice for teams that want an inspectable acceptance record after handoffs or rework. Existing native worker/reviewer spawn capability must be confirmed by the coordinating host before a run; a profile, task name, or plan-only brief is not proof, and an unavailable tool returns pending work without a substitute executor. This is host guidance, not binary enforcement.
@@ -222,7 +222,7 @@ entries describe development history, not publicly reconstructable release
 objects. They attribute receipt 2 / harness manifest 1 to 0.4.0 and run events 2
 to 0.7.0; the original archived trees are not asserted equivalent to public tags.
 Private archives, refs, and operational evidence remain intentionally
-unpublished. See [the public history boundary](public-history.md).
+unpublished. See [the public history boundary](docs/public-history.md).
 
 ## 0.12.1-rc.2
 
