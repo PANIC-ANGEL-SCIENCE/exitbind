@@ -149,7 +149,7 @@ fn invalid_path_and_symlink_candidates_remain_strict_refusals() {
         let target = fixture.root.join("target.json");
         fs::write(&target, report_bytes()).unwrap();
         let link = fixture.root.join("link.json");
-        symlink(Path::new("target.json"), &link).unwrap();
+        symlink(Path::new("target.json"), link).unwrap();
         let bytes = fs::read(&target).unwrap();
         let event = json!({"action":"submit","eventSha256":"event-link",
             "artifact":{"root":"state","path":"link.json","bytes":bytes.len(),
