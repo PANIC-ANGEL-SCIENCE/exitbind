@@ -48,6 +48,7 @@ jobs:
     if: needs.scope.outputs.scope != 'readme'
     runs-on: ubuntu-latest
     env:
+      VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       # Keep test runtime practical without changing the release profile or assertions.
       # Set these before cache restoration so the Cargo profile enters its key.
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
@@ -64,7 +65,6 @@ jobs:
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-selected-history.sh
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
@@ -112,7 +112,6 @@ jobs:
           CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-local.sh
       - name: Upload Linux stable release for WSL
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
@@ -126,6 +125,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'
     env:
+      VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
       CARGO_PROFILE_TEST_OPT_LEVEL: '1'
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -151,7 +151,6 @@ jobs:
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-selected-history.sh
       - name: Verify native macOS host and target
         run: |
@@ -192,7 +191,6 @@ jobs:
           CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-local.sh
   windows-wsl:
     needs: exit
