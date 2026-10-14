@@ -4,6 +4,32 @@ use serde_json::Value;
 
 pub(crate) const PROTOCOL: u64 = 1;
 
+pub(crate) fn frozen_plan(loaded: &crate::config::Loaded, start: &Value) -> Result<Value, String> {
+    let plan = start
+        .get("plan")
+        .ok_or("check replacement predecessor has no frozen plan")?;
+    crate::config::boundary::assert_current(loaded, plan)?;
+    crate::project::architecture::assert_current(loaded)?;
+    let current_architecture = loaded
+        .architecture_contract
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or(Value::Null);
+    if plan
+        .get("architectureContract")
+        .cloned()
+        .unwrap_or(Value::Null)
+        != current_architecture
+    {
+        return Err(
+            "check replacement architecture provenance differs from the frozen predecessor".into(),
+        );
+    }
+    Ok(plan.clone())
+}
+
 pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     let Some(value) = event.get("checkReplacement") else {
         return Ok(());

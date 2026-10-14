@@ -102,6 +102,18 @@ impl Fixture {
     }
     fn begin_failed_check_with(&self, check_command: &str, goal: &str) -> (String, Value) {
         let work = self.begin_completed_worker(check_command, goal);
+        self.finish_failed_check(work)
+    }
+    fn begin_failed_check_with_boundary(
+        &self,
+        check_command: &str,
+        goal: &str,
+        boundary: &str,
+    ) -> (String, Value) {
+        let work = self.begin_completed_worker_with_boundary(check_command, goal, Some(boundary));
+        self.finish_failed_check(work)
+    }
+    fn finish_failed_check(&self, work: String) -> (String, Value) {
         let failed = self.call(&["work", "check", &work, "--timeout-ms", "2000"]);
         assert!(
             !failed.status.success(),
@@ -129,7 +141,15 @@ impl Fixture {
         (work, event)
     }
     fn begin_completed_worker(&self, check_command: &str, goal: &str) -> String {
-        let begin = self.ok(&[
+        self.begin_completed_worker_with_boundary(check_command, goal, None)
+    }
+    fn begin_completed_worker_with_boundary(
+        &self,
+        check_command: &str,
+        goal: &str,
+        boundary: Option<&str>,
+    ) -> String {
+        let mut args = vec![
             "work",
             "begin",
             "change",
@@ -139,7 +159,11 @@ impl Fixture {
             check_command,
             "--review-policy",
             "required",
-        ]);
+        ];
+        if let Some(boundary) = boundary {
+            args.extend(["--boundary", boundary]);
+        }
+        let begin = self.ok(&args);
         let work = begin["work"].as_str().unwrap().to_string();
         let lead = begin["next"]["assignment"].as_str().unwrap();
         self.ok(&["work", "return", &work, lead, "--outcome", "scoped"]);
@@ -173,6 +197,8 @@ fn clear_native_selectors(command: &mut Command) {
         "CLAUDE_CODE_SESSION_ID",
         "EXITBIND_NATIVE_SESSION_ID",
         "EXITBIND_SESSION_GOALS_DIR",
+        "CLAUDE_ENV_FILE",
+        "XDG_STATE_HOME",
     ] {
         command.env_remove(name);
     }
@@ -200,6 +226,27 @@ fn replacement_args(work: &str, binding: &str) -> Vec<String> {
 }
 fn refs(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
+}
+
+fn install_narrow_boundary(f: &Fixture) {
+    fs::create_dir_all(f.root.join("src")).unwrap();
+    fs::write(f.root.join("src/a.txt"), "bounded file\n").unwrap();
+    let config_path = f.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["agents"]["worker"]["observe"] = json!(["src/**"]);
+    config["agents"]["worker"]["write"] = json!(["src/**"]);
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let path = f.root.join(".agents/boundaries");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("task.json"),
+        serde_json::to_vec(&json!({
+            "version": 1,
+            "agents": {"worker": {"observe": ["src/a.txt"], "write": ["src/a.txt"]}}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
 }
 
 fn canonical(value: &Value) -> String {
@@ -411,8 +458,13 @@ fn run_entries(f: &Fixture) -> Vec<String> {
 #[test]
 fn preview_and_apply_create_one_immutable_successor_without_running_new_check() {
     let f = Fixture::new();
+    install_narrow_boundary(&f);
     fs::write(f.root.join("preserved-evidence"), b"retain").unwrap();
-    let (work, source) = f.begin_failed_check();
+    let (work, source) = f.begin_failed_check_with_boundary(
+        "exec sh checker.sh",
+        "repair the checker",
+        ".agents/boundaries/task.json",
+    );
     let lead = f.ok(&["work", "next", &work, "--json"]);
     let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let source_sha = source["eventSha256"].as_str().unwrap();
@@ -474,6 +526,10 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
     assert_eq!(
         start["checkReplacement"]["source"]["eventSha256"],
         source_sha
+    );
+    assert_eq!(
+        start["plan"], predecessor_start["plan"],
+        "replacement preserves the complete frozen plan, including every role boundary and provenance"
     );
     assert_eq!(
         start["checkReplacement"]["classification"],
@@ -609,7 +665,42 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
             .contains("check replacement marker is missing or differs"),
         "{rejected:?}"
     );
-    fs::write(&successor_ledger, original_successor).unwrap();
+    fs::write(&successor_ledger, &original_successor).unwrap();
+    for strip_manifest in [false, true] {
+        let mut tampered = start.clone();
+        if strip_manifest {
+            tampered["plan"]
+                .as_object_mut()
+                .unwrap()
+                .remove("boundaryManifest");
+        } else {
+            let worker = tampered["plan"]["stages"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .flat_map(|stage| stage["agents"].as_array_mut().unwrap())
+                .find(|agent| agent["role"] == "worker")
+                .unwrap();
+            worker["declaredBoundary"]["write"] = json!(["**"]);
+        }
+        tampered.as_object_mut().unwrap().remove("eventSha256");
+        tampered["eventSha256"] = json!(digest_value(&tampered));
+        fs::write(
+            &successor_ledger,
+            format!("{}\n", serde_json::to_string(&tampered).unwrap()),
+        )
+        .unwrap();
+        let rejected = f.call(&["work", "detail", &successor, "--json"]);
+        assert!(!rejected.status.success(), "{rejected:?}");
+        let rejected_json: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+        assert!(
+            rejected_json["error"].as_str().unwrap().contains(
+                "check replacement successor plan differs from the frozen predecessor plan"
+            ),
+            "{rejected:?}"
+        );
+        fs::write(&successor_ledger, &original_successor).unwrap();
+    }
     let retry = f.ok(&refs(&apply_args));
     assert_eq!(retry["state"], "existing_successor_recovered");
     let mut changed = apply_args.clone();
@@ -619,6 +710,153 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
         !f.call(&refs(&changed)).status.success(),
         "different relation must not create another successor"
     );
+}
+
+#[test]
+fn replacement_preserves_narrowed_plan_and_refuses_boundary_drift_without_claim() {
+    for remove_manifest in [false, true] {
+        let f = Fixture::new();
+        install_narrow_boundary(&f);
+        let (work, _) = f.begin_failed_check_with_boundary(
+            "exec sh checker.sh",
+            "the check needs a narrowed worker boundary",
+            ".agents/boundaries/task.json",
+        );
+        let binding = f.ok(&["work", "next", &work, "--json"])["current"]["binding"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let preview = f.ok(&refs(&replacement_args(&work, &binding)));
+        let apply = preview["applyCommand"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let boundary_path = f.root.join(".agents/boundaries/task.json");
+        let original_boundary = fs::read(&boundary_path).unwrap();
+        if remove_manifest {
+            fs::remove_file(&boundary_path).unwrap();
+        } else {
+            fs::write(
+                &boundary_path,
+                br#"{"version":1,"agents":{"worker":{"observe":["src/**"],"write":["src/**"]}}}"#,
+            )
+            .unwrap();
+        }
+        let before_runs = run_entries(&f);
+        let before_ledger = fs::read(f.ledger(&work)).unwrap();
+        let refused = f.call(&refs(&apply));
+        assert!(!refused.status.success(), "{refused:?}");
+        let diagnostic = if refused.stdout.is_empty() {
+            String::from_utf8_lossy(&refused.stderr).into_owned()
+        } else {
+            let refusal: Value = serde_json::from_slice(&refused.stdout).unwrap();
+            refusal["error"].as_str().unwrap().to_owned()
+        };
+        assert!(
+            diagnostic.contains(if remove_manifest {
+                "run boundary manifest is absent after run start"
+            } else {
+                "run boundary manifest drift detected"
+            }),
+            "{refused:?}"
+        );
+        assert_eq!(
+            run_entries(&f),
+            before_runs,
+            "no claim or successor was added"
+        );
+        assert_eq!(fs::read(f.ledger(&work)).unwrap(), before_ledger);
+
+        fs::write(&boundary_path, original_boundary).unwrap();
+        let recovered = f.ok(&refs(&apply));
+        assert_eq!(recovered["state"], "successor_created");
+        let successor = recovered["successor"]["work"].as_str().unwrap();
+        let successor_start: Value = serde_json::from_slice(
+            fs::read(f.ledger(successor))
+                .unwrap()
+                .split(|byte| *byte == b'\n')
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        let predecessor_start: Value =
+            serde_json::from_slice(before_ledger.split(|byte| *byte == b'\n').next().unwrap())
+                .unwrap();
+        assert_eq!(successor_start["plan"], predecessor_start["plan"]);
+        assert_eq!(
+            successor_start["plan"]["boundaryManifest"]["path"],
+            ".agents/boundaries/task.json"
+        );
+        let worker = successor_start["plan"]["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|stage| stage["agents"].as_array().unwrap())
+            .find(|agent| agent["role"] == "worker")
+            .unwrap();
+        assert_eq!(worker["declaredBoundary"]["observe"], json!(["src/a.txt"]));
+        assert_eq!(worker["declaredBoundary"]["write"], json!(["src/a.txt"]));
+    }
+}
+
+#[test]
+fn replacement_requires_current_architecture_source_before_claim() {
+    let f = Fixture::new();
+    let contract_path = f.root.join("architecture.json");
+    let contract = include_bytes!("fixtures/architecture-contract.json");
+    fs::write(&contract_path, contract).unwrap();
+    let contract_value: Value = serde_json::from_slice(contract).unwrap();
+    let config_path = f.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["project"]["architectureContract"] = json!({
+        "sourcePath": "architecture.json",
+        "sourceSha256": format!("{:x}", Sha256::digest(contract)),
+        "revision": contract_value["revision"],
+    });
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+    let (work, _) = f.begin_failed_check();
+    let binding = f.ok(&["work", "next", &work, "--json"])["current"]["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview = f.ok(&refs(&replacement_args(&work, &binding)));
+    let apply = preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let before_runs = run_entries(&f);
+    let before_ledger = fs::read(f.ledger(&work)).unwrap();
+    fs::write(&contract_path, b"{}").unwrap();
+    let refused = f.call(&refs(&apply));
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("architecture contract source changed"),
+        "{refused:?}"
+    );
+    assert_eq!(run_entries(&f), before_runs);
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), before_ledger);
+
+    fs::write(&contract_path, contract).unwrap();
+    let recovered = f.ok(&refs(&apply));
+    assert_eq!(recovered["state"], "successor_created");
+    let successor = recovered["successor"]["work"].as_str().unwrap();
+    let successor_start: Value = serde_json::from_slice(
+        fs::read(f.ledger(successor))
+            .unwrap()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let predecessor_start: Value =
+        serde_json::from_slice(before_ledger.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
+    assert_eq!(successor_start["plan"], predecessor_start["plan"]);
+    assert!(successor_start["plan"]["architectureContract"].is_object());
 }
 
 #[test]

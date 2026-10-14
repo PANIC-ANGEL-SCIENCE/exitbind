@@ -401,6 +401,11 @@ fn validate_edge(
         return Err("superseded predecessor provenance mismatch".into());
     }
     if let Some(replacement) = replacement {
+        if start["plan"] != predecessor_events[0]["plan"] {
+            return Err(
+                "check replacement successor plan differs from the frozen predecessor plan".into(),
+            );
+        }
         if claim.get("checkReplacement") != Some(replacement)
             || replacement["predecessorHeadEventSha256"] != head["eventSha256"]
         {

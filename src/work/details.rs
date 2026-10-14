@@ -214,6 +214,21 @@ pub(super) fn replacement_relation(
 ) -> Result<Option<Value>, String> {
     let start = events.first().ok_or("Work ledger has no start")?;
     if let Some(marker) = start.get("checkReplacement") {
+        let ledger = super::resolve(loaded, work)?;
+        let (_, current_events, _) = crate::run::ledger::load(loaded, &ledger)?;
+        if current_events != events {
+            return Err(
+                "check replacement changed during Work detail; refresh the current Work view"
+                    .into(),
+            );
+        }
+        let start = current_events.first().ok_or("Work ledger has no start")?;
+        if start.get("checkReplacement") != Some(marker) {
+            return Err(
+                "check replacement changed during Work detail; refresh the current Work view"
+                    .into(),
+            );
+        }
         let predecessor = start["supersedes"]["ledgerPath"]
             .as_str()
             .unwrap_or_default();

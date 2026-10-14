@@ -352,16 +352,21 @@ fn supersede_with_policy_and_recovery(
         if fs::read_to_string(&loaded.path).map_err(|error| error.to_string())? != loaded.source {
             return Err("configuration changed while superseding; reload configuration".into());
         }
-        let mut plan = crate::config::boundary::apply(
-            loaded,
-            selected_plan(envelope::plan(loaded, workflow, goal)?)?,
-            boundary,
-        )?;
+        let plan = if check_replacement.is_some() {
+            crate::run::check_replacement::frozen_plan(loaded, &old_events[0])?
+        } else {
+            let mut plan = crate::config::boundary::apply(
+                loaded,
+                selected_plan(envelope::plan(loaded, workflow, goal)?)?,
+                boundary,
+            )?;
+            crate::project::architecture::bind_plan(loaded, &mut plan)?;
+            plan
+        };
         let extension = extension_from_cli(basis, review_policy)?;
         if owner_recovery.is_some() && extension.is_some() {
             return Err("owner recovery must preserve the predecessor basis and review decision; omit --basis and --review-policy".into());
         }
-        crate::project::architecture::bind_plan(loaded, &mut plan)?;
         let old_policy = old_state
             .get("checkPolicy")
             .map(|policy| crate::run_value::policy_from_value(policy, 0))

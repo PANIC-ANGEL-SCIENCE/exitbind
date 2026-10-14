@@ -22,15 +22,19 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     let start = events
         .first()
         .ok_or("predecessor Work has no start event")?;
-    let next = next_for(loaded, work, &ledger)?;
-    if next["current"]["binding"] != binding {
-        return Err(format!("current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped"));
-    }
     if state["status"] == "accepted" {
         return Err("accepted predecessor cannot be replaced".into());
     }
     if !matches!(state["status"].as_str(), Some("running" | "blocked")) {
         return Err("only a running or blocked predecessor can be continued".into());
+    }
+    if start["configSha256"] != crate::evidence::hash::text(&loaded.source) {
+        return Err("predecessor configuration is stale; check replacement requires the current project configuration".into());
+    }
+    let _frozen_plan = crate::run::check_replacement::frozen_plan(loaded, start)?;
+    let next = next_for(loaded, work, &ledger)?;
+    if next["current"]["binding"] != binding {
+        return Err(format!("current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped"));
     }
     let (lead_agent, lead_native) = if next["role"] == "lead" && next["assignment"].is_string() {
         (
@@ -84,9 +88,6 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         || options.reason.contains('\0')
     {
         return Err("--reason must be non-empty and at most 1024 bytes".into());
-    }
-    if start["configSha256"] != crate::evidence::hash::text(&loaded.source) {
-        return Err("predecessor configuration is stale; check replacement requires the current project configuration".into());
     }
     let old_policy = start
         .get("checkPolicy")
