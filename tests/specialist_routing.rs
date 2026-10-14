@@ -383,3 +383,105 @@ fn expired_items_and_symlinked_profile_preserve_host_layout() {
         .is_symlink());
     assert_eq!(fs::read(f.root.join("custom.md")).unwrap(), bytes);
 }
+
+#[test]
+fn unrelated_scopes_and_inaccessible_metadata_are_not_read_or_disclosed() {
+    let f = Fixture::new();
+    let mut c = f.config();
+    c["agents"]["record-specialist"]["memoryRead"] =
+        json!(["specialist.record-specialist.v1", "private-other"]);
+    c["agents"]["record-specialist"]["memoryWrite"] =
+        json!(["specialist.record-specialist.v1", "private-other"]);
+    c["agents"]["reviewer"]["memoryReview"] =
+        json!(["specialist.record-specialist.v1", "private-other"]);
+    c["agents"]["lead"]["memoryPromote"] =
+        json!(["specialist.record-specialist.v1", "private-other"]);
+    c["memory"]["protocolScopes"] = json!(["specialist.record-specialist.v1", "private-other"]);
+    f.save(&c);
+    fs::write(
+        f.root.join("private-filename.json"),
+        "This is not specialist JSON",
+    )
+    .unwrap();
+    f.ok(&[
+        "memory",
+        "propose",
+        "record-specialist",
+        "private-filename.json",
+        "--scope",
+        "private-other",
+        "--ledger",
+        ".exitbind/memory/other.jsonl",
+    ]);
+    f.qualify(".exitbind/memory/other.jsonl");
+    // Even authorized but unrelated sources must never be opened by this consumer.
+    fs::write(
+        f.root.join("private-filename.json"),
+        vec![b'x'; 1024 * 1024],
+    )
+    .unwrap();
+    assert_eq!(
+        f.route("record aggregation")["snapshot"]["experience"],
+        json!([])
+    );
+    std::os::unix::fs::symlink(
+        "missing",
+        f.root.join(".exitbind/memory/private-ledger-name.jsonl"),
+    )
+    .unwrap();
+    let out = f.call(&[
+        "project",
+        "route",
+        "--task",
+        "record aggregation",
+        "--purpose",
+        "record",
+        "--role",
+        "worker",
+        "--host",
+        "codex",
+    ]);
+    assert!(!out.status.success());
+    assert!(!String::from_utf8(out.stdout)
+        .unwrap()
+        .contains("private-ledger-name"));
+    c["agents"]["record-specialist"]["memoryRead"] = json!([]);
+    f.save(&c);
+    assert_eq!(
+        f.route("record aggregation")["snapshot"]["experience"],
+        json!([])
+    );
+}
+
+#[test]
+fn oversized_own_source_refuses_without_private_name_and_help_names_route() {
+    let f = Fixture::new();
+    f.draft("private-source.json", "r1");
+    f.propose("private-source.json", ".exitbind/memory/own.jsonl");
+    f.qualify(".exitbind/memory/own.jsonl");
+    fs::write(f.root.join("private-source.json"), vec![b'x'; 1024 * 1024]).unwrap();
+    let out = f.call(&[
+        "project",
+        "route",
+        "--task",
+        "unrelated record task",
+        "--purpose",
+        "record",
+        "--role",
+        "worker",
+        "--host",
+        "codex",
+    ]);
+    assert!(!out.status.success());
+    let error = String::from_utf8(out.stdout).unwrap();
+    assert!(error.contains("4096"));
+    assert!(!error.contains("private-source"));
+    let help = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["project", "route", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(String::from_utf8(help.stdout)
+        .unwrap()
+        .contains("--role worker|reviewer|adviser"));
+}

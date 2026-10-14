@@ -50,10 +50,66 @@ fn read(root: &std::path::Path, name: &str) -> Result<Vec<u8>, String> {
         path::SecureBytesResult::Bytes(bytes) => Ok(bytes),
         path::SecureBytesResult::Absent(e)
         | path::SecureBytesResult::Unsafe(e)
-        | path::SecureBytesResult::Unreadable(e) => Err(e),
+        | path::SecureBytesResult::Unreadable(e) => {
+            let _ = e;
+            Err("specialist resource unavailable, unsafe or exceeds 4096 bytes".into())
+        }
         #[cfg(not(unix))]
         path::SecureBytesResult::Unsupported(e) => Err(e),
     }
+}
+
+// Inspect lifecycle metadata before reading any experience content. Generic
+// recall deliberately serves all of an agent's scopes; this consumer serves
+// only its own reserved scope and must not read other eligible source bytes.
+fn references(loaded: &Loaded, name: &str) -> Result<Vec<Value>, String> {
+    let agent = loaded.agent(name).ok_or("specialist is not configured")?;
+    let scope = format!("specialist.{name}.v1");
+    let Some(policy) = memory::policy::get(&loaded.config) else {
+        return Ok(Vec::new());
+    };
+    let allowed = agent.memory_read.contains(&scope)
+        && match agent.cross_context.as_str() {
+            "same-scope" => true,
+            "protocol-only" => policy.protocol_scopes.contains(&scope),
+            "synthetic-only" => policy.synthetic_scopes.contains(&scope),
+            _ => false,
+        };
+    if !allowed {
+        return Ok(Vec::new());
+    }
+    let ledgers = memory::discovery::discover(loaded)
+        .map_err(|_| {
+            "specialist lifecycle metadata unavailable; inspect the authorized memory store"
+        })?
+        .unwrap_or_default();
+    let mut result = Vec::new();
+    for ledger in ledgers {
+        for item in ledger.snapshot.items.values() {
+            if item["state"] != "accepted" || item["scope"] != scope {
+                continue;
+            }
+            let expires = item["expiresAt"]
+                .as_str()
+                .ok_or("specialist experience requires explicit expiry")?;
+            if chrono::DateTime::parse_from_rfc3339(expires)
+                .map_err(|_| "invalid specialist expiry")?
+                <= chrono::Utc::now().fixed_offset()
+            {
+                continue;
+            }
+            memory::validate_history_current(loaded, &ledger.snapshot)
+                .map_err(|_| "specialist recorded policy or actor profile changed")?;
+            result.push(json!({"itemId":item["itemId"],"scope":scope,
+                "sourcePath":item["source"]["path"],"sourceSha256":item["source"]["sha256"],
+                "ledgerPath":ledger.path,"ledgerHeadSha256":ledger.snapshot.last_event_sha256,
+                "state":"accepted"}));
+            if result.len() > policy.max_items {
+                return Err("specialist experience exceeds the configured recall budget".into());
+            }
+        }
+    }
+    Ok(result)
 }
 
 pub(crate) fn route(
@@ -154,19 +210,24 @@ fn snapshot(
     let profile = read(&loaded.control_root, &agent.profile)?;
     let profile_text =
         std::str::from_utf8(&profile).map_err(|_| "specialist profile must be UTF-8")?;
-    let references = memory::selection::resolve_for_task(loaded, name, Some(task))?;
-    let scope = format!("specialist.{name}.v1");
+    let references = references(loaded, name)?;
     let project = crate::host::assignment_context::project_identity(loaded)?;
     let mut resources = Vec::new();
     let mut ids = BTreeSet::new();
+    let mut observed_sources = Vec::new();
+    let mut observed_guards = Vec::new();
+    let max_bytes = memory::policy::get(&loaded.config).map_or(0, |policy| policy.max_bytes);
+    let mut source_bytes = 0usize;
     for reference in &references {
-        if reference["scope"] != scope {
-            continue;
-        }
         let source = reference["sourcePath"]
             .as_str()
             .ok_or("invalid specialist source")?;
         let bytes = read(&loaded.product_root, source)?;
+        source_bytes = source_bytes.saturating_add(bytes.len());
+        if source_bytes > max_bytes {
+            return Err("specialist experience exceeds the configured recall byte budget".into());
+        }
+        observed_sources.push((source.to_owned(), bytes.clone()));
         if reference["sourceSha256"] != hash::bytes(&bytes) {
             return Err("specialist experience changed; no snapshot delivered".into());
         }
@@ -212,6 +273,7 @@ fn snapshot(
         let mut current = true;
         for guard in &item.guards {
             let bytes = read(&loaded.product_root, &guard.path)?;
+            observed_guards.push((guard.path.clone(), bytes.clone()));
             if hash::bytes(&bytes) != guard.sha256 {
                 current = false;
             }
@@ -227,7 +289,11 @@ fn snapshot(
         return Err("more than three applicable specialist resources; narrow the policy".into());
     }
     if read(&loaded.control_root, &agent.profile)? != profile
-        || memory::selection::resolve_for_task(loaded, name, Some(task))? != references
+        || self::references(loaded, name)? != references
+        || observed_sources
+            .iter()
+            .chain(&observed_guards)
+            .any(|(source, expected)| read(&loaded.product_root, source).as_ref() != Ok(expected))
     {
         return Err("specialist inputs changed during snapshot; refresh before launch".into());
     }

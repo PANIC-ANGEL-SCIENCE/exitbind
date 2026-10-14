@@ -26,7 +26,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work child prepare WORK SHORT_ASSIGNMENT --context TOKEN [--agent-type NAME] [--perspectives JSON]"
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
-        ["project"] => "project context [memory ITEM_ID] [--task GOAL] [--json] | project agents [--apply] [--json] | project architecture [check] [--json]",
+        ["project"] => "project context [memory ITEM_ID] [--task GOAL] [--json] | project route --task TASK --purpose PURPOSE --role ROLE --host HOST [--agent NAME] [--json] | project agents [--apply] [--json] | project architecture [check] [--json]",
+        ["project", "route"] => "project route --task TASK --purpose PURPOSE --role worker|reviewer|adviser --host codex|claude [--agent NAME] [--json] [--config CONFIG] (read-only configured eligibility and qualified agent-owned snapshot; ambiguity stays with the Lead; the native host owns execution)",
         ["project", "capabilities"] => "project capabilities [--task GOAL] [--host codex|claude] [--json] | project capabilities select DESCRIPTOR --decision reviewed --reason TEXT (preview emits exact apply; existing Work stays frozen; live refresh is pending next launch)",
         ["project", "capabilities", "select"] => "project capabilities select DESCRIPTOR --decision reviewed --reason TEXT [--current-binding SHA --apply] [--json] [--config CONFIG]",
         ["project", "context"] => "project context [memory ITEM_ID] [--task GOAL] [--json] [--config CONFIG] (task-specific lessons are selected only for the supplied relevant goal)",
