@@ -1,11 +1,11 @@
 # Release series and compatibility
 
 Published stable tag: v0.31.13
-Source candidate tag: v0.31.13
+Source candidate tag: v0.31.14
 
-The published stable release and source candidate are both 0.31.13, from the
-same source commit. The published stable release is available; the source
-candidate identifies the source reviewed for that release.
+The published stable release remains 0.31.13. The current source candidate is
+0.31.14 and is not yet an available release; README and guide install commands
+continue to point to the published 0.31.13 assets until 0.31.14 is released.
 README install links name the available published assets. A source version or
 passing CI alone does not establish an official release. The release-reference
 check validates published and candidate declarations separately; source metadata,

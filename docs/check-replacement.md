@@ -20,6 +20,11 @@ Replacement keeps the predecessor's complete frozen plan, including each role's 
 
 Do not use this route for a normal failed product assertion, missing environment dependency, timeout, or uncertain live effect. A check failure does not by itself prove the contract defective or establish that no side effect occurred. Unknown effects, unresolved observations, accepted predecessors, stale session/project state, and live or prepared children remain blocking conditions. A committed successor should be followed through its returned read-only Work detail route; do not repeat the write after a lost projection.
 
+When a successor return is checked before append, its relation is derived from
+the validated committed ledger. Preflight can project exactly one hash-valid
+submit linked to that ledger head; changed committed history or any other
+proposed event shape still refuses.
+
 When a worker submission leaves Work blocked with no pending Lead assignment,
 the same route binds the explicit sibling Lead decision to the configured Lead
 owner and current Work binding. The blocked Work action form exposes the route

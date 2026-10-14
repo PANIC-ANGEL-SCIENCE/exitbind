@@ -93,9 +93,29 @@ impl Fixture {
         assert!(output.status.success(), "{args:?}: {output:?}");
         serde_json::from_slice(&output.stdout).unwrap_or_else(|error| panic!("{error}: {output:?}"))
     }
+    fn full_next(&self, work: &str) -> Value {
+        let compact = self.ok(&["work", "next", work, "--json"]);
+        if compact["truncated"] != true {
+            return compact;
+        }
+        let command = compact["fullCommand"]
+            .as_array()
+            .expect("a truncated current response supplies its fullCommand")
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        self.ok(&refs(&command))
+    }
     fn ledger(&self, work: &str) -> PathBuf {
         self.root
             .join(format!(".exitbind/runs/work-{}.jsonl", &work[4..]))
+    }
+    fn events(&self, work: &str) -> Vec<Value> {
+        fs::read_to_string(self.ledger(work))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
     }
     fn begin_failed_check(&self) -> (String, Value) {
         self.begin_failed_check_with("exec sh checker.sh", "repair the checker")
@@ -799,6 +819,129 @@ fn replacement_preserves_narrowed_plan_and_refuses_boundary_drift_without_claim(
         assert_eq!(worker["declaredBoundary"]["observe"], json!(["src/a.txt"]));
         assert_eq!(worker["declaredBoundary"]["write"], json!(["src/a.txt"]));
     }
+}
+
+#[test]
+fn successor_scoped_return_completes_full_fresh_review_lifecycle() {
+    let f = Fixture::new();
+    install_narrow_boundary(&f);
+    let (predecessor, _) = f.begin_failed_check_with_boundary(
+        "exec sh checker.sh",
+        "repair the defective checker contract",
+        ".agents/boundaries/task.json",
+    );
+    let predecessor_bytes = fs::read(f.ledger(&predecessor)).unwrap();
+    let lead = f.ok(&["work", "next", &predecessor, "--json"]);
+    let binding = lead["current"]["binding"].as_str().unwrap();
+    let mut replacement = replacement_args(&predecessor, binding);
+    let check_index = replacement
+        .iter()
+        .position(|argument| argument == "--check-command")
+        .unwrap();
+    replacement[check_index + 1] = "test -f checker.sh".into();
+    let preview = f.ok(&refs(&replacement));
+    let apply = preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let applied = f.ok(&refs(&apply));
+    let successor = applied["successor"]["work"].as_str().unwrap().to_owned();
+    assert_eq!(fs::read(f.ledger(&predecessor)).unwrap(), predecessor_bytes);
+
+    let successor_start: Value = serde_json::from_slice(
+        fs::read(f.ledger(&successor))
+            .unwrap()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let predecessor_start: Value = serde_json::from_slice(
+        predecessor_bytes
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(successor_start["plan"], predecessor_start["plan"]);
+
+    let lead = f.full_next(&successor);
+    assert_eq!(lead["next"]["role"], "lead", "{lead}");
+    assert_eq!(lead["next"]["action"], "lead_decision");
+    f.ok(&[
+        "work",
+        "return",
+        &successor,
+        lead["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "scoped",
+    ]);
+    let scoped_event = f.events(&successor).pop().unwrap();
+    assert_eq!(scoped_event["action"], "submit");
+    assert_eq!(scoped_event["role"], "lead");
+    assert_eq!(scoped_event["outcome"], "scoped");
+    assert_eq!(
+        f.ok(&["work", "detail", &successor, "--json"])["checkReplacement"]["state"],
+        "verified"
+    );
+
+    let worker = f.full_next(&successor);
+    assert_eq!(worker["next"]["role"], "worker");
+    assert_eq!(worker["next"]["action"], "spawn");
+    f.ok(&[
+        "work",
+        "return",
+        &successor,
+        worker["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "completed",
+    ]);
+    let completed_event = f.events(&successor).pop().unwrap();
+    assert_eq!(completed_event["action"], "submit");
+    assert_eq!(completed_event["role"], "worker");
+    assert_eq!(completed_event["outcome"], "completed");
+    let check = f.ok(&["work", "check", &successor, "--timeout-ms", "2000"]);
+    assert_eq!(check["result"]["code"], 0, "{check}");
+
+    let reviewer = f.full_next(&successor);
+    assert_eq!(reviewer["next"]["role"], "reviewer");
+    assert_eq!(reviewer["next"]["action"], "spawn");
+    f.ok(&[
+        "work",
+        "return",
+        &successor,
+        reviewer["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "approved",
+    ]);
+    let reviewed_event = f.events(&successor).pop().unwrap();
+    assert_eq!(reviewed_event["action"], "submit");
+    assert_eq!(reviewed_event["role"], "reviewer");
+    assert_eq!(reviewed_event["outcome"], "approved");
+    let lead = f.full_next(&successor);
+    assert_eq!(lead["next"]["role"], "lead");
+    assert_eq!(lead["next"]["action"], "lead_decision");
+    f.ok(&[
+        "work",
+        "return",
+        &successor,
+        lead["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "accepted",
+    ]);
+    let accepted_event = f.events(&successor).pop().unwrap();
+    assert_eq!(accepted_event["action"], "submit");
+    assert_eq!(accepted_event["role"], "lead");
+    assert_eq!(accepted_event["outcome"], "accepted");
+    let terminal = f.full_next(&successor);
+    assert_eq!(terminal["next"]["action"], "done");
+    assert_eq!(
+        f.ok(&["work", "detail", &successor, "--json"])["checkReplacement"]["state"],
+        "verified"
+    );
+    assert_eq!(fs::read(f.ledger(&predecessor)).unwrap(), predecessor_bytes);
 }
 
 #[test]

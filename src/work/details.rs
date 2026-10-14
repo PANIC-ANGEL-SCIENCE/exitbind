@@ -212,18 +212,21 @@ pub(super) fn replacement_relation(
     work: &str,
     events: &[Value],
 ) -> Result<Option<Value>, String> {
-    let start = events.first().ok_or("Work ledger has no start")?;
-    if let Some(marker) = start.get("checkReplacement") {
+    let proposed_start = events.first().ok_or("Work ledger has no start")?;
+    if proposed_start.get("checkReplacement").is_some() {
         let ledger = super::resolve(loaded, work)?;
         let (_, current_events, _) = crate::run::ledger::load(loaded, &ledger)?;
-        if current_events != events {
+        if !events_match_committed_or_submit_preview(events, &current_events) {
             return Err(
                 "check replacement changed during Work detail; refresh the current Work view"
                     .into(),
             );
         }
         let start = current_events.first().ok_or("Work ledger has no start")?;
-        if start.get("checkReplacement") != Some(marker) {
+        let marker = start
+            .get("checkReplacement")
+            .ok_or("check replacement changed during Work detail; refresh the current Work view")?;
+        if proposed_start.get("checkReplacement") != Some(marker) {
             return Err(
                 "check replacement changed during Work detail; refresh the current Work view"
                     .into(),
@@ -272,6 +275,145 @@ pub(super) fn replacement_relation(
         "successor":{"work":crate::work::locator_for_ledger(successor_ledger),"ledger":successor_ledger,"runId":claim["newRunId"],"checkPolicy":marker["newPolicy"]},
         "source":marker["source"],"reason":marker["reason"],"classification":marker["classification"],"leadOwner":marker["leadOwner"],
         "meaning":"This predecessor remains immutable; its successor has a new check contract and receives no prior check, review or grant credit."})))
+}
+
+/// A preflight projection may contain the one submit transaction being
+/// considered, while the ledger on disk is still the checked committed base.
+/// Every other consumer must present that exact base; no arbitrary suffix or
+/// changed committed history is a valid preview.
+fn events_match_committed_or_submit_preview(candidate: &[Value], committed: &[Value]) -> bool {
+    if candidate == committed {
+        return true;
+    }
+    if candidate.len() != committed.len().saturating_add(1)
+        || candidate.get(..committed.len()) != Some(committed)
+    {
+        return false;
+    }
+    let Some(previous) = committed.last() else {
+        return false;
+    };
+    let Some(submission) = candidate.last() else {
+        return false;
+    };
+    submission["kind"] == "run"
+        && submission["action"] == "submit"
+        && submission["version"] == previous["version"]
+        && submission["runId"] == previous["runId"]
+        && submission["previousEventSha256"] == previous["eventSha256"]
+        && crate::run::state::validate_event(submission, Some(previous), committed.len() + 1)
+            .is_ok()
+}
+
+#[cfg(test)]
+mod replacement_relation_preview_tests {
+    use super::*;
+
+    fn committed() -> Vec<Value> {
+        vec![json!({
+            "version": 8,
+            "runId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "eventSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "timestamp": "2026-10-14T00:00:00Z"
+        })]
+    }
+
+    fn submit(previous: &Value) -> Value {
+        crate::run::state::make_event(json!({
+            "version": 8,
+            "kind": "run",
+            "producer": crate::producer::evidence_for_version(8),
+            "action": "submit",
+            "runId": previous["runId"],
+            "stage": 1,
+            "attempt": 1,
+            "agent": "lead",
+            "role": "lead",
+            "outcome": "scoped",
+            "artifact": {
+                "root": "state",
+                "path": "result.json",
+                "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "previousEventSha256": previous["eventSha256"],
+            "timestamp": "2026-10-14T00:00:01Z"
+        }))
+    }
+
+    #[test]
+    fn replacement_relation_accepts_only_exact_current_or_one_valid_linked_submit() {
+        let committed = committed();
+        assert!(events_match_committed_or_submit_preview(
+            &committed, &committed
+        ));
+
+        let transaction = submit(&committed[0]);
+        let mut preview = committed.clone();
+        preview.push(transaction.clone());
+        assert!(events_match_committed_or_submit_preview(
+            &preview, &committed
+        ));
+
+        let mut changed_prefix = preview.clone();
+        changed_prefix[0]["timestamp"] = json!("2026-10-14T00:00:00Z");
+        changed_prefix[0]["eventSha256"] =
+            json!("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd");
+        assert!(!events_match_committed_or_submit_preview(
+            &changed_prefix,
+            &committed
+        ));
+
+        let mut wrong_previous = transaction.clone();
+        wrong_previous["previousEventSha256"] =
+            json!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        wrong_previous
+            .as_object_mut()
+            .unwrap()
+            .remove("eventSha256");
+        let wrong_previous = crate::run::state::make_event(wrong_previous);
+        let mut preview = committed.clone();
+        preview.push(wrong_previous);
+        assert!(!events_match_committed_or_submit_preview(
+            &preview, &committed
+        ));
+
+        let mut wrong_run = transaction.clone();
+        wrong_run["runId"] =
+            json!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        wrong_run.as_object_mut().unwrap().remove("eventSha256");
+        let wrong_run = crate::run::state::make_event(wrong_run);
+        let mut preview = committed.clone();
+        preview.push(wrong_run);
+        assert!(!events_match_committed_or_submit_preview(
+            &preview, &committed
+        ));
+
+        let mut non_submit = transaction.clone();
+        non_submit["action"] = json!("check");
+        non_submit.as_object_mut().unwrap().remove("eventSha256");
+        let non_submit = crate::run::state::make_event(non_submit);
+        let mut preview = committed.clone();
+        preview.push(non_submit);
+        assert!(!events_match_committed_or_submit_preview(
+            &preview, &committed
+        ));
+
+        let mut multiple = committed.clone();
+        multiple.push(transaction.clone());
+        multiple.push(transaction.clone());
+        assert!(!events_match_committed_or_submit_preview(
+            &multiple, &committed
+        ));
+
+        let mut invalid_hash = committed.clone();
+        invalid_hash.push(submit(&invalid_hash[0]));
+        invalid_hash[1]["eventSha256"] =
+            json!("0000000000000000000000000000000000000000000000000000000000000000");
+        assert!(!events_match_committed_or_submit_preview(
+            &invalid_hash,
+            &committed
+        ));
+    }
 }
 
 pub(crate) fn section_value(

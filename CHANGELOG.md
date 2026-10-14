@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 0.31.14 source candidate
+
+- Allow a successor Work's scoped submission to pass checked preflight against
+  its exact committed prefix and one validated submit preview, while refusing
+  changed history, malformed submit linkage, and additional proposed events.
+
 ## 0.31.13
 
 Published stable release; the `v0.31.13` tag and release assets are available.
