@@ -426,7 +426,7 @@ fn preview_and_apply_create_one_immutable_successor_without_running_new_check() 
         .collect();
     let predecessor_state = f.ok(&[
         "run",
-        "status",
+        "inspect",
         &format!(".exitbind/runs/work-{}.jsonl", &work[4..]),
         "--json",
     ]);
@@ -1316,14 +1316,9 @@ fn native_goal_replacement_keeps_original_member_and_resolves_successor_lineage_
     assert_eq!(detail["checkReplacement"]["successor"]["work"], successor);
 
     let next = f.ok_in_session(session, &store, &["work", "next", &successor, "--json"]);
-    assert_eq!(
-        next["goalProgress"]["workAssociation"]["kind"],
-        "verified_successor_lineage"
-    );
-    assert_eq!(
-        next["goalProgress"]["workAssociation"]["originalMemberWork"],
-        work
-    );
+    let association = &next["presentation"]["goalProgress"]["workAssociation"];
+    assert_eq!(association["kind"], "verified_successor_lineage");
+    assert_eq!(association["originalMemberWork"], work);
 }
 
 #[test]
@@ -1541,32 +1536,7 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
         ],
     );
     let worker = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
-    f.ok_in_session(
-        session,
-        &store,
-        &[
-            "work",
-            "return",
-            &work,
-            worker["next"]["assignment"].as_str().unwrap(),
-            "--outcome",
-            "completed",
-        ],
-    );
-    let failed = f.call_in_session(
-        session,
-        &store,
-        &["work", "check", &work, "--timeout-ms", "2000"],
-    );
-    assert!(!failed.status.success(), "{failed:?}");
-    assert!(
-        fs::read_to_string(f.ledger(&work))
-            .unwrap()
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .any(|event| event["action"] == "check" && event["result"]["code"] != 0),
-        "fixture must retain an actual failed check before preparing a child"
-    );
+    assert_eq!(worker["next"]["role"], "worker");
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let token = continuation["mutationContext"]["token"].as_str().unwrap();
     f.ok_in_session(
@@ -1601,43 +1571,58 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
             token,
         ],
     );
-    let children = f.ok_in_session(session, &store, &["work", "continuation", &work]);
-    assert_eq!(children["preparedChildren"][0]["state"], "prepared");
-    let current = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
-    let binding = current["current"]["binding"].as_str().unwrap();
-    let before = fs::read(f.ledger(&work)).unwrap();
-    let refused = f.call_in_session(
+    let blocked = f.call_in_session(
         session,
         &store,
         &[
             "work",
-            "replace-check",
+            "return",
             &work,
-            "--check-command",
-            "true",
-            "--reason",
-            "a child remains prepared against the predecessor",
-            "--classification",
-            "defective-contract",
-            "--current-binding",
-            binding,
-            "--apply",
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
         ],
     );
-    assert!(
-        !refused.status.success(),
-        "a prepared child is an unresolved live continuation: {refused:?}"
-    );
-    let diagnostic = String::from_utf8_lossy(&refused.stderr);
-    assert!(
-        diagnostic
-            .contains("check replacement is blocked by a live, prepared, or retained child result"),
-        "unexpected earlier replacement guard; stderr={diagnostic}; stdout={}",
-        String::from_utf8_lossy(&refused.stdout)
-    );
-    assert_eq!(
-        fs::read(f.ledger(&work)).unwrap(),
-        before,
-        "child ownership blocks successor creation before predecessor or successor mutation"
-    );
+    assert!(blocked.status.success(), "{blocked:?}");
+    let children = f.ok_in_session(session, &store, &["work", "continuation", &work]);
+    assert_eq!(children["preparedChildren"][0]["state"], "prepared");
+    let before = fs::read(f.ledger(&work)).unwrap();
+    let events: Vec<Value> = std::str::from_utf8(&before)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let blocked_source = events
+        .iter()
+        .find(|event| {
+            event["action"] == "submit"
+                && event["role"] == "worker"
+                && event["outcome"] == "blocked"
+        })
+        .expect("the refused replacement has exact blocked-worker source evidence");
+    assert!(blocked_source["eventSha256"].is_string());
+    let current = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
+    let binding = current["current"]["binding"].as_str().unwrap();
+    let entries_before = run_entries(&f);
+    for apply in [false, true] {
+        let mut args = replacement_args(&work, binding);
+        if apply {
+            args.push("--apply".into());
+        }
+        let refused = f.call_in_session(session, &store, &refs(&args));
+        assert!(
+            !refused.status.success(),
+            "a prepared child blocks preview and apply: {refused:?}"
+        );
+        let diagnostic = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            diagnostic.contains(
+                "check replacement is blocked by a live, prepared, or retained child result"
+            ),
+            "unexpected earlier replacement guard; stderr={diagnostic}; stdout={}",
+            String::from_utf8_lossy(&refused.stdout)
+        );
+        assert_eq!(fs::read(f.ledger(&work)).unwrap(), before);
+        assert_eq!(run_entries(&f), entries_before);
+    }
 }
