@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — 0.31.14 source candidate
+## 0.31.14
+
+Published stable release; the `v0.31.14` tag and release assets are available.
 
 - Allow a successor Work's scoped submission to pass checked preflight against
   its exact committed prefix and one validated submit preview, while refusing

@@ -1,6 +1,6 @@
 # Approved project skills and lenses
 
-This path is included in the published 0.31.13 release. See
+This path is included in the published 0.31.14 release. See
 [release status](release-version-policy.md).
 
 An approved resource reaches a relevant configured agent on its next native
