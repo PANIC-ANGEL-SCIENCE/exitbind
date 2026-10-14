@@ -134,6 +134,27 @@ impl Fixture {
             "correctAlternative":{"strengthenedCheck":"passed"}});
         report
     }
+    fn submit_events(&self) -> Vec<Value> {
+        let id = self.work.strip_prefix("smw_").unwrap();
+        fs::read_to_string(self.root.join(format!(".exitbind/runs/work-{id}.jsonl")))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .filter(|event: &Value| event["action"] == "submit")
+            .collect()
+    }
+    fn result_path(&self, event: &Value) -> PathBuf {
+        self.root.join(event["artifact"]["path"].as_str().unwrap())
+    }
+    fn accepted_result(&self) -> Value {
+        let checked = execute(&self.root, &["work", "check", &self.work], b"", true);
+        assert!(checked.status.success(), "{checked:?}");
+        self.submit(
+            "accepted",
+            json!({"summary":"Accepted result without a report"}),
+        );
+        self.submit_events().pop().unwrap()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -227,6 +248,114 @@ fn no_new_information_remains_an_honest_report_and_does_not_pass_final_check() {
         "no_new_information"
     );
     assert_eq!(evidence["finalCheck"], Value::Null);
+}
+
+#[test]
+fn missing_newest_result_keeps_next_and_world_readable_without_history_churn() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"earlyEvidence":fixture.report()}));
+    fixture.submit("completed", json!({"summary":"No challenge report here"}));
+    let newest = fixture.accepted_result();
+    let events = fixture.submit_events();
+    let ledger = fixture.root.join(format!(
+        ".exitbind/runs/work-{}.jsonl",
+        fixture.work.strip_prefix("smw_").unwrap()
+    ));
+    let before = fs::read(&ledger).unwrap();
+    fs::remove_file(fixture.result_path(&newest)).unwrap();
+
+    let next = value(
+        &fixture.root,
+        &["work", "next", &fixture.work, "--json"],
+        b"",
+    );
+    assert!(next["current"]["binding"].is_string());
+    let world = value(
+        &fixture.root,
+        &["work", "world", &fixture.work, "--json"],
+        b"",
+    );
+    assert!(world["motifs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|motif| motif["name"] == "exit_sign" && motif["active"] == false));
+    assert_eq!(fixture.submit_events().len(), events.len());
+    assert_eq!(fs::read(&ledger).unwrap(), before);
+    let detail = execute(
+        &fixture.root,
+        &["work", "detail", &fixture.work, "--json"],
+        b"",
+        true,
+    );
+    assert!(!detail.status.success());
+    assert!(String::from_utf8_lossy(&detail.stdout).contains("artifact"));
+}
+
+#[test]
+fn changed_newest_result_keeps_next_readable_while_detail_stays_strict() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"earlyEvidence":fixture.report()}));
+    fixture.submit("completed", json!({"summary":"No challenge report here"}));
+    let newest = fixture.accepted_result();
+    let path = fixture.result_path(&newest);
+    let mut bytes = fs::read(&path).unwrap();
+    bytes.push(b' ');
+    fs::write(path, bytes).unwrap();
+
+    let next = value(
+        &fixture.root,
+        &["work", "next", &fixture.work, "--json"],
+        b"",
+    );
+    assert!(next["current"]["binding"].is_string());
+    let detail = execute(
+        &fixture.root,
+        &["work", "detail", &fixture.work, "--json"],
+        b"",
+        true,
+    );
+    assert!(!detail.status.success());
+    assert!(String::from_utf8_lossy(&detail.stdout).contains("artifact bytes changed"));
+}
+
+#[test]
+fn verified_submissions_without_a_report_remain_not_selected() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"scope":"Approved task only"}));
+    let evidence = &fixture.detail()["sections"]["evidence"]["earlyEvidence"];
+    assert_eq!(evidence["selected"], false);
+    assert_eq!(evidence["state"], "not_selected");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_latest_result_remains_a_strict_refusal() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"scope":"Approved task only"}));
+    let newest = fixture.submit_events().pop().unwrap();
+    let path = fixture.result_path(&newest);
+    let target = path.with_extension("target");
+    fs::rename(&path, &target).unwrap();
+    symlink(&target, &path).unwrap();
+
+    let output = execute(
+        &fixture.root,
+        &["work", "next", &fixture.work, "--json"],
+        b"",
+        true,
+    );
+    assert!(!output.status.success());
+    let response = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let refused: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(refused["effect"], "no-change", "{response}");
+    assert_eq!(refused["reason"]["code"], "corrupt_ledger", "{response}");
 }
 
 /// Seeded executable candidates, not a naturally discovered product defect.

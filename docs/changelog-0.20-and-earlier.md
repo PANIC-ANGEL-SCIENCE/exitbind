@@ -1,0 +1,608 @@
+# Changelog — 0.20.0 and earlier
+
+[Current changelog](../CHANGELOG.md) continues this release history. Historical entries retain their original release claims and identifiers.
+
+## 0.20.0
+
+- Installing Exitbind now installs the host bridge the coding-agent lead needs
+  to find it. `install.sh` installs or refreshes a managed bootstrap skill for
+  each detected host (`~/.codex/skills/exitbind/SKILL.md`,
+  `~/.claude/skills/exitbind/SKILL.md`) and the managed session hook, then
+  reports what it installed or could not install. A binary installed without a
+  usable host bridge is no longer a silent state.
+- Add `exitbind host status` and `exitbind host install`. Status reports the
+  binary, the bootstrap skill, and the activation hook per host as separate
+  observations, and states that discovery is not activation.
+- `exitbind update` refreshes a stale managed bootstrap so a current binary
+  cannot keep an older host bridge, and reports each refresh.
+- Installation retires a superseded `soulmate hook-run` session-hook record on
+  the Exitbind surface and keeps every other hook. Files Exitbind does not
+  manage - a foreign skill at the same path, a symlink, another tool's hook -
+  are reported and never overwritten.
+- A session in a repository that is not configured yet now receives a small
+  bootstrap context on the Exitbind surface: select Exitbind before
+  consequential mutation for material work, keep tiny and read-only work
+  direct, request the single initialization write, and do not claim activation
+  without a lifecycle action. The legacy Soulmate surface stays silent.
+- The unconfigured-project error names the single owner-approved write and its
+  exact command instead of a bare instruction.
+- Selection remains a host/model judgement. Discovery, selection, activation,
+  and governed work are separate observations, and no prompt text forces
+  compliance. No persisted format changed.
+
+## 0.19.1
+
+- Fix `exitbind update` on Linux leaving a zero-byte binary after reporting
+  success. After the installer replaced the running binary, the updater
+  re-derived its caller surface from an executable name that read as deleted,
+  switched to the legacy profile, and copied the new binary onto itself. The
+  surface is now decided once per process, and an install path is never copied
+  onto itself.
+- The installer moves a replaced binary aside into one hidden
+  `.exitbind-previous-PID/` directory that keeps its file name, so released
+  0.18.0 and 0.19.0 updaters no longer truncate the binary this installer
+  places. The next install removes earlier aside copies.
+- If an earlier update left a zero-byte `exitbind`, reinstall once with the
+  pinned installer command in the README.
+- No persisted format or public command changes.
+
+## 0.19.0
+
+- Write run-event format 6 for new Exitbind starts. v6 checks, reviewer
+  approvals, protections, and lead acceptance record the tested-input identity
+  of the product root (`product-root-files-v1`: tracked plus untracked,
+  non-ignored files in a Git worktree, or every file otherwise; `.git` and state
+  directories excluded). Evidence taken on different inputs is not current, a
+  check whose inputs change while it runs records nothing, and acceptance
+  recomputes the identity. Ignored files, files outside the product root, the
+  environment, and remote or time-dependent conditions are not covered.
+- 0.18.0 binaries refuse v6 ledgers; v1-v5 ledgers remain readable under their
+  original guarantees and gain no input binding.
+- Preservation requirements are v6-only and require a functional check policy;
+  the combination without `checkPolicy` is refused at start, successor, and
+  replay.
+- Residual packets are version 2: the snapshot carries tested-input identity,
+  and `humanHelp` is derived from state with `ownerDecision` separate from lead
+  actions. Add `work validate WORK --packet FILE`, returning `usable`,
+  `refresh_required`, `cannot_establish_applicability`, or `not_continuable`.
+  Validation compares every behavior-relevant packet field and always returns
+  the canonical packet to act on; only `usable` permits skipping work, and
+  nothing in a submitted packet is executed.
+- Derive `work next`, `work resume`, `work check`, and `work validate` from one
+  run snapshot per request, so the next action, evidence assessment, packet, and
+  help describe one ledger revision and one established input context. A failed
+  input listing makes dependent evidence unavailable instead of falling back to a
+  stored digest.
+- Treat terminal runs as history: an accepted, rejected, or blocked run keeps
+  its replayable record, but its packet carries no reuse and cannot authorize
+  skipping new work after files change.
+- No token, model-call, or human-time savings are claimed.
+
+## 0.18.0
+
+- Add deterministic residual packets to `work next` and `work resume`, reporting
+  current work identity, subject identity, established facts, still-valid
+  evidence, remaining obligations, the next action, and actions the next agent
+  should not repeat.
+- Let resumed work carry forward a current passed check or approved review when
+  the exact subject remains valid, while refusing to reuse stale evidence after
+  the subject changes.
+- Document the bounded cost-evaluation fixture set for duplicate check/review
+  avoidance and stale-subject refusal. No token, model-call, human-time,
+  host-startup, or frontier-agent correctness savings are claimed.
+- Preserve persisted run-event format 5, historical v1-v4 readers, and the
+  existing local-only architecture; no daemon, cloud, database, telemetry, model
+  runtime, provider integration, or dependency is introduced.
+
+## 0.17.0
+
+- Rebrand the current public product as Exitbind with the lines “Exitbind — No
+  result exits unbound.” and “Bind the evidence to the exact result before
+  exit.”
+- Add run-event format 5 for new writes, binding an Accepted Subject to the
+  exact result and evidence while retaining historical v1–v4 readers and
+  `soulmate` producer provenance.
+- Retire Coffee as a public feature and brand; readiness guidance belongs to
+  the lead surface. Keep OpenCode path-compatible and experimental unless host
+  execution is directly observed.
+- Preserve the honest limits: local evidence is not tamper-proof, model
+  compliance, human adoption, or general project-diff coverage, and no daemon,
+  cloud, database, telemetry, model runtime, or new dependency is introduced.
+
+## 0.16.0-rc.1
+
+- Add the agent-first `work begin|next|return|check|resume` façade over the
+  existing strict run core. It allocates routine ledgers and artifacts, returns
+  opaque handles plus one next action, and keeps low-level `run` commands as the
+  advanced interoperability surface.
+- Establish a project-scoped selective-use contract: later supported agent
+  sessions classify material work, activate Soulmate before scoped mutation,
+  keep tiny reversible work direct, and return an explicit blocker when
+  selected governed handling cannot activate.
+- Separate available, discovered, selected, and activated states in generated
+  skill and setup guidance. Fresh initialization now refuses stale managed
+  projections instead of claiming exact embedded bytes and points to the
+  explicit skill-refresh path.
+- Move the complete low-level, recovery, and evidence guidance into a delayed
+  reference while keeping the always-loaded skill focused on selection,
+  authority, and the normal high-level path.
+- Make bridge assumptions explicit in Reality claims guidance: keep endpoint
+  facts distinct, test the connecting edge, and bind evidence to its target.
+- Preserve run-event formats and existing v1-v4 readers; no migration, daemon,
+  model runtime, permission grant, or new dependency is introduced.
+
+## 0.15.0-rc.3
+
+- Bound local `run observe-check` execution with a configurable timeout, run it
+  outside the ledger lock, terminate its POSIX process group on timeout, and
+  revalidate the complete durable binding before append.
+- Distinguish locally observed, host-reported, and mixed check acquisition in
+  human status while keeping check, review, and lead acceptance separate.
+- Route setup-purpose agents from contributor instructions to README onboarding
+  and keep Coffee's context guidance role-based.
+
+## 0.15.0-rc.2
+
+- Separate human contribution guidance from repository instructions for coding
+  agents and keep Coffee independent of private tool-stack vocabulary.
+- Select the contributor and CI Rust toolchain once in `rust-toolchain.toml`
+  while retaining the package MSRV as a distinct Cargo contract.
+
+## 0.15.0-rc.1
+
+- Add checked run-event format 4 and `run observe-check`, which records a
+  locally observed frozen command with separate acquisition and exit/signal
+  result evidence while retaining v3 caller-reported ledgers.
+- Reject replayed check events after terminal run state and clarify that update
+  and skill diagnostics do not establish host-cache or active-session reload.
+- Lead the public README with conversation-first, URL-first setup while keeping
+  selective governed work, prerelease consent, and direct simple work explicit.
+
+## 0.14.0-rc.4
+
+- Lead with the existing host conversation, selective project preferences, and direct ordinary work while keeping setup and protocol boundaries explicit.
+- Add fresh StateRoot ledger-path guidance and document current observe-path and migration-mode limits with focused regression coverage.
+
+## 0.14.0-rc.3
+
+- Clarify empty starter boundaries, update rollback diagnostics, and align the benchmark and setup guidance with their observable behavior.
+
+## 0.14.0-rc.2
+
+- Add a disposable behavioral-evaluation rubric that records observable probe and mutation ordering without claiming agent behavior or product benefit.
+
+## 0.14.0-rc.1
+
+- Add target-bound readiness guidance before materially costly dependent work or cutover while safe independent work continues.
+- Lead the installer to the setup-free benchmark before portable project initialization.
+- Align plugin presentation with the public product statement and correct the portable-root manifest schema usage; plugin installation does not install the separate CLI.
+- Add an active SessionStart agent advisory for newer public releases and an explicit `soulmate update` path; neither performs an automatic install.
+- Use a disposable user cache with bounded public release metadata; no persisted-format, dependency, or migration change is claimed.
+
+## 0.13.0-rc.1
+
+- Add canonical Soulmate guidance for bounded reality claims and decision closure.
+
+## 0.12.1-rc.3
+
+- Ship the `v0.12.1-rc.3` prerelease from source snapshot `4199ebd`, with native builds, packaged installation, and public asset installation validated for Linux x86_64 and both Mac architectures; WSL exercises the same Linux artifact inside Ubuntu. See [platform support details](platform-support.md) and [public release workflow](https://github.com/envy404/soulmate/actions/runs/34094355184).
+- Show current worker claims, host-reported checks, reviewer findings, and actual lead decisions in the human status and explanation views. A protocol refusal remains distinct from lead rejection; machine JSON and persisted records retain their existing shape.
+- Add read-only skill diagnostics and documentation navigation and guidance. No schema, authority, or stable-policy change is claimed; no persisted migration is required.
+- Frame the preview as a conditional choice for teams that want an inspectable acceptance record after handoffs or rework. Existing native worker/reviewer spawn capability must be confirmed by the coordinating host before a run; a profile, task name, or plan-only brief is not proof, and an unavailable tool returns pending work without a substitute executor. This is host guidance, not binary enforcement.
+
+## Public tags and format readers
+
+For a checked run using run-event format 3, retain a **0.12.0 or later
+compatible binary**. For format 4, retain **0.15.0-rc.1 or later**. Inspect with
+`soulmate run inspect LEDGER --config CONFIG`; do not edit a ledger's format
+number to make a downgrade work.
+
+This frozen map covers selected public format-transition and retained-reader
+tags observed through `v0.15.0-rc.3` at commit `4faf2a7`. Reader support below
+is established from tagged source; current-reader tests also replay frozen
+historical fixtures. It is not a claim that every older downloaded binary was
+re-executed during this review.
+
+| Version | Public tag / source commit | Persisted format change | Inspect with this binary |
+| --- | --- | --- | --- |
+| 0.11.0 | [v0.11.0](https://github.com/envy404/soulmate/tree/v0.11.0), `7f1d014` | No new persisted format | Receipts 1–2; run events 1–2; memory, configuration and harness manifest 1. Rejects run events 3. |
+| 0.12.0 | [v0.12.0](https://github.com/envy404/soulmate/tree/v0.12.0), `349b662` | Adds checked run events 3 | Receipts 1–2; run events 1–3; memory, configuration and harness manifest 1. |
+| 0.12.1-rc.1 | [v0.12.1-rc.1](https://github.com/envy404/soulmate/tree/v0.12.1-rc.1), `23e04df` | None | Same persisted readers as 0.12.0. |
+| 0.12.1-rc.2 | [v0.12.1-rc.2](https://github.com/envy404/soulmate/tree/v0.12.1-rc.2), `243d781` | None | Same persisted readers as 0.12.0. |
+| 0.15.0-rc.1 | [v0.15.0-rc.1](https://github.com/envy404/soulmate/tree/v0.15.0-rc.1), `8b3a509` | Adds checked run events 4 with locally observed or caller-reported check acquisition | Receipts 1–2; run events 1–4; memory, configuration and harness manifest 1. |
+| 0.15.0-rc.3 | [v0.15.0-rc.3](https://github.com/envy404/soulmate/tree/v0.15.0-rc.3), `4faf2a7` | None | Same persisted readers as 0.15.0-rc.1. |
+| 0.17.0 | [v0.17.0](https://github.com/envy404/exitbind/tree/v0.17.0), `55d2c97` | Adds new checked run-event format 5 with Accepted Subject bindings; retains historical readers for v1–v4. | Exitbind v5 plus historical v1–v4 readers. |
+| 0.18.0 | [v0.18.0](https://github.com/envy404/exitbind/tree/v0.18.0), `fc0ef16` | None | Same persisted readers as 0.17.0. |
+| 0.19.0 | [v0.19.0](https://github.com/envy404/exitbind/tree/v0.19.0), `02df86f` | Adds run-event format 6 with tested-input identity bindings; retains historical readers for v1–v5. | Exitbind v6 plus historical v1–v5 readers. |
+| 0.19.1 | Current stable Exitbind release | None | Same persisted readers as 0.19.0. |
+
+The parentless public root `a0b8be3` contains package 0.10.0 without a
+corresponding public release tag in this observed map. Earlier changelog
+entries describe development history, not publicly reconstructable release
+objects. They attribute receipt 2 / harness manifest 1 to 0.4.0 and run events 2
+to 0.7.0; the original archived trees are not asserted equivalent to public tags.
+Private archives, refs, and operational evidence remain intentionally
+unpublished. See [the public history boundary](public-history.md).
+
+## 0.12.1-rc.2
+
+- Lead with the existing setup-free experiment: `soulmate benchmark` runs a disposable
+  configuration-repair example with real local checks and scripted actors.
+  Its readable result shows the worker claim, failed check, reviewer approval,
+  refused lead acceptance, rework, and the fresh accepted attempt.
+- Lead the README with the installed-binary experiment, then an explicit
+  `soulmate init --mode portable` project setup and a handoff naming the
+  generated skill and configuration for the existing coding-agent host.
+  Setup does not activate agents or grant host permissions.
+- Exercise the literal README journey in a Git-initialized fixture while
+  preserving the user's project and the explicit Git initialization guard.
+- Preserve commands, JSON, proof scenarios, and persisted formats. Stable
+  0.12.0 remains available; this preview correction adds no product invariant,
+  stable-policy change, or migration. Synthetic checks establish observed
+  refusal and recovery, not human time savings or universal installation payback.
+
+## 0.12.1-rc.1
+
+- Preview the optional `run submit --event-id` and `run next --text` forms,
+  checked-start guidance, read-only next actions, and executable rework example.
+  Default JSON and persisted formats retain their existing contracts.
+- Lead the README with an existing-host task and real check. Bundle guidance
+  for concise results with inspectable evidence, and describe initialization
+  as preparing skills rather than activating agents.
+- Report the bounded native/Soulmate pilots, including a real bug first found
+  by the native baseline and missed by an initially accepted Soulmate run.
+  These results do not establish better code or lower operator cost.
+- This is a prerelease of compatible presentation additions. The current stable
+  version policy does not classify these additions; no new product invariant
+  or stable-policy change is claimed. Stable 0.12.0 remains available, with its
+  JSON workflow. Upgrade the binary before using the new flags, then explicitly
+  refresh managed skills. No persisted migration is required.
+
+## 0.12.0
+
+- Add opt-in checked acceptance: freeze a check command at run start and bind
+  caller-reported results to exact current worker submission events. Missing
+  or failed results prevent canonical acceptance, including during replay.
+  The host executes checks; reported success is not authenticated execution,
+  reviewer approval, or final acceptance.
+- Add status, explanation, and redacted local aggregate views, plus a
+  token-free `soulmate benchmark` scenario that reproduces refusal and fresh
+  rework recovery. Synthetic command counts and elapsed execution do not
+  establish human time saved or recurring production incidents.
+- Checked runs use run-event format 3. Ordinary v1/v2 runs keep their existing
+  format and read behavior. Older binaries reject v3; retain a compatible
+  binary to inspect checked evidence and never downgrade a ledger by editing
+  its version. No mandatory runtime or dependency is added.
+- Link the scoped public claim to its executable proof and pin versioned proof
+  schemas in CI. The minor version follows the existing invariant rule: a
+  configured failed-check counterexample previously accepted is now refused.
+
+- Strengthen contributor release-reference checks and pin the retained public
+  ancestry in CI. Document the existing history boundary and separate retention
+  rules from publication permission. Product behavior and version policy are
+  unchanged by those contributor-only checks.
+
+## 0.11.0
+
+- Made native conversation preservation an explicit host-guidance invariant:
+  profiles, briefs, run records, and governed memory augment the active root
+  conversation. They do not authorize replacing it or discarding recent user
+  corrections, rejected approaches, or their rationale.
+- Session-start hooks present the same bounded advisory distinction. Executable
+  hook and generated-skill regression checks cover the behavior Soulmate owns.
+- Added a diagnostic guide that separates thread replacement, compaction,
+  injected context, and host/client integration hypotheses.
+- This is synchronized guidance and tested local hook behavior, not proof of
+  model compliance or resolution of a historical host-memory regression.
+- Migration: update host guidance with the supported skill-refresh path. No
+  CLI command, configuration, persisted format, dependency, or model runtime
+  changes are introduced. The minor version records the new product invariant
+  under the repository's versioning policy.
+
+## 0.10.0
+
+- Attended implementation workers and reviewers must now use the host's native
+  subagent spawn with the assignment's exact native task name; when that spawn
+  is unavailable, stop and return the pending assignment to the operator. This
+  is synchronized host guidance, not Soulmate enforcement of host execution.
+- `soulmate away` remains reserved for an explicit operator-away or disconnect
+  continuation; the Rust away runtime is unchanged.
+- Corrected hook-output home-path redaction so machine-local paths stay
+  redacted while the public source remains safe for publication.
+- Migration: update attended workflow handoffs to native spawn. This release
+  adds no CLI, configuration, persisted schema or format, dependency, or
+  runtime expansion.
+
+## 0.9.3
+
+- Removed the unsupported context-observation collector and report from the
+  product tree and release binary. The implementation remains available for
+  transparent development only on `experiment/context-observability`; locally
+  collected diagnostic data remains private and is never published.
+- Local-mode hooks now resolve the exact ControlRoot through the private
+  machine binding while confirming that the hook ProductRoot still matches;
+  repeating `soulmate bind` upgrades compatible older bindings in place.
+
+## 0.9.2
+
+- Added strict private ingestion of exact host-reported usage for internal
+  context dogfooding, correlated to content-free run and assignment identities.
+- Reports exact repeated and still-pending assignment invocations without
+  treating an invocation as completion, success, or authority to skip work.
+- Rejects malformed, duplicated, rerouted, unsafe, unmatched, and concurrently
+  stale diagnostic evidence while leaving the default CLI and canonical
+  persisted formats unchanged.
+
+## 0.9.1
+
+- Added non-default, private context-accounting dogfood instrumentation that
+  measures only Soulmate-owned byte boundaries and keeps model/provider usage,
+  host context, and broader optimization claims explicitly unknown.
+- Hardened authority classification for mixed payloads and run-scoped
+  observations without changing the default CLI or canonical persisted
+  formats.
+
+## 0.9.0
+
+- Native away recovery now records the explicit or unknown sandbox posture and
+  distinguishes exit codes from signal termination. Completion requires the
+  exact stage, attempt, and agent submission event; merely leaving the pending
+  set is reported separately.
+- Path inputs used by commands, identifiers, or recorded evidence now reject
+  non-UTF-8 rendering and unresolved working directories instead of silently
+  substituting or collapsing paths. A repository allowlist gate prevents the
+  rejected patterns from returning.
+- Release and plugin manifests now share one version identity, and tag
+  publication runs the release-reference gate before building artifacts.
+
+## 0.8.0
+
+- New projects and explicit `migrate paths` runs prepare the complete public
+  `soulmate/` and private `.soulmate/` directory contract while retaining
+  legacy manifest and evidence bytes.
+- `doctor` now distinguishes a direct dotagents command from uninvoked
+  `npx`/`agents.toml` observations.
+- Clarified that external task handoffs are incomplete unless exact observe,
+  write, and command authority arrives as structured fields rather than guide
+  prose.
+- Separated authoritative assignment contract, reviewed profile guidance,
+  context-only memory, and evidence-only harness/artifact claims in the native
+  away prompt, with instruction-like adversarial fixtures and security limits.
+- Added an explicit deterministic `migrate layout` dry-run/apply path for
+  configured `.agents/profiles/` sources. It refuses symlinks, collisions, and
+  tracked or staged mutations while leaving historical evidence untouched.
+- `run supersede` now permits one provenance-bound successor from a terminal
+  `blocked` run while preserving immutable predecessor bytes and continuing to
+  reject `accepted` and `rejected` predecessors.
+- New portable and local projects, plus newly imported profiles, now keep
+  canonical agent profiles under `soulmate/agents/`; existing configurations
+  that reference `.agents/profiles/` remain valid and are never rewritten.
+- Documented the Soulmate-centered directory contract while retaining
+  `.agents/` for optional distribution and `.codex/`/`.claude/` for host-owned
+  projections.
+
+## 0.7.0
+
+- Added opt-in run-event version 2, which binds an existing receipt-v2 harness
+  record by StateRoot-relative path and exact SHA-256 while retaining generation
+  and inspection of unbound version-1 runs.
+- Added native `soulmate away` start/list/show commands. The single Rust binary
+  now revalidates config, selected profile/runtime, boundary, memory, upstream
+  artifacts, receipt, and exact manifest claims across an isolated tmux launch.
+- Removed the project-copied Python away adapter and its Python CI dependency;
+  0.6 scripts migrate to `soulmate away` without changing receipt/config shapes
+  or the canonical `run submit` evidence path.
+- Added fail-closed receipt/manifest drift, mixed-event-version, plan-coverage,
+  zero-Codex-launch, recovery-state privacy, and real-tmux regression coverage.
+
+## 0.6.0
+
+- Added an optional, project-scoped Codex+tmux reference adapter that keeps one
+  already-authorized pending assignment alive across an operator disconnect.
+- Kept normal `run next`/`run submit` ledger evidence canonical; adapter status
+  is private process-recovery evidence and no daemon, provider client, second
+  JSONL store, persisted schema, or dependency was added.
+- Revalidates the exact assignment, profile, memory hashes, runtime choice, and
+  fresh StateRoot artifact path before launch; rejects fallback selection and a
+  second same-host launch of the same live assignment.
+
+## 0.5.0
+
+- Made generated and published schema references follow the crate version while
+  accepting older advisory harness `$schema` values for manifest version 1.
+- Clarified that `independently_verified` records an off-box claim whose format
+  is validated and bound, without hashing a local artifact or authenticating a
+  verifier; SHA-256 inputs must be lowercase hexadecimal.
+- Hardened onboarding path errors, documented fixed evidence shapes and the
+  canonical-root precondition, and clarified macOS source-test-only support.
+
+## 0.4.0
+
+- Added an opt-in, versioned harness manifest that hash-binds portable project
+  and session identifiers, harness identity, and bounded skill, perspective,
+  and Ponytail activation evidence into the existing canonical receipt without
+  copying raw manifest strings.
+- Added receipt version 2 for harness-bound receipts while retaining version 1
+  generation and verification when no manifest is supplied.
+- Kept evidence levels explicit (`configured`, `presented`, `agent_declared`,
+  `hook_observed`, and `independently_verified`) without treating presentation
+  or declaration as proof of agent compliance.
+- Rejects unknown manifest fields and free-form content; prompts, goals,
+  transcripts, secrets, raw environment values, and unrelated project content
+  are not accepted or copied into receipts.
+
+## 0.3.0
+
+- Removed the legacy Node implementation and moved publication privacy and
+  compatibility coverage into Rust tests with frozen v0.0.8, v0.1.x, and
+  v0.2.x ledger fixtures.
+- Hardened Git worktree preflight against non-UTF-8 paths, missing Git,
+  command failure, and inconsistent tracked/staged failure handling.
+- Removed external-input panic paths from boundary, CLI JSON, timestamp, and
+  memory path handling; `--json` failures now remain parseable.
+- Continued the typed configuration transition for boundary, receipt, runtime,
+  and memory selection without changing persisted receipt, ledger, or config
+  shapes.
+- Reorganized the bundled skill around recovery branches and distinguished
+  configured, presented, agent-declared, hook-observed, and independently
+  verified harness evidence in existing submitted artifacts.
+- Pinned generated schema/install references to the release tag, added Linux
+  dependency audit and macOS test coverage, and reduced duplicated README
+  limitation prose in favor of the security boundary document.
+
+## 0.2.1
+
+- Fixed empty CLI invocation and added conventional `--help` and `--version`
+  entrypoints without changing existing subcommand parsing.
+- Added content-free memory-budget refusal diagnostics with the attempted
+  item/byte totals at refusal and configured limits; strict no-truncation
+  behavior is unchanged.
+- Began a gradual typed configuration transition at the validated agent/runtime
+  boundary while preserving raw configuration bytes and persisted formats.
+- Added GitHub artifact provenance attestation and release-workflow verification
+  for the packaged archive, while retaining installer SHA-256 checksum checks.
+- Clarified that root Node files are preserved v0.0.8 compatibility/privacy
+  fixtures, not a supported installed runtime.
+- Fixed skill refresh to restore missing managed copies and report created,
+  refreshed, or unchanged destinations truthfully after complete preflight.
+
+## 0.2.0
+
+- Added explicit portable and local repository modes with typed ControlRoot,
+  ProductRoot, and StateRoot ownership, private machine-local project bindings,
+  and Git preflight refusal for tracked or staged runtime state.
+- Added exact run-scoped observe/write manifests that can only narrow configured
+  maxima, remain hash-linked across resume, and fail closed on manifest drift.
+- Added warning-level placeholder diagnostics and focused local-mode,
+  publication-boundary, narrowing, drift, and parallel-assignment tests.
+- Added immutable, attempt-scoped StateRoot artifact hints and explicit
+  `--artifact-root state` submissions so rework does not overwrite prior
+  evidence.
+- Added producer version/commit evidence to newly created receipts and ledger
+  events while preserving inspection of older records without that field.
+- Updated Rust examples and CI, declared Rust 1.75 as the MSRV, and prevented
+  release workflows from overwriting existing tag assets.
+
+- Added opt-in, project-scoped recall of accepted memory evidence through a
+  shallow bounded ledger root and exact per-agent scope/context filtering.
+- Added content-free `memory resolve` output and deterministic memory references
+  in briefs, plans, and native-host run assignments; source bytes remain in
+  operator-owned project files, while the bundled skill requires exact reads
+  immediately before a matching subagent spawn.
+- Frozen run references now fail closed on source, lifecycle, ledger-head, or
+  selection drift without breaking inspection of existing v0.0.8/v0.1.0
+  ledgers.
+- Supersession now rolls back only its own newly created predecessor claim when
+  successor creation fails, so a corrected retry is not stranded.
+- Kept semantic search and embeddings out of core; any future optional ranker
+  may operate only after lifecycle and authorization eligibility.
+
+## 0.1.0
+
+- Replaced the user-facing Node.js runtime with a Rust 2021 single binary.
+- Added Cargo build metadata, embedded skills, release artifacts, checksums,
+  and an initially Linux x86_64 installer.
+- Preserved the v0.0.8 JSON configuration, receipt, JSONL run, and memory
+  evidence formats; Node files remain only as migration reference fixtures.
+- Kept configuration drift fail closed and added explicit `run supersede`
+  provenance: a new bounded ledger links to a verified predecessor head while
+  leaving the predecessor unchanged and sealed against later submissions.
+- Clarified that role outcomes are evidence records, not votes or proof of
+  multi-agent consensus; the configured lead retains final acceptance authority.
+- Initially support Linux x86_64 release artifacts; unsupported platforms fail
+  before download rather than receiving an unverified cross-compiled binary.
+
+## 0.0.8
+
+- Added explicit `soulmate init --with-coffee` and matching refresh support to
+  install the bundled Coffee skill for Codex and Claude without changing the
+  default Soulmate-only initialization path.
+- Added all-selected-destination preflight and regression coverage so Coffee
+  opt-in refuses conflicts before writing any selected skill file.
+- Documented a narrow Venus interoperability boundary: cross-session
+  orientation stays advisory and human-narrowed, while Soulmate owns only the
+  active task's bounded handoff and run evidence.
+
+## 0.0.7
+
+- Repair the public CI installed-package smoke test by creating its isolated
+  project root before initialization.
+- Route CI privacy checks through Soulmate's tested, fail-closed privacy gate
+  so adversarial test fixtures are not mistaken for release leaks.
+
+## 0.0.6
+
+- Added resumable `run start|next|submit|inspect` lifecycle evidence with
+  role-aware transitions, rework attempts, artifact hashes, drift checks,
+  bounded assignment batches, and conservative project-local lock recovery.
+- Added bundled native-host adapter guidance: capable hosts perform native
+  spawning and review while the CLI remains provider-free and records only
+  declared evidence and submitted artifacts.
+- Added private `.soulmate/` run state with an ignored contents boundary and a
+  repository privacy gate; the gate is a publication check, not proof of
+  purging local or untracked data.
+- Added portable profile audit/import with redacted findings and conservative
+  zero-right defaults for reusing agent briefs outside their original project.
+- Added stable, display, and native agent-name mapping without claiming that a
+  host-generated thread label or ID is controlled by Soulmate.
+- Added strict retention and cross-context values plus content-free local
+  forgetting-attestation receipts for already-absent terminal memory items.
+- `soulmate init` now installs the bundled skill into project-scoped Codex and
+  Claude discovery paths; explicit `--refresh-skills` updates only marked
+  Soulmate-owned copies, while npm installation alone changes no host config.
+
+## 0.0.5
+
+- Added role-scoped memory proposal, review, promotion, rejection, revocation,
+  and expiry evidence as part of Soulmate's agent-handoff boundary.
+- Kept Coffee as an optional portable preparation skill that can feed the
+  existing agent `skills`, brief, and plan flow without adding a second
+  subsystem.
+- Added one-item append-only JSONL ledgers with hash-linked transition events
+  referencing operator-owned project files without copying their contents.
+- Kept the runtime dependency-free with no Coffee CLI or configuration
+  subsystem, daemon, database, embeddings, telemetry, provider client,
+  background expiry, or external tool execution.
+
+## 0.0.4
+
+- Registry onboarding and documentation release: npm installation is now the
+  primary quick-start path, with the tagged GitHub source retained as a
+  fallback for source-based installs.
+- Kept dotagents and Codex/Claude hooks optional and advanced; no feature or
+  dependency changes.
+- Normalized the npm executable path so publication no longer needs manifest
+  correction.
+
+## 0.0.3
+
+- Simplified standalone onboarding: install the pinned GitHub release, run
+  `soulmate init`, and render a first brief without dotagents or hooks.
+- Clarified that Node.js 20+ is the sole runtime requirement and moved dotagents,
+  host hooks, and model bindings into optional or advanced integrations.
+- Updated `init` next-step output to point to the standalone first-value command.
+
+## 0.0.2
+
+- Added explicit project-local Codex and Claude hook plan/apply/status/remove
+  commands with idempotent, per-file atomic, conflict-safe settings merges.
+- Added the internal `hook-run` bridge for bounded SessionStart and
+  SubagentStart context; it is fail-open when Soulmate is unavailable.
+- Added a pre-install hook-protocol handshake and five-second native hook
+  timeout so stale commands or a stuck bridge cannot become a startup bottleneck.
+- Preserved host settings, rejected malformed or escaping hook paths, and
+  documented the bounded multi-file rename limitation.
+
+## 0.0.1
+
+- Added the dependency-free, plan-only CLI for config checks, briefs, plans,
+  profiles, onboarding, and opt-in receipt verification.
+- Added a valid Agent Plugins v1 portable bundle with role-specific skills;
+  preserved SessionStart/SubagentStart host-hook resources are separated under
+  a reverse-domain extension namespace and are not activated by installation.
+- Added explicit runtime binding metadata without model routing, invocation,
+  credentials, or implicit fallback.
+- Receipts now contain selected config/profile bytes and requested runtime
+  metadata only; task and goal fingerprints are not stored.
+- Memory fields remain declarations of policy intent only; no storage,
+  promotion, expiry, deletion, or revocation is performed.

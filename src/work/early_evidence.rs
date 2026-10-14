@@ -83,7 +83,14 @@ pub(crate) fn with_probe(
     Ok(packet)
 }
 
-fn latest_report(loaded: &Loaded, events: &[Value]) -> Result<Option<(Value, Value)>, String> {
+#[derive(Debug)]
+enum LatestReport {
+    Found(Value, Value),
+    None,
+    Unknown { event: Value, reason: &'static str },
+}
+
+fn latest_report(loaded: &Loaded, events: &[Value]) -> Result<LatestReport, String> {
     for event in events
         .iter()
         .rev()
@@ -92,18 +99,37 @@ fn latest_report(loaded: &Loaded, events: &[Value]) -> Result<Option<(Value, Val
         if event["artifact"]["root"] != "state" {
             continue;
         }
-        let artifact = crate::run::artifact::read(loaded, &event["artifact"], "early evidence")?;
+        let artifact =
+            match crate::run::artifact::read(loaded, &event["artifact"], "early evidence") {
+                Ok(artifact) => artifact,
+                Err(error) if crate::run::artifact::is_missing(&error) => {
+                    return Ok(LatestReport::Unknown {
+                        event: event.clone(),
+                        reason: "latest_candidate_artifact_missing",
+                    });
+                }
+                Err(error) if error.ends_with("artifact bytes changed") => {
+                    return Ok(LatestReport::Unknown {
+                        event: event.clone(),
+                        reason: "latest_candidate_artifact_changed",
+                    });
+                }
+                Err(error) => return Err(error),
+            };
         if artifact.bytes as usize != artifact.preview.len() {
-            continue;
+            return Ok(LatestReport::Unknown {
+                event: event.clone(),
+                reason: "latest_candidate_artifact_truncated",
+            });
         }
         let Ok(value) = serde_json::from_slice::<Value>(&artifact.preview) else {
             continue;
         };
         if let Some(report) = value.get("earlyEvidence") {
-            return Ok(Some((event.clone(), report.clone())));
+            return Ok(LatestReport::Found(event.clone(), report.clone()));
         }
     }
-    Ok(None)
+    Ok(LatestReport::None)
 }
 
 fn well_formed(report: &Value) -> bool {
@@ -130,6 +156,13 @@ fn well_formed(report: &Value) -> bool {
         )
 }
 
+fn unknown_projection(event: &Value, reason: &str) -> Value {
+    json!({"selected":true,"state":"unknown","authority":"none",
+        "reasons":[reason],"reportEventSha256":event["eventSha256"],
+        "artifactSha256":event["artifact"]["sha256"],
+        "candidateSubjectSha256":event["subjectSha256"]})
+}
+
 pub(crate) fn projection(
     loaded: &Loaded,
     work: &str,
@@ -139,8 +172,14 @@ pub(crate) fn projection(
     let events = view["events"]
         .as_array()
         .ok_or("current events unavailable")?;
-    let Some((event, report)) = latest_report(loaded, events)? else {
-        return Ok(json!({"selected":false,"state":"not_selected","authority":"none"}));
+    let (event, report) = match latest_report(loaded, events)? {
+        LatestReport::None => {
+            return Ok(json!({"selected":false,"state":"not_selected","authority":"none"}));
+        }
+        LatestReport::Unknown { event, reason } => {
+            return Ok(unknown_projection(&event, reason));
+        }
+        LatestReport::Found(event, report) => (event, report),
     };
     let expected = requirement(
         loaded,
@@ -207,3 +246,7 @@ pub(crate) fn projection(
         "meaning":"Applicable reported evidence covers only declared requirement, candidate and probe inputs; it never permits skipping final checks, review or Lead acceptance."}),
     )
 }
+
+#[cfg(test)]
+#[path = "early_evidence/unit_tests.rs"]
+mod unit_tests;
