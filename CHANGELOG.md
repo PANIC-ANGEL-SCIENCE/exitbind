@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — 0.31.13 source candidate
+## 0.31.13
+
+Published stable release; the `v0.31.13` tag and release assets are available.
 
 - Continue a defective frozen check through an explicitly approved linked Work,
   retaining the predecessor, same-Goal accounting and fresh check/review gates.

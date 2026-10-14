@@ -1,9 +1,11 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.12
+Published stable tag: v0.31.13
 Source candidate tag: v0.31.13
 
-The published stable release remains 0.31.12; the source candidate is 0.31.13.
+The published stable release and source candidate are both 0.31.13, from the
+same source commit. The published stable release is available; the source
+candidate identifies the source reviewed for that release.
 README install links name the available published assets. A source version or
 passing CI alone does not establish an official release. The release-reference
 check validates published and candidate declarations separately; source metadata,
@@ -16,8 +18,8 @@ release JSON, the peeled tag commit as `producer_commit`, and asset names with
 their GitHub SHA-256 digests. The checker requires the published stable state,
 the matching `Published stable tag` policy line, one visible README install
 command for that tag, and the exact three-platform inventory of binaries,
-archives and checksum files. A newer source candidate may remain unbuilt while
-the selected available stable tag and its install command remain older. Verify
+archives and checksum files. An available stable tag may differ from a newer
+source candidate when release assets have not yet been published. Verify
 attestations as part of delivery before recording its result. Obtain and
 authenticate that readback through the delivery process; the checker performs
 no network or `latest` lookup and does not authenticate its input file. Missing
