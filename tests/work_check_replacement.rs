@@ -822,18 +822,11 @@ fn stale_binding_and_non_defective_or_missing_sources_refuse_without_mutation() 
     let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let before = fs::read(f.ledger(&work)).unwrap();
 
-    for (args, description) in [(
-        {
-            let mut value = replacement_args(&work, &"0".repeat(64));
-            value.push("--apply".into());
-            value
-        },
-        "stale binding",
-    )] {
-        let output = f.call(&refs(&args));
-        assert!(!output.status.success(), "{description}: {output:?}");
-        assert_eq!(fs::read(f.ledger(&work)).unwrap(), before);
-    }
+    let mut stale_args = replacement_args(&work, &"0".repeat(64));
+    stale_args.push("--apply".into());
+    let output = f.call(&refs(&stale_args));
+    assert!(!output.status.success(), "stale binding: {output:?}");
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), before);
     let preview = f.ok(&refs(&replacement_args(&work, &binding)));
     let mut wrong_class = preview["applyCommand"]["argv"]
         .as_array()
