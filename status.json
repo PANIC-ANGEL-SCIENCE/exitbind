@@ -1,7 +1,7 @@
 {
   "main_sha": "1a93283b32e7d9ff42d8830ebacbd13042e39de5",
   "ci": {
-    "label": "running",
+    "label": "passing",
     "run_id": 38566840134,
     "sha": "1a93283b32e7d9ff42d8830ebacbd13042e39de5"
   },
@@ -14,5 +14,5 @@
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-10-14T12:57:52.965767+00:00"
+  "checked_at": "2026-10-14T13:08:36.758188+00:00"
 }
