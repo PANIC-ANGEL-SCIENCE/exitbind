@@ -465,7 +465,9 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
                     return Err("a different successor is already claimed".into());
                 }
             }
-            if value.get("checkReplacement") != wanted.get("checkReplacement") {
+            if value.get("checkReplacement") != wanted.get("checkReplacement")
+                || value.get("preReturnPolicy") != wanted.get("preReturnPolicy")
+            {
                 return Err("a different successor is already claimed".into());
             }
             Ok(SupersessionClaim {
@@ -571,11 +573,13 @@ fn validate_claim(value: &Value) -> Result<(), String> {
     ];
     let carry_fields = ["carryProtocol", "governorCarrySha256"];
     let has_replacement = value.get("checkReplacement").is_some();
+    let has_pre_return = value.get("preReturnPolicy").is_some();
     let has_carry =
         value.get("carryProtocol").is_some() || value.get("governorCarrySha256").is_some();
     let expected_len = legacy_fields.len()
         + usize::from(has_carry) * carry_fields.len()
-        + usize::from(has_replacement);
+        + usize::from(has_replacement)
+        + usize::from(has_pre_return);
     if object.len() != expected_len
         || legacy_fields.iter().any(|key| !object.contains_key(*key))
         || (has_carry
@@ -585,6 +589,9 @@ fn validate_claim(value: &Value) -> Result<(), String> {
                 || !sha(value["governorCarrySha256"].as_str())))
         || (has_replacement
             && crate::run::check_replacement::validate_marker(&value["checkReplacement"], 1)
+                .is_err())
+        || (has_pre_return
+            && crate::run_value::pre_return_policy_from_value(&value["preReturnPolicy"], 1)
                 .is_err())
         || value["version"] != 1
         || [

@@ -24,7 +24,18 @@ pub(crate) enum BasisOrigin<'a> {
     PreparedJourney(crate::session_goal::journey::Prepared),
 }
 
+#[cfg(test)]
 pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value, String> {
+    begin_with_pre_return(loaded, options, None, None, None)
+}
+
+pub(crate) fn begin_with_pre_return(
+    loaded: &Loaded,
+    options: BeginOptions<'_>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+) -> Result<Value, String> {
     let basis = match &options.basis {
         BasisOrigin::Caller(basis) => {
             if let Some(basis) = basis {
@@ -80,7 +91,7 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
     let ledger = format!("{}/work-{token}.jsonl", runs_dir());
     let work = format!("{WORK_PREFIX}{token}");
     if let Some(candidate) = goal_candidate.as_ref() {
-        let intent = run::start_intent_sha256(
+        let intent = run::start_intent_sha256_with_pre_return(
             loaded,
             options.workflow,
             options.goal,
@@ -93,6 +104,9 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
             options.preservation_proof_origin,
             basis,
             options.review_policy,
+            pre_return_command,
+            pre_return_timeout_ms,
+            pre_return_capture_bytes,
         )?;
         let scope = goal_scope
             .as_ref()
@@ -106,7 +120,7 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
             options.goal,
         )?;
     }
-    if let Err(error) = run::start_with_policy(
+    if let Err(error) = run::start_with_policy_and_pre_return(
         loaded,
         options.workflow,
         options.goal,
@@ -120,6 +134,9 @@ pub(crate) fn begin(loaded: &Loaded, options: BeginOptions<'_>) -> Result<Value,
         options.preservation_proof_origin,
         basis,
         options.review_policy,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
     ) {
         if goal_candidate.is_some() {
             return Err(format!(

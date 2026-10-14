@@ -9,11 +9,13 @@ unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_CODE_SESSION_ID EXITBIND_NATIVE_SE
 fail() { printf 'ci-local: %s\n' "$*" >&2; exit 1; }
 checks_only=false
 preflight_only=false
+ci_mode=full
 case "${1:-}" in
-  '') test "$#" -eq 0 || fail 'usage: ci-local.sh [--checks-only]' ;;
-  --checks-only) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only]'; checks_only=true ;;
-  --preflight) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight]'; preflight_only=true ;;
-  *) fail 'usage: ci-local.sh [--checks-only]' ;;
+  '') test "$#" -eq 0 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]' ;;
+  --checks-only) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; checks_only=true ;;
+  --preflight) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; preflight_only=true ;;
+  --pre-return) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; ci_mode=pre-return ;;
+  *) fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]' ;;
 esac
 
 # Honor an explicit Cargo, otherwise preserve PATH before trying its usual home.
@@ -32,6 +34,7 @@ PATH="$cargo_dir:$PATH"
 export PATH
 cd -- "$(dirname -- "$0")/.."
 root=$(pwd -P)
+. "$root/scripts/ci-stages.sh"
 
 case "$(uname -s):$(uname -m)" in
   Linux:x86_64) platform=linux; target=x86_64-unknown-linux-gnu ;;
@@ -119,7 +122,7 @@ else
   printf '%s\n' "$root" > "$cache_owner"
 fi
 {
-  printf 'head=%s\nroot=%s\ntarget=%s\ncandidate=%s\n' "$(git rev-parse HEAD)" "$root" "$CARGO_TARGET_DIR" "${CANDIDATE_SHA:-HEAD}"
+  printf 'head=%s\nroot=%s\ntarget=%s\ncandidate=%s\nmode=%s\n' "$(git rev-parse HEAD)" "$root" "$CARGO_TARGET_DIR" "${CANDIDATE_SHA:-HEAD}" "$ci_mode"
   "$CARGO" --version
   rustc --version
   git status --porcelain --untracked-files=normal
@@ -141,38 +144,65 @@ run() {
   test "$stage_status" -eq 0 || exit "$stage_status"
 }
 
-run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}"
-run workflows ./scripts/check-workflows.sh
-run workflow-regression ./scripts/test-workflow-validation.sh
-run quiet-command-regression python3 ./scripts/test-quiet-command.py
-VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
-if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
-  VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
-elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
-  git fetch --no-tags origin "$VALUE_PROOF_BASE"
-fi
-git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
-export VALUE_PROOF_BASE
-printf 'proof-base=%s\n' "$VALUE_PROOF_BASE" >> "$run_dir/context"
-printf 'ci-local: platform=%s head=%s proof-base=%s\n' "$platform" "$(git rev-parse HEAD)" "$VALUE_PROOF_BASE"
+prepare_value_proof_base() {
+  VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
+  if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
+    VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^)
+  elif ! git cat-file -e "${VALUE_PROOF_BASE}^{commit}"; then
+    git fetch --no-tags origin "$VALUE_PROOF_BASE"
+  fi
+  git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
+  export VALUE_PROOF_BASE
+  printf 'proof-base=%s\n' "$VALUE_PROOF_BASE" >> "$run_dir/context"
+  printf 'ci-local: platform=%s head=%s proof-base=%s\n' "$platform" "$(git rev-parse HEAD)" "$VALUE_PROOF_BASE"
+}
 
-if [ "$platform" = linux ]; then
-  run fmt "$CARGO" fmt --check
-  run path-rendering ./scripts/check-path-rendering.sh
-  run product-surface ./scripts/check-product-surface.sh
-  run clippy "$CARGO" clippy --locked --all-targets -- -D warnings
+if [ "$ci_mode" = pre-return ]; then
+  printf 'ci-local: platform=%s head=%s mode=%s\n' "$platform" "$(git rev-parse HEAD)" "$ci_mode"
 fi
-run tests "$CARGO" test --locked
-run value-proof ./scripts/run-value-proof-suite.sh
-if [ "$platform" = linux ]; then
-  run drift-warning ./scripts/demo-drift-warning.sh
-  run native-handoff "$CARGO" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
-  ./scripts/assert-test-ran.sh real_tmux_child_presents_bound_evidence_without_persisting_the_prompt < "$run_dir/native-handoff.log" || fail 'native-handoff target did not execute and pass'
-  run release-refs ./scripts/check-release-refs.sh
-fi
+
+proof_base_ready=false
+for stage in $(ci_stage_order); do
+  ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
+  if [ "$ci_mode" = full ] && [ "$proof_base_ready" = false ] && { [ "$stage" = fmt ] || [ "$stage" = tests ]; }; then
+    prepare_value_proof_base
+    proof_base_ready=true
+  fi
+  case "$stage" in
+    history) run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}" ;;
+    workflows) run workflows ./scripts/check-workflows.sh ;;
+    workflow-regression) run workflow-regression ./scripts/test-workflow-validation.sh ;;
+    ci-stage-contract) run ci-stage-contract ./scripts/test-ci-stages.sh ;;
+    quiet-command-regression) run quiet-command-regression python3 ./scripts/test-quiet-command.py ;;
+    fmt) run fmt "$CARGO" fmt --check ;;
+    path-rendering) run path-rendering ./scripts/check-path-rendering.sh ;;
+    product-surface) run product-surface ./scripts/check-product-surface.sh ;;
+    clippy) run clippy "$CARGO" clippy --locked --all-targets -- -D warnings ;;
+    tests) run tests "$CARGO" test --locked ;;
+    architecture-budget) run architecture-budget "$CARGO" test --locked --test architecture_budget ;;
+    privacy-gate) run privacy-gate "$CARGO" test --locked --test privacy_gate ;;
+    release-integrity) run release-integrity "$CARGO" test --locked --test release_integrity ;;
+    docs-workflow) run docs-workflow "$CARGO" test --locked --test docs_workflow ;;
+    first-impression) run first-impression "$CARGO" test --locked --test first_impression ;;
+    value-contract) run value-contract "$CARGO" test --locked --test value_contract ;;
+    plugin-distribution) run plugin-distribution "$CARGO" test --locked --test plugin_distribution ;;
+    value-proof) run value-proof ./scripts/run-value-proof-suite.sh ;;
+    drift-warning) run drift-warning ./scripts/demo-drift-warning.sh ;;
+    native-handoff)
+      run native-handoff "$CARGO" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
+      ./scripts/assert-test-ran.sh real_tmux_child_presents_bound_evidence_without_persisting_the_prompt < "$run_dir/native-handoff.log" || fail 'native-handoff target did not execute and pass'
+      ;;
+    release-refs) run release-refs ./scripts/check-release-refs.sh ;;
+    *) fail "selected stage has no command: $stage" ;;
+  esac
+done
 
 if [ "$checks_only" = true ]; then
   current_stage=checks-complete
+  exit 0
+fi
+if [ "$ci_mode" = pre-return ]; then
+  current_stage=pre-return-complete
   exit 0
 fi
 EXITBIND_BUILD_COMMIT=${GITHUB_SHA:-$(git rev-parse HEAD)}

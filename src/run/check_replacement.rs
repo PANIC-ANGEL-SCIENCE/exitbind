@@ -46,11 +46,21 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
             })
         })
     });
+    let target = value["target"].as_str().unwrap_or("check");
+    let target_valid = match target {
+        "check" => {
+            event["checkPolicy"]["commandSha256"] == value["newPolicy"]["commandSha256"]
+                && event["checkPolicy"]["origin"] == value["newPolicy"]["origin"]
+        }
+        "pre_return" => event.get("preReturnPolicy").is_some_and(|policy| {
+            crate::evidence::hash::value(policy) == value["newPolicy"]["policySha256"]
+        }),
+        _ => false,
+    };
     if event["version"].as_u64() != Some(8)
         || event.get("supersedes").is_none()
         || !configured_lead
-        || event["checkPolicy"]["commandSha256"] != value["newPolicy"]["commandSha256"]
-        || event["checkPolicy"]["origin"] != value["newPolicy"]["origin"]
+        || !target_valid
     {
         return Err(format!(
             "invalid run ledger line {line}: invalid check replacement"
@@ -63,6 +73,10 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
 pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> {
     let invalid = || format!("invalid run ledger line {line}: invalid check replacement");
     let object = value.as_object().ok_or_else(invalid)?;
+    let target = value["target"].as_str().unwrap_or("check");
+    if !matches!(target, "check" | "pre_return") {
+        return Err(invalid());
+    }
     let expected = [
         "protocol",
         "classification",
@@ -73,8 +87,10 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
         "oldPolicy",
         "newPolicy",
     ];
-    if object.len() != expected.len()
-        || object.keys().any(|key| !expected.contains(&key.as_str()))
+    if object
+        .keys()
+        .any(|key| !expected.contains(&key.as_str()) && key != "target")
+        || object.len() != expected.len() + usize::from(object.contains_key("target"))
         || value["protocol"].as_u64() != Some(PROTOCOL)
         || value["classification"] != "defective_contract"
         || !bounded_text(value["reason"].as_str(), 1024)
@@ -83,11 +99,17 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
         return Err(invalid());
     }
     let source = value["source"].as_object().ok_or_else(invalid)?;
-    if source.len() != 2
+    let source_shape = if target == "pre_return" {
+        source.len() == 3 && sha(value["source"]["attemptId"].as_str())
+    } else {
+        source.len() == 2
+    };
+    if !source_shape
         || !matches!(
             value["source"]["kind"].as_str(),
             Some("failed_check" | "blocked_worker")
         )
+        || (target == "pre_return" && value["source"]["kind"] != "blocked_worker")
         || !sha(value["source"]["eventSha256"].as_str())
     {
         return Err(invalid());
@@ -101,20 +123,28 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
     }
     let old = value["oldPolicy"].as_object().ok_or_else(invalid)?;
     let new = value["newPolicy"].as_object().ok_or_else(invalid)?;
-    if old.len() != 2
-        || new.len() != 2
-        || !sha(value["oldPolicy"]["commandSha256"].as_str())
-        || !sha(value["newPolicy"]["commandSha256"].as_str())
-        || value["oldPolicy"]["commandSha256"] == value["newPolicy"]["commandSha256"]
-        || !matches!(
-            value["oldPolicy"]["origin"].as_str(),
-            Some("local_report" | "synthetic")
-        )
-        || !matches!(
-            value["newPolicy"]["origin"].as_str(),
-            Some("local_report" | "synthetic")
-        )
-    {
+    let policies_valid = if target == "pre_return" {
+        old.len() == 1
+            && new.len() == 1
+            && sha(value["oldPolicy"]["policySha256"].as_str())
+            && sha(value["newPolicy"]["policySha256"].as_str())
+            && value["oldPolicy"]["policySha256"] != value["newPolicy"]["policySha256"]
+    } else {
+        old.len() == 2
+            && new.len() == 2
+            && sha(value["oldPolicy"]["commandSha256"].as_str())
+            && sha(value["newPolicy"]["commandSha256"].as_str())
+            && value["oldPolicy"]["commandSha256"] != value["newPolicy"]["commandSha256"]
+            && matches!(
+                value["oldPolicy"]["origin"].as_str(),
+                Some("local_report" | "synthetic")
+            )
+            && matches!(
+                value["newPolicy"]["origin"].as_str(),
+                Some("local_report" | "synthetic")
+            )
+    };
+    if !policies_valid {
         return Err(invalid());
     }
     Ok(())

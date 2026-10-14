@@ -240,8 +240,30 @@ fn grouped_sections(
     }
     assignment["projection"] = json!({"equalAliases": aliases,
         "recoveryAliases": "equal recovery goal/scope/subject/current/missing/loop/next refer to context goal/scope/subject/evidence/obligations/loop/next"});
+    if next["role"] == "lead" {
+        let command = super::response_recovery::bounded_argv(
+            vec![
+                "work".into(),
+                "challenge".into(),
+                work.into(),
+                "--question".into(),
+                "<QUESTION>".into(),
+                "--json".into(),
+                "--config".into(),
+            ],
+            loaded.path.to_str(),
+            1024,
+        );
+        assignment["optionalChallenge"] = json!({"required":false,"readOnly":true,
+            "when":"Only for a consequential unresolved assumption in this approved task.",
+            "command":command.argv,"sameConfigRequired":command.same_config,
+            "sameExecutableRequired":command.same_executable,
+            "meaning":"Prepare a bounded native-host evidence packet; no agent or probe is launched."});
+    }
     sections.insert("assignment".into(), assignment);
     let mut evidence = super::details::readable_evidence(loaded, snapshot, next)?;
+    evidence["earlyEvidence"] = super::early_evidence::projection(loaded, work, snapshot)?;
+    evidence["preReturn"] = crate::run::pre_return::projection(loaded, work)?;
     for item in evidence["items"].as_array_mut().unwrap() {
         for field in ["artifact", "stdout", "stderr"] {
             if item[field].is_object() && item[field]["readable"] == false {

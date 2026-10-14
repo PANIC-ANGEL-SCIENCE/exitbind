@@ -8,7 +8,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work"] => {
             "work next WORK | work detail WORK | work closeout WORK | work continuation WORK | work resume [--history] | work link-session WORK [--json] | work replace-check WORK ... | work focus WORK | work bind WORK ... | work child WORK ASSIGNMENT ... | work record WORK < JSON | work validate WORK --packet FILE | work expand WORK REFERENCE | work usage WORK [--json] | work <child> --help"
         }
-        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--detail] [--standalone] [--journey-integration --artifact CHECKER] [--goal-id ID --requirement IDs --artifact CHECKER [--scope integration] [--project-goal]] [--basis JSON] (an available native-host identity links ordinary Work context to the current conversation Goal; --standalone opts out; --journey-integration freezes accepted conversation tasks for a final-current checker; --project-goal selects a project-local named contract while retaining conversation context; --detail delivers current recipient context; after an interrupted native association, inspect status/detail and use work link-session only for the exact recorded admission and actual Work start; never repeat begin)",
+        ["work", "begin"] => "work begin WORKFLOW --goal GOAL --check-command COMMAND [--review-policy required|omitted] [--pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]] [--detail] [--standalone] [--journey-integration --artifact CHECKER] [--goal-id ID --requirement IDs --artifact CHECKER [--scope integration] [--project-goal]] [--basis JSON] (an available native-host identity links ordinary Work context to the current conversation Goal; --standalone opts out; --journey-integration freezes accepted conversation tasks for a final-current checker; --project-goal selects a project-local named contract while retaining conversation context; --detail delivers current recipient context; after an interrupted native association, inspect status/detail and use work link-session only for the exact recorded admission and actual Work start; never repeat begin)",
         ["work", "link-session"] => "work link-session WORK [--config CONFIG] [--json] (recovers only a matching native-session Goal admission after verifying the actual immutable Work start; performs no Work, check, acceptance, or provider mutation)",
         ["work", "act"] => "work act WORK [--inspect] [--resume [--operation ASSIGNMENT]] [--model MODEL] [--reasoning-effort EFFORT] [--controlled-effects]",
         ["work", "next"] => "work next WORK [--json] [--full]",
@@ -54,13 +54,14 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (preview by default; configured Lead attests exact known-ended storage failure; records failure only, never reruns a check)",
-        ["work", "replace-check"] => "work replace-check WORK --check-command COMMAND --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; derives Lead owner, exact source event, check origin, and deterministic successor identity; preserves the predecessor)",
+        ["work", "replace-check"] => "work replace-check WORK (--check-command COMMAND | --pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]) --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; Lead-owned continuation preserves predecessor, final-check policy for a diagnostic replacement, and spent accounting)",
         ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file-serve"] => "work file-serve SESSION --config CONFIG (host-owned stdio MCP transport)",
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
+        ["work", "challenge"] => "work challenge WORK --question QUESTION [--probe-command COMMAND --probe-source PROJECT_FILE] [--json] (conditional native-host independent-evidence packet; read-only, launches no agents or probes)",
         ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands and complete section routes without repeating instructions)",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
@@ -70,7 +71,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "activity codex [--model MODEL] [--reasoning-effort EFFORT] < PROMPT"
         }
         ["activity", "show"] => "activity show ACTIVITY_ID",
-        ["run", "start"] => "run start WORKFLOW --goal GOAL --ledger LEDGER",
+        ["run", "start"] => "run start WORKFLOW --goal GOAL --ledger LEDGER [--pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]]",
+        ["run", "pre-return", "read"] => "run pre-return read WORK_OR_LEDGER ATTEMPT_ID [--stream stdout|stderr] [--config CONFIG] (read-only retained diagnostic metadata or exact stored bytes; never executes a check)",
         ["run", "next"] => "run next LEDGER [--text]",
         ["run", "submit"] => "run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT",
         ["run", "review-policy"] => "run review-policy AGENT LEDGER --decision required|omitted",

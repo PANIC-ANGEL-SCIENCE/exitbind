@@ -258,6 +258,24 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             return Err("check observation protocol requires checked governed v8 recovery".into());
         }
     }
+    if let Some(policy) = event.get("preReturnPolicy") {
+        if version != 8 || event.get("checkPolicy").is_none() {
+            return Err(format!(
+                "invalid run ledger line {line}: preReturnPolicy requires a checked v8 run"
+            ));
+        }
+        crate::run_value::pre_return_policy_from_value(policy, line)?;
+        let has_worker = stages.iter().any(|stage| {
+            stage["agents"]
+                .as_array()
+                .is_some_and(|agents| agents.iter().any(|agent| agent["role"] == "worker"))
+        });
+        if !has_worker {
+            return Err(format!(
+                "invalid run ledger line {line}: preReturnPolicy requires a worker stage"
+            ));
+        }
+    }
     if version == 2 {
         validate_harness_receipt(event.get("harnessReceipt"), line)?;
     } else if event.get("harnessReceipt").is_some() {

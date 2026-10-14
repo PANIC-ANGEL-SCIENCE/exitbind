@@ -35,6 +35,7 @@ pub(crate) fn binding(
         "goalRevision": crate::session_goal::record_for_work(loaded, work)
             .as_ref()
             .map(hash::value),
+        "earlyEvidence": super::early_evidence::projection(loaded, work, snapshot)?,
     })))
 }
 
@@ -207,6 +208,22 @@ pub(super) fn attach(
     Ok(())
 }
 
+fn replacement_policy_projection(marker: &Value, mut relation: Value) -> Value {
+    if marker["target"] == "pre_return" {
+        relation["target"] = json!("pre_return");
+        for side in ["predecessor", "successor"] {
+            if let Some(object) = relation[side].as_object_mut() {
+                if let Some(policy) = object.remove("checkPolicy") {
+                    object.insert("preReturnPolicy".into(), policy);
+                }
+            }
+        }
+        relation["finalCheckPolicyPreserved"] = json!(true);
+        relation["meaning"] = json!("The predecessor remains immutable. Only the explicitly defective pre-return policy changed; the successor gets no old grant, diagnostic pass, final check or review credit.");
+    }
+    relation
+}
+
 pub(super) fn replacement_relation(
     loaded: &Loaded,
     work: &str,
@@ -236,13 +253,16 @@ pub(super) fn replacement_relation(
             .as_str()
             .unwrap_or_default();
         let previous_work = crate::work::locator_for_ledger(predecessor);
-        return Ok(Some(json!({"state":"verified","direction":"successor",
+        return Ok(Some(replacement_policy_projection(
+            marker,
+            json!({"state":"verified","direction":"successor",
             "predecessor":{"work":previous_work,"ledger":predecessor,
                 "runId":start["supersedes"]["runId"],"headEventSha256":start["supersedes"]["headEventSha256"],
                 "checkPolicy":marker["oldPolicy"]},
             "successor":{"work":work,"runId":start["runId"],"checkPolicy":marker["newPolicy"]},
             "source":marker["source"],"reason":marker["reason"],"classification":marker["classification"],"leadOwner":marker["leadOwner"],
-            "meaning":"The predecessor is immutable; the successor has a new check contract and receives no prior check, review or grant credit."})));
+            "meaning":"The predecessor is immutable; the successor has a new check contract and receives no prior check, review or grant credit."}),
+        )));
     }
     let ledger = super::resolve(loaded, work)?;
     let ledger_path = crate::run::ledger::load(loaded, &ledger)?.0;
@@ -270,11 +290,14 @@ pub(super) fn replacement_relation(
             "successor":{"work":crate::work::locator_for_ledger(successor_ledger),"ledger":successor_ledger,"runId":claim["newRunId"]},
             "reason":"successor ledger or provenance could not be verified; no continuation is authorized"})));
     }
-    Ok(Some(json!({"state":"verified","direction":"predecessor",
+    Ok(Some(replacement_policy_projection(
+        marker,
+        json!({"state":"verified","direction":"predecessor",
         "predecessor":{"work":work,"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"],"checkPolicy":marker["oldPolicy"]},
         "successor":{"work":crate::work::locator_for_ledger(successor_ledger),"ledger":successor_ledger,"runId":claim["newRunId"],"checkPolicy":marker["newPolicy"]},
         "source":marker["source"],"reason":marker["reason"],"classification":marker["classification"],"leadOwner":marker["leadOwner"],
-        "meaning":"This predecessor remains immutable; its successor has a new check contract and receives no prior check, review or grant credit."})))
+        "meaning":"This predecessor remains immutable; its successor has a new check contract and receives no prior check, review or grant credit."}),
+    )))
 }
 
 /// A preflight projection may contain the one submit transaction being

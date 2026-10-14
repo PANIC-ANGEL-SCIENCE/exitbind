@@ -73,6 +73,9 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     if let Some(policy) = first.get("checkPolicy") {
         state["checkPolicy"] = policy.clone();
     }
+    if let Some(policy) = first.get("preReturnPolicy") {
+        state["preReturnPolicy"] = policy.clone();
+    }
     if let Some(preservation) = first.get("preservation") {
         state["preservation"] = preservation.clone();
     }
@@ -177,6 +180,9 @@ fn reject_unknown(
         if matches!(version, 3..=8) {
             allowed.push("harnessReceipt");
             allowed.push("checkPolicy");
+        }
+        if version == 8 {
+            allowed.push("preReturnPolicy");
         }
         if version >= 5 {
             allowed.push("subject");

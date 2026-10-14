@@ -1,5 +1,7 @@
 use super::*;
 
+type ArtifactProducer<'a> = Box<dyn FnOnce() -> Result<String, String> + 'a>;
+
 #[allow(clippy::too_many_arguments)]
 pub fn submit(
     loaded: &Loaded,
@@ -18,6 +20,13 @@ pub fn submit(
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let artifact = artifact.to_owned();
+    let pre_return_attempt = if outcome == "completed"
+        && super::pre_return::enabled(loaded, ledger)?
+    {
+        super::pre_return::prepare_direct(loaded, ledger, agent, outcome, artifact_root, &artifact)?
+    } else {
+        None
+    };
     submit_locked(
         loaded,
         &path,
@@ -33,6 +42,7 @@ pub fn submit(
         },
         |_, _| Ok(()),
         None,
+        pre_return_attempt.as_deref(),
     )
 }
 
@@ -60,6 +70,23 @@ where
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let agent = expected.agent.clone();
     let assignment_sha256 = crate::evidence::hash::text(assignment_handle);
+    let selected_pre_return = outcome == "completed"
+        && expected.role == "worker"
+        && super::pre_return::enabled(loaded, ledger)?;
+    let (subject_artifact, pre_return_attempt): (ArtifactProducer<'_>, Option<String>) =
+        if selected_pre_return {
+            let (artifact_path, attempt_id) = super::pre_return::prepare_for_assignment(
+                loaded,
+                ledger,
+                &agent,
+                &expected,
+                &assignment_sha256,
+                artifact,
+            )?;
+            (Box::new(move || Ok(artifact_path)), Some(attempt_id))
+        } else {
+            (Box::new(artifact), None)
+        };
     if expected.role == "worker" && outcome == "completed" {
         // A current Lead repair can precede the mutation permit that exhausts
         // the no-information streak. Record that decision's one forward
@@ -84,10 +111,11 @@ where
         disposition,
         SubmitSubject {
             root: Some("state"),
-            artifact,
+            artifact: subject_artifact,
         },
         preflight,
         Some(recorded_protection),
+        pre_return_attempt.as_deref(),
     )
 }
 
@@ -98,7 +126,7 @@ struct SubmitSubject<'r, F> {
     artifact: F,
 }
 
-fn matching_mutation_grants(
+pub(super) fn matching_mutation_grants(
     events: &[Value],
     state: &Value,
     assignment: &Value,
@@ -164,6 +192,7 @@ fn submit_locked<F, P>(
     subject: SubmitSubject<'_, F>,
     preflight: P,
     recorded_protection: Option<&mut Option<RecordedProtection>>,
+    pre_return_attempt_id: Option<&str>,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
@@ -240,6 +269,17 @@ where
         }
         let artifact = artifact()?;
         let artifact_value = crate::run::artifact::evidence(loaded, artifact_root, &artifact)?;
+        if assignment["role"] == "worker" && outcome == "completed" {
+            super::pre_return::assert_pass_current(
+                loaded,
+                path,
+                &state,
+                &assignment,
+                assignment_sha256,
+                &artifact_value,
+                pre_return_attempt_id,
+            )?;
+        }
         let last = events.last().ok_or("run ledger has no head event")?;
         // Preserve the ledger's historical event version. Optional fields
         // must not silently upgrade a v3 checked run on its next submission.

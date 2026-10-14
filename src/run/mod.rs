@@ -22,6 +22,7 @@ pub(crate) mod inputs;
 pub(crate) mod ledger;
 mod lifecycle;
 mod observed_check;
+pub(crate) mod pre_return;
 pub(crate) mod preservation_assignment;
 mod reducer;
 mod repair_recovery;
@@ -37,8 +38,13 @@ pub(crate) use self::governor::{
     AssignmentIdentity, RecordedProtection, SubmissionRefusal, OPERATION_MAX_BYTES,
     REQUEST_ID_MAX_BYTES,
 };
-pub use self::lifecycle::{next, review_policy, start, start_with_policy};
-pub(crate) use self::lifecycle::{start_event_intent_sha256, start_intent_sha256};
+#[cfg(test)]
+pub use self::lifecycle::start_with_policy;
+pub use self::lifecycle::{next, review_policy, start};
+pub(crate) use self::lifecycle::{
+    start_event_intent_sha256, start_intent_sha256_with_pre_return,
+    start_with_policy_and_pre_return,
+};
 use self::reducer::{
     action_drift_warning, artifact_current, extension_from_cli, fallback_provenance,
     has_worker_stage, live_inputs, nondecreasing, selected_plan,
@@ -49,11 +55,11 @@ pub(crate) use self::reducer::{
 };
 pub use self::submission::submit;
 pub(crate) use self::submission::submit_for_assignment;
-pub use self::view::replace_check_contract;
 pub use self::view::{
     explain, inspect, report, report_markdown, status, supersede, supersede_with_owner_recovery,
 };
 pub(crate) use self::view::{human_explain, human_status, terminal_display};
+pub use self::view::{replace_check_contract, replace_pre_return_contract};
 
 pub use self::error::DriftError;
 pub use self::event_detail::inspect_event;

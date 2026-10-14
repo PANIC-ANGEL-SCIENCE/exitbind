@@ -1,5 +1,8 @@
 use super::*;
 
+mod check_replacement;
+pub use self::check_replacement::{replace_check_contract, replace_pre_return_contract};
+
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     let mut view = RunSnapshot::capture(loaded, ledger)?.inspect_view();
     attach_governor_recovery(&mut view);
@@ -196,52 +199,7 @@ pub fn supersede_with_policy(
         None,
         None,
         None,
-    )
-}
-
-/// Continue an explicitly defective frozen check contract under the same
-/// Work/Goal lineage. The caller must supply the exact predecessor evidence
-/// and Lead decision; ordinary supersession never accepts this marker.
-#[allow(clippy::too_many_arguments)]
-pub fn replace_check_contract(
-    loaded: &Loaded,
-    old_ledger: &str,
-    workflow: &str,
-    goal: &str,
-    new_ledger: &str,
-    check_command: &str,
-    proof_origin: Option<&str>,
-    reason: &str,
-    source_kind: &str,
-    source_event_sha256: &str,
-    expected_head_event_sha256: &str,
-    lead_agent: &str,
-    lead_native_task_name: &str,
-) -> Result<Value, String> {
-    supersede_with_policy_and_recovery(
-        loaded,
-        old_ledger,
-        workflow,
-        goal,
-        new_ledger,
         None,
-        None,
-        Some(check_command),
-        proof_origin,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(expected_head_event_sha256),
-        Some(json!({
-            "protocol": 1,
-            "classification": "defective_contract",
-            "reason": reason,
-            "source": {"kind": source_kind, "eventSha256": source_event_sha256},
-            "leadOwner": {"agent": lead_agent, "nativeTaskName": lead_native_task_name},
-        })),
     )
 }
 
@@ -281,11 +239,12 @@ pub fn supersede_with_owner_recovery(
         owner_recovery,
         None,
         None,
+        None,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn supersede_with_policy_and_recovery(
+pub(super) fn supersede_with_policy_and_recovery(
     loaded: &Loaded,
     old_ledger: &str,
     workflow: &str,
@@ -303,6 +262,7 @@ fn supersede_with_policy_and_recovery(
     owner_recovery: Option<&str>,
     expected_head_event_sha256: Option<&str>,
     mut check_replacement: Option<Value>,
+    pre_return_policy_override: Option<crate::run_value::PreReturnPolicy>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -373,6 +333,11 @@ fn supersede_with_policy_and_recovery(
             .transpose()
             .map_err(|error| error.replacen("line 0", "state", 1))?;
         let requested_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+        let mut pre_return_policy = old_state.get("preReturnPolicy").cloned();
+        if let Some(policy) = &pre_return_policy {
+            crate::run_value::pre_return_policy_from_value(policy, 0)
+                .map_err(|error| error.replacen("line 0", "state", 1))?;
+        }
         if let Some(replacement) = check_replacement.as_mut() {
             if replacement["classification"] != "defective_contract"
                 || replacement["reason"]
@@ -381,7 +346,10 @@ fn supersede_with_policy_and_recovery(
             {
                 return Err("check replacement requires an explicit defective-contract classification and reason".into());
             }
-            let source_kind = replacement["source"]["kind"].as_str().unwrap_or_default();
+            let source_kind = replacement["source"]["kind"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let source_sha = replacement["source"]["eventSha256"]
                 .as_str()
                 .unwrap_or_default();
@@ -389,7 +357,7 @@ fn supersede_with_policy_and_recovery(
                 .iter()
                 .find(|event| event["eventSha256"] == source_sha)
                 .ok_or("check replacement source evidence is not in the predecessor ledger")?;
-            let source_valid = match source_kind {
+            let source_valid = match source_kind.as_str() {
                 "failed_check" => {
                     source["action"] == "check"
                         && (source["result"]["signal"].is_number()
@@ -408,29 +376,80 @@ fn supersede_with_policy_and_recovery(
             if !source_valid {
                 return Err("check replacement source must be an exact failed-check or blocked-worker event".into());
             }
-            if old_state.get("checkPolicy").is_none() || requested_policy.is_none() {
-                return Err(
-                    "check replacement requires frozen predecessor and successor check policies"
-                        .into(),
-                );
-            }
-            let previous = crate::run_value::policy_from_value(&old_state["checkPolicy"], 0)?;
-            let successor = requested_policy.as_ref().expect("checked above");
-            if previous == *successor {
-                return Err("check replacement must identify a changed successor policy".into());
-            }
+            let target = replacement["target"].as_str().unwrap_or("check").to_owned();
             replacement["predecessorHeadEventSha256"] = old_events
                 .last()
                 .map(|event| event["eventSha256"].clone())
                 .unwrap_or(Value::Null);
-            replacement["oldPolicy"] = json!({
-                "commandSha256": previous.command_sha256,
-                "origin": previous.origin.as_str(),
-            });
-            replacement["newPolicy"] = json!({
-                "commandSha256": successor.command_sha256,
-                "origin": successor.origin.as_str(),
-            });
+            match target.as_str() {
+                "check" => {
+                    if pre_return_policy_override.is_some()
+                        || old_state.get("checkPolicy").is_none()
+                        || requested_policy.is_none()
+                    {
+                        return Err("check replacement requires frozen predecessor and successor check policies".into());
+                    }
+                    let previous =
+                        crate::run_value::policy_from_value(&old_state["checkPolicy"], 0)?;
+                    let successor = requested_policy.as_ref().expect("checked above");
+                    if previous == *successor {
+                        return Err(
+                            "check replacement must identify a changed successor policy".into()
+                        );
+                    }
+                    replacement["oldPolicy"] = json!({
+                        "commandSha256": previous.command_sha256,
+                        "origin": previous.origin.as_str(),
+                    });
+                    replacement["newPolicy"] = json!({
+                        "commandSha256": successor.command_sha256,
+                        "origin": successor.origin.as_str(),
+                    });
+                }
+                "pre_return" => {
+                    if requested_policy.is_some() || source_kind != "blocked_worker" {
+                        return Err("pre-return replacement requires a blocked Worker source and preserves the final check policy".into());
+                    }
+                    let previous = pre_return_policy
+                        .as_ref()
+                        .ok_or("pre-return replacement requires a frozen predecessor policy")?;
+                    let successor = pre_return_policy_override
+                        .as_ref()
+                        .ok_or("pre-return replacement policy is missing")?;
+                    let attempt_id = replacement["source"]["attemptId"]
+                        .as_str()
+                        .ok_or("pre-return replacement must identify the diagnostic attempt")?;
+                    let validated_attempt = crate::run::pre_return::replacement_source_attempt(
+                        loaded,
+                        &old,
+                        &old_events[0],
+                        source,
+                    )?;
+                    if validated_attempt != attempt_id {
+                        return Err(
+                            "blocked report diagnostic attempt changed after preview".into()
+                        );
+                    }
+                    if previous == &successor.value() {
+                        return Err(
+                            "replacement pre-return policy must differ from the frozen predecessor"
+                                .into(),
+                        );
+                    }
+                    let old_sha = crate::evidence::hash::value(previous);
+                    let new_sha = crate::evidence::hash::value(&successor.value());
+                    if replacement["oldPolicy"]["policySha256"] != old_sha
+                        || replacement["newPolicy"]["policySha256"] != new_sha
+                    {
+                        return Err(
+                            "pre-return replacement marker does not match its frozen policies"
+                                .into(),
+                        );
+                    }
+                    pre_return_policy = Some(successor.value());
+                }
+                _ => return Err("check replacement target is invalid".into()),
+            }
             for field in ["agent", "nativeTaskName"] {
                 if replacement["leadOwner"][field]
                     .as_str()
@@ -575,6 +594,9 @@ fn supersede_with_policy_and_recovery(
         if let Some(replacement) = &check_replacement {
             wanted_claim["checkReplacement"] = replacement.clone();
         }
+        if let Some(policy) = &pre_return_policy {
+            wanted_claim["preReturnPolicy"] = policy.clone();
+        }
         if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {
             wanted_claim["carryProtocol"] = json!(protocol);
             wanted_claim["governorCarrySha256"] = json!(sha);
@@ -629,6 +651,9 @@ fn supersede_with_policy_and_recovery(
         }
         if let Some(policy) = &check_policy {
             event_value["checkPolicy"] = policy.value();
+        }
+        if let Some(policy) = &pre_return_policy {
+            event_value["preReturnPolicy"] = policy.clone();
         }
         if let Some(replacement) = &check_replacement {
             event_value["checkReplacement"] = replacement.clone();
@@ -718,6 +743,7 @@ fn supersede_with_policy_and_recovery(
                 "carryProtocol",
                 "governorCarrySha256",
                 "checkReplacement",
+                "preReturnPolicy",
             ];
             let mismatched = existing.first().map(|current| {
                 request_fields

@@ -12,6 +12,9 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             "boundary",
             "harness-receipt",
             "check-command",
+            "pre-return-command",
+            "pre-return-timeout-ms",
+            "pre-return-capture-bytes",
             "proof-origin",
             "preserve-requirement",
             "preservation-check-command",
@@ -33,6 +36,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             "json",
         ][..],
         "observe-check" => &["config", "target", "requirement", "timeout-ms", "json"][..],
+        "pre-return" => &["config", "json", "stream"][..],
         "status" => &["config", "json", "session-closed", "themed"][..],
         "explain" => &["config", "event", "json", "session-closed", "themed"][..],
         "report" => &["config", "json"][..],
@@ -54,10 +58,29 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             "json",
         ][..],
         _ => {
-            return Err("run requires one action: start, next, submit, review-policy, record-check, observe-check, status, explain, report, inspect, or supersede".into())
+            return Err("run requires one action: start, next, submit, review-policy, record-check, observe-check, pre-return, status, explain, report, inspect, or supersede".into())
         }
     };
     args::assert_options("run", a, allowed)?;
+    if action == "pre-return" {
+        if positional(a, 1, "run pre-return requires read")? != "read" {
+            return Err("run pre-return supports only read".into());
+        }
+        args::assert_positionals("run pre-return read", a, 4)?;
+        let work = positional(a, 2, "run pre-return read requires WORK_OR_LEDGER")?;
+        let attempt = positional(a, 3, "run pre-return read requires ATTEMPT_ID")?;
+        if let Some(stream) = a.options.get("stream") {
+            let bytes = run::pre_return::read_stream(l, work, attempt, stream)?;
+            use std::io::Write;
+            std::io::stdout()
+                .write_all(&bytes)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        let value = run::pre_return::read(l, work, attempt)?;
+        print_json(&value)?;
+        return Ok(());
+    }
     for alternative in ["event-id", "text"] {
         if a.flags.contains_key(alternative) && a.flags.contains_key("json") {
             return Err(format!("--{alternative} and --json are mutually exclusive"));
@@ -89,10 +112,13 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                 && preservation_proof_origin.is_none()
                 && a.options.get("basis").is_none()
                 && a.options.get("review-policy").is_none()
+                && a.options.get("pre-return-command").is_none()
+                && a.options.get("pre-return-timeout-ms").is_none()
+                && a.options.get("pre-return-capture-bytes").is_none()
             {
                 run::start(l, workflow, goal, ledger, boundary, receipt)
             } else {
-                run::start_with_policy(
+                run::start_with_policy_and_pre_return(
                     l,
                     workflow,
                     goal,
@@ -106,6 +132,11 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                     preservation_proof_origin,
                     a.options.get("basis").map(String::as_str),
                     a.options.get("review-policy").map(String::as_str),
+                    a.options.get("pre-return-command").map(String::as_str),
+                    a.options.get("pre-return-timeout-ms").map(String::as_str),
+                    a.options
+                        .get("pre-return-capture-bytes")
+                        .map(String::as_str),
                 )
             }
         }

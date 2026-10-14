@@ -323,7 +323,7 @@ fn validate_edge(
         .ok_or("invalid superseded predecessor path")?;
     let marked = has_carry_fields(start);
     let replacement = start.get("checkReplacement");
-    let needs_claim = marked || replacement.is_some();
+    let needs_claim = marked || replacement.is_some() || start.get("preReturnPolicy").is_some();
     let predecessor = match ledger_path(&loaded.state_root, relative, true) {
         Ok(predecessor) => predecessor,
         Err(_) if !needs_claim => return Ok(()),
@@ -338,7 +338,9 @@ fn validate_edge(
         match claim_result {
             Ok(claim)
                 if claim.as_ref().is_some_and(|claim| {
-                    has_carry_fields(claim) || claim.get("checkReplacement").is_some()
+                    has_carry_fields(claim)
+                        || claim.get("checkReplacement").is_some()
+                        || claim.get("preReturnPolicy").is_some()
                 }) =>
             {
                 claim
@@ -382,6 +384,11 @@ fn validate_edge(
             "check replacement marker is missing or differs from its persisted claim".into(),
         );
     }
+    if claim.get("preReturnPolicy") != start.get("preReturnPolicy") {
+        return Err(
+            "pre-return policy is missing or differs from its persisted predecessor claim".into(),
+        );
+    }
     if marked
         && (start["carryProtocol"].as_u64() != carry_protocol
             || claim["governorCarrySha256"] != start["governorCarrySha256"])
@@ -411,13 +418,37 @@ fn validate_edge(
         {
             return Err("check replacement claim does not bind the exact predecessor head".into());
         }
-        let old_policy = predecessor_events[0]
-            .get("checkPolicy")
-            .ok_or("check replacement predecessor has no frozen check policy")?;
-        if replacement["oldPolicy"]["commandSha256"] != old_policy["commandSha256"]
-            || replacement["oldPolicy"]["origin"] != old_policy["origin"]
-        {
-            return Err("check replacement does not bind the predecessor check policy".into());
+        let target = replacement["target"].as_str().unwrap_or("check");
+        match target {
+            "check" => {
+                let old_policy = predecessor_events[0]
+                    .get("checkPolicy")
+                    .ok_or("check replacement predecessor has no frozen check policy")?;
+                if replacement["oldPolicy"]["commandSha256"] != old_policy["commandSha256"]
+                    || replacement["oldPolicy"]["origin"] != old_policy["origin"]
+                {
+                    return Err(
+                        "check replacement does not bind the predecessor check policy".into(),
+                    );
+                }
+            }
+            "pre_return" => {
+                let old_policy = predecessor_events[0]
+                    .get("preReturnPolicy")
+                    .ok_or("pre-return replacement predecessor has no frozen pre-return policy")?;
+                let successor_policy = start
+                    .get("preReturnPolicy")
+                    .ok_or("pre-return replacement successor has no frozen policy")?;
+                if replacement["oldPolicy"]["policySha256"]
+                    != crate::evidence::hash::value(old_policy)
+                    || replacement["newPolicy"]["policySha256"]
+                        != crate::evidence::hash::value(successor_policy)
+                    || start["checkPolicy"] != predecessor_events[0]["checkPolicy"]
+                {
+                    return Err("pre-return replacement does not preserve the final check or bind both frozen policies".into());
+                }
+            }
+            _ => return Err("check replacement target is invalid".into()),
         }
         let evidence_sha = replacement["source"]["eventSha256"]
             .as_str()
@@ -446,6 +477,20 @@ fn validate_edge(
             return Err(
                 "check replacement source is not a failed check or blocked worker event".into(),
             );
+        }
+        if target == "pre_return" {
+            let attempt_id = replacement["source"]["attemptId"]
+                .as_str()
+                .ok_or("pre-return replacement has no diagnostic attempt identity")?;
+            let validated = crate::run::pre_return::replacement_source_attempt(
+                loaded,
+                &predecessor,
+                &predecessor_events[0],
+                evidence,
+            )?;
+            if validated != attempt_id {
+                return Err("pre-return replacement diagnostic evidence changed".into());
+            }
         }
     }
     if !marked {

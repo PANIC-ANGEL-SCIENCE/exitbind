@@ -7,7 +7,7 @@ use std::path::Path;
 pub(crate) const SESSION_GOAL_CARD: &str =
     "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
-const WHOLE_GOAL_TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
+pub(super) const WHOLE_GOAL_TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
 
 /// Automatic protocol presentation from current whole-goal closure facts.
 /// This is display only: no model, percentage, memo, or new acceptance event.

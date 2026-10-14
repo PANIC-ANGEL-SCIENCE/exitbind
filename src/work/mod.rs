@@ -6,11 +6,14 @@ mod begin;
 mod check;
 pub(crate) mod check_recovery;
 pub(crate) mod check_replacement;
-pub(crate) use begin::{begin, BasisOrigin, BeginOptions};
+#[cfg(test)]
+pub(crate) use begin::begin;
+pub(crate) use begin::{begin_with_pre_return, BasisOrigin, BeginOptions};
 pub(crate) mod closeout;
 pub(crate) mod compact;
 pub(crate) mod details;
 mod disposition;
+pub(crate) mod early_evidence;
 pub(crate) mod effective_action;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
@@ -892,14 +895,31 @@ fn write_artifact(
     work: &str,
     assignment: &str,
     bytes: &[u8],
-) -> Result<String, String> {
+) -> Result<(String, bool), String> {
     let directory = loaded.state_root.join(artifacts_dir());
     crate::project::managed_files::ensure_state_directory(&loaded.state_root, &directory)?;
     let suffix = &hash::bytes(bytes)[..16];
     let name = format!("{work}-{assignment}-{suffix}.md");
     let path = directory.join(&name);
+    let relative = format!("{}/{}", artifacts_dir(), name);
+    match fs::symlink_metadata(&path) {
+        Ok(_) => {
+            // A held result may already have prepared these exact bytes before
+            // a governor refusal. Reuse only verified immutable content; never
+            // overwrite it or treat it as a newly owned cleanup target.
+            run::artifact::read(
+                loaded,
+                &json!({"root":"state", "path":relative,
+                    "sha256":hash::bytes(bytes), "bytes":bytes.len()}),
+                "retained worker result",
+            )?;
+            return Ok((relative, false));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
     crate::project::managed_files::write_state_exclusive(&path, bytes)?;
-    Ok(format!("{}/{}", artifacts_dir(), name))
+    Ok((relative, true))
 }
 
 fn assignment_handle(work: &str, assignment: &Value) -> Result<String, String> {

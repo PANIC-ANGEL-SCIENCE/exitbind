@@ -285,3 +285,7 @@ command locally while v3 ledgers remain report-only. After updating the binary, 
 run-event format 3 for checked-ledger rollback. Remove optional hooks before
 removing the binary; [removal](../REFERENCE.md#removal) leaves local records and
 product changes under your control.
+
+For a consequential unresolved assumption or an explicitly selected cheap
+pre-return diagnostic, see [early evidence](early-evidence.md). Both keep the
+final checked acceptance path described above.

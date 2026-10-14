@@ -3,7 +3,10 @@
 use super::*;
 
 pub(crate) struct Options<'a> {
-    pub(crate) check_command: &'a str,
+    pub(crate) check_command: Option<&'a str>,
+    pub(crate) pre_return_command: Option<&'a str>,
+    pub(crate) pre_return_timeout_ms: Option<&'a str>,
+    pub(crate) pre_return_capture_bytes: Option<&'a str>,
     pub(crate) reason: &'a str,
     pub(crate) classification: &'a str,
     pub(crate) current_binding: Option<&'a str>,
@@ -11,6 +14,16 @@ pub(crate) struct Options<'a> {
 }
 
 pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Result<Value, String> {
+    let replacing_pre_return = options.pre_return_command.is_some();
+    if options.check_command.is_some() == replacing_pre_return
+        || (!replacing_pre_return
+            && (options.pre_return_timeout_ms.is_some()
+                || options.pre_return_capture_bytes.is_some()))
+    {
+        return Err(
+            "choose exactly one replacement target: --check-command or --pre-return-command".into(),
+        );
+    }
     let binding = options
         .current_binding
         .filter(|value| !value.trim().is_empty())
@@ -93,17 +106,50 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         .get("checkPolicy")
         .ok_or("predecessor has no frozen check policy")?;
     let proof_origin = old_policy["origin"].as_str().unwrap_or("local_report");
-    let new_policy =
-        crate::run_value::policy_from_cli(Some(options.check_command), Some(proof_origin))?
-            .ok_or("successor check policy is required")?;
-    if crate::run_value::policy_from_value(old_policy, 0)? == new_policy {
-        return Err("replacement check policy must differ from the frozen predecessor".into());
+    let old_check_policy = crate::run_value::policy_from_value(old_policy, 0)?;
+    let new_check_policy = options
+        .check_command
+        .map(|command| crate::run_value::policy_from_cli(Some(command), Some(proof_origin)))
+        .transpose()?
+        .flatten();
+    let old_pre_return_policy = start
+        .get("preReturnPolicy")
+        .map(|policy| crate::run_value::pre_return_policy_from_value(policy, 0))
+        .transpose()?;
+    let new_pre_return_policy = if replacing_pre_return {
+        if old_pre_return_policy.is_none() {
+            return Err("pre-return policy replacement requires an opted-in predecessor".into());
+        }
+        Some(
+            crate::run_value::PreReturnPolicy::from_cli(
+                loaded,
+                options.pre_return_command,
+                options.pre_return_timeout_ms,
+                options.pre_return_capture_bytes,
+            )?
+            .ok_or("successor pre-return policy is required")?,
+        )
+    } else {
+        None
+    };
+    if let Some(new_policy) = &new_check_policy {
+        if old_check_policy == *new_policy {
+            return Err("replacement check policy must differ from the frozen predecessor".into());
+        }
+    }
+    if let (Some(old_policy), Some(new_policy)) = (&old_pre_return_policy, &new_pre_return_policy) {
+        if old_policy == new_policy {
+            return Err(
+                "replacement pre-return policy must differ from the frozen predecessor".into(),
+            );
+        }
     }
     let (source_kind, source_event_sha256) = events
         .iter()
         .rev()
         .find_map(|event| {
-            let failed_check = event["action"] == "check"
+            let failed_check = !replacing_pre_return
+                && event["action"] == "check"
                 && (event["result"]["signal"].is_number()
                     || event["result"]["code"]
                         .as_i64()
@@ -144,12 +190,31 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     if !source_valid {
         return Err("source event must be a failed check or a blocked worker submission".into());
     }
+    let diagnostic_attempt_id = if replacing_pre_return {
+        Some(crate::run::pre_return::replacement_source_attempt(
+            loaded,
+            &crate::run::ledger::ledger_path(&loaded.state_root, &ledger, false)?,
+            start,
+            source,
+        )?)
+    } else {
+        None
+    };
     let workflow = start["workflow"]
         .as_str()
         .ok_or("predecessor workflow is missing")?;
     let goal = start["goal"]
         .as_str()
         .ok_or("predecessor Goal is missing")?;
+    let replacement_id = if let Some(policy) = &new_pre_return_policy {
+        crate::evidence::hash::value(&policy.value())
+    } else {
+        new_check_policy
+            .as_ref()
+            .ok_or("successor check policy is required")?
+            .command_sha256
+            .clone()
+    };
     let generated_ledger = format!(
         "{}/runs/work-{}.jsonl",
         crate::project::layout_types::state_namespace(),
@@ -160,21 +225,47 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
                 .last()
                 .and_then(|event| event["eventSha256"].as_str())
                 .unwrap_or_default(),
-            new_policy.command_sha256,
+            replacement_id,
             options.reason
         ))
     );
     let new_ledger = generated_ledger.as_str();
-    let requested_relation = json!({
+    let mut source_binding = json!({"kind":source_kind,"eventSha256":source_event_sha256});
+    if let Some(attempt_id) = &diagnostic_attempt_id {
+        source_binding["attemptId"] = json!(attempt_id);
+    }
+    let (old_replacement_policy, new_replacement_policy) = if let Some(new_policy) =
+        &new_pre_return_policy
+    {
+        (
+            json!({"policySha256":crate::evidence::hash::value(&old_pre_return_policy.as_ref().unwrap().value())}),
+            json!({"policySha256":crate::evidence::hash::value(&new_policy.value())}),
+        )
+    } else {
+        let new_policy = new_check_policy
+            .as_ref()
+            .ok_or("successor check policy is required")?;
+        (
+            json!({"commandSha256":old_check_policy.command_sha256,"origin":old_check_policy.origin.as_str()}),
+            json!({"commandSha256":new_policy.command_sha256,"origin":new_policy.origin.as_str()}),
+        )
+    };
+    let mut requested_relation = json!({
         "protocol": 1,
+        "target": if replacing_pre_return { "pre_return" } else { "check" },
         "classification": "defective_contract",
         "reason": options.reason,
-        "source": {"kind": source_kind, "eventSha256": source_event_sha256},
+        "source": source_binding,
         "leadOwner": {"agent": lead_agent, "nativeTaskName": lead_native},
         "predecessorHeadEventSha256": events.last().map(|event| event["eventSha256"].clone()).unwrap_or(Value::Null),
-        "oldPolicy": {"commandSha256": old_policy["commandSha256"], "origin": old_policy["origin"]},
-        "newPolicy": {"commandSha256": new_policy.command_sha256, "origin": new_policy.origin.as_str()},
+        "oldPolicy": old_replacement_policy,
+        "newPolicy": new_replacement_policy,
     });
+    if !replacing_pre_return {
+        if let Some(relation) = requested_relation.as_object_mut() {
+            relation.remove("target");
+        }
+    }
     let new_path = crate::run::ledger::ledger_path(&loaded.state_root, new_ledger, true)?;
     let expected_new_relative = crate::config::rel(&loaded.state_root, &new_path.expected)?;
     let existing_claim = crate::run::ledger::load(loaded, &ledger).and_then(|(path, _, _)| {
@@ -217,40 +308,93 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         );
     }
     if !options.apply {
+        let successor_preview = if let Some(policy) = &new_pre_return_policy {
+            json!({"ledger":new_ledger,"workflow":workflow,"goalSha256":crate::evidence::hash::text(goal),
+                "preReturnPolicySha256":crate::evidence::hash::value(&policy.value()),
+                "preReturnCommand":policy.command,"timeoutMs":policy.timeout_ms,"captureBytes":policy.capture_limit_bytes,
+                "preservesFinalCheckPolicy":true,"diagnosticAttemptId":diagnostic_attempt_id})
+        } else {
+            let policy = new_check_policy
+                .as_ref()
+                .ok_or("successor check policy is required")?;
+            json!({"ledger":new_ledger,"workflow":workflow,"goalSha256":crate::evidence::hash::text(goal),
+                "checkCommandSha256":policy.command_sha256,"proofOrigin":policy.origin.as_str()})
+        };
+        let mut apply_argv = vec![
+            "work".into(),
+            "replace-check".into(),
+            work.into(),
+            "--reason".into(),
+            options.reason.into(),
+            "--classification".into(),
+            "defective-contract".into(),
+            "--current-binding".into(),
+            binding.into(),
+            "--apply".into(),
+        ];
+        if let Some(policy) = &new_pre_return_policy {
+            apply_argv.extend(["--pre-return-command".into(), policy.command.clone()]);
+            apply_argv.extend([
+                "--pre-return-timeout-ms".into(),
+                policy.timeout_ms.to_string(),
+            ]);
+            apply_argv.extend([
+                "--pre-return-capture-bytes".into(),
+                policy.capture_limit_bytes.to_string(),
+            ]);
+        } else if let Some(policy) = &new_check_policy {
+            apply_argv.extend(["--check-command".into(), policy.command.clone()]);
+        }
         return Ok(json!({
             "effect":"no-change", "state":"preview", "work":work,
-            "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"]),"checkPolicy":old_policy},
-            "successor":{"ledger":new_ledger,"workflow":workflow,"goalSha256":crate::evidence::hash::text(goal),"checkCommandSha256":new_policy.command_sha256,"proofOrigin":new_policy.origin.as_str()},
+            "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"]),"checkPolicy":old_policy,"preReturnPolicy":start.get("preReturnPolicy")},
+            "successor":successor_preview,
             "decision":requested_relation,
             "currentBinding":binding,
-            "applyCommand": crate::work::action_forms::command(loaded, vec![
-                "work".into(), "replace-check".into(), work.into(),
-                "--check-command".into(), options.check_command.into(),
-                "--reason".into(), options.reason.into(),
-                "--classification".into(), "defective-contract".into(),
-                "--current-binding".into(), binding.into(), "--apply".into(),
-            ]),
-            "meaning":"Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the changed check earns no pass or review credit."
+            "applyCommand": crate::work::action_forms::command(loaded, apply_argv),
+            "meaning": if replacing_pre_return { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the prior diagnostic is not a pass and the successor needs fresh evidence and review." } else { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the changed check earns no pass or review credit." }
         }));
     }
-    let value = run::replace_check_contract(
-        loaded,
-        &ledger,
-        workflow,
-        goal,
-        new_ledger,
-        options.check_command,
-        Some(proof_origin),
-        options.reason,
-        source_kind,
-        source_event_sha256,
-        events
-            .last()
-            .and_then(|event| event["eventSha256"].as_str())
-            .ok_or("predecessor head is missing")?,
-        lead_agent,
-        lead_native,
-    )?;
+    let head = events
+        .last()
+        .and_then(|event| event["eventSha256"].as_str())
+        .ok_or("predecessor head is missing")?;
+    let value = if let Some(policy) = new_pre_return_policy {
+        run::replace_pre_return_contract(
+            loaded,
+            &ledger,
+            workflow,
+            goal,
+            new_ledger,
+            policy,
+            options.reason,
+            source_event_sha256,
+            diagnostic_attempt_id
+                .as_deref()
+                .ok_or("pre-return diagnostic attempt is missing")?,
+            head,
+            lead_agent,
+            lead_native,
+        )?
+    } else {
+        run::replace_check_contract(
+            loaded,
+            &ledger,
+            workflow,
+            goal,
+            new_ledger,
+            options
+                .check_command
+                .ok_or("successor check policy is required")?,
+            Some(proof_origin),
+            options.reason,
+            source_kind,
+            source_event_sha256,
+            head,
+            lead_agent,
+            lead_native,
+        )?
+    };
     Ok(json!({
         "effect":"committed", "state":"successor_created", "work":work,
         "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"])},

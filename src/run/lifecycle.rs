@@ -43,6 +43,45 @@ pub fn start_with_policy(
     basis: Option<&str>,
     review_policy: Option<&str>,
 ) -> Result<Value, String> {
+    start_with_policy_and_pre_return(
+        loaded,
+        workflow,
+        goal,
+        ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        None,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn start_with_policy_and_pre_return(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    ledger: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
     }
@@ -55,6 +94,12 @@ pub fn start_with_policy(
         boundary,
     )?;
     let check_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+    let pre_return_policy = crate::run_value::PreReturnPolicy::from_cli(
+        loaded,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+    )?;
     crate::project::architecture::bind_plan(loaded, &mut plan)?;
     let preservation = crate::run_value::preservation_from_cli(
         preserve_requirement,
@@ -70,6 +115,12 @@ pub fn start_with_policy(
     }
     if preservation.is_some() && check_policy.is_none() {
         return Err("preservation requirements require a checked run with --check-command".into());
+    }
+    if pre_return_policy.is_some() && check_policy.is_none() {
+        return Err("--pre-return-command requires --check-command".into());
+    }
+    if pre_return_policy.is_some() && !has_worker_stage(&plan) {
+        return Err("pre-return policy requires a workflow with at least one worker stage".into());
     }
     if preservation.is_some() && !crate::producer::exitbind_surface() {
         return Err("preservation requirements require Exitbind v6 runs".into());
@@ -129,6 +180,9 @@ pub fn start_with_policy(
         if let Some(policy) = &check_policy {
             value["checkPolicy"] = policy.value();
         }
+        if let Some(policy) = &pre_return_policy {
+            value["preReturnPolicy"] = policy.value();
+        }
         if let Some(preservation) = &preservation {
             value["preservation"] = preservation.value();
         }
@@ -172,13 +226,8 @@ pub fn start_with_policy(
     result(&[event])
 }
 
-/// Stable identity for the frozen request fields of a new start. Dynamic
-/// ledger fields such as runId, timestamp, subject and event hash are omitted;
-/// every caller-selected plan, checker, basis, review and receipt field is
-/// included. Native session admission stores this before the start exists and
-/// verifies it against the eventual immutable start event.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn start_intent_sha256(
+pub(crate) fn start_intent_sha256_with_pre_return(
     loaded: &Loaded,
     workflow: &str,
     goal: &str,
@@ -191,6 +240,9 @@ pub(crate) fn start_intent_sha256(
     preservation_proof_origin: Option<&str>,
     basis: Option<&str>,
     review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
 ) -> Result<String, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -204,6 +256,12 @@ pub(crate) fn start_intent_sha256(
         boundary,
     )?;
     let check_policy = crate::run_value::policy_from_cli(check_command, proof_origin)?;
+    let pre_return_policy = crate::run_value::PreReturnPolicy::from_cli(
+        loaded,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+    )?;
     crate::project::architecture::bind_plan(loaded, &mut plan)?;
     let preservation = crate::run_value::preservation_from_cli(
         preserve_requirement,
@@ -219,6 +277,12 @@ pub(crate) fn start_intent_sha256(
     }
     if preservation.is_some() && check_policy.is_none() {
         return Err("preservation requirements require a checked run with --check-command".into());
+    }
+    if pre_return_policy.is_some() && check_policy.is_none() {
+        return Err("--pre-return-command requires --check-command".into());
+    }
+    if pre_return_policy.is_some() && !has_worker_stage(&plan) {
+        return Err("pre-return policy requires a workflow with at least one worker stage".into());
     }
     if preservation.is_some() && !crate::producer::exitbind_surface() {
         return Err("preservation requirements require Exitbind v6 runs".into());
@@ -250,6 +314,9 @@ pub(crate) fn start_intent_sha256(
     }
     if let Some(policy) = &check_policy {
         value["checkPolicy"] = policy.value();
+    }
+    if let Some(policy) = &pre_return_policy {
+        value["preReturnPolicy"] = policy.value();
     }
     if let Some(preservation) = &preservation {
         value["preservation"] = preservation.value();
@@ -291,6 +358,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "plan",
         "harnessReceipt",
         "checkPolicy",
+        "preReturnPolicy",
         "preservation",
         "basisProtocol",
         "recoveryProtocol",

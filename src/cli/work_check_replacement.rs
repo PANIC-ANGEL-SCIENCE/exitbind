@@ -10,6 +10,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "apply",
             "current-binding",
             "check-command",
+            "pre-return-command",
+            "pre-return-timeout-ms",
+            "pre-return-capture-bytes",
             "reason",
             "classification",
         ],
@@ -20,11 +23,13 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         l,
         work,
         crate::work::check_replacement::Options {
-            check_command: option(
-                a,
-                "check-command",
-                "work replace-check requires --check-command COMMAND",
-            )?,
+            check_command: a.options.get("check-command").map(String::as_str),
+            pre_return_command: a.options.get("pre-return-command").map(String::as_str),
+            pre_return_timeout_ms: a.options.get("pre-return-timeout-ms").map(String::as_str),
+            pre_return_capture_bytes: a
+                .options
+                .get("pre-return-capture-bytes")
+                .map(String::as_str),
             reason: option(a, "reason", "work replace-check requires --reason TEXT")?,
             classification: option(
                 a,

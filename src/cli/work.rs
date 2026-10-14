@@ -51,6 +51,16 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             };
             print_work_json(&result)
         }
+        "challenge" => {
+            args::assert_options("work challenge", a, &["config", "question", "probe-command", "probe-source", "json"])?;
+            args::assert_positionals("work challenge", a, 2)?;
+            let packet = crate::work::early_evidence::packet(l,
+                positional(a, 1, "work challenge requires WORK")?,
+                option(a, "question", "work challenge requires --question QUESTION")?)?;
+            print_work_json(&crate::work::early_evidence::with_probe(l, packet,
+                a.options.get("probe-command").map(String::as_str),
+                a.options.get("probe-source").map(String::as_str))?)
+        }
         "world" => {
             args::assert_options("work world", a,
                 &["config", "json", "plain", "reduced-motion", "export"])?;
@@ -246,6 +256,9 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     "config",
                     "goal",
                     "check-command",
+                    "pre-return-command",
+                    "pre-return-timeout-ms",
+                    "pre-return-capture-bytes",
                     "boundary",
                     "harness-receipt",
                     "proof-origin",
@@ -325,7 +338,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     option(a, "check-command", "work begin requires --check-command COMMAND")?,
                 )?)
             } else {None};
-            let mut response = crate::work::begin(
+            let mut response = crate::work::begin_with_pre_return(
                 l,
                 crate::work::BeginOptions {
                     workflow: positional(a, 1, "work begin requires WORKFLOW")?,
@@ -361,6 +374,9 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     review_policy: a.options.get("review-policy").map(String::as_str),
                     auto_goal_context: !standalone,
                 },
+                a.options.get("pre-return-command").map(String::as_str),
+                a.options.get("pre-return-timeout-ms").map(String::as_str),
+                a.options.get("pre-return-capture-bytes").map(String::as_str),
             )?;
             if let Some(prepared)=&named {
                 let work=response["work"].as_str().ok_or("recorded Work identity is missing")?.to_owned();

@@ -186,6 +186,29 @@ pub(crate) fn read(
     Ok(verified)
 }
 
+pub(crate) fn read_exact(
+    loaded: &Loaded,
+    artifact: &Value,
+    label: &str,
+    maximum: u64,
+) -> Result<Vec<u8>, String> {
+    let verified = read(loaded, artifact, label)?;
+    if verified.bytes > maximum {
+        return Err(format!("{label} exceeds its exact-read limit"));
+    }
+    let requested = artifact["path"]
+        .as_str()
+        .ok_or_else(|| format!("{label} artifact path is invalid"))?;
+    let path = confined(&loaded.state_root, requested)?;
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 != verified.bytes
+        || crate::evidence::hash::bytes(&bytes) != verified.sha256
+    {
+        return Err(format!("{label} artifact changed while reading"));
+    }
+    Ok(bytes)
+}
+
 fn verify_file(path: &Path, preview_limit: usize) -> std::io::Result<VerifiedArtifact> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();

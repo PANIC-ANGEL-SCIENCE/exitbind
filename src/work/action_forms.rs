@@ -152,6 +152,7 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
     let replacement_choice = |choice: &Value| {
         choice["label"].as_str().is_some_and(|label| {
             label.contains("replacement of an explicitly defective frozen check")
+                || label.contains("defective frozen pre-return check")
                 || label == "replace an explicitly defective frozen check"
         })
     };
@@ -200,18 +201,38 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                 binding.into(),
                 "--apply".into(),
             ];
+            let mut choices = vec![json!({
+                "label": "replace an explicitly defective frozen check",
+                "command": command(loaded, suffix),
+                "placeholders": ["NEW_CHECK_COMMAND", "REASON"],
+                "stdin": {"required": false, "kind": "none"},
+                "sideEffect": "creates one immutable successor only after the configured Lead chooses the new check and records a defective-contract reason; the blocked predecessor stays unchanged"
+            })];
+            let diagnostic_attempt = crate::run::pre_return::replacement_ready(loaded, work)
+                .ok()
+                .flatten();
+            if let Some(attempt_id) = &diagnostic_attempt {
+                choices.push(json!({
+                    "label": "replace an explicitly defective frozen pre-return check",
+                    "command": command(loaded, vec![
+                        "work".into(), "replace-check".into(), work.into(),
+                        "--pre-return-command".into(), "<NEW_PRE_RETURN_COMMAND>".into(),
+                        "--reason".into(), "<REASON>".into(),
+                        "--classification".into(), "defective-contract".into(),
+                        "--current-binding".into(), binding.into(),
+                    ]),
+                    "placeholders": ["NEW_PRE_RETURN_COMMAND", "REASON"],
+                    "stdin": {"required": false, "kind": "none"},
+                    "source": {"kind":"blocked_worker","diagnosticAttemptId":attempt_id},
+                    "sideEffect": "preview only; the blocked report must link this known-ended diagnostic; the predecessor and its grant remain unchanged"
+                }));
+            }
             return json!({
                 "version": 1, "state": "blocked_lead_check_replacement",
                 "binding": binding, "leadChoiceRequired": true,
-                "choices": [{
-                    "label": "replace an explicitly defective frozen check",
-                    "command": command(loaded, suffix),
-                    "placeholders": ["NEW_CHECK_COMMAND", "REASON"],
-                    "stdin": {"required": false, "kind": "none"},
-                    "sideEffect": "creates one immutable successor only after the configured Lead chooses the new check and records a defective-contract reason; the blocked predecessor stays unchanged"
-                }],
+                "choices": choices,
                 "mechanicalAction": Value::Null,
-                "constraints": {"classification": "defective-contract", "sourceKind": "blocked_worker", "binding": binding}
+                "constraints": {"classification": "defective-contract", "sourceKind": "blocked_worker", "diagnosticAttemptId":diagnostic_attempt,"binding": binding}
             });
         }
         if next["action"] == "lead_decision"

@@ -188,8 +188,10 @@ pub(crate) fn return_result_with(
         reason,
         disposition,
         || {
-            let path = write_artifact(loaded, work, assignment, &bytes)?;
-            *created_artifact.borrow_mut() = Some(path.clone());
+            let (path, created) = write_artifact(loaded, work, assignment, &bytes)?;
+            if created {
+                *created_artifact.borrow_mut() = Some(path.clone());
+            }
             Ok(path)
         },
         |events, source| {

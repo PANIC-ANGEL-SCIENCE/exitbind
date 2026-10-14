@@ -25,8 +25,8 @@ pub(crate) fn goal_completion(record: &Value, rendered: &Value) -> Option<Value>
     }
     let mode = rendered["completionMode"].as_str()?;
     let terminal = match mode {
-        "governed" => "This room remains nothing.\nEXIT READY",
-        "direct" => "This room remains nothing.",
+        "governed" => super::room::WHOLE_GOAL_TERMINAL,
+        "direct" => super::room::SESSION_GOAL_CARD,
         _ => return None,
     };
     Some(json!({
@@ -47,7 +47,10 @@ mod tests {
             "completionMode":"governed","subgoals":[],"findings":[],"blockers":[],"decisions":[],"externalActions":[]});
         let first = goal_completion(&record, &rendered).unwrap();
         assert_eq!(first, goal_completion(&record, &rendered).unwrap());
-        assert_eq!(first["terminal"], "This room remains nothing.\nEXIT READY");
+        assert_eq!(
+            first["terminal"],
+            crate::presentation_events::room::WHOLE_GOAL_TERMINAL
+        );
         for key in [
             "subgoals",
             "findings",
@@ -69,7 +72,7 @@ mod tests {
         rendered["completionMode"] = json!("direct");
         assert_eq!(
             goal_completion(&record, &rendered).unwrap()["terminal"],
-            "This room remains nothing."
+            crate::presentation_events::room::SESSION_GOAL_CARD
         );
         assert!(goal_completion(&json!({}), &rendered).is_none());
     }
