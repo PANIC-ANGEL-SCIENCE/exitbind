@@ -37,9 +37,7 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             next["agent"]
                 .as_str()
                 .ok_or("current Lead identity is missing")?,
-            next["nativeTaskName"]
-                .as_str()
-                .ok_or("current Lead native task identity is missing")?,
+            lead_native_for_agent(start, next["agent"].as_str().unwrap_or_default())?,
         )
     } else if next["action"] == "done" && state["status"] == "blocked" {
         // The route itself is an explicit sibling Lead decision bound to the
@@ -278,4 +276,23 @@ fn start_lead_owner(start: &Value) -> Result<(&str, &str), String> {
         return Err("configured Lead native task name is missing".into());
     }
     Ok((agent, native))
+}
+
+fn lead_native_for_agent<'a>(start: &'a Value, selected: &str) -> Result<&'a str, String> {
+    let names = start["plan"]["stages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|stage| stage["agents"].as_array().into_iter().flatten())
+        .filter(|agent| agent["role"] == "lead" && agent["name"] == selected)
+        .filter_map(|agent| agent["nativeTaskName"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if names.len() != 1 {
+        return Err("current Lead has no unambiguous configured native identity".into());
+    }
+    names
+        .into_iter()
+        .next()
+        .filter(|name| !name.trim().is_empty())
+        .ok_or("configured Lead native identity is empty".into())
 }

@@ -458,7 +458,11 @@ fn supersede_with_policy_and_recovery(
                             .into(),
                     );
                 }
-                Some(old)
+                Some(if check_replacement.is_some() {
+                    requested
+                } else {
+                    old
+                })
             }
         };
         let preservation = match (old_preservation, requested_preservation) {

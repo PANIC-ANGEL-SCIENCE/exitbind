@@ -411,8 +411,8 @@ fn run_entries(f: &Fixture) -> Vec<String> {
 #[test]
 fn preview_and_apply_create_one_immutable_successor_without_running_new_check() {
     let f = Fixture::new();
-    let (work, source) = f.begin_failed_check();
     fs::write(f.root.join("preserved-evidence"), b"retain").unwrap();
+    let (work, source) = f.begin_failed_check();
     let lead = f.ok(&["work", "next", &work, "--json"]);
     let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let source_sha = source["eventSha256"].as_str().unwrap();
@@ -803,8 +803,8 @@ fn destructive_bound_input_observation_never_becomes_replacement_source_credit()
 #[test]
 fn stale_binding_and_non_defective_or_missing_sources_refuse_without_mutation() {
     let f = Fixture::new();
-    let (work, source) = f.begin_failed_check();
     fs::write(f.root.join("preserved-evidence"), b"retain").unwrap();
+    let (work, source) = f.begin_failed_check();
     let lead = f.ok(&["work", "next", &work, "--json"]);
     let binding = lead["current"]["binding"].as_str().unwrap().to_owned();
     let before = fs::read(f.ledger(&work)).unwrap();
@@ -1164,10 +1164,14 @@ fn native_goal_work_cannot_be_replaced_from_a_foreign_session() {
         "the deliberately absent input must fail once: {failed:?}"
     );
     let events_before = fs::read(f.ledger(&work)).unwrap();
-    let current = f.call_in_session(owner_session, &store, &["work", "next", &work, "--json"]);
-    assert!(current.status.success(), "{current:?}");
-    let current: Value = serde_json::from_slice(&current.stdout).unwrap();
-    let binding = current["current"]["binding"].as_str().unwrap();
+    let binding = f.ok_in_session(
+        "r46-unrelated-session",
+        &store,
+        &["work", "next", &work, "--json"],
+    )["current"]["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     let foreign = f.call_in_session(
         "r46-unrelated-session",
@@ -1183,7 +1187,7 @@ fn native_goal_work_cannot_be_replaced_from_a_foreign_session() {
             "--classification",
             "defective-contract",
             "--current-binding",
-            binding,
+            &binding,
             "--apply",
         ],
     );
@@ -1204,11 +1208,107 @@ fn native_goal_work_cannot_be_replaced_from_a_foreign_session() {
 }
 
 #[test]
+fn native_goal_replacement_keeps_original_member_and_resolves_successor_lineage_read_only() {
+    let f = Fixture::new();
+    let session = "r46-native-lineage-session";
+    let store = f.root.join(".exitbind/native-test-session-goals");
+    let (work, binding) = native_failed_work(&f, session, &store);
+    let session_root = native_session_root(&store, session);
+    let journal_path = session_root.join(".exitbind/session-goal.jsonl");
+    let journal_before = fs::read(&journal_path).unwrap();
+    let records_before = journal_before
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let member_before = records_before
+        .iter()
+        .rev()
+        .find_map(|record| {
+            record["journeyMembers"]
+                .as_array()?
+                .iter()
+                .find(|member| member["work"] == work)
+        })
+        .expect("original native Goal member")
+        .clone();
+    assert_eq!(
+        records_before.last().unwrap()["journeyMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "this fixture begins with one original conversation member"
+    );
+    assert!(records_before.last().unwrap()["obligations"]
+        .to_string()
+        .contains("Keep the original side obligation intact"));
+    let predecessor_before = fs::read(f.ledger(&work)).unwrap();
+
+    let preview = f.ok_in_session(session, &store, &refs(&replacement_args(&work, &binding)));
+    let argv = preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let applied = f.ok_in_session(session, &store, &refs(&argv));
+    assert_eq!(applied["state"], "successor_created");
+    let successor = applied["successor"]["work"].as_str().unwrap().to_owned();
+
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), predecessor_before);
+    assert_eq!(
+        fs::read(&journal_path).unwrap(),
+        journal_before,
+        "replacement does not append a successor member or rewrite admissions/obligations"
+    );
+    let records_after = fs::read_to_string(&journal_path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        records_after.last().unwrap()["journeyMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        records_after.last().unwrap()["journeyMembers"][0],
+        member_before
+    );
+    assert!(records_after.last().unwrap()["obligations"]
+        .to_string()
+        .contains("Keep the original side obligation intact"));
+
+    let detail = f.ok_in_session(session, &store, &["work", "detail", &successor, "--json"]);
+    assert_eq!(
+        detail["goalAssociation"]["kind"],
+        "verified_successor_lineage"
+    );
+    assert_eq!(detail["goalAssociation"]["work"], successor);
+    assert_eq!(detail["goalAssociation"]["originalMemberWork"], work);
+    assert_eq!(detail["checkReplacement"]["predecessor"]["work"], work);
+    assert_eq!(detail["checkReplacement"]["successor"]["work"], successor);
+
+    let next = f.ok_in_session(session, &store, &["work", "next", &successor, "--json"]);
+    assert_eq!(
+        next["goalProgress"]["workAssociation"]["kind"],
+        "verified_successor_lineage"
+    );
+    assert_eq!(
+        next["goalProgress"]["workAssociation"]["originalMemberWork"],
+        work
+    );
+}
+
+#[test]
 fn pending_native_admission_blocks_check_replacement_preview_and_apply() {
     let f = Fixture::new();
     let session = "r46-pending-admission-session";
     let store = f.root.join(".exitbind/native-test-session-goals");
-    let (work, binding) = native_failed_work(&f, session, &store);
+    let (work, _) = native_failed_work(&f, session, &store);
     let session_root = native_session_root(&store, session);
 
     // A separate unlinked Work start creates a valid admission against this
@@ -1263,6 +1363,12 @@ fn pending_native_admission_blocks_check_replacement_preview_and_apply() {
         .to_string()
         .contains("Keep the original side obligation intact"));
 
+    let binding = f.ok_in_session(session, &store, &["work", "next", &work, "--json"])["current"]
+        ["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
     let ledger_before = fs::read(f.ledger(&work)).unwrap();
     let entries_before = run_entries(&f);
     for apply in [false, true] {
@@ -1308,7 +1414,7 @@ fn same_session_corrupt_native_companion_blocks_check_replacement() {
     let f = Fixture::new();
     let session = "r46-corrupt-companion-session";
     let store = f.root.join(".exitbind/native-test-session-goals");
-    let (work, binding) = native_failed_work(&f, session, &store);
+    let (work, _) = native_failed_work(&f, session, &store);
     let ledger_before = fs::read(f.ledger(&work)).unwrap();
     let entries_before = run_entries(&f);
     let companion = f.root.join(format!(
@@ -1321,6 +1427,12 @@ fn same_session_corrupt_native_companion_blocks_check_replacement() {
     );
     fs::write(&companion, b"corrupted fixture companion\n").unwrap();
     let corrupted = fs::read(&companion).unwrap();
+
+    let binding = f.ok_in_session(session, &store, &["work", "next", &work, "--json"])["current"]
+        ["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     let mut args = replacement_args(&work, &binding);
     args.push("--apply".into());
@@ -1346,7 +1458,22 @@ fn same_session_corrupt_native_companion_blocks_check_replacement() {
 #[test]
 fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
     let f = Fixture::new();
-    let (work, _) = f.begin_failed_check();
+    let begin = f.ok(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "inspect unresolved child ownership",
+        "--check-command",
+        "exec sh checker.sh",
+        "--review-policy",
+        "required",
+        "--preserve-requirement",
+        "child-review:Inspect unresolved child ownership.",
+        "--preservation-check-command",
+        "true",
+    ]);
+    let work = begin["work"].as_str().unwrap().to_owned();
     let session = "r46-prepared-child-session";
     let store = f.root.join(".exitbind/native-test-session-goals");
     let initialization = serde_json::json!({
@@ -1360,6 +1487,33 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
         initialization.to_string().as_bytes(),
     );
     assert!(initialized.status.success(), "{initialized:?}");
+    f.ok(&[
+        "work",
+        "return",
+        &work,
+        begin["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "scoped",
+    ]);
+    let worker = f.ok(&["work", "next", &work, "--json"]);
+    f.ok(&[
+        "work",
+        "return",
+        &work,
+        worker["next"]["assignment"].as_str().unwrap(),
+        "--outcome",
+        "completed",
+    ]);
+    let failed = f.call(&["work", "check", &work, "--timeout-ms", "2000"]);
+    assert!(!failed.status.success(), "{failed:?}");
+    assert!(
+        fs::read_to_string(f.ledger(&work))
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .any(|event| event["action"] == "check" && event["result"]["code"] != 0),
+        "fixture must retain an actual failed check before preparing a child"
+    );
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let token = continuation["mutationContext"]["token"].as_str().unwrap();
     f.ok_in_session(
