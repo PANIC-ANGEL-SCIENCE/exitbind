@@ -81,7 +81,8 @@ Concurrent sessions append separate candidates through separate memory ledgers.
 Two accepted versions with the same stable ID cause a conflict, including when
 one has become inapplicable. The Lead retires the predecessor through the existing
 lifecycle before adopting a correction; there is no last-writer overwrite or
-revival of a revoked item. This consumer detects conflicting adoption; the generic
+revival of a revoked item. A revoked source digest remains retired even if its
+bytes are proposed from a different source path and ledger. This consumer detects conflicting adoption; the generic
 memory writer does not provide an atomic expected-version transaction across
 different ledgers. Reconcile a conflict before launching dependent work.
 

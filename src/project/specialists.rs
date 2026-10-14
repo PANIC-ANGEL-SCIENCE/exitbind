@@ -83,11 +83,26 @@ fn references(loaded: &Loaded, name: &str) -> Result<Vec<Value>, String> {
             "specialist lifecycle metadata unavailable; inspect the authorized memory store"
         })?
         .unwrap_or_default();
+    let retired = ledgers
+        .iter()
+        .flat_map(|ledger| ledger.snapshot.items.values())
+        .filter(|item| item["scope"] == scope && item["state"] == "revoked")
+        .filter_map(|item| item["source"]["sha256"].as_str().map(str::to_owned))
+        .collect::<BTreeSet<_>>();
     let mut result = Vec::new();
     for ledger in ledgers {
         for item in ledger.snapshot.items.values() {
             if item["state"] != "accepted" || item["scope"] != scope {
                 continue;
+            }
+            if item["source"]["sha256"]
+                .as_str()
+                .is_some_and(|digest| retired.contains(digest))
+            {
+                return Err(
+                    "revoked specialist source cannot be reintroduced through another ledger"
+                        .into(),
+                );
             }
             let expires = item["expiresAt"]
                 .as_str()
@@ -204,6 +219,17 @@ fn snapshot(
     role: &str,
     host: &str,
 ) -> Result<Value, String> {
+    snapshot_after_source(loaded, name, task, role, host, || Ok(()))
+}
+
+fn snapshot_after_source(
+    loaded: &Loaded,
+    name: &str,
+    task: &str,
+    role: &str,
+    host: &str,
+    mut after_source: impl FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
     let agent = loaded
         .agent(name)
         .ok_or("selected specialist disappeared")?;
@@ -234,13 +260,16 @@ fn snapshot(
         let item: Experience = serde_json::from_slice(&bytes)
             .map_err(|_| "invalid specialist experience; inspect its authorized source")?;
         validate(&item, name, &project)?;
+        after_source()?;
         let ledger = memory::snapshot(
             loaded,
             reference["ledgerPath"]
                 .as_str()
                 .ok_or("invalid specialist ledger")?,
-        )?;
-        memory::validate_history_current(loaded, &ledger)?;
+        )
+        .map_err(|_| "specialist lifecycle changed or became unavailable during snapshot")?;
+        memory::validate_history_current(loaded, &ledger)
+            .map_err(|_| "specialist recorded policy or actor profile changed during snapshot")?;
         let proposed = ledger.events.first().ok_or("empty specialist history")?;
         let reviewer = ledger.events.iter().find(|e| e["action"] == "review");
         let promoter = ledger.events.iter().find(|e| e["action"] == "promote");
@@ -343,4 +372,105 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
         );
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn excluded_item_late_ledger_and_history_failures_do_not_disclose_private_names() {
+        for mutate_ledger in [true, false] {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "specialist-late-read-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir(&root).unwrap();
+            assert!(Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["init", "-q"])
+                .status()
+                .unwrap()
+                .success());
+            let scope = "specialist.specialist.v1";
+            let mut agents = json!({});
+            for name in ["lead", "specialist", "reviewer"] {
+                fs::write(
+                    root.join(format!("{name}.md")),
+                    "Bounded selected profile.\n",
+                )
+                .unwrap();
+                agents[name] = json!({"profile":format!("{name}.md"),"purpose":"record aggregation",
+                    "observe":[],"write":[],"commands":["python3"],"skills":[],"memoryForget":[],
+                    "memoryRead":[],"memoryWrite":[],"retention":"explicit-expiry","crossContext":"protocol-only"});
+            }
+            agents["specialist"]["memoryRead"] = json!([scope]);
+            agents["specialist"]["memoryWrite"] = json!([scope]);
+            agents["reviewer"]["memoryReview"] = json!([scope]);
+            agents["lead"]["memoryPromote"] = json!([scope]);
+            let c = json!({"version":1,"project":{"root":"."},"agents":agents,
+                "orchestration":{"lead":"lead","maxParallel":1},
+                "workflows":{"change":{"workers":["specialist"],"reviewers":["reviewer"]}},
+                "memory":{"root":".exitbind/memory","maxItems":4,"maxBytes":8192,"protocolScopes":[scope],"syntheticScopes":[]}});
+            let config = root.join("exitbind.json");
+            fs::write(&config, c.to_string()).unwrap();
+            let loaded = crate::config::load(config.to_str()).unwrap();
+            let source = json!({"version":1,"id":"past-method","revision":"r1","kind":"skill",
+                "author":"specialist","projectIdentity":crate::host::assignment_context::project_identity(&loaded).unwrap(),
+                "taskTerms":["different task"],"hosts":["codex"],"summary":"Prior qualified method.",
+                "preconditions":["Applicable schema"],"procedure":["Use presence accounting"],
+                "verification":["Distinct input"],"requiredCommands":["python3"],"evidence":["past-task.md"],"guards":[]});
+            fs::write(root.join("private-source-name.json"), source.to_string()).unwrap();
+            let ledger = ".exitbind/memory/private-ledger-name.jsonl";
+            fs::create_dir_all(root.join(".exitbind/memory")).unwrap();
+            memory::action(
+                &loaded,
+                "specialist",
+                "propose",
+                Some("private-source-name.json"),
+                Some(scope),
+                ledger,
+                Some("2100-01-01T00:00:00Z"),
+            )
+            .unwrap();
+            memory::action(&loaded, "reviewer", "review", None, None, ledger, None).unwrap();
+            memory::action(&loaded, "lead", "promote", None, None, ledger, None).unwrap();
+            let result = snapshot_after_source(
+                &loaded,
+                "specialist",
+                "current task",
+                "worker",
+                "codex",
+                || {
+                    if mutate_ledger {
+                        fs::remove_file(root.join(ledger)).unwrap();
+                        std::os::unix::fs::symlink("absent", root.join(ledger)).unwrap();
+                    } else {
+                        fs::write(
+                            root.join("reviewer.md"),
+                            "Changed after initial metadata verification.\n",
+                        )
+                        .unwrap();
+                    }
+                    Ok(())
+                },
+            );
+            let error = result.unwrap_err();
+            assert!(!error.contains("private-source-name"));
+            assert!(!error.contains("private-ledger-name"));
+            assert!(!error.contains(root.to_str().unwrap()));
+            assert!(error.contains("specialist"));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }

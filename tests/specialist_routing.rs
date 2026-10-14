@@ -149,6 +149,25 @@ fn draft_is_inactive_and_reviewed_owned_skill_is_current_and_bounded() {
         .call(&["memory", "promote", "lead", ".exitbind/memory/r1.jsonl"])
         .status
         .success());
+    fs::copy(f.root.join("draft.json"), f.root.join("relocated.json")).unwrap();
+    f.propose("relocated.json", ".exitbind/memory/reintroduced.jsonl");
+    f.qualify(".exitbind/memory/reintroduced.jsonl");
+    let revived = f.call(&[
+        "project",
+        "route",
+        "--task",
+        "record aggregation",
+        "--purpose",
+        "record",
+        "--role",
+        "worker",
+        "--host",
+        "codex",
+    ]);
+    assert!(!revived.status.success());
+    assert!(String::from_utf8(revived.stdout)
+        .unwrap()
+        .contains("revoked specialist source"));
 }
 
 #[test]
