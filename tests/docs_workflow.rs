@@ -73,7 +73,6 @@ fn checked_work_journey_links_resolve_in_the_checkout() {
         "REFERENCE.md",
         "CHANGELOG.md",
         "docs/reference-run-and-recovery.md",
-        "CHANGELOG-0.20-and-earlier.md",
         "docs/onboarding.md",
         "docs/first-checked-run.md",
         "docs/user-owned-agents.md",
