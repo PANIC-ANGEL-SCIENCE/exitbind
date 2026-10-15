@@ -11,13 +11,77 @@ struct Inspector {
     parser_input_bytes: usize,
 }
 
+// Inspection must retain every member; a map would overwrite duplicate values
+// that remain visible in the original bytes delivered to a native recipient.
+enum Fragment {
+    Object(Vec<(String, Fragment)>),
+    Array(Vec<Fragment>),
+    String(String),
+    Scalar,
+}
+
+impl<'de> Deserialize<'de> for Fragment {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FragmentVisitor;
+        impl<'de> serde::de::Visitor<'de> for FragmentVisitor {
+            type Value = Fragment;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a JSON fragment")
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Fragment, E> {
+                Ok(Fragment::Scalar)
+            }
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Fragment, E> {
+                Ok(Fragment::Scalar)
+            }
+            fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Fragment, E> {
+                Ok(Fragment::Scalar)
+            }
+            fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Fragment, E> {
+                Ok(Fragment::Scalar)
+            }
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Fragment, E> {
+                Ok(Fragment::Scalar)
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Fragment, E> {
+                Ok(Fragment::String(value.to_owned()))
+            }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Fragment, E> {
+                Ok(Fragment::String(value))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Fragment, A::Error> {
+                let mut values = Vec::new();
+                while let Some(value) = seq.next_element()? {
+                    values.push(value);
+                }
+                Ok(Fragment::Array(values))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Fragment, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = map.next_entry()? {
+                    members.push(member);
+                }
+                Ok(Fragment::Object(members))
+            }
+        }
+        deserializer.deserialize_any(FragmentVisitor)
+    }
+}
+
 impl Inspector {
-    fn parse(&mut self, bytes: &[u8]) -> Option<(Value, usize)> {
+    fn parse(&mut self, bytes: &[u8]) -> Option<(Fragment, usize)> {
         #[cfg(test)]
         {
             self.parser_input_bytes += bytes.len();
         }
-        let mut values = serde_json::Deserializer::from_slice(bytes).into_iter::<Value>();
+        let mut values = serde_json::Deserializer::from_slice(bytes).into_iter::<Fragment>();
         let value = values.next()?.ok()?;
         Some((value, values.byte_offset()))
     }
@@ -37,11 +101,11 @@ impl Inspector {
         std::str::from_utf8(bytes).is_ok_and(|text| self.text(text))
     }
 
-    fn value(&mut self, value: Value) -> bool {
+    fn value(&mut self, value: Fragment) -> bool {
         let mut pending = vec![value];
         while let Some(value) = pending.pop() {
             match value {
-                Value::Object(value) => {
+                Fragment::Object(value) => {
                     if [
                         "version",
                         "author",
@@ -54,24 +118,24 @@ impl Inspector {
                         "guards",
                     ]
                     .iter()
-                    .all(|key| value.contains_key(*key))
+                    .all(|key| value.iter().any(|(name, _)| name.as_str() == *key))
                     {
                         return true;
                     }
                     for (key, value) in value {
                         pending.push(value);
-                        pending.push(Value::String(key));
+                        pending.push(Fragment::String(key));
                     }
                 }
-                Value::Array(values) => pending.extend(values),
-                Value::String(text) => {
+                Fragment::Array(values) => pending.extend(values),
+                Fragment::String(text) => {
                     // Decoding removes an enclosing string/escapes, so repeated
                     // conventional string envelopes shrink within the input bound.
                     if self.source(text.as_bytes()) {
                         return true;
                     }
                 }
-                _ => (),
+                Fragment::Scalar => (),
             }
         }
         false

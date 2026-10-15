@@ -44,6 +44,65 @@ fn fake_provider(f: &Fixture) -> (PathBuf, PathBuf) {
 }
 
 #[test]
+fn duplicate_object_members_never_hide_revoked_reserved_source_from_unrelated_native_delivery() {
+    let f = with_generic();
+    f.draft("specialist.json", "r1");
+    let source = fs::read_to_string(f.root.join("specialist.json")).unwrap();
+    f.propose("specialist.json", ".exitbind/memory/specialist.jsonl");
+    f.qualify(".exitbind/memory/specialist.jsonl");
+    let duplicate = format!("{{\"payload\":{source},\"payload\":\"ordinary later value\"}}");
+    for (i, text) in [
+        duplicate.clone(),
+        format!(
+            "{{\"payload\":{},\"payload\":\"ordinary later value\"}}",
+            serde_json::to_string(&source).unwrap()
+        ),
+        format!("[{{\"nested\":{duplicate}}}]"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let path = format!("duplicate-{i}.json");
+        fs::write(f.root.join(&path), text).unwrap();
+        accept_generic(&f, &path, &format!(".exitbind/memory/duplicate-{i}.jsonl"));
+    }
+    let ordinary = "{\"note\":\"first ordinary member\",\"note\":\"second ordinary member\"}";
+    fs::write(f.root.join("ordinary-duplicate.json"), ordinary).unwrap();
+    accept_generic(
+        &f,
+        "ordinary-duplicate.json",
+        ".exitbind/memory/ordinary.jsonl",
+    );
+    f.ok(&[
+        "memory",
+        "revoke",
+        "lead",
+        ".exitbind/memory/specialist.jsonl",
+    ]);
+    let resolved = f.ok(&[
+        "memory",
+        "resolve",
+        "record-specialist",
+        "--task",
+        "unrelated formatting",
+    ]);
+    let work = f.worker("unrelated formatting");
+    let (fake, capture) = fake_provider(&f);
+    f.ok(&["work", "act", &work, "--codex-bin", fake.to_str().unwrap()]);
+    let prompt = fs::read_to_string(capture).unwrap();
+    assert!(prompt.contains("first ordinary member"));
+    assert!(prompt.contains("second ordinary member"));
+    assert!(!prompt.contains("Track presence and sum independently."));
+    assert!(!prompt.contains("MEMORY [ordinary] duplicate-"));
+    assert_eq!(resolved["references"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        resolved["references"][0]["sourcePath"],
+        "ordinary-duplicate.json"
+    );
+    assert_eq!(resolved["references"][0]["byteLength"], ordinary.len());
+}
+
+#[test]
 fn repeated_escaped_quotes_remain_valid_ordinary_memory() {
     let f = with_generic();
     let source = format!(
