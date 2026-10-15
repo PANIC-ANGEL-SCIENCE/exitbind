@@ -824,8 +824,11 @@ compatibility, privacy, and release gates.
 bounded current snapshot for a configured specialist. One eligible match is
 selected; ambiguity stays with the Lead and no match stays Lead-held. The host
 owns actual execution. See [specialist experience](docs/specialist-experience.md)
-for scoped authoring, independent qualification, next-task reuse and the existing
-Work integration boundary.
+for scoped authoring, independent qualification, next-task reuse and current
+Work/native-child delivery. `memory form --scope specialist.AGENT.v1 --json`
+returns the inactive source shape and current identity; lifecycle replies name
+the independent reviewer and configured Lead action. Ordinary recipient and
+native launch selection uses the actual assignment, without rerouting its agent.
 
 Runtime `host`, `model`, reasoning, and fallback values are opaque requested
 bindings. Exitbind never stores provider credentials, routes models, or

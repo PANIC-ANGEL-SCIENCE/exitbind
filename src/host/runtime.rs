@@ -360,6 +360,12 @@ pub fn run() -> Result<(), String> {
                         );
                     }
                     context.push_str("\nSelected task perspectives for this assignment:");
+                    if let Some(specialist) = child.get("specialistExperience") {
+                        context.push_str("\nCurrent qualified specialist experience (complete; observed use remains separate):\n");
+                        context.push_str(
+                            &serde_json::to_string(specialist).map_err(|e| e.to_string())?,
+                        );
+                    }
                     if let Some(capabilities) = child.get("capabilities") {
                         context.push_str("\nCurrent approved project capabilities (complete; native use remains separate):\n");
                         context.push_str(

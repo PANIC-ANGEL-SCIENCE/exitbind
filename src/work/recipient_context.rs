@@ -85,5 +85,14 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     )? {
         result["projectLessons"] = lessons;
     }
+    if let Some(specialist) = crate::project::specialists::delivery(
+        loaded,
+        name,
+        next["role"].as_str().unwrap_or(""),
+        next["packet"]["goal"].as_str().unwrap_or(""),
+        next["packet"]["runtime"]["host"].as_str().unwrap_or(""),
+    )? {
+        result["specialistExperience"] = specialist;
+    }
     Ok(result)
 }

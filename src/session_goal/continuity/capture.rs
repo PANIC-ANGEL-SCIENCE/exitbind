@@ -151,25 +151,30 @@ pub(crate) fn prepare(
         let Some(session) = binding["session"].as_str().map(str::to_owned) else {
             return Err("bind the receiving session before preparing a child".into());
         };
-        let selected = if perspectives.is_empty() && loaded.capabilities.is_empty() {
-            Value::Null
-        } else {
-            let view = crate::work::next(loaded, work)?;
-            let next = &view["next"];
-            if next["action"] != "spawn"
-                || agent_type != next["packet"]["nativeTaskName"].as_str()
-                || !next["assignment"].is_string()
-                || !next["packet"]["profileSha256"].is_string()
-            {
-                return Err(
-                    "selected perspectives require the current named native assignment".into(),
-                );
-            }
-            json!({"assignment":next["assignment"],
+        let view = crate::work::next(loaded, work)?;
+        let specialist_enabled = view["next"]["agent"]
+            .as_str()
+            .is_some_and(|name| crate::project::specialists::enabled(loaded, name));
+        let selected =
+            if perspectives.is_empty() && loaded.capabilities.is_empty() && !specialist_enabled {
+                Value::Null
+            } else {
+                let view = crate::work::next(loaded, work)?;
+                let next = &view["next"];
+                if next["action"] != "spawn"
+                    || agent_type != next["packet"]["nativeTaskName"].as_str()
+                    || !next["assignment"].is_string()
+                    || !next["packet"]["profileSha256"].is_string()
+                {
+                    return Err(
+                        "selected perspectives require the current named native assignment".into(),
+                    );
+                }
+                json!({"assignment":next["assignment"],
                 "agent":next["packet"]["agent"],
                 "nativeTaskName":next["packet"]["nativeTaskName"],
                 "profileSha256":next["packet"]["profileSha256"]})
-        };
+            };
         let capability_binding = if selected.is_null() {
             Value::Null
         } else {
@@ -181,7 +186,20 @@ pub(crate) fn prepare(
             )?;
             json!(hash::value(&json!(delivery)))
         };
-        let intent = json!({
+        let specialist_binding = if selected.is_null() || !specialist_enabled {
+            Value::Null
+        } else {
+            let next = &view["next"];
+            let delivery = crate::project::specialists::delivery(
+                loaded,
+                next["agent"].as_str().unwrap_or(""),
+                next["role"].as_str().unwrap_or(""),
+                next["packet"]["goal"].as_str().unwrap_or(""),
+                binding["host"].as_str().unwrap_or(""),
+            )?;
+            json!(hash::value(&json!(delivery)))
+        };
+        let mut intent = json!({
             "work": work,
             "session": session,
             "host": binding["host"],
@@ -192,6 +210,9 @@ pub(crate) fn prepare(
             "perspectives": perspectives,
             "capabilityBinding": capability_binding,
         });
+        if !specialist_binding.is_null() {
+            intent["specialistBinding"] = specialist_binding;
+        }
         let id = hash::value(&intent);
         let mut effect = "prepared";
         let mut superseded = Vec::new();
@@ -274,6 +295,21 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         &current["next"]["packet"],
         binding["host"].as_str().unwrap_or(""),
     )?;
+    let specialist = crate::project::specialists::delivery(
+        loaded,
+        agent_id,
+        current["next"]["role"].as_str().unwrap_or(""),
+        current["next"]["packet"]["goal"].as_str().unwrap_or(""),
+        binding["host"].as_str().unwrap_or(""),
+    )?;
+    if (specialist.is_some() || !intent["specialistBinding"].is_null())
+        && intent["specialistBinding"] != hash::value(&json!(specialist))
+    {
+        return Err(
+            "specialist experience changed or expired; prepare the current approved next launch"
+                .into(),
+        );
+    }
     if !intent["capabilityBinding"].is_null()
         && intent["capabilityBinding"] != hash::value(&json!(capabilities))
     {
@@ -295,6 +331,9 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     if let Some(capabilities) = &capabilities {
         result["capabilities"] = capabilities.clone();
     }
+    if let Some(specialist) = &specialist {
+        result["specialistExperience"] = specialist.clone();
+    }
     let fresh = crate::work::next(loaded, work)?;
     let (_, fresh_binding) = current_binding(loaded, work)?;
     if fresh["next"]["assignment"] != selected["assignment"]
@@ -305,6 +344,13 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
             &fresh["next"]["packet"],
             fresh_binding["host"].as_str().unwrap_or(""),
         )? != capabilities
+        || crate::project::specialists::delivery(
+            loaded,
+            agent_id,
+            fresh["next"]["role"].as_str().unwrap_or(""),
+            fresh["next"]["packet"]["goal"].as_str().unwrap_or(""),
+            fresh_binding["host"].as_str().unwrap_or(""),
+        )? != specialist
     {
         return Err("child context changed during delivery; refresh the current assignment".into());
     }

@@ -8,8 +8,14 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         "form" => {
             args::assert_options("memory form", a, &["config", "scope", "json"])?;
             args::assert_positionals("memory form", a, 1)?;
-            if a.options.get("scope").map(String::as_str) != Some(memory::lessons::SCOPE) {
-                return Err("memory form requires --scope project-lessons.v1".into());
+            let scope = option(a, "scope", "memory form requires --scope")?;
+            if crate::project::specialists::is_scope(scope) {
+                return print_json(&crate::project::specialists::input_form(l, scope)?);
+            }
+            if scope != memory::lessons::SCOPE {
+                return Err(
+                    "memory form requires --scope project-lessons.v1 or specialist.AGENT.v1".into(),
+                );
             }
             print_json(&memory::lessons::input_form(l)?)
         }
