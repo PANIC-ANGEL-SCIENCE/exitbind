@@ -1,7 +1,7 @@
 {
   "main_sha": "3382ebf78cf50efaf1c0753a334e82a831dbf002",
   "ci": {
-    "label": "pending",
+    "label": "running",
     "run_id": 38679736418,
     "sha": "3382ebf78cf50efaf1c0753a334e82a831dbf002"
   },
@@ -14,5 +14,5 @@
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-10-15T04:06:51.036926+00:00"
+  "checked_at": "2026-10-15T04:07:05.115968+00:00"
 }
