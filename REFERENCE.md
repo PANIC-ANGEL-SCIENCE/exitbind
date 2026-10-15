@@ -819,6 +819,14 @@ compatibility, privacy, and release gates.
 
 ## Advanced integrations
 
+`exitbind project route --task TASK --purpose PURPOSE --role worker|reviewer|adviser
+--host codex|claude [--agent NAME] --json` provides read-only eligibility and a
+bounded current snapshot for a configured specialist. One eligible match is
+selected; ambiguity stays with the Lead and no match stays Lead-held. The host
+owns actual execution. See [specialist experience](docs/specialist-experience.md)
+for scoped authoring, independent qualification, next-task reuse and the existing
+Work integration boundary.
+
 Runtime `host`, `model`, reasoning, and fallback values are opaque requested
 bindings. Exitbind never stores provider credentials, routes models, or
 silently substitutes a fallback. An agent's `skills` list is selection intent;

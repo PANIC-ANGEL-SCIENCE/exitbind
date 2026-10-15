@@ -16,3 +16,4 @@ pub(crate) mod path;
 pub(crate) mod portability;
 pub(crate) mod setup;
 pub(crate) mod skills;
+pub(crate) mod specialists;

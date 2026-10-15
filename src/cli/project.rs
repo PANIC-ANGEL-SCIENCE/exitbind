@@ -5,6 +5,29 @@ use crate::{config::Loaded, project::context};
 
 pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), String> {
     let action = arguments.positional.first().map(String::as_str);
+    if action == Some("route") {
+        args::assert_options(
+            "project route",
+            arguments,
+            &["config", "json", "task", "purpose", "role", "host", "agent"],
+        )?;
+        args::assert_positionals("project route", arguments, 1)?;
+        let required = |name: &str| {
+            arguments
+                .options
+                .get(name)
+                .map(String::as_str)
+                .ok_or_else(|| format!("project route requires --{name}"))
+        };
+        return print_json(&crate::project::specialists::route(
+            loaded,
+            required("task")?,
+            required("purpose")?,
+            required("role")?,
+            required("host")?,
+            arguments.options.get("agent").map(String::as_str),
+        )?);
+    }
     if action == Some("capabilities") {
         if arguments.positional.get(1).map(String::as_str) == Some("select") {
             args::assert_options(
@@ -126,7 +149,7 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
     }
     args::assert_options("project context", arguments, &["config", "json", "task"])?;
     if action != Some("context") {
-        return Err("project requires context, agents, capabilities or architecture".into());
+        return Err("project requires context, route, agents, capabilities or architecture".into());
     }
     match arguments.positional.get(1).map(String::as_str) {
         None => {
