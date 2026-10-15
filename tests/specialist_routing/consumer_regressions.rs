@@ -76,6 +76,9 @@ fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_deliv
     let source = fs::read_to_string(f.root.join("specialist.json")).unwrap();
     let object: Value = serde_json::from_str(&source).unwrap();
     let pretty = serde_json::to_string_pretty(&object).unwrap();
+    let mut key_alias = serde_json::Map::new();
+    key_alias.insert(source.clone(), json!("ordinary lookup value"));
+    let key_alias = Value::Object(key_alias);
     let quoted = |text: &str, prefix: &str| {
         let mut result = String::new();
         for line in text.lines() {
@@ -107,8 +110,19 @@ fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_deliv
         quoted(&pretty, "    "),
         quoted(&format!("```json\n{pretty}\n```"), "> ").replace('\n', "\r\n"),
         json!({"payload":quoted(&format!("```json\n{pretty}"), "> ")}).to_string(),
+        key_alias.to_string(),
+        json!({"payload":[key_alias]}).to_string(),
     ];
     fs::write(f.root.join("ordinary.md"), "Ordinary loose field words: procedure, guards and taskTerms.\n> ```json\n> {\"payload\":[{\"procedure\":\"ordinary example\"}]}\n> ```\n- Ordinary list guidance.\n```text\nUnclosed ordinary code with procedure and guards.\n").unwrap();
+    let mut ordinary = fs::read_to_string(f.root.join("ordinary.md")).unwrap();
+    ordinary.push_str(
+        &serde_json::to_string(&std::collections::BTreeMap::from([(
+            json!({"procedure":"ordinary example"}).to_string(),
+            "ordinary lookup",
+        )]))
+        .unwrap(),
+    );
+    fs::write(f.root.join("ordinary.md"), ordinary).unwrap();
     accept_generic(&f, "ordinary.md", ".exitbind/memory/ordinary.jsonl");
     f.ok(&[
         "memory",

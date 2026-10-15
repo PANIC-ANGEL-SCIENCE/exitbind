@@ -58,7 +58,10 @@ impl Inspector {
                     {
                         return true;
                     }
-                    pending.extend(value.into_values());
+                    for (key, value) in value {
+                        pending.push(value);
+                        pending.push(Value::String(key));
+                    }
                 }
                 Value::Array(values) => pending.extend(values),
                 Value::String(text) => {
@@ -180,14 +183,21 @@ mod tests {
                     "Ordinary escaped quote example: \"{}{suffix}",
                     "\\\"".repeat(count)
                 );
-                let mut inspector = Inspector::default();
-                assert!(!inspector.source(source.as_bytes()));
-                assert!(
-                    inspector.parser_input_bytes <= source.len() * 4,
-                    "{} parser-input bytes for {} ordinary source bytes",
-                    inspector.parser_input_bytes,
-                    source.len()
-                );
+                let keyed = serde_json::to_vec(&std::collections::BTreeMap::from([(
+                    source.clone(),
+                    "ordinary lookup",
+                )]))
+                .unwrap();
+                for bytes in [source.into_bytes(), keyed] {
+                    let mut inspector = Inspector::default();
+                    assert!(!inspector.source(&bytes));
+                    assert!(
+                        inspector.parser_input_bytes <= bytes.len() * 4,
+                        "{} parser-input bytes for {} ordinary source bytes",
+                        inspector.parser_input_bytes,
+                        bytes.len()
+                    );
+                }
             }
         }
     }
