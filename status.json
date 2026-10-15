@@ -1,7 +1,7 @@
 {
   "main_sha": "bedfa74e3a55ac9a27c7130a9108821fba8226cf",
   "ci": {
-    "label": "pending",
+    "label": "running",
     "run_id": 38769426598,
     "sha": "bedfa74e3a55ac9a27c7130a9108821fba8226cf"
   },
@@ -14,5 +14,5 @@
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-10-15T16:29:48.854738+00:00"
+  "checked_at": "2026-10-15T16:30:00.833846+00:00"
 }
