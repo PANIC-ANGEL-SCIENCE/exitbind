@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — 0.31.15 source candidate
+
+- Add optional early evidence and exact pre-return diagnostics while keeping
+  final assurance, independent review and Lead acceptance separate.
+- Deliver the existing whole-session completion sentence inside a simple ASCII
+  box when the complete current Goal actually closes.
+- Add explicit read-only specialist routing with scoped lifecycle, source and
+  profile currentness checks; the host retains launch and permission authority.
+- Split large implementation files by responsibility without changing existing
+  supported paths. Existing Works retain their original configuration and producer.
+
 ## 0.31.14
 
 Published stable release; the `v0.31.14` tag and release assets are available.
