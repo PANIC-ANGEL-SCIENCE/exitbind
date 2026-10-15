@@ -20,8 +20,6 @@ pub(crate) fn run_observed_command(
     }
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt;
-
         let child_stderr = child_stderr_stdio().map_err(|error| {
             ObservationError::new(
                 error,
@@ -34,17 +32,13 @@ pub(crate) fn run_observed_command(
                 },
             )
         })?;
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(&request.command)
-            .arg("exitbind-observe-check")
-            .current_dir(&request.working_dir)
-            .stdout(child_stderr)
-            .stderr(Stdio::inherit())
-            .process_group(0);
         let started = Instant::now();
-        let mut child = command.spawn().map_err(|error| {
+        let mut child = crate::run::capture_supervisor::ObservedChild::spawn(
+            request,
+            child_stderr,
+            Stdio::inherit(),
+        )
+        .map_err(|error| {
             ObservationError::new(
                 format!("check command could not be launched: {error}"),
                 ExecutionOutcome {
@@ -59,30 +53,48 @@ pub(crate) fn run_observed_command(
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
+                    if child.timed_out() || child.cancelled() {
+                        let mut failure = ObservationError::new(
+                            if child.timed_out() {
+                                format!(
+                                    "check observation timed out after {} ms",
+                                    request.timeout_ms
+                                )
+                            } else {
+                                "check observation cancelled".into()
+                            },
+                            ExecutionOutcome {
+                                status: Some(status),
+                                duration_ms: elapsed_ms(started),
+                                capture: CaptureDisposition::Disabled,
+                                group_ended: child.ended(),
+                                process_started: true,
+                            },
+                        );
+                        failure.deadline_exceeded = child.timed_out();
+                        return Err(failure);
+                    }
                     return Ok(ExecutionOutcome {
                         status: Some(status),
                         duration_ms: elapsed_ms(started),
                         capture: CaptureDisposition::Disabled,
-                        group_ended: i32::try_from(child.id())
-                            .ok()
-                            .and_then(|pid| process_group_exists(pid).ok())
-                            == Some(false),
+                        group_ended: child.ended(),
                         process_started: true,
-                    })
+                    });
                 }
                 Ok(None) if Instant::now() >= request.deadline => {
-                    let cleanup = terminate_process_group(&mut child);
+                    let cleanup = child.terminate();
                     let mut error = ObservationError::new(
                         format!(
                             "check observation timed out after {} ms",
                             request.timeout_ms
                         ),
                         ExecutionOutcome {
-                            status: child.try_wait().ok().flatten(),
+                            status: child.status(),
                             duration_ms: elapsed_ms(started),
                             capture: CaptureDisposition::Disabled,
-                            group_ended: cleanup.is_ok(),
-                            process_started: true,
+                            group_ended: child.ended() && cleanup.is_ok(),
+                            process_started: child.process_started(),
                         },
                     );
                     error.deadline_exceeded = true;
@@ -96,15 +108,15 @@ pub(crate) fn run_observed_command(
                     thread::sleep(remaining.min(Duration::from_millis(OBSERVE_POLL_MS)));
                 }
                 Err(error) => {
-                    let cleanup = terminate_process_group(&mut child);
+                    let cleanup = child.terminate();
                     let mut result = ObservationError::new(
                         format!("check command could not be observed: {error}"),
                         ExecutionOutcome {
-                            status: child.try_wait().ok().flatten(),
+                            status: child.status(),
                             duration_ms: elapsed_ms(started),
                             capture: CaptureDisposition::Disabled,
-                            group_ended: cleanup.is_ok(),
-                            process_started: true,
+                            group_ended: child.ended() && cleanup.is_ok(),
+                            process_started: child.process_started(),
                         },
                     );
                     if let Err(cleanup) = cleanup {

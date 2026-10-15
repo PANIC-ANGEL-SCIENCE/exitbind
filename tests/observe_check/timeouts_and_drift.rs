@@ -56,7 +56,11 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             let pid = wait_for_positive_pid(&pid_file, deadline).unwrap();
             while Instant::now() < deadline {
                 let mut status = 0;
-                if unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) } == pid {
+                let waited = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+                let wait_error = std::io::Error::last_os_error().raw_os_error();
+                if waited == pid
+                    || (waited == -1 && wait_error == Some(libc::ECHILD) && !process_exists(pid))
+                {
                     return;
                 }
                 thread::sleep(Duration::from_millis(2));

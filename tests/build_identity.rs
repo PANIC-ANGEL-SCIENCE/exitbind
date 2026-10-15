@@ -77,6 +77,34 @@ fn pinned_exitbind_keeps_identity_and_soulmate_copy_refuses_before_cli_effects()
     assert!(String::from_utf8_lossy(&output.stderr).contains("Soulmate is no longer supported"));
     assert_eq!(std::fs::read(&config).unwrap(), before);
 
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::{fd::AsRawFd, unix::process::CommandExt};
+        let proof = std::fs::File::create(project.join("observer-proof")).unwrap();
+        let fd = proof.as_raw_fd();
+        let mut command = Command::new(&soulmate_copy);
+        command.current_dir(&project).args([
+            "--exitbind-observer-capsule-v1",
+            &fd.to_string(),
+            "1000",
+            "printf launched > observer-launched",
+        ]);
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Soulmate is no longer supported"));
+        assert!(!project.join("observer-launched").exists());
+        assert_eq!(proof.metadata().unwrap().len(), 0);
+    }
+
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

@@ -54,7 +54,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
-        ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (preview by default; configured Lead attests exact known-ended storage failure; records failure only, never reruns a check)",
+        ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (read-only preview or blocked unknown-termination diagnostic; configured Lead attests exact known-ended storage failure only; never reruns a check)",
         ["work", "replace-check"] => "work replace-check WORK (--check-command COMMAND | --pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]) --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; Lead-owned continuation preserves predecessor, final-check policy for a diagnostic replacement, and spent accounting)",
         ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file-serve"] => "work file-serve SESSION --config CONFIG (host-owned stdio MCP transport)",

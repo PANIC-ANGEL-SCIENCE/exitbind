@@ -281,6 +281,12 @@ required review. An unresolved admission, live descendant or uncertain cleanup
 permits stopping but blocks repair, acceptance, retry and supersession. If
 failure storage is unavailable, the response says no durable failure was
 recorded and returns a bounded inspection route; the admission stays unresolved.
+For a durable unknown-termination failure in an already blocked Work,
+`work recover-check WORK` provides inspection-only admission/failure/head
+locators and immutable facts, without captures, an apply command or check credit.
+Changed current inputs do not erase this historical diagnostic. `--apply`
+continues to refuse that unresolved execution. See [check recovery](docs/check-recovery.md).
+
 For a retained known-ended storage-failure response, `work recover-check WORK`
 previews a configured-Lead decision. Its explicit apply records a reported
 failure only; ordinary Lead repair, a new worker result, checks and required

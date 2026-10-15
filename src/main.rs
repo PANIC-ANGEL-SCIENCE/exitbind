@@ -34,6 +34,10 @@ fn main() {
         );
         std::process::exit(2);
     }
+    #[cfg(target_os = "linux")]
+    if let Some(status) = crate::run::capture_supervisor::entry() {
+        std::process::exit(status);
+    }
     let raw = std::env::args_os().skip(1).collect::<Vec<_>>();
     let json_output = raw.iter().any(|argument| argument == "--json");
     let raw_for_error = raw.clone();

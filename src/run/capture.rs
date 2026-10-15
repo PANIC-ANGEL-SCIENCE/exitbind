@@ -6,7 +6,9 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
+use std::process::Child;
+use std::process::{ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -215,8 +217,6 @@ fn capture_to_files(
     }
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt;
-
         let started = Instant::now();
         let mut owned = OwnedPaths::new();
         let stdout_file =
@@ -244,16 +244,11 @@ fn capture_to_files(
         };
         owned.add(stderr_temp.to_owned());
         let per_stream_bytes = request.capture.per_stream_bytes;
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(&request.command)
-            .arg("exitbind-observe-check")
-            .current_dir(&request.working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0);
-        let mut child = match command.spawn() {
+        let mut child = match super::capture_supervisor::ObservedChild::spawn(
+            request,
+            Stdio::piped(),
+            Stdio::piped(),
+        ) {
             Ok(child) => child,
             Err(error) => {
                 return Err(capture_prelaunch_failure(
@@ -269,7 +264,7 @@ fn capture_to_files(
             Some(stdout) => stdout,
             None => {
                 let mut cleanup = Vec::new();
-                if let Err(error) = terminate_process_group(&mut child) {
+                if let Err(error) = child.terminate() {
                     cleanup.push(error);
                 }
                 return Err(capture_failure(
@@ -285,7 +280,7 @@ fn capture_to_files(
             Some(stderr) => stderr,
             None => {
                 let mut cleanup = Vec::new();
-                if let Err(error) = terminate_process_group(&mut child) {
+                if let Err(error) = child.terminate() {
                     cleanup.push(error);
                 }
                 return Err(capture_failure(
@@ -384,12 +379,12 @@ fn capture_to_files(
             // A failed reader can leave a descendant holding the other pipe
             // even after the shell leader has exited; always inspect and
             // terminate the process group on this path.
-            terminate_process_group(&mut child)
+            child.terminate()
         } else {
             Ok(())
         };
         let mut status_observation_error = None;
-        if status.is_none() {
+        if status.is_none() && child.process_started() {
             match child.try_wait() {
                 Ok(observed) => status = observed,
                 Err(error) => {
@@ -398,6 +393,13 @@ fn capture_to_files(
                     ));
                 }
             }
+            if status.is_none() {
+                status = child.status();
+            }
+        }
+        timed_out |= child.timed_out();
+        if child.cancelled() {
+            stream_errors.push("check observation cancelled".into());
         }
         while stream_results.len() < 2 {
             match receiver.recv_timeout(Duration::from_millis(OBSERVE_TERMINATION_GRACE_MS)) {
@@ -463,10 +465,8 @@ fn capture_to_files(
             // An escaped descendant may hold a pipe after the owned group has
             // ended. Detached readers leave that effect uninspectably live.
             failure.capture_readers_ended = stream_results.len() == 2;
-            failure.outcome.group_ended = i32::try_from(child.id())
-                .ok()
-                .and_then(|pid| process_group_exists(pid).ok())
-                == Some(false);
+            failure.outcome.group_ended = child.ended();
+            failure.outcome.process_started = child.process_started();
             failure.partial_captures = partial_captures;
             return Err(failure);
         }
@@ -495,10 +495,7 @@ fn capture_to_files(
                 status: Some(status),
                 duration_ms: elapsed_ms(started),
                 process_started: true,
-                group_ended: i32::try_from(child.id())
-                    .ok()
-                    .and_then(|pid| process_group_exists(pid).ok())
-                    == Some(false),
+                group_ended: child.ended(),
                 capture: CaptureDisposition::Complete {
                     stdout_bytes: stdout_bytes.unwrap_or_default(),
                     stderr_bytes: stderr_bytes.unwrap_or_default(),
@@ -696,7 +693,7 @@ fn same_file_contents(left: &std::path::Path, right: &std::path::Path) -> io::Re
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
 pub(crate) fn terminate_process_group(child: &mut Child) -> Result<(), String> {
     let process_group = match i32::try_from(child.id()) {
         Ok(process_group) => Some(process_group),
@@ -794,7 +791,7 @@ pub(crate) fn terminate_process_group(child: &mut Child) -> Result<(), String> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
 fn signal_process_group(process_group: i32, signal: i32) -> Result<(), String> {
     if unsafe { libc::kill(-process_group, signal) } == 0 {
         return Ok(());
