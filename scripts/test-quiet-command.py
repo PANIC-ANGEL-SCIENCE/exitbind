@@ -479,6 +479,36 @@ def main():
         )
         require(generic_failure.returncode == 17 and b"failed (17)" in generic_failure.stderr, "generic failure status or presentation changed")
 
+        # Inject TERM after real child creation but before Popen returns. The
+        # capture must retain that signal, reap its child and record its status.
+        early_log = root / "early-interruption.log"
+        early_driver = r'''
+import importlib.util, os, signal, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("quiet", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original = module.subprocess.Popen
+def launch(*args, **kwargs):
+    child = original(*args, **kwargs)
+    if kwargs.get("start_new_session"):
+        os.kill(os.getpid(), signal.SIGTERM)
+    return child
+module.subprocess.Popen = launch
+os.environ["QUIET_COMMAND_LOG"] = sys.argv[2]
+raise SystemExit(module.run("early-interruption", [sys.executable, "-c", "import time; time.sleep(30)"]))
+'''
+        early = subprocess.run(
+            [sys.executable, "-c", early_driver, str(HELPER), str(early_log)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15,
+        )
+        require(early.returncode == 143, "early interruption lost the child status")
+        early_meta = json.loads(pathlib.Path(str(early_log) + ".meta.json").read_text())
+        require(early_meta["state"] == "complete" and early_meta["childReturnCode"] == -15,
+                "early interruption left a live or unknown child")
+        require(pathlib.Path(str(early_log) + ".exit").read_text() == "143\n",
+                "early interruption did not retain status")
+
         protected_target = root / "protected-target"
         protected_target.write_bytes(b"do not replace\n")
         collision_log = root / "collision.log"

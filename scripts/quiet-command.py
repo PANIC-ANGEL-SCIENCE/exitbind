@@ -116,22 +116,15 @@ def shell_status(return_code):
 def capture(argv, handles):
     child_env = os.environ.copy()
     child_env.pop("QUIET_COMMAND_LOG", None)
-    try:
-        child = subprocess.Popen(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env,
-            start_new_session=True,
-        )
-    except OSError as error:
-        message = ("quiet-command: could not execute command: " + str(error) + "\n").encode(
-            "utf-8", "backslashreplace"
-        )
-        handles["stderr"].write(message)
-        handles["combined"].write(message)
-        return 127, False
+    child = None
+    pending = []
 
-    # The capture owns this process group. Forward interruption and drain its
-    # streams before recording status; never leave a writer behind a released lock.
+    # Install forwarding before Popen: a signal during child creation must be
+    # retained until its owned process group exists, not orphan that child.
     def forward(signum, _frame):
+        if child is None:
+            pending.append(signum)
+            return
         try:
             os.killpg(child.pid, signum)
         except ProcessLookupError:
@@ -142,8 +135,22 @@ def capture(argv, handles):
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     }
     selector = selectors.DefaultSelector()
-    streams = {"stdout": child.stdout, "stderr": child.stderr}
     try:
+        try:
+            child = subprocess.Popen(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env,
+                start_new_session=True,
+            )
+        except OSError as error:
+            message = ("quiet-command: could not execute command: " + str(error) + "\n").encode(
+                "utf-8", "backslashreplace"
+            )
+            handles["stderr"].write(message)
+            handles["combined"].write(message)
+            return 127, False
+        for signum in pending:
+            forward(signum, None)
+        streams = {"stdout": child.stdout, "stderr": child.stderr}
         for name, stream in streams.items():
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, name)
@@ -165,9 +172,10 @@ def capture(argv, handles):
                 handles["combined"].write(data)
         return child.wait(), True
     except BaseException:
-        if child.poll() is None:
-            child.terminate()
-        child.wait()
+        if child is not None:
+            if child.poll() is None:
+                forward(signal.SIGTERM, None)
+            child.wait()
         raise
     finally:
         selector.close()
