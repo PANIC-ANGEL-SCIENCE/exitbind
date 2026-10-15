@@ -1,4 +1,4 @@
-name: Exitbind release
+name: Exitbind stable release
 
 on:
   workflow_dispatch:

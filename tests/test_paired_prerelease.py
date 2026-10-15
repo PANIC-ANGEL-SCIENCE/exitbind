@@ -200,6 +200,35 @@ class PairTests(unittest.TestCase):
         self.assertEqual(api.calls, before)
 
 
+class ClientEvidenceTests(unittest.TestCase):
+    def test_unknown_write_retains_attempt_without_token_or_retry(self):
+        import urllib.error
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self): return json.dumps({'id': 1, 'full_name': 'fixture/repo', 'default_branch': 'main'}).encode()
+        calls = []
+        def request(value, timeout):
+            calls.append(value.method)
+            if value.method == 'POST':
+                raise urllib.error.URLError('fixture connection lost')
+            return Response()
+        with tempfile.TemporaryDirectory(prefix='pair-api-') as directory:
+            with patch.dict(os.environ, {'GITHUB_REPOSITORY': 'fixture/repo', 'GITHUB_REPOSITORY_ID': '1',
+                                        'GH_TOKEN': 'fixture-private-token', 'PAIR_EVIDENCE': directory}), patch.object(PAIR.urllib.request, 'urlopen', side_effect=request):
+                client = PAIR.Client()
+                with self.assertRaises(RuntimeError):
+                    client.post('git/refs', {'ref': 'refs/tags/v'+NEXT, 'sha': CANDIDATE})
+            records = [json.loads(p.read_text()) for p in Path(directory).glob('*.json')]
+            writes = [x for x in records if x['method'] == 'POST']
+            self.assertEqual(len(writes), 1)
+            self.assertEqual(writes[0]['status'], 'unknown')
+            self.assertEqual(writes[0]['request']['sha'], CANDIDATE)
+            self.assertNotIn('fixture-private-token', json.dumps(records))
+            self.assertEqual(calls, ['GET', 'GET', 'POST'])
+
+
 class ChannelTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='release-channel-')

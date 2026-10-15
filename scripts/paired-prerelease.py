@@ -74,6 +74,8 @@ class Client:
                     'Content-Type': 'application/json'})
         self.sequence += 1
         capture = self.evidence/str(self.sequence)
+        record = {'method': method, 'route': route, 'request': body, 'status': 'unknown', 'response': None}
+        capture.with_suffix('.json').write_text(json.dumps(record))
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 raw = response.read()
@@ -81,11 +83,17 @@ class Client:
         except urllib.error.HTTPError as error:
             raw = error.read()
             status = error.code
-            capture.with_suffix('.json').write_text(json.dumps({'method': method, 'route': route, 'status': status, 'response': raw.decode(errors='replace')}))
+            record.update(status=status, response=raw.decode(errors='replace'))
+            capture.with_suffix('.json').write_text(json.dumps(record))
             if optional and method == 'GET' and status == 404:
                 return None
             raise RuntimeError('GitHub operation failed; inspect retained evidence, do not replay uncertain writes') from error
-        capture.with_suffix('.json').write_text(json.dumps({'method': method, 'route': route, 'status': status, 'response': raw.decode(errors='replace')}))
+        except (urllib.error.URLError, TimeoutError) as error:
+            record['errorClass'] = type(error).__name__
+            capture.with_suffix('.json').write_text(json.dumps(record))
+            raise RuntimeError('Unknown operation outcome; inspect provider state before any further effect') from error
+        record.update(status=status, response=raw.decode(errors='replace'))
+        capture.with_suffix('.json').write_text(json.dumps(record))
         return json.loads(raw) if raw else None
 
     def verify(self):
