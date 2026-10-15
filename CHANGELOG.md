@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — 0.31.15 source candidate
+## 0.31.15
+
+Published stable release; the `v0.31.15` tag and release assets are available.
 
 - Add optional early evidence and exact pre-return diagnostics while keeping
   final assurance, independent review and Lead acceptance separate.
