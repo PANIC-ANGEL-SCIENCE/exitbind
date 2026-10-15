@@ -124,9 +124,12 @@ selector for the already assigned agent, role, task and actual requested host.
 Generic memory routes exclude reserved experience and source aliases; ordinary
 generic scopes and project lessons retain their own consumers. Administrative
 `memory inspect` remains explicit lifecycle inspection.
-Complete reserved JSON in conventional Markdown fenced blocks or bounded JSON
-object, array and string envelopes is excluded too; loose field names in ordinary prose remain
-ordinary guidance. This is bounded content recognition, not semantic paraphrase
+Complete reserved JSON in Markdown quote/list/indented containers, fenced blocks
+(including EOF termination), explanatory/code text, or bounded JSON object,
+array and string envelopes is excluded too. Loose field names and nested ordinary
+JSON without a complete reserved record remain ordinary guidance. Recognition
+removes conventional container syntax and parses complete JSON values; it is
+bounded content recognition, not semantic paraphrase
 detection. Actual delivery enforces the existing total item/source-byte memory
 budget across generic guidance, applicable project lessons and specialist
 experience together. Overflow refuses delivery instead of dropping ordinary

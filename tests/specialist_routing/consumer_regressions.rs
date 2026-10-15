@@ -49,6 +49,16 @@ fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_deliv
     f.draft("specialist.json", "r1");
     let source = fs::read_to_string(f.root.join("specialist.json")).unwrap();
     let object: Value = serde_json::from_str(&source).unwrap();
+    let pretty = serde_json::to_string_pretty(&object).unwrap();
+    let quoted = |text: &str, prefix: &str| {
+        let mut result = String::new();
+        for line in text.lines() {
+            result.push_str(prefix);
+            result.push_str(line);
+            result.push('\n');
+        }
+        result
+    };
     f.propose("specialist.json", ".exitbind/memory/specialist.jsonl");
     f.qualify(".exitbind/memory/specialist.jsonl");
     let envelopes = [
@@ -60,13 +70,19 @@ fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_deliv
         json!([object.clone()]).to_string(),
         serde_json::to_string(&json!({"payload":[object]}).to_string()).unwrap(),
         json!({"payload":format!("```json\n{source}\n```\n")}).to_string(),
+        quoted(&format!("```json\n{pretty}\n```"), "> "),
+        quoted(&format!("~~~json\n{source}\n~~~"), "> > "),
+        format!("```json\n{source}"),
+        quoted(&format!("~~~json\n{pretty}"), "> "),
+        format!("- ```json\n  {source}\n  ```\n"),
+        format!("> 1. ```json\n>    {source}\n>    ```\n"),
+        format!("```text\nExample source follows:\n{pretty}\nEnd of example.\n```\n"),
+        format!("Prior record: `{source}` End of example."),
+        quoted(&pretty, "    "),
+        quoted(&format!("```json\n{pretty}\n```"), "> ").replace('\n', "\r\n"),
+        json!({"payload":quoted(&format!("```json\n{pretty}"), "> ")}).to_string(),
     ];
-    for (i, text) in envelopes.iter().enumerate() {
-        let path = format!("wrapped-{i}.md");
-        fs::write(f.root.join(&path), text).unwrap();
-        accept_generic(&f, &path, &format!(".exitbind/memory/wrapped-{i}.jsonl"));
-    }
-    fs::write(f.root.join("ordinary.md"), "Ordinary loose field words: procedure, guards and taskTerms.\n```json\n{\"payload\":[{\"procedure\":\"ordinary example\"}]}\n```\n").unwrap();
+    fs::write(f.root.join("ordinary.md"), "Ordinary loose field words: procedure, guards and taskTerms.\n> ```json\n> {\"payload\":[{\"procedure\":\"ordinary example\"}]}\n> ```\n- Ordinary list guidance.\n```text\nUnclosed ordinary code with procedure and guards.\n").unwrap();
     accept_generic(&f, "ordinary.md", ".exitbind/memory/ordinary.jsonl");
     f.ok(&[
         "memory",
@@ -74,22 +90,37 @@ fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_deliv
         "lead",
         ".exitbind/memory/specialist.jsonl",
     ]);
-    let resolved = f.ok(&[
-        "memory",
-        "resolve",
-        "record-specialist",
-        "--task",
-        "unrelated formatting",
-    ]);
-    assert_eq!(resolved["references"].as_array().unwrap().len(), 1);
-    assert_eq!(resolved["references"][0]["sourcePath"], "ordinary.md");
-    let work = f.worker("unrelated formatting");
-    let (fake, capture) = fake_provider(&f);
-    f.ok(&["work", "act", &work, "--codex-bin", fake.to_str().unwrap()]);
-    let prompt = fs::read_to_string(capture).unwrap();
-    assert!(prompt.contains("Ordinary loose field words"));
-    assert!(!prompt.contains("Track presence and sum independently."));
-    assert!(!prompt.contains("wrapped-"));
+    // Keep each native probe below its independent presentation item ceiling;
+    // otherwise that ceiling could mask an eligibility failure.
+    for (group, envelopes) in envelopes.chunks(6).enumerate() {
+        let mut ledgers = Vec::new();
+        for (i, text) in envelopes.iter().enumerate() {
+            let path = format!("wrapped-{group}-{i}.md");
+            fs::write(f.root.join(&path), text).unwrap();
+            let ledger = format!(".exitbind/memory/wrapped-{group}-{i}.jsonl");
+            accept_generic(&f, &path, &ledger);
+            ledgers.push(ledger);
+        }
+        let resolved = f.ok(&[
+            "memory",
+            "resolve",
+            "record-specialist",
+            "--task",
+            "unrelated formatting",
+        ]);
+        let work = f.worker("unrelated formatting");
+        let (fake, capture) = fake_provider(&f);
+        f.ok(&["work", "act", &work, "--codex-bin", fake.to_str().unwrap()]);
+        let prompt = fs::read_to_string(capture).unwrap();
+        assert!(prompt.contains("Ordinary loose field words"));
+        assert!(!prompt.contains("Track presence and sum independently."));
+        assert!(!prompt.contains("wrapped-"));
+        assert_eq!(resolved["references"].as_array().unwrap().len(), 1);
+        assert_eq!(resolved["references"][0]["sourcePath"], "ordinary.md");
+        for ledger in ledgers {
+            f.ok(&["memory", "revoke", "lead", &ledger]);
+        }
+    }
 }
 
 #[test]
