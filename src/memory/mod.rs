@@ -175,6 +175,13 @@ pub fn action(
             ledger,
             &next_state,
         )?)
+    } else if crate::project::specialists::is_scope(event["scope"].as_str().unwrap_or("")) {
+        Some(crate::project::specialists::next_action(
+            loaded,
+            event["scope"].as_str().ok_or("missing memory scope")?,
+            ledger,
+            &next_state,
+        )?)
     } else {
         None
     };

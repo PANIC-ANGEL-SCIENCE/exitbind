@@ -41,6 +41,19 @@ pub(crate) fn resolve_for_task(
     let mut references = Vec::new();
     let mut bytes = 0usize;
     let mut item_ids = BTreeSet::new();
+    // Reserved experience cannot escape its sole applicability consumer through
+    // a second generic scope, path, copied digest or retired ledger.
+    let reserved: Vec<_> = ledgers
+        .iter()
+        .flat_map(|ledger| ledger.snapshot.items.values())
+        .filter(|item| crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")))
+        .map(|item| {
+            (
+                item["source"]["path"].clone(),
+                item["source"]["sha256"].clone(),
+            )
+        })
+        .collect();
     for ledger in ledgers {
         for item in ledger.snapshot.items.values() {
             let item_id = item["itemId"].as_str().ok_or("invalid memory item id")?;
@@ -51,6 +64,9 @@ pub(crate) fn resolve_for_task(
                 continue;
             }
             let scope = item["scope"].as_str().ok_or("invalid memory item scope")?;
+            if crate::project::specialists::is_scope(scope) {
+                continue;
+            }
             if !scopes.iter().any(|candidate| candidate == scope) {
                 continue;
             }
@@ -63,10 +79,19 @@ pub(crate) fn resolve_for_task(
             let source_sha = item["source"]["sha256"]
                 .as_str()
                 .ok_or("invalid memory source hash")?;
+            if reserved
+                .iter()
+                .any(|(path, digest)| path == source_path || digest == source_sha)
+            {
+                continue;
+            }
             let source_target =
                 confined_target(loaded.product_root.as_path(), source_path, "memory source")?;
             let source_path = relative_project_path(&loaded.product_root, &source_target)?;
             let source = current_source(loaded, &source_path, source_sha)?;
+            if crate::project::specialists::reserved_source(&source) {
+                continue;
+            }
             if scope == super::lessons::SCOPE {
                 super::validate_history_current(loaded, &ledger.snapshot)?;
                 let lesson = super::lessons::parse(loaded, &source)?;
@@ -76,12 +101,7 @@ pub(crate) fn resolve_for_task(
             }
             let attempted_items = references.len().saturating_add(1);
             let attempted_bytes = bytes.saturating_add(source.len());
-            if attempted_items > policy.max_items || attempted_bytes > policy.max_bytes {
-                return Err(format!(
-                    "memory_budget_exceeded: itemId={} attemptedItems={} attemptedBytes={} maxItems={} maxBytes={}",
-                    item_id, attempted_items, attempted_bytes, policy.max_items, policy.max_bytes
-                ));
-            }
+            check_budget(loaded, attempted_items, attempted_bytes, item_id)?;
             bytes = attempted_bytes;
             references.push(json!({
                 "itemId": item["itemId"],
@@ -96,6 +116,20 @@ pub(crate) fn resolve_for_task(
         }
     }
     Ok(references)
+}
+
+pub(crate) fn check_budget(
+    loaded: &config::Loaded,
+    items: usize,
+    bytes: usize,
+    item_id: &str,
+) -> Result<(), String> {
+    if let Some(policy) = policy::get(&loaded.config) {
+        if items > policy.max_items || bytes > policy.max_bytes {
+            return Err(format!("memory_budget_exceeded: itemId={item_id} attemptedItems={items} attemptedBytes={bytes} maxItems={} maxBytes={}", policy.max_items, policy.max_bytes));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_references(value: &Value) -> Result<(), String> {

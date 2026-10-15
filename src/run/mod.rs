@@ -7,6 +7,8 @@
 pub(crate) mod artifact;
 pub(crate) mod assignment;
 pub(crate) mod capture;
+#[cfg(unix)]
+pub(crate) mod capture_supervisor;
 pub(crate) mod carry;
 pub(crate) mod check_observation;
 pub(crate) mod check_recovery;

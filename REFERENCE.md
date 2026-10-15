@@ -281,6 +281,12 @@ required review. An unresolved admission, live descendant or uncertain cleanup
 permits stopping but blocks repair, acceptance, retry and supersession. If
 failure storage is unavailable, the response says no durable failure was
 recorded and returns a bounded inspection route; the admission stays unresolved.
+For a durable unknown-termination failure in an already blocked Work,
+`work recover-check WORK` provides inspection-only admission/failure/head
+locators and immutable facts, without captures, an apply command or check credit.
+Changed current inputs do not erase this historical diagnostic. `--apply`
+continues to refuse that unresolved execution. See [check recovery](docs/check-recovery.md).
+
 For a retained known-ended storage-failure response, `work recover-check WORK`
 previews a configured-Lead decision. Its explicit apply records a reported
 failure only; ordinary Lead repair, a new worker result, checks and required
@@ -824,8 +830,17 @@ compatibility, privacy, and release gates.
 bounded current snapshot for a configured specialist. One eligible match is
 selected; ambiguity stays with the Lead and no match stays Lead-held. The host
 owns actual execution. See [specialist experience](docs/specialist-experience.md)
-for scoped authoring, independent qualification, next-task reuse and the existing
-Work integration boundary.
+for scoped authoring, independent qualification, next-task reuse and current
+Work/native-child delivery. `memory form --scope specialist.AGENT.v1 --json`
+returns the inactive source shape and current identity; lifecycle replies name
+the independent reviewer and configured Lead action. Ordinary recipient and
+native launch selection uses the actual assignment, without rerouting its agent.
+`memory form SOURCE --scope specialist.AGENT.v1 --json` validates the exact
+inactive source's typed shape and current identity using that same parser,
+without lifecycle effects or a qualification claim. The form describes guard
+objects (`path`, `sha256`), their bounds and narrative preconditions. Native
+delivery shares one total memory item/source-byte budget across ordinary
+guidance, applicable project lessons and specialist resources; overflow refuses.
 
 Runtime `host`, `model`, reasoning, and fallback values are opaque requested
 bindings. Exitbind never stores provider credentials, routes models, or

@@ -13,7 +13,8 @@ whose partial capture bytes still exist. Preview first:
 exitbind work recover-check WORK --json --config CONFIG
 ```
 
-The response is read-only and supplies `ownerDecision`. Preserve its exact
+For an eligible known-ended storage failure, the read-only response supplies
+`ownerDecision`. Preserve its exact
 recovery request binding, admission snapshot, earlier observer identity and timeout.
 This binding is specific to this preview, with the `check_recovery_request_v1`
 domain, current Lead assignment and original admission. A general Work-detail
@@ -54,3 +55,21 @@ saved bytes; switching a selector does not downgrade the record. If the complete
 failure response or known-ended evidence is unavailable, leave the outcome
 unresolved and report the remaining user task. Source changes, private launchers
 and hand-edited ledgers are not consumer recovery steps.
+
+For a durable failed observation with unknown termination whose Work is already
+blocked, the same preview returns `historical_unknown_termination`. This is an
+immutable diagnostic: it identifies the original admission, failure and blocked
+head, reports the recorded process facts and separately describes current input
+availability. It exposes no captures, recovery decision or apply command.
+Changed source does not prevent this historical inspection. `--apply` refuses;
+the original Work remains blocked with no check credit. A later process listing
+cannot establish the missing original execution identity.
+
+On Linux, new observations use a fresh exclusive observer process to own and
+reap their checker descendants, including children that change session. The
+caller never becomes a process-wide subreaper. Exact checker status and raw
+streams remain separate from the private termination proof. The observer waits for normal background children to end within the observation
+budget and sends no cleanup signal on that normal path. Timeout cleanup signals only currently owned children, remains bounded
+and remains a failed observation even when all children are reaped. Missing or
+incomplete proof keeps termination unknown. This does not retroactively resolve
+an older unknown execution or provide a sandbox against hostile processes.

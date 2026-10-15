@@ -5,6 +5,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
+mod aliases;
+mod delivery;
+mod form;
+
+pub(crate) use aliases::reserved_source;
+pub(crate) use delivery::{delivery, enabled, is_scope};
+pub(crate) use form::{input_form, next_action};
+
 const SOURCE_LIMIT: u64 = 4096;
 const SNAPSHOT_LIMIT: usize = 16384;
 
@@ -56,6 +64,18 @@ fn read(root: &std::path::Path, name: &str) -> Result<Vec<u8>, String> {
         }
         #[cfg(not(unix))]
         path::SecureBytesResult::Unsupported(e) => Err(e),
+    }
+}
+
+fn profile_bytes(loaded: &Loaded, name: &str) -> Result<Vec<u8>, String> {
+    match path::secure_bytes_observation_bounded(
+        &loaded.control_root,
+        name,
+        "specialist profile",
+        64 * 1024,
+    ) {
+        path::SecureBytesResult::Bytes(bytes) => Ok(bytes),
+        _ => Err("specialist profile unavailable, unsafe or exceeds 65536 bytes".into()),
     }
 }
 
@@ -145,26 +165,14 @@ pub(crate) fn route(
     let mut eligible = Vec::new();
     let mut excluded = Vec::new();
     for (name, agent) in &loaded.agents {
-        let reason = if !loaded.roles_for(name).contains(role) {
-            Some("role_not_configured")
-        } else if !agent
+        let reason = if !agent
             .purpose
             .to_lowercase()
             .contains(&purpose.to_lowercase())
         {
             Some("purpose_not_matched")
-        } else if agent.runtime.host.as_deref().is_some_and(|h| h != host) {
-            Some("primary_host_incompatible")
-        } else if loaded
-            .agents
-            .iter()
-            .filter(|(other, a)| a.native_name(other) == agent.native_name(name))
-            .count()
-            != 1
-        {
-            Some("native_mapping_ambiguous")
         } else {
-            None
+            delivery::exclusion(loaded, name, role, host)
         };
         if let Some(reason) = reason {
             // Only configured identity and eligibility, never inaccessible resources.
@@ -228,109 +236,33 @@ fn snapshot_after_source(
     task: &str,
     role: &str,
     host: &str,
-    mut after_source: impl FnMut() -> Result<(), String>,
+    after_source: impl FnMut() -> Result<(), String>,
 ) -> Result<Value, String> {
     let agent = loaded
         .agent(name)
         .ok_or("selected specialist disappeared")?;
-    let profile = read(&loaded.control_root, &agent.profile)?;
+    let profile = profile_bytes(loaded, &agent.profile)?;
     let profile_text =
         std::str::from_utf8(&profile).map_err(|_| "specialist profile must be UTF-8")?;
-    let references = references(loaded, name)?;
-    let project = crate::host::assignment_context::project_identity(loaded)?;
-    let mut resources = Vec::new();
-    let mut ids = BTreeSet::new();
-    let mut observed_sources = Vec::new();
-    let mut observed_guards = Vec::new();
-    let max_bytes = memory::policy::get(&loaded.config).map_or(0, |policy| policy.max_bytes);
-    let mut source_bytes = 0usize;
-    for reference in &references {
-        let source = reference["sourcePath"]
-            .as_str()
-            .ok_or("invalid specialist source")?;
-        let bytes = read(&loaded.product_root, source)?;
-        source_bytes = source_bytes.saturating_add(bytes.len());
-        if source_bytes > max_bytes {
-            return Err("specialist experience exceeds the configured recall byte budget".into());
-        }
-        observed_sources.push((source.to_owned(), bytes.clone()));
-        if reference["sourceSha256"] != hash::bytes(&bytes) {
-            return Err("specialist experience changed; no snapshot delivered".into());
-        }
-        let item: Experience = serde_json::from_slice(&bytes)
-            .map_err(|_| "invalid specialist experience; inspect its authorized source")?;
-        validate(&item, name, &project)?;
-        after_source()?;
-        let ledger = memory::snapshot(
-            loaded,
-            reference["ledgerPath"]
-                .as_str()
-                .ok_or("invalid specialist ledger")?,
-        )
-        .map_err(|_| "specialist lifecycle changed or became unavailable during snapshot")?;
-        memory::validate_history_current(loaded, &ledger)
-            .map_err(|_| "specialist recorded policy or actor profile changed during snapshot")?;
-        let proposed = ledger.events.first().ok_or("empty specialist history")?;
-        let reviewer = ledger.events.iter().find(|e| e["action"] == "review");
-        let promoter = ledger.events.iter().find(|e| e["action"] == "promote");
-        let owned = proposed["actor"] == name && proposed["action"] == "propose";
-        let reviewed = reviewer.is_some_and(|e| e["actor"].as_str().is_some_and(|a| a != name));
-        let promoted = promoter.is_some_and(|e| e["actor"].as_str() == loaded.lead());
-        if !owned || !reviewed || !promoted || proposed["expiresAt"].as_str().is_none() {
-            return Err("specialist experience needs attributable author, independent review, Lead promotion and explicit expiry".into());
-        }
-        // Duplicate accepted revisions are a conflict, including inapplicable ones.
-        // Retire the predecessor through the existing lifecycle before adoption.
-        if !ids.insert(item.id.clone()) {
-            return Err(
-                "conflicting accepted specialist revisions; Lead must retire the predecessor"
-                    .into(),
-            );
-        }
-        if !item.hosts.iter().any(|h| h == host)
-            || !item
-                .task_terms
-                .iter()
-                .any(|term| task.to_lowercase().contains(&term.to_lowercase()))
-            || !item
-                .required_commands
-                .iter()
-                .all(|c| agent.commands.contains(c))
-        {
-            continue;
-        }
-        let mut current = true;
-        for guard in &item.guards {
-            let bytes = read(&loaded.product_root, &guard.path)?;
-            observed_guards.push((guard.path.clone(), bytes.clone()));
-            if hash::bytes(&bytes) != guard.sha256 {
-                current = false;
-            }
-        }
-        if !current {
-            continue;
-        }
-        resources.push(json!({"id":item.id,"revision":item.revision,"kind":item.kind,
-            "reference":reference,"content":serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
-            "coverage":"complete","state":"qualified_snapshot"}));
+    let selected = delivery::select_after_source(loaded, name, task, role, host, after_source)?;
+    if profile_bytes(loaded, &agent.profile)? != profile {
+        return Err("specialist profile changed during snapshot; refresh before launch".into());
     }
-    if resources.len() > 3 {
-        return Err("more than three applicable specialist resources; narrow the policy".into());
-    }
-    if read(&loaded.control_root, &agent.profile)? != profile
-        || self::references(loaded, name)? != references
-        || observed_sources
-            .iter()
-            .chain(&observed_guards)
-            .any(|(source, expected)| read(&loaded.product_root, source).as_ref() != Ok(expected))
-    {
-        return Err("specialist inputs changed during snapshot; refresh before launch".into());
-    }
-    let value = json!({"projectIdentity":project,"configurationSha256":hash::text(&loaded.source),
+    let profile_access = if profile.len() <= 4096 {
+        Value::Null
+    } else {
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        json!({"command":[executable.to_str().ok_or("profile reader is not UTF-8")?,"profile",name,"--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
+            "sameConfigRequired":true,"sameExecutableRequired":true,"readOnly":true})
+    };
+    let value = json!({"projectIdentity": selected["projectIdentity"],"configurationSha256":hash::text(&loaded.source),
         "agent":name,"nativeName":agent.native_name(name),"role":role,"task":task,"host":host,
         "purpose":agent.purpose,"runtime":agent.runtime_value(),"declaredBoundary":agent.boundary_value(),
-        "profile":{"path":agent.profile,"sha256":hash::bytes(&profile),"content":profile_text},
-        "experience":resources,
+        "profile":{"path":agent.profile,"sha256":hash::bytes(&profile),
+            "content":if profile.len() <= 4096 { Some(profile_text) } else { None },
+            "complete":profile.len() <= 4096,
+            "access":profile_access},
+        "experience":selected["experience"],
         "delivery":"projected; native execution, acknowledgement and observed use require separate evidence"});
     let mut result = value.clone();
     result["snapshotId"] = json!(hash::value(&value));
@@ -360,6 +292,16 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
         || item.guards.len() > 4
         || item.guards.iter().any(|g| {
             !text(&g.path, 256)
+                || std::path::Path::new(&g.path).is_absolute()
+                || !std::path::Path::new(&g.path).components().all(|part| {
+                    matches!(
+                        part,
+                        std::path::Component::Normal(_) | std::path::Component::CurDir
+                    )
+                })
+                || !std::path::Path::new(&g.path)
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::Normal(_)))
                 || g.sha256.len() != 64
                 || !g
                     .sha256
@@ -372,6 +314,17 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
         );
     }
     Ok(())
+}
+
+fn parse(bytes: &[u8], name: &str, project: &str) -> Result<Experience, String> {
+    if bytes.len() > SOURCE_LIMIT as usize {
+        return Err("specialist source exceeds 4096 UTF-8 bytes".into());
+    }
+    let item: Experience = serde_json::from_slice(bytes).map_err(|_| {
+        "invalid specialist source; use memory form: guards are file path/sha256 objects; prose restrictions belong in preconditions"
+    })?;
+    validate(&item, name, project)?;
+    Ok(item)
 }
 
 #[cfg(all(test, unix))]

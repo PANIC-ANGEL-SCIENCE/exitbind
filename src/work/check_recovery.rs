@@ -1,6 +1,7 @@
 //! Supported preview and exact replay for Lead-attested failed-check recovery.
 use super::*;
 use crate::run::{check_recovery as protocol, ledger};
+mod diagnostic;
 
 pub(crate) fn recover(
     loaded: &Loaded,
@@ -10,6 +11,16 @@ pub(crate) fn recover(
 ) -> Result<Value, String> {
     let ledger_name = resolve(loaded, work)?;
     let (path, _, _) = ledger::load(loaded, &ledger_name)?;
+    if let Some(diagnostic) = ledger::with_lock(&path, || {
+        let (_, events, source) = ledger::load_at(loaded, &path)?;
+        let state = run::state::reduce(&events)?;
+        diagnostic::inspect(loaded, work, &ledger_name, &events, &source, &state)
+    })? {
+        if apply {
+            return Err("durable unknown-termination failure is inspection-only; no recovery or check credit is available".into());
+        }
+        return Ok(diagnostic);
+    }
     let bytes = if apply {
         let mut bytes = Vec::new();
         std::io::stdin()

@@ -96,6 +96,13 @@ fn project_parts_after_reads(
     let memory = current_memory(loaded, &generic_references)?;
     let lessons =
         memory::lessons::delivery(loaded, agent_name, packet["goal"].as_str().unwrap_or(""))?;
+    let specialist = super::specialists::delivery(
+        loaded,
+        agent_name,
+        role,
+        packet["goal"].as_str().unwrap_or(""),
+        binding.host,
+    )?;
     let project = project_value(loaded)?;
     let role_value = json!({
         "agentId": agent_name,
@@ -199,12 +206,32 @@ fn project_parts_after_reads(
             ),
         )?;
     }
+    if let Some(specialist) = &specialist {
+        push_section(
+            &mut volatile,
+            "CURRENT QUALIFIED SPECIALIST EXPERIENCE",
+            specialist,
+        )?;
+    }
     after_reads()?;
     if super::capabilities::delivery(loaded, packet, binding.host)? != capabilities {
         return Err("approved capabilities changed before native launch".into());
     }
     if super::architecture::delivery(loaded, packet)? != architecture {
         return Err("architecture contract changed before native launch".into());
+    }
+    if super::specialists::delivery(
+        loaded,
+        agent_name,
+        role,
+        packet["goal"].as_str().unwrap_or(""),
+        binding.host,
+    )? != specialist
+    {
+        return Err(
+            "specialist experience changed before native launch; refresh the current assignment"
+                .into(),
+        );
     }
     let fresh = crate::work::next(loaded, work)?;
     let fresh_next = &fresh["next"];

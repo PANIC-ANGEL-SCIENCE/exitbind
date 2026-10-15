@@ -1,5 +1,7 @@
 //! Real CLI routing and the existing memory lifecycle, without a distributor.
 #![cfg(unix)]
+#[path = "specialist_routing/consumer_regressions.rs"]
+mod consumer_regressions;
 mod support;
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf, process::Output};
@@ -8,6 +10,58 @@ struct Fixture {
     root: PathBuf,
 }
 impl Fixture {
+    fn input(&self, args: &[&str], input: &str) -> Value {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        command.current_dir(&self.root).args(args);
+        if args.first() != Some(&"hook-run") {
+            command.args(["--config", "exitbind.json"]);
+        }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+
+    fn worker(&self, task: &str) -> String {
+        let begun = self.ok(&[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            task,
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--preserve-requirement",
+            "records:Check records.",
+            "--preservation-check-command",
+            "true",
+        ]);
+        let work = begun["work"].as_str().unwrap();
+        let assignment = begun["next"]["assignment"].as_str().unwrap();
+        self.input(
+            &["work", "return", work, assignment, "--outcome", "scoped"],
+            "Fixture scope",
+        );
+        work.to_owned()
+    }
+
     fn new() -> Self {
         let root = support::temp("specialist-routing");
         support::git_topology::repository(&root);
@@ -53,7 +107,11 @@ impl Fixture {
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"]);
-        if args.first() != Some(&"memory") {
+        if (args.first() != Some(&"memory")
+            && !(args.first() == Some(&"work") && matches!(args.get(1), Some(&"bind" | &"child"))))
+            || (args.first() == Some(&"memory")
+                && matches!(args.get(1), Some(&"resolve" | &"inspect")))
+        {
             command.arg("--json");
         }
         command.output().unwrap()
@@ -103,6 +161,317 @@ impl Fixture {
     fn qualify(&self, ledger: &str) {
         self.ok(&["memory", "review", "reviewer", ledger]);
         self.ok(&["memory", "promote", "lead", ledger]);
+    }
+}
+
+#[test]
+fn typed_form_returns_inactive_shape_and_independent_lifecycle_actors() {
+    let f = Fixture::new();
+    let form = f.ok(&[
+        "memory",
+        "form",
+        "--scope",
+        "specialist.record-specialist.v1",
+    ]);
+    assert_eq!(form["template"]["author"], "record-specialist");
+    assert_eq!(form["effect"], "no-change");
+    assert!(form["template"]["projectIdentity"]
+        .as_str()
+        .unwrap()
+        .starts_with("root:"));
+    f.draft("draft.json", "r1");
+    let proposed = f.ok(&[
+        "memory",
+        "propose",
+        "record-specialist",
+        "draft.json",
+        "--scope",
+        "specialist.record-specialist.v1",
+        "--ledger",
+        ".exitbind/memory/form.jsonl",
+        "--expires-at",
+        "2100-01-01T00:00:00Z",
+    ]);
+    assert_eq!(proposed["nextAction"]["command"][3], "reviewer");
+    assert_eq!(f.route("aggregation")["snapshot"]["experience"], json!([]));
+    let reviewed = f.ok(&[
+        "memory",
+        "review",
+        "reviewer",
+        ".exitbind/memory/form.jsonl",
+    ]);
+    assert_eq!(reviewed["nextAction"]["command"][3], "lead");
+    assert_eq!(f.route("aggregation")["snapshot"]["experience"], json!([]));
+}
+
+#[test]
+fn generic_scopes_and_content_aliases_cannot_reintroduce_specialist_sources() {
+    let f = Fixture::new();
+    let mut c = f.config();
+    for right in ["memoryRead", "memoryWrite", "memoryReview", "memoryPromote"] {
+        let name = match right {
+            "memoryReview" => "reviewer",
+            "memoryPromote" => "lead",
+            _ => "record-specialist",
+        };
+        c["agents"][name][right] = json!(["specialist.record-specialist.v1", "ordinary"]);
+    }
+    c["memory"]["protocolScopes"] = json!(["specialist.record-specialist.v1", "ordinary"]);
+    f.save(&c);
+    f.draft("draft.json", "r1");
+    f.propose("draft.json", ".exitbind/memory/specialist.jsonl");
+    f.qualify(".exitbind/memory/specialist.jsonl");
+    fs::copy(f.root.join("draft.json"), f.root.join("copy.json")).unwrap();
+    f.draft("only-generic.json", "r2");
+    fs::write(
+        f.root.join("ordinary.txt"),
+        "Ordinary taskTerms and procedure words remain useful.",
+    )
+    .unwrap();
+    for (source, ledger) in [
+        ("draft.json", "alias"),
+        ("copy.json", "copy"),
+        ("only-generic.json", "shape"),
+        ("ordinary.txt", "ordinary"),
+    ] {
+        let path = format!(".exitbind/memory/{ledger}.jsonl");
+        f.ok(&[
+            "memory",
+            "propose",
+            "record-specialist",
+            source,
+            "--scope",
+            "ordinary",
+            "--ledger",
+            &path,
+        ]);
+        f.qualify(&path);
+    }
+    let selected = f.ok(&[
+        "memory",
+        "resolve",
+        "record-specialist",
+        "--task",
+        "unrelated formatting",
+    ]);
+    assert_eq!(selected["references"].as_array().unwrap().len(), 1);
+    assert_eq!(selected["references"][0]["sourcePath"], "ordinary.txt");
+    f.ok(&[
+        "memory",
+        "revoke",
+        "lead",
+        ".exitbind/memory/specialist.jsonl",
+    ]);
+    let selected = f.ok(&[
+        "memory",
+        "resolve",
+        "record-specialist",
+        "--task",
+        "aggregation",
+    ]);
+    assert_eq!(selected["references"].as_array().unwrap().len(), 1);
+    assert!(f.ok(&["memory", "inspect", ".exitbind/memory/alias.jsonl"])["items"].is_array());
+}
+
+#[test]
+fn work_detail_and_native_prompt_use_the_same_current_qualified_version() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    f.draft("draft.json", "r1");
+    f.propose("draft.json", ".exitbind/memory/skill.jsonl");
+    f.qualify(".exitbind/memory/skill.jsonl");
+    let expected = f.route("record aggregation")["snapshot"]["experience"].clone();
+    for (task, applicable) in [
+        ("record aggregation", true),
+        ("unrelated formatting", false),
+    ] {
+        let work = f.worker(task);
+        let detail = f.ok(&["work", "detail", &work]);
+        let experience = &detail["recipientContext"]["specialistExperience"]["experience"];
+        assert_eq!(
+            *experience,
+            if applicable {
+                expected.clone()
+            } else {
+                json!([])
+            }
+        );
+        let capture = f.root.join("prompt");
+        let fake = f.root.join("fake-codex");
+        fs::write(&fake, format!("#!/bin/sh\ncat > '{}'\nprintf '%s\\n' '{{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}}' '{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"fixture captured\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' '{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n", capture.display())).unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+        f.ok(&["work", "act", &work, "--codex-bin", fake.to_str().unwrap()]);
+        let prompt = fs::read_to_string(capture).unwrap();
+        assert_eq!(
+            prompt.contains("Track presence and sum independently."),
+            applicable
+        );
+        assert!(prompt.contains("CURRENT QUALIFIED SPECIALIST EXPERIENCE"));
+    }
+}
+
+#[test]
+fn specialist_only_child_preparation_binds_and_rechecks_before_hook_presentation() {
+    let f = Fixture::new();
+    f.draft("draft.json", "r1");
+    f.propose("draft.json", ".exitbind/memory/skill.jsonl");
+    f.qualify(".exitbind/memory/skill.jsonl");
+    let work = f.worker("record aggregation");
+    f.input(&["work", "record", &work], &json!({"action":"init","sourceRef":"fixture:scope","sourceText":"Check records.","requirements":[{"id":"records","text":"Check records."}]}).to_string());
+    let token = f.ok(&["work", "continuation", &work])["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.ok(&[
+        "work",
+        "bind",
+        &work,
+        "--context",
+        &token,
+        "--host",
+        "codex",
+        "--session",
+        "parent",
+        "--host-version",
+        "fixture",
+    ]);
+    let token = f.ok(&["work", "continuation", &work])["mutationContext"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let prepared = f.ok(&[
+        "work",
+        "child",
+        "prepare",
+        &work,
+        "specialist-fixture",
+        "--context",
+        &token,
+        "--agent-type",
+        "record_specialist",
+    ]);
+    assert_eq!(prepared["selected"]["agent"], "record-specialist");
+    let intent = prepared["intent"].as_str().unwrap();
+    let context = f.ok(&["work", "child", "context", &work, intent]);
+    assert_eq!(
+        context["specialistExperience"]["experience"][0]["revision"],
+        "r1"
+    );
+    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root,"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
+    assert!(hook["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("Track presence and sum independently."));
+    f.ok(&["memory", "revoke", "lead", ".exitbind/memory/skill.jsonl"]);
+    assert!(!f
+        .call(&["work", "child", "context", &work, intent])
+        .status
+        .success());
+    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root,"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
+    assert!(!hook["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("Track presence and sum independently."));
+}
+
+#[test]
+fn ordinary_recipient_keeps_complete_large_profile_with_specialist_memory() {
+    let f = Fixture::new();
+    let profile = f.config()["agents"]["record-specialist"]["profile"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let content = "Complete ordinary profile guidance.\n".repeat(500);
+    assert!(content.len() > 16 * 1024 && content.len() < 64 * 1024);
+    fs::write(f.root.join(profile), &content).unwrap();
+    f.draft("draft.json", "r1");
+    f.propose("draft.json", ".exitbind/memory/skill.jsonl");
+    f.qualify(".exitbind/memory/skill.jsonl");
+    let routed = f.route("record aggregation");
+    assert_eq!(routed["snapshot"]["profile"]["complete"], false);
+    assert_eq!(routed["snapshot"]["experience"][0]["revision"], "r1");
+    let work = f.worker("record aggregation");
+    let detail = f.ok(&["work", "detail", &work]);
+    assert_eq!(detail["recipientContext"]["profile"]["complete"], false);
+    assert_eq!(
+        detail["recipientContext"]["specialistExperience"]["experience"][0]["revision"],
+        "r1"
+    );
+    let action = f.ok(&["work", "detail", &work, "--view", "action"]);
+    let reference = action["details"]["recipient"]["reference"]
+        .as_str()
+        .unwrap();
+    let mut reference = reference.to_owned();
+    let mut bytes = Vec::new();
+    loop {
+        let page = f.ok(&["work", "expand", &work, &reference]);
+        let hex = page["contentHex"].as_str().unwrap();
+        bytes.extend(
+            (0..hex.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap()),
+        );
+        if page["next"].is_null() {
+            break;
+        }
+        reference = page["next"]["reference"].as_str().unwrap().to_owned();
+    }
+    let expanded: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(expanded["profile"]["content"], content);
+    assert_eq!(expanded["profile"]["complete"], true);
+    assert_eq!(
+        expanded["specialistExperience"]["experience"][0]["revision"],
+        "r1"
+    );
+}
+
+#[test]
+fn actual_work_recipient_excludes_wrong_host_command_guard_and_expired_experience() {
+    for case in ["host", "command", "guard", "expiry"] {
+        let f = Fixture::new();
+        f.draft("draft.json", "r1");
+        let mut v: Value =
+            serde_json::from_slice(&fs::read(f.root.join("draft.json")).unwrap()).unwrap();
+        match case {
+            "host" => v["hosts"] = json!(["claude"]),
+            "command" => v["requiredCommands"] = json!(["undeclared-command"]),
+            "guard" => {
+                fs::write(f.root.join("guard.txt"), "one").unwrap();
+                v["guards"] = json!([{"path":"guard.txt","sha256":"7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"}]);
+            }
+            _ => (),
+        }
+        fs::write(f.root.join("draft.json"), v.to_string()).unwrap();
+        f.ok(&[
+            "memory",
+            "propose",
+            "record-specialist",
+            "draft.json",
+            "--scope",
+            "specialist.record-specialist.v1",
+            "--ledger",
+            ".exitbind/memory/skill.jsonl",
+            "--expires-at",
+            if case == "expiry" {
+                "2000-01-01T00:00:00Z"
+            } else {
+                "2100-01-01T00:00:00Z"
+            },
+        ]);
+        f.qualify(".exitbind/memory/skill.jsonl");
+        if case == "guard" {
+            fs::write(f.root.join("guard.txt"), "two").unwrap();
+        }
+        let work = f.worker("record aggregation");
+        let detail = f.ok(&["work", "detail", &work]);
+        assert_eq!(
+            detail["recipientContext"]["specialistExperience"]["experience"],
+            json!([]),
+            "{case}"
+        );
+        assert!(!serde_json::to_string(&detail["recipientContext"])
+            .unwrap()
+            .contains("Track presence and sum independently."));
     }
 }
 impl Drop for Fixture {

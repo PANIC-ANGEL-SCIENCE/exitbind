@@ -171,8 +171,10 @@ fn official_ci_launcher_clears_all_host_goal_selectors_for_raw_builders() {
     fs::create_dir(&bin).unwrap();
     let fake_cargo = bin.join("cargo");
     let fake_rustc = bin.join("rustc");
+    let fake_tmux = bin.join("tmux");
     let cargo_capture = fixture.0.join("cargo-argv.txt");
     let rustc_capture = fixture.0.join("rustc-environment.txt");
+    let tmux_capture = fixture.0.join("tmux-invoked.txt");
     let target_root = fixture.0.join("target-root");
     let temp_root = fixture.0.join("temp-root");
     let log_root = fixture.0.join("log-root");
@@ -221,8 +223,13 @@ exit 92
 "##;
     fs::write(&fake_cargo, cargo_script).unwrap();
     fs::write(&fake_rustc, rustc_script).unwrap();
+    fs::write(
+        &fake_tmux,
+        "#!/bin/sh\nprintf 'unexpected fake tmux invocation\\n' >> \"$FAKE_TMUX_CAPTURE\"\nexit 93\n",
+    )
+    .unwrap();
     #[cfg(unix)]
-    for executable in [&fake_cargo, &fake_rustc] {
+    for executable in [&fake_cargo, &fake_rustc, &fake_tmux] {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(executable, fs::Permissions::from_mode(0o755)).unwrap();
     }
@@ -242,6 +249,7 @@ exit 92
         .env("CI_LOG_ROOT", &log_root)
         .env("FAKE_CARGO_CAPTURE", &cargo_capture)
         .env("FAKE_RUSTC_CAPTURE", &rustc_capture)
+        .env("FAKE_TMUX_CAPTURE", &tmux_capture)
         .env("FAKE_HOST_TRIPLE", host)
         .env("CARGO_BUILD_JOBS", "1");
     for name in HOST_CONTEXT {
@@ -256,6 +264,10 @@ exit 92
     );
     let stdout = String::from_utf8(output.stdout).expect("preflight output is UTF-8");
     assert!(stdout.contains("preflight=ready\n"), "{stdout}");
+    assert!(
+        !tmux_capture.exists(),
+        "preflight must discover tmux without executing it"
+    );
     assert!(
         stdout.contains("cargo 1.75.0 (controlled fixture)"),
         "{stdout}"
