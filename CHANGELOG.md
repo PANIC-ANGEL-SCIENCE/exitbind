@@ -1,14 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- Carry approved pre-return diagnostics and limits through setup preview,
-  application and the emitted Work start action.
-- Share owned verification context, cache ownership and retained output across
-  focused, pre-return and full checks; preserve child outcomes on interruption.
-- Make conditional early evidence and approved diagnostic selection discoverable
-  from the packaged host skill.
-
 ## 0.31.15
 
 Published stable release; the `v0.31.15` tag and release assets are available.
