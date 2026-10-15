@@ -4,9 +4,8 @@ mod matrix {
     include!("compatibility_matrix.rs");
 }
 
-const WSL_SCHEDULE: &str = "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}";
 const PROOF_BASE_ENV: &str =
-    "VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}";
+    "VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}";
 const ZERO_PROOF_BASE: &str =
     "if [ \"$VALUE_PROOF_BASE\" = \"0000000000000000000000000000000000000000\" ]; then";
 const EMPTY_OR_ZERO_PROOF_BASE: &str =
@@ -328,63 +327,35 @@ fn current_proof_and_drift_warning_gates_use_the_exitbind_binary() {
 }
 
 #[test]
-fn primary_ci_and_release_keep_the_accepted_wsl_cadence() {
+fn ordinary_ci_is_linux_only_and_stable_readiness_retains_native_platforms() {
     let ci = source(".github/workflows/ci.yml");
-    assert!(ci.contains(
-        "on:\n  push:\n    branches:\n      - '**'\n  pull_request:\n  workflow_dispatch:"
-    ));
-
-    let exit = ci
-        .split_once("  exit:\n")
-        .unwrap()
-        .1
-        .split_once("  macos:\n")
-        .unwrap()
-        .0;
-    let macos = ci
-        .split_once("  macos:\n")
-        .unwrap()
-        .1
-        .split_once("  windows-wsl:\n")
-        .unwrap()
-        .0;
-    for block in [exit, macos] {
-        assert_eq!(block.matches(PROOF_BASE_ENV).count(), 1);
-        assert_eq!(block.matches("run: ./scripts/ci-local.sh\n").count(), 1);
-        assert!(!block.contains("cargo test --locked"));
-    }
+    assert!(ci.contains("  workflow_call:\n"));
+    assert!(!ci.contains("  macos:\n"));
+    assert!(!ci.contains("  windows-wsl:\n"));
+    assert!(!ci.contains("runs-on: macos"));
+    assert!(!ci.contains("runs-on: windows"));
+    let exit = job_block(&ci, "exit", "audit");
+    assert_eq!(exit.matches(PROOF_BASE_ENV).count(), 1);
+    assert_eq!(exit.matches("run: ./scripts/ci-local.sh\n").count(), 1);
+    assert!(ci.contains("ref: ${{ inputs.candidate_sha || github.sha }}"));
+    assert!(ci.contains("HEAD_SHA: ${{ inputs.candidate_sha || github.sha }}"));
     let shared = source("scripts/ci-local.sh");
     assert!(shared.contains(EMPTY_OR_ZERO_PROOF_BASE));
-    assert!(shared.contains("git rev-parse --verify HEAD^"));
     assert_eq!(shared.matches(EXACT_FETCH).count(), 1);
     assert_eq!(shared.matches(VERIFY_PROOF_BASE).count(), 2);
     assert!(shared.find(EXACT_FETCH).unwrap() < shared.find("test --locked").unwrap());
     assert!(!shared.contains("git fetch origin main"));
-    assert!(!shared.contains("VALUE_PROOF_BASE=$(git rev-parse --verify HEAD^) ||"));
-
-    let wsl = ci
-        .split_once("  windows-wsl:\n")
-        .unwrap()
-        .1
-        .split_once("  audit:\n")
-        .unwrap()
-        .0;
-    assert!(wsl.contains(&format!("    if: {WSL_SCHEDULE}\n")));
-    assert!(wsl.contains("    needs: exit\n"));
-
-    let upload = ci
-        .split_once("      - name: Upload Linux stable release for WSL\n")
-        .unwrap()
-        .1
-        .split_once("  macos:\n")
-        .unwrap()
-        .0;
-    assert!(upload.contains(&format!("        if: {WSL_SCHEDULE}\n")));
-
     let release = source(".github/workflows/release.yml");
-    assert!(release.contains("  windows-wsl:\n"));
-    assert!(release.contains("  publish:\n    needs: [linux, macos, windows-wsl]\n"));
-    assert!(!release.contains(WSL_SCHEDULE));
+    assert!(release.contains("options: [release, stable-readiness]"));
+    assert!(release.contains("needs: [channel, linux, macos, windows-wsl]"));
+    assert!(release.contains("needs.channel.outputs.full_platforms == 'true'"));
+    assert!(release.contains("needs.channel.outputs.prerelease == 'true' || (needs.macos.result == 'success' && needs.windows-wsl.result == 'success')"));
+    assert!(release.contains(
+        "needs.channel.outputs.readiness_only == 'false' && needs.linux.result == 'success'"
+    ));
+    assert!(release.contains("matrix: ${{ fromJSON(needs.channel.outputs.installed) }}"));
+    assert!(release.contains("for target in $RELEASE_TARGETS; do"));
+    assert!(release.contains("'published': False, 'mainChanged': False"));
     for block in [
         job_block(&release, "linux", "macos"),
         job_block(&release, "macos", "windows-wsl"),
@@ -395,7 +366,6 @@ fn primary_ci_and_release_keep_the_accepted_wsl_cadence() {
                 .count(),
             1
         );
-        assert!(!block.contains("cargo test --locked"));
     }
 }
 
@@ -428,10 +398,16 @@ fn workflow_dispatch_empty_proof_base_uses_head_parent_and_controls_remain_disti
 fn every_checkout_job_asserts_the_github_sha_once_before_use() {
     let ci = source(".github/workflows/ci.yml");
     for (job, next_job, assertion) in [
-        ("exit", "macos", POSIX_SHA_ASSERTION),
-        ("macos", "windows-wsl", POSIX_SHA_ASSERTION),
-        ("windows-wsl", "audit", WINDOWS_SHA_ASSERTION),
-        ("audit", "__missing__", POSIX_SHA_ASSERTION),
+        (
+            "exit",
+            "audit",
+            "test \"$(git rev-parse HEAD)\" = \"$EXITBIND_EXPECTED_SHA\"",
+        ),
+        (
+            "audit",
+            "__missing__",
+            "test \"$(git rev-parse HEAD)\" = \"$EXITBIND_EXPECTED_SHA\"",
+        ),
     ] {
         let block = if next_job == "__missing__" {
             ci.split_once(&format!("  {job}:\n")).unwrap().1
@@ -452,7 +428,7 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         ("macos", "windows-wsl", POSIX_SHA_ASSERTION),
         ("windows-wsl", "publish", WINDOWS_SHA_ASSERTION),
         ("publish", "installed", POSIX_SHA_ASSERTION),
-        ("installed", "__missing__", POSIX_SHA_ASSERTION),
+        ("installed", "stable-readiness-result", POSIX_SHA_ASSERTION),
     ] {
         let block = if next_job == "__missing__" {
             release.split_once(&format!("  {job}:\n")).unwrap().1

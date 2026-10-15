@@ -5,8 +5,19 @@ on:
       - '**'
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        required: true
+        type: string
+      proof_base:
+        required: true
+        type: string
 permissions:
   contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  EXITBIND_EXPECTED_SHA: ${{ inputs.candidate_sha || github.sha }}
 concurrency:
   group: ${{ (github.event_name == 'pull_request' && format('{0}-pull-request-{1}', github.workflow, github.event.pull_request.number)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/') && format('{0}-feature-push-{1}', github.workflow, github.ref)) || format('{0}-protected-run-{1}', github.workflow, github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) }}
@@ -19,17 +30,18 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
           fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Complete selected Git history
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
+          VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/ci-selected-history.sh
       - id: detect
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ inputs.candidate_sha || github.sha }}
         run: python3 tooling/readme/ci_scope.py >> "$GITHUB_OUTPUT"
   readme:
     needs: scope
@@ -38,6 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
           fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Existing README rules
         env:
@@ -48,7 +61,7 @@ jobs:
     if: needs.scope.outputs.scope != 'readme'
     runs-on: ubuntu-latest
     env:
-      VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
       # Keep test runtime practical without changing the release profile or assertions.
       # Set these before cache restoration so the Cargo profile enters its key.
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
@@ -58,13 +71,14 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
           fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Assert exact GitHub SHA checkout
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        run: test "$(git rev-parse HEAD)" = "$EXITBIND_EXPECTED_SHA"
       - name: Complete selected Git history
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
         run: ./scripts/ci-selected-history.sh
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
@@ -89,6 +103,8 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Test paired prerelease controls without network writes
+        run: python3 -m unittest discover -s tests -p test_paired_prerelease.py -v
       - name: Test README tooling
         run: python3 -m unittest discover -s tooling/readme -v
       - name: Verify Cargo package excludes README presentation tooling
@@ -111,121 +127,8 @@ jobs:
           CI_LOG_ROOT: ${{ runner.temp }}/exitbind-logs
           CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
         run: ./scripts/ci-local.sh
-      - name: Upload Linux stable release for WSL
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: exitbind-linux-x86_64-${{ github.sha }}
-          path: ${{ runner.temp }}/exitbind-target/release/exitbind
-          if-no-files-found: error
-          retention-days: 1
-  macos:
-    needs: scope
-    if: needs.scope.outputs.scope != 'readme'
-    env:
-      VALUE_PROOF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-      CARGO_PROFILE_DEV_OPT_LEVEL: '1'
-      CARGO_PROFILE_TEST_OPT_LEVEL: '1'
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            host_arch: arm64
-            target: aarch64-apple-darwin
-          - runner: macos-15-intel
-            host_arch: x86_64
-            target: x86_64-apple-darwin
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
-      - name: Assert exact GitHub SHA checkout
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - name: Complete selected Git history
-        env:
-          GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/ci-selected-history.sh
-      - name: Verify native macOS host and target
-        run: |
-          test "$(uname -s)" = Darwin
-          test "$(uname -m)" = "${{ matrix.host_arch }}"
-          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.target }}"
-          printf 'runner=%s arch=%s os=%s target=%s commit=%s\n' \
-            "${{ matrix.runner }}" "$(uname -m)" "$(sw_vers -productVersion)" \
-            "${{ matrix.target }}" "$GITHUB_SHA"
-      - name: Prepare dependency-cache target path
-        env:
-          CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
-        run: |
-          python3 - <<'PY' >> "$GITHUB_ENV"
-          import os
-          workspace = os.path.realpath(os.environ["GITHUB_WORKSPACE"])
-          target = os.path.realpath(os.environ["CARGO_TARGET_DIR"])
-          relative = os.path.relpath(target, workspace)
-          if os.path.isabs(relative) or not relative:
-              raise SystemExit("Cargo target cache path must be relative to the workspace")
-          print(f"EXITBIND_CACHE_TARGET={relative}")
-          PY
-      - name: Cache native Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: . -> ${{ env.EXITBIND_CACHE_TARGET }}
-          cache-targets: true
-          cache-bin: false
-          cache-all-crates: false
-          cache-workspace-crates: false
-      - name: Test README tooling
-        run: python3 -m unittest discover -s tooling/readme -v
-      - name: Run shared native CI checks and packaging
-        env:
-          CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
-          TMPDIR: ${{ runner.temp }}/exitbind-fixtures
-          CI_LOG_ROOT: ${{ runner.temp }}/exitbind-logs
-          CARGO_BUILD_JOBS: '2'
-          EXITBIND_FETCH_VALIDATOR: '1'
-          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/ci-local.sh
-  windows-wsl:
-    needs: exit
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Assert exact GitHub SHA checkout
-        shell: pwsh
-        run: |
-          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'checkout does not match GITHUB_SHA' }
-      - name: Download Linux stable release
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: exitbind-linux-x86_64-${{ github.sha }}
-          path: wsl-release
-      - name: Install Ubuntu under WSL 2
-        shell: pwsh
-        run: |
-          wsl.exe --install --distribution Ubuntu --no-launch --web-download
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $distributions = (wsl.exe --list --verbose | Out-String) -replace "`0", ""
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $distributions
-          if ($distributions -notmatch 'Ubuntu\s+\w+\s+2') {
-            throw 'Ubuntu was not installed as WSL 2'
-          }
-      - name: Exercise the installed Linux release inside WSL 2
-        shell: pwsh
-        run: |
-          $windowsWorkspace = $env:GITHUB_WORKSPACE -replace '\\', '/'
-          $workspace = (& wsl.exe --distribution Ubuntu --user root -- wslpath -a $windowsWorkspace).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/scripts/ci-wsl.sh" "$workspace"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   audit:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'
@@ -233,7 +136,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Assert exact GitHub SHA checkout
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        run: test "$(git rev-parse HEAD)" = "$EXITBIND_EXPECTED_SHA"
       - name: Cache cargo-audit
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:

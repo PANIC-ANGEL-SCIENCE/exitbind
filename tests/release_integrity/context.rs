@@ -355,7 +355,7 @@ case "$1 $2" in
         --clobber) exit 1 ;;
       esac
     done
-    test "$count" -eq 9
+    test "$count" -eq "$EXITBIND_EXPECTED_ASSET_COUNT"
     : > "$SOULMATE_UPLOAD_MARKER"
     exit 0
     ;;
@@ -417,6 +417,16 @@ esac
 
 #[cfg(unix)]
 fn run_publisher_steps(workflow: &str, fixture: &Fixture) -> Output {
+    run_publisher_steps_for_targets(
+        workflow,
+        fixture,
+        "x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin",
+        "v99.0.0",
+    )
+}
+
+#[cfg(unix)]
+fn run_publisher_steps_for_targets(workflow: &str, fixture: &Fixture, targets: &str, tag: &str) -> Output {
     let script = [
         "Validate exact release inventory and transferred digests",
         "Verify transferred archive provenance",
@@ -454,8 +464,10 @@ fn run_publisher_steps(workflow: &str, fixture: &Fixture) -> Output {
         .env("SOULMATE_GH_CALLS", &calls)
         .env("SOULMATE_UPLOAD_MARKER", &marker)
         .env("GITHUB_REPOSITORY", "fixture/project")
-        .env("GITHUB_REF_NAME", "v99.0.0")
-        .env("GITHUB_REF", "refs/tags/v99.0.0")
+        .env("RELEASE_TARGETS", targets)
+        .env("EXITBIND_EXPECTED_ASSET_COUNT", (targets.split_whitespace().count() * 3).to_string())
+        .env("GITHUB_REF_NAME", tag)
+        .env("GITHUB_REF", format!("refs/tags/{tag}"))
         .env("GITHUB_SHA", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         .env("GH_TOKEN", "fixture-token")
         .output()

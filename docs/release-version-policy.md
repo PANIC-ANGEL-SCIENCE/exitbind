@@ -1,11 +1,9 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.15
+Published stable tag: v0.31.16
 Source candidate tag: v0.31.16
 
-The published stable tag is 0.31.15; the current source candidate is 0.31.16.
-The new candidate is not a published release until its immutable assets and
-provenance have been verified.
+The published stable tag and current source version are 0.31.16.
 README install links name the available stable assets. The published installation
 pointer has been verified against the exact release tag and asset inventory. A source version or
 passing CI alone does not establish an official release. The release-reference
@@ -49,3 +47,11 @@ Publication requires exact source review, native checks, hosted checks on the
 selected publication ref, actual WSL validation, tag checks, release attestations
 and installer proof. Official release and operator installation remain separate decisions.
 Published tags and assets stay immutable.
+
+Routine branch and paired-integration CI uses Linux only. Two explicitly selected
+completed task branches can produce one Linux-only prerelease such as
+`0.31.17-rc.1`; the candidate number is selected once for the pair, not incremented
+for each commit. Prereleases never become the latest stable release. Before a
+separately selected stable promotion, run all-platform stable readiness on the
+exact integration candidate, then verify that result before changing main.
+See [paired prereleases](prereleases.md). Existing tags and assets stay immutable.

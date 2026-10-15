@@ -85,7 +85,7 @@ Use the script's absolute path when outside the checkout. On Linux it runs
 `cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
 drift-warning demo, native tmux handoff, release references, release build,
 onboarding smoke, packaging, and installer smoke. On macOS it runs the same
-native test/proof/build/package/installer sequence as the macOS CI jobs.
+native test/proof/build/package/installer sequence as the stable release jobs.
 Each stage announces its name and log path before it starts. Output stays
 quiet on success. Failure prints the last 8 KiB; complete stdout/stderr remain
 in the private per-run log directory printed at startup. Inspect that stage's
@@ -132,8 +132,10 @@ can additionally select the contributing head for the ancestry check.
 `--checks-only` stops before build/package steps; the release workflow uses it
 before its tag, build, attestation, and publication gates. Local completion
 covers only the selected native host and current working tree. GitHub's exact
-checkout checks, the other OS jobs, dependency audit, WSL, and release
-provenance checks remain separate; a local pass is not an exact-SHA CI pass.
+checkout checks and dependency audit remain separate. Routine CI uses Linux;
+[stable readiness](docs/prereleases.md) checks both Macs and WSL before a
+separately selected main promotion. Release provenance stays separate; a local
+pass is not an exact-source hosted result.
 
 Add the smallest focused test that proves changed behavior. Documentation links
 and public wording contracts belong in the existing documentation tests. Do not

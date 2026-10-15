@@ -1,0 +1,83 @@
+name: Paired Linux prerelease
+on:
+  workflow_run:
+    workflows: ["Exitbind / Exit"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: paired-linux-prerelease
+  cancel-in-progress: false
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.id == github.repository_id)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+      actions: read
+    outputs:
+      ready: ${{ steps.pair.outputs.ready }}
+      sha: ${{ steps.pair.outputs.sha }}
+      base: ${{ steps.pair.outputs.base }}
+      branch: ${{ steps.pair.outputs.branch }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Plan only the selected pair using trusted main code
+        id: pair
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAIR_CONFIG: ${{ vars.EXITBIND_PRERELEASE_PAIR }}
+          PAIR_AUTHOR_NAME: envy404
+          PAIR_AUTHOR_EMAIL: 287204764+envy404@users.noreply.github.com
+        run: python3 scripts/paired-prerelease.py plan
+      - name: Retain pair planning evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: paired-plan-${{ github.run_id }}
+          path: pair-evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+  check:
+    needs: plan
+    if: needs.plan.outputs.ready == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      candidate_sha: ${{ needs.plan.outputs.sha }}
+      proof_base: ${{ needs.plan.outputs.base }}
+  finish:
+    needs: [plan, check]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.plan.outputs.base }}
+          persist-credentials: false
+      - name: Record exact combined result and request one Linux prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAIR_CONFIG: ${{ vars.EXITBIND_PRERELEASE_PAIR }}
+          PAIR_SHA: ${{ needs.plan.outputs.sha }}
+          PAIR_BRANCH: ${{ needs.plan.outputs.branch }}
+          PAIR_CHECK_RESULT: ${{ needs.check.result }}
+        run: python3 scripts/paired-prerelease.py finish
+      - name: Retain completion evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: paired-finish-${{ github.run_id }}
+          path: pair-evidence/
+          if-no-files-found: ignore
+          retention-days: 14

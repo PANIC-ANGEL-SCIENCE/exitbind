@@ -27,14 +27,14 @@ wsl.exe --list --verbose
 
 ## Install Exitbind inside Ubuntu
 
-To install the published `v0.31.15` release, open the Ubuntu terminal.
+To install the published `v0.31.16` release, open the Ubuntu terminal.
 Keep projects under the Linux home directory, not under `/mnt/c`, so Linux path,
 permission, and filesystem behavior remain the ones Exitbind tests.
 
 ```sh
 sudo apt-get update
 sudo apt-get install -y curl git tmux
-curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.15/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.16/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
 mkdir -p "$HOME/projects"

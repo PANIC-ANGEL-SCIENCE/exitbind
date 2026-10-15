@@ -187,13 +187,12 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
     }
     assert!(workflow.contains("installer-smoke.sh"));
     assert!(workflow.contains("github.sha"));
-    assert!(workflow.contains("needs: [linux, macos, windows-wsl]"));
+    assert!(workflow.contains("needs: [channel, linux, macos, windows-wsl]"));
     assert!(workflow.contains("pattern: release-*"));
     assert!(workflow.contains("merge-multiple: true"));
-    assert!(workflow.contains("aarch64-apple-darwin.bundle.json"));
-    assert!(workflow.contains("exitbind-aarch64-apple-darwin.tar.gz.sha256"));
-    assert!(workflow.contains("exitbind-x86_64-apple-darwin.tar.gz.sha256"));
-    assert!(workflow.contains("exitbind-x86_64-unknown-linux-gnu.tar.gz.sha256"));
+    assert!(workflow.contains("for target in $RELEASE_TARGETS; do"));
+    assert!(workflow.contains("RELEASE_TARGETS: ${{ needs.channel.outputs.targets }}"));
+    assert!(workflow.contains("needs.channel.outputs.prerelease == 'true' || (needs.macos.result == 'success' && needs.windows-wsl.result == 'success')"));
     assert!(workflow.matches("--deny-self-hosted-runners").count() >= 3);
     assert!(workflow.matches("actions/attest@").count() >= 2);
     let publish = workflow
@@ -209,7 +208,12 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
         .split_once("\n  installed:\n")
         .unwrap_or_else(|| panic!("missing installed post-publication job"))
         .1;
-    assert!(installed.starts_with("    needs: publish\n"));
+    assert!(installed.starts_with("    needs: [channel, publish]\n"));
+    assert!(installed.contains("matrix: ${{ fromJSON(needs.channel.outputs.installed) }}"));
+    let channel = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/release-channel.py"),
+    )
+    .unwrap();
     for (runner, host_os, host_arch, target) in [
         (
             "ubuntu-latest",
@@ -220,10 +224,10 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
         ("macos-15", "Darwin", "arm64", "aarch64-apple-darwin"),
         ("macos-15-intel", "Darwin", "x86_64", "x86_64-apple-darwin"),
     ] {
-        assert!(installed.contains(&format!("runner: {runner}")));
-        assert!(installed.contains(&format!("host_os: {host_os}")));
-        assert!(installed.contains(&format!("host_arch: {host_arch}")));
-        assert!(installed.contains(&format!("target: {target}")));
+        assert!(channel.contains(&format!("'runner': '{runner}'")));
+        assert!(channel.contains(&format!("'host_os': '{host_os}'")));
+        assert!(channel.contains(&format!("'host_arch': '{host_arch}'")));
+        assert!(channel.contains(target));
     }
     assert!(installed.contains("ref: ${{ github.ref }}"));
     assert!(installed.contains("Download same-workflow expected release artifact"));
@@ -396,5 +400,71 @@ fn publisher_rejects_tampered_transferred_raw_bytes_before_upload_for_each_targe
         assert_eq!(calls.matches("attestation verify").count(), 3);
         assert!(!fixture.0.join("upload-marker").exists());
         assert!(!fixture.0.join("dist").exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn linux_prerelease_inventory_and_tamper_checks_require_exactly_three_assets() {
+    let workflow = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
+    )
+    .unwrap();
+    for tampered in [false, true] {
+        let fixture = publisher_fixture(
+            "linux-prerelease",
+            if tampered {
+                Some("x86_64-unknown-linux-gnu")
+            } else {
+                None
+            },
+        );
+        fs::write(
+            fixture.0.join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"99.0.0-rc.1\"\n",
+        )
+        .unwrap();
+        for target in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {
+            for suffix in ["", ".tar.gz", ".tar.gz.sha256"] {
+                fs::remove_file(
+                    fixture
+                        .0
+                        .join("release-evidence")
+                        .join(format!("exitbind-{target}{suffix}")),
+                )
+                .unwrap();
+            }
+            fs::remove_file(
+                fixture
+                    .0
+                    .join("release-evidence")
+                    .join(format!("{target}.bundle.json")),
+            )
+            .unwrap();
+        }
+        let output = run_publisher_steps_for_targets(
+            &workflow,
+            &fixture,
+            "x86_64-unknown-linux-gnu",
+            "v99.0.0-rc.1",
+        );
+        if tampered {
+            assert!(
+                !output.status.success(),
+                "tampered Linux bytes were accepted: {output:?}"
+            );
+            assert!(!fixture.0.join("upload-marker").exists());
+        } else {
+            expect_success(output);
+            assert!(fixture.0.join("upload-marker").exists());
+            assert_eq!(fs::read_dir(fixture.0.join("dist")).unwrap().count(), 3);
+        }
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("gh-calls"))
+                .unwrap()
+                .matches("attestation verify")
+                .count(),
+            1
+        );
     }
 }

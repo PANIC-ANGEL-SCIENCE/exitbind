@@ -1,6 +1,6 @@
 # Install the binary for your platform
 
-The `v0.31.15` release targets Linux x86_64 and macOS on
+The `v0.31.16` release targets Linux x86_64 and macOS on
 Apple Silicon and Intel. The public release workflow is the authoritative path
 for validating native builds, packaged installation, and public asset
 installation; check its result for this exact release. WSL uses the same Linux artifact inside Ubuntu. See the
@@ -19,9 +19,10 @@ is needed to run the installed binary or `exitbind benchmark`.
 | macOS on Apple Silicon | `aarch64-apple-darwin` | Required release gates: native macOS 15 build, packaged installation, and public asset installation. |
 | macOS on Intel | `x86_64-apple-darwin` | Required release gates: native macOS 15 build, packaged installation, and public asset installation. |
 
-The [CI](../.github/workflows/ci.yml) and
+Ordinary [CI](../.github/workflows/ci.yml) runs on Linux. Prereleases provide
+Linux assets only. Stable readiness and the stable
 [release workflow](../.github/workflows/release.yml) require both native Mac
-architectures. Older macOS versions have not been validated by this matrix.
+architectures and actual WSL. See [paired prereleases](prereleases.md). Older macOS versions have not been validated by this matrix.
 Cross-compilation alone is not installation evidence.
 
 The public release workflow rechecks transferred archive checksums and

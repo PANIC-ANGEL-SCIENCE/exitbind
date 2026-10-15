@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — 0.31.16 source candidate
+## 0.31.16
+
+Published stable release; the `v0.31.16` tag and release assets are available.
 
 - Carry approved optional pre-return diagnostics through ordinary setup and
   share owned verification context across focused, diagnostic and full checks.
