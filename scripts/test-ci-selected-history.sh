@@ -148,7 +148,7 @@ test "$(git -C "$work/shallow-selected" rev-parse --is-shallow-repository)" = tr
 
 workflow=$root/.github/workflows/ci.yml
 conditional_count=$(grep -F -c 'fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}' "$workflow")
-test "$conditional_count" -eq 4 || fail 'public/unknown depth-zero checkout behavior drifted from the four history-capable jobs'
+test "$conditional_count" -eq 3 || fail 'public/unknown depth-zero checkout behavior drifted from scope, readme and Linux test jobs'
 grep -F 'Complete selected Git history' "$workflow" >/dev/null || fail 'private selected-history helper is not wired into CI'
 
 printf 'ci-selected-history regression passed\n'

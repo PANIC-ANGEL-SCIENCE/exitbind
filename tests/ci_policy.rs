@@ -422,6 +422,19 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         assert!(block.find("actions/checkout@").unwrap() < block.find(assertion).unwrap());
     }
 
+    for (job, next) in [
+        ("scope", "readme"),
+        ("readme", "exit"),
+        ("exit", "audit"),
+        ("audit", "__missing__"),
+    ] {
+        let block = job_block(&ci, job, next);
+        assert!(
+            block.contains("ref: ${{ inputs.candidate_sha || github.sha }}"),
+            "CI {job} must checkout the explicit candidate, including audit"
+        );
+    }
+
     let release = source(".github/workflows/release.yml");
     for (job, next_job, assertion) in [
         ("linux", "macos", POSIX_SHA_ASSERTION),

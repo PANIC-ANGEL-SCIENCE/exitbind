@@ -135,6 +135,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$EXITBIND_EXPECTED_SHA"
       - name: Cache cargo-audit
