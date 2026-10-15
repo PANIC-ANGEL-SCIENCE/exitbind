@@ -283,6 +283,46 @@ class MetadataSafetyTests(unittest.TestCase):
 
 
 class RealGitObjectTests(unittest.TestCase):
+    def test_privileged_repository_commands_refuse_before_merge_or_api_writes(self):
+        controls = ['scripts/check-public-history.sh', 'scripts/publish-release-assets.sh',
+                    'scripts/paired-prerelease.py', 'scripts/prepare-prerelease.py',
+                    'scripts/release-channel.py', 'scripts/check-release-refs.sh']
+        publication = (ROOT/'.github/workflows/release.yml').read_text().split('  publish:\n', 1)[1].split('  installed:\n', 1)[0]
+        import re
+        commands = re.findall(r'(?:\./|sh )(scripts/[a-z0-9-]+\.sh)', publication)
+        self.assertEqual(set(commands), {'scripts/check-public-history.sh', 'scripts/publish-release-assets.sh'})
+        for control in controls:
+            with self.subTest(control=control), tempfile.TemporaryDirectory(prefix='pair-control-') as directory:
+                root = Path(directory)
+                trusted = root/'trusted'
+                trusted.mkdir()
+                run(trusted, 'init', '-q', '-b', 'main')
+                run(trusted, 'config', 'user.name', 'Fixture')
+                run(trusted, 'config', 'user.email', 'fixture@example.invalid')
+                (trusted/'base.txt').write_text('base\n')
+                run(trusted, 'add', '--all')
+                run(trusted, 'commit', '-qm', 'Fixture base')
+                base = run(trusted, 'rev-parse', 'HEAD').decode().strip()
+                target = trusted/control
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('candidate control must never execute\n')
+                run(trusted, 'add', '--all')
+                run(trusted, 'commit', '-qm', 'Fixture changed control')
+                changed = run(trusted, 'rev-parse', 'HEAD').decode().strip()
+                bare = root/'remote.git'
+                run(trusted, 'clone', '-q', '--bare', str(trusted), str(bare))
+                original_git = PAIR.git
+                seen = []
+                def local_git(path, *args, **kwargs):
+                    seen.append(args)
+                    return original_git(path, *tuple(str(bare) if x == 'https://github.com/fixture/repo.git' else x for x in args), **kwargs)
+                api = FakeAPI()
+                with patch.object(PAIR, 'git', side_effect=local_git), patch.dict(os.environ, {
+                        'PAIR_AUTHOR_NAME': 'Fixture', 'PAIR_AUTHOR_EMAIL': 'fixture@example.invalid'}), self.assertRaises(ValueError):
+                    PAIR.build_candidate(api, trusted, base, CONFIG, [changed, changed], {})
+                self.assertFalse(any(args[0] == 'merge' for args in seen))
+                self.assertEqual(api.calls, [])
+
     def test_generated_merge_version_and_git_data_objects_keep_exact_identity(self):
         with tempfile.TemporaryDirectory(prefix='pair-git-') as directory:
             root = Path(directory)
@@ -339,13 +379,47 @@ class RealGitObjectTests(unittest.TestCase):
             with patch.object(PAIR, 'git', side_effect=local_git), patch.dict(os.environ, {
                     'PAIR_AUTHOR_NAME': 'Fixture', 'PAIR_AUTHOR_EMAIL': 'fixture@example.invalid', 'TZ': 'UTC'}):
                 candidate = PAIR.build_candidate(GitAPI(), trusted, base, CONFIG, heads, marker)
+                run(bare, 'update-ref', 'refs/heads/reserved-good', candidate)
                 probe = GitAPI()
                 with self.assertRaises(ValueError):
-                    PAIR.build_candidate(probe, trusted, base, CONFIG, heads, marker, expected_tree='0'*40)
+                    PAIR.build_candidate(probe, trusted, base, CONFIG, heads, marker, expected_tree='0'*40, reserved_candidate=candidate)
                 self.assertEqual(probe.writes, 0)
                 expected = run(bare, 'rev-parse', candidate+'^{tree}').decode().strip()
-                PAIR.build_candidate(probe, trusted, base, CONFIG, heads, marker, expected_tree=expected)
+                PAIR.build_candidate(probe, trusted, base, CONFIG, heads, marker, expected_tree=expected, reserved_candidate=candidate)
                 self.assertEqual(probe.writes, 0)
+
+                class ResumeAPI(FakeAPI):
+                    def __init__(self, reserved):
+                        super().__init__()
+                        self.refs = dict(zip(['main', *CONFIG['branches']], [base, *heads]))
+                        self.refs['integration/pair-'+NEXT] = reserved
+                        self.marker = marker
+
+                    def get(self, route, optional=False):
+                        if route.startswith('git/commits/'):
+                            return {'tree': {'sha': expected}}
+                        return super().get(route, optional)
+
+                for index, parents in enumerate([[base], [heads[0]], [heads[1]], []]):
+                    command = ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit-tree', expected]
+                    for parent in parents:
+                        command += ['-p', parent]
+                    forged = run(bare, *command, data=b'Equal tree without all required ancestry\n').decode().strip()
+                    run(bare, 'update-ref', f'refs/heads/reserved-bad-{index}', forged)
+                    with self.subTest(parents=parents), self.assertRaises(ValueError):
+                        PAIR.build_candidate(probe, trusted, base, CONFIG, heads, marker, expected_tree=expected, reserved_candidate=forged)
+                    self.assertEqual(probe.writes, 0)
+                    api = ResumeAPI(forged)
+                    with self.subTest(admission_parents=parents), self.assertRaises(ValueError):
+                        PAIR.plan(api, trusted, json.dumps(CONFIG))
+                    self.assertEqual(api.calls, [])
+                api = ResumeAPI(candidate)
+                with patch.dict(os.environ, {'GITHUB_RUN_ID': 'fixture'}):
+                    resumed = PAIR.plan(api, trusted, json.dumps(CONFIG))
+                self.assertTrue(resumed['ready'])
+                self.assertEqual(resumed['sha'], candidate)
+                self.assertEqual(len(api.calls), 1)
+                self.assertEqual(api.calls[0][0], 'statuses/'+candidate)
             for source in [base, *heads]:
                 p = subprocess.run(['git', '-C', str(bare), 'merge-base', '--is-ancestor', source, candidate])
                 self.assertEqual(p.returncode, 0)

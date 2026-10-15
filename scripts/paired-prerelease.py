@@ -21,6 +21,7 @@ PROTECTED = ['.github/', 'scripts/paired-prerelease.py', 'scripts/prepare-prerel
              'scripts/release-channel.py', 'scripts/ci-local.sh', 'scripts/ci-selected-history.sh',
              'scripts/publish-release-assets.sh', 'scripts/package-release.sh',
              'scripts/check-release-refs.sh', 'scripts/published-install-smoke.sh',
+             'scripts/check-public-history.sh',
              'scripts/installer-smoke.sh', 'scripts/verify-binary.py', 'install.sh',
              'tooling/readme/ci_scope.py']
 SHA = re.compile('[0-9a-f]{40}')
@@ -194,13 +195,18 @@ def upload_objects(api, root, base, sources, candidate):
             raise ValueError('Generated commit identity mismatch')
 
 
-def build_candidate(api, trusted, base, config, sources, marker, expected_tree=None):
+def build_candidate(api, trusted, base, config, sources, marker, expected_tree=None, reserved_candidate=None):
     """No candidate program executes in this privileged stage."""
     with tempfile.TemporaryDirectory(prefix='paired-integration-') as directory:
         root = Path(directory)
         git(root, 'init', '-q')
         git(root, 'remote', 'add', 'origin', 'https://github.com/'+api.repo+'.git')
-        git(root, 'fetch', '--no-tags', 'origin', base, *sources)
+        if expected_tree is not None and not SHA.fullmatch(reserved_candidate or ''):
+            raise ValueError('Reserved reconstruction requires an exact candidate commit')
+        reserved = [reserved_candidate] if expected_tree is not None else []
+        git(root, 'fetch', '--no-tags', 'origin', base, *sources, *reserved)
+        for ancestor in [base, *sources] if reserved else []:
+            git(root, 'merge-base', '--is-ancestor', ancestor, reserved_candidate)
         git(root, 'checkout', '--detach', base)
         env = {k: v for k, v in os.environ.items() if 'TOKEN' not in k and k not in ['GITHUB_OUTPUT', 'GITHUB_ENV']}
         env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
@@ -251,13 +257,16 @@ def plan(api, trusted, raw):
     existing = api.get('git/ref/heads/'+encode(branch), optional=True)
     if existing:
         candidate = existing['object']['sha']
+        if existing['object']['type'] != 'commit' or not SHA.fullmatch(candidate):
+            raise ValueError('Reserved integration ref must identify an exact commit')
         item = api.get('contents/'+MARKER+'?ref='+candidate)
         if json.loads(base64.b64decode(item['content'])) != marker:
             raise ValueError('Reserved integration branch has different inputs; explicit recovery is required')
         if latest_status(api, candidate) is not None:
             return {'ready': False, 'state': 'candidate already admitted; do not automatically retry'}
         tree = api.get('git/commits/'+candidate)['tree']['sha']
-        build_candidate(api, trusted, base, config, sources, marker, expected_tree=tree)
+        build_candidate(api, trusted, base, config, sources, marker,
+                        expected_tree=tree, reserved_candidate=candidate)
     else:
         candidate = build_candidate(api, trusted, base, config, sources, marker)
         if head(api, 'main') != base or [head(api, b) for b in config['branches']] != sources:

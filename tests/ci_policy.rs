@@ -457,6 +457,27 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
     }
 }
 
+#[test]
+fn paired_privileged_plan_requires_main_before_checkout() {
+    let paired = source(".github/workflows/paired-prerelease.yml");
+    let plan = job_block(&paired, "plan", "check");
+    let admission = plan
+        .lines()
+        .find(|line| line.trim_start().starts_with("if:"))
+        .unwrap();
+    assert_eq!(
+        admission.trim(),
+        concat!(
+            "if: github.ref == 'refs/heads/main' && (",
+            "github.event_name == 'workflow_dispatch' || (",
+            "github.event.workflow_run.conclusion == 'success' && ",
+            "github.event.workflow_run.head_repository.id == github.repository_id))"
+        )
+    );
+    assert!(plan.find(admission).unwrap() < plan.find("actions/checkout@").unwrap());
+    assert!(plan.contains("persist-credentials: false"));
+}
+
 /// The context-surface inventory is a measurement, not a gate. It must report
 /// the same numbers from any working directory — otherwise a later context
 /// audit would compare against an environment, not against the repository —

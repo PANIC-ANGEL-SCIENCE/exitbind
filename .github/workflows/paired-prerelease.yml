@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.id == github.repository_id)
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.id == github.repository_id))
     runs-on: ubuntu-latest
     permissions:
       contents: write
