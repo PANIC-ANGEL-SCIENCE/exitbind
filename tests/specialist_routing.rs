@@ -63,7 +63,11 @@ impl Fixture {
     }
 
     fn new() -> Self {
-        let root = support::temp("specialist-routing");
+        Self::with_label("specialist-routing")
+    }
+
+    fn with_label(label: &str) -> Self {
+        let root = support::temp(label);
         support::git_topology::repository(&root);
         let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--skip-skills", "--root"])
@@ -376,7 +380,16 @@ fn specialist_only_child_preparation_binds_and_rechecks_before_hook_presentation
 
 #[test]
 fn ordinary_recipient_keeps_complete_large_profile_with_specialist_memory() {
-    let f = Fixture::new();
+    assert_complete_specialist_recipient(Fixture::new(), false);
+}
+
+#[test]
+fn long_action_paths_keep_complete_large_profile_with_specialist_memory() {
+    let label = format!("specialist-routing-{}", "long-path-".repeat(10));
+    assert_complete_specialist_recipient(Fixture::with_label(&label), true);
+}
+
+fn assert_complete_specialist_recipient(f: Fixture, expect_grouped: bool) {
     let profile = f.config()["agents"]["record-specialist"]["profile"]
         .as_str()
         .unwrap()
@@ -398,10 +411,23 @@ fn ordinary_recipient_keeps_complete_large_profile_with_specialist_memory() {
         "r1"
     );
     let action = f.ok(&["work", "detail", &work, "--view", "action"]);
-    let reference = action["details"]["recipient"]["reference"]
+    if expect_grouped {
+        assert!(action["details"]["grouped"].is_object(), "{action}");
+        assert!(action["details"]["recipient"].is_null(), "{action}");
+    }
+    // Long invocation paths can collapse section routes into the bounded
+    // grouped fallback. Full next retains the exact current section routes.
+    let mut reference = action["details"]["recipient"]["reference"]
         .as_str()
-        .unwrap();
-    let mut reference = reference.to_owned();
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            assert!(action["details"]["grouped"].is_object(), "{action}");
+            let full_next = f.ok(&["work", "next", &work, "--full"]);
+            full_next["next"]["current"]["details"]["recipient"]["reference"]
+                .as_str()
+                .expect("full next must retain the current recipient section")
+                .to_owned()
+        });
     let mut bytes = Vec::new();
     loop {
         let page = f.ok(&["work", "expand", &work, &reference]);
