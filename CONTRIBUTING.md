@@ -139,6 +139,23 @@ Add the smallest focused test that proves changed behavior. Documentation links
 and public wording contracts belong in the existing documentation tests. Do not
 add a dependency when the standard library or an existing dependency is enough.
 
+Run a selected integration target with the shared verification preparation:
+
+```sh
+./scripts/test-focused.sh --test setup_pre_return
+./scripts/test-focused.sh --test pre_return selected_test_name -- --exact
+```
+
+Focused, pre-return and full checks share `scripts/verification-context.sh`.
+It removes ambient native Goal and Git selectors only for these owned checks,
+preserves the selected command arguments, uses a checkout-owned external cache,
+and retains complete output and child status. Focused selection requires at
+least one passing test; an empty or entirely ignored selection fails. Synthetic
+fixtures may add their own isolated identity after preparation. Real human Work
+and native delegation retain their conversation context. On interruption, the
+capture forwards the signal to its owned process group and drains output before
+releasing the cache lock; an unrecorded outcome remains unknown.
+
 For a changed Work consumer, check the ordinary readable route and native
 delivery together, including compact fallback, historical/held results,
 cross-host corrections, and current goal status. Keep help, command reference,

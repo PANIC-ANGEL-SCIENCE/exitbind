@@ -2,10 +2,6 @@
 # Shared native CI checks; run from any working directory.
 set -eu
 
-# Raw Command::new test builders inherit from Cargo, so clear ambient host
-# identity and Goal storage before launching any sibling process.
-unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_CODE_SESSION_ID EXITBIND_NATIVE_SESSION_ID EXITBIND_SESSION_GOALS_DIR CLAUDE_ENV_FILE XDG_STATE_HOME
-
 fail() { printf 'ci-local: %s\n' "$*" >&2; exit 1; }
 checks_only=false
 preflight_only=false
@@ -18,23 +14,10 @@ case "${1:-}" in
   *) fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]' ;;
 esac
 
-# Honor an explicit Cargo, otherwise preserve PATH before trying its usual home.
-if [ -n "${CARGO:-}" ]; then
-  cargo_path=$(command -v "$CARGO") || fail 'CARGO must name an executable'
-elif command -v cargo >/dev/null 2>&1; then
-  cargo_path=$(command -v cargo)
-else
-  cargo_path=${CARGO_HOME:-$HOME/.cargo}/bin/cargo
-fi
-test -x "$cargo_path" || fail 'Cargo unavailable; set CARGO or add Cargo to PATH'
-cargo_dir=$(CDPATH= cd -- "$(dirname -- "$cargo_path")" && pwd)
-CARGO="$cargo_dir/$(basename -- "$cargo_path")"
-export CARGO
-PATH="$cargo_dir:$PATH"
-export PATH
-cd -- "$(dirname -- "$0")/.."
-root=$(pwd -P)
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+. "$root/scripts/verification-context.sh"
 . "$root/scripts/ci-stages.sh"
+prepare_verification_context "$root"
 
 case "$(uname -s):$(uname -m)" in
   Linux:x86_64) platform=linux; target=x86_64-unknown-linux-gnu ;;
@@ -49,100 +32,12 @@ if [ "$platform" = linux ]; then
   command -v tmux >/dev/null 2>&1 || fail 'tmux is required for the native handoff check; install it first'
 fi
 
-# Resolve target, fixture and log roots before any build or instrumentation.
-. "$root/scripts/ci-preflight.sh"
-prepare_execution_roots
-CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-1}
-export CARGO_BUILD_JOBS
 if [ "$preflight_only" = true ]; then
   show_execution_preflight
   exit 0
 fi
 
-# Retain raw stage output independently of the caller's console/tee log.
-# Git-private storage is excluded from product input fingerprints and commits.
-log_root=$CI_LOG_ROOT
-mkdir -p "$log_root"
-log_root=$(CDPATH= cd -- "$log_root" && pwd -P)
-run_dir=$(umask 077; mktemp -d "$log_root/run.XXXXXX")
-show_execution_preflight > "$run_dir/preflight"
-current_stage=setup
-owns_lock=false
-finish() {
-  result=$?
-  trap - 0
-  printf '%s\n' "$result" > "$run_dir/run.exit"
-  printf 'stage=%s exit=%s\n' "$current_stage" "$result" > "$run_dir/state"
-  if [ "$owns_lock" = true ]; then
-    rm -f "$target_lock/owner" && rmdir "$target_lock" ||
-      printf 'ci-local: could not remove own target lock: %s\n' "$target_lock" >&2
-  fi
-  printf 'ci-local: exit=%s stage=%s logs=%s\n' "$result" "$current_stage" "$run_dir"
-  exit "$result"
-}
-trap finish 0
-trap 'exit 130' INT
-trap 'exit 143' TERM
-trap 'exit 129' HUP
-printf 'ci-local: logs=%s\n' "$run_dir"
-printf 'stage=setup running\n' > "$run_dir/state"
-
-# Do not let two ci-local invocations or different worktrees mix this cache.
-mkdir -p "$CARGO_TARGET_DIR"
-CARGO_TARGET_DIR=$(CDPATH= cd -- "$CARGO_TARGET_DIR" && pwd -P)
-export CARGO_TARGET_DIR
-if [ -z "${TMPDIR:-}" ]; then
-  case "$CARGO_TARGET_DIR" in
-    "$root"|"$root"/*) TMPDIR=/tmp ;;
-    *) TMPDIR="$CARGO_TARGET_DIR/tmp"; (umask 077; mkdir -p "$TMPDIR") ;;
-  esac
-fi
-test -d "$TMPDIR" && test -w "$TMPDIR" || fail 'TMPDIR must be a writable directory'
-TMPDIR=$(CDPATH= cd -- "$TMPDIR" && pwd -P)
-case "$TMPDIR" in
-  "$root"|"$root"/*) fail 'TMPDIR must be outside the checkout for native test fixtures' ;;
-esac
-export TMPDIR
-EXITBIND_BIN="$CARGO_TARGET_DIR/debug/exitbind"
-export EXITBIND_BIN
-target_lock="$CARGO_TARGET_DIR/.ci-local-lock"
-mkdir "$target_lock" || fail "cannot acquire target lock: $target_lock; inspect its owner and filesystem before retrying"
-owns_lock=true
-printf 'pid=%s\nroot=%s\nlogs=%s\n' "$$" "$root" "$run_dir" > "$target_lock/owner"
-printf 'started=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$target_lock/owner"
-if [ -r /proc/sys/kernel/random/boot_id ]; then
-  printf 'boot=%s\n' "$(cat /proc/sys/kernel/random/boot_id)" >> "$target_lock/owner"
-fi
-printf 'process-start=%s\n' "$(ps -p "$$" -o lstart=)" >> "$target_lock/owner"
-cache_owner="$CARGO_TARGET_DIR/.ci-local-checkout"
-if [ -e "$cache_owner" ]; then
-  previous_root=$(cat "$cache_owner")
-  test "$previous_root" = "$root" || fail 'target belongs to another checkout; choose a separate CARGO_TARGET_DIR (existing cache retained)'
-else
-  printf '%s\n' "$root" > "$cache_owner"
-fi
-{
-  printf 'head=%s\nroot=%s\ntarget=%s\ncandidate=%s\nmode=%s\n' "$(git rev-parse HEAD)" "$root" "$CARGO_TARGET_DIR" "${CANDIDATE_SHA:-HEAD}" "$ci_mode"
-  "$CARGO" --version
-  rustc --version
-  git status --porcelain --untracked-files=normal
-} > "$run_dir/context"
-
-run() {
-  current_stage=$1
-  printf 'stage=%s running\n' "$current_stage" > "$run_dir/state"
-  printf 'start: %s; log: %s/%s.log\n' "$current_stage" "$run_dir" "$current_stage"
-  started=$(date +%s)
-  if QUIET_COMMAND_LOG="$run_dir/$current_stage.log" ./scripts/quiet-command.sh "$@"; then
-    stage_status=0
-  else
-    stage_status=$?
-  fi
-  recorded_status=$(cat "$run_dir/$current_stage.log.exit") || fail "$current_stage has no captured child status"
-  test "$recorded_status" = "$stage_status" || fail "$current_stage wrapper status disagrees with its captured child status"
-  printf 'stage=%s exit=%s seconds=%s\n' "$current_stage" "$stage_status" "$(($(date +%s) - started))" >> "$run_dir/stages"
-  test "$stage_status" -eq 0 || exit "$stage_status"
-}
+begin_verification_run
 
 prepare_value_proof_base() {
   VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}

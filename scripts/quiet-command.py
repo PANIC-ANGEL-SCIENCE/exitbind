@@ -11,6 +11,7 @@ import pathlib
 import re
 import selectors
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -116,7 +117,10 @@ def capture(argv, handles):
     child_env = os.environ.copy()
     child_env.pop("QUIET_COMMAND_LOG", None)
     try:
-        child = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env)
+        child = subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env,
+            start_new_session=True,
+        )
     except OSError as error:
         message = ("quiet-command: could not execute command: " + str(error) + "\n").encode(
             "utf-8", "backslashreplace"
@@ -125,6 +129,18 @@ def capture(argv, handles):
         handles["combined"].write(message)
         return 127, False
 
+    # The capture owns this process group. Forward interruption and drain its
+    # streams before recording status; never leave a writer behind a released lock.
+    def forward(signum, _frame):
+        try:
+            os.killpg(child.pid, signum)
+        except ProcessLookupError:
+            pass
+
+    previous_handlers = {
+        signum: signal.signal(signum, forward)
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    }
     selector = selectors.DefaultSelector()
     streams = {"stdout": child.stdout, "stderr": child.stderr}
     try:
@@ -155,6 +171,8 @@ def capture(argv, handles):
         raise
     finally:
         selector.close()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 def sha256_file(path):

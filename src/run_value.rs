@@ -47,6 +47,13 @@ pub(crate) struct PreReturnPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PreReturnOptions {
+    pub(crate) command: String,
+    pub(crate) timeout_ms: u64,
+    pub(crate) capture_limit_bytes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckerSource {
     pub(crate) argument_path: Option<String>,
     pub(crate) path: String,
@@ -56,6 +63,31 @@ pub(crate) struct CheckerSource {
 impl PreReturnPolicy {
     pub(crate) fn from_cli(
         loaded: &crate::config::Loaded,
+        command: Option<&str>,
+        timeout_ms: Option<&str>,
+        capture_bytes: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        let Some(options) = PreReturnOptions::from_cli(command, timeout_ms, capture_bytes)? else {
+            return Ok(None);
+        };
+        Ok(Some(options.into_policy(loaded)?))
+    }
+
+    pub(crate) fn value(&self) -> Value {
+        json!({"version": PRE_RETURN_POLICY_VERSION, "command": self.command, "commandSha256": self.command_sha256,
+            "timeoutMs": self.timeout_ms, "captureLimitBytes": self.capture_limit_bytes, "checkerSources": self.checker_sources.iter().map(|s| {
+                let mut value=json!({"path":s.path,"sha256":s.sha256});
+                if let Some(argument_path)=&s.argument_path { value["argumentPath"]=json!(argument_path); }
+                value
+            }).collect::<Vec<_>>()})
+    }
+}
+
+impl PreReturnOptions {
+    /// Validate caller-selected policy values without needing project state.
+    /// Setup uses this before any write; Work begin later adds source pinning
+    /// from the loaded project configuration.
+    pub(crate) fn from_cli(
         command: Option<&str>,
         timeout_ms: Option<&str>,
         capture_bytes: Option<&str>,
@@ -88,23 +120,22 @@ impl PreReturnPolicy {
             })
             .transpose()?
             .unwrap_or(262_144);
-        let checker_sources = checker_sources(loaded, command)?;
         Ok(Some(Self {
             command: command.to_owned(),
-            command_sha256: crate::evidence::hash::text(command),
             timeout_ms,
             capture_limit_bytes,
-            checker_sources,
         }))
     }
 
-    pub(crate) fn value(&self) -> Value {
-        json!({"version": PRE_RETURN_POLICY_VERSION, "command": self.command, "commandSha256": self.command_sha256,
-            "timeoutMs": self.timeout_ms, "captureLimitBytes": self.capture_limit_bytes, "checkerSources": self.checker_sources.iter().map(|s| {
-                let mut value=json!({"path":s.path,"sha256":s.sha256});
-                if let Some(argument_path)=&s.argument_path { value["argumentPath"]=json!(argument_path); }
-                value
-            }).collect::<Vec<_>>()})
+    fn into_policy(self, loaded: &crate::config::Loaded) -> Result<PreReturnPolicy, String> {
+        let checker_sources = checker_sources(loaded, &self.command)?;
+        Ok(PreReturnPolicy {
+            command_sha256: crate::evidence::hash::text(&self.command),
+            command: self.command,
+            timeout_ms: self.timeout_ms,
+            capture_limit_bytes: self.capture_limit_bytes,
+            checker_sources,
+        })
     }
 }
 
