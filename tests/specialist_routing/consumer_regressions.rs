@@ -44,6 +44,32 @@ fn fake_provider(f: &Fixture) -> (PathBuf, PathBuf) {
 }
 
 #[test]
+fn repeated_escaped_quotes_remain_valid_ordinary_memory() {
+    let f = with_generic();
+    let source = format!(
+        "Ordinary escaped quote example: \"{}\"\n",
+        "\\\"".repeat(4096)
+    );
+    assert_eq!(source.len(), 8227);
+    fs::write(f.root.join("ordinary.txt"), &source).unwrap();
+    accept_generic(&f, "ordinary.txt", ".exitbind/memory/ordinary.jsonl");
+    let resolved = f.ok(&[
+        "memory",
+        "resolve",
+        "record-specialist",
+        "--task",
+        "unrelated formatting",
+    ]);
+    assert_eq!(resolved["references"].as_array().unwrap().len(), 1);
+    assert_eq!(resolved["references"][0]["sourcePath"], "ordinary.txt");
+    assert_eq!(resolved["references"][0]["byteLength"], source.len());
+    assert_eq!(
+        resolved["references"][0]["sourceSha256"],
+        "b3b7fa65d1bedbfa533ebabe6697e0f7cb7b71074d76d92a1ce6e1211ed8cc7c"
+    );
+}
+
+#[test]
 fn fenced_and_encoded_reserved_aliases_stay_out_of_actual_unrelated_native_delivery_after_revoke() {
     let f = with_generic();
     f.draft("specialist.json", "r1");
