@@ -40,6 +40,10 @@ review or Lead acceptance.
 
 An optional project command can be frozen alongside the existing final check:
 
+When using approved setup facts, pass the same optional diagnostic flags to
+`setup`; its preview/apply response carries them into the emitted begin action.
+See [approved setup facts](onboarding.md#assemble-approved-facts-without-a-configuration-join).
+
 ```sh
 exitbind work begin change --goal "Implement the approved behavior" \
   --check-command "./test-all.sh" --pre-return-command "./test-cheap.sh" \

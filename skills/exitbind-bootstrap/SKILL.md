@@ -21,6 +21,21 @@ In an unconfigured project, inspect first and obtain owner consent for `exitbind
 
 For new governed Work, follow applied setup's exact next argv or use `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted --detail`. Consume the returned complete current recipient context without another discovery read; the Lead's scope decision still precedes worker editing. A recorded start with failed delivery exposes the existing Work and a read-only recovery. If the reply was lost, use `work resume --json` with the same configuration; never repeat begin for recovery. Unmarked historical Work keeps required review and cannot revise policy. Project guidance carries the full authority rules. Product-managed Codex uses `work act WORK` for its configured pending role/check and explicit Lead decision. Host-managed native agents inspect `actionForms`: execute `beforeEditing` only when that new-permit form is present; use `currentGrant` for its exact present mutation when supplied; and complete `nextRequest` before any later mutation request. `beforeEditing` appears only when a new permit is admissible. For a lost or uncertain permit reply, retry only with the same request ID and inspect current detail/head before acting; never mint a fresh request ID merely to recover. A grant gives no host access. `replan_required` and `evidence_required` govern the next new mutation request and do not revoke a valid present grant. A validated sensor request or inert sensor result preserves it; a conservative sensor result or later semantic governor event makes it stale. Retained worker results take priority over editing and must be returned through the current recovery form first. Worker completion still requires the ready-governor state. Ordinary returns need no continuation initialization. Cross-host initialized continuation uses its own bound receive routes.
 
+If an optional pre-return diagnostic and limits are already approved, supply
+`--pre-return-command`, `--pre-return-timeout-ms` and
+`--pre-return-capture-bytes` to `setup`; preview/apply carry those exact facts
+into the emitted begin argv. Neither setup nor begin executes the diagnostic.
+It gates the successful Worker return and never replaces the final check.
+
+For a consequential unresolved assumption, `work challenge WORK --question
+QUESTION` supplies a read-only packet with separate native first-pass
+assignments and an ordinary-result `earlyEvidence` template. An already
+permitted `--probe-command COMMAND --probe-source PROJECT_FILE` can bind a
+behavioral discriminator. Follow the packet through the host, observe the probe
+and retain a reasoned no-new-information or inconclusive outcome when applicable.
+The packet launches nothing and its reports are advisory; review and acceptance
+remain separate. Clear routine tasks need no challenge.
+
 For the narrow owner-recovery form exposed by a blocked Work, require the exact
 adjacent duplicate-permit events, a same-goal successor, an explicit owner
 invocation attestation, and complete bounded StateRoot evidence that each

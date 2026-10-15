@@ -17,6 +17,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "setup_next.rs"]
+mod setup_next;
 #[path = "setup_roles.rs"]
 mod setup_roles;
 use setup_roles::{single_command, split_list, RoleFacts};
@@ -34,6 +36,9 @@ pub(crate) struct SetupFacts {
     write: Option<Vec<String>>,
     commands: Option<Vec<String>>,
     check_command: Option<String>,
+    pre_return_command: Option<String>,
+    pre_return_timeout_ms: Option<String>,
+    pre_return_capture_bytes: Option<String>,
     review_policy: Option<String>,
     goal: Option<String>,
     hosts: Vec<String>,
@@ -76,6 +81,9 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         "write",
         "commands",
         "check-command",
+        "pre-return-command",
+        "pre-return-timeout-ms",
+        "pre-return-capture-bytes",
         "review-policy",
         "goal",
         "hosts",
@@ -113,6 +121,9 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         write: split_list(arguments.options.get("write"), "write")?,
         commands: single_command(arguments.options.get("commands"), "commands")?,
         check_command: arguments.options.get("check-command").cloned(),
+        pre_return_command: arguments.options.get("pre-return-command").cloned(),
+        pre_return_timeout_ms: arguments.options.get("pre-return-timeout-ms").cloned(),
+        pre_return_capture_bytes: arguments.options.get("pre-return-capture-bytes").cloned(),
         review_policy: arguments.options.get("review-policy").cloned(),
         goal: arguments.options.get("goal").cloned(),
         hosts: split_list(arguments.options.get("hosts"), "hosts")?.unwrap_or_default(),
@@ -288,11 +299,16 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         );
     }
     report["applyRequired"] = json!(false);
-    report["next"] = next_actions(&facts.root, &loaded.path, &hosts, facts)?;
+    report["next"] = setup_next::next_actions(&facts.root, &loaded.path, &hosts, facts)?;
     Ok(report)
 }
 
 fn validate_facts(facts: &SetupFacts) -> Result<(), String> {
+    crate::run_value::PreReturnOptions::from_cli(
+        facts.pre_return_command.as_deref(),
+        facts.pre_return_timeout_ms.as_deref(),
+        facts.pre_return_capture_bytes.as_deref(),
+    )?;
     if facts.root.trim().is_empty() || facts.root.contains('\0') {
         return Err("setup root must be a non-empty path without NUL bytes".into());
     }
@@ -517,6 +533,14 @@ fn preview_report(
         .filter(|_| !hosts.is_empty())
         .and_then(|loaded| native_profiles::status_for_hosts(loaded, &host_refs(hosts)).ok())
         .unwrap_or_else(|| json!({"status": "preview", "writes": false}));
+    let mut approved_facts = json!({"roles": facts.resolved_roles(), "observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal});
+    if facts.pre_return_command.is_some() {
+        approved_facts["preReturn"] = json!({
+            "command": facts.pre_return_command,
+            "timeoutMs": facts.pre_return_timeout_ms,
+            "captureBytes": facts.pre_return_capture_bytes,
+        });
+    }
     Ok(json!({
         "version": 1,
         "status": "preview",
@@ -524,7 +548,7 @@ fn preview_report(
         "root": root,
         "mode": facts.mode,
         "scope": facts.scope,
-        "approvedFacts": {"roles": facts.resolved_roles(), "observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal},
+        "approvedFacts": approved_facts,
         "affectedPaths": affected,
         "conflicts": conflicts,
         "missingOwnerDecisions": missing,
@@ -532,7 +556,7 @@ fn preview_report(
         "guidance": guidance,
         "profiles": profiles,
         "projection": projection,
-        "next": next_actions(&facts.root, config_path, hosts, facts)?,
+        "next": setup_next::next_actions(&facts.root, config_path, hosts, facts)?,
     }))
 }
 
@@ -720,74 +744,6 @@ fn skill_state_label(state: project_skills::SkillObservationState) -> &'static s
     }
 }
 
-fn next_actions(
-    root: &str,
-    config: &Path,
-    hosts: &[String],
-    facts: &SetupFacts,
-) -> Result<Value, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("invoking executable cannot be resolved: {error}"))?;
-    let executable = fs::canonicalize(executable)
-        .map_err(|error| format!("invoking executable cannot be canonicalized: {error}"))?;
-    let executable = executable
-        .to_str()
-        .ok_or("invoking executable path is not valid UTF-8")?;
-    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-    let cwd = fs::canonicalize(cwd).map_err(|error| error.to_string())?;
-    let cwd = cwd.to_str().ok_or("working directory is not valid UTF-8")?;
-    let config = config
-        .to_str()
-        .ok_or("configuration path is not valid UTF-8")?;
-    let check_argv = vec![executable, "check", "--config", config];
-    let mut actions = Vec::new();
-    let mut argv = Vec::new();
-    if !facts.apply {
-        actions.push(
-            check_argv
-                .iter()
-                .map(|item| shell_quote(item))
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
-        argv.push(check_argv);
-    }
-    if let (Some(check), Some(review_policy), Some(goal)) =
-        (&facts.check_command, &facts.review_policy, &facts.goal)
-    {
-        let work_argv = vec![
-            executable,
-            "work",
-            "begin",
-            "change",
-            "--goal",
-            goal,
-            "--check-command",
-            check,
-            "--review-policy",
-            review_policy,
-            "--detail",
-            "--config",
-            config,
-        ];
-        actions.push(
-            work_argv
-                .iter()
-                .map(|item| shell_quote(item))
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
-        argv.push(work_argv);
-    }
-    Ok(
-        json!({"root": root, "workingDirectory": cwd, "argv": argv, "commands": actions, "hosts": hosts, "sessionReload": "not performed"}),
-    )
-}
-
-fn shell_quote(value: &str) -> String {
-    crate::presentation::shell_quote(value)
-}
-
 fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::Local => "local",
@@ -850,6 +806,9 @@ mod tests {
             write: Some(vec!["src".into()]),
             commands: Some(vec!["cargo test --locked".into()]),
             check_command: Some("cargo test --locked".into()),
+            pre_return_command: None,
+            pre_return_timeout_ms: None,
+            pre_return_capture_bytes: None,
             review_policy: Some("required".into()),
             goal: Some("test setup".into()),
             hosts: Vec::new(),

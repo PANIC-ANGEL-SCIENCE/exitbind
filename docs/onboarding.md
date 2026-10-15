@@ -136,6 +136,15 @@ exitbind setup --mode portable --root . --scope worker \
   --goal "Describe the bounded change"
 ```
 
+To add the optional diagnostic that runs before a Worker returns a completed
+result, include `--pre-return-command COMMAND`. You may also set
+`--pre-return-timeout-ms MS` (1–300000) and
+`--pre-return-capture-bytes BYTES` (1–1048576); their defaults are 120000 ms
+and 262144 bytes. Setup validates these values before writing, then carries the
+approved values into the emitted `work begin` action. Setup and Work begin only
+record the policy; the diagnostic runs later at the Worker return boundary.
+Either limit requires `--pre-return-command`.
+
 Review the preview, then repeat with `--apply`. `--scope` selects `lead`,
 `worker`, and/or `reviewer`; the default is `worker`. `--hosts codex`,
 `--hosts claude`, or `--hosts codex,claude` selects the supported native
