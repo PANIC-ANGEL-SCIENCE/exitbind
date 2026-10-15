@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — 0.31.16 source candidate
+
+- Carry approved optional pre-return diagnostics through ordinary setup and
+  share owned verification context across focused, diagnostic and full checks.
+- Preserve signals received while creating an owned check subprocess and retain
+  its complete output and exit status.
+- Apply qualified specialist experience consistently to actual native delivery;
+  retain complete ordinary guidance and reject reserved-source recall bypasses.
+- Own Linux observation descendants separately from unrelated caller children,
+  and keep historical unknown-termination recovery inspection-only.
+- Preserve complete recipient expansion when long invocation paths select the
+  existing bounded action fallback.
+
 ## 0.31.15
 
 Published stable release; the `v0.31.15` tag and release assets are available.
