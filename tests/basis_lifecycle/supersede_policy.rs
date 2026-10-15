@@ -93,34 +93,42 @@ fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
 
     let barrier = Arc::new(Barrier::new(2));
     let root = fixture.root.clone();
-    let workers = (0..2)
-        .map(|_| {
-            let barrier = Arc::clone(&barrier);
-            let root = root.clone();
-            thread::spawn(move || {
-                barrier.wait();
-                Command::new(env!("CARGO_BIN_EXE_exitbind"))
-                    .current_dir(&root)
-                    .args([
-                        "run",
-                        "supersede",
-                        ".exitbind/runs/basis.jsonl",
-                        "--workflow",
-                        "change",
-                        "--goal",
-                        "concurrent successor",
-                        "--ledger",
-                        ".exitbind/runs/concurrent-successor.jsonl",
-                        "--review-policy",
-                        "omitted",
-                        "--config",
-                    ])
-                    .arg(root.join("exitbind.json"))
-                    .output()
-                    .unwrap()
-            })
+    // Different requests must choose one successor even if the OS schedules
+    // their children sequentially. Identical requests may both validly succeed
+    // because the later request replays the already committed claim.
+    let workers = [
+        ".exitbind/runs/concurrent-successor-a.jsonl",
+        ".exitbind/runs/concurrent-successor-b.jsonl",
+    ]
+    .into_iter()
+    .map(|ledger| {
+        let barrier = Arc::clone(&barrier);
+        let root = root.clone();
+        thread::spawn(move || {
+            barrier.wait();
+            let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+                .current_dir(&root)
+                .args([
+                    "run",
+                    "supersede",
+                    ".exitbind/runs/basis.jsonl",
+                    "--workflow",
+                    "change",
+                    "--goal",
+                    "concurrent successor",
+                    "--ledger",
+                    ledger,
+                    "--review-policy",
+                    "omitted",
+                    "--config",
+                ])
+                .arg(root.join("exitbind.json"))
+                .output()
+                .unwrap();
+            (ledger, output)
         })
-        .collect::<Vec<_>>();
+    })
+    .collect::<Vec<_>>();
     let outputs = workers
         .into_iter()
         .map(|worker| worker.join().unwrap())
@@ -128,31 +136,35 @@ fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
     assert_eq!(
         outputs
             .iter()
-            .filter(|output| output.status.success())
+            .filter(|(_, output)| output.status.success())
             .count(),
         1,
         "concurrent supersede did not choose one winner: {:?}",
         outputs
             .iter()
-            .map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
+            .map(|(_, output)| String::from_utf8_lossy(&output.stderr).into_owned())
             .collect::<Vec<_>>()
     );
-    assert!(outputs.iter().any(|output| {
+    assert!(outputs.iter().any(|(_, output)| {
         !output.status.success()
             && (String::from_utf8_lossy(&output.stderr).contains("busy")
                 || String::from_utf8_lossy(&output.stderr).contains("already claimed"))
     }));
 
     let claim = fixture.root.join(".exitbind/runs/basis.jsonl.supersede");
-    let successor = fixture
-        .root
-        .join(".exitbind/runs/concurrent-successor.jsonl");
+    let (winner, _) = outputs
+        .iter()
+        .find(|(_, output)| output.status.success())
+        .unwrap();
+    let (loser, _) = outputs
+        .iter()
+        .find(|(_, output)| !output.status.success())
+        .unwrap();
+    let successor = fixture.root.join(winner);
     assert!(claim.is_file());
     assert!(successor.is_file());
-    assert_eq!(
-        ledger_events_at(&fixture, ".exitbind/runs/concurrent-successor.jsonl").len(),
-        1
-    );
+    assert!(!fixture.root.join(loser).exists());
+    assert_eq!(ledger_events_at(&fixture, winner).len(), 1);
     let claim_bytes = fs::read(&claim).unwrap();
     let successor_bytes = fs::read(&successor).unwrap();
 
@@ -166,7 +178,7 @@ fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
             "--goal",
             "concurrent successor",
             "--ledger",
-            ".exitbind/runs/concurrent-successor.jsonl",
+            winner,
             "--review-policy",
             "omitted",
         ],
