@@ -1,5 +1,7 @@
 //! Real CLI routing and the existing memory lifecycle, without a distributor.
 #![cfg(unix)]
+#[path = "specialist_routing/consumer_regressions.rs"]
+mod consumer_regressions;
 mod support;
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf, process::Output};

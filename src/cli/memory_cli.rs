@@ -7,11 +7,18 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     match action {
         "form" => {
             args::assert_options("memory form", a, &["config", "scope", "json"])?;
-            args::assert_positionals("memory form", a, 1)?;
+            if !(1..=2).contains(&a.positional.len()) {
+                return Err("memory form accepts one optional SOURCE positional".into());
+            }
             let scope = option(a, "scope", "memory form requires --scope")?;
             if crate::project::specialists::is_scope(scope) {
-                return print_json(&crate::project::specialists::input_form(l, scope)?);
+                return print_json(&crate::project::specialists::input_form(
+                    l,
+                    scope,
+                    a.positional.get(1).map(String::as_str),
+                )?);
             }
+            args::assert_positionals("memory form", a, 1)?;
             if scope != memory::lessons::SCOPE {
                 return Err(
                     "memory form requires --scope project-lessons.v1 or specialist.AGENT.v1".into(),

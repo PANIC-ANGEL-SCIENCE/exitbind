@@ -8,29 +8,6 @@ pub(crate) fn is_scope(scope: &str) -> bool {
         .is_some_and(|name| !name.is_empty())
 }
 
-pub(crate) fn reserved_source(bytes: &[u8]) -> bool {
-    // Recognize the reserved shape, including invalid revisions/foreign identities.
-    // Loose substrings in ordinary generic guidance are not a reserved source.
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
-        .is_some_and(|v| {
-            v.is_object()
-                && [
-                    "version",
-                    "author",
-                    "projectIdentity",
-                    "taskTerms",
-                    "hosts",
-                    "procedure",
-                    "verification",
-                    "requiredCommands",
-                    "guards",
-                ]
-                .iter()
-                .all(|key| v.get(*key).is_some())
-        })
-}
-
 pub(crate) fn enabled(loaded: &Loaded, name: &str) -> bool {
     loaded
         .agent(name)
@@ -80,7 +57,29 @@ pub(crate) fn delivery(
     if exclusion(loaded, name, role, host).is_some() {
         return Ok(None);
     }
-    select_after_source(loaded, name, task, role, host, || Ok(())).map(Some)
+    let selected = select_after_source(loaded, name, task, role, host, || Ok(()))?;
+    let generic = memory::selection::resolve_for_task(loaded, name, Some(task))?;
+    let resources = selected["experience"]
+        .as_array()
+        .ok_or("invalid specialist selection")?;
+    let bytes = generic
+        .iter()
+        .chain(resources.iter().map(|r| &r["reference"]))
+        .try_fold(0usize, |total, reference| -> Result<usize, String> {
+            let length = reference["byteLength"]
+                .as_u64()
+                .ok_or("memory source byte length unavailable")?;
+            Ok(total.saturating_add(
+                usize::try_from(length).map_err(|_| "memory source byte length overflow")?,
+            ))
+        })?;
+    memory::selection::check_budget(
+        loaded,
+        generic.len().saturating_add(resources.len()),
+        bytes,
+        "combined",
+    )?;
+    Ok(Some(selected))
 }
 
 pub(super) fn select_after_source(
@@ -118,9 +117,7 @@ pub(super) fn select_after_source(
         if reference["sourceSha256"] != hash::bytes(&bytes) {
             return Err("specialist experience changed; no snapshot delivered".into());
         }
-        let item: Experience = serde_json::from_slice(&bytes)
-            .map_err(|_| "invalid specialist experience; inspect its authorized source")?;
-        validate(&item, name, &project)?;
+        let item = parse(&bytes, name, &project)?;
         after_source()?;
         let ledger = memory::snapshot(
             loaded,
@@ -171,8 +168,10 @@ pub(super) fn select_after_source(
         if !current {
             continue;
         }
+        let mut current_reference = reference.clone();
+        current_reference["byteLength"] = json!(bytes.len());
         resources.push(json!({"id":item.id,"revision":item.revision,"kind":item.kind,
-            "reference":reference,"content":serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
+            "reference":current_reference,"content":serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
             "coverage":"complete","state":"qualified_snapshot"}));
     }
     if resources.len() > 3 {

@@ -46,6 +46,12 @@ observation or inactive skill source inside its approved private project scope.
 Use `exitbind memory form --scope specialist.AGENT_NAME.v1 --json` for the
 current author/project identity, typed shape and bounds. Fill its placeholders
 from the actual task and distinct trial evidence; the form writes nothing.
+Run `exitbind memory form SOURCE --scope specialist.AGENT_NAME.v1 --json`
+to validate the exact inactive source using the delivery parser. Its `validation`
+records source bytes/hash and current author/project/config/profile bindings.
+This read-only preparation changes no lifecycle and proves no trial, review,
+qualification or task applicability. Guard file currentness is checked at actual
+delivery. Corrected sources use a new immutable revision and ledger.
 It runs relevant trials and an independent evaluator checks a different case and
 inappropriate use. The Lead records the reviewer's actual opinion, then uses
 the existing `memory propose`, `memory review` and `memory promote` operations
@@ -64,6 +70,21 @@ The source is complete UTF-8 JSON, at most 4096 bytes, with these fields:
 | `taskTerms`, `hosts` | One to four literal task substrings and compatible `codex`/`claude` hosts |
 | `summary`, `preconditions`, `procedure`, `verification` | Attributable finding, applicability, procedure and meaningful verification; uncertainty stays explicit |
 | `requiredCommands`, `evidence`, `guards` | Already declared exact commands, task evidence references, optional confined file/SHA-256 prerequisites |
+
+`guards` contains zero to four objects, each with exactly `path` and `sha256`.
+Use `[]` for none. `path` is a nonblank confined relative project file path of
+at most 256 UTF-8 bytes, without parent traversal. `sha256` is its expected
+64-character lowercase hexadecimal digest; each guarded file is at most 4096
+bytes. For example:
+
+```json
+{"path":"docs/current-contract.md","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+```
+
+Narrative authority or applicability restrictions belong in `preconditions`,
+not guard strings. The public form lists every field's item/UTF-8 byte bounds.
+Source validation checks shape and identity; lifecycle and actual qualification
+remain separate.
 
 This is a consumer format inside the existing generic memory source; it adds no
 configuration or ledger schema. It does not rewrite shared project lessons.
@@ -103,6 +124,13 @@ selector for the already assigned agent, role, task and actual requested host.
 Generic memory routes exclude reserved experience and source aliases; ordinary
 generic scopes and project lessons retain their own consumers. Administrative
 `memory inspect` remains explicit lifecycle inspection.
+Complete reserved JSON in conventional Markdown fenced blocks or bounded JSON
+object, array and string envelopes is excluded too; loose field names in ordinary prose remain
+ordinary guidance. This is bounded content recognition, not semantic paraphrase
+detection. Actual delivery enforces the existing total item/source-byte memory
+budget across generic guidance, applicable project lessons and specialist
+experience together. Overflow refuses delivery instead of dropping ordinary
+references or granting a second allowance.
 
 For a supported native child handoff, bind the receiving native session and use
 the emitted `work child prepare` route with the current `--agent-type`. Specialist

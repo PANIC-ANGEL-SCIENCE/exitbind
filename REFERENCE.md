@@ -829,6 +829,12 @@ Work/native-child delivery. `memory form --scope specialist.AGENT.v1 --json`
 returns the inactive source shape and current identity; lifecycle replies name
 the independent reviewer and configured Lead action. Ordinary recipient and
 native launch selection uses the actual assignment, without rerouting its agent.
+`memory form SOURCE --scope specialist.AGENT.v1 --json` validates the exact
+inactive source's typed shape and current identity using that same parser,
+without lifecycle effects or a qualification claim. The form describes guard
+objects (`path`, `sha256`), their bounds and narrative preconditions. Native
+delivery shares one total memory item/source-byte budget across ordinary
+guidance, applicable project lessons and specialist resources; overflow refuses.
 
 Runtime `host`, `model`, reasoning, and fallback values are opaque requested
 bindings. Exitbind never stores provider credentials, routes models, or

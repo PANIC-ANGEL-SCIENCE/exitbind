@@ -101,12 +101,7 @@ pub(crate) fn resolve_for_task(
             }
             let attempted_items = references.len().saturating_add(1);
             let attempted_bytes = bytes.saturating_add(source.len());
-            if attempted_items > policy.max_items || attempted_bytes > policy.max_bytes {
-                return Err(format!(
-                    "memory_budget_exceeded: itemId={} attemptedItems={} attemptedBytes={} maxItems={} maxBytes={}",
-                    item_id, attempted_items, attempted_bytes, policy.max_items, policy.max_bytes
-                ));
-            }
+            check_budget(loaded, attempted_items, attempted_bytes, item_id)?;
             bytes = attempted_bytes;
             references.push(json!({
                 "itemId": item["itemId"],
@@ -121,6 +116,20 @@ pub(crate) fn resolve_for_task(
         }
     }
     Ok(references)
+}
+
+pub(crate) fn check_budget(
+    loaded: &config::Loaded,
+    items: usize,
+    bytes: usize,
+    item_id: &str,
+) -> Result<(), String> {
+    if let Some(policy) = policy::get(&loaded.config) {
+        if items > policy.max_items || bytes > policy.max_bytes {
+            return Err(format!("memory_budget_exceeded: itemId={item_id} attemptedItems={items} attemptedBytes={bytes} maxItems={} maxBytes={}", policy.max_items, policy.max_bytes));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_references(value: &Value) -> Result<(), String> {

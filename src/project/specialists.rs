@@ -5,10 +5,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
+mod aliases;
 mod delivery;
 mod form;
 
-pub(crate) use delivery::{delivery, enabled, is_scope, reserved_source};
+pub(crate) use aliases::reserved_source;
+pub(crate) use delivery::{delivery, enabled, is_scope};
 pub(crate) use form::{input_form, next_action};
 
 const SOURCE_LIMIT: u64 = 4096;
@@ -290,6 +292,16 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
         || item.guards.len() > 4
         || item.guards.iter().any(|g| {
             !text(&g.path, 256)
+                || std::path::Path::new(&g.path).is_absolute()
+                || !std::path::Path::new(&g.path).components().all(|part| {
+                    matches!(
+                        part,
+                        std::path::Component::Normal(_) | std::path::Component::CurDir
+                    )
+                })
+                || !std::path::Path::new(&g.path)
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::Normal(_)))
                 || g.sha256.len() != 64
                 || !g
                     .sha256
@@ -302,6 +314,17 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
         );
     }
     Ok(())
+}
+
+fn parse(bytes: &[u8], name: &str, project: &str) -> Result<Experience, String> {
+    if bytes.len() > SOURCE_LIMIT as usize {
+        return Err("specialist source exceeds 4096 UTF-8 bytes".into());
+    }
+    let item: Experience = serde_json::from_slice(bytes).map_err(|_| {
+        "invalid specialist source; use memory form: guards are file path/sha256 objects; prose restrictions belong in preconditions"
+    })?;
+    validate(&item, name, project)?;
+    Ok(item)
 }
 
 #[cfg(all(test, unix))]
