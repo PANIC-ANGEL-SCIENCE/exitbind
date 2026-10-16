@@ -131,6 +131,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         .as_object()
         .ok_or_else(|| format!("invalid run ledger line {line}: start must be an object"))?;
     reject_unknown(object, "start", version, line)?;
+    crate::run::continuation_protocol::validate_start(event, line)?;
     if event["previousEventSha256"] != Value::Null {
         return Err(format!(
             "invalid run ledger line {line}: start must begin the chain"

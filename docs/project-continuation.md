@@ -1,9 +1,8 @@
 # Continue an approved project direction
 
-This interface is an implementation draft under review. Admission is not ready
-for ordinary execution until the native launch, mutation, successor and cost
-controls described below are connected and verified. Proposal inspection is
-read-only.
+`project advance form --json` is the entry to source-grounded continuation.
+It uses the existing Goal, Work and native host. Proposal inspection is read-only;
+delegated execution requires an explicitly selected finite mandate.
 
 A project direction describes an outcome and constraints. The native Lead
 compares that direction with actual source, tests and accepted or in-progress
@@ -69,6 +68,13 @@ If a response is lost, use `project advance status MANDATE_ID --json`. The same
 task and contract resolve to the same Work even if the plan label changes.
 Different task content under an existing identity refuses. A reserved but
 missing or uncertain Work remains held; changing its name is not recovery.
+If the exact start exists but its admission observation was lost, use the
+claim's `savedStartRecovery` preview and exact apply form. It verifies the
+committed start and repairs accounting only, including after a stop; a missing
+or different start never triggers another start. Preview stays read-only.
+The same preview lists exact committed Lead/reviewer, review-policy and governor
+decision receipts whose observation was lost. Apply verifies those canonical
+events again and observes their original debits; it never repeats a decision.
 
 Consume the existing complete Work assignment and its exact action forms
 through the native host. After current checks, independent review and Lead
@@ -85,11 +91,26 @@ record is not evidence that a process terminated. Safe inspection and saved
 result recovery must remain available. A real owner-selected revision retains
 previous claims and the original elapsed-time origin.
 
-The reviewed admission draft conservatively reserves caller estimates. Before
-execution can be accepted, controlled native launches, retries, mutation grants,
-effects, checks and successors must also consult a frozen continuation reference
-and debit defined actual action units. The same account must follow successors
-for concurrency and cost. Estimates alone are not the required enforcement.
+Admission, each native launch or retry, mutation grant, managed file effect,
+observed check, pre-return check, recorded review/Lead decision and successor
+debit one actual action unit before execution. Estimates remain planning advice.
+Failed and unknown attempts stay spent; changing an operation or plan label
+does not reset authority. Exact verified saved-result recovery makes no fresh
+effect and no new debit. An unknown effect remains held until its owner proves
+the original identity and result; it is never replaced by a blind retry.
+
+The frozen Work association binds project, mandate revision, source digest,
+task and claim root. Successors retain that association and the original account
+and elapsed origin. A stopped or changed source, configuration or selected
+memory blocks new controlled effects. Owned native and checker waits poll for
+revocation and request bounded interruption. Inspect the actual process/group
+observations before claiming termination. Native tools still obey the host's
+permissions; these controls do not create an operating-system sandbox or an
+external publication adapter. Source documents are not rewritten by this route.
+
+An older executable that does not recognize the frozen association refuses
+these Work ledgers. Resume them with a supporting executable; preserve previous
+binaries and ordinary Work rather than editing the ledger to downgrade it.
 
 For an observed mistake, first inspect relevant existing skills and lessons.
 Prefer a causal parser, form or check correction for a deterministic error. A

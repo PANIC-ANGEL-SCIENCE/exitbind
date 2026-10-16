@@ -8,9 +8,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const POLL: Duration = Duration::from_millis(10);
-const TERM_GRACE: Duration = Duration::from_millis(250);
-const REAP_GRACE: Duration = Duration::from_secs(2);
+pub(super) const POLL: Duration = Duration::from_millis(10);
+pub(super) const TERM_GRACE: Duration = Duration::from_millis(250);
+pub(super) const REAP_GRACE: Duration = Duration::from_secs(2);
 
 pub(super) fn identity(pid: u32) -> ProcessIdentity {
     ProcessIdentity {
@@ -61,7 +61,7 @@ pub(super) fn liveness(identity: &ProcessIdentity) -> ProcessLiveness {
 }
 
 #[cfg(unix)]
-fn group_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
+pub(super) fn group_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
     let Some(group) = identity.process_group.filter(|group| *group > 0) else {
         return ProcessLiveness::Uncertain;
     };
@@ -75,6 +75,11 @@ fn group_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
     }
 }
 
+#[cfg(not(unix))]
+pub(super) fn group_liveness(_: &ProcessIdentity) -> ProcessLiveness {
+    ProcessLiveness::Uncertain
+}
+
 #[cfg(target_os = "linux")]
 fn start_time_ticks(pid: u32) -> Option<u64> {
     let source = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
@@ -82,7 +87,49 @@ fn start_time_ticks(pid: u32) -> Option<u64> {
     fields.split_whitespace().nth(19)?.parse().ok()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn start_time_ticks(pid: u32) -> Option<u64> {
+    // proc_pidinfo is supplied by the host's libproc, not a provider process.
+    #[link(name = "proc")]
+    extern "C" {}
+    let native_pid = libc::pid_t::try_from(pid).ok().filter(|pid| *pid > 0)?;
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
+    let observed = unsafe {
+        libc::proc_pidinfo(
+            native_pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if observed != size {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    macos_start_marker(
+        pid,
+        info.pbi_pid,
+        info.pbi_start_tvsec,
+        info.pbi_start_tvusec,
+    )
+}
+
+// This is an opaque host-specific marker in the existing journal field. A
+// missing, malformed or overflowing observation never becomes live identity.
+#[cfg(any(test, target_os = "macos"))]
+fn macos_start_marker(pid: u32, observed_pid: u32, seconds: u64, micros: u64) -> Option<u64> {
+    if pid == 0 || observed_pid != pid || micros >= 1_000_000 {
+        return None;
+    }
+    seconds
+        .checked_mul(1_000_000)?
+        .checked_add(micros)
+        .filter(|marker| *marker > 0)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn start_time_ticks(_: u32) -> Option<u64> {
     None
 }
@@ -228,18 +275,17 @@ where
     F: FnMut() -> Result<(), RunError>,
 {
     let started = Instant::now();
+    let owned = identity(child.id());
     loop {
         if let Err(error) = poll() {
-            terminate_group(child);
-            let _ = child.wait();
-            return Err(error);
+            return Err(super::control::interrupt(child, &owned, error));
         }
         match child.try_wait() {
             Ok(Some(status)) => return Ok((status, false)),
             Ok(None) if started.elapsed() >= timeout => break,
             Ok(None) => thread::sleep(POLL),
             Err(error) => {
-                terminate_group(child);
+                super::control::cleanup(child, &owned);
                 return Err(RunError::Launch(error));
             }
         }
@@ -248,9 +294,7 @@ where
     let deadline = Instant::now() + REAP_GRACE;
     loop {
         if let Err(error) = poll() {
-            terminate_group(child);
-            let _ = child.wait();
-            return Err(error);
+            return Err(super::control::interrupt(child, &owned, error));
         }
         match child.try_wait().map_err(RunError::Launch)? {
             Some(status) => return Ok((status, true)),
@@ -317,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn identity_classification_is_conservative_and_pid_reuse_safe() {
         let current = identity(std::process::id());
         assert_eq!(liveness(&current), ProcessLiveness::Alive);
@@ -332,11 +376,25 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     fn unverifiable_process_start_remains_uncertain() {
         assert_eq!(
             liveness(&identity(std::process::id())),
             ProcessLiveness::Uncertain
+        );
+    }
+
+    #[test]
+    fn macos_start_marker_requires_exact_pid_and_valid_bounded_timestamp() {
+        assert_eq!(macos_start_marker(42, 42, 123, 456), Some(123_000_456));
+        assert_eq!(macos_start_marker(42, 43, 123, 456), None);
+        assert_eq!(macos_start_marker(0, 0, 123, 456), None);
+        assert_eq!(macos_start_marker(42, 42, 123, 1_000_000), None);
+        assert_eq!(macos_start_marker(42, 42, u64::MAX, 0), None);
+        assert_eq!(macos_start_marker(42, 42, 0, 0), None);
+        assert_ne!(
+            macos_start_marker(42, 42, 123, 456),
+            macos_start_marker(42, 42, 123, 457)
         );
     }
 

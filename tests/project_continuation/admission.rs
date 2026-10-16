@@ -60,7 +60,7 @@ fn git_and_export_admission_share_work_resume_and_stable_task_replay() {
         let status = project.status(); // Each CLI invocation is a fresh process.
         assert_eq!(status["claims"][0]["work"], work);
         assert_eq!(status["claims"][0]["actualWork"]["status"], "running");
-        assert_eq!(status["budget"]["claimedWorks"], 1);
+        assert_eq!(status["budget"]["actualWorks"], 1);
         let replay = project.value(&["project", "advance", "admit", SPEC, "--proposal", PLAN]);
         assert_eq!(replay["state"], "existing_work");
         assert_eq!(replay["work"], work);
@@ -109,10 +109,17 @@ fn concurrent_claimants_never_create_two_work_ledgers() {
             assert!(
                 matches!(
                     result["state"].as_str(),
-                    Some("work_started" | "existing_work")
+                    Some("work_started" | "existing_work" | "reserved_unresolved")
                 ),
                 "{result}"
             );
+            if result["state"] == "reserved_unresolved" {
+                // The durable claim is visible after releasing the account
+                // lock and before its single Work start. The other caller
+                // must hold this claim, never wait with the account or start.
+                assert_eq!(result["effect"], "no-change");
+                assert!(result["unresolved"].is_string());
+            }
             started += usize::from(result["state"] == "work_started");
         } else {
             let error = message(&output);
@@ -149,7 +156,8 @@ fn unknown_started_effect_stays_reserved_and_is_not_restarted() {
     assert!(replay["unresolved"].is_string());
     assert!(!project.work_path(work).exists());
     assert_eq!(project.state(), before);
-    assert_eq!(project.status()["budget"]["reservedActions"], 4);
+    assert_eq!(project.status()["budget"]["actualActions"], 1);
+    assert_eq!(project.status()["budget"]["estimatedActions"], 4);
 }
 
 #[test]

@@ -283,6 +283,8 @@ pub(crate) struct Attempt<'a> {
 }
 
 pub(crate) enum Request<'a> {
+    #[cfg_attr(not(test), allow(dead_code))]
+    // The pure read-only contract also serves inspection tests.
     Inspect,
     RecoverSaved {
         key: &'a str,
@@ -520,7 +522,7 @@ pub(crate) fn evaluate(
     Ok(Decision::Execute { next })
 }
 
-fn eligibility(
+pub(super) fn eligibility(
     policy: &Policy<'_>,
     facts: &Facts<'_>,
     account: &Account,
@@ -630,7 +632,7 @@ fn live_slots(account: &Account, facts: &Facts<'_>) -> Result<u64, Refusal> {
     Ok(slots)
 }
 
-fn validate_account(account: &Account) -> Result<(), Refusal> {
+pub(super) fn validate_account(account: &Account) -> Result<(), Refusal> {
     if account.version != ACCOUNT_VERSION
         || !id(&account.mandate_id)
         || bounded(&account.project, "account project", 256).is_err()

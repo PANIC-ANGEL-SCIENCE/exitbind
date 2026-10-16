@@ -312,8 +312,14 @@ pub(super) fn interact_content(
         state::save_reads(loaded, session, &reads, &original)?;
         result
             .map(|value| {
-                json!({"path":file,"status":value["status"],"effect":value["effect"],
-            "replay":value["replay"],"authority":"none","mediatedClass":value["mediatedClass"]})
+                let mut response = json!({"path":file,"status":value["status"],"effect":value["effect"],
+                    "replay":value["replay"],"authority":"none","mediatedClass":value["mediatedClass"]});
+                if let Some(error) = value["accountingRecovery"].as_str() {
+                    response["accountingRecovery"] = json!({
+                        "reason":error.chars().take(1024).collect::<String>(),
+                        "action":"Use this tool's inspect action, then replay the same submitted bytes to reconcile the saved effect. Do not refresh or launch another mutation."});
+                }
+                response
             })
             .map_err(|e| {
                 format!("{e}; use the supplied tool's inspect action before choosing refresh")

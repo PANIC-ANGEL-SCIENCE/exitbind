@@ -82,11 +82,102 @@ pub(crate) fn start_with_policy_and_pre_return(
     pre_return_timeout_ms: Option<&str>,
     pre_return_capture_bytes: Option<&str>,
 ) -> Result<Value, String> {
+    start_with_association(
+        loaded,
+        workflow,
+        goal,
+        ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+        None,
+    )
+}
+
+/// Only the continuation owner can supply this verified, non-deserializable
+/// association; the ordinary Run start interface cannot attach a marker.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn start_with_continuation(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    ledger: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+    association: &crate::project::continuation::control::VerifiedAssociation,
+) -> Result<Value, String> {
+    start_with_association(
+        loaded,
+        workflow,
+        goal,
+        ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+        Some(association),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_with_association(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    ledger: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+    association: Option<&crate::project::continuation::control::VerifiedAssociation>,
+) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
     }
     if goal.trim().is_empty() {
         return Err("--goal requires a non-empty value".into());
+    }
+    if let Some(association) = association {
+        crate::project::continuation::runtime::validate_start_association(
+            loaded,
+            association,
+            ledger,
+        )?;
     }
     let mut plan = crate::config::boundary::apply(
         loaded,
@@ -150,6 +241,15 @@ pub(crate) fn start_with_policy_and_pre_return(
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let event = with_lock(&path, || {
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+        let continuation = association
+            .map(|association| {
+                crate::project::continuation::runtime::validate_start_association(
+                    loaded,
+                    association,
+                    ledger,
+                )
+            })
+            .transpose()?;
         let reference = if let Some(receipt) = harness_receipt {
             if fs::read_to_string(&loaded.path).map_err(|error| error.to_string())? != loaded.source
             {
@@ -183,6 +283,10 @@ pub(crate) fn start_with_policy_and_pre_return(
             "previousEventSha256": null,
             "timestamp": timestamp
         });
+        if let Some(marker) = continuation {
+            value["projectContinuation"] = marker;
+            crate::run::continuation_protocol::validate_start(&value, 1)?;
+        }
         if let Some(reference) = reference {
             value["harnessReceipt"] = reference;
         }
@@ -259,6 +363,85 @@ pub(crate) fn start_intent_sha256_with_pre_return(
     pre_return_timeout_ms: Option<&str>,
     pre_return_capture_bytes: Option<&str>,
 ) -> Result<String, String> {
+    start_intent_with_association(
+        loaded,
+        workflow,
+        goal,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+        None,
+    )
+}
+
+/// Preview binds the exact association without reading or reserving its claim.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn start_intent_sha256_with_continuation(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+    association: &crate::project::continuation::control::VerifiedAssociation,
+) -> Result<String, String> {
+    start_intent_with_association(
+        loaded,
+        workflow,
+        goal,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        pre_return_command,
+        pre_return_timeout_ms,
+        pre_return_capture_bytes,
+        Some(association),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_intent_with_association(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    boundary: Option<&str>,
+    harness_receipt: Option<&str>,
+    check_command: Option<&str>,
+    proof_origin: Option<&str>,
+    preserve_requirement: Option<&str>,
+    preservation_check_command: Option<&str>,
+    preservation_proof_origin: Option<&str>,
+    basis: Option<&str>,
+    review_policy: Option<&str>,
+    pre_return_command: Option<&str>,
+    pre_return_timeout_ms: Option<&str>,
+    pre_return_capture_bytes: Option<&str>,
+    association: Option<&crate::project::continuation::control::VerifiedAssociation>,
+) -> Result<String, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
     }
@@ -333,6 +516,11 @@ pub(crate) fn start_intent_sha256_with_pre_return(
         "configSha256": hash::text(&loaded.source),
         "plan": plan,
     });
+    if let Some(association) = association {
+        value["projectContinuation"] =
+            serde_json::to_value(association.association()).map_err(|error| error.to_string())?;
+        crate::run::continuation_protocol::validate_start(&value, 1)?;
+    }
     if let Some(reference) = harness_reference {
         value["harnessReceipt"] = reference;
     }
@@ -396,6 +584,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "basis",
         "reviewPolicy",
         "governor",
+        "projectContinuation",
     ];
     if event["action"] != "start" {
         return Err("Work ledger does not begin with a start event".into());
@@ -428,6 +617,7 @@ pub fn review_policy(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        crate::project::continuation::runtime::guard_review_policy(loaded, &state, decision)?;
         let drift = action_drift_warning(loaded, &state)?;
         warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
@@ -463,7 +653,14 @@ pub fn review_policy(
         let mut all = events;
         all.push(event.clone());
         let next_state = reduce_live(loaded, &all)?;
+        let ticket = super::continuation_effect::begin_event(
+            loaded,
+            &state,
+            crate::project::continuation::control::Kind::Effect,
+            &event,
+        )?;
         append(&path, &event, false, &source)?;
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
         Ok(
             json!({"valid":true,"event":event,"status":next_state["status"],"assignments":crate::run::assignment::pending(&next_state)}),
         )

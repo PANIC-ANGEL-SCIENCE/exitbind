@@ -48,7 +48,7 @@ pub(super) fn contains(root: &str, path: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
-fn validate_recipients(loaded: &Loaded, spec: &Spec, plan: &Plan) -> Result<(), String> {
+pub(super) fn validate_recipients(loaded: &Loaded, spec: &Spec, plan: &Plan) -> Result<(), String> {
     let workflow = loaded
         .workflows
         .get(&plan.workflow)
@@ -101,7 +101,7 @@ fn validate_recipients(loaded: &Loaded, spec: &Spec, plan: &Plan) -> Result<(), 
     Ok(())
 }
 
-fn goal(plan: &Plan) -> String {
+pub(super) fn goal(plan: &Plan) -> String {
     format!(
         "{}\nOutcome: {}\nWhy next: {}\nAcceptance: {}\nPreserve: {}",
         plan.title,
@@ -112,12 +112,37 @@ fn goal(plan: &Plan) -> String {
     )
 }
 
-fn preservation(plan: &Plan) -> String {
+pub(super) fn preservation(plan: &Plan) -> String {
     format!("project-preservation:{}", plan.preservation.join("; "))
 }
 
-fn intent(loaded: &Loaded, plan: &Plan, basis: &str) -> Result<String, String> {
-    crate::run::start_intent_sha256_with_pre_return(
+fn work(record: &Record, plan: &Plan) -> Result<String, String> {
+    let token = hash::value(&json!({"project":record.project_identity,
+        "mandate":record.specification.mandate.id,"task":plan.task_id}));
+    Ok(format!("smw_{token}"))
+}
+
+fn prepared(record: &Record, plan: &Plan) -> Result<control::VerifiedAssociation, String> {
+    let work = work(record, plan)?;
+    let policy = control::Policy {
+        project: &record.project_identity,
+        specification_sha256: &record.specification_sha256,
+        mandate: &record.specification.mandate,
+    };
+    control::prepare_association(&policy, &plan.task_id, &work, &work)
+        .map_err(|reason| format!("invalid selected association: {reason:?}"))
+}
+
+fn intent(loaded: &Loaded, record: &Record, plan: &Plan, basis: &str) -> Result<String, String> {
+    let timeout = plan
+        .pre_return
+        .as_ref()
+        .map(|policy| policy.timeout_ms.to_string());
+    let capture = plan
+        .pre_return
+        .as_ref()
+        .map(|policy| policy.capture_limit_bytes.to_string());
+    crate::run::start_intent_sha256_with_continuation(
         loaded,
         &plan.workflow,
         &goal(plan),
@@ -130,9 +155,12 @@ fn intent(loaded: &Loaded, plan: &Plan, basis: &str) -> Result<String, String> {
         None,
         Some(basis),
         Some("required"),
-        None,
-        None,
-        None,
+        plan.pre_return
+            .as_ref()
+            .map(|policy| policy.command.as_str()),
+        timeout.as_deref(),
+        capture.as_deref(),
+        &prepared(record, plan)?,
     )
 }
 
@@ -149,28 +177,11 @@ fn check_capacity(loaded: &Loaded, record: &Record, plan: &Plan) -> Result<(), S
     if record.claims.len() as u64 >= maximum {
         return Err("aggregate Work admission budget exhausted; claims and failed reservations are retained".into());
     }
-    let reserved = record.claims.iter().try_fold(0u64, |sum, claim| {
-        sum.checked_add(claim.plan.estimated_actions)
-            .ok_or("action reservation overflow")
-    })?;
-    if reserved
-        .checked_add(plan.estimated_actions)
-        .ok_or("action reservation overflow")?
-        > policy.max_actions
+    if record.account.works_spent() >= maximum
+        || record.account.actions_spent() >= policy.max_actions
     {
-        return Err("aggregate action reservation budget exhausted".into());
-    }
-    let mut live = 0u64;
-    for claim in &record.claims {
-        match work_status(loaded, claim) {
-            Ok(status) if status["status"] == "running" => live += 1,
-            Err(_) => live += 1,
-            _ => {}
-        }
-    }
-    if live >= policy.max_parallel {
         return Err(
-            "mandate concurrency bound reached; inspect existing running/unknown Work".into(),
+            "aggregate actual admission/action budget exhausted; failed attempts stay spent".into(),
         );
     }
     for dependency in &plan.dependencies {
@@ -261,7 +272,16 @@ pub(crate) fn admit(
     validate_recipients(loaded, &spec, &plan)?;
     check_capacity(loaded, &record, &plan)?;
     let coverage = prepare(&plan)?;
-    let start_intent = intent(loaded, &plan, &coverage.basis)?;
+    let start_intent = intent(loaded, &record, &plan, &coverage.basis)?;
+    // Preview runs the same pure admission decision without persisting its
+    // proposed account. Parallel/unknown owners therefore hold before apply.
+    runtime::reserve_admission(
+        loaded,
+        &record,
+        &plan,
+        &work(&record, &plan)?,
+        &start_intent,
+    )?;
     let binding = hash::value(&json!({"head":record.event_sha256,"source":source_digest,
         "plan":digest,"configuration":hash::text(&loaded.source),"startIntent":start_intent}));
     let mut response = json!({"version":1,"state":"preview","readOnly":true,"effect":"no-change",
@@ -275,14 +295,15 @@ pub(crate) fn admit(
         return Err("plan admission preview is stale; no Work was started".into());
     }
     let selected = journal::prepare(loaded, &relative)?;
-    ledger::with_lock(&selected, || {
+    let reserved = ledger::with_lock(&selected, || {
         let (fresh_spec, fresh_digest, _, fresh) = read_record(loaded, source)?;
         let current_plan = read_plan(loaded, plan_path, &fresh_spec)?;
         if plan_digest(&current_plan)? != digest {
             return Err("plan changed before admission".into());
         }
-        if let Some(response) = replay(loaded, &fresh, &current_plan, &digest)? {
-            return Ok(response);
+        if let Some(existing) = replay(loaded, &fresh, &current_plan, &digest)? {
+            response = existing;
+            return Ok(None);
         }
         if fresh.event_sha256 != record.event_sha256 || fresh_digest != source_digest {
             return Err("another planner changed the mandate before admission".into());
@@ -290,21 +311,19 @@ pub(crate) fn admit(
         check_capacity(loaded, &fresh, &current_plan)?;
         validate_recipients(loaded, &fresh_spec, &current_plan)?;
         let coverage = prepare(&current_plan)?;
-        if intent(loaded, &current_plan, &coverage.basis)? != start_intent {
+        if intent(loaded, &fresh, &current_plan, &coverage.basis)? != start_intent {
             return Err("Goal/check/profile/selected experience changed before admission".into());
         }
         let classified = crate::work::classify(Some(loaded), &loaded.product_root, true, true);
         if classified["availability"]["managedNamespace"] != true {
             return Err("governed Work activation is unavailable".into());
         }
-        let token = hash::value(&json!({"project":fresh.project_identity,
-            "mandate":fresh.specification.mandate.id,"task":plan.task_id}));
+        let work = work(&fresh, &plan)?;
+        let token = work.strip_prefix("smw_").ok_or("invalid planned Work")?;
         let ledger_relative = format!(
             "{}/runs/work-{token}.jsonl",
             crate::project::layout_types::state_namespace()
         );
-        let work =
-            crate::work::locator_for_ledger(&ledger_relative).ok_or("invalid Work locator")?;
         // A pre-existing unclaimed Work is conflicting state, not replay.
         if std::fs::symlink_metadata(loaded.state_root.join(&ledger_relative)).is_ok() {
             return Err(
@@ -312,6 +331,8 @@ pub(crate) fn admit(
                     .into(),
             );
         }
+        let (verified, account, ticket) =
+            runtime::reserve_admission(loaded, &fresh, &plan, &work, &start_intent)?;
         let claim = journal::Claim {
             task_id: plan.task_id.clone(),
             plan_sha256: digest.clone(),
@@ -325,63 +346,90 @@ pub(crate) fn admit(
             )?
             .sha256,
             admitted_at: Utc::now().to_rfc3339(),
+            association: verified.association().clone(),
         };
         let (_, raw) = journal::read(loaded, &relative)?;
         let mut next = fresh.clone();
         next.claims.push(claim);
+        next.account = account;
         journal::append(&selected, next, Some(&fresh), &raw)?;
-        let started = crate::run::start_with_policy_and_pre_return(
-            loaded,
-            &plan.workflow,
-            &goal(&plan),
-            &ledger_relative,
-            None,
-            None,
-            Some(&plan.check_command),
-            None,
-            Some(&preservation(&plan)),
-            Some(&plan.preservation_check_command),
-            None,
-            Some(&coverage.basis),
-            Some("required"),
-            None,
-            None,
-            None,
-        );
-        response["readOnly"] = json!(false);
-        response["effect"] = json!("claim_recorded");
-        response["work"] = json!(work);
-        match started {
-            Err(error) => {
-                response["state"] = json!("reserved_unresolved");
-                response["unresolved"] = json!(error);
-                response["recovery"]=json!("Inspect this exact Work; the reservation remains spent. Never repeat start or mint another task ID.");
-            }
-            Ok(_) => {
-                response["state"] = json!("work_started");
-                let linked = (|| {
-                    let (_, events, _) = ledger::load(loaded, &ledger_relative)?;
-                    let start = events.first().ok_or("Work start unavailable")?["eventSha256"]
-                        .as_str()
-                        .ok_or("Work start hash unavailable")?;
-                    requirements::write_scope_companion(loaded, &work, start, &coverage)?;
-                    requirements::assign(
-                        &loaded.state_root,
-                        loaded,
-                        &plan.goal_id,
-                        &plan.requirements.join(","),
-                        &work,
-                        false,
-                    )?;
-                    crate::work::set_focus(loaded, &work)?;
-                    Ok::<(), String>(())
-                })();
-                if let Err(error) = linked {
-                    response["linkageRecovery"] = json!(error)
-                }
-                response["detail"] = json!({"command":work_argv(loaded,&work)?});
+        Ok(Some((work, ledger_relative, verified, ticket, coverage)))
+    })?;
+    let Some((work, ledger_relative, verified, ticket, coverage)) = reserved else {
+        return Ok(response);
+    };
+    // The reservation is durable and the mandate lock is released. Never
+    // wait for a Work lock while holding that account lock.
+    let timeout = plan
+        .pre_return
+        .as_ref()
+        .map(|policy| policy.timeout_ms.to_string());
+    let capture = plan
+        .pre_return
+        .as_ref()
+        .map(|policy| policy.capture_limit_bytes.to_string());
+    let started = crate::run::start_with_continuation(
+        loaded,
+        &plan.workflow,
+        &goal(&plan),
+        &ledger_relative,
+        None,
+        None,
+        Some(&plan.check_command),
+        None,
+        Some(&preservation(&plan)),
+        Some(&plan.preservation_check_command),
+        None,
+        Some(&coverage.basis),
+        Some("required"),
+        plan.pre_return
+            .as_ref()
+            .map(|policy| policy.command.as_str()),
+        timeout.as_deref(),
+        capture.as_deref(),
+        &verified,
+    );
+    let ticket = Some(ticket);
+    response["readOnly"] = json!(false);
+    response["effect"] = json!("claim_recorded");
+    response["work"] = json!(work);
+    match started {
+        Err(error) => {
+            let accounted = runtime::complete(loaded, &ticket, false, false);
+            response["state"] = json!("reserved_unresolved");
+            response["unresolved"] = json!(error);
+            response["recovery"]=json!("Inspect this exact Work; the reservation remains spent. Never repeat start or mint another task ID.");
+            if let Err(error) = accounted {
+                response["accountingRecovery"] = json!(error);
             }
         }
-        Ok(response)
-    })
+        Ok(_) => {
+            if let Err(error) = runtime::complete(loaded, &ticket, true, true) {
+                response["accountingRecovery"] = json!(error);
+            }
+            response["state"] = json!("work_started");
+            let linked = (|| {
+                let (_, events, _) = ledger::load(loaded, &ledger_relative)?;
+                let start = events.first().ok_or("Work start unavailable")?["eventSha256"]
+                    .as_str()
+                    .ok_or("Work start hash unavailable")?;
+                requirements::write_scope_companion(loaded, &work, start, &coverage)?;
+                requirements::assign(
+                    &loaded.state_root,
+                    loaded,
+                    &plan.goal_id,
+                    &plan.requirements.join(","),
+                    &work,
+                    false,
+                )?;
+                crate::work::set_focus(loaded, &work)?;
+                Ok::<(), String>(())
+            })();
+            if let Err(error) = linked {
+                response["linkageRecovery"] = json!(error)
+            }
+            response["detail"] = json!({"command":work_argv(loaded,&work)?});
+        }
+    }
+    Ok(response)
 }

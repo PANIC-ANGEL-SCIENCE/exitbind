@@ -56,7 +56,7 @@ fn selected_recipient_commands_must_be_exact_subsets_of_the_mandate() {
         );
         let status = project.status();
         assert!(status["claims"].as_array().unwrap().is_empty());
-        assert_eq!(status["budget"]["reservedActions"], 0);
+        assert_eq!(status["budget"]["actualActions"], 0);
     }
 
     let mut allowed = Project::new("continuation-recipient-subset", "export");
@@ -87,7 +87,7 @@ fn recipient_command_change_after_preview_refuses_apply_without_a_new_work() {
     let output = project.apply_command(&preview).output().unwrap();
     assert!(!output.status.success(), "{output:?}");
     assert!(
-        message(&output).contains("selected configuration changed"),
+        message(&output).contains("ConfigurationDrift"),
         "{output:?}"
     );
     assert_eq!(project.state(), before);
@@ -198,13 +198,16 @@ fn stop_blocks_admission_and_does_not_claim_native_termination_or_erase_work() {
         "Owner revoked continuation.",
     ]);
     assert_eq!(stopped["state"], "stopped");
-    assert_eq!(stopped["interruption"]["termination"], "unconfirmed");
+    assert_eq!(
+        stopped["interruption"]["termination"],
+        "pending_or_unavailable"
+    );
     assert_eq!(stopped["claims"][0]["actualWork"]["status"], "running");
     assert_eq!(fs::read(project.work_path(work)).unwrap(), original);
     let before = project.state();
     project.reject(
         &["project", "advance", "admit", SPEC, "--proposal", PLAN],
-        "mandate stopped",
+        "Stopped",
     );
     let preview = project.value(&[
         "project",
@@ -218,7 +221,7 @@ fn stop_blocks_admission_and_does_not_claim_native_termination_or_erase_work() {
     assert!(!output.status.success(), "{output:?}");
     assert!(message(&output).contains("higher revision"), "{output:?}");
     assert_eq!(project.state(), before);
-    assert_eq!(project.status()["budget"]["claimedWorks"], 1);
+    assert_eq!(project.status()["budget"]["actualWorks"], 1);
 }
 
 #[test]
@@ -248,7 +251,7 @@ fn expired_mandate_is_visible_in_proposal_but_cannot_be_selected() {
 }
 
 #[test]
-fn cycle_and_aggregate_action_bounds_survive_new_plan_ids_and_reselection() {
+fn cycle_and_actual_account_retention_keep_plan_estimates_advisory() {
     let mut cycle = Project::new("continuation-cycle", "export");
     cycle.spec["mandate"]["mode"] = json!("cycle");
     cycle.save_spec();
@@ -277,14 +280,14 @@ fn cycle_and_aggregate_action_bounds_survive_new_plan_ids_and_reselection() {
     aggregate.plan["id"] = json!("new-plan-id");
     aggregate.plan["taskId"] = json!("new-task-id");
     aggregate.save_plan();
-    let before = aggregate.state();
-    aggregate.reject(
-        &["project", "advance", "admit", SPEC, "--proposal", PLAN],
-        "action reservation budget exhausted",
-    );
-    assert_eq!(aggregate.state(), before);
-    assert_eq!(aggregate.status()["budget"]["reservedActions"], 4);
-    assert_eq!(aggregate.runs().len(), 1);
+    assert_eq!(aggregate.status()["budget"]["actualActions"], 1);
+    assert_eq!(aggregate.status()["budget"]["estimatedActions"], 4);
+    assert_eq!(aggregate.admit()["state"], "work_started");
+    let status = aggregate.status();
+    assert_eq!(status["budget"]["actualActions"], 2);
+    assert_eq!(status["budget"]["actualWorks"], 2);
+    assert_eq!(status["budget"]["estimatedActions"], 8);
+    assert_eq!(aggregate.runs().len(), 2);
 }
 
 #[test]
@@ -308,7 +311,7 @@ fn concurrent_work_bound_and_changed_preview_are_fail_closed() {
     let before = project.state();
     project.reject(
         &["project", "advance", "admit", SPEC, "--proposal", PLAN],
-        "concurrency bound reached",
+        "ConcurrencyBudget",
     );
     assert_eq!(project.state(), before);
     assert_eq!(project.runs().len(), 1);
@@ -348,7 +351,7 @@ fn elapsed_budget_retains_original_start_time_after_reselection() {
     assert!(project.status()["eligibility"]
         .as_str()
         .unwrap()
-        .contains("elapsed-time bound exhausted"));
+        .contains("ElapsedBudget"));
     project.spec["mandate"]["revision"] = json!(2);
     project.save_spec();
     project.select();
@@ -356,7 +359,7 @@ fn elapsed_budget_retains_original_start_time_after_reselection() {
     let before = project.state();
     project.reject(
         &["project", "advance", "admit", SPEC, "--proposal", PLAN],
-        "elapsed-time bound exhausted",
+        "ElapsedBudget",
     );
     assert_eq!(project.state(), before);
     assert!(project.runs().is_empty());

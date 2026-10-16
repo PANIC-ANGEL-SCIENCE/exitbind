@@ -270,6 +270,17 @@ where
         }
         let artifact = artifact()?;
         let artifact_value = crate::run::artifact::evidence(loaded, artifact_root, &artifact)?;
+        let saved_native = if matches!(assignment["role"].as_str(), Some("worker" | "reviewer")) {
+            crate::project::continuation::runtime::allow_saved_result(
+                loaded,
+                &state,
+                agent,
+                outcome,
+                &artifact_value,
+            )?
+        } else {
+            false
+        };
         if assignment["role"] == "worker" && outcome == "completed" {
             super::pre_return::assert_pass_current(
                 loaded,
@@ -429,7 +440,27 @@ where
         let line = serde_json::to_string(&event).map_err(|error| error.to_string())?;
         let projected_source = format!("{source}{line}\n");
         preflight(&all, &projected_source)?;
+        let eligibility = crate::project::continuation::runtime::guard(loaded, &state);
+        let recovering_saved = saved_native && eligibility.is_err();
+        let ticket = if !recovering_saved
+            && matches!(assignment["role"].as_str(), Some("lead" | "reviewer"))
+            && !matches!(outcome, "blocked" | "unavailable")
+        {
+            eligibility?;
+            super::continuation_effect::begin_event(
+                loaded,
+                &state,
+                crate::project::continuation::control::Kind::Effect,
+                &event,
+            )?
+        } else {
+            if !recovering_saved && !matches!(outcome, "blocked" | "unavailable") {
+                eligibility?;
+            }
+            None
+        };
         append(path, &event, false, &source)?;
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
         Ok(json!({
             "valid": true,
             "event": event,

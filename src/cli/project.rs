@@ -5,6 +5,9 @@ use crate::{config::Loaded, project::context};
 
 pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), String> {
     let action = arguments.positional.first().map(String::as_str);
+    if action == Some("advance") {
+        return super::project_continuation::command(loaded, arguments);
+    }
     if action == Some("route") {
         args::assert_options(
             "project route",
@@ -149,7 +152,7 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
     }
     args::assert_options("project context", arguments, &["config", "json", "task"])?;
     if action != Some("context") {
-        return Err("project requires context, route, agents, capabilities or architecture".into());
+        return Err("project requires context, route, agents, capabilities, architecture or advance; use project advance form --json for bounded continuation".into());
     }
     match arguments.positional.get(1).map(String::as_str) {
         None => {

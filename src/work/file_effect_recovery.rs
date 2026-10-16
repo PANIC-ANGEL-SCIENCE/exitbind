@@ -67,6 +67,13 @@ pub(super) fn reconcile(
         if !crate::project::portability::writable(root) {
             return Err("unsupported file reconciliation: project source is read-only; admitted intent is retained".into());
         }
+        let ledger = crate::work::resolve(loaded, request.work)?;
+        let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+        let state = crate::run::reduce_live(loaded, &events)?;
+        if state.get("projectContinuation").is_some() {
+            crate::project::continuation::runtime::guard(loaded, &state)?;
+            return Err("associated file effect remains unresolved; inspect its exact target and retained intent before a supported repair; no automatic replacement was made".into());
+        }
         let target = root.join(request.path);
         let mode = replacement_mode(&target, now.is_some())?;
         durable_write(&target, content, mode, now.as_deref(), root)?;
@@ -79,6 +86,18 @@ pub(super) fn reconcile(
             Some(0o600),
             Some(previous),
             &loaded.state_root,
+        )?;
+    }
+    if let Some(key) = record.get("continuationOperation").and_then(Value::as_str) {
+        let ledger = crate::work::resolve(loaded, request.work)?;
+        let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+        let state = crate::run::reduce_live(loaded, &events)?;
+        crate::project::continuation::runtime::recover_completed(
+            loaded,
+            &state,
+            key,
+            crate::project::continuation::control::Kind::Effect,
+            &json!({"parametersSha256":parameters}),
         )?;
     }
     let mut response = result(request, parameters, already_written);

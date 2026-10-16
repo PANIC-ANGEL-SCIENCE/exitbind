@@ -232,6 +232,7 @@ pub(super) fn replay_for_operation(
         return Err("committed check replay refused changed binding, policy, configuration or execution limit".into());
     }
     crate::run::artifact::assert_current(loaded, &state)?;
+    super::continuation_effect::recover_observed_check(loaded, ledger, check)?;
     Ok(Some(
         json!({"valid": true, "event": check, "recovered": true}),
     ))

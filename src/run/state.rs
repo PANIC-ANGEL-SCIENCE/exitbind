@@ -179,6 +179,7 @@ fn reject_unknown(
         }
         if version == 8 {
             allowed.push("preReturnPolicy");
+            allowed.push("projectContinuation");
         }
         if version >= 5 {
             allowed.push("subject");

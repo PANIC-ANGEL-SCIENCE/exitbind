@@ -13,6 +13,9 @@ pub(crate) mod carry;
 pub(crate) mod check_observation;
 pub(crate) mod check_recovery;
 pub(crate) mod check_replacement;
+mod continuation_effect;
+pub(crate) use continuation_effect::{recover_continuation_event, saved_continuation_events};
+mod continuation_protocol;
 pub(crate) mod disposition;
 pub(crate) mod error;
 mod event_detail;
@@ -45,8 +48,8 @@ pub(crate) use self::governor::{
 pub use self::lifecycle::start_with_policy;
 pub use self::lifecycle::{next, review_policy, start};
 pub(crate) use self::lifecycle::{
-    start_event_intent_sha256, start_intent_sha256_with_pre_return,
-    start_with_policy_and_pre_return,
+    start_event_intent_sha256, start_intent_sha256_with_continuation,
+    start_intent_sha256_with_pre_return, start_with_continuation, start_with_policy_and_pre_return,
 };
 use self::reducer::{
     action_drift_warning, artifact_current, extension_from_cli, fallback_provenance,

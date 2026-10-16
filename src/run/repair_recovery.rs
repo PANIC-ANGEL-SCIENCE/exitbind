@@ -92,7 +92,14 @@ pub(super) fn before_worker_completion(
         let mut projected = events;
         projected.push(event.clone());
         run_state::reduce(&projected)?;
+        let ticket = super::continuation_effect::begin_event(
+            loaded,
+            &state,
+            crate::project::continuation::control::Kind::Effect,
+            &event,
+        )?;
         append(path, &event, false, &source)?;
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
         Ok(())
     })
 }

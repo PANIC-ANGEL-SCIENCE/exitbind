@@ -148,11 +148,14 @@ impl Project {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        support::run(
-            self.command()
-                .args(args)
-                .args(["--config", "exitbind.json", "--json"]),
-        )
+        let mut command = self.command();
+        command.args(args).args(["--config", "exitbind.json"]);
+        // Work's native control forms are JSON by contract and do not accept
+        // the optional rendering flag used by the other command families.
+        if args.first() != Some(&"work") {
+            command.arg("--json");
+        }
+        support::run(&mut command)
     }
 
     fn value(&self, args: &[&str]) -> Value {
@@ -214,6 +217,10 @@ impl Project {
     }
 
     fn execute_form(&self, form: &Value, input: Option<&str>) -> Value {
+        successful(self.form_output(form, input))
+    }
+
+    fn form_output(&self, form: &Value, input: Option<&str>) -> Output {
         let argv = form["command"]["argv"]
             .as_array()
             .expect("exact action argv");
@@ -235,10 +242,22 @@ impl Project {
                 .unwrap()
                 .write_all(input.as_bytes())
                 .unwrap();
-            successful(child.wait_with_output().unwrap())
+            child.wait_with_output().unwrap()
         } else {
-            successful(command.output().unwrap())
+            command.output().unwrap()
         }
+    }
+
+    fn call_input(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut child = self
+            .command()
+            .args(args)
+            .args(["--config", "exitbind.json", "--json"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        child.wait_with_output().unwrap()
     }
 
     fn accept_fixture_work(&self, work: &str) {
@@ -378,3 +397,5 @@ fn successful(output: Output) -> Value {
 mod admission;
 #[path = "project_continuation/authority.rs"]
 mod authority;
+#[path = "project_continuation/control.rs"]
+mod control;

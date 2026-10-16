@@ -7,6 +7,8 @@
 
 mod controlled;
 pub(crate) use controlled::Tool as ControlledTool;
+mod control;
+pub(crate) use control::run_with_control;
 mod process;
 mod stream;
 
@@ -54,8 +56,8 @@ pub(crate) struct ProcessOutcome {
 }
 
 /// The provider process identity captured immediately after spawn. The
-/// optional start time prevents a reused PID from being mistaken for the
-/// original execution on Linux.
+/// optional host start marker prevents a reused PID from being mistaken for
+/// the original execution on Linux and macOS. Missing identity stays uncertain.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProcessIdentity {
     pub(crate) pid: u32,
@@ -252,6 +254,7 @@ pub(crate) enum RunError {
     MalformedFinalResult,
     FinalResultTooLarge,
     Observer(String),
+    ControlledInterruption { reason: String, cleanup: Value },
 }
 
 impl fmt::Display for RunError {
@@ -274,6 +277,9 @@ impl fmt::Display for RunError {
             }
             Self::Observer(reason) => {
                 write!(formatter, "Codex process observation failed: {reason}")
+            }
+            Self::ControlledInterruption { reason, .. } => {
+                write!(formatter, "Codex execution held by control: {reason}")
             }
         }
     }
@@ -319,7 +325,7 @@ fn checked_executable(path: &Path) -> Result<PathBuf, RunError> {
 }
 
 pub(crate) fn run(request: &Request) -> Result<Observation, RunError> {
-    run_inner(request, None, None)
+    run_inner(request, None, None, None)
 }
 
 /// Observe process identity and bounded stream fields as they arrive. Stream
@@ -337,6 +343,7 @@ where
         request,
         Some(&mut process_observer),
         Some(&mut stream_observer),
+        None,
     )
 }
 
@@ -344,17 +351,18 @@ fn run_inner(
     request: &Request,
     mut observer: Option<&mut ProcessObserver<'_>>,
     mut stream_observer: Option<&mut StreamObserver<'_>>,
+    mut eligibility: Option<&mut control::Eligibility<'_>>,
 ) -> Result<Observation, RunError> {
     validate_request(request)?;
     let executable = checked_executable(&request.executable)?;
     let cwd = checked_directory(&request.cwd)?;
     let mut command = command_line(request, &executable, &cwd)?;
+    control::poll(&mut eligibility)?;
     let mut child = command.spawn().map_err(RunError::Launch)?;
     let identity = process::identity(child.id());
     if let Some(observer) = observer.as_mut() {
         if let Err(error) = observer(&identity) {
-            process::terminate_group(&mut child);
-            let _ = child.wait();
+            control::cleanup(&mut child, &identity);
             return Err(RunError::Observer(error));
         }
     }
@@ -397,6 +405,7 @@ fn run_inner(
 
     let want_final = request.output_schema.is_some();
     let (status, timed_out) = process::wait_with_timeout_poll(&mut child, request.timeout, || {
+        control::poll(&mut eligibility)?;
         if stream_enabled {
             process::drain_stream_lines(&stream_rx, want_final, &mut stream_observer)
         } else {
@@ -404,10 +413,30 @@ fn run_inner(
         }
     })?;
     let reader_grace = Duration::from_secs(2);
-    let prompt_delivery_failed =
-        bounded_receive(&prompt_rx, reader_grace, &mut child, "prompt writer")?;
-    let stdout = bounded_receive(&stdout_rx, reader_grace, &mut child, "stdout reader")?;
-    let stderr = bounded_receive(&stderr_rx, reader_grace, &mut child, "stderr reader")?;
+    let prompt_delivery_failed = control::receive(
+        &prompt_rx,
+        reader_grace,
+        &mut child,
+        &identity,
+        &mut eligibility,
+        "prompt writer",
+    )?;
+    let stdout = control::receive(
+        &stdout_rx,
+        reader_grace,
+        &mut child,
+        &identity,
+        &mut eligibility,
+        "stdout reader",
+    )?;
+    let stderr = control::receive(
+        &stderr_rx,
+        reader_grace,
+        &mut child,
+        &identity,
+        &mut eligibility,
+        "stderr reader",
+    )?;
     if stream_enabled {
         if let Err(error) = process::drain_stream_lines_until_closed(
             &stream_rx,
@@ -415,9 +444,7 @@ fn run_inner(
             &mut stream_observer,
             reader_grace,
         ) {
-            // wait_with_timeout has already observed process exit. Reap again
-            // defensively so a callback failure cannot leave owned state live.
-            let _ = child.wait();
+            control::cleanup(&mut child, &identity);
             return Err(error);
         }
     }
@@ -617,18 +644,6 @@ fn capture<R: Read>(mut reader: R, limit: usize) -> Captured {
         }
     }
     Captured { bytes, oversized }
-}
-
-fn bounded_receive<T>(
-    receiver: &mpsc::Receiver<T>,
-    grace: Duration,
-    child: &mut std::process::Child,
-    label: &'static str,
-) -> Result<T, RunError> {
-    receiver.recv_timeout(grace).map_err(|_| {
-        process::terminate_group(child);
-        RunError::InvalidRequestDetail(format!("Codex {label} did not finish after process exit"))
-    })
 }
 
 fn process_outcome(status: ExitStatus, timed_out: bool) -> ProcessOutcome {

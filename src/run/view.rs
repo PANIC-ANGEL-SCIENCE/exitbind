@@ -1,7 +1,9 @@
 use super::*;
 
 mod check_replacement;
+mod successor_protocol;
 pub use self::check_replacement::{replace_check_contract, replace_pre_return_contract};
+use self::successor_protocol::attach_successor_work;
 
 pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
     let mut view = RunSnapshot::capture(loaded, ledger)?.inspect_view();
@@ -118,19 +120,6 @@ pub fn report(loaded: &Loaded, ledgers: &[&str]) -> Result<Value, String> {
 
 pub fn report_markdown(report: &Value) -> String {
     crate::run_value::markdown(report)
-}
-
-fn attach_successor_work(loaded: &Loaded, new_ledger: &str, mut value: Value) -> Value {
-    if let Some(work) = crate::work::locator_for_ledger(new_ledger) {
-        value["work"] = json!(work);
-        value["currentDetail"] = json!({
-            "route": "work detail",
-            "readOnly": true,
-            "requiresFreshContext": true,
-            "command": crate::work::action_forms::current_detail_command(loaded, &work),
-        });
-    }
-    value
 }
 
 /// Start a fresh bounded run while atomically claiming one running or blocked predecessor.
@@ -744,67 +733,35 @@ pub(super) fn supersede_with_policy_and_recovery(
                 event_value["checkObservationProtocol"] = protocol.clone();
             }
         }
+        let ticket = crate::project::continuation::runtime::prepare_successor(
+            loaded,
+            &old_state,
+            &mut event_value,
+            &new_rel,
+        )?;
         let event = run_state::make_event(event_value);
         if new.path.exists() {
             let (_, existing, _) = load_at(loaded, &new)?;
-            let request_fields = [
-                "runId",
-                "workflow",
-                "goal",
-                "configSha256",
-                "plan",
-                "checkPolicy",
-                "preservation",
-                "basisProtocol",
-                "basis",
-                "reviewPolicy",
-                "recoveryProtocol",
-                "governor",
-                "supersedes",
-                "carryProtocol",
-                "governorCarrySha256",
-                "checkReplacement",
-                "preReturnPolicy",
-                "verificationPreparationProtocol",
-                "verificationCheckerSources",
-            ];
-            let mismatched = existing.first().map(|current| {
-                request_fields
-                    .into_iter()
-                    .filter(|field| current.get(*field) != event.get(*field))
-                    .collect::<Vec<_>>()
-            });
-            let same_subject = existing.first().is_some_and(|current| {
-                match (current.get("subject"), event.get("subject")) {
-                    (Some(Value::Object(current)), Some(Value::Object(requested))) => current
-                        .iter()
-                        .filter(|(key, _)| key.as_str() != "sha256")
-                        .all(|(key, value)| requested.get(key) == Some(value)),
-                    (None, None) => true,
-                    _ => false,
-                }
-            });
-            let same_request = mismatched.as_ref().is_some_and(Vec::is_empty) && same_subject;
-            if same_request {
-                return Ok(attach_successor_work(
+            successor_protocol::assert_same_request(&existing, &event)?;
+            return Ok(successor_protocol::attach_goal_linkage(
+                loaded,
+                &new_rel,
+                attach_successor_work(
                     loaded,
                     claim.value["newLedgerPath"].as_str().unwrap_or_default(),
                     result(&existing)?,
-                ));
-            }
-            let mut fields = mismatched.unwrap_or_default();
-            if !same_subject {
-                fields.push("subject");
-            }
-            return Err(format!(
-                "successor ledger already exists with different provenance (fields: {})",
-                fields.join(", ")
+                ),
             ));
         }
         if let Err(error) = append(&new, &event, true, "") {
             rollback_claim(&claim_path, &claim);
             return Err(error);
         }
-        Ok(attach_successor_work(loaded, &new_rel, result(&[event])?))
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
+        Ok(successor_protocol::attach_goal_linkage(
+            loaded,
+            &new_rel,
+            attach_successor_work(loaded, &new_rel, result(&[event])?),
+        ))
     })
 }

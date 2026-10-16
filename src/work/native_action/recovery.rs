@@ -35,10 +35,13 @@ pub(super) fn recover(
         return Err("native replay refuses changed execution parameters; retry the recorded operation without model, binary, sandbox or timeout overrides".into());
     }
 
+    super::continuation::reconcile_failed(loaded, work, &candidate.journal)?;
+
     match candidate.status.as_str() {
         "completed" => {
             super::validate_completed_observation(&candidate.journal)?;
             let bytes = journal_result(&candidate.journal)?;
+            super::continuation::reconcile_saved(loaded, work, &candidate.journal)?;
             super::super::super::return_result_impl::replay_recorded_native(
                 loaded, work, &candidate.assignment, &candidate.journal, &bytes,
             ).map(Some)

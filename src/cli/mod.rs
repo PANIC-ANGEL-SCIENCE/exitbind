@@ -18,6 +18,7 @@ mod goal_completion;
 mod help;
 mod memory_cli;
 mod project;
+mod project_continuation;
 mod replan_input;
 mod run_cli;
 mod status;

@@ -142,6 +142,25 @@ pub(super) fn replace_locked(
     };
     let journal_path = loaded.state_root.join(&journal_relative);
     let mode = replacement_mode(&target, expected.is_some())?;
+    let continuation_key = format!(
+        "file-effect-{}",
+        hash::value(&json!([request.work, request.operation]))
+    );
+    let continuation_input = json!({"parametersSha256":parameters});
+    let continuation = crate::project::continuation::runtime::begin(
+        loaded,
+        &state,
+        crate::project::continuation::runtime::Operation {
+            kind: crate::project::continuation::control::Kind::Effect,
+            key: &continuation_key,
+            role: "worker",
+            agent: assignment["agent"].as_str(),
+            paths: &[request.path.to_string()],
+            commands: &[],
+            input: &continuation_input,
+            predecessor: None,
+        },
+    )?;
     crate::project::managed_files::ensure_state_directory(
         &loaded.state_root,
         journal_path
@@ -152,6 +171,9 @@ pub(super) fn replace_locked(
         "parametersSha256":parameters,"work":request.work,"assignment":request.assignment,
         "operation":request.operation,"path":request.path,"status":"admitted",
         "grantEventSha256":grant["eventSha256"],"resultSha256":hash::text(content), "ownerSha256":owner_binding(loaded)?});
+    if let Some(ticket) = &continuation {
+        record["continuationOperation"] = json!(ticket.key());
+    }
     let intent = format!("{record}\n");
     durable_write(
         &journal_path,
@@ -171,7 +193,13 @@ pub(super) fn replace_locked(
         Some(&intent),
         &loaded.state_root,
     )?;
-    Ok(result(&request, &parameters, false))
+    let mut response = result(&request, &parameters, false);
+    if let Err(error) =
+        crate::project::continuation::runtime::complete(loaded, &continuation, true, true)
+    {
+        response["accountingRecovery"] = json!(error);
+    }
+    Ok(response)
 }
 
 pub(super) fn current_grant<'a>(

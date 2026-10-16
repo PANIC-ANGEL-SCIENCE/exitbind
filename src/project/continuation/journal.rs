@@ -15,6 +15,7 @@ pub(super) struct Claim {
     pub start_intent_sha256: String,
     pub checker_sha256: String,
     pub admitted_at: String,
+    pub association: super::control::Association,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -31,6 +32,7 @@ pub(super) struct Record {
     pub reason: String,
     pub stopped: bool,
     pub claims: Vec<Claim>,
+    pub account: super::control::Account,
     pub previous_event_sha256: Option<String>,
     pub event_sha256: String,
 }
@@ -86,13 +88,21 @@ pub(super) fn read(loaded: &Loaded, relative: &str) -> Result<(Option<Record>, S
             .as_object_mut()
             .ok_or("invalid record")?
             .remove("eventSha256");
-        if record.version != 1
+        super::control::validate_account(&record.account)
+            .map_err(|reason| format!("invalid continuation account: {reason:?}"))?;
+        if record.version != 2
             || record.revision != previous.as_ref().map_or(1, |p| p.revision + 1)
             || record.event_sha256 != hash::value(&value)
             || record.previous_event_sha256 != previous.as_ref().map(|p| p.event_sha256.clone())
             || record.project_identity != crate::session_goal::requirements::identity(loaded)?
             || record.claims.len() > 64
             || record.specification.mandate.id.is_empty()
+            || record.account.project != record.project_identity
+            || record.account.mandate_id != record.specification.mandate.id
+            || chrono::DateTime::parse_from_rfc3339(&record.selected_at)
+                .map_err(|_| "invalid continuation origin")?
+                .timestamp()
+                != record.account.started_at
         {
             return Err("continuation journal identity, bounds or chain is invalid".into());
         }
@@ -102,6 +112,10 @@ pub(super) fn read(loaded: &Loaded, relative: &str) -> Result<(Option<Record>, S
                 || claim.task_id != claim.plan.task_id
                 || !crate::work::valid_work_handle(&claim.work)
                 || super::admission::plan_digest(&claim.plan)? != claim.plan_sha256
+                || claim.association.project != record.project_identity
+                || claim.association.mandate_id != record.specification.mandate.id
+                || claim.association.task_id != claim.task_id
+                || claim.association.claim_root != claim.work
             {
                 return Err("continuation journal claim is invalid".into());
             }
@@ -110,8 +124,30 @@ pub(super) fn read(loaded: &Loaded, relative: &str) -> Result<(Option<Record>, S
             if record.specification.mandate.id != prior.specification.mandate.id
                 || record.selected_at != prior.selected_at
                 || !record.claims.starts_with(&prior.claims)
+                || record.account.started_at != prior.account.started_at
+                || record.account.revision < prior.account.revision
+                || record.account.operations.len() < prior.account.operations.len()
             {
                 return Err("continuation mandate lineage or spent claims changed".into());
+            }
+            for (old, new) in prior
+                .account
+                .operations
+                .iter()
+                .zip(&record.account.operations)
+            {
+                if old.key != new.key
+                    || old.intent != new.intent
+                    || old.association != new.association
+                    || (old.outcome == super::control::Outcome::Unknown
+                        && new.outcome == super::control::Outcome::Reserved)
+                    || (matches!(
+                        old.outcome,
+                        super::control::Outcome::Succeeded | super::control::Outcome::Failed
+                    ) && old.outcome != new.outcome)
+                {
+                    return Err("continuation spent operation changed".into());
+                }
             }
         }
         previous = Some(record);

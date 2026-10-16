@@ -1,3 +1,5 @@
+#[path = "native_action/continuation.rs"]
+pub(super) mod continuation;
 #[path = "native_action/journal.rs"]
 mod journal;
 #[path = "native_action/prompt.rs"]
@@ -94,11 +96,15 @@ pub(crate) fn execute(
 
     if let Some(journal) = existing.clone() {
         verify_journal(&journal, work, &identity, role, agent)?;
+        if options.resume {
+            continuation::reconcile_failed(loaded, work, &journal)?;
+        }
         recovery::validate_overrides(&journal, &options)?;
         match journal["status"].as_str() {
             Some("completed") => {
                 validate_completed_observation(&journal)?;
                 let bytes = journal_result(&journal)?;
+                continuation::reconcile_saved(loaded, work, &journal)?;
                 let response = submit_saved(loaded, work, &identity.assignment, bytes)?;
                 return Ok(recovery::mark_same_work_return(
                     response,
@@ -159,7 +165,10 @@ pub(crate) fn execute(
         return Err("--resume requires a started native assignment journal".into());
     }
 
-    let selected = crate::work::details::required_assignment(loaded, work, current)?;
+    let mut selected = crate::work::details::required_assignment(loaded, work, current)?;
+    if let Some(delivery) = crate::project::continuation::runtime::delivery(loaded, work)? {
+        selected["sections"]["projectContinuation"] = delivery;
+    }
     let assignment = &selected["canonicalAssignment"];
     let _canonical_packet = bounded_json(assignment, MAX_PACKET_BYTES, "assignment packet")?;
     let packet = bounded_json(
@@ -226,20 +235,29 @@ pub(crate) fn execute(
         }
     }
     codex_exec::validate_request(&request).map_err(|error| error.to_string())?;
-    if existing.is_none() {
-        let operation_id = prior_failure
-            .as_ref()
-            .and_then(|failure| failure["operation"].as_str())
-            .map(|operation| format!("native-retry-{operation}-{}", timestamp()))
-            .unwrap_or_else(|| format!("native-{}-{}", std::process::id(), timestamp()));
+    let state = continuation::state(loaded, work)?;
+    let prepared_journal = if existing.is_none() {
+        let operation_id = continuation::operation_id(
+            &state,
+            work,
+            &identity.assignment,
+            &request,
+            prior_failure.as_ref(),
+        )
+        .unwrap_or_else(|| {
+            prior_failure
+                .as_ref()
+                .and_then(|failure| failure["operation"].as_str())
+                .map(|operation| format!("native-retry-{operation}-{}", timestamp()))
+                .unwrap_or_else(|| format!("native-{}-{}", std::process::id(), timestamp()))
+        });
         let resumed_from_operation = prior_failure
             .as_ref()
             .map(|failure| failure["operation"].clone())
             .unwrap_or(Value::Null);
         let exclusive = prior_failure.is_none();
-        write_journal(
-            &paths.journal,
-            &json!({
+        Some((
+            json!({
                 "version": 1,
                 "status": "started",
                 "work": work,
@@ -260,21 +278,20 @@ pub(crate) fn execute(
                 "request": request_projection(&request),
             }),
             exclusive,
-        )?;
-    }
-
-    claim_started(&paths.journal)?;
-    let observation = match codex_exec::run_with_observers(
-        &request,
-        |identity| recovery::persist_identity(&paths.journal, identity),
-        |stream| recovery::persist_stream(&paths.journal, stream),
-    ) {
-        Ok(observation) => observation,
-        Err(error) => {
-            record_error(&paths.journal, &error.to_string())?;
-            return Err(error.to_string());
-        }
+        ))
+    } else {
+        None
     };
+
+    let (observation, ticket) = continuation::execute(
+        loaded,
+        work,
+        &state,
+        current,
+        &paths,
+        &request,
+        prepared_journal,
+    )?;
     let mut observation_value = projection(&observation);
     if let Some(evidence) = review_evidence.as_ref() {
         observation_value["verifiedEvidence"] = json!(evidence
@@ -291,37 +308,66 @@ pub(crate) fn execute(
         &observation_value,
         observation.final_result.as_ref(),
     )?;
-    let final_result = observation
-        .final_result
-        .as_ref()
-        .ok_or_else(|| format!("native assignment has no typed {role} result"))?;
-    let outcome = validate_final_result(role, final_result)?;
-    if let Some(evidence) = review_evidence.as_ref() {
-        let expected = evidence
-            .iter()
-            .map(|item| json!(item.reference))
-            .collect::<Vec<_>>();
-        if final_result["evidenceReferences"] != json!(expected) {
-            return Err(
-                "native reviewer did not cite every verified worker result reference".into(),
-            );
+    let retained = (|| {
+        let final_result = observation
+            .final_result
+            .as_ref()
+            .ok_or_else(|| format!("native assignment has no typed {role} result"))?;
+        let outcome = validate_final_result(role, final_result)?;
+        if let Some(evidence) = review_evidence.as_ref() {
+            let expected = evidence
+                .iter()
+                .map(|item| json!(item.reference))
+                .collect::<Vec<_>>();
+            if final_result["evidenceReferences"] != json!(expected) {
+                return Err(
+                    "native reviewer did not cite every verified worker result reference".into(),
+                );
+            }
         }
-    }
-    if !observation.process.success
-        || observation.interrupted
-        || !matches!(observation.turn, TurnStatus::Completed)
-        || !observation.coverage_gap.is_empty()
-    {
-        return Err(format!(
+        if !observation.process.success
+            || observation.interrupted
+            || !matches!(observation.turn, TurnStatus::Completed)
+            || !observation.coverage_gap.is_empty()
+        {
+            return Err(format!(
             "native assignment did not produce a complete accepted observation (outcome {outcome})"
         ));
-    }
-    let result = projected_result(role, final_result, &observation_value)?;
-    let bytes = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_RESULT_BYTES {
-        return Err("native result exceeds the bounded result journal".into());
-    }
-    write_completed(&paths.journal, &observation_value, &bytes)?;
+        }
+        let result = projected_result(role, final_result, &observation_value)?;
+        let bytes = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_RESULT_BYTES {
+            return Err("native result exceeds the bounded result journal".into());
+        }
+        write_completed(&paths.journal, &observation_value, &bytes)?;
+        Ok::<_, String>(bytes)
+    })();
+    let accounted = if ticket.is_some() {
+        if let Err(error) = retained.as_ref() {
+            record_error(&paths.journal, error)?;
+        }
+        let journal = read_journal(&paths.journal)?
+            .ok_or("native journal disappeared after retaining its observation")?;
+        continuation::complete_owned(
+            loaded,
+            &paths,
+            &ticket,
+            retained.is_ok(),
+            recovery::liveness(&journal) == ProcessLiveness::Ended,
+        )
+    } else {
+        Ok(())
+    };
+    let bytes = match (retained, accounted) {
+        (Ok(bytes), Ok(())) => bytes,
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(_), Err(error)) => return Err(format!("native accounting recovery pending: {error}")),
+        (Err(error), Err(accounting)) => {
+            return Err(format!(
+                "{error}; native accounting recovery pending: {accounting}"
+            ));
+        }
+    };
     submit_saved(loaded, work, &identity.assignment, bytes)
 }
 

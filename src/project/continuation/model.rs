@@ -96,6 +96,16 @@ pub(crate) struct Plan {
     pub(crate) requirements: Vec<String>,
     pub(crate) checker: String,
     pub(crate) integration: bool,
+    #[serde(default)]
+    pub(crate) pre_return: Option<PreReturn>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PreReturn {
+    pub(crate) command: String,
+    pub(crate) timeout_ms: u64,
+    pub(crate) capture_limit_bytes: u64,
 }
 
 fn text(value: &str, max: usize, label: &str) -> Result<(), String> {
@@ -356,6 +366,16 @@ impl Plan {
             text(command, 4096, "plan check command")?;
             if !spec.mandate.commands.contains(command) {
                 return Err("plan check commands must exactly match mandate commands".into());
+            }
+        }
+        if let Some(policy) = &self.pre_return {
+            text(&policy.command, 4096, "pre-return command")?;
+            if !spec.mandate.commands.contains(&policy.command)
+                || !(1..=crate::run_value::PRE_RETURN_TIMEOUT_MAX_MS).contains(&policy.timeout_ms)
+                || !(1..=crate::run_value::PRE_RETURN_CAPTURE_MAX_BYTES)
+                    .contains(&policy.capture_limit_bytes)
+            {
+                return Err("pre-return policy must use an exact mandate command and existing finite capture/time bounds".into());
             }
         }
         if self.estimated_actions == 0 || self.estimated_actions > spec.mandate.max_actions {
