@@ -16,19 +16,8 @@ pub(super) fn validate(event: &Value) -> Result<(), String> {
                 "combinedBytes",
                 "state",
             ],
-        ) || !exact(
-            &value["binding"],
-            &[
-                "runId",
-                "targetEventSha256",
-                "subjectSha256",
-                "inputsSha256",
-                "configSha256",
-                "checkCommandSha256",
-                "requirementId",
-                "observerExecutableSha256",
-            ],
-        ) {
+        ) || !binding_shape(&value["binding"])
+        {
             return Err("invalid check observation fields".into());
         }
         if value["state"] != "running"
@@ -57,6 +46,15 @@ pub(super) fn validate(event: &Value) -> Result<(), String> {
                 return Err(format!("invalid check observation {field}"));
             }
         }
+        if let Some(digest) = value["binding"].get("verificationPreparationSha256") {
+            if !is_sha(digest.as_str())
+                || !is_sha(value["binding"]["verificationOperationId"].as_str())
+            {
+                return Err("invalid check observation preparation binding".into());
+            }
+        } else if value["binding"].get("verificationOperationId").is_some() {
+            return Err("invalid check observation preparation binding".into());
+        }
     } else if !exact(value, &["admissionEventSha256", "facts"])
         || !is_sha(value["admissionEventSha256"].as_str())
         || !valid_facts(&value["facts"])
@@ -64,6 +62,36 @@ pub(super) fn validate(event: &Value) -> Result<(), String> {
         return Err("invalid check observation failure facts".into());
     }
     Ok(())
+}
+
+fn binding_shape(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    const BASE: &[&str] = &[
+        "runId",
+        "targetEventSha256",
+        "subjectSha256",
+        "inputsSha256",
+        "configSha256",
+        "checkCommandSha256",
+        "requirementId",
+        "observerExecutableSha256",
+    ];
+    let selected = object.contains_key("verificationPreparationSha256")
+        && object.contains_key("verificationOperationId");
+    let expected = if selected { BASE.len() + 2 } else { BASE.len() };
+    object.len() == expected
+        && BASE.iter().all(|field| object.contains_key(*field))
+        && (!selected
+            || object.contains_key("verificationPreparationSha256")
+                && object.contains_key("verificationOperationId"))
+        && object.keys().all(|key| {
+            BASE.contains(&key.as_str())
+                || (selected
+                    && ["verificationPreparationSha256", "verificationOperationId"]
+                        .contains(&key.as_str()))
+        })
 }
 
 fn exact(value: &Value, fields: &[&str]) -> bool {
@@ -184,6 +212,10 @@ pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
             || binding["subjectSha256"] != state["subject"]["sha256"]
             || binding["configSha256"] != state["configSha256"]
             || binding["checkCommandSha256"] != policy.command_sha256
+            || (state.get("verificationPreparationProtocol").is_some()
+                != binding.get("verificationPreparationSha256").is_some())
+            || (binding.get("verificationPreparationSha256").is_some()
+                != binding.get("verificationOperationId").is_some())
         {
             return Err(
                 "check observation does not match frozen configuration, current policy or subject"

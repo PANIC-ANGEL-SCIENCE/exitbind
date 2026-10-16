@@ -139,7 +139,7 @@ impl PreReturnOptions {
     }
 }
 
-fn checker_sources(
+pub(crate) fn checker_sources(
     loaded: &crate::config::Loaded,
     command: &str,
 ) -> Result<Vec<CheckerSource>, String> {
@@ -212,7 +212,152 @@ fn checker_sources(
             },
         );
     }
+    if sources.len() > CHECKER_SOURCE_COUNT_MAX {
+        return Err("checker command names too many source files to bind".into());
+    }
     Ok(sources.into_values().collect())
+}
+
+pub(crate) fn verification_checker_sources(
+    loaded: &crate::config::Loaded,
+    policy: Option<&CheckPolicy>,
+    preservation: Option<&PreservationPolicy>,
+) -> Result<Vec<CheckerSource>, String> {
+    let mut sources = std::collections::BTreeMap::new();
+    let mut commands = Vec::new();
+    if let Some(policy) = policy {
+        commands.push(policy.command.as_str());
+    }
+    if let Some(preservation) = preservation {
+        commands.extend(
+            preservation
+                .requirements
+                .iter()
+                .map(|item| item.command.as_str()),
+        );
+    }
+    for command in commands {
+        for source in checker_sources(loaded, command)? {
+            let key = source
+                .argument_path
+                .clone()
+                .unwrap_or_else(|| source.path.clone());
+            if let Some(previous) = sources.get(&key) {
+                if previous != &source {
+                    return Err(
+                        "verification policies resolve one checker argument to different sources"
+                            .into(),
+                    );
+                }
+            } else {
+                sources.insert(key, source);
+            }
+        }
+    }
+    if sources.len() > CHECKER_SOURCE_COUNT_MAX {
+        return Err("verification policies name too many checker source files to bind".into());
+    }
+    Ok(sources.into_values().collect())
+}
+
+pub(crate) const CHECKER_SOURCE_COUNT_MAX: usize = 32;
+
+pub(crate) fn checker_sources_value(sources: &[CheckerSource]) -> Value {
+    Value::Array(
+        sources
+            .iter()
+            .map(|source| {
+                let mut value = json!({"path": source.path, "sha256": source.sha256});
+                if let Some(argument_path) = &source.argument_path {
+                    value["argumentPath"] = json!(argument_path);
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn checker_sources_from_value(
+    value: &Value,
+    line: usize,
+) -> Result<Vec<CheckerSource>, String> {
+    let invalid =
+        || format!("invalid run ledger line {line}: malformed verificationCheckerSources");
+    let entries = value
+        .as_array()
+        .filter(|entries| entries.len() <= CHECKER_SOURCE_COUNT_MAX)
+        .ok_or_else(invalid)?;
+    let mut sources = Vec::with_capacity(entries.len());
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in entries {
+        let object = entry.as_object().ok_or_else(invalid)?;
+        if !(object.len() == 2 || object.len() == 3)
+            || !object.contains_key("path")
+            || !object.contains_key("sha256")
+            || object
+                .keys()
+                .any(|key| !["path", "sha256", "argumentPath"].contains(&key.as_str()))
+        {
+            return Err(invalid());
+        }
+        let path = entry["path"]
+            .as_str()
+            .filter(|path| {
+                !path.is_empty()
+                    && path.len() <= 1024
+                    && !path.contains('\0')
+                    && Path::new(path).is_absolute()
+            })
+            .ok_or_else(invalid)?
+            .to_owned();
+        let sha256 = entry["sha256"]
+            .as_str()
+            .filter(|sha| is_sha(Some(sha)))
+            .ok_or_else(invalid)?
+            .to_owned();
+        let argument_path = entry
+            .get("argumentPath")
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|path| {
+                        !path.is_empty()
+                            && path.len() <= 1024
+                            && !path.contains('\0')
+                            && Path::new(path).is_absolute()
+                    })
+                    .map(str::to_owned)
+                    .ok_or_else(invalid)
+            })
+            .transpose()?;
+        let key = argument_path.clone().unwrap_or_else(|| path.clone());
+        if !seen.insert(key) {
+            return Err(invalid());
+        }
+        sources.push(CheckerSource {
+            argument_path,
+            path,
+            sha256,
+        });
+    }
+    Ok(sources)
+}
+
+pub(crate) fn validate_checker_sources(
+    sources: &[CheckerSource],
+    label: &str,
+) -> Result<(), String> {
+    for source in sources {
+        let argument_path = source.argument_path.as_deref().unwrap_or(&source.path);
+        let canonical = fs::canonicalize(argument_path)
+            .map_err(|error| format!("{label} checker source is unavailable: {error}"))?;
+        if canonical.to_str() != Some(source.path.as_str())
+            || crate::evidence::hash::file(&canonical)? != source.sha256
+        {
+            return Err(format!("{label} checker source changed; use authorized supersession to bind the changed checker"));
+        }
+    }
+    Ok(())
 }
 
 fn parse_bounded_policy_u64(

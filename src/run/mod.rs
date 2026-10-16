@@ -31,6 +31,7 @@ mod repair_recovery;
 mod result_reference;
 pub(crate) mod state;
 mod submission;
+pub(crate) mod verification_preparation;
 mod view;
 
 use self::governor::{canonical_work_for_ledger, GOVERNOR_COMPLETION_REFUSAL};

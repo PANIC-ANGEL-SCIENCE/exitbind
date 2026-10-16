@@ -1,11 +1,13 @@
 //! Opt-in, source-bound diagnostic execution before a successful Worker return.
 mod binding_diagnostic;
 mod journal;
+mod response;
 
 use self::journal::{
     directory_path, ensure_directory, install_captured_logs, read_record, record_bytes,
     record_path, write_durable,
 };
+use self::response::{failure_response, read_route};
 use super::submission::matching_mutation_grants;
 use super::*;
 use std::time::{Duration, Instant};
@@ -36,10 +38,26 @@ fn current_binding(
     } else {
         Vec::new()
     };
+    let operation_id = crate::evidence::hash::value(&json!({
+        "runId": state["runId"],
+        "stage": assignment["stage"],
+        "attempt": assignment["attempt"],
+        "agent": assignment["agent"],
+        "assignmentSha256": crate::evidence::hash::value(assignment),
+        "resultSha256": artifact["sha256"],
+        "policySha256": crate::evidence::hash::value(&policy.value()),
+        "operation": "pre-return"
+    }));
+    let preparation = crate::run::verification_preparation::planned(
+        loaded,
+        state,
+        &operation_id,
+        &policy.checker_sources,
+    )?;
     if !grants.is_empty() && work.is_none() {
         return Err("governed permits require a canonical work ledger".into());
     }
-    Ok(json!({
+    let mut binding = json!({
         "work": work, "ledger": ledger, "selector": selector, "runId": state["runId"],
         "stage": assignment["stage"], "attempt": assignment["attempt"], "agent": assignment["agent"],
         "role": assignment["role"], "assignmentSha256": crate::evidence::hash::value(assignment),
@@ -49,7 +67,13 @@ fn current_binding(
         "grantSetSha256": crate::evidence::hash::value(&json!(grants)),
         "checkerExecutableSha256": crate::producer::build_identity()["executableSha256"],
         "producer": crate::producer::evidence_for_version(8)
-    }))
+    });
+    if let Some(preparation) = preparation {
+        binding["verificationPreparation"] = preparation.identity()?;
+        binding["verificationPreparationSha256"] = json!(preparation.sha256()?);
+        binding["verificationOperationId"] = json!(operation_id);
+    }
+    Ok(binding)
 }
 
 fn assert_current_configuration(loaded: &Loaded, state: &Value) -> Result<(), String> {
@@ -64,20 +88,7 @@ fn assert_current_configuration(loaded: &Loaded, state: &Value) -> Result<(), St
     crate::project::architecture::assert_current(loaded)
         .map_err(|e| format!("pre-return architecture binding is stale: {e}"))?;
     let policy = crate::run_value::pre_return_policy_from_value(&state["preReturnPolicy"], 1)?;
-    for source in policy.checker_sources {
-        let argument_path = source.argument_path.as_deref().unwrap_or(&source.path);
-        let path = std::path::Path::new(argument_path);
-        let canonical = fs::canonicalize(path)
-            .map_err(|e| format!("pre-return checker source is unavailable: {e}"))?;
-        if canonical
-            .to_str()
-            .ok_or("pre-return checker path is not valid UTF-8")?
-            != source.path
-            || crate::evidence::hash::file(&canonical)? != source.sha256
-        {
-            return Err("pre-return checker source changed; use authorized supersession to bind the changed checker".into());
-        }
-    }
+    crate::run_value::validate_checker_sources(&policy.checker_sources, "pre-return")?;
     if let Some(warning) = super::input_drift_warning_for(loaded, state, None)? {
         return Err(format!(
             "pre-return check requires current product inputs; use authorized supersession after input drift: {}",
@@ -126,50 +137,49 @@ fn latest_or_create(
     Ok((attempt_id, attempt, false))
 }
 
-fn failure_response(loaded: &Loaded, attempt_id: &str, result: &Value) -> String {
-    let work = read_record(&record_path(loaded, attempt_id, "attempt").unwrap_or_default())
-        .ok()
-        .and_then(|a| a["binding"]["selector"].as_str().map(str::to_owned))
-        .unwrap_or_default();
-    let read = json!({
-        "metadata": read_route(loaded, &work, attempt_id, None),
-        "stdoutBytes": read_route(loaded, &work, attempt_id, Some("stdout")),
-        "stderrBytes": read_route(loaded, &work, attempt_id, Some("stderr")),
-    });
-    format!(
-        "EXITBIND_JSON:{}",
-        json!({"effect":"no_change","preReturn":"refused","attemptId":attempt_id,
-        "failureKind":result["failureKind"],"exitCode":result["exitCode"],"stdout":result["stdout"],"stderr":result["stderr"],
-        "readRoutes":read,"nextActions":["repair within the current assignment and valid grant","report blocked to the Lead if repair is unavailable"],
-        "finalCheckCredited":false,"automaticRework":false,"replayed":result["replayed"]==true})
-    )
-}
-
-fn read_route(loaded: &Loaded, work: &str, attempt_id: &str, stream: Option<&str>) -> Value {
-    let mut argv = vec![
-        "run".into(),
-        "pre-return".into(),
-        "read".into(),
-        work.into(),
-        attempt_id.into(),
-    ];
-    if let Some(stream) = stream {
-        argv.extend(["--stream".into(), stream.into()]);
-    }
-    argv.push("--config".into());
-    let route = crate::work::response_recovery::bounded_argv(argv, loaded.path.to_str(), 2048);
-    json!({"argv":route.argv,"sameConfigRequired":route.same_config,"sameExecutableRequired":route.same_executable})
-}
-
 fn run_or_recover(
     loaded: &Loaded,
     attempt_id: &str,
     attempt: &Value,
     policy: &crate::run_value::PreReturnPolicy,
+    state: &Value,
     replayed: bool,
 ) -> Result<Value, String> {
     if replayed {
         return Ok(attempt.clone());
+    }
+    let preparation = match crate::run_value::validate_checker_sources(
+        &policy.checker_sources,
+        "pre-return",
+    )
+    .and_then(|()| {
+        crate::run::verification_preparation::prepare(
+            loaded,
+            state,
+            attempt["binding"]["verificationOperationId"]
+                .as_str()
+                .unwrap_or(attempt_id),
+            &policy.checker_sources,
+        )
+    }) {
+        Ok(preparation) => preparation,
+        Err(error) => {
+            let result_path = record_path(loaded, attempt_id, "result")?;
+            let result = json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,
+                "state":"uncertain","failureKind":"preparation_refused",
+                "execution":{"started":false,"certainty":"known_not_started"},
+                "diagnostic":{"message":error,"storageStage":"preparation"},
+                "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
+                "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()});
+            write_durable(&result_path, &record_bytes(&result)?)
+                .map_err(|store| format!("pre-return preparation refusal could not be recorded; attempt remains unresolved: {store}"))?;
+            return Err(failure_response(loaded, attempt_id, &result));
+        }
+    };
+    if let Some(preparation) = &preparation {
+        if attempt["binding"]["verificationPreparationSha256"] != preparation.sha256()? {
+            return Err("pre-return preparation recipe changed after attempt admission; no check was launched".into());
+        }
     }
     let request = crate::run::capture::ObservationRequest {
         command: policy.command.clone(),
@@ -189,6 +199,7 @@ fn run_or_recover(
             combined_bytes: policy.capture_limit_bytes.saturating_mul(2),
         },
         retain_partial: true,
+        preparation,
     };
     let result_path = record_path(loaded, attempt_id, "result")?;
     let result = match crate::run::capture::capture_observed_command(&request) {
@@ -372,10 +383,10 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
             )?;
         }
         let (attempt_id, attempt, replayed) = latest_or_create(loaded, binding.clone(), &policy)?;
-        Ok((artifact_path, attempt_id, attempt, replayed, policy))
+        Ok((artifact_path, attempt_id, attempt, replayed, policy, state))
     })?;
-    let (artifact_path, attempt_id, attempt, replayed, policy) = prepared;
-    run_or_recover(loaded, &attempt_id, &attempt, &policy, replayed)?;
+    let (artifact_path, attempt_id, attempt, replayed, policy, state) = prepared;
+    run_or_recover(loaded, &attempt_id, &attempt, &policy, &state, replayed)?;
     Ok((artifact_path, attempt_id))
 }
 
@@ -417,12 +428,12 @@ pub(super) fn prepare_direct(
             }
         }
         let (attempt_id, attempt, replayed) = latest_or_create(loaded, binding, &policy)?;
-        Ok(Some((attempt_id, attempt, replayed, policy)))
+        Ok(Some((attempt_id, attempt, replayed, policy, state)))
     })?;
-    let Some((attempt_id, attempt, replayed, policy)) = prepared else {
+    let Some((attempt_id, attempt, replayed, policy, state)) = prepared else {
         return Ok(None);
     };
-    run_or_recover(loaded, &attempt_id, &attempt, &policy, replayed)?;
+    run_or_recover(loaded, &attempt_id, &attempt, &policy, &state, replayed)?;
     Ok(Some(attempt_id))
 }
 

@@ -314,6 +314,81 @@ fn setup_does_not_report_a_nonexecutable_path_entry_as_an_available_host() {
 }
 
 #[test]
+fn setup_previews_and_persists_the_opt_in_owned_outputs_contract() {
+    let root = fixture("setup-verification-preparation");
+    let bin = support::git_topology::git_only_path(&root);
+    let root_text = root.to_str().unwrap();
+    let base = [
+        "setup",
+        "--json",
+        "--mode",
+        "portable",
+        "--root",
+        root_text,
+        "--scope",
+        "worker",
+        "--observe",
+        "README.md,src",
+        "--write",
+        "src",
+        "--commands",
+        "cargo fmt --check",
+        "--check-command",
+        "true",
+        "--verification-preparation",
+        "owned-outputs",
+        "--goal",
+        "test setup",
+        "--review-policy",
+        "required",
+        "--skip-skills",
+    ];
+    let preview = invoke_env(&base, &[("PATH", &bin)]);
+    assert!(preview.status.success(), "{}", text(&preview));
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(
+        preview["approvedFacts"]["verificationPreparation"]["version"],
+        1
+    );
+    assert_eq!(
+        preview["approvedFacts"]["verificationPreparation"]["pythonBytecode"],
+        "disabled"
+    );
+    assert_eq!(
+        preview["approvedFacts"]["verificationPreparation"]["scratch"],
+        "taskOwned"
+    );
+    assert!(
+        preview["approvedFacts"]["verificationPreparation"]["scratchPath"]
+            .as_str()
+            .unwrap()
+            .contains(".exitbind/verification/<run-id>/<operation-id>")
+    );
+    let mut apply = base.to_vec();
+    apply.extend(["--apply"]);
+    let result = invoke_env(&apply, &[("PATH", &bin)]);
+    assert!(result.status.success(), "{}", text(&result));
+    let config: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("exitbind.json")).unwrap()).unwrap();
+    assert_eq!(
+        config["project"]["verificationPreparation"],
+        serde_json::json!({
+            "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
+        })
+    );
+    let persisted = fs::read(root.join("exitbind.json")).unwrap();
+    let repeat = invoke_env(&apply, &[("PATH", &bin)]);
+    assert!(repeat.status.success(), "{}", text(&repeat));
+    assert_eq!(fs::read(root.join("exitbind.json")).unwrap(), persisted);
+    let repeated: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("exitbind.json")).unwrap()).unwrap();
+    assert_eq!(
+        repeated["project"]["verificationPreparation"],
+        config["project"]["verificationPreparation"]
+    );
+}
+
+#[test]
 fn setup_reports_and_refuses_changed_owned_guidance() {
     let root = fixture("setup-guidance");
     let first = setup_without_host(&root, true, false);

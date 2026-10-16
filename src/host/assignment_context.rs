@@ -207,6 +207,7 @@ mod tests {
             architecture_contract: None,
             capabilities: Vec::new(),
             workflows: std::collections::BTreeMap::new(),
+            verification_preparation: None,
             path: PathBuf::from("config.json"),
             control_root: PathBuf::from("fixture-root"),
             product_root: PathBuf::from("fixture-root"),

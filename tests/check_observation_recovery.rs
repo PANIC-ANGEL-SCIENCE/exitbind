@@ -35,6 +35,16 @@ impl Fixture {
             .env("EXITBIND_NO_UPDATE_CHECK", "1");
         command
     }
+    fn enable_owned_outputs(&self) {
+        let path = self.root.join("exitbind.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        config["project"]["verificationPreparation"] = json!({
+            "version": 1,
+            "pythonBytecode": "disabled",
+            "scratch": "taskOwned"
+        });
+        fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    }
     fn call(&self, args: &[&str], body: &[u8]) -> Output {
         let mut child = self
             .command(args)
@@ -152,6 +162,22 @@ fn value(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|_| panic!("{output:?}"))
 }
 
+fn find_named_file(root: &std::path::Path, name: &str) -> Option<PathBuf> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory).ok()? {
+            let entry = entry.ok()?;
+            if entry.file_name() == name {
+                return Some(entry.path());
+            }
+            if entry.file_type().ok()?.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    None
+}
+
 fn rehash(value: &mut Value) {
     use sha2::{Digest, Sha256};
     value.as_object_mut().unwrap().remove("eventSha256");
@@ -162,11 +188,23 @@ fn rehash(value: &mut Value) {
 }
 
 fn storage_interruption() -> (Fixture, String, Value, Vec<u8>) {
+    storage_interruption_with_preparation(false)
+}
+
+fn storage_interruption_with_preparation(selected: bool) -> (Fixture, String, Value, Vec<u8>) {
     // A real post-admission storage failure on every supported Unix host,
     // including privileged test runners: make the ledger directory unavailable
     // while the checker runs, then restore the exact original bytes after its
     // observer has returned. No accepted event or process fact is constructed.
-    let f = Fixture::new("printf ran >> .exitbind/attempt-count; mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf retained-output; exit 0\n");
+    let script = if selected {
+        "printf ran >> .exitbind/attempt-count; printf owned > \"$EXITBIND_VERIFICATION_SCRATCH/prepared-effect\"; mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf retained-output; exit 0\n"
+    } else {
+        "printf ran >> .exitbind/attempt-count; mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf retained-output; exit 0\n"
+    };
+    let f = Fixture::new(script);
+    if selected {
+        f.enable_owned_outputs();
+    }
     let work = f.begin();
     let failed = f.call(&["work", "check", &work, "--timeout-ms", "2000"], b"");
     assert!(!failed.status.success(), "{failed:?}");

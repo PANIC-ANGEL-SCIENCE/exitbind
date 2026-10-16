@@ -342,3 +342,38 @@ fn timeout_records_failure_then_lead_repair_recheck_required_review_and_acceptan
         2
     );
 }
+
+#[test]
+fn selected_preparation_timeout_keeps_owned_effect_and_refuses_reexecution() {
+    let f = Fixture::new("printf started >> .exitbind/attempt-count; printf owned > \"$EXITBIND_VERIFICATION_SCRATCH/started\"; printf before-timeout; exec sleep 3\n");
+    f.enable_owned_outputs();
+    let work = f.begin();
+    let failure = f.call(&["work", "check", &work, "--timeout-ms", "50"], b"");
+    assert!(!failure.status.success(), "{failure:?}");
+    let result = value(&failure);
+    let facts = &result["observationFailure"]["facts"];
+    assert_eq!(facts["deadlineExceeded"], true);
+    assert_eq!(facts["capture"], "incomplete");
+    assert_eq!(facts["termination"], "ended");
+    assert_eq!(result["checkRecorded"], false);
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"started"
+    );
+    let marker = find_named_file(&f.root.join(".exitbind/verification"), "started")
+        .expect("prepared timeout scratch must remain available for inspection");
+    assert_eq!(fs::read(marker).unwrap(), b"owned");
+    assert_eq!(
+        f.events(&work)
+            .iter()
+            .filter(|event| event["action"] == "check")
+            .count(),
+        0
+    );
+    let retry = f.call(&["work", "check", &work, "--timeout-ms", "50"], b"");
+    assert!(!retry.status.success());
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"started"
+    );
+}

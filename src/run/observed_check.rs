@@ -57,66 +57,158 @@ pub fn observe_check_for_requirement(
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-    let (source, policy, inputs, identity, capture_logs, initial_warning, admission) = with_lock(
-        &path,
-        || {
-            crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
-            if claim_path(&path).exists() {
-                return Err("run has been superseded; no mutation was made".into());
-            }
-            let (_, events, mut source) = load_at(loaded, &path)?;
-            let state = reduce_live(loaded, &events)?;
-            if state["version"].as_u64().unwrap_or(0) < 4 {
-                return Err("observe-check requires a newly created checked run".into());
-            }
-            if state["status"] != "running" {
-                return Err(
-                    "run has already reached a terminal state; no mutation was made".into(),
-                );
-            }
-            check_observation::assert_current(loaded, &state)?;
-            let warning = action_drift_warning(loaded, &state)?;
-            crate::memory::contextual::assert_plan(loaded, &state)?;
-            crate::run::artifact::assert_current(loaded, &state)?;
-            predecessor(loaded, &events[0])?;
-            let policy = active_check_policy(&state, requirement_id)?;
-            crate::run_value::validate_check_target(&state, target)?;
-            let inputs = if state["version"].as_u64() >= Some(6) {
-                Some(live_inputs(&state)?)
-            } else {
-                None
-            };
-            let identity = json!({
-                "runId": state["runId"], "targetEventSha256": target,
-                "subjectSha256": state["subject"]["sha256"], "inputsSha256": inputs,
-                "configSha256": hash::text(&loaded.source), "checkCommandSha256": policy.command_sha256,
-                "requirementId": requirement_id,
-                "observerExecutableSha256": if state["checkObservationProtocol"] == check_observation::PROTOCOL {
-                    crate::producer::build_identity()["executableSha256"].clone()
-                } else { Value::Null },
-            });
-            let admission = check_observation::admit(
-                loaded,
-                &path,
-                &mut source,
-                &state,
-                &events,
-                identity.clone(),
-                timeout_ms,
-            )?;
-            Ok((
-                source,
-                policy.clone(),
-                inputs.clone(),
-                identity,
-                state["version"] == 8,
-                warning,
-                admission,
-            ))
-        },
-    )?;
+    let (
+        source,
+        policy,
+        inputs,
+        identity,
+        capture_logs,
+        initial_warning,
+        admission,
+        operation_id,
+        admitted_state,
+    ) = with_lock(&path, || {
+        crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+        if claim_path(&path).exists() {
+            return Err("run has been superseded; no mutation was made".into());
+        }
+        let (_, events, mut source) = load_at(loaded, &path)?;
+        let state = reduce_live(loaded, &events)?;
+        if state["version"].as_u64().unwrap_or(0) < 4 {
+            return Err("observe-check requires a newly created checked run".into());
+        }
+        if state["status"] != "running" {
+            return Err("run has already reached a terminal state; no mutation was made".into());
+        }
+        check_observation::assert_current(loaded, &state)?;
+        let warning = action_drift_warning(loaded, &state)?;
+        crate::memory::contextual::assert_plan(loaded, &state)?;
+        crate::run::artifact::assert_current(loaded, &state)?;
+        predecessor(loaded, &events[0])?;
+        let policy = active_check_policy(&state, requirement_id)?;
+        let checker_sources = crate::run::verification_preparation::current_checker_sources(
+            loaded,
+            &state,
+            &policy.command,
+        )?;
+        crate::run_value::validate_check_target(&state, target)?;
+        let inputs = if state["version"].as_u64() >= Some(6) {
+            Some(live_inputs(&state)?)
+        } else {
+            None
+        };
+        let mut identity = json!({
+            "runId": state["runId"], "targetEventSha256": target,
+            "subjectSha256": state["subject"]["sha256"], "inputsSha256": inputs,
+            "configSha256": hash::text(&loaded.source), "checkCommandSha256": policy.command_sha256,
+            "requirementId": requirement_id,
+            "observerExecutableSha256": if state["checkObservationProtocol"] == check_observation::PROTOCOL {
+                crate::producer::build_identity()["executableSha256"].clone()
+            } else { Value::Null },
+        });
+        let preparation_operation_id = hash::value(&json!({
+            "identity": identity,
+            "ledgerSourceSha256": hash::text(&source),
+        }));
+        let preparation = crate::run::verification_preparation::planned(
+            loaded,
+            &state,
+            &preparation_operation_id,
+            &checker_sources,
+        )?;
+        if let Some(preparation) = &preparation {
+            identity["verificationPreparationSha256"] = json!(preparation.sha256()?);
+            identity["verificationOperationId"] = json!(preparation_operation_id.clone());
+        }
+        let admission = check_observation::admit(
+            loaded,
+            &path,
+            &mut source,
+            &state,
+            &events,
+            identity.clone(),
+            timeout_ms,
+        )?;
+        // Legacy recovery binds partial captures to the post-admission ledger
+        // source. Selected runs must instead keep the frozen operation id in
+        // their admission recipe, avoiding a recursive hash over that binding.
+        let operation_id = if preparation.is_some() {
+            preparation_operation_id
+        } else {
+            hash::value(&json!({
+                "identity": identity,
+                "ledgerSourceSha256": hash::text(&source),
+            }))
+        };
+        Ok((
+            source,
+            policy.clone(),
+            inputs.clone(),
+            identity,
+            state["version"] == 8,
+            warning,
+            admission,
+            operation_id,
+            state,
+        ))
+    })?;
 
     warn_drift(initial_warning.as_ref());
+    let checker_sources = match crate::run::verification_preparation::current_checker_sources(
+        loaded,
+        &admitted_state,
+        &policy.command,
+    ) {
+        Ok(sources) => sources,
+        Err(error) if admission.is_some() => {
+            return check_observation::record_failure(
+                loaded,
+                ledger,
+                &path,
+                admission.as_ref(),
+                super::capture::prelaunch_failure_facts(error),
+            )
+        }
+        Err(error) => return Err(error),
+    };
+    let preparation = match crate::run::verification_preparation::prepare(
+        loaded,
+        &admitted_state,
+        &operation_id,
+        &checker_sources,
+    ) {
+        Ok(preparation) => preparation,
+        Err(error) if admission.is_some() => {
+            return check_observation::record_failure(
+                loaded,
+                ledger,
+                &path,
+                admission.as_ref(),
+                super::capture::prelaunch_failure_facts(error),
+            );
+        }
+        Err(error) => return Err(error),
+    };
+    if preparation
+        .as_ref()
+        .map(|value| value.sha256())
+        .transpose()?
+        .as_deref()
+        != identity["verificationPreparationSha256"].as_str()
+    {
+        if admission.is_some() {
+            return check_observation::record_failure(
+                loaded, ledger, &path, admission.as_ref(),
+                super::capture::prelaunch_failure_facts(
+                    "verification preparation changed after observation admission; no check was launched".into(),
+                ),
+            );
+        }
+        return Err(
+            "verification preparation changed after observation admission; no check was launched"
+                .into(),
+        );
+    }
     let request = ObservationRequest {
         command: policy.command.clone(),
         working_dir: loaded.product_root.clone(),
@@ -129,12 +221,10 @@ pub fn observe_check_for_requirement(
             .checked_add(Duration::from_millis(timeout_ms))
             .unwrap_or_else(Instant::now),
         timeout_ms,
-        operation_id: hash::value(&json!({
-            "identity": identity,
-            "ledgerSourceSha256": hash::text(&source),
-        })),
+        operation_id,
         capture: CapturePolicy::FINITE,
         retain_partial: admission.is_some(),
+        preparation,
     };
     let capture = match if capture_logs {
         capture_observed_command(&request)

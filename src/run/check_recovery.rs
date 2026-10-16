@@ -107,8 +107,20 @@ pub(crate) fn decision(value: &Value) -> Result<Value, String> {
             "recovery requires an exact retained known-ended storage-failure response".into(),
         );
     }
-    let operation = hash::value(&json!({"identity": s["binding"],
-        "ledgerSourceSha256": s["ledgerSourceSha256"]}));
+    let operation = match s["binding"].get("verificationOperationId") {
+        Some(operation)
+            if strict_sha(operation)
+                && strict_sha(&s["binding"]["verificationPreparationSha256"]) =>
+        {
+            operation.as_str().unwrap().to_owned()
+        }
+        Some(_) => return Err("invalid selected verification operation identity".into()),
+        None if s["binding"].get("verificationPreparationSha256").is_none() => {
+            hash::value(&json!({"identity": s["binding"],
+                "ledgerSourceSha256": s["ledgerSourceSha256"]}))
+        }
+        None => return Err("incomplete selected verification operation identity".into()),
+    };
     let mut streams = std::collections::BTreeSet::new();
     for partial in facts["partialCaptures"]
         .as_array()
@@ -128,6 +140,14 @@ fn sha(value: &Value) -> bool {
     value
         .as_str()
         .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+fn strict_sha(value: &Value) -> bool {
+    value.as_str().is_some_and(|s| {
+        s.len() == 64
+            && s.bytes().all(|b| b.is_ascii_hexdigit())
+            && s.bytes().all(|b| !b.is_ascii_uppercase())
+    })
 }
 
 fn response(value: &Value) -> Result<Value, String> {

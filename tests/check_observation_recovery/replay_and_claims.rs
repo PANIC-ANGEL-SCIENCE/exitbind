@@ -85,6 +85,32 @@ fn successful_lost_response_replays_and_changed_limits_and_inputs_refuse() {
 }
 
 #[test]
+fn selected_preparation_successful_lost_response_replays_without_second_execution() {
+    let f = Fixture::new("printf ran >> .exitbind/attempt-count; printf owned > \"$EXITBIND_VERIFICATION_SCRATCH/result\"; exit 0\n");
+    f.enable_owned_outputs();
+    let work = f.begin();
+    let first = f.ok(&["work", "check", &work], b"");
+    assert_eq!(first["result"]["code"], 0);
+    let replay = f.ok(&["work", "check", &work], b"");
+    assert_eq!(replay["eventSha256"], first["eventSha256"]);
+    assert_eq!(replay["recovered"], true);
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"ran"
+    );
+    let result = find_named_file(&f.root.join(".exitbind/verification"), "result")
+        .expect("successful selected check must retain its operation scratch");
+    assert_eq!(fs::read(result).unwrap(), b"owned");
+    assert_eq!(
+        f.events(&work)
+            .iter()
+            .filter(|event| event["action"] == "check")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn simultaneous_requests_claim_once_and_unfinished_admission_blocks_supersession() {
     let f = Fixture::new("printf started > .exitbind/started; while [ ! -f .exitbind/release ]; do sleep 0.01; done; exit 0\n");
     let work = f.begin();

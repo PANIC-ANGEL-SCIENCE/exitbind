@@ -145,6 +145,20 @@ approved values into the emitted `work begin` action. Setup and Work begin only
 record the policy; the diagnostic runs later at the Worker return boundary.
 Either limit requires `--pre-return-command`.
 
+To opt new checked runs into verification output preparation, add
+`--verification-preparation owned-outputs` to setup. Preview shows the exact
+policy and the private `.exitbind/verification/<run-id>/<operation-id>` path;
+apply stores the versioned choice in project configuration, so emitted Work
+starts use it without another shell wrapper. Each pre-return and final check
+gets its own newly created directory. The checker receives
+`PYTHONDONTWRITEBYTECODE=1`, `TMPDIR`, `TMP`, `TEMP`, and
+`EXITBIND_VERIFICATION_SCRATCH`; these settings apply only to the observed
+checker process and its descendants. Existing paths and unsafe source aliases
+refuse before launch. Scratch stays in managed state without a product size
+quota for diagnosis; the managed filesystem's capacity applies. This
+prevents Python bytecode writes and offers a generic scratch location; it does
+not make the product root an operating-system read-only sandbox.
+
 Review the preview, then repeat with `--apply`. `--scope` selects `lead`,
 `worker`, and/or `reviewer`; the default is `worker`. `--hosts codex`,
 `--hosts claude`, or `--hosts codex,claude` selects the supported native

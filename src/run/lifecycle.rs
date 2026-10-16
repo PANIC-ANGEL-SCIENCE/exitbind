@@ -106,6 +106,15 @@ pub(crate) fn start_with_policy_and_pre_return(
         preservation_check_command,
         preservation_proof_origin,
     )?;
+    let verification_checker_sources = if loaded.verification_preparation.is_some() {
+        Some(crate::run_value::verification_checker_sources(
+            loaded,
+            check_policy.as_ref(),
+            preservation.as_ref(),
+        )?)
+    } else {
+        None
+    };
     let extension = extension_from_cli(basis, review_policy)?;
     if check_policy.is_some() && !has_worker_stage(&plan) {
         return Err("checked run requires a workflow with at least one worker stage".into());
@@ -179,6 +188,13 @@ pub(crate) fn start_with_policy_and_pre_return(
         }
         if let Some(policy) = &check_policy {
             value["checkPolicy"] = policy.value();
+            if loaded.verification_preparation.is_some() {
+                value["verificationPreparationProtocol"] =
+                    json!(crate::run::verification_preparation::PROTOCOL);
+                value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
+                    verification_checker_sources.as_deref().unwrap_or_default(),
+                );
+            }
         }
         if let Some(policy) = &pre_return_policy {
             value["preReturnPolicy"] = policy.value();
@@ -268,6 +284,15 @@ pub(crate) fn start_intent_sha256_with_pre_return(
         preservation_check_command,
         preservation_proof_origin,
     )?;
+    let verification_checker_sources = if loaded.verification_preparation.is_some() {
+        Some(crate::run_value::verification_checker_sources(
+            loaded,
+            check_policy.as_ref(),
+            preservation.as_ref(),
+        )?)
+    } else {
+        None
+    };
     let extension = extension_from_cli(basis, review_policy)?;
     if check_policy.is_some() && !has_worker_stage(&plan) {
         return Err("checked run requires a workflow with at least one worker stage".into());
@@ -314,6 +339,13 @@ pub(crate) fn start_intent_sha256_with_pre_return(
     }
     if let Some(policy) = &check_policy {
         value["checkPolicy"] = policy.value();
+        if loaded.verification_preparation.is_some() {
+            value["verificationPreparationProtocol"] =
+                json!(crate::run::verification_preparation::PROTOCOL);
+            value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
+                verification_checker_sources.as_deref().unwrap_or_default(),
+            );
+        }
     }
     if let Some(policy) = &pre_return_policy {
         value["preReturnPolicy"] = policy.value();
@@ -363,6 +395,8 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "basisProtocol",
         "recoveryProtocol",
         "checkObservationProtocol",
+        "verificationPreparationProtocol",
+        "verificationCheckerSources",
         "basis",
         "reviewPolicy",
         "governor",

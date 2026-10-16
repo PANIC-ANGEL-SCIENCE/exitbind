@@ -66,6 +66,12 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     if let Some(marker) = first.get("checkObservationProtocol") {
         state["checkObservationProtocol"] = marker.clone();
     }
+    if let Some(marker) = first.get("verificationPreparationProtocol") {
+        state["verificationPreparationProtocol"] = marker.clone();
+    }
+    if let Some(sources) = first.get("verificationCheckerSources") {
+        state["verificationCheckerSources"] = sources.clone();
+    }
     let governor_enabled = super::carry::initialize_governor(first, &mut state)?;
     if let Some(receipt) = first.get("harnessReceipt") {
         state["harnessReceipt"] = receipt.clone();
@@ -203,6 +209,8 @@ fn reject_unknown(
             allowed.push("governorCarry");
             allowed.push("governorCarrySha256");
             allowed.push("checkReplacement");
+            allowed.push("verificationPreparationProtocol");
+            allowed.push("verificationCheckerSources");
         }
         return object
             .keys()

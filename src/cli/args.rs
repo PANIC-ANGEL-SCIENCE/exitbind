@@ -64,6 +64,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "pre-return-command",
     "pre-return-timeout-ms",
     "pre-return-capture-bytes",
+    "verification-preparation",
     "question",
     "probe-command",
     "probe-source",

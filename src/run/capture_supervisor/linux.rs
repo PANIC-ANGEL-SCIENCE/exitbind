@@ -137,6 +137,13 @@ pub(super) fn spawn(
     );
     command
         .current_dir(&request.working_dir)
+        .envs(
+            request
+                .preparation
+                .as_ref()
+                .map(|value| value.environment())
+                .unwrap_or_default(),
+        )
         .stdout(stdout)
         .stderr(stderr)
         .process_group(0);

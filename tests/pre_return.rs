@@ -268,6 +268,23 @@ fn lower_level_passing_check_allows_the_result_to_enter_the_run_ledger() {
         .iter()
         .any(|event| event["action"] == "submit" && event["agent"] == "worker"));
     let attempt = f.only_attempt_id();
+    let attempt_value: Value = serde_json::from_slice(
+        &fs::read(f.root.join(format!(
+            ".exitbind/pre-return/pre-return-{attempt}.attempt.json"
+        )))
+        .unwrap(),
+    )
+    .unwrap();
+    for field in [
+        "verificationPreparation",
+        "verificationPreparationSha256",
+        "verificationOperationId",
+    ] {
+        assert!(
+            attempt_value["binding"].get(field).is_none(),
+            "unselected legacy binding acquired {field}"
+        );
+    }
     assert_eq!(
         f.read_stream(&f.ledger(), &attempt, "stdout"),
         b"passed-out"
@@ -335,6 +352,92 @@ fn facade_runs_the_frozen_check_before_worker_return_and_passes_through_on_succe
     assert!(status.status.success(), "{status:?}");
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(status["status"], "accepted");
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn selected_pre_return_uses_its_own_prepared_scratch_and_disables_product_bytecode() {
+    let f = Fixture::new("pre-return-verification-preparation");
+    let config_path = f.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["project"]["verificationPreparation"] = serde_json::json!({
+        "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
+    });
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    fs::write(f.root.join("pre_return_probe.py"), "VALUE = 'prepared'\n").unwrap();
+    let checker = "python3 -c 'import pre_return_probe, os, pathlib; assert os.environ[\"PYTHONDONTWRITEBYTECODE\"] == \"1\"; p=pathlib.Path(os.environ[\"EXITBIND_VERIFICATION_SCRATCH\"]); (p/\"pre-return.txt\").write_text(pre_return_probe.VALUE); print(pre_return_probe.VALUE)'";
+    f.start_run_with(checker, &["--review-policy", "required"]);
+    let returned = f.submit("worker", "completed", "prepared");
+    assert!(returned.status.success(), "{returned:?}");
+    assert!(
+        !f.root.join("__pycache__").exists(),
+        "pre-return wrote Python bytecode into product inputs"
+    );
+    let verification = f.root.join(".exitbind/verification");
+    let mut pending = vec![verification];
+    let mut scratch = None;
+    while let Some(path) = pending.pop() {
+        for entry in fs::read_dir(&path).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                if entry.path().join("pre-return.txt").is_file() {
+                    scratch = Some(entry.path());
+                } else {
+                    pending.push(entry.path());
+                }
+            }
+        }
+    }
+    let scratch = scratch.expect("pre-return did not receive its owned scratch directory");
+    assert_eq!(
+        fs::read_to_string(scratch.join("pre-return.txt")).unwrap(),
+        "prepared"
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn selected_pre_return_alias_refusal_is_durable_and_never_retries() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new("pre-return-verification-alias");
+    let config_path = f.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["project"]["verificationPreparation"] = serde_json::json!({
+        "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
+    });
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    symlink(".exitbind/verification", f.root.join("verification-alias")).unwrap();
+    let output = f.call(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "pre-return alias",
+        "--ledger",
+        ".exitbind/runs/pre-return.jsonl",
+        "--check-command",
+        "exit 0",
+        "--review-policy",
+        "required",
+        "--pre-return-command",
+        "touch verification-alias/should-not-run",
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    f.submit("lead", "scoped", "scope");
+    let failed = f.submit("worker", "completed", "alias-refused");
+    assert!(!failed.status.success());
+    assert!(!f.root.join("verification-alias/should-not-run").exists());
+    let attempt_id = f.only_attempt_id();
+    let attempt_path = f.root.join(format!(
+        ".exitbind/pre-return/pre-return-{attempt_id}.result.json"
+    ));
+    let result: Value = serde_json::from_slice(&fs::read(attempt_path).unwrap()).unwrap();
+    assert_eq!(result["failureKind"], "preparation_refused");
+    assert_eq!(result["execution"]["certainty"], "known_not_started");
+    assert_eq!(result["execution"]["started"], false);
+    let retry = f.submit("worker", "completed", "alias-refused-again");
+    assert!(!retry.status.success());
+    assert!(!f.root.join("verification-alias/should-not-run").exists());
 }
 
 #[test]

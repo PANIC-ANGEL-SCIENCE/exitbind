@@ -17,6 +17,7 @@ pub struct Loaded {
     pub(crate) architecture_contract: Option<crate::project::architecture::Selection>,
     pub(crate) capabilities: Vec<crate::project::capabilities::Selection>,
     pub(crate) workflows: BTreeMap<String, types::WorkflowConfig>,
+    pub(crate) verification_preparation: Option<types::VerificationPreparation>,
     pub path: PathBuf,
     pub control_root: PathBuf,
     pub product_root: PathBuf,
@@ -139,6 +140,12 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
         .unwrap_or_default();
     let workflows = serde_json::from_value(config["workflows"].clone())
         .map_err(|e| format!("invalid typed workflow: {e}"))?;
+    let verification_preparation = config["project"]
+        .get("verificationPreparation")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| format!("invalid typed verification preparation: {e}"))?;
     Ok(Loaded {
         config,
         agents,
@@ -146,6 +153,7 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
         architecture_contract,
         capabilities,
         workflows,
+        verification_preparation,
         path,
         control_root: layout.control_root,
         product_root: layout.product_root,
@@ -230,7 +238,14 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
     };
     reject_unknown(
         project,
-        &["root", "mode", "id", "architectureContract", "capabilities"],
+        &[
+            "root",
+            "mode",
+            "id",
+            "architectureContract",
+            "capabilities",
+            "verificationPreparation",
+        ],
         "project",
         errors,
     );
@@ -240,6 +255,17 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
     if let Some(selected) = project.get("capabilities") {
         if let Err(error) = crate::project::capabilities::selections(selected) {
             errors.push(format!("project.capabilities: {error}"));
+        }
+    }
+    if let Some(selected) = project.get("verificationPreparation") {
+        let valid = selected.as_object().is_some_and(|value| {
+            value.len() == 3
+                && value.get("version").and_then(Value::as_u64) == Some(1)
+                && value.get("pythonBytecode").and_then(Value::as_str) == Some("disabled")
+                && value.get("scratch").and_then(Value::as_str) == Some("taskOwned")
+        });
+        if !valid {
+            errors.push("project.verificationPreparation must be {version: 1, pythonBytecode: 'disabled', scratch: 'taskOwned'}".into());
         }
     }
     match project.get("root").and_then(Value::as_str) {

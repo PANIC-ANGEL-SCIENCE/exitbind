@@ -196,6 +196,29 @@ pub(super) fn replay_for_operation(
     }
     assert_current(loaded, &state)?;
     let policy = active_check_policy(&state, binding["requirementId"].as_str())?;
+    if state.get("verificationPreparationProtocol").is_some() {
+        let sources = crate::run::verification_preparation::current_checker_sources(
+            loaded,
+            &state,
+            &policy.command,
+        )?;
+        let operation_id = binding["verificationOperationId"]
+            .as_str()
+            .ok_or("committed preparation replay has no operation identity")?;
+        let preparation =
+            crate::run::verification_preparation::planned(loaded, &state, operation_id, &sources)?
+                .ok_or("committed preparation replay lost its selected recipe")?;
+        if binding["verificationPreparationSha256"] != preparation.sha256()? {
+            return Err(
+                "committed check replay refused changed preparation recipe or checker sources"
+                    .into(),
+            );
+        }
+    } else if binding.get("verificationPreparationSha256").is_some()
+        || binding.get("verificationOperationId").is_some()
+    {
+        return Err("committed check replay has preparation fields for an unselected run".into());
+    }
     if binding["observerExecutableSha256"] != crate::producer::build_identity()["executableSha256"]
         || admission["producer"] != crate::producer::evidence_for_version(8)
         || binding["inputsSha256"] != live_inputs(&state)?

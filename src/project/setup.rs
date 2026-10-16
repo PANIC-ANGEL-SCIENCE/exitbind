@@ -21,6 +21,8 @@ use std::{
 mod setup_next;
 #[path = "setup_roles.rs"]
 mod setup_roles;
+#[path = "setup_verification.rs"]
+mod setup_verification;
 use setup_roles::{single_command, split_list, RoleFacts};
 
 const ROLES: [&str; 3] = ["lead", "worker", "reviewer"];
@@ -39,6 +41,7 @@ pub(crate) struct SetupFacts {
     pre_return_command: Option<String>,
     pre_return_timeout_ms: Option<String>,
     pre_return_capture_bytes: Option<String>,
+    verification_preparation: Option<String>,
     review_policy: Option<String>,
     goal: Option<String>,
     hosts: Vec<String>,
@@ -84,6 +87,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         "pre-return-command",
         "pre-return-timeout-ms",
         "pre-return-capture-bytes",
+        "verification-preparation",
         "review-policy",
         "goal",
         "hosts",
@@ -124,6 +128,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         pre_return_command: arguments.options.get("pre-return-command").cloned(),
         pre_return_timeout_ms: arguments.options.get("pre-return-timeout-ms").cloned(),
         pre_return_capture_bytes: arguments.options.get("pre-return-capture-bytes").cloned(),
+        verification_preparation: arguments.options.get("verification-preparation").cloned(),
         review_policy: arguments.options.get("review-policy").cloned(),
         goal: arguments.options.get("goal").cloned(),
         hosts: split_list(arguments.options.get("hosts"), "hosts")?.unwrap_or_default(),
@@ -249,6 +254,13 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         Some(status)
     };
     let (next, config_edited) = setup_roles::updated_config(&loaded, &roles, &hosts)?;
+    let mut next = next;
+    let verification_edited = setup_verification::apply_config(
+        &mut next,
+        facts.verification_preparation.as_deref(),
+        loaded.verification_preparation.is_some(),
+    );
+    let config_edited = config_edited || verification_edited;
     if config_edited {
         let mut source = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         source.push('\n');
@@ -361,6 +373,16 @@ fn validate_facts(facts: &SetupFacts) -> Result<(), String> {
         .is_some_and(|goal| goal.trim().is_empty() || goal.contains('\0'))
     {
         return Err("--goal must be a non-empty value without NUL bytes".into());
+    }
+    if facts
+        .verification_preparation
+        .as_deref()
+        .is_some_and(|value| value != "owned-outputs")
+    {
+        return Err("--verification-preparation must be owned-outputs".into());
+    }
+    if facts.verification_preparation.is_some() && facts.check_command.is_none() {
+        return Err("--verification-preparation requires --check-command".into());
     }
     if facts
         .check_command
@@ -534,6 +556,9 @@ fn preview_report(
         .and_then(|loaded| native_profiles::status_for_hosts(loaded, &host_refs(hosts)).ok())
         .unwrap_or_else(|| json!({"status": "preview", "writes": false}));
     let mut approved_facts = json!({"roles": facts.resolved_roles(), "observe": facts.observe, "write": facts.write, "commands": facts.commands, "checkCommand": facts.check_command, "reviewPolicy": facts.review_policy, "goal": facts.goal});
+    if let Some(selection) = facts.verification_preparation.as_deref() {
+        approved_facts["verificationPreparation"] = setup_verification::preview(selection, state);
+    }
     if facts.pre_return_command.is_some() {
         approved_facts["preReturn"] = json!({
             "command": facts.pre_return_command,
@@ -765,6 +790,7 @@ fn ordinary_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
 
 fn print_report(report: &Value) {
     println!("Setup {}.", report["status"].as_str().unwrap_or("unknown"));
+    setup_verification::print(&report["approvedFacts"]["verificationPreparation"]);
     if let Some(paths) = report["affectedPaths"].as_array() {
         println!("Affected paths:");
         for path in paths {
@@ -809,6 +835,7 @@ mod tests {
             pre_return_command: None,
             pre_return_timeout_ms: None,
             pre_return_capture_bytes: None,
+            verification_preparation: None,
             review_policy: Some("required".into()),
             goal: Some("test setup".into()),
             hosts: Vec::new(),

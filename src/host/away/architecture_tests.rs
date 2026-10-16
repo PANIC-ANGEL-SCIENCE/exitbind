@@ -10,6 +10,7 @@ fn loaded(root: &Path) -> Loaded {
         architecture_contract: None,
         capabilities: Vec::new(),
         workflows: std::collections::BTreeMap::new(),
+        verification_preparation: None,
         path: root.join("exitbind.json"),
         control_root: root.to_owned(),
         product_root: root.to_owned(),

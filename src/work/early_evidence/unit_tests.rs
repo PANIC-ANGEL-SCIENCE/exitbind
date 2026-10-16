@@ -30,6 +30,7 @@ impl Artifacts {
             architecture_contract: None,
             capabilities: Vec::new(),
             workflows: BTreeMap::new(),
+            verification_preparation: None,
             path: root.join("exitbind.json"),
             control_root: root.clone(),
             product_root: root.clone(),

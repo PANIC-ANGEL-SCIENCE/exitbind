@@ -45,6 +45,7 @@ fn prompt_keeps_input() {
         architecture_contract: None,
         capabilities: Vec::new(),
         workflows: std::collections::BTreeMap::new(),
+        verification_preparation: None,
         path: root.join("soulmate.json"),
         control_root: root.clone(),
         product_root: root.clone(),

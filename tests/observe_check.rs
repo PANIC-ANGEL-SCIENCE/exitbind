@@ -259,3 +259,5 @@ mod observation_and_status;
 mod pid_readiness;
 #[path = "observe_check/timeouts_and_drift.rs"]
 mod timeouts_and_drift;
+#[path = "observe_check/verification_preparation.rs"]
+mod verification_preparation;

@@ -258,6 +258,18 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             return Err("check observation protocol requires checked governed v8 recovery".into());
         }
     }
+    if let Some(marker) = event.get("verificationPreparationProtocol") {
+        if version != 8
+            || marker.as_u64() != Some(crate::run::verification_preparation::PROTOCOL)
+            || event.get("checkPolicy").is_none()
+            || event.get("verificationCheckerSources").is_none()
+        {
+            return Err(format!("invalid run ledger line {line}: verification preparation requires a checked v8 start and supported protocol"));
+        }
+        crate::run_value::checker_sources_from_value(&event["verificationCheckerSources"], line)?;
+    } else if event.get("verificationCheckerSources").is_some() {
+        return Err(format!("invalid run ledger line {line}: verification checker sources require selected preparation"));
+    }
     if let Some(policy) = event.get("preReturnPolicy") {
         if version != 8 || event.get("checkPolicy").is_none() {
             return Err(format!(

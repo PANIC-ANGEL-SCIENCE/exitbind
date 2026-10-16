@@ -502,6 +502,15 @@ pub(super) fn supersede_with_policy_and_recovery(
                 Some(old)
             }
         };
+        let verification_checker_sources = if loaded.verification_preparation.is_some() {
+            Some(crate::run_value::verification_checker_sources(
+                loaded,
+                check_policy.as_ref(),
+                preservation.as_ref(),
+            )?)
+        } else {
+            None
+        };
         if check_policy.is_some() && !has_worker_stage(&plan) {
             return Err(
                 "checked successor requires a workflow with at least one worker stage".into(),
@@ -597,6 +606,13 @@ pub(super) fn supersede_with_policy_and_recovery(
         if let Some(policy) = &pre_return_policy {
             wanted_claim["preReturnPolicy"] = policy.clone();
         }
+        if check_policy.is_some() && loaded.verification_preparation.is_some() {
+            wanted_claim["verificationPreparationProtocol"] =
+                json!(crate::run::verification_preparation::PROTOCOL);
+            wanted_claim["verificationCheckerSources"] = crate::run_value::checker_sources_value(
+                verification_checker_sources.as_deref().unwrap_or_default(),
+            );
+        }
         if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {
             wanted_claim["carryProtocol"] = json!(protocol);
             wanted_claim["governorCarrySha256"] = json!(sha);
@@ -651,6 +667,13 @@ pub(super) fn supersede_with_policy_and_recovery(
         }
         if let Some(policy) = &check_policy {
             event_value["checkPolicy"] = policy.value();
+            if loaded.verification_preparation.is_some() {
+                event_value["verificationPreparationProtocol"] =
+                    json!(crate::run::verification_preparation::PROTOCOL);
+                event_value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
+                    verification_checker_sources.as_deref().unwrap_or_default(),
+                );
+            }
         }
         if let Some(policy) = &pre_return_policy {
             event_value["preReturnPolicy"] = policy.clone();
@@ -744,6 +767,8 @@ pub(super) fn supersede_with_policy_and_recovery(
                 "governorCarrySha256",
                 "checkReplacement",
                 "preReturnPolicy",
+                "verificationPreparationProtocol",
+                "verificationCheckerSources",
             ];
             let mismatched = existing.first().map(|current| {
                 request_fields

@@ -20,6 +20,7 @@ fn request(command: &str, timeout: u64) -> ObservationRequest {
         operation_id: "capsule-test".into(),
         capture: CapturePolicy::FINITE,
         retain_partial: false,
+        preparation: None,
     }
 }
 

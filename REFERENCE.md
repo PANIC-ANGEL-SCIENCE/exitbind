@@ -262,6 +262,17 @@ exact durable binding before append. A local observation is still check
 evidence: review and lead acceptance remain separate. Existing v3 ledgers keep
 the caller-reported `record-check` representation.
 
+`setup --verification-preparation owned-outputs` selects an opt-in runtime
+contract for newly started checked v8 runs. It suppresses Python bytecode
+writes and provides a fresh private `.exitbind/verification/<run-id>/<operation-id>`
+scratch directory to each pre-return and final checker through
+`PYTHONDONTWRITEBYTECODE`, `TMPDIR`, `TMP`, `TEMP`, and
+`EXITBIND_VERIFICATION_SCRATCH`. The directory is exclusively created under
+managed state and retained for diagnosis without a product size quota. Unsafe aliases refuse before launch;
+ordinary unselected runs keep their existing behavior. This controls the
+supported checker environment and does not enforce operating-system write
+protection for project sources.
+
 New checked starts with an explicit review policy also record
 `checkObservationProtocol: 1`. Their observer appends a bounded admission before
 launch, binding target, subject, inputs, configuration, frozen policy,

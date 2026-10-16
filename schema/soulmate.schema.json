@@ -23,6 +23,16 @@
             "revision": { "type": "string", "minLength": 1, "maxLength": 4096 }
           },
           "additionalProperties": false
+        },
+        "verificationPreparation": {
+          "type": "object",
+          "required": ["version", "pythonBytecode", "scratch"],
+          "properties": {
+            "version": { "const": 1 },
+            "pythonBytecode": { "const": "disabled" },
+            "scratch": { "const": "taskOwned" }
+          },
+          "additionalProperties": false
         }
       },
       "allOf": [

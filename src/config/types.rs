@@ -12,6 +12,15 @@ pub(crate) struct WorkflowConfig {
     pub(crate) advisers: Vec<String>,
 }
 
+/// Opt-in settings for source-bound verification output preparation.
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct VerificationPreparation {
+    pub(crate) version: u64,
+    #[serde(rename = "pythonBytecode")]
+    pub(crate) python_bytecode: String,
+    pub(crate) scratch: String,
+}
+
 /// The validated, typed representation of one configured agent.
 ///
 /// Unknown fields are intentionally ignored here. `config::validate` is the

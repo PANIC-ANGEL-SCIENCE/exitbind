@@ -97,6 +97,54 @@ fn storage_failure_preserves_observed_facts_and_unresolved_admission_without_ret
 }
 
 #[test]
+fn selected_preparation_storage_unknown_keeps_capture_and_owned_effect_without_retry() {
+    let (f, work, decision, prefix) = storage_interruption_with_preparation(true);
+    let response: Value = serde_json::from_str(decision["response"].as_str().unwrap()).unwrap();
+    assert_eq!(response["effect"], "unknown");
+    assert_eq!(response["checkRecorded"], false);
+    assert_eq!(response["observation"]["capture"], "complete");
+    assert_eq!(response["observation"]["process"]["code"], 0);
+    let prepared = find_named_file(&f.root.join(".exitbind/verification"), "prepared-effect")
+        .expect("uncertain selected execution must retain its operation scratch");
+    assert_eq!(fs::read(prepared).unwrap(), b"owned");
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"ran"
+    );
+    let retry = f.call(&["work", "check", &work], b"");
+    assert!(!retry.status.success());
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"ran"
+    );
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
+    let preview = f.ok(&["work", "recover-check", &work, "--json"], b"");
+    let recovered = recover_with_preview(&f, &preview, &decision);
+    assert!(recovered.status.success(), "{recovered:?}");
+    let result = value(&recovered);
+    assert_eq!(result["checkRecorded"], false);
+    assert_eq!(result["observationFailure"]["facts"]["process"]["code"], 0);
+    let recovered_bytes = fs::read(f.ledger(&work)).unwrap();
+    assert!(recovered_bytes.starts_with(&prefix));
+    assert_eq!(
+        f.events(&work)
+            .iter()
+            .filter(|event| event["action"] == "check")
+            .count(),
+        0
+    );
+    let replay = recover_with_preview(&f, &preview, &decision);
+    assert!(replay.status.success(), "{replay:?}");
+    assert_eq!(value(&replay)["effect"], "no-change");
+    assert_eq!(value(&replay)["eventSha256"], result["eventSha256"]);
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), recovered_bytes);
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/attempt-count")).unwrap(),
+        b"ran"
+    );
+}
+
+#[test]
 fn replay_refuses_changed_configuration_and_a_new_policy_needs_supersession() {
     let f = Fixture::new("printf ran >> .exitbind/attempt-count; exit 0\n");
     let work = f.begin();

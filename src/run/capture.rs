@@ -28,6 +28,7 @@ pub(crate) struct ObservationRequest {
     pub(crate) operation_id: String,
     pub(crate) capture: CapturePolicy,
     pub(crate) retain_partial: bool,
+    pub(crate) preparation: Option<super::verification_preparation::RuntimePreparation>,
 }
 
 #[derive(Clone, Copy)]
@@ -46,6 +47,20 @@ impl CapturePolicy {
 #[path = "capture_error.rs"]
 mod error;
 pub(crate) use error::{CaptureDisposition, ExecutionOutcome, ObservationError};
+
+pub(crate) fn prelaunch_failure_facts(message: String) -> Value {
+    ObservationError::new(
+        message,
+        ExecutionOutcome {
+            status: None,
+            duration_ms: 0,
+            capture: CaptureDisposition::Disabled,
+            group_ended: true,
+            process_started: false,
+        },
+    )
+    .facts()
+}
 
 struct OwnedPaths(Vec<PathBuf>);
 
