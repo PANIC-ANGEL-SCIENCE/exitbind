@@ -5,7 +5,7 @@
 
 use super::model::{bounded, contains_path, validate_path, Mandate, Mode};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const ASSOCIATION_VERSION: u64 = 1;
 const ACCOUNT_VERSION: u64 = 1;
@@ -262,6 +262,12 @@ pub(crate) struct Facts<'a> {
     pub recipient_write: &'a [String],
     pub recipient_commands: &'a [String],
     pub works: &'a [WorkObservation<'a>],
+    /// Supplied only after the IO owner verifies the current native journal's
+    /// original owned process/assignment identity is alive for this Work and
+    /// recipient. A caller string, matching PID or stored "running" label is
+    /// insufficient. This permits subordinate controlled boundaries, never a
+    /// second native launch or recovery of unknown effects.
+    pub active_native_operation: Option<&'a str>,
     /// Exact predecessor already validated by the existing successor owner.
     pub successor_of: Option<&'a str>,
     pub observation: Option<Observation<'a>>,
@@ -477,7 +483,16 @@ pub(crate) fn evaluate(
         }
         if account.operations.iter().any(|o| {
             o.intent.work == intent.work
-                && matches!(o.outcome, Outcome::Reserved | Outcome::Unknown)
+                && match o.outcome {
+                    Outcome::Unknown => true,
+                    Outcome::Reserved => {
+                        !(o.intent.kind == Kind::Native
+                            && o.intent.role == intent.role
+                            && facts.active_native_operation == Some(o.key.as_str())
+                            && matches!(intent.kind, Kind::Check | Kind::Mutation | Kind::Effect))
+                    }
+                    Outcome::Succeeded | Outcome::Failed => false,
+                }
         }) {
             return Err(Refusal::WorkNotActive);
         }
@@ -616,7 +631,7 @@ fn validate_account(account: &Account) -> Result<(), Refusal> {
         return Err(Refusal::InvalidAccount);
     }
     let mut keys = BTreeSet::new();
-    let mut admitted = BTreeSet::new();
+    let mut admitted = BTreeMap::new();
     for op in &account.operations {
         op.association
             .validate()
@@ -630,15 +645,16 @@ fn validate_account(account: &Account) -> Result<(), Refusal> {
             return Err(Refusal::InvalidAccount);
         }
         if op.intent.kind.starts_work() {
-            if !admitted.insert(op.intent.work.as_str()) {
+            if admitted.contains_key(op.intent.work.as_str()) {
                 return Err(Refusal::InvalidAccount);
             }
             if let Some(predecessor) = &op.intent.predecessor {
-                if !admitted.contains(predecessor.as_str()) {
+                if !admitted.contains_key(predecessor.as_str()) {
                     return Err(Refusal::InvalidAccount);
                 }
             }
-        } else if !admitted.contains(op.intent.work.as_str()) {
+            admitted.insert(op.intent.work.as_str(), &op.association);
+        } else if admitted.get(op.intent.work.as_str()) != Some(&&op.association) {
             return Err(Refusal::InvalidAccount);
         }
     }

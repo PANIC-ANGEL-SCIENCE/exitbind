@@ -44,6 +44,7 @@ impl Fixture {
             recipient_write: &self.paths,
             recipient_commands: &self.commands,
             works: &[],
+            active_native_operation: None,
             successor_of: None,
             observation: None,
         }
@@ -768,5 +769,153 @@ fn propose_only_zero_budget_and_cycle_limits_do_not_create_fresh_permission() {
             &Request::Attempt(attempt(&account, "two", &two, &second))
         ),
         Err(Refusal::WorkBudget)
+    );
+}
+
+#[test]
+fn active_native_allows_only_verified_subordinate_boundaries_and_every_one_debits() {
+    let fixture = Fixture::new();
+    let (account, association, _) = admitted(&fixture);
+    let observations = [WorkObservation {
+        work: association.work(),
+        state: WorkState::Active,
+    }];
+    let mut facts = fixture.facts();
+    facts.works = &observations;
+    let native = intent(association.work(), Kind::Native);
+    let mut account = executed(evaluate(
+        &fixture.policy(),
+        &facts,
+        &account,
+        &Request::Attempt(attempt(&account, "native-owner", &native, &association)),
+    ));
+    let mutation = intent(association.work(), Kind::Mutation);
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "mutation", &mutation, &association))
+        ),
+        Err(Refusal::WorkNotActive)
+    );
+    facts.active_native_operation = Some("arbitrary-other-operation");
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "mutation", &mutation, &association))
+        ),
+        Err(Refusal::WorkNotActive)
+    );
+    facts.active_native_operation = Some("native-owner");
+    for (index, kind) in [Kind::Mutation, Kind::Effect, Kind::Check]
+        .into_iter()
+        .enumerate()
+    {
+        let subordinate = intent(association.work(), kind);
+        let key = format!("subordinate-{index}");
+        account = executed(evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, &key, &subordinate, &association)),
+        ));
+        assert_eq!(account.actions_spent(), index as u64 + 3);
+        account = observe(
+            &fixture,
+            &account,
+            &key,
+            &subordinate,
+            &association,
+            Outcome::Succeeded,
+        );
+    }
+    assert_eq!(account.operations[1].outcome, Outcome::Reserved);
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "second-native", &native, &association))
+        ),
+        Err(Refusal::WorkNotActive)
+    );
+    let mut reviewer = intent(association.work(), Kind::Mutation);
+    reviewer.role = Role::Reviewer;
+    facts.recipient_role = Role::Reviewer;
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(
+                &account,
+                "other-recipient",
+                &reviewer,
+                &association
+            ))
+        ),
+        Err(Refusal::WorkNotActive)
+    );
+    facts.recipient_role = Role::Worker;
+    account = observe(
+        &fixture,
+        &account,
+        "native-owner",
+        &native,
+        &association,
+        Outcome::Unknown,
+    );
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "unknown-parent", &mutation, &association))
+        ),
+        Err(Refusal::WorkNotActive)
+    );
+}
+
+#[test]
+fn imported_runtime_operation_must_keep_its_originating_work_association() {
+    let fixture = Fixture::new();
+    let (account, association, _) = admitted(&fixture);
+    let observations = [WorkObservation {
+        work: association.work(),
+        state: WorkState::Active,
+    }];
+    let mut facts = fixture.facts();
+    facts.works = &observations;
+    let native = intent(association.work(), Kind::Native);
+    let account = executed(evaluate(
+        &fixture.policy(),
+        &facts,
+        &account,
+        &Request::Attempt(attempt(&account, "native", &native, &association)),
+    ));
+    let mut account = observe(
+        &fixture,
+        &account,
+        "native",
+        &native,
+        &association,
+        Outcome::Failed,
+    );
+    account.operations[1].association.task_id = "different-valid-task".into();
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "new-native", &native, &association))
+        ),
+        Err(Refusal::InvalidAccount)
+    );
+    assert_eq!(
+        evaluate(&fixture.policy(), &facts, &account, &Request::Inspect),
+        Ok(Decision::Inspect)
     );
 }
