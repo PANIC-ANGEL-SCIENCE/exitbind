@@ -315,3 +315,62 @@ Context approval records a declared selection. Source preparation, lifecycle
 qualification, selected references, actual native delivery, observed useful use
 and net benefit each require their own evidence. Contextual selection makes no
 model-level semantic truth or compliance guarantee.
+
+
+## Keep separate live task choices
+
+For new tasks, the owner may explicitly select `"contextual": {"version": 2,
+"sourcePath": ".exitbind/artifacts/memory-choices"}` in the existing memory
+policy. This fixed directory belongs to StateRoot's existing artifact owner;
+it is not a product input exclusion added by this feature. The legacy Soulmate
+surface uses `.soulmate/artifacts/memory-choices`. Older readers refuse version
+2 before an effect. No configuration or source is migrated automatically.
+Existing no-context resources can use the reviewed contextual-only revalidation
+above; arbitrary v1 pointer replacement and v1-to-v2 policy migration remain
+unsupported. Preserve prior configurations and governors.
+
+Inspect bounded candidates as above. Then the configured Lead supplies only the
+recipient, exact approved task, actual host, chosen eligible item IDs, and its
+own task applicability reason:
+
+```sh
+exitbind memory choose worker ITEM_ID --task "Task A: repair coupled docs" --host codex --reason "The changed behavior affects both documented surfaces." --json
+exitbind memory choose worker --task "Task B: format quoted text" --host codex --reason "No experience applies to the formatting task." --json
+```
+
+Each read-only preview derives role, purpose, profile, source, ledger, project
+and configuration identities. Execute its exact `apply.command` after inspecting
+the selection; do not hand-build hashes or JSON. The recipient must have an
+explicit configured primary host matching preparation. Zero item IDs records
+explicit no-adoption. Preparation grants no memory right, qualification, host
+permission or prior check credit. Candidate content cannot approve itself.
+
+`memory choice AGENT --task TASK --json` reads the current outcome. A lost apply
+reply can recover the same request with its preview digest in `--request-id`, or
+replay the exact emitted apply command. Historical recovery reports `current`
+and `currentlyUsable` separately; it never launches or adopts again. An explicit
+revision uses the prior readback's digest in `--previous`, then a new preview and
+apply. Competing revisions conflict instead of overwriting. A revision after a
+Work froze its choice requires that Work's supported successor; it cannot
+hot-swap already delivered guidance. Existing models cannot have delivered bytes
+erased.
+
+The selection unit is project/configuration, configured recipient and exact
+approved goal text. Give different tasks distinct approved goal identities.
+Same-text Works intentionally share the choice and invalidate together on its
+revision; each assignment separately freezes the digest. Task B's unrelated
+record does not alter A's binding or tested product inputs. Real product edits,
+shared policy changes, selected source/profile/rights/guards, expiry, revocation
+and unsafe/missing records still refuse dependent use. Unselected owned draft
+admission grants no guidance. Each choice has at most 64 immutable revisions,
+8192 bytes per record and eight selected resources; a namespace has at most 128
+task/recipient/configuration identities. Existing lower delivery/recall budgets
+also apply. There is no automatic cleanup or cross-ledger atomic transaction.
+
+When returning to A after starting B, select A through ordinary `work focus A`
+when the host's native child path needs current focus. Focus is navigation;
+both Works remain live. Read A's current complete detail and prepare the fresh
+child normally. Route, Work detail, native delivery and checks retain A's exact
+choice. An incompatible actual child host refuses before presentation instead
+of silently dropping selected guidance. Separate specialists retain separate
+rights; private first-pass conclusions are not shared through these records.
