@@ -34,7 +34,7 @@ jobs:
           PAIR_CONFIG: ${{ vars.EXITBIND_PRERELEASE_PAIR }}
           PAIR_AUTHOR_NAME: envy404
           PAIR_AUTHOR_EMAIL: 287204764+envy404@users.noreply.github.com
-        run: python3 scripts/paired-prerelease.py plan
+        run: python3 tooling/repository/release/paired-prerelease.py plan
       - name: Retain pair planning evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -72,7 +72,7 @@ jobs:
           PAIR_SHA: ${{ needs.plan.outputs.sha }}
           PAIR_BRANCH: ${{ needs.plan.outputs.branch }}
           PAIR_CHECK_RESULT: ${{ needs.check.result }}
-        run: python3 scripts/paired-prerelease.py finish
+        run: python3 tooling/repository/release/paired-prerelease.py finish
       - name: Retain completion evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

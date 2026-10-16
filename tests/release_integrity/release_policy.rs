@@ -54,7 +54,8 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
         fs::write(&metadata_path, serde_json::to_vec(metadata).unwrap()).unwrap();
         Command::new("python3")
             .arg(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/check-installation-pointer.py"),
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tooling/repository/release/check-installation-pointer.py"),
             )
             .args([
                 "--metadata",
@@ -132,7 +133,10 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
 
     let missing_metadata = fixture.0.join("missing-release.json");
     let unavailable = Command::new("python3")
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/check-installation-pointer.py"))
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tooling/repository/release/check-installation-pointer.py"),
+        )
         .args([
             "--metadata",
             missing_metadata.to_str().unwrap(),
@@ -247,7 +251,7 @@ fn packaged_plugin_mirrors_and_validator_cannot_drift_from_the_release() {
         "plugins/exitbind/plugin.json",
         "plugins/exitbind/.codex-plugin/plugin.json",
         "plugins/exitbind/.claude-plugin/plugin.json",
-        "scripts/check-plugin-distribution.py",
+        "tooling/repository/release/check-plugin-distribution.py",
     ] {
         let fixture = Fixture::release();
         fixture.replace(file, VERSION, "99.98.97");
@@ -467,7 +471,7 @@ fn absent_or_drifted_required_version_values_are_rejected() {
             historical_manifest,
         ),
         ("install.sh", installer.as_str()),
-        ("scripts/ci-wsl.sh", wsl.as_str()),
+        ("tooling/repository/ci/ci-wsl.sh", wsl.as_str()),
         ("CHANGELOG.md", changelog.as_str()),
     ] {
         let malformed = if file.starts_with("systems.soulmate/") {

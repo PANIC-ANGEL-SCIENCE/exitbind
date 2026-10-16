@@ -196,7 +196,7 @@ impl Drop for OwnedDescendant {
 #[cfg(target_os = "linux")]
 #[test]
 fn legacy_unknown_diagnostic_preserves_blocked_bytes_and_refuses_all_apply_credit() {
-    const TEST: &str = "process_containment::legacy_unknown_diagnostic_preserves_blocked_bytes_and_refuses_all_apply_credit";
+    const TEST: &str = "check_observation_recovery::process_containment::legacy_unknown_diagnostic_preserves_blocked_bytes_and_refuses_all_apply_credit";
     if isolated(TEST) {
         return;
     }
@@ -369,7 +369,7 @@ fn legacy_unknown_diagnostic_preserves_blocked_bytes_and_refuses_all_apply_credi
 #[cfg(target_os = "linux")]
 #[test]
 fn production_capsule_reaps_escaped_pipe_and_closed_stream_children_after_deadline() {
-    const TEST: &str = "process_containment::production_capsule_reaps_escaped_pipe_and_closed_stream_children_after_deadline";
+    const TEST: &str = "check_observation_recovery::process_containment::production_capsule_reaps_escaped_pipe_and_closed_stream_children_after_deadline";
     if isolated(TEST) {
         return;
     }

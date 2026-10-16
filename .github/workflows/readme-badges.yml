@@ -27,8 +27,8 @@ jobs:
           ref: main
           fetch-depth: 1
       - name: Validate badge tooling
-        run: python3 -m unittest discover -s tooling/readme -v
+        run: python3 -m unittest discover -s tooling/repository/ci/readme -v
       - name: Refresh isolated badge data
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh tooling/readme/publish.sh
+        run: sh tooling/repository/ci/readme/publish.sh

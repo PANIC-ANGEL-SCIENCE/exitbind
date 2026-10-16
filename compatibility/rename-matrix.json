@@ -323,11 +323,11 @@
     "releaseAssetPrefix": "exitbind",
     "invocations": [
       {"id": "claims", "path": "proof/claims.json", "command": "EXITBIND_BIN=target/debug/exitbind ./scripts/run-value-proof-suite.sh", "occurrences": 1},
-      {"id": "ci", "path": "scripts/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
-      {"id": "ci-drift-warning", "path": "scripts/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
-      {"id": "release", "path": "scripts/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
-      {"id": "release-drift-warning", "path": "scripts/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
-      {"id": "wsl", "path": "scripts/ci-wsl.sh", "command": "EXITBIND_BIN=\"$install_root/bin/exitbind\" \"$checkout/scripts/run-value-proof-suite.sh\"", "occurrences": 1}
+      {"id": "ci", "path": "tooling/repository/ci/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
+      {"id": "ci-drift-warning", "path": "tooling/repository/ci/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
+      {"id": "release", "path": "tooling/repository/ci/ci-local.sh", "command": "run value-proof ./scripts/run-value-proof-suite.sh", "occurrences": 1},
+      {"id": "release-drift-warning", "path": "tooling/repository/ci/ci-local.sh", "command": "run drift-warning ./scripts/demo-drift-warning.sh", "occurrences": 1},
+      {"id": "wsl", "path": "tooling/repository/ci/ci-wsl.sh", "command": "EXITBIND_BIN=\"$install_root/bin/exitbind\" \"$checkout/scripts/run-value-proof-suite.sh\"", "occurrences": 1}
     ]
   }
 }

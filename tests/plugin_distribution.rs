@@ -7,7 +7,7 @@ use std::{
 
 fn script(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("scripts")
+        .join("tooling/repository/release")
         .join(name)
 }
 

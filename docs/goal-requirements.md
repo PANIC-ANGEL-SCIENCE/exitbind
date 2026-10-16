@@ -221,8 +221,8 @@ member remains unresolved and cannot support current closure.
 From this source checkout, run:
 
 ```sh
-cargo test --locked --test goal_requirements \
-  three_requirements_multiple_works_interruption_drift_composition_and_closure -- --exact --nocapture
+cargo test --locked --features repository-checks --test goal_basis_requirements \
+  goal_requirements::three_requirements_multiple_works_interruption_drift_composition_and_closure -- --exact --nocapture
 ```
 
 The packaged CLI creates an isolated import example with a shared format file

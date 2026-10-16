@@ -144,11 +144,11 @@ add a dependency when the standard library or an existing dependency is enough.
 Run a selected integration target with the shared verification preparation:
 
 ```sh
-./scripts/test-focused.sh --test setup_pre_return
-./scripts/test-focused.sh --test pre_return selected_test_name -- --exact
+./scripts/test-focused.sh --test project_user_surface setup_pre_return
+./scripts/test-focused.sh --test work_admission_return pre_return::selected_test_name -- --exact
 ```
 
-Focused, pre-return and full checks share `scripts/verification-context.sh`.
+Focused selectors use the new target name followed by the module-qualified test path. Repository-only checks are included in focused and full developer CI with the `repository-checks` feature; distributed Cargo source tests omit that feature. Focused, pre-return and full checks share `scripts/verification-context.sh`.
 It removes ambient native Goal and Git selectors only for these owned checks,
 preserves the selected command arguments, uses a checkout-owned external cache,
 and retains complete output and child status. Focused selection requires at
@@ -292,6 +292,6 @@ small verification needed to prove behavior.
 
 ## Historical maintenance evidence
 
-The [v0.25.1 maintenance entry](docs/maintenance/v0.25.1/README.md) preserves
-its assigned reviewer-handoff and R14 closeout history. It is an archive, not a
-current contributor task.
+The [documentation index](docs/index.md) separates current contributor guidance,
+product reference, design notes, and public evidence. Archived maintenance
+records are not current contributor instructions.

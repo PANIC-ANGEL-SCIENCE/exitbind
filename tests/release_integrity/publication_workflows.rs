@@ -158,11 +158,27 @@ esac
         Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
     )
     .unwrap();
-    let provenance = workflow.find("gh attestation verify").unwrap();
+    let evidence_step = workflow.find("verify-release-evidence.sh").unwrap();
+    let evidence = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tooling/repository/release/verify-release-evidence.sh"),
+    )
+    .unwrap();
+    let provenance = evidence.find("gh attestation verify").unwrap();
+    assert!(evidence.contains("sha256sum -c \"$archive.sha256\""));
+    assert!(evidence
+        .contains("test \"$(tar -tzf \"release-evidence/$archive\")\" = \"exitbind-$target\""));
+    assert!(evidence.contains("--repo \"$GITHUB_REPOSITORY\""));
+    assert!(evidence.contains("--source-ref \"$GITHUB_REF\""));
+    assert!(evidence.contains("--source-digest \"$GITHUB_SHA\""));
+    assert!(evidence
+        .contains("cmp \"$payload_dir/exitbind-$target\" \"release-evidence/exitbind-$target\""));
+    assert!(evidence.contains("test ! -L \"$payload_dir/exitbind-$target\""));
     let publish = workflow
-        .find("sh scripts/publish-release-assets.sh")
+        .find("sh tooling/repository/release/publish-release-assets.sh")
         .unwrap();
-    assert!(provenance < publish);
+    assert!(evidence_step < publish);
+    assert!(provenance < evidence.find("mkdir dist").unwrap());
     assert!(!workflow.contains("gh release create"));
     assert!(!workflow.contains("gh release upload"));
 }
@@ -190,15 +206,31 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
     assert!(workflow.contains("needs: [channel, linux, macos, windows-wsl]"));
     assert!(workflow.contains("pattern: release-*"));
     assert!(workflow.contains("merge-multiple: true"));
-    assert!(workflow.contains("for target in $RELEASE_TARGETS; do"));
+    assert!(workflow.contains("verify-release-evidence.sh"));
+    let evidence = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tooling/repository/release/verify-release-evidence.sh"),
+    )
+    .unwrap();
+    assert!(evidence.contains("for target in $RELEASE_TARGETS; do"));
+    assert!(evidence.contains("mkdir dist"));
+    assert!(evidence.contains("cp \"release-evidence/exitbind-$target.tar.gz.sha256\" dist/"));
     assert!(workflow.contains("RELEASE_TARGETS: ${{ needs.channel.outputs.targets }}"));
     assert!(workflow.contains("needs.channel.outputs.prerelease == 'true' || (needs.macos.result == 'success' && needs.windows-wsl.result == 'success')"));
-    assert!(workflow.matches("--deny-self-hosted-runners").count() >= 3);
+    assert!(evidence.contains("--deny-self-hosted-runners"));
     assert!(workflow.matches("actions/attest@").count() >= 2);
+    assert!(workflow.matches("gh attestation verify").count() >= 2);
+    assert_eq!(evidence.matches("gh attestation verify").count(), 1);
     let publish = workflow
-        .find("run: sh scripts/publish-release-assets.sh")
+        .find("run: sh tooling/repository/release/publish-release-assets.sh")
         .unwrap();
-    assert!(workflow[..publish].matches("gh attestation verify").count() >= 3);
+    assert!(workflow[..publish].contains("verify-release-evidence.sh"));
+    assert!(
+        workflow[..publish]
+            .matches("--deny-self-hosted-runners")
+            .count()
+            >= 2
+    );
     assert!(workflow.contains("retention-days: 1"));
     assert!(!workflow.contains("--clobber"));
     assert!(!workflow.contains("gh release create"));
@@ -211,7 +243,7 @@ fn release_workflow_requires_all_native_targets_and_wsl_before_publish() {
     assert!(installed.starts_with("    needs: [channel, publish]\n"));
     assert!(installed.contains("matrix: ${{ fromJSON(needs.channel.outputs.installed) }}"));
     let channel = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/release-channel.py"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tooling/repository/release/release-channel.py"),
     )
     .unwrap();
     for (runner, host_os, host_arch, target) in [
@@ -366,7 +398,16 @@ fn publisher_rejects_tampered_transferred_raw_bytes_before_upload_for_each_targe
         Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
     )
     .unwrap();
-    let provenance = release_workflow_step(&workflow, "Verify transferred archive provenance");
+    let verify_step = release_workflow_step(&workflow, "Verify transferred release evidence");
+    assert_eq!(
+        verify_step,
+        "./tooling/repository/release/verify-release-evidence.sh"
+    );
+    let provenance = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tooling/repository/release/verify-release-evidence.sh"),
+    )
+    .unwrap();
     assert!(provenance.contains("cmp \"$payload_dir/exitbind-$target\""));
 
     let valid = publisher_fixture("valid", None);

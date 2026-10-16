@@ -1,15 +1,17 @@
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     env, fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
     sync::atomic::{AtomicU64, Ordering},
 };
+#[cfg(feature = "repository-checks")]
+use std::{collections::BTreeSet, os::unix::fs::PermissionsExt};
 
 const FORMAT_MARKER: &str = "x-soulmate-format-version";
+#[cfg(feature = "repository-checks")]
 const REQUIRED_LIMITATIONS: [&str; 4] = [
     "caller_reported_checks",
     "synthetic_not_frequency",
@@ -70,6 +72,7 @@ fn copy_relative(source: &Path, destination: &Path, relative: &str) {
     fs::copy(from, to).unwrap();
 }
 
+#[cfg(feature = "repository-checks")]
 fn registry_fixture() -> TempDir {
     let source = repo_root();
     let fixture = TempDir::new("registry");
@@ -120,6 +123,7 @@ fn object<'a>(value: &'a Value, label: &str) -> Result<&'a Map<String, Value>, S
         .ok_or_else(|| format!("{label} must be an object"))
 }
 
+#[cfg(feature = "repository-checks")]
 fn object_mut<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<String, Value>, String> {
     value
         .as_object_mut()
@@ -188,6 +192,7 @@ fn required_relative_file(root: &Path, raw: &str, label: &str) -> Result<PathBuf
     Ok(path)
 }
 
+#[cfg(feature = "repository-checks")]
 fn executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
@@ -201,6 +206,7 @@ fn executable(path: &Path) -> bool {
     }
 }
 
+#[cfg(feature = "repository-checks")]
 fn strings(value: &Value, label: &str, unique: bool) -> Result<Vec<String>, String> {
     let items = array(value, label)?;
     if items.is_empty() {
@@ -221,6 +227,7 @@ fn strings(value: &Value, label: &str, unique: bool) -> Result<Vec<String>, Stri
     Ok(result)
 }
 
+#[cfg(feature = "repository-checks")]
 fn validate_registry(root: &Path, registry: &Value) -> Result<(), String> {
     let registry_object = object(registry, "registry")?;
     exact_keys(
@@ -654,21 +661,15 @@ fn git_schema_fixture_without_lock() -> (TempDir, String) {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn claim_registry_and_schema_are_valid() {
     let root = repo_root();
     let registry = read_json(&root.join("proof/claims.json"));
     validate_registry(&root, &registry).unwrap();
-
-    let schema = read_json(&root.join("schema/claim-registry-v1.schema.json"));
-    assert_eq!(schema[FORMAT_MARKER], json!(1));
-    assert_eq!(schema["additionalProperties"], json!(false));
-    assert_eq!(
-        schema["required"].as_array().unwrap(),
-        &vec![json!("schemaVersion"), json!("claims"), json!("scenarios")]
-    );
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_rejects_missing_or_unknown_scenarios() {
     let fixture = registry_fixture();
     let path = fixture.path().join("proof/claims.json");
@@ -687,6 +688,7 @@ fn registry_rejects_missing_or_unknown_scenarios() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_rejects_missing_executable_or_expected() {
     let fixture = registry_fixture();
     let path = fixture.path().join("proof/claims.json");
@@ -708,6 +710,7 @@ fn registry_rejects_missing_executable_or_expected() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_rejects_missing_limitation_or_statement() {
     let fixture = registry_fixture();
     let path = fixture.path().join("proof/claims.json");
@@ -732,6 +735,7 @@ fn registry_rejects_missing_limitation_or_statement() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_accepts_wrapped_claims_but_rejects_changed_words() {
     let fixture = registry_fixture();
     let registry = read_json(&fixture.path().join("proof/claims.json"));
@@ -748,6 +752,7 @@ fn registry_accepts_wrapped_claims_but_rejects_changed_words() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_rejects_invalid_version_and_duplicate_ids() {
     let fixture = registry_fixture();
     let path = fixture.path().join("proof/claims.json");
@@ -766,6 +771,7 @@ fn registry_rejects_invalid_version_and_duplicate_ids() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn registry_rejects_non_synthetic_or_non_executable_scenarios() {
     let fixture = registry_fixture();
     let path = fixture.path().join("proof/claims.json");
@@ -794,6 +800,14 @@ fn schema_lock_matches_all_current_marked_schemas() {
     let root = repo_root();
     let base = env::var("VALUE_PROOF_BASE").ok();
     validate_schema_lock(&root, base.as_deref()).unwrap();
+
+    let schema = read_json(&root.join("schema/claim-registry-v1.schema.json"));
+    assert_eq!(schema[FORMAT_MARKER], json!(1));
+    assert_eq!(schema["additionalProperties"], json!(false));
+    assert_eq!(
+        schema["required"].as_array().unwrap(),
+        &vec![json!("schemaVersion"), json!("claims"), json!("scenarios")]
+    );
 }
 
 #[test]

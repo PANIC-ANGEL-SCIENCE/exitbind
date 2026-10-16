@@ -34,7 +34,7 @@ jobs:
         id: channel
         env:
           RELEASE_MODE: ${{ inputs.mode || 'release' }}
-        run: python3 scripts/release-channel.py --mode "$RELEASE_MODE"
+        run: python3 tooling/repository/release/release-channel.py --mode "$RELEASE_MODE"
   linux:
     needs: channel
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Preserve published Git ancestry
-        run: ./scripts/check-public-history.sh
+        run: ./tooling/repository/release/check-public-history.sh
       - name: Require the release tag at the current main commit
         if: needs.channel.outputs.prerelease == 'false' && needs.channel.outputs.readiness_only == 'false'
         run: |
@@ -105,21 +105,21 @@ jobs:
       - name: Run shared native CI checks
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
-        run: ./scripts/ci-local.sh --checks-only
+        run: ./tooling/repository/ci/ci-local.sh --checks-only
       - run: cargo audit
       - name: Build native Linux stable release
         env:
           EXITBIND_BUILD_COMMIT: ${{ github.sha }}
         run: cargo build --release --locked
       - name: Exercise first-user path without language toolchains
-        run: ./scripts/onboarding-smoke.sh "$CARGO_TARGET_DIR/release/exitbind" "$GITHUB_WORKSPACE/skills/exitbind/SKILL.md"
+        run: ./tooling/repository/release/onboarding-smoke.sh "$CARGO_TARGET_DIR/release/exitbind" "$GITHUB_WORKSPACE/skills/exitbind/SKILL.md"
       - name: Verify tag matches the binary
         if: needs.channel.outputs.readiness_only == 'false'
         run: test "v$("$CARGO_TARGET_DIR/release/exitbind" version)" = "$GITHUB_REF_NAME"
       - name: Package native Linux stable release
-        run: ./scripts/package-release.sh x86_64-unknown-linux-gnu "$CARGO_TARGET_DIR/release/exitbind" dist
+        run: ./tooling/repository/release/package-release.sh x86_64-unknown-linux-gnu "$CARGO_TARGET_DIR/release/exitbind" dist
       - name: Exercise packaged Linux installer
-        run: ./scripts/installer-smoke.sh dist x86_64-unknown-linux-gnu
+        run: ./tooling/repository/release/installer-smoke.sh dist x86_64-unknown-linux-gnu
       - name: Attest packaged archive provenance
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
@@ -189,7 +189,7 @@ jobs:
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Preserve published Git ancestry
-        run: ./scripts/check-public-history.sh
+        run: ./tooling/repository/release/check-public-history.sh
       - name: Require the release tag at the current main commit
         if: needs.channel.outputs.prerelease == 'false' && needs.channel.outputs.readiness_only == 'false'
         run: |
@@ -232,7 +232,7 @@ jobs:
       - name: Run shared native CI checks
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
-        run: ./scripts/ci-local.sh --checks-only
+        run: ./tooling/repository/ci/ci-local.sh --checks-only
       - name: Build native macOS stable release
         env:
           EXITBIND_BUILD_COMMIT: ${{ github.sha }}
@@ -241,9 +241,9 @@ jobs:
         if: needs.channel.outputs.readiness_only == 'false'
         run: test "v$("$CARGO_TARGET_DIR/${{ matrix.target }}/release/exitbind" version)" = "$GITHUB_REF_NAME"
       - name: Package native macOS stable release
-        run: ./scripts/package-release.sh "${{ matrix.target }}" "$CARGO_TARGET_DIR/${{ matrix.target }}/release/exitbind" dist
+        run: ./tooling/repository/release/package-release.sh "${{ matrix.target }}" "$CARGO_TARGET_DIR/${{ matrix.target }}/release/exitbind" dist
       - name: Exercise packaged macOS installer
-        run: ./scripts/installer-smoke.sh dist "${{ matrix.target }}"
+        run: ./tooling/repository/release/installer-smoke.sh dist "${{ matrix.target }}"
       - name: Attest packaged archive provenance
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
@@ -308,7 +308,7 @@ jobs:
           $windowsWorkspace = $env:GITHUB_WORKSPACE -replace '\\', '/'
           $workspace = (& wsl.exe --distribution Ubuntu --user root -- wslpath -a $windowsWorkspace).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/scripts/ci-wsl.sh" "$workspace"
+          & wsl.exe --distribution Ubuntu --user root -- sh "$workspace/tooling/repository/ci/ci-wsl.sh" "$workspace"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   publish:
@@ -326,7 +326,7 @@ jobs:
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Preserve published Git ancestry
-        run: ./scripts/check-public-history.sh
+        run: ./tooling/repository/release/check-public-history.sh
       - name: Require the release tag at the current main commit
         if: needs.channel.outputs.prerelease == 'false' && needs.channel.outputs.readiness_only == 'false'
         run: |
@@ -338,61 +338,14 @@ jobs:
           pattern: release-*-${{ github.sha }}
           path: release-evidence
           merge-multiple: true
-      - name: Validate exact release inventory and transferred digests
-        run: |
-          set -eu
-          expected=$(for target in $RELEASE_TARGETS; do
-            printf '%s\n' "$target.bundle.json" "exitbind-$target" \
-              "exitbind-$target.tar.gz" "exitbind-$target.tar.gz.sha256"
-          done | sort)
-          actual=$(for file in release-evidence/*; do basename "$file"; done | sort)
-          test "$actual" = "$expected"
-          for target in $RELEASE_TARGETS; do
-            archive="exitbind-$target.tar.gz"
-            (cd release-evidence && sha256sum -c "$archive.sha256")
-            test "$(tar -tzf "release-evidence/$archive")" = "exitbind-$target"
-          done
-      - name: Verify transferred archive provenance
+      - name: Verify transferred release evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          for target in $RELEASE_TARGETS; do
-            gh attestation verify "release-evidence/exitbind-$target.tar.gz" \
-              --bundle "release-evidence/$target.bundle.json" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-              --source-ref "$GITHUB_REF" \
-              --source-digest "$GITHUB_SHA" \
-              --deny-self-hosted-runners
-          done
-          verified_payloads=$(mktemp -d)
-          cleanup_verified_payloads() {
-            rm -rf "$verified_payloads"
-          }
-          trap cleanup_verified_payloads EXIT HUP INT TERM
-          for target in $RELEASE_TARGETS; do
-            archive="exitbind-$target.tar.gz"
-            payload_dir="$verified_payloads/$target"
-            mkdir "$payload_dir"
-            tar -xzf "release-evidence/$archive" -C "$payload_dir"
-            test ! -L "$payload_dir/exitbind-$target"
-            test -f "$payload_dir/exitbind-$target"
-            test -x "$payload_dir/exitbind-$target"
-            cmp "$payload_dir/exitbind-$target" "release-evidence/exitbind-$target"
-          done
-      - name: Stage exactly the published release assets
-        run: |
-          mkdir dist
-          for target in $RELEASE_TARGETS; do
-            cp "release-evidence/exitbind-$target" dist/
-            cp "release-evidence/exitbind-$target.tar.gz" dist/
-            cp "release-evidence/exitbind-$target.tar.gz.sha256" dist/
-          done
+        run: ./tooling/repository/release/verify-release-evidence.sh
       - name: Publish tag assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh scripts/publish-release-assets.sh
+        run: sh tooling/repository/release/publish-release-assets.sh
 
   installed:
     needs: [channel, publish]
@@ -427,29 +380,27 @@ jobs:
         env:
           EXITBIND_REPOSITORY: ${{ github.repository }}
           EXITBIND_VERSION: ${{ github.ref_name }}
-        run: ./scripts/published-install-smoke.sh "${{ matrix.target }}" "expected/exitbind-${{ matrix.target }}"
+        run: ./tooling/repository/release/published-install-smoke.sh "${{ matrix.target }}" "expected/exitbind-${{ matrix.target }}"
 
   stable-readiness-result:
     needs: [channel, linux, macos, windows-wsl]
     if: always() && needs.channel.outputs.readiness_only == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Assert exact GitHub SHA checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Require every platform before recording stable readiness
         env:
           CHANNEL_RESULT: ${{ needs.channel.result }}
           LINUX_RESULT: ${{ needs.linux.result }}
           MACOS_RESULT: ${{ needs.macos.result }}
           WSL_RESULT: ${{ needs.windows-wsl.result }}
-        run: |
-          python3 - <<'PY_READY'
-          import json, os
-          keys = ['CHANNEL_RESULT', 'LINUX_RESULT', 'MACOS_RESULT', 'WSL_RESULT']
-          assert all(os.environ[key] == 'success' for key in keys)
-          with open('stable-readiness.json', 'w') as output:
-              json.dump({'source': os.environ['GITHUB_SHA'], 'ref': os.environ['GITHUB_REF'],
-                         'runId': os.environ['GITHUB_RUN_ID'], 'allNativePlatformsAndWsl': True,
-                         'published': False, 'mainChanged': False}, output)
-          PY_READY
+        run: python3 tooling/repository/release/write-stable-readiness.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: stable-readiness-${{ github.sha }}

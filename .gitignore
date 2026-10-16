@@ -2,3 +2,7 @@
 /.soulmate/
 /.codex/work/
 *.swp
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

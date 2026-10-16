@@ -67,7 +67,7 @@ fn fixture_git_environment_is_isolated_in_a_dedicated_subprocess() {
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "fixture_git_environment_is_isolated_in_a_dedicated_subprocess",
+            "init_without_skills::fixture_git_environment_is_isolated_in_a_dedicated_subprocess",
             "--nocapture",
         ])
         .env(CHILD, &foreign)
@@ -80,6 +80,11 @@ fn fixture_git_environment_is_isolated_in_a_dedicated_subprocess() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", text(&output));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+        "fixture subprocess did not execute exactly one test: {}",
+        text(&output)
+    );
     assert_eq!(fs::read(git_dir.join("config")).unwrap(), config);
     assert!(!index.exists(), "fixture commands wrote the caller's index");
     assert_eq!(

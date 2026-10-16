@@ -231,7 +231,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             if a.flags.contains_key("json") {
                 print_json(&report)?;
             } else {
-                print!("{}", run::report_markdown(&report));
+                print!("{}", crate::presentation::run_report_markdown(&report));
             }
             return Ok(());
         }

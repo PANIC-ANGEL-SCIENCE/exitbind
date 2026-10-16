@@ -7,13 +7,177 @@ description = "Bounded exact-subject acceptance and evidence binding before exit
 license = "MIT"
 repository = "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
 
-exclude = ["assets/readme/**", "tooling/readme/**", ".github/workflows/readme-badges.yml"]
+include = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "LICENSE",
+  "CONTRIBUTING.md",
+  "REFERENCE.md",
+  "SECURITY.md",
+  "install.sh",
+  "src/**",
+  "schema/**",
+  "compatibility/rename-matrix.json",
+  "skills/**",
+  "plugins/exitbind/**",
+  "plugin.json",
+  ".codex-plugin/plugin.json",
+  ".claude-plugin/plugin.json",
+  ".agents/plugins/marketplace.json",
+  ".claude-plugin/marketplace.json",
+  "proof/**",
+  "examples/**",
+  "tests/**",
+  "scripts/demo-checked-work.sh",
+  "docs/agent-control-plane.md",
+  "docs/agent-first-evaluation.md",
+  "docs/architecture-contract.md",
+  "docs/check-recovery.md",
+  "docs/check-replacement.md",
+  "docs/codex-tmux-away.md",
+  "docs/command-consumption.md",
+  "docs/continuing-native-work.md",
+  "docs/controlled-file-effects.md",
+  "docs/cross-host-continuation.md",
+  "docs/early-evidence.md",
+  "docs/evidence/participation-comparison.md",
+  "docs/exitbind-centered-layout.md",
+  "docs/first-checked-run.md",
+  "docs/glossary.md",
+  "docs/goal-requirements.md",
+  "docs/index.md",
+  "docs/legacy-compatibility.md",
+  "docs/native-continuity.md",
+  "docs/onboarding.md",
+  "docs/optional-surfaces.md",
+  "docs/participation-validation.md",
+  "docs/platform-support.md",
+  "docs/post-0.3.0-harness-evidence.md",
+  "docs/prereleases.md",
+  "docs/project-capabilities.md",
+  "docs/project-lessons.md",
+  "docs/project-placement.md",
+  "docs/prose-mechanism-audit.md",
+  "docs/public-history.md",
+  "docs/reference-run-and-recovery.md",
+  "docs/release-boundary-governance-binding.md",
+  "docs/release-version-policy.md",
+  "docs/repair-a-run.md",
+  "docs/residual-resume-cost.md",
+  "docs/soulmate-centered-layout.md",
+  "docs/specialist-experience.md",
+  "docs/upgrade-and-rollback.md",
+  "docs/user-owned-agents.md",
+  "docs/value-baseline.md",
+  "docs/value-proof-methodology.md",
+  "docs/windows-wsl.md",
+  "docs/work-mutation-results.md",
+  "docs/examples/value-report.md",
+]
 
 autobins = false
+autotests = false
 
 [[bin]]
 name = "exitbind"
 path = "src/main.rs"
+
+[[test]]
+name = "architecture_budget"
+required-features = ["repository-checks"]
+path = "tests/architecture_budget.rs"
+
+[[test]]
+name = "away_native"
+path = "tests/away_native.rs"
+
+[[test]]
+name = "privacy_gate"
+required-features = ["repository-checks"]
+path = "tests/privacy_gate.rs"
+
+[[test]]
+name = "release_integrity"
+required-features = ["repository-checks"]
+path = "tests/release_integrity.rs"
+
+[[test]]
+name = "docs_workflow"
+required-features = ["repository-checks"]
+path = "tests/docs_workflow.rs"
+
+[[test]]
+name = "first_impression"
+path = "tests/first_impression.rs"
+
+[[test]]
+name = "value_contract"
+path = "tests/value_contract.rs"
+
+[[test]]
+name = "plugin_distribution"
+required-features = ["repository-checks"]
+path = "tests/plugin_distribution.rs"
+
+[[test]]
+name = "session_goal_direct"
+path = "tests/session_goal_direct.rs"
+
+[[test]]
+name = "repository_contracts"
+required-features = ["repository-checks"]
+path = "tests/groups/repository_contracts.rs"
+
+[[test]]
+name = "project_user_surface"
+path = "tests/groups/project_user_surface.rs"
+
+[[test]]
+name = "project_installation"
+path = "tests/groups/project_installation.rs"
+
+[[test]]
+name = "host_runtime"
+path = "tests/groups/host_runtime.rs"
+
+[[test]]
+name = "run_evidence_lifecycle"
+path = "tests/groups/run_evidence_lifecycle.rs"
+
+[[test]]
+name = "work_admission_return"
+path = "tests/groups/work_admission_return.rs"
+
+[[test]]
+name = "work_persistence_recovery"
+path = "tests/groups/work_persistence_recovery.rs"
+
+[[test]]
+name = "check_review_recovery"
+path = "tests/groups/check_review_recovery.rs"
+
+[[test]]
+name = "goal_basis_requirements"
+path = "tests/groups/goal_basis_requirements.rs"
+
+[[test]]
+name = "goal_progress_presentation"
+path = "tests/groups/goal_progress_presentation.rs"
+
+[[test]]
+name = "context_continuity"
+path = "tests/groups/context_continuity.rs"
+
+[[test]]
+name = "memory"
+path = "tests/groups/memory.rs"
+
+[[test]]
+name = "value_evidence"
+path = "tests/groups/value_evidence.rs"
+[features]
+default = []
+repository-checks = []
 
 [dependencies]
 # serde/serde_json preserve the public JSON configuration, receipt, and JSONL schemas.

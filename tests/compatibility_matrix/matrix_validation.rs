@@ -66,6 +66,7 @@ fn valid_matrix_rejects_closed_mutations_without_reject_all_behavior() {
 }
 
 #[test]
+#[cfg(feature = "repository-checks")]
 fn matrix_rows_bind_current_projection_sources() {
     let value = matrix();
     let proof = &value["proof"];
@@ -97,7 +98,7 @@ fn matrix_rows_bind_current_projection_sources() {
         }
     }
     let package = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/package-release.sh"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tooling/repository/release/package-release.sh"),
     )
     .unwrap();
     assert!(package.contains("stem=\"exitbind-$target\""));

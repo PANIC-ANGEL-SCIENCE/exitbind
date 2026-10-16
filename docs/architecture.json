@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "revision": "product-responsibilities-1",
+  "responsibilities": [
+    {
+      "id": "entry",
+      "summary": "Parse and route CLI requests without owning lifecycle evidence.",
+      "paths": [
+        "src/main.rs",
+        "src/cli"
+      ]
+    },
+    {
+      "id": "execution",
+      "summary": "Run orchestration, gate policy, currentness and derived progress.",
+      "paths": [
+        "src/run",
+        "src/run_exit.rs",
+        "src/run_value.rs",
+        "src/run_value",
+        "src/run_progress.rs",
+        "src/run_human.rs"
+      ]
+    },
+    {
+      "id": "presentation",
+      "summary": "Render human and terminal projections from checked domain facts.",
+      "paths": [
+        "src/presentation.rs",
+        "src/presentation",
+        "src/presentation_events.rs",
+        "src/presentation_events",
+        "src/run_presentation.rs"
+      ]
+    },
+    {
+      "id": "goals",
+      "summary": "Conversation Goal meaning, membership and closure.",
+      "paths": [
+        "src/session_goal.rs",
+        "src/session_goal"
+      ]
+    },
+    {
+      "id": "work",
+      "summary": "Checked Work admission, native assignments and lifecycle routing.",
+      "paths": [
+        "src/work"
+      ]
+    },
+    {
+      "id": "project",
+      "summary": "Portable project configuration, architecture and capabilities. Existing cfg(test) fixture includes are allowed only as source-checkout test inputs; production build/runtime dependencies on repository administration remain forbidden.",
+      "paths": [
+        "src/project"
+      ]
+    },
+    {
+      "id": "memory",
+      "summary": "Qualified contextual memory and revocation.",
+      "paths": [
+        "src/memory"
+      ]
+    },
+    {
+      "id": "configuration",
+      "summary": "Validated configuration and role boundaries.",
+      "paths": [
+        "src/config",
+        "src/envelope.rs"
+      ]
+    },
+    {
+      "id": "foundation",
+      "summary": "Evidence, compatibility, host and reusable distribution primitives. Existing cfg(test) fixture includes are allowed only as source-checkout test inputs; production build/runtime dependencies on repository administration remain forbidden.",
+      "paths": [
+        "src/kernel",
+        "src/evidence",
+        "src/compatibility",
+        "src/context.rs",
+        "src/context",
+        "src/producer.rs",
+        "src/distribution",
+        "src/host",
+        "src/value_benchmark.rs",
+        "src/value_benchmark"
+      ]
+    },
+    {
+      "id": "repository",
+      "summary": "Developer verification, CI and publication of this repository. Existing cfg(test) fixture includes are allowed only as source-checkout test inputs; production build/runtime dependencies remain forbidden.",
+      "paths": [
+        "tooling",
+        "scripts",
+        ".github",
+        "tests",
+        ".gitignore",
+        ".mailmap",
+        "rust-toolchain.toml"
+      ]
+    },
+    {
+      "id": "product-assets",
+      "summary": "Public guides, schemas, skills and product examples.",
+      "paths": [
+        "docs",
+        "schema",
+        "skills",
+        "plugins",
+        "examples",
+        "proof",
+        "compatibility",
+        "assets",
+        "README.md",
+        "REFERENCE.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "Cargo.toml",
+        "Cargo.lock",
+        "install.sh",
+        "plugin.json",
+        ".claude-plugin",
+        ".gitattributes",
+        "systems.soulmate",
+        ".agents",
+        "LICENSE",
+        "SECURITY.md"
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "execution",
+      "to": "presentation",
+      "direction": "forbidden"
+    },
+    {
+      "from": "presentation",
+      "to": "execution",
+      "direction": "allowed"
+    },
+    {
+      "from": "project",
+      "to": "repository",
+      "direction": "forbidden"
+    },
+    {
+      "from": "foundation",
+      "to": "repository",
+      "direction": "forbidden"
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "run-owner",
+      "owner": "execution",
+      "path": "src/run/mod.rs",
+      "summary": "Run lifecycle and evidence operations remain in the execution owner."
+    },
+    {
+      "id": "distribution-owner",
+      "owner": "foundation",
+      "path": "src/distribution/mod.rs",
+      "summary": "Generic product distribution remains independent of this repository administration."
+    }
+  ],
+  "checks": [
+    {
+      "id": "no-rendering-in-run-owner",
+      "responsibility": "execution",
+      "path": "src/run/mod.rs",
+      "assertion": "excludes",
+      "literal": "crate::presentation",
+      "dependency": {
+        "from": "execution",
+        "to": "presentation"
+      }
+    },
+    {
+      "id": "product-distribution-no-admin",
+      "responsibility": "foundation",
+      "path": "src/distribution/mod.rs",
+      "assertion": "excludes",
+      "literal": "tooling/repository",
+      "dependency": {
+        "from": "foundation",
+        "to": "repository"
+      }
+    },
+    {
+      "id": "run-interface-present",
+      "responsibility": "execution",
+      "path": "src/run/mod.rs",
+      "assertion": "contains",
+      "literal": "Run orchestration",
+      "interface": "run-owner"
+    }
+  ]
+}

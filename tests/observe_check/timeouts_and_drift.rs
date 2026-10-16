@@ -9,7 +9,7 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
         let mut child = support::git_topology::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "timeout_cleans_descendants_appends_nothing_and_allows_recovery",
+                "observe_check::timeouts_and_drift::timeout_cleans_descendants_appends_nothing_and_allows_recovery",
                 "--nocapture",
                 "--test-threads=1",
             ])
@@ -35,6 +35,12 @@ fn timeout_cleans_descendants_appends_nothing_and_allows_recovery() {
             "legacy fixture failed; captures {}: {}",
             captures.display(),
             fs::read_to_string(captures.join("stderr")).unwrap()
+        );
+        let stdout = fs::read_to_string(captures.join("stdout")).unwrap();
+        assert!(
+            stdout.contains("1 passed; 0 failed"),
+            "legacy fixture did not execute exactly one test; captures {}: {stdout}",
+            captures.display()
         );
         fs::remove_dir_all(captures).unwrap();
         return;

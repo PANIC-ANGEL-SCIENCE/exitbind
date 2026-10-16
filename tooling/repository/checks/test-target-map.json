@@ -1,0 +1,1725 @@
+{
+  "schemaVersion": 1,
+  "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
+  "rootCount": 119,
+  "declarations": 893,
+  "ordinaryDisabledDeclarations": 2,
+  "ordinaryIgnoredDeclarations": 1,
+  "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
+  "standalone": [
+    {
+      "oldTarget": "architecture_budget",
+      "newTarget": "architecture_budget",
+      "source": "tests/architecture_budget.rs",
+      "module": null,
+      "reason": "process current-directory isolation"
+    },
+    {
+      "oldTarget": "away_native",
+      "newTarget": "away_native",
+      "source": "tests/away_native.rs",
+      "module": null,
+      "reason": "dedicated ignored native CI selector"
+    },
+    {
+      "oldTarget": "privacy_gate",
+      "newTarget": "privacy_gate",
+      "source": "tests/privacy_gate.rs",
+      "module": null,
+      "reason": "dedicated repository privacy gate"
+    },
+    {
+      "oldTarget": "release_integrity",
+      "newTarget": "release_integrity",
+      "source": "tests/release_integrity.rs",
+      "module": null,
+      "reason": "dedicated release integrity gate"
+    },
+    {
+      "oldTarget": "docs_workflow",
+      "newTarget": "docs_workflow",
+      "source": "tests/docs_workflow.rs",
+      "module": null,
+      "reason": "dedicated docs workflow gate"
+    },
+    {
+      "oldTarget": "first_impression",
+      "newTarget": "first_impression",
+      "source": "tests/first_impression.rs",
+      "module": null,
+      "reason": "dedicated first-impression flow"
+    },
+    {
+      "oldTarget": "value_contract",
+      "newTarget": "value_contract",
+      "source": "tests/value_contract.rs",
+      "module": null,
+      "reason": "dedicated value contract gate"
+    },
+    {
+      "oldTarget": "plugin_distribution",
+      "newTarget": "plugin_distribution",
+      "source": "tests/plugin_distribution.rs",
+      "module": null,
+      "reason": "dedicated plugin distribution gate"
+    },
+    {
+      "oldTarget": "session_goal_direct",
+      "newTarget": "session_goal_direct",
+      "source": "tests/session_goal_direct.rs",
+      "module": null,
+      "reason": "crate-root fixture/support assumptions"
+    }
+  ],
+  "groups": {
+    "repository_contracts": [
+      {
+        "oldTarget": "architecture_adoption",
+        "newTarget": "repository_contracts",
+        "source": "tests/architecture_adoption.rs",
+        "module": "architecture_adoption",
+        "moduleQualifiedPrefix": "architecture_adoption"
+      },
+      {
+        "oldTarget": "architecture_contract",
+        "newTarget": "repository_contracts",
+        "source": "tests/architecture_contract.rs",
+        "module": "architecture_contract",
+        "moduleQualifiedPrefix": "architecture_contract"
+      },
+      {
+        "oldTarget": "artifact_bytes",
+        "newTarget": "repository_contracts",
+        "source": "tests/artifact_bytes.rs",
+        "module": "artifact_bytes",
+        "moduleQualifiedPrefix": "artifact_bytes"
+      },
+      {
+        "oldTarget": "build_identity",
+        "newTarget": "repository_contracts",
+        "source": "tests/build_identity.rs",
+        "module": "build_identity",
+        "moduleQualifiedPrefix": "build_identity"
+      },
+      {
+        "oldTarget": "ci_policy",
+        "newTarget": "repository_contracts",
+        "source": "tests/ci_policy.rs",
+        "module": "ci_policy",
+        "moduleQualifiedPrefix": "ci_policy"
+      },
+      {
+        "oldTarget": "ci_test_execution",
+        "newTarget": "repository_contracts",
+        "source": "tests/ci_test_execution.rs",
+        "module": "ci_test_execution",
+        "moduleQualifiedPrefix": "ci_test_execution"
+      },
+      {
+        "oldTarget": "compatibility_matrix",
+        "newTarget": "repository_contracts",
+        "source": "tests/compatibility_matrix.rs",
+        "module": "compatibility_matrix",
+        "moduleQualifiedPrefix": "compatibility_matrix"
+      },
+      {
+        "oldTarget": "exit_transition_conformance",
+        "newTarget": "repository_contracts",
+        "source": "tests/exit_transition_conformance.rs",
+        "module": "exit_transition_conformance",
+        "moduleQualifiedPrefix": "exit_transition_conformance"
+      },
+      {
+        "oldTarget": "public_positioning",
+        "newTarget": "repository_contracts",
+        "source": "tests/public_positioning.rs",
+        "module": "public_positioning",
+        "moduleQualifiedPrefix": "public_positioning"
+      },
+      {
+        "oldTarget": "r13_check",
+        "newTarget": "repository_contracts",
+        "source": "tests/r13_check.rs",
+        "module": "r13_check",
+        "moduleQualifiedPrefix": "r13_check"
+      },
+      {
+        "oldTarget": "rust_contract",
+        "newTarget": "repository_contracts",
+        "source": "tests/rust_contract.rs",
+        "module": "rust_contract",
+        "moduleQualifiedPrefix": "rust_contract"
+      },
+      {
+        "oldTarget": "rust_parity",
+        "newTarget": "repository_contracts",
+        "source": "tests/rust_parity.rs",
+        "module": "rust_parity",
+        "moduleQualifiedPrefix": "rust_parity"
+      }
+    ],
+    "project_user_surface": [
+      {
+        "oldTarget": "activation_classify",
+        "newTarget": "project_user_surface",
+        "source": "tests/activation_classify.rs",
+        "module": "activation_classify",
+        "moduleQualifiedPrefix": "activation_classify"
+      },
+      {
+        "oldTarget": "agent_first_control",
+        "newTarget": "project_user_surface",
+        "source": "tests/agent_first_control.rs",
+        "module": "agent_first_control",
+        "moduleQualifiedPrefix": "agent_first_control"
+      },
+      {
+        "oldTarget": "checked_work_ux",
+        "newTarget": "project_user_surface",
+        "source": "tests/checked_work_ux.rs",
+        "module": "checked_work_ux",
+        "moduleQualifiedPrefix": "checked_work_ux"
+      },
+      {
+        "oldTarget": "external_selection",
+        "newTarget": "project_user_surface",
+        "source": "tests/external_selection.rs",
+        "module": "external_selection",
+        "moduleQualifiedPrefix": "external_selection"
+      },
+      {
+        "oldTarget": "fresh_user_surface",
+        "newTarget": "project_user_surface",
+        "source": "tests/fresh_user_surface.rs",
+        "module": "fresh_user_surface",
+        "moduleQualifiedPrefix": "fresh_user_surface"
+      },
+      {
+        "oldTarget": "host_help",
+        "newTarget": "project_user_surface",
+        "source": "tests/host_help.rs",
+        "module": "host_help",
+        "moduleQualifiedPrefix": "host_help"
+      },
+      {
+        "oldTarget": "init_without_skills",
+        "newTarget": "project_user_surface",
+        "source": "tests/init_without_skills.rs",
+        "module": "init_without_skills",
+        "moduleQualifiedPrefix": "init_without_skills"
+      },
+      {
+        "oldTarget": "project_capabilities",
+        "newTarget": "project_user_surface",
+        "source": "tests/project_capabilities.rs",
+        "module": "project_capabilities",
+        "moduleQualifiedPrefix": "project_capabilities"
+      },
+      {
+        "oldTarget": "project_context",
+        "newTarget": "project_user_surface",
+        "source": "tests/project_context.rs",
+        "module": "project_context",
+        "moduleQualifiedPrefix": "project_context"
+      },
+      {
+        "oldTarget": "project_layout",
+        "newTarget": "project_user_surface",
+        "source": "tests/project_layout.rs",
+        "module": "project_layout",
+        "moduleQualifiedPrefix": "project_layout"
+      },
+      {
+        "oldTarget": "setup",
+        "newTarget": "project_user_surface",
+        "source": "tests/setup.rs",
+        "module": "setup",
+        "moduleQualifiedPrefix": "setup"
+      },
+      {
+        "oldTarget": "setup_pre_return",
+        "newTarget": "project_user_surface",
+        "source": "tests/setup_pre_return.rs",
+        "module": "setup_pre_return",
+        "moduleQualifiedPrefix": "setup_pre_return"
+      },
+      {
+        "oldTarget": "singleton_options",
+        "newTarget": "project_user_surface",
+        "source": "tests/singleton_options.rs",
+        "module": "singleton_options",
+        "moduleQualifiedPrefix": "singleton_options"
+      },
+      {
+        "oldTarget": "specialist_routing",
+        "newTarget": "project_user_surface",
+        "source": "tests/specialist_routing.rs",
+        "module": "specialist_routing",
+        "moduleQualifiedPrefix": "specialist_routing"
+      },
+      {
+        "oldTarget": "usage_help",
+        "newTarget": "project_user_surface",
+        "source": "tests/usage_help.rs",
+        "module": "usage_help",
+        "moduleQualifiedPrefix": "usage_help"
+      }
+    ],
+    "project_installation": [
+      {
+        "oldTarget": "installed_consumer",
+        "newTarget": "project_installation",
+        "source": "tests/installed_consumer.rs",
+        "module": "installed_consumer",
+        "moduleQualifiedPrefix": "installed_consumer"
+      },
+      {
+        "oldTarget": "installer_platform",
+        "newTarget": "project_installation",
+        "source": "tests/installer_platform.rs",
+        "module": "installer_platform",
+        "moduleQualifiedPrefix": "installer_platform"
+      },
+      {
+        "oldTarget": "layout_migration",
+        "newTarget": "project_installation",
+        "source": "tests/layout_migration.rs",
+        "module": "layout_migration",
+        "moduleQualifiedPrefix": "layout_migration"
+      },
+      {
+        "oldTarget": "legacy_installer_bridge",
+        "newTarget": "project_installation",
+        "source": "tests/legacy_installer_bridge.rs",
+        "module": "legacy_installer_bridge",
+        "moduleQualifiedPrefix": "legacy_installer_bridge"
+      },
+      {
+        "oldTarget": "path_compatibility",
+        "newTarget": "project_installation",
+        "source": "tests/path_compatibility.rs",
+        "module": "path_compatibility",
+        "moduleQualifiedPrefix": "path_compatibility"
+      },
+      {
+        "oldTarget": "portability",
+        "newTarget": "project_installation",
+        "source": "tests/portability.rs",
+        "module": "portability",
+        "moduleQualifiedPrefix": "portability"
+      },
+      {
+        "oldTarget": "provider_fallback",
+        "newTarget": "project_installation",
+        "source": "tests/provider_fallback.rs",
+        "module": "provider_fallback",
+        "moduleQualifiedPrefix": "provider_fallback"
+      },
+      {
+        "oldTarget": "skill_diagnostics",
+        "newTarget": "project_installation",
+        "source": "tests/skill_diagnostics.rs",
+        "module": "skill_diagnostics",
+        "moduleQualifiedPrefix": "skill_diagnostics"
+      },
+      {
+        "oldTarget": "skill_refresh",
+        "newTarget": "project_installation",
+        "source": "tests/skill_refresh.rs",
+        "module": "skill_refresh",
+        "moduleQualifiedPrefix": "skill_refresh"
+      },
+      {
+        "oldTarget": "update",
+        "newTarget": "project_installation",
+        "source": "tests/update.rs",
+        "module": "update",
+        "moduleQualifiedPrefix": "update"
+      }
+    ],
+    "host_runtime": [
+      {
+        "oldTarget": "agent_context_delivery",
+        "newTarget": "host_runtime",
+        "source": "tests/agent_context_delivery.rs",
+        "module": "agent_context_delivery",
+        "moduleQualifiedPrefix": "agent_context_delivery"
+      },
+      {
+        "oldTarget": "agent_protocol",
+        "newTarget": "host_runtime",
+        "source": "tests/agent_protocol.rs",
+        "module": "agent_protocol",
+        "moduleQualifiedPrefix": "agent_protocol"
+      },
+      {
+        "oldTarget": "child_capture",
+        "newTarget": "host_runtime",
+        "source": "tests/child_capture.rs",
+        "module": "child_capture",
+        "moduleQualifiedPrefix": "child_capture"
+      },
+      {
+        "oldTarget": "controlled_effects",
+        "newTarget": "host_runtime",
+        "source": "tests/controlled_effects.rs",
+        "module": "controlled_effects",
+        "moduleQualifiedPrefix": "controlled_effects"
+      },
+      {
+        "oldTarget": "fixture_host_isolation",
+        "newTarget": "host_runtime",
+        "source": "tests/fixture_host_isolation.rs",
+        "module": "fixture_host_isolation",
+        "moduleQualifiedPrefix": "fixture_host_isolation"
+      },
+      {
+        "oldTarget": "harness_receipt",
+        "newTarget": "host_runtime",
+        "source": "tests/harness_receipt.rs",
+        "module": "harness_receipt",
+        "moduleQualifiedPrefix": "harness_receipt"
+      },
+      {
+        "oldTarget": "harness_run",
+        "newTarget": "host_runtime",
+        "source": "tests/harness_run.rs",
+        "module": "harness_run",
+        "moduleQualifiedPrefix": "harness_run"
+      },
+      {
+        "oldTarget": "host_bridge",
+        "newTarget": "host_runtime",
+        "source": "tests/host_bridge.rs",
+        "module": "host_bridge",
+        "moduleQualifiedPrefix": "host_bridge"
+      },
+      {
+        "oldTarget": "host_workflow",
+        "newTarget": "host_runtime",
+        "source": "tests/host_workflow.rs",
+        "module": "host_workflow",
+        "moduleQualifiedPrefix": "host_workflow"
+      },
+      {
+        "oldTarget": "managed_edits",
+        "newTarget": "host_runtime",
+        "source": "tests/managed_edits.rs",
+        "module": "managed_edits",
+        "moduleQualifiedPrefix": "managed_edits"
+      },
+      {
+        "oldTarget": "native_continuity",
+        "newTarget": "host_runtime",
+        "source": "tests/native_continuity.rs",
+        "module": "native_continuity",
+        "moduleQualifiedPrefix": "native_continuity"
+      },
+      {
+        "oldTarget": "native_session_export",
+        "newTarget": "host_runtime",
+        "source": "tests/native_session_export.rs",
+        "module": "native_session_export",
+        "moduleQualifiedPrefix": "native_session_export"
+      },
+      {
+        "oldTarget": "start_context",
+        "newTarget": "host_runtime",
+        "source": "tests/start_context.rs",
+        "module": "start_context",
+        "moduleQualifiedPrefix": "start_context"
+      },
+      {
+        "oldTarget": "state_permissions",
+        "newTarget": "host_runtime",
+        "source": "tests/state_permissions.rs",
+        "module": "state_permissions",
+        "moduleQualifiedPrefix": "state_permissions"
+      }
+    ],
+    "run_evidence_lifecycle": [
+      {
+        "oldTarget": "action_forms",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/action_forms.rs",
+        "module": "action_forms",
+        "moduleQualifiedPrefix": "action_forms"
+      },
+      {
+        "oldTarget": "compact_preservation",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/compact_preservation.rs",
+        "module": "compact_preservation",
+        "moduleQualifiedPrefix": "compact_preservation"
+      },
+      {
+        "oldTarget": "compact_work",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/compact_work.rs",
+        "module": "compact_work",
+        "moduleQualifiedPrefix": "compact_work"
+      },
+      {
+        "oldTarget": "early_evidence",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/early_evidence.rs",
+        "module": "early_evidence",
+        "moduleQualifiedPrefix": "early_evidence"
+      },
+      {
+        "oldTarget": "file_effects",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/file_effects.rs",
+        "module": "file_effects",
+        "moduleQualifiedPrefix": "file_effects"
+      },
+      {
+        "oldTarget": "mutation_result",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/mutation_result.rs",
+        "module": "mutation_result",
+        "moduleQualifiedPrefix": "mutation_result"
+      },
+      {
+        "oldTarget": "run_boundary",
+        "newTarget": "run_evidence_lifecycle",
+        "source": "tests/run_boundary.rs",
+        "module": "run_boundary",
+        "moduleQualifiedPrefix": "run_boundary"
+      }
+    ],
+    "work_admission_return": [
+      {
+        "oldTarget": "continuation_conditions",
+        "newTarget": "work_admission_return",
+        "source": "tests/continuation_conditions.rs",
+        "module": "continuation_conditions",
+        "moduleQualifiedPrefix": "continuation_conditions"
+      },
+      {
+        "oldTarget": "current_details",
+        "newTarget": "work_admission_return",
+        "source": "tests/current_details.rs",
+        "module": "current_details",
+        "moduleQualifiedPrefix": "current_details"
+      },
+      {
+        "oldTarget": "held_delivery",
+        "newTarget": "work_admission_return",
+        "source": "tests/held_delivery.rs",
+        "module": "held_delivery",
+        "moduleQualifiedPrefix": "held_delivery"
+      },
+      {
+        "oldTarget": "lead_disposition",
+        "newTarget": "work_admission_return",
+        "source": "tests/lead_disposition.rs",
+        "module": "lead_disposition",
+        "moduleQualifiedPrefix": "lead_disposition"
+      },
+      {
+        "oldTarget": "pre_return",
+        "newTarget": "work_admission_return",
+        "source": "tests/pre_return.rs",
+        "module": "pre_return",
+        "moduleQualifiedPrefix": "pre_return"
+      },
+      {
+        "oldTarget": "pre_return_native",
+        "newTarget": "work_admission_return",
+        "source": "tests/pre_return_native.rs",
+        "module": "pre_return_native",
+        "moduleQualifiedPrefix": "pre_return_native"
+      },
+      {
+        "oldTarget": "receiving_entry",
+        "newTarget": "work_admission_return",
+        "source": "tests/receiving_entry.rs",
+        "module": "receiving_entry",
+        "moduleQualifiedPrefix": "receiving_entry"
+      },
+      {
+        "oldTarget": "replan_input",
+        "newTarget": "work_admission_return",
+        "source": "tests/replan_input.rs",
+        "module": "replan_input",
+        "moduleQualifiedPrefix": "replan_input"
+      },
+      {
+        "oldTarget": "resume_scope",
+        "newTarget": "work_admission_return",
+        "source": "tests/resume_scope.rs",
+        "module": "resume_scope",
+        "moduleQualifiedPrefix": "resume_scope"
+      }
+    ],
+    "work_persistence_recovery": [
+      {
+        "oldTarget": "save_return_contract",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/save_return_contract.rs",
+        "module": "save_return_contract",
+        "moduleQualifiedPrefix": "save_return_contract"
+      },
+      {
+        "oldTarget": "save_return_preservation",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/save_return_preservation.rs",
+        "module": "save_return_preservation",
+        "moduleQualifiedPrefix": "save_return_preservation"
+      },
+      {
+        "oldTarget": "save_return_recovery",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/save_return_recovery.rs",
+        "module": "save_return_recovery",
+        "moduleQualifiedPrefix": "save_return_recovery"
+      },
+      {
+        "oldTarget": "work_action_refresh",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/work_action_refresh.rs",
+        "module": "work_action_refresh",
+        "moduleQualifiedPrefix": "work_action_refresh"
+      },
+      {
+        "oldTarget": "work_check_replacement",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/work_check_replacement.rs",
+        "module": "work_check_replacement",
+        "moduleQualifiedPrefix": "work_check_replacement"
+      },
+      {
+        "oldTarget": "work_closeout",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/work_closeout.rs",
+        "module": "work_closeout",
+        "moduleQualifiedPrefix": "work_closeout"
+      },
+      {
+        "oldTarget": "work_goal_absence",
+        "newTarget": "work_persistence_recovery",
+        "source": "tests/work_goal_absence.rs",
+        "module": "work_goal_absence",
+        "moduleQualifiedPrefix": "work_goal_absence"
+      }
+    ],
+    "check_review_recovery": [
+      {
+        "oldTarget": "check_observation_recovery",
+        "newTarget": "check_review_recovery",
+        "source": "tests/check_observation_recovery.rs",
+        "module": "check_observation_recovery",
+        "moduleQualifiedPrefix": "check_observation_recovery"
+      },
+      {
+        "oldTarget": "check_retry",
+        "newTarget": "check_review_recovery",
+        "source": "tests/check_retry.rs",
+        "module": "check_retry",
+        "moduleQualifiedPrefix": "check_retry"
+      },
+      {
+        "oldTarget": "event_detail_integrity",
+        "newTarget": "check_review_recovery",
+        "source": "tests/event_detail_integrity.rs",
+        "module": "event_detail_integrity",
+        "moduleQualifiedPrefix": "event_detail_integrity"
+      },
+      {
+        "oldTarget": "observe_check",
+        "newTarget": "check_review_recovery",
+        "source": "tests/observe_check.rs",
+        "module": "observe_check",
+        "moduleQualifiedPrefix": "observe_check"
+      },
+      {
+        "oldTarget": "preservation_assignment_stages",
+        "newTarget": "check_review_recovery",
+        "source": "tests/preservation_assignment_stages.rs",
+        "module": "preservation_assignment_stages",
+        "moduleQualifiedPrefix": "preservation_assignment_stages"
+      },
+      {
+        "oldTarget": "preservation_independence",
+        "newTarget": "check_review_recovery",
+        "source": "tests/preservation_independence.rs",
+        "module": "preservation_independence",
+        "moduleQualifiedPrefix": "preservation_independence"
+      },
+      {
+        "oldTarget": "recovery_config",
+        "newTarget": "check_review_recovery",
+        "source": "tests/recovery_config.rs",
+        "module": "recovery_config",
+        "moduleQualifiedPrefix": "recovery_config"
+      },
+      {
+        "oldTarget": "recurrence_repairs",
+        "newTarget": "check_review_recovery",
+        "source": "tests/recurrence_repairs.rs",
+        "module": "recurrence_repairs",
+        "moduleQualifiedPrefix": "recurrence_repairs"
+      },
+      {
+        "oldTarget": "repeated_repair",
+        "newTarget": "check_review_recovery",
+        "source": "tests/repeated_repair.rs",
+        "module": "repeated_repair",
+        "moduleQualifiedPrefix": "repeated_repair"
+      },
+      {
+        "oldTarget": "review_currentness",
+        "newTarget": "check_review_recovery",
+        "source": "tests/review_currentness.rs",
+        "module": "review_currentness",
+        "moduleQualifiedPrefix": "review_currentness"
+      },
+      {
+        "oldTarget": "review_policy",
+        "newTarget": "check_review_recovery",
+        "source": "tests/review_policy.rs",
+        "module": "review_policy",
+        "moduleQualifiedPrefix": "review_policy"
+      },
+      {
+        "oldTarget": "reviewer_evidence_handoff",
+        "newTarget": "check_review_recovery",
+        "source": "tests/reviewer_evidence_handoff.rs",
+        "module": "reviewer_evidence_handoff",
+        "moduleQualifiedPrefix": "reviewer_evidence_handoff"
+      },
+      {
+        "oldTarget": "verification_context",
+        "newTarget": "check_review_recovery",
+        "source": "tests/verification_context.rs",
+        "module": "verification_context",
+        "moduleQualifiedPrefix": "verification_context"
+      }
+    ],
+    "goal_basis_requirements": [
+      {
+        "oldTarget": "basis_lifecycle",
+        "newTarget": "goal_basis_requirements",
+        "source": "tests/basis_lifecycle.rs",
+        "module": "basis_lifecycle",
+        "moduleQualifiedPrefix": "basis_lifecycle"
+      },
+      {
+        "oldTarget": "goal_requirements",
+        "newTarget": "goal_basis_requirements",
+        "source": "tests/goal_requirements.rs",
+        "module": "goal_requirements",
+        "moduleQualifiedPrefix": "goal_requirements"
+      },
+      {
+        "oldTarget": "session_goal_usage",
+        "newTarget": "goal_basis_requirements",
+        "source": "tests/session_goal_usage.rs",
+        "module": "session_goal_usage",
+        "moduleQualifiedPrefix": "session_goal_usage"
+      }
+    ],
+    "goal_progress_presentation": [
+      {
+        "oldTarget": "presentation",
+        "newTarget": "goal_progress_presentation",
+        "source": "tests/presentation.rs",
+        "module": "presentation",
+        "moduleQualifiedPrefix": "presentation"
+      },
+      {
+        "oldTarget": "subject_progress",
+        "newTarget": "goal_progress_presentation",
+        "source": "tests/subject_progress.rs",
+        "module": "subject_progress",
+        "moduleQualifiedPrefix": "subject_progress"
+      }
+    ],
+    "context_continuity": [
+      {
+        "oldTarget": "context_v022",
+        "newTarget": "context_continuity",
+        "source": "tests/context_v022.rs",
+        "module": "context_v022",
+        "moduleQualifiedPrefix": "context_v022"
+      },
+      {
+        "oldTarget": "cross_host_continuity",
+        "newTarget": "context_continuity",
+        "source": "tests/cross_host_continuity.rs",
+        "module": "cross_host_continuity",
+        "moduleQualifiedPrefix": "cross_host_continuity"
+      },
+      {
+        "oldTarget": "current_work_focus",
+        "newTarget": "context_continuity",
+        "source": "tests/current_work_focus.rs",
+        "module": "current_work_focus",
+        "moduleQualifiedPrefix": "current_work_focus"
+      },
+      {
+        "oldTarget": "governor_recovery",
+        "newTarget": "context_continuity",
+        "source": "tests/governor_recovery.rs",
+        "module": "governor_recovery",
+        "moduleQualifiedPrefix": "governor_recovery"
+      }
+    ],
+    "memory": [
+      {
+        "oldTarget": "contextual_memory",
+        "newTarget": "memory",
+        "source": "tests/contextual_memory.rs",
+        "module": "contextual_memory",
+        "moduleQualifiedPrefix": "contextual_memory"
+      },
+      {
+        "oldTarget": "lesson_input",
+        "newTarget": "memory",
+        "source": "tests/lesson_input.rs",
+        "module": "lesson_input",
+        "moduleQualifiedPrefix": "lesson_input"
+      },
+      {
+        "oldTarget": "lesson_revalidation",
+        "newTarget": "memory",
+        "source": "tests/lesson_revalidation.rs",
+        "module": "lesson_revalidation",
+        "moduleQualifiedPrefix": "lesson_revalidation"
+      },
+      {
+        "oldTarget": "memory_policy_correction",
+        "newTarget": "memory",
+        "source": "tests/memory_policy_correction.rs",
+        "module": "memory_policy_correction",
+        "moduleQualifiedPrefix": "memory_policy_correction"
+      },
+      {
+        "oldTarget": "memory_recall",
+        "newTarget": "memory",
+        "source": "tests/memory_recall.rs",
+        "module": "memory_recall",
+        "moduleQualifiedPrefix": "memory_recall"
+      },
+      {
+        "oldTarget": "project_memory_projection",
+        "newTarget": "memory",
+        "source": "tests/project_memory_projection.rs",
+        "module": "project_memory_projection",
+        "moduleQualifiedPrefix": "project_memory_projection"
+      },
+      {
+        "oldTarget": "task_local_memory",
+        "newTarget": "memory",
+        "source": "tests/task_local_memory.rs",
+        "module": "task_local_memory",
+        "moduleQualifiedPrefix": "task_local_memory"
+      }
+    ],
+    "value_evidence": [
+      {
+        "oldTarget": "behavioral_evaluation",
+        "newTarget": "value_evidence",
+        "source": "tests/behavioral_evaluation.rs",
+        "module": "behavioral_evaluation",
+        "moduleQualifiedPrefix": "behavioral_evaluation"
+      },
+      {
+        "oldTarget": "evidence_expansion_v022",
+        "newTarget": "value_evidence",
+        "source": "tests/evidence_expansion_v022.rs",
+        "module": "evidence_expansion_v022",
+        "moduleQualifiedPrefix": "evidence_expansion_v022"
+      },
+      {
+        "oldTarget": "value_benchmark",
+        "newTarget": "value_evidence",
+        "source": "tests/value_benchmark.rs",
+        "module": "value_benchmark",
+        "moduleQualifiedPrefix": "value_benchmark"
+      },
+      {
+        "oldTarget": "value_proof",
+        "newTarget": "value_evidence",
+        "source": "tests/value_proof.rs",
+        "module": "value_proof",
+        "moduleQualifiedPrefix": "value_proof"
+      },
+      {
+        "oldTarget": "value_receipt",
+        "newTarget": "value_evidence",
+        "source": "tests/value_receipt.rs",
+        "module": "value_receipt",
+        "moduleQualifiedPrefix": "value_receipt"
+      },
+      {
+        "oldTarget": "value_reconstruction",
+        "newTarget": "value_evidence",
+        "source": "tests/value_reconstruction.rs",
+        "module": "value_reconstruction",
+        "moduleQualifiedPrefix": "value_reconstruction"
+      },
+      {
+        "oldTarget": "value_replay",
+        "newTarget": "value_evidence",
+        "source": "tests/value_replay.rs",
+        "module": "value_replay",
+        "moduleQualifiedPrefix": "value_replay"
+      }
+    ]
+  },
+  "baselineSourceFiles": [
+    {
+      "path": "tests/action_forms.rs",
+      "sha256": "6b2da7728a549fd8887159e6bda82172a3dd71f62bcf772c10bbe60f711e355e"
+    },
+    {
+      "path": "tests/activation_classify.rs",
+      "sha256": "bcecc0b53b297cd82cb43dea0376fdade8d7ea27e8fdc844e23665250a6a1a59"
+    },
+    {
+      "path": "tests/agent_context_delivery.rs",
+      "sha256": "523ae7d2f328f13925147ba9dc449741fd1075dfcf9688e04d061097523c2cd7"
+    },
+    {
+      "path": "tests/agent_first_control.rs",
+      "sha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c"
+    },
+    {
+      "path": "tests/agent_protocol.rs",
+      "sha256": "d80c10e4e68dc2a4c0b3f7c451b1cff6e884c399f2a4cf5e9168c6a689ecd486"
+    },
+    {
+      "path": "tests/architecture_adoption.rs",
+      "sha256": "d6abc45d409401fb790d43aedd0bd75ae0e2ba3d167a9485066984fbbd0c2f08"
+    },
+    {
+      "path": "tests/architecture_budget.rs",
+      "sha256": "4ea2442881657c2f7bb78a53f7bbc8c415d57457db3672a7710c6bcbe40cf0c4"
+    },
+    {
+      "path": "tests/architecture_contract.rs",
+      "sha256": "86e772e4e2ccf50b60a346400ca4fbb58d7205fb2f77a71949eb7659723ea8a0"
+    },
+    {
+      "path": "tests/artifact_bytes.rs",
+      "sha256": "abb6157ec60233fdf27b77899d0346c4055709291bfaf9bffaf3f02ed253e275"
+    },
+    {
+      "path": "tests/away_native.rs",
+      "sha256": "5a8ec747744de8914869b7db9c5e80214154e77727c7084ce2fde94b6ac6590e"
+    },
+    {
+      "path": "tests/basis_lifecycle/basis_corrections.rs",
+      "sha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc"
+    },
+    {
+      "path": "tests/basis_lifecycle/reader_compatibility.rs",
+      "sha256": "c23739decfec439bdf932f281bf509fcd941d5ccd52b8eecc95821b7264e93cd"
+    },
+    {
+      "path": "tests/basis_lifecycle/supersede_policy.rs",
+      "sha256": "fb8f1b5888a2a0539f2ac4c8da567b0f6b14c73b1927a4f577c7d4d18f605c9b"
+    },
+    {
+      "path": "tests/basis_lifecycle.rs",
+      "sha256": "a5a707b20759c8941b3188d6c07252878a3e7b1bab1475d6964fbb66350fcffb"
+    },
+    {
+      "path": "tests/behavioral_evaluation.rs",
+      "sha256": "c48ffb737417f96909eb50477bb14800e93f544f765306436606d1606161b0bb"
+    },
+    {
+      "path": "tests/build_identity.rs",
+      "sha256": "bd104bdbbd58f9a6842efbbe10e3c05bbd853824411ae2edc5990a050c9643f3"
+    },
+    {
+      "path": "tests/check_observation_recovery/admission_and_recovery.rs",
+      "sha256": "bf109cbf1ce5e5e65131670beb4681f75aa9274ec1d2699d31f739bf3dbb4208"
+    },
+    {
+      "path": "tests/check_observation_recovery/drift_and_retry_limits.rs",
+      "sha256": "9b9020ef4453080c3790aae0721a629b9a8b0c1a69bf7373f599330c8b7cba76"
+    },
+    {
+      "path": "tests/check_observation_recovery/process_containment.rs",
+      "sha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895"
+    },
+    {
+      "path": "tests/check_observation_recovery/replay_and_claims.rs",
+      "sha256": "15047dd6da8c6e21a74b29e025204daee432bab1436a6fec1bdfc1c6756788c5"
+    },
+    {
+      "path": "tests/check_observation_recovery.rs",
+      "sha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83"
+    },
+    {
+      "path": "tests/check_retry.rs",
+      "sha256": "a3bc2766b3bcbbaea6eb00eb9d234e1b2be8a59b975b9f74a686f95cda85a8bb"
+    },
+    {
+      "path": "tests/checked_work_ux.rs",
+      "sha256": "552ab58e361e3ecdcb514e63995cd17858d1ec89a5eef3dc33f4072d21060e8d"
+    },
+    {
+      "path": "tests/child_capture.rs",
+      "sha256": "32e65bdd296132c1e3596d8184727ac8863a1b419bbc323212befa8bef6b0077"
+    },
+    {
+      "path": "tests/ci_policy.rs",
+      "sha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0"
+    },
+    {
+      "path": "tests/ci_test_execution.rs",
+      "sha256": "84a1be79d74aafb1094ea972b295e51532e483ffa26077cc31126e31d475fc98"
+    },
+    {
+      "path": "tests/compact_preservation.rs",
+      "sha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9"
+    },
+    {
+      "path": "tests/compact_work.rs",
+      "sha256": "4c218d3277dae911e5cae064d1ce63f4d9be790a45292acad10efaadb283575d"
+    },
+    {
+      "path": "tests/compatibility_matrix/matrix_validation.rs",
+      "sha256": "553980e338b25be74cd64e7a34d77ca07e49dea0cc4d4d3117dc500805d3e01d"
+    },
+    {
+      "path": "tests/compatibility_matrix/projection_compatibility.rs",
+      "sha256": "fa4cb436ea15c45bcd9bbdd18bcbc2de8de9e6a4fb3f4c95cb514b3ebd12216a"
+    },
+    {
+      "path": "tests/compatibility_matrix.rs",
+      "sha256": "187e381dddf24a7dd505b6473e2c33ee7df01eade9db99c1708ef73a7a5ae3ba"
+    },
+    {
+      "path": "tests/context_v022/context_projection.rs",
+      "sha256": "1d69ae1bc8cc171057a0fcf879e017a84c1a265cc3b9a7dff34778d101507673"
+    },
+    {
+      "path": "tests/context_v022/governor_policy.rs",
+      "sha256": "b7e923afd458d0202787783cc4998dd0cd0e746c988b00e9a97da8ab7435b16c"
+    },
+    {
+      "path": "tests/context_v022/mutation_completion.rs",
+      "sha256": "cfd7a2aa34ff771026158b1c33a1831433e262b28b7bd65dd2ea4ef805b25da8"
+    },
+    {
+      "path": "tests/context_v022/request_replay.rs",
+      "sha256": "3b2c72bfb864cb64eb3c09b4d1913bb1f881634d35c7296a3723ebc35c05bef7"
+    },
+    {
+      "path": "tests/context_v022.rs",
+      "sha256": "b4753b736fe3589c50d1ec18722aa636cb37d22088c92f9a4db3cb6f90a13091"
+    },
+    {
+      "path": "tests/contextual_memory/fixture.rs",
+      "sha256": "2913551c8ee4b8a3227c0495a39d8474f95819bf92d8e550f0a3502fe1a1e6fb"
+    },
+    {
+      "path": "tests/contextual_memory.rs",
+      "sha256": "3b463fe45442ceec5758c2d74f47048bb48ac6f72497403619ac1ccb68ee6af4"
+    },
+    {
+      "path": "tests/continuation_conditions.rs",
+      "sha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1"
+    },
+    {
+      "path": "tests/controlled_effects.rs",
+      "sha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322"
+    },
+    {
+      "path": "tests/cross_host_continuity/continuation_context.rs",
+      "sha256": "961077dff811ca6a040cce46242df3afd6a79f1b5ed9ad0e31d607f630fa5420"
+    },
+    {
+      "path": "tests/cross_host_continuity/handoff_and_checks.rs",
+      "sha256": "8cf311a7eb36899a4e387a4d5029dcb00e985d13fd824554209d8fd9831a8372"
+    },
+    {
+      "path": "tests/cross_host_continuity/readiness_continuity.rs",
+      "sha256": "14844588088043107ef36634a87b3fefa68bae5792bc9cd2efdef2c773b0b62b"
+    },
+    {
+      "path": "tests/cross_host_continuity/world_projection.rs",
+      "sha256": "ab27873b4b87c5ce56e37e95e7fc4393220a91ad13fa0caa438bb5ed3c8dc7c5"
+    },
+    {
+      "path": "tests/cross_host_continuity.rs",
+      "sha256": "862948fb607c0fe22565328eb61e16449cd8356f33fa0d3614bc49caef896307"
+    },
+    {
+      "path": "tests/current_details.rs",
+      "sha256": "eed1d601dfc12dc4e7097d4347ada8b3aa146ab61ac8bf3f9b27d7ebb486fa13"
+    },
+    {
+      "path": "tests/current_work_focus.rs",
+      "sha256": "abfa617d3aaff3c213f368df0ef4c93cf3cd1031023eaa7ae4be96484f6f3a50"
+    },
+    {
+      "path": "tests/docs_workflow.rs",
+      "sha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6"
+    },
+    {
+      "path": "tests/early_evidence.rs",
+      "sha256": "198392eb1741e61d0a171fd96080470e51d2ce4b68128e3f0362263db6d8cf70"
+    },
+    {
+      "path": "tests/event_detail_integrity.rs",
+      "sha256": "f95d34e3535ea22ced1c90a5edc60b3913eaf86988d1e9abbeffeb9e7bb7d38e"
+    },
+    {
+      "path": "tests/evidence_expansion_v022.rs",
+      "sha256": "c5193dc9b78efe6606c26bd8d274f79e88e035524a0652fe5ebf72533fa7b567"
+    },
+    {
+      "path": "tests/exit_transition_conformance/historical_compatibility.rs",
+      "sha256": "5ed85afd8c986efa05ce0eae57eaa69c45cdf2d4a42bbea62febc3952c8385fc"
+    },
+    {
+      "path": "tests/exit_transition_conformance/stale_check_recovery.rs",
+      "sha256": "2272dff80bce8763022a8c24c11944a64baa5e90e343cf3fe11f873d45137a0e"
+    },
+    {
+      "path": "tests/exit_transition_conformance/workflow_receipts.rs",
+      "sha256": "a89c4a07e2ff96ece894383a12117b8054497ff1068e0e3cf479bd6e650fedc0"
+    },
+    {
+      "path": "tests/exit_transition_conformance.rs",
+      "sha256": "a9b986a8bc6b68135760e6b874dbe6ad6d712a0e3b385224f5a3b661992b4ec4"
+    },
+    {
+      "path": "tests/external_selection.rs",
+      "sha256": "deabb753ff25967f1f5ddb740c6e8ea9d70c604e0d73c99ba64d8f18b5d88e86"
+    },
+    {
+      "path": "tests/file_effects.rs",
+      "sha256": "b35352cdd79f33f16e28e1727bdbc44bff501151a527a43df85e18d5ac09b20c"
+    },
+    {
+      "path": "tests/first_impression.rs",
+      "sha256": "7a3a60b54d701dbf27860988805c84cf21a72a1dcd15b9badbf0d5e43563e538"
+    },
+    {
+      "path": "tests/fixture_host_isolation.rs",
+      "sha256": "74d11342f4ef66840cdd446871b682c62b7fed0b72894ec7054f4c1fe5091628"
+    },
+    {
+      "path": "tests/fresh_user_surface.rs",
+      "sha256": "1954df4ba0a2d35f221a0124b127e5dc6596bd0f9607ff59537d361ba258f948"
+    },
+    {
+      "path": "tests/goal_requirements/closure_flows.rs",
+      "sha256": "9dd3bc9703eec97f56a97bb1843bb796f0cd0bb167d95ef864185cceadec6b2a"
+    },
+    {
+      "path": "tests/goal_requirements/correction_and_journey.rs",
+      "sha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004"
+    },
+    {
+      "path": "tests/goal_requirements/intake_and_identity.rs",
+      "sha256": "2755128744e55cfdcc4bbdd3d0352cc579add00b180b75af6911b38270ab92eb"
+    },
+    {
+      "path": "tests/goal_requirements.rs",
+      "sha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb"
+    },
+    {
+      "path": "tests/governor_recovery/owner_recovery.rs",
+      "sha256": "413b1185b202395ab1fb1386365ed58f41d4e0f4e258edc839671b4ee711b4ff"
+    },
+    {
+      "path": "tests/governor_recovery/sensor_resolution.rs",
+      "sha256": "e0396b7272d3b19378e1a2750c4b5cc9021c5a99cede03c708d4619e67c45076"
+    },
+    {
+      "path": "tests/governor_recovery.rs",
+      "sha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2"
+    },
+    {
+      "path": "tests/harness_receipt.rs",
+      "sha256": "119af8d7e42cf649598306f7147b203f4faa2f2eaa6ec6394b145f2ec7cf2127"
+    },
+    {
+      "path": "tests/harness_run.rs",
+      "sha256": "ef1da565ecd11abf493ee83a1a26f7401ed586ad0672d91e836b24d525dc2c0c"
+    },
+    {
+      "path": "tests/held_delivery.rs",
+      "sha256": "6b7d27e3c7ca49934fa7123143b966ade6181a370b06952ea174b64d23fa386a"
+    },
+    {
+      "path": "tests/host_bridge.rs",
+      "sha256": "74c47215d0f81759c9c06c18eaa7f1cf4dcbbc3ce4efa183b94b2ac289e45f1b"
+    },
+    {
+      "path": "tests/host_help.rs",
+      "sha256": "1ea3b9232af3dbcc894a35b679ba5d8d9c1180b9328c9e1e95ee637cc7df981e"
+    },
+    {
+      "path": "tests/host_workflow.rs",
+      "sha256": "44490cd7ca96973da1f4d53649b9896b774495f35d3be1e3ab617076fb8344d9"
+    },
+    {
+      "path": "tests/init_without_skills.rs",
+      "sha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce"
+    },
+    {
+      "path": "tests/installed_consumer.rs",
+      "sha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71"
+    },
+    {
+      "path": "tests/installer_platform.rs",
+      "sha256": "c60a898d0a90ececa608fede2342e0a98b3b6d59e352870e8afc4cb9b0904582"
+    },
+    {
+      "path": "tests/layout_migration.rs",
+      "sha256": "07ecc199957295379b85cf2947971160a71703b0ee0db865e57cbc41bce790a4"
+    },
+    {
+      "path": "tests/lead_disposition.rs",
+      "sha256": "b09788c6601462e67cfa68a08a94ac2802195b550feb307a3aa9cb1e9c4997b3"
+    },
+    {
+      "path": "tests/legacy_installer_bridge.rs",
+      "sha256": "010bde494eb192df47e3e9d2a53c32746617036b6c55a30c9769f8020ea13738"
+    },
+    {
+      "path": "tests/lesson_input.rs",
+      "sha256": "457df3430bb380ea8bd4a7a49adf2ec94bc9c7b77ec81a55564b014ddc7f5323"
+    },
+    {
+      "path": "tests/lesson_revalidation.rs",
+      "sha256": "7fd425ba51ce832061177e78783871c9981a349513d67ad7caac8ae23260862c"
+    },
+    {
+      "path": "tests/managed_edits/managed_reads_and_writes.rs",
+      "sha256": "0fb4b3661b758f97724bfca6e2bdf77f08b8e2ac60c9f4b39141333165998339"
+    },
+    {
+      "path": "tests/managed_edits/recovery_and_native_launch.rs",
+      "sha256": "92aece7cfafe4c416d747d774b94dd3997c278f8714d0151ef4d25d32ed423ea"
+    },
+    {
+      "path": "tests/managed_edits.rs",
+      "sha256": "a1445aeb2d071066bdc9c5c78b7ee3d451ee842e3230688389452f6a0c920e11"
+    },
+    {
+      "path": "tests/memory_policy_correction.rs",
+      "sha256": "fdb7ee9b91e9a16eb696efdc03791e5a6b26ef8b603c50c2c62fcf3c0fbf93a6"
+    },
+    {
+      "path": "tests/memory_recall.rs",
+      "sha256": "867064bacec3ffc52b70c0df81f0fb6962f2f5e82b6380498135725da77def0b"
+    },
+    {
+      "path": "tests/mutation_result.rs",
+      "sha256": "8676889dd9bef48cb9a62b5d489d022fd4478f957949d50736e66806a8b84ba8"
+    },
+    {
+      "path": "tests/native_continuity.rs",
+      "sha256": "36a26b31a2257d8615b00f248eac38105ef422423cf0b0dae2d72d498d35f38f"
+    },
+    {
+      "path": "tests/native_session_export.rs",
+      "sha256": "f1fd9925bae3c53faec7dba3ee9e20b550ccba49a3c13b312726f58b75b173ff"
+    },
+    {
+      "path": "tests/observe_check/observation_and_status.rs",
+      "sha256": "577ef54465fc4cbaf242ace98124ad8adc4fdbea67578fb6b8424b6300825fb7"
+    },
+    {
+      "path": "tests/observe_check/pid_readiness.rs",
+      "sha256": "610b992f986fb3d695dc49de9524deeff72bdf93f788025a74d03da092fd8740"
+    },
+    {
+      "path": "tests/observe_check/timeouts_and_drift.rs",
+      "sha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d"
+    },
+    {
+      "path": "tests/observe_check/verification_preparation.rs",
+      "sha256": "af429aaf36b539c9b12b149169bf32031a8accc6abaa4e5000ea89ecbbe081e3"
+    },
+    {
+      "path": "tests/observe_check.rs",
+      "sha256": "8c1b88332f34e909122bb490f3fc97f444584cbacce267bd86f02918bd094807"
+    },
+    {
+      "path": "tests/path_compatibility.rs",
+      "sha256": "cfb77beba33f5b02f6d946ef194d82cbdb9f0bd557914b0c8c587d2c46b627b8"
+    },
+    {
+      "path": "tests/plugin_distribution.rs",
+      "sha256": "75fa9f5f6d5cae7c3a077b2cc05d9da119e0cbeec5ab68de4c22995c10843ed9"
+    },
+    {
+      "path": "tests/portability.rs",
+      "sha256": "9f7419e75be79843602c9e21134d40edc29b377f4e77a8a1b69783fe6f69b6ba"
+    },
+    {
+      "path": "tests/pre_return.rs",
+      "sha256": "96226b800fc4971030ab2e931a7dd67227cfe247c3284d815f3f2a86330cab12"
+    },
+    {
+      "path": "tests/pre_return_native.rs",
+      "sha256": "81c29915289c059f9b381921dc0b7932566c154c453eddcb0f5df11fefcf3666"
+    },
+    {
+      "path": "tests/presentation/context.rs",
+      "sha256": "2ee14fa57ebdf2a89273628e44110cf8862c21404427003bc08052afb16d31e6"
+    },
+    {
+      "path": "tests/presentation/interactive_closure.rs",
+      "sha256": "08423155b2de16cb8647abfba0642f94e40c415ccc836b2fb7ea920ffa397ec1"
+    },
+    {
+      "path": "tests/presentation/session_goal_closure.rs",
+      "sha256": "40f6dad7c7d19f8f683d4138caaa989949d555afac6a2b45c14f299a7a31db2d"
+    },
+    {
+      "path": "tests/presentation/status_reporting.rs",
+      "sha256": "60b2b35cea08fb1d63bded11df43d7f437b4cf4ef4b09bc27ff634f6a6c23326"
+    },
+    {
+      "path": "tests/presentation/terminal_decisions.rs",
+      "sha256": "7eaedca427039f13ffc77067ac92b08170997409ac235947068fb7969e94de71"
+    },
+    {
+      "path": "tests/presentation.rs",
+      "sha256": "0735c4b5aae940793b3286ef13287d0b51b083d0558dad9f434837d2a21aa9a2"
+    },
+    {
+      "path": "tests/preservation_assignment_stages.rs",
+      "sha256": "675b83ce1630281d21ef89d50d97269ed701e7f2626bf5ec369df4768ddc1c56"
+    },
+    {
+      "path": "tests/preservation_independence.rs",
+      "sha256": "8a3b292a6cc369ae71f32895898dbfee7db885294473ecafd8cb59c17e0c817b"
+    },
+    {
+      "path": "tests/privacy_gate.rs",
+      "sha256": "cdea5db79087b1e26be6450f7c19ca19684aa0191367b2a6e8e5f7fe93e0c153"
+    },
+    {
+      "path": "tests/project_capabilities.rs",
+      "sha256": "c38e76a17f276e8604faef0aed71164996b027e5f9992f2cab3cc5df33988d2e"
+    },
+    {
+      "path": "tests/project_context.rs",
+      "sha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d"
+    },
+    {
+      "path": "tests/project_layout.rs",
+      "sha256": "b6065ec20b0cc45ff4d906bd9ef69ed57c5e2902bcd4da05e153a45ddd33710f"
+    },
+    {
+      "path": "tests/project_memory_projection.rs",
+      "sha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569"
+    },
+    {
+      "path": "tests/provider_fallback.rs",
+      "sha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2"
+    },
+    {
+      "path": "tests/public_positioning.rs",
+      "sha256": "4b02f7fbddf4e89ebda2d5be579672faf1fd27f54e5d8be91b37c097d6874ae6"
+    },
+    {
+      "path": "tests/r13_check.rs",
+      "sha256": "db84bb04677cacd771022b54ea338428133833e74fdc3d5f33e101b581f07416"
+    },
+    {
+      "path": "tests/receiving_entry.rs",
+      "sha256": "1489ef98a7d4505be57dec00661c20cd96e1ba6459665efa791a5c354591f749"
+    },
+    {
+      "path": "tests/recovery_config.rs",
+      "sha256": "c2f1939154f271e2b76d8c692debc8329b92fdc54912b14c79504e2ab4d83b05"
+    },
+    {
+      "path": "tests/recurrence_repairs.rs",
+      "sha256": "793001bef55ced5eea22bcc401a9a43926c5e3befb1976efeb0e300eca90d0c6"
+    },
+    {
+      "path": "tests/release_integrity/context.rs",
+      "sha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b"
+    },
+    {
+      "path": "tests/release_integrity/publication_workflows.rs",
+      "sha256": "e7863d6ed6cc43070357e9ab2cdc2d36af99111339ebd7c991e147355eaf5244"
+    },
+    {
+      "path": "tests/release_integrity/release_policy.rs",
+      "sha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e"
+    },
+    {
+      "path": "tests/release_integrity/source_and_history_integrity.rs",
+      "sha256": "f2ee8d69ccbb2eb4d8015fe91170375040d83d1945909ff926ca698789e019f2"
+    },
+    {
+      "path": "tests/release_integrity.rs",
+      "sha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b"
+    },
+    {
+      "path": "tests/repeated_repair.rs",
+      "sha256": "5cdd0448c360961c7717715306d71ee2f490be8569c18c8436faf226452e98d5"
+    },
+    {
+      "path": "tests/replan_input.rs",
+      "sha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0"
+    },
+    {
+      "path": "tests/resume_scope.rs",
+      "sha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246"
+    },
+    {
+      "path": "tests/review_currentness.rs",
+      "sha256": "9d9d6f6640044b840fde66d04867aceefd50534b786d13969df3697dec8ef5cf"
+    },
+    {
+      "path": "tests/review_policy.rs",
+      "sha256": "161bd970d1578e22bfb82508bf5c89069b20d13bd87fe6022791634889aec349"
+    },
+    {
+      "path": "tests/reviewer_evidence_handoff.rs",
+      "sha256": "e475217565157f2df0502e55a880a31953a4e090392b7837f85fb467f48b9066"
+    },
+    {
+      "path": "tests/run_boundary.rs",
+      "sha256": "ecd859ee61fe79cc1e73cc6a9d78b12328a162b4b2552be1774c43ec3adcf4a5"
+    },
+    {
+      "path": "tests/rust_contract.rs",
+      "sha256": "0dcff343e0901a7e3681665447fd69d4af1a4459eaac8c4cf45adbbeacf8250b"
+    },
+    {
+      "path": "tests/rust_parity.rs",
+      "sha256": "2a7798050e81cc3a1132f478fc94d04be0479fc2fce110f050aa98d59befa4db"
+    },
+    {
+      "path": "tests/save_return_contract.rs",
+      "sha256": "1a0123eebf30d7f763f6d0f4d3462f1b6c842e9c1446d2c3f38fea52618ba6ae"
+    },
+    {
+      "path": "tests/save_return_preservation.rs",
+      "sha256": "e7177a0d2b35e5e7185b8bcb04a934252b85e81050826f59f0a6bdef742ea5d6"
+    },
+    {
+      "path": "tests/save_return_recovery/context.rs",
+      "sha256": "1b30af500d04fefdd479e9b0a9fc507dfd950a7cf5d79246f5de0e34f38ee05e"
+    },
+    {
+      "path": "tests/save_return_recovery/journal_replay.rs",
+      "sha256": "07355cc40fabc0b5b2b87f478aa504ee9e068cb1f5bdaf7eb2adf5c50cde5280"
+    },
+    {
+      "path": "tests/save_return_recovery/native_return_inspection.rs",
+      "sha256": "751fbb85de80fe6dcf2496728fa08cecf5602e672543fb988800fd30ad866f34"
+    },
+    {
+      "path": "tests/save_return_recovery/worker_resume.rs",
+      "sha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32"
+    },
+    {
+      "path": "tests/save_return_recovery.rs",
+      "sha256": "43a5aa69cfe6a959742203560e695a718a9aa1630bd1516b6e122a8af48a2afd"
+    },
+    {
+      "path": "tests/session_goal_direct/closure_events.rs",
+      "sha256": "e1fbdc04af3203fcc9cd9e56585cd78a8b38f923833abe8d6414386f45131c38"
+    },
+    {
+      "path": "tests/session_goal_direct/direct_scope.rs",
+      "sha256": "fb6ab57f908e47ccd1700d288dfee8cde070da52acaf3bcd9afa30623109845c"
+    },
+    {
+      "path": "tests/session_goal_direct/fixture.rs",
+      "sha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1"
+    },
+    {
+      "path": "tests/session_goal_direct/native_context.rs",
+      "sha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a"
+    },
+    {
+      "path": "tests/session_goal_direct.rs",
+      "sha256": "618552d2ae54fbab7c0aee6b4de0d96022550775d09acd9501298d601ed70d95"
+    },
+    {
+      "path": "tests/session_goal_usage.rs",
+      "sha256": "f16d52e3017bf2700cb8182e1d825aa78657096d5c3f1c3fe04dc0e101992bd6"
+    },
+    {
+      "path": "tests/setup.rs",
+      "sha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4"
+    },
+    {
+      "path": "tests/setup_pre_return.rs",
+      "sha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742"
+    },
+    {
+      "path": "tests/singleton_options.rs",
+      "sha256": "e73d329b2e23edbce6e47456fdb05902e467bf5cb290c488d289a64d00906d8f"
+    },
+    {
+      "path": "tests/skill_diagnostics.rs",
+      "sha256": "40d1d0b4e75a0add74562628c4739a47e96950a7cbc17f4b6c6d17ce2765c7d3"
+    },
+    {
+      "path": "tests/skill_refresh.rs",
+      "sha256": "582cbfdb098054cb4961b7a8dd308b83cf8355b3d30ff9eeb2e4e4163b7ba0fa"
+    },
+    {
+      "path": "tests/specialist_routing/consumer_regressions.rs",
+      "sha256": "1c0798c9c7500bc0d37c649d418ab8ba78dc61f23f73e2988ae403800f0d3dec"
+    },
+    {
+      "path": "tests/specialist_routing.rs",
+      "sha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05"
+    },
+    {
+      "path": "tests/start_context.rs",
+      "sha256": "e25531cc4e3071eaaa3e6e682f4e0ea583b02ae32c07782d10ba56e501063029"
+    },
+    {
+      "path": "tests/state_permissions.rs",
+      "sha256": "b804338e97875c5e63648ef3941c6b88c2afc2dcd7be40c0aa3fea7096b4d107"
+    },
+    {
+      "path": "tests/subject_progress/compatibility_and_terminal_history.rs",
+      "sha256": "d1ac13874a21016b9232bbf2ea71afb57e9630e542027afdd4fd2149db9e65ec"
+    },
+    {
+      "path": "tests/subject_progress/context.rs",
+      "sha256": "388d24a71e2cf3d821d41ad51d840b93789fb0546fecd61e29d1e7fca946e412"
+    },
+    {
+      "path": "tests/subject_progress/failed_check_recovery.rs",
+      "sha256": "af22ee1f5471d5c054a44627c5932c2394bcadb768171a54c6de35238b1f99d4"
+    },
+    {
+      "path": "tests/subject_progress/opaque_discovery.rs",
+      "sha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b"
+    },
+    {
+      "path": "tests/subject_progress/preservation_and_rework.rs",
+      "sha256": "fcfce30f545d1354d4ac53d4f0f59ee219f028a1a93588bce9db7155d5505c82"
+    },
+    {
+      "path": "tests/subject_progress/resume_lineage.rs",
+      "sha256": "53d70bcef545c00149f57ad396e4a30c6b922f4735e343c3632542f40b200c7c"
+    },
+    {
+      "path": "tests/subject_progress/return_and_presentation.rs",
+      "sha256": "02b9811b512646934e3d335daf65f3611a8e41d53e0d0d08cd285f9532ee7fcf"
+    },
+    {
+      "path": "tests/subject_progress/same_goal_carry.rs",
+      "sha256": "5dd695058bff8e67b4dc792c5237466069b8758af7429adaa70c5695f156da66"
+    },
+    {
+      "path": "tests/subject_progress/saved_packet_reuse.rs",
+      "sha256": "5d27f6bc7ff2c2994fc2bbbc65aff8d2e11eb6d2b58118fa30ec71608cdcc4fa"
+    },
+    {
+      "path": "tests/subject_progress.rs",
+      "sha256": "d4002d43c4069966f08f08b8a181cdcc5496b83a7348f66c606c0fde9f1bcfa0"
+    },
+    {
+      "path": "tests/support/agent_first_surface.rs",
+      "sha256": "71c129181f08f35f63acfbdc1b996167e5e8f621dc6c7f3d810e9dcca49c0e55"
+    },
+    {
+      "path": "tests/support/git_topology.rs",
+      "sha256": "19ca19859ac9a0bca59837606e29d45c9117ee4a47fe3e8aa81a793017231656"
+    },
+    {
+      "path": "tests/support/mod.rs",
+      "sha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705"
+    },
+    {
+      "path": "tests/support/opaque_work_surface.rs",
+      "sha256": "f5a4aab4bc605727458881e09e9e1ff3050c2fb8a9d98ef0dc783031dac324f0"
+    },
+    {
+      "path": "tests/task_local_memory.rs",
+      "sha256": "3c8e0cc55bd394eb4c35f2066a3bac082781bcdef150ebc85581398f2e757840"
+    },
+    {
+      "path": "tests/update.rs",
+      "sha256": "9d39179c2ab783d80b51c44d161f3a599bb08d6ca5df3c038e68a33b79465cf4"
+    },
+    {
+      "path": "tests/usage_help.rs",
+      "sha256": "579849586f0ccb236da18a18fc58f18265ad0e33a767d0cf5770cf1f9c5c35b3"
+    },
+    {
+      "path": "tests/value_benchmark.rs",
+      "sha256": "8b3fd2cb2a71aa88efb4d71326da154f962e21cfb9c8d719388d7ed2b13d1ebb"
+    },
+    {
+      "path": "tests/value_contract.rs",
+      "sha256": "461b64fea780d8148f5a1e81595b39ca5d3fb0f8d0acfa1486e71801eb9ef9ba"
+    },
+    {
+      "path": "tests/value_proof/context.rs",
+      "sha256": "b4b302b2660dc8ad4de7ae26a56c783bcfb52c6538aaef823b1027c08bd7e655"
+    },
+    {
+      "path": "tests/value_proof/status_and_check_evidence.rs",
+      "sha256": "d481550844f81c742d66485e0ba61fe931256f8837a4785b0cc06b75388aff9b"
+    },
+    {
+      "path": "tests/value_proof/worker_policy_and_acceptance.rs",
+      "sha256": "15eab4a14bad2173ea2a2eba602f129a9e3db15092a430acd1e0f4ae945dbc1b"
+    },
+    {
+      "path": "tests/value_proof.rs",
+      "sha256": "a5e3d2dd1645fe37a792183e17eeea14d611a50831f1222133e5f2edd8e4b8f7"
+    },
+    {
+      "path": "tests/value_receipt.rs",
+      "sha256": "8f2b72369e5c47adbc62f0820e48165632dd54a31c8c051c56b00ca810dbfdca"
+    },
+    {
+      "path": "tests/value_reconstruction/bundle_helpers.rs",
+      "sha256": "4ebf9695251de805362bbf5605c581da8780e8af2556866cb0eca7b545e186fc"
+    },
+    {
+      "path": "tests/value_reconstruction/bundle_reconstruction.rs",
+      "sha256": "bf046aacdce87f6b31dc02d216d50f6ca652ed9184ff31eb27480df96d9a9a51"
+    },
+    {
+      "path": "tests/value_reconstruction/context.rs",
+      "sha256": "31bf2f2cff54ad830dca416834893e994f5bab58ca92fac0b270b5c36ca7a5b8"
+    },
+    {
+      "path": "tests/value_reconstruction/event_shape_validation.rs",
+      "sha256": "e6f6dc6fa0cb556322569f7bf49714d63eece8a65ba634963f872716187739e0"
+    },
+    {
+      "path": "tests/value_reconstruction/event_validation_helpers.rs",
+      "sha256": "3c4daa450f8a96719dfcbb1bb30237ac78e897352e8917b72ac60caa987d8350"
+    },
+    {
+      "path": "tests/value_reconstruction/serialization_helpers.rs",
+      "sha256": "42b59bf3ca7629b064f800c276cf84193624ca9aa3c4d7cd9bae45249b5ac0df"
+    },
+    {
+      "path": "tests/value_reconstruction/surface_compatibility.rs",
+      "sha256": "d1871a6d20457ef259cf1c16953c43a8e47cc62006a4408956bbbcf94beff730"
+    },
+    {
+      "path": "tests/value_reconstruction/workflow_and_artifact_helpers.rs",
+      "sha256": "8cb39b6babb554da9aa054a12f325d785b18c7e2e1314a3385bd180c230a13e7"
+    },
+    {
+      "path": "tests/value_reconstruction.rs",
+      "sha256": "24c2929bd3dda977c8361e144138d4143d43bbf504905e1b4aea0d9abbe062e3"
+    },
+    {
+      "path": "tests/value_replay.rs",
+      "sha256": "763736f6f662d2b3692ba51ab7756f0cf85ed566800dfd34bd3f271e7d8519a5"
+    },
+    {
+      "path": "tests/verification_context.rs",
+      "sha256": "93534e83fcd448690c72e6bec8576018faa27c475beec60c118a99f518115d6e"
+    },
+    {
+      "path": "tests/work_action_refresh.rs",
+      "sha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72"
+    },
+    {
+      "path": "tests/work_check_replacement/context.rs",
+      "sha256": "86efc24696f0af82c838a11df80aab44f0dd8ba0330c926cefd2d778148e69b9"
+    },
+    {
+      "path": "tests/work_check_replacement/refusal_and_native_lineage.rs",
+      "sha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18"
+    },
+    {
+      "path": "tests/work_check_replacement/replacement_lifecycle.rs",
+      "sha256": "1ae6eb148c0b9ff20e6e772aeaee695f8f40bc6cb70a6f0e4aee6356b81f5140"
+    },
+    {
+      "path": "tests/work_check_replacement/source_and_binding_validation.rs",
+      "sha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d"
+    },
+    {
+      "path": "tests/work_check_replacement.rs",
+      "sha256": "7edca09a6bf0f8c661a91e14a6a9773bd8c7573c55aea308e90d7b4df7fcaa33"
+    },
+    {
+      "path": "tests/work_closeout.rs",
+      "sha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f"
+    },
+    {
+      "path": "tests/work_goal_absence.rs",
+      "sha256": "b00aa5743d90da24e09366acab2010905bf91912ae4dd4f7d77af324a4bc2ddd"
+    }
+  ],
+  "sourceFileCount": 197,
+  "testAttributes": 893,
+  "ignoreAttributes": 1,
+  "repositoryOnlyTargets": [
+    "architecture_budget",
+    "docs_workflow",
+    "plugin_distribution",
+    "privacy_gate",
+    "release_integrity",
+    "repository_contracts"
+  ],
+  "sourceAdaptations": {
+    "tests/ci_policy.rs": {
+      "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
+      "currentSha256": "ea0a8bdb56ced1c006ad0ab22882327061710bc9f31ff9d93ec56a0d1a5996e0",
+      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain."
+    },
+    "tests/compatibility_matrix/matrix_validation.rs": {
+      "baselineSha256": "553980e338b25be74cd64e7a34d77ca07e49dea0cc4d4d3117dc500805d3e01d",
+      "currentSha256": "fde6b916863cdce8e8ba87ecceb7bb59efe39c96330c369d2fbd2b95f8faec1a",
+      "reason": "The repository-only projection source proof remains active under repository-checks, while default product tests no longer require excluded tooling or .github files. Product parser, installer and update cases remain unconditional."
+    },
+    "tests/plugin_distribution.rs": {
+      "baselineSha256": "75fa9f5f6d5cae7c3a077b2cc05d9da119e0cbeec5ab68de4c22995c10843ed9",
+      "currentSha256": "da424b94ee9c17f1c2de2d53d08115aba0544810d83b5c97d88492f816c193f8",
+      "reason": "The deterministic archive and validation tests now exercise repository-owned packager/checker implementations; the target is gated by repository-checks so excluded admin paths are not called by product archive tests."
+    },
+    "tests/release_integrity/context.rs": {
+      "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
+      "currentSha256": "4376575a86df676604edd135db09532c0ead6caa811e2360bf592a1ff57c4581",
+      "reason": "Release fixtures now copy the exact repository-owned verifier and execute the actual Verify transferred release evidence and Publish tag assets workflow steps; original behavioral checks remain."
+    },
+    "tests/release_integrity/publication_workflows.rs": {
+      "baselineSha256": "e7863d6ed6cc43070357e9ab2cdc2d36af99111339ebd7c991e147355eaf5244",
+      "currentSha256": "f2da5d2b47d23c6930b705a2115b6e4e71cb85559dac0105da5f56a3d464c695",
+      "reason": "Release provenance assertions now point to the repository-owned verifier and its actual workflow invocation; behavioral tamper cases and workflow safety assertions remain."
+    },
+    "tests/release_integrity/release_policy.rs": {
+      "baselineSha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e",
+      "currentSha256": "e9e84a80e53c9085483f8153198d2b90f1741b9e8a44f4be5bb0583ca5d6428b",
+      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent."
+    },
+    "tests/check_observation_recovery/process_containment.rs": {
+      "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
+      "currentSha256": "16157e199efeec237ca14fd6a5d578107b6dd93410624085e78df4bda567b58c",
+      "reason": "Grouped self-reexec selectors now use the actual source-module path emitted by libtest, excluding the Cargo target; original subprocess guard and assertions remain."
+    },
+    "tests/observe_check/timeouts_and_drift.rs": {
+      "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
+      "currentSha256": "8807ccf7d07a2f628dfb50c535a157caaba1a22519969327cbc623603cbc9095",
+      "reason": "Grouped self-reexec selector now uses the actual source-module path emitted by libtest, excluding the Cargo target; child summary must prove exactly one test executed."
+    },
+    "tests/init_without_skills.rs": {
+      "baselineSha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce",
+      "currentSha256": "a7d59280f7013aca4005e0cd9f8078fd26211896de73983e251dfb300a380411",
+      "reason": "Grouped self-reexec selector now uses the actual source-module path emitted by libtest, excluding the Cargo target; child summary must prove exactly one test executed."
+    },
+    "tests/value_contract.rs": {
+      "baselineSha256": "461b64fea780d8148f5a1e81595b39ca5d3fb0f8d0acfa1486e71801eb9ef9ba",
+      "currentSha256": "dab43ebe55d8cad9c42f70211964b3534ded15bee1ec56d1176d3a14e35462a5",
+      "reason": "The seven claim-registry and scenario fixture proofs are selected only with repository-checks because their canonical proof executable is repository-only; shared schema-validation helpers and schema shape assertions remain unconditional with all nine schema-lock and operational receipt tests."
+    }
+  }
+}

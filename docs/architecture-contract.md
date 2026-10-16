@@ -119,6 +119,47 @@ New marked check observations refuse configuration or selected-source drift
 before admission or execution on both Work and direct observation routes;
 drift during execution records a non-check observation failure.
 
+### Current source ownership layout
+
+The selected R51 layout keeps the run lifecycle in `src/run/`. The mutually
+dependent exit gate and checked-run value policy live together under
+`src/run/gate/`; progress projection and typed human model assembly live under
+`src/run/` as well. Human wording and terminal projections live under
+`src/presentation/`. The model assembly in `src/run/human.rs` contains no
+rendered wording.
+
+The source moves preserve these owners and APIs:
+
+| Previous path | Current path | Owner and meaning |
+| --- | --- | --- |
+| `src/run_exit.rs` | `src/run/gate/exit.rs` | Execution: canonical exit classification and acceptance gate. |
+| `src/run_value.rs` | `src/run/gate/value.rs` | Execution: checked-run policy, validation and typed facts. |
+| `src/run_value/human.rs` | `src/run/gate/value/human.rs` | Execution: typed status and explanation model assembly. |
+| `src/run_value/report.rs` | `src/run/gate/value/report.rs` and `src/presentation/run_report.rs` | Execution aggregates redacted report facts; presentation renders Markdown. |
+| `src/run_value/validation.rs` | `src/run/gate/value/validation.rs` | Execution: persisted check and protection validation. |
+| `src/run_value/progress_tests.rs` | `src/run/gate/value/progress_tests.rs` | Test-only source for the execution projection. |
+| `src/run_progress.rs` | `src/run/progress.rs` | Execution: progress arithmetic and JSON projection. |
+| `src/run_human.rs` | `src/run/human.rs` | Execution: typed human model assembly, without wording. |
+| `src/run_presentation.rs` | `src/presentation/run.rs` | Presentation: human-readable run rendering. |
+| `src/presentation.rs` | `src/presentation/mod.rs` | Presentation: shared presentation helpers and module owner. |
+| `src/presentation_events.rs` and `src/presentation_events/` | `src/presentation/events.rs` and `src/presentation/events/` | Presentation: conversational and terminal projections. |
+
+Repository administration has its own developer-only owner under
+`tooling/repository/`: CI and workflow orchestration in `ci/`, publication and
+release controls in `release/`, review-state helpers in `maintenance/`, and
+source-boundary checks in `checks/`. Root `scripts/` compatibility commands
+forward to those implementations; `.github/workflows/` files remain platform
+entry declarations. The Cargo product package excludes repository tooling and
+workflow files. Product runtime distribution code remains under
+`src/distribution/`, while `skills/exitbind/` is the editable skill source and
+the standalone plugin carries committed byte-identical skill projections.
+
+Crate-private root re-exports preserve existing internal call sites during the
+move. They do not expand the public API. The repository dependency check
+recursively inspects Rust files under `src/` and rejects execution-to-
+presentation references and product references to `tooling/repository`; its
+seeded forbidden-edge case demonstrates that the first rule fails closed.
+
 `work detail`, `work act` native launch context, the bound SubagentStart hook
 and explicit `work child context` use the same derived slice. Legacy `away`
 refuses preparation when current configuration selects a contract or the

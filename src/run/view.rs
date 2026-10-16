@@ -116,10 +116,6 @@ pub fn report(loaded: &Loaded, ledgers: &[&str]) -> Result<Value, String> {
     Ok(report)
 }
 
-pub fn report_markdown(report: &Value) -> String {
-    crate::run_value::markdown(report)
-}
-
 fn attach_successor_work(loaded: &Loaded, new_ledger: &str, mut value: Value) -> Value {
     if let Some(work) = crate::work::locator_for_ledger(new_ledger) {
         value["work"] = json!(work);

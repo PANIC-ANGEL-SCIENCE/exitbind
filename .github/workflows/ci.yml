@@ -37,12 +37,12 @@ jobs:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
           VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
-        run: ./scripts/ci-selected-history.sh
+        run: ./tooling/repository/ci/ci-selected-history.sh
       - id: detect
         env:
           BASE_SHA: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ inputs.candidate_sha || github.sha }}
-        run: python3 tooling/readme/ci_scope.py >> "$GITHUB_OUTPUT"
+        run: python3 tooling/repository/ci/readme/ci_scope.py >> "$GITHUB_OUTPUT"
   readme:
     needs: scope
     if: needs.scope.outputs.scope == 'readme'
@@ -55,7 +55,7 @@ jobs:
       - name: Existing README rules
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/readme-target
-        run: sh tooling/readme/check-existing.sh
+        run: sh tooling/repository/ci/readme/check-existing.sh
   exit:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'
@@ -79,7 +79,7 @@ jobs:
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/ci-selected-history.sh
+        run: ./tooling/repository/ci/ci-selected-history.sh
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
       - name: Prepare dependency-cache target path
@@ -106,7 +106,7 @@ jobs:
       - name: Test paired prerelease controls without network writes
         run: python3 -m unittest discover -s tests -p test_paired_prerelease.py -v
       - name: Test README tooling
-        run: python3 -m unittest discover -s tooling/readme -v
+        run: python3 -m unittest discover -s tooling/repository/ci/readme -v
       - name: Verify Cargo package excludes README presentation tooling
         run: |
           package_list=$(mktemp)
@@ -115,7 +115,7 @@ jobs:
           for required in Cargo.toml Cargo.lock LICENSE src/main.rs; do
             grep -Fx "$required" "$package_list" >/dev/null
           done
-          if grep -E '^(assets/readme/|tooling/readme/|\.github/workflows/readme-badges\.yml$)' "$package_list"; then
+          if grep -E '^(assets/readme/|tooling/repository/ci/readme/|\.github/workflows/readme-badges\.yml$)' "$package_list"; then
             echo 'README presentation files leaked into the Cargo package'
             exit 1
           fi
@@ -128,7 +128,7 @@ jobs:
           CARGO_BUILD_JOBS: '2'
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/ci-local.sh
+        run: ./tooling/repository/ci/ci-local.sh
   audit:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'

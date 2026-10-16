@@ -9,18 +9,17 @@ mod host;
 mod kernel;
 mod memory;
 mod presentation;
-mod presentation_events;
 mod producer;
 mod project;
 mod run;
-mod run_exit;
-mod run_human;
-mod run_presentation;
-mod run_progress;
-mod run_value;
 mod session_goal;
 mod value_benchmark;
 mod work;
+
+// Keep crate-private call sites stable while implementations have clear owners.
+pub(crate) use presentation::{events as presentation_events, run as run_presentation};
+pub(crate) use run::gate::{exit as run_exit, value as run_value};
+pub(crate) use run::{human as run_human, progress as run_progress};
 
 fn main() {
     let argv0 = std::env::args_os().next();

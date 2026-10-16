@@ -22,9 +22,9 @@ def module(name, path):
     return value
 
 
-PAIR = module('paired', 'scripts/paired-prerelease.py')
-CHANNEL = module('channel', 'scripts/release-channel.py')
-PREPARE = module('prepare', 'scripts/prepare-prerelease.py')
+PAIR = module('paired', 'tooling/repository/release/paired-prerelease.py')
+CHANNEL = module('channel', 'tooling/repository/release/release-channel.py')
+PREPARE = module('prepare', 'tooling/repository/release/prepare-prerelease.py')
 CURRENT = CHANNEL.package_version(ROOT)
 CORE = CURRENT.split('-', 1)[0].split('+', 1)[0]
 PARTS = [int(x) for x in CORE.split('.')]
@@ -33,8 +33,8 @@ CONFIG = {'branches': ['R01/task-one', 'dot01/task-two'], 'version': NEXT}
 A, B, BASE, CANDIDATE = [x*40 for x in ['a', 'b', 'c', 'd']]
 
 
-def run(root, *args, data=None):
-    p = subprocess.run(['git', '-C', str(root), *args], input=data, capture_output=True)
+def run(root, *args, data=None, env=None):
+    p = subprocess.run(['git', '-C', str(root), *args], input=data, env=env, capture_output=True)
     if p.returncode:
         raise AssertionError(p.stderr.decode())
     return p.stdout
@@ -284,44 +284,84 @@ class MetadataSafetyTests(unittest.TestCase):
 
 class RealGitObjectTests(unittest.TestCase):
     def test_privileged_repository_commands_refuse_before_merge_or_api_writes(self):
-        controls = ['scripts/check-public-history.sh', 'scripts/publish-release-assets.sh',
+        class ReachedTrustedPreparation(Exception):
+            pass
+
+        controls = ['tooling/repository/release/check-public-history.sh',
+                    'tooling/repository/release/publish-release-assets.sh',
+                    'tooling/repository/release/paired-prerelease.py',
+                    'tooling/repository/release/prepare-prerelease.py',
+                    'tooling/repository/release/release-channel.py',
+                    'tooling/repository/release/check-release-refs.sh',
+                    '.github/workflows/release.yml', 'install.sh',
                     'scripts/paired-prerelease.py', 'scripts/prepare-prerelease.py',
-                    'scripts/release-channel.py', 'scripts/check-release-refs.sh']
+                    'scripts/release-channel.py', 'scripts/ci-local.sh', 'scripts/ci-selected-history.sh',
+                    'scripts/publish-release-assets.sh', 'scripts/package-release.sh',
+                    'scripts/check-release-refs.sh', 'scripts/published-install-smoke.sh',
+                    'scripts/check-public-history.sh', 'scripts/installer-smoke.sh',
+                    'scripts/verify-binary.py', 'tooling/readme/ci_scope.py']
         publication = (ROOT/'.github/workflows/release.yml').read_text().split('  publish:\n', 1)[1].split('  installed:\n', 1)[0]
         import re
-        commands = re.findall(r'(?:\./|sh )(scripts/[a-z0-9-]+\.sh)', publication)
-        self.assertEqual(set(commands), {'scripts/check-public-history.sh', 'scripts/publish-release-assets.sh'})
+        commands = re.findall(r'(?:\./|sh )(tooling/repository/release/[a-z0-9-]+\.sh)', publication)
+        self.assertEqual(set(commands), {'tooling/repository/release/check-public-history.sh',
+                                         'tooling/repository/release/verify-release-evidence.sh',
+                                         'tooling/repository/release/publish-release-assets.sh'})
+        readiness = (ROOT/'.github/workflows/release.yml').read_text().split(
+            '  stable-readiness-result:\n', 1)[1]
+        readiness_command = re.search(
+            r'(?m)^\s*run:\s*python3\s+(tooling/repository/release/[a-z0-9-]+\.py)\s*$', readiness)
+        self.assertIsNotNone(readiness_command)
+        workflow_controls = set(commands) | {readiness_command.group(1)}
+        controls.extend(sorted(workflow_controls - set(controls)))
         for control in controls:
             with self.subTest(control=control), tempfile.TemporaryDirectory(prefix='pair-control-') as directory:
                 root = Path(directory)
                 trusted = root/'trusted'
                 trusted.mkdir()
-                run(trusted, 'init', '-q', '-b', 'main')
-                run(trusted, 'config', 'user.name', 'Fixture')
-                run(trusted, 'config', 'user.email', 'fixture@example.invalid')
+                fixture_env = os.environ.copy()
+                for name in ('CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID',
+                             'EXITBIND_NATIVE_SESSION_ID', 'EXITBIND_SESSION_GOALS_DIR', 'CLAUDE_ENV_FILE'):
+                    fixture_env.pop(name, None)
+                fixture_env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
+                                   GIT_AUTHOR_NAME='Fixture', GIT_AUTHOR_EMAIL='fixture@example.invalid',
+                                   GIT_COMMITTER_NAME='Fixture', GIT_COMMITTER_EMAIL='fixture@example.invalid',
+                                   PAIR_AUTHOR_NAME='Fixture', PAIR_AUTHOR_EMAIL='fixture@example.invalid')
+                run(trusted, 'init', '-q', '-b', 'main', env=fixture_env)
+                run(trusted, 'config', 'user.name', 'Fixture', env=fixture_env)
+                run(trusted, 'config', 'user.email', 'fixture@example.invalid', env=fixture_env)
                 (trusted/'base.txt').write_text('base\n')
-                run(trusted, 'add', '--all')
-                run(trusted, 'commit', '-qm', 'Fixture base')
-                base = run(trusted, 'rev-parse', 'HEAD').decode().strip()
+                run(trusted, 'add', '--all', env=fixture_env)
+                run(trusted, 'commit', '-qm', 'Fixture base', env=fixture_env)
+                base = run(trusted, 'rev-parse', 'HEAD', env=fixture_env).decode().strip()
                 target = trusted/control
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text('candidate control must never execute\n')
-                run(trusted, 'add', '--all')
-                run(trusted, 'commit', '-qm', 'Fixture changed control')
-                changed = run(trusted, 'rev-parse', 'HEAD').decode().strip()
+                run(trusted, 'add', '--all', env=fixture_env)
+                run(trusted, 'commit', '-qm', 'Fixture changed control', env=fixture_env)
+                changed = run(trusted, 'rev-parse', 'HEAD', env=fixture_env).decode().strip()
                 bare = root/'remote.git'
-                run(trusted, 'clone', '-q', '--bare', str(trusted), str(bare))
+                run(trusted, 'clone', '-q', '--bare', str(trusted), str(bare), env=fixture_env)
                 original_git = PAIR.git
                 seen = []
                 def local_git(path, *args, **kwargs):
                     seen.append(args)
+                    kwargs.setdefault('env', fixture_env)
                     return original_git(path, *tuple(str(bare) if x == 'https://github.com/fixture/repo.git' else x for x in args), **kwargs)
                 api = FakeAPI()
-                with patch.object(PAIR, 'git', side_effect=local_git), patch.dict(os.environ, {
-                        'PAIR_AUTHOR_NAME': 'Fixture', 'PAIR_AUTHOR_EMAIL': 'fixture@example.invalid'}), self.assertRaises(ValueError):
-                    PAIR.build_candidate(api, trusted, base, CONFIG, [changed, changed], {})
+                with patch.object(PAIR, 'git', side_effect=local_git), patch.dict(os.environ, fixture_env, clear=True), \
+                        patch.object(PAIR.importlib.util, 'spec_from_file_location', side_effect=ReachedTrustedPreparation):
+                    try:
+                        PAIR.build_candidate(api, trusted, base, CONFIG, [changed, changed], {})
+                    except ValueError as error:
+                        self.assertEqual(str(error), 'Release-control changes need separate reviewed main delivery')
+                    except ReachedTrustedPreparation:
+                        self.fail(f'{control} reached trusted preparation after merge')
+                    else:
+                        self.fail(f'{control} completed without the protected refusal')
                 self.assertFalse(any(args[0] == 'merge' for args in seen))
                 self.assertEqual(api.calls, [])
+        for control in workflow_controls:
+            self.assertTrue(any(control == guard or control.startswith(guard) for guard in PAIR.PROTECTED), control)
 
     def test_generated_merge_version_and_git_data_objects_keep_exact_identity(self):
         with tempfile.TemporaryDirectory(prefix='pair-git-') as directory:

@@ -293,7 +293,7 @@ fn ci_tests_the_default_product_and_runs_the_real_native_handoff() {
     assert!(!manifest.contains("name = \"soulmate\""));
     assert!(!manifest.contains("legacy-cli-test"));
 
-    let shared = source("scripts/ci-local.sh");
+    let shared = source("tooling/repository/ci/ci-local.sh");
     assert!(shared.contains(
         "run native-handoff \"$CARGO\" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact"
     ));
@@ -336,10 +336,14 @@ fn ordinary_ci_is_linux_only_and_stable_readiness_retains_native_platforms() {
     assert!(!ci.contains("runs-on: windows"));
     let exit = job_block(&ci, "exit", "audit");
     assert_eq!(exit.matches(PROOF_BASE_ENV).count(), 1);
-    assert_eq!(exit.matches("run: ./scripts/ci-local.sh\n").count(), 1);
+    assert_eq!(
+        exit.matches("run: ./tooling/repository/ci/ci-local.sh\n")
+            .count(),
+        1
+    );
     assert!(ci.contains("ref: ${{ inputs.candidate_sha || github.sha }}"));
     assert!(ci.contains("HEAD_SHA: ${{ inputs.candidate_sha || github.sha }}"));
-    let shared = source("scripts/ci-local.sh");
+    let shared = source("tooling/repository/ci/ci-local.sh");
     assert!(shared.contains(EMPTY_OR_ZERO_PROOF_BASE));
     assert_eq!(shared.matches(EXACT_FETCH).count(), 1);
     assert_eq!(shared.matches(VERIFY_PROOF_BASE).count(), 2);
@@ -354,15 +358,18 @@ fn ordinary_ci_is_linux_only_and_stable_readiness_retains_native_platforms() {
         "needs.channel.outputs.readiness_only == 'false' && needs.linux.result == 'success'"
     ));
     assert!(release.contains("matrix: ${{ fromJSON(needs.channel.outputs.installed) }}"));
-    assert!(release.contains("for target in $RELEASE_TARGETS; do"));
-    assert!(release.contains("'published': False, 'mainChanged': False"));
+    let release_evidence = source("tooling/repository/release/verify-release-evidence.sh");
+    assert!(release_evidence.contains("for target in $RELEASE_TARGETS; do"));
+    let readiness = source("tooling/repository/release/write-stable-readiness.py");
+    assert!(readiness.contains("\"published\": False"));
+    assert!(readiness.contains("\"mainChanged\": False"));
     for block in [
         job_block(&release, "linux", "macos"),
         job_block(&release, "macos", "windows-wsl"),
     ] {
         assert_eq!(
             block
-                .matches("run: ./scripts/ci-local.sh --checks-only")
+                .matches("run: ./tooling/repository/ci/ci-local.sh --checks-only")
                 .count(),
             1
         );
@@ -371,7 +378,7 @@ fn ordinary_ci_is_linux_only_and_stable_readiness_retains_native_platforms() {
 
 #[test]
 fn workflow_dispatch_empty_proof_base_uses_head_parent_and_controls_remain_distinct() {
-    let shared = source("scripts/ci-local.sh");
+    let shared = source("tooling/repository/ci/ci-local.sh");
     assert_eq!(shared.matches(EMPTY_OR_ZERO_PROOF_BASE).count(), 1);
     assert!(!shared.contains(ZERO_PROOF_BASE));
 
@@ -442,6 +449,11 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         ("windows-wsl", "publish", WINDOWS_SHA_ASSERTION),
         ("publish", "installed", POSIX_SHA_ASSERTION),
         ("installed", "stable-readiness-result", POSIX_SHA_ASSERTION),
+        (
+            "stable-readiness-result",
+            "__missing__",
+            POSIX_SHA_ASSERTION,
+        ),
     ] {
         let block = if next_job == "__missing__" {
             release.split_once(&format!("  {job}:\n")).unwrap().1
@@ -455,6 +467,24 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         );
         assert!(block.find("actions/checkout@").unwrap() < block.find(assertion).unwrap());
     }
+
+    let readiness_job = release
+        .split_once("  stable-readiness-result:\n")
+        .unwrap()
+        .1;
+    let readiness_checkout = readiness_job.find("actions/checkout@").unwrap();
+    let readiness_helper = readiness_job
+        .find("run: python3 tooling/repository/release/write-stable-readiness.py")
+        .unwrap();
+    assert_eq!(readiness_job.matches("actions/checkout@").count(), 1);
+    assert!(readiness_checkout < readiness_job.find(POSIX_SHA_ASSERTION).unwrap());
+    assert!(readiness_job.find(POSIX_SHA_ASSERTION).unwrap() < readiness_helper);
+    assert!(
+        readiness_job.contains("uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683")
+    );
+    assert!(readiness_job.contains("ref: ${{ github.sha }}"));
+    assert!(readiness_job.contains("fetch-depth: 1"));
+    assert!(readiness_job.contains("persist-credentials: false"));
 }
 
 #[test]
@@ -487,7 +517,8 @@ fn paired_privileged_plan_requires_main_before_checkout() {
 fn context_surface_inventory_is_reproducible_and_path_free() {
     use std::process::Command;
 
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/context-surface-inventory.sh");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tooling/repository/ci/context-surface-inventory.sh");
     let run = |cwd: &Path| {
         let output = Command::new("sh")
             .arg(&script)

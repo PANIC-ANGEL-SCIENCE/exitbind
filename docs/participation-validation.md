@@ -6,11 +6,9 @@ an installation recommendation for every builder. Private task records are not
 published; this summary is a report, not a publicly reproducible live-model run.
 The separate [scripted proof](value-proof-methodology.md) is reproducible.
 
-The later [real Holytail workload comparison](holytail-workload-findings.md)
-uses the released 0.12.1-rc.2 binary and four independently reviewed task
-copies. Both workflows completed correctly; no installation-cost recovery was
-demonstrated. Its measured subprocess costs and missing human-cost evidence
-are reported separately from the earlier pilots below.
+The [maintainer comparison method and results](evidence/participation-comparison.md)
+records the released 0.12.1-rc.2 comparison, including its adverse token result,
+measured subprocess costs, and missing human-cost evidence.
 
 ## Configured agents already participated
 

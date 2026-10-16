@@ -22,14 +22,14 @@ const RELEASE_FILES: &[&str] = &[
     "plugins/exitbind/plugin.json",
     "plugins/exitbind/.codex-plugin/plugin.json",
     "plugins/exitbind/.claude-plugin/plugin.json",
-    "scripts/check-plugin-distribution.py",
+    "tooling/repository/release/check-plugin-distribution.py",
     "systems.soulmate/.codex-plugin/plugin.json",
     "systems.soulmate/.claude-plugin/plugin.json",
-    "scripts/ci-wsl.sh",
+    "tooling/repository/ci/ci-wsl.sh",
     "docs/goal-requirements.md",
     "docs/legacy-compatibility.md",
     "docs/release-version-policy.md",
-    "scripts/check-installation-pointer.py",
+    "tooling/repository/release/check-installation-pointer.py",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
 const PUBLISHED_GUIDES: &[&str] = &[
@@ -406,10 +406,21 @@ esac
             fs::write(&transferred, b"unverified transferred raw binary\n").unwrap();
         }
     }
-    fs::create_dir_all(fixture.0.join("scripts")).unwrap();
+    fs::create_dir_all(fixture.0.join("tooling/repository/release")).unwrap();
     fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/publish-release-assets.sh"),
-        fixture.0.join("scripts/publish-release-assets.sh"),
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tooling/repository/release/publish-release-assets.sh"),
+        fixture
+            .0
+            .join("tooling/repository/release/publish-release-assets.sh"),
+    )
+    .unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tooling/repository/release/verify-release-evidence.sh"),
+        fixture
+            .0
+            .join("tooling/repository/release/verify-release-evidence.sh"),
     )
     .unwrap();
     fixture
@@ -426,17 +437,17 @@ fn run_publisher_steps(workflow: &str, fixture: &Fixture) -> Output {
 }
 
 #[cfg(unix)]
-fn run_publisher_steps_for_targets(workflow: &str, fixture: &Fixture, targets: &str, tag: &str) -> Output {
-    let script = [
-        "Validate exact release inventory and transferred digests",
-        "Verify transferred archive provenance",
-        "Stage exactly the published release assets",
-        "Publish tag assets",
-    ]
-    .into_iter()
-    .map(|name| release_workflow_step(workflow, name))
-    .collect::<Vec<_>>()
-    .join("\n");
+fn run_publisher_steps_for_targets(
+    workflow: &str,
+    fixture: &Fixture,
+    targets: &str,
+    tag: &str,
+) -> Output {
+    let script = ["Verify transferred release evidence", "Publish tag assets"]
+        .into_iter()
+        .map(|name| release_workflow_step(workflow, name))
+        .collect::<Vec<_>>()
+        .join("\n");
     let old_path = std::env::var_os("PATH").unwrap();
     let path = std::env::join_paths(
         std::iter::once(fixture.0.join("bin")).chain(std::env::split_paths(&old_path)),
@@ -465,7 +476,10 @@ fn run_publisher_steps_for_targets(workflow: &str, fixture: &Fixture, targets: &
         .env("SOULMATE_UPLOAD_MARKER", &marker)
         .env("GITHUB_REPOSITORY", "fixture/project")
         .env("RELEASE_TARGETS", targets)
-        .env("EXITBIND_EXPECTED_ASSET_COUNT", (targets.split_whitespace().count() * 3).to_string())
+        .env(
+            "EXITBIND_EXPECTED_ASSET_COUNT",
+            (targets.split_whitespace().count() * 3).to_string(),
+        )
         .env("GITHUB_REF_NAME", tag)
         .env("GITHUB_REF", format!("refs/tags/{tag}"))
         .env("GITHUB_SHA", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
