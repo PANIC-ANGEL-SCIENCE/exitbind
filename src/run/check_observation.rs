@@ -17,7 +17,8 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
     {
         return Err("check observation requires the frozen current configuration; inspect the Work and use authorized supersession for a changed configuration".into());
     }
-    crate::project::architecture::assert_current(loaded)
+    crate::project::architecture::assert_current(loaded)?;
+    crate::run::verification_preparation::assert_checker_sources_current(state)
 }
 
 pub(crate) fn timeout(value: Option<&str>) -> Result<u64, String> {

@@ -233,6 +233,20 @@ fn selected_external_checker_run(
     std::path::PathBuf,
     String,
 ) {
+    selected_external_checker_run_with_source(label, "print('EXECUTED_EXTERNAL')\n")
+}
+
+#[cfg(unix)]
+fn selected_external_checker_run_with_source(
+    label: &str,
+    checker_source: &str,
+) -> (
+    std::path::PathBuf,
+    String,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    String,
+) {
     use std::os::unix::fs::symlink;
     let root = support::temp(label);
     support::git_topology::repository(&root);
@@ -244,7 +258,7 @@ fn selected_external_checker_run(
         .parent()
         .unwrap()
         .join(format!("{name}-checker-link.py"));
-    fs::write(&external, "print('EXECUTED_EXTERNAL')\n").unwrap();
+    fs::write(&external, checker_source).unwrap();
     symlink(&external, &argument).unwrap();
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -314,6 +328,183 @@ fn selected_external_checker_run(
         argument,
         worker["event"]["eventSha256"].as_str().unwrap().to_owned(),
     )
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_external_checker_mutation_retains_effects_without_check_credit() {
+    let source = "from pathlib import Path\nimport sys\np = Path(__file__).resolve()\np.write_text(p.read_text() + '# retained checker mutation\\n')\nprint('CHECKER_MUTATED_STDOUT')\nprint('CHECKER_MUTATED_STDERR', file=sys.stderr)\n";
+    let (root, ledger, external, argument, target) = selected_external_checker_run_with_source(
+        "observe-verification-checker-self-mutation",
+        source,
+    );
+    let before = fs::read(&external).unwrap();
+    let observed = run(
+        &root,
+        &[
+            "run",
+            "observe-check",
+            &ledger,
+            "--target",
+            &target,
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert_eq!(observed["checkRecorded"], false);
+    assert_eq!(
+        observed["observationFailure"]["action"],
+        "check_observation_failed"
+    );
+    let facts = &observed["observationFailure"]["observation"]["facts"];
+    assert_eq!(facts["process"]["kind"], "exit");
+    assert_eq!(facts["process"]["code"], 0);
+    assert_eq!(facts["capture"], "complete");
+    assert!(facts["diagnostic"]
+        .as_str()
+        .unwrap()
+        .contains("verification checker source changed"));
+    let after = fs::read(&external).unwrap();
+    assert_ne!(after, before, "checker mutation was erased");
+    assert!(String::from_utf8_lossy(&after).contains("retained checker mutation"));
+    let partials = facts["partialCaptures"].as_array().unwrap();
+    assert_eq!(partials.len(), 2);
+    let stdout = partials
+        .iter()
+        .find(|item| item["stream"] == "stdout")
+        .unwrap();
+    let stderr = partials
+        .iter()
+        .find(|item| item["stream"] == "stderr")
+        .unwrap();
+    assert_eq!(
+        fs::read(root.join(stdout["path"].as_str().unwrap())).unwrap(),
+        b"CHECKER_MUTATED_STDOUT\n"
+    );
+    assert_eq!(
+        fs::read(root.join(stderr["path"].as_str().unwrap())).unwrap(),
+        b"CHECKER_MUTATED_STDERR\n"
+    );
+    let events = fs::read_to_string(root.join(&ledger)).unwrap();
+    assert!(events.contains("check_observation_failed"));
+    assert!(!events.contains("\"action\":\"check\""));
+    let stale = call(
+        &root,
+        &[
+            "run",
+            "status",
+            &ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(
+        !stale.status.success(),
+        "checker drift remained current: {}",
+        text(&stale)
+    );
+    assert!(text(&stale).contains("verification checker source changed"));
+    fs::remove_file(argument).unwrap();
+    fs::remove_file(external).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_external_checker_edit_invalidates_live_credit_without_reexecution() {
+    let source = "from pathlib import Path\np = Path(__file__).resolve()\np.with_suffix('.count').open('a').write('x')\nprint('EXECUTED_EXTERNAL')\n";
+    let (root, ledger, external, argument, target) = selected_external_checker_run_with_source(
+        "observe-verification-checker-live-drift",
+        source,
+    );
+    let count = external.with_extension("count");
+    let observed = run(
+        &root,
+        &[
+            "run",
+            "observe-check",
+            &ledger,
+            "--target",
+            &target,
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert_eq!(observed["event"]["result"]["code"], 0);
+    assert_eq!(fs::read(&count).unwrap(), b"x");
+
+    fs::write(&external, "print('CHANGED_AFTER_CHECK')\n").unwrap();
+    let before = fs::read(root.join(&ledger)).unwrap();
+    for args in [
+        vec![
+            "run",
+            "status",
+            &ledger,
+            "--json",
+            "--config",
+            "exitbind.json",
+        ],
+        vec![
+            "run",
+            "observe-check",
+            &ledger,
+            "--target",
+            &target,
+            "--config",
+            "exitbind.json",
+        ],
+        vec![
+            "run",
+            "submit",
+            "reviewer",
+            &ledger,
+            "--outcome",
+            "approved",
+            "--artifact",
+            ".exitbind/artifacts/worker.md",
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ],
+        vec![
+            "run",
+            "submit",
+            "lead",
+            &ledger,
+            "--outcome",
+            "accepted",
+            "--artifact",
+            ".exitbind/artifacts/worker.md",
+            "--artifact-root",
+            "state",
+            "--config",
+            "exitbind.json",
+        ],
+    ] {
+        let refused = call(&root, &args);
+        assert!(
+            !refused.status.success(),
+            "changed checker remained current: {}",
+            text(&refused)
+        );
+        assert!(
+            text(&refused).contains("verification checker source changed"),
+            "unexpected drift refusal: {}",
+            text(&refused)
+        );
+        assert_eq!(fs::read(root.join(&ledger)).unwrap(), before);
+        assert_eq!(
+            fs::read(&count).unwrap(),
+            b"x",
+            "refusal re-executed checker"
+        );
+    }
+    fs::remove_file(count).unwrap();
+    fs::remove_file(argument).unwrap();
+    fs::remove_file(external).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(unix)]

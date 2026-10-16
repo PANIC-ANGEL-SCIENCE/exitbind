@@ -449,7 +449,7 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
     if let Some(reference) = state.get("harnessReceipt") {
         crate::evidence::receipt::assert_current(loaded, reference, &state["plan"])?;
     }
-    Ok(())
+    crate::run::verification_preparation::assert_checker_sources_current(state)
 }
 
 pub(crate) fn drift_value(error: &str) -> Option<Value> {

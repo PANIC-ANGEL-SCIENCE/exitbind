@@ -157,6 +157,17 @@ pub(crate) fn current_checker_sources(
     Ok(frozen)
 }
 
+/// Keep selected external checker bytes current through observation commit and
+/// every live evidence/currentness check, not only before process launch.
+pub(crate) fn assert_checker_sources_current(state: &Value) -> Result<(), String> {
+    if state.get("verificationPreparationProtocol").is_none() {
+        return Ok(());
+    }
+    let frozen =
+        crate::run_value::checker_sources_from_value(&state["verificationCheckerSources"], 1)?;
+    crate::run_value::validate_checker_sources(&frozen, "verification")
+}
+
 fn refuse_input_aliases(
     loaded: &Loaded,
     state: &Value,
