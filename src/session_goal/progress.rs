@@ -15,6 +15,13 @@ const MAX_DISPLAY_CHARS: usize = 180;
 const SYSTEM_TEXT_MAX_GOAL_CHARS: usize = 64;
 const SYSTEM_TEXT_MAX_TASK_CHARS: usize = 32;
 
+#[derive(Clone, Copy)]
+struct GoalProjectionContext<'a> {
+    loaded: Option<&'a Loaded>,
+    root: Option<&'a std::path::Path>,
+    project_selected: bool,
+}
+
 /// Work can be governed without opting into a separate native session Goal.
 /// This projection is only for verified absence, never failed association reads.
 pub(super) fn not_requested(result: &Value) -> Value {
@@ -35,13 +42,15 @@ pub(super) fn project(
     result: Option<&Value>,
 ) -> Value {
     project_with_limit(
-        loaded,
+        GoalProjectionContext {
+            loaded,
+            root: loaded.map(|loaded| loaded.state_root.as_path()),
+            project_selected: false,
+        },
         record,
         rendered,
         result,
         MAX_TASKS,
-        false,
-        loaded.map(|loaded| loaded.state_root.as_path()),
         false,
     )
 }
@@ -55,14 +64,16 @@ pub(super) fn project_selected(
     result: Option<&Value>,
 ) -> Value {
     project_with_limit(
-        Some(loaded),
+        GoalProjectionContext {
+            loaded: Some(loaded),
+            root: Some(root),
+            project_selected,
+        },
         record,
         rendered,
         result,
         MAX_TASKS,
         false,
-        Some(root),
-        project_selected,
     )
 }
 
@@ -94,15 +105,18 @@ pub(super) fn context_only(record: &Value, result: Option<&Value>) -> Value {
 }
 
 fn project_with_limit(
-    loaded: Option<&Loaded>,
+    context: GoalProjectionContext<'_>,
     record: Option<&Value>,
     rendered: &Value,
     result: Option<&Value>,
     task_limit: usize,
     include_canonical_id: bool,
-    goal_root: Option<&std::path::Path>,
-    project_selected: bool,
 ) -> Value {
+    let GoalProjectionContext {
+        loaded,
+        root: goal_root,
+        project_selected,
+    } = context;
     let Some(record) = record else {
         return unavailable(
             result,
@@ -538,13 +552,15 @@ pub(super) fn project_for_work(
         }
     }
     let mut projection = project_with_limit(
-        Some(loaded),
+        GoalProjectionContext {
+            loaded: Some(loaded),
+            root: Some(&loaded.state_root),
+            project_selected: false,
+        },
         Some(record),
         rendered,
         result,
         MAX_TASKS,
-        false,
-        Some(&loaded.state_root),
         false,
     );
     let association = match work_association_with_lineage(loaded, record, work) {
@@ -612,14 +628,16 @@ pub(super) fn project_detail_for_work(
         }
     }
     let mut projection = project_with_limit(
-        Some(loaded),
+        GoalProjectionContext {
+            loaded: Some(loaded),
+            root: Some(&loaded.state_root),
+            project_selected: false,
+        },
         Some(record),
         rendered,
         result,
         usize::MAX,
         true,
-        Some(&loaded.state_root),
-        false,
     );
     let association = match work_association_with_lineage(loaded, record, work) {
         Ok(value) => value,
