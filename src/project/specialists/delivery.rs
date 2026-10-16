@@ -51,6 +51,7 @@ pub(crate) fn delivery(
     task: &str,
     host: &str,
 ) -> Result<Option<Value>, String> {
+    memory::choices::assert_host(loaded, name, task, host)?;
     if !enabled(loaded, name) || task.trim().is_empty() || !matches!(host, "codex" | "claude") {
         return Ok(None);
     }
@@ -102,6 +103,9 @@ pub(super) fn select_resources(
     candidates: bool,
     mut after_source: impl FnMut() -> Result<(), String>,
 ) -> Result<Value, String> {
+    if !candidates {
+        memory::choices::assert_host(loaded, name, task, host)?;
+    }
     let agent = loaded
         .agent(name)
         .ok_or("selected specialist disappeared")?;
