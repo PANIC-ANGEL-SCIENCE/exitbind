@@ -370,6 +370,73 @@ fn setup_previews_and_persists_the_opt_in_owned_outputs_contract() {
     assert!(result.status.success(), "{}", text(&result));
     let config: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("exitbind.json")).unwrap()).unwrap();
+    let canonical_schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/exitbind.schema.json")).unwrap();
+    let compatibility_schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/soulmate.schema.json")).unwrap();
+    assert_eq!(
+        canonical_schema["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(config["$schema"], canonical_schema["$id"]);
+    let declared_project_properties = canonical_schema["properties"]["project"]["properties"]
+        .as_object()
+        .unwrap();
+    for property in config["project"].as_object().unwrap().keys() {
+        assert!(
+            declared_project_properties.contains_key(property),
+            "generated project property {property:?} is absent from the canonical schema"
+        );
+    }
+    let expected_policy = serde_json::json!({
+        "version": 1,
+        "pythonBytecode": "disabled",
+        "scratch": "taskOwned"
+    });
+    assert_eq!(
+        config["project"]["verificationPreparation"],
+        expected_policy
+    );
+    for (name, schema) in [
+        ("canonical", &canonical_schema),
+        ("compatibility", &compatibility_schema),
+    ] {
+        let policy_schema =
+            &schema["properties"]["project"]["properties"]["verificationPreparation"];
+        assert!(policy_schema.is_object(), "{name} schema omits the policy");
+        let required: std::collections::BTreeSet<_> = policy_schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            required,
+            ["pythonBytecode", "scratch", "version"]
+                .into_iter()
+                .collect()
+        );
+        let declared_policy_properties: std::collections::BTreeSet<_> = policy_schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let expected_properties: std::collections::BTreeSet<_> = expected_policy
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(declared_policy_properties, expected_properties);
+        assert_eq!(policy_schema["properties"]["version"]["const"], 1);
+        assert_eq!(
+            policy_schema["properties"]["pythonBytecode"]["const"],
+            "disabled"
+        );
+        assert_eq!(policy_schema["properties"]["scratch"]["const"], "taskOwned");
+        assert_eq!(policy_schema["additionalProperties"], false);
+    }
     assert_eq!(
         config["project"]["verificationPreparation"],
         serde_json::json!({
