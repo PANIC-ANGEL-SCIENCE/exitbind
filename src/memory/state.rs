@@ -320,9 +320,18 @@ pub(crate) fn validate_history_current(
         .iter()
         .rposition(|event| event["action"] == "revalidate" || event["action"] == "correct-policy")
         .unwrap_or(0);
-    for event in &ledger.events[first..] {
-        if event["configSha256"] != config_hash {
+    let specialist = ledger
+        .items
+        .values()
+        .any(|item| crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")));
+    for (index, event) in ledger.events.iter().enumerate() {
+        if index >= first && event["configSha256"] != config_hash {
             return Err("configuration changed since memory event".into());
+        }
+        // Contextual opt-in migrates configuration only. Specialist author and
+        // independent reviewer profiles remain required qualification evidence.
+        if index < first && !specialist {
+            continue;
         }
         let actor = event["actor"].as_str().ok_or("invalid memory actor")?;
         let agent = loaded

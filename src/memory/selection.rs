@@ -28,6 +28,23 @@ pub(crate) fn resolve_for_task(
     agent_name: &str,
     task: Option<&str>,
 ) -> Result<Vec<Value>, String> {
+    references_for_task(loaded, agent_name, task, false)
+}
+
+pub(crate) fn candidate_references(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+) -> Result<Vec<Value>, String> {
+    references_for_task(loaded, agent_name, task, true)
+}
+
+fn references_for_task(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+    candidates: bool,
+) -> Result<Vec<Value>, String> {
     let agent = loaded
         .agent(agent_name)
         .ok_or_else(|| format!("unknown agent '{agent_name}'"))?;
@@ -95,15 +112,16 @@ pub(crate) fn resolve_for_task(
             if scope == super::lessons::SCOPE {
                 super::validate_history_current(loaded, &ledger.snapshot)?;
                 let lesson = super::lessons::parse(loaded, &source)?;
-                if !super::lessons::applicable(loaded, &lesson, agent_name, task)? {
+                let eligible = if candidates || super::contextual::enabled(loaded) {
+                    super::lessons::eligible(loaded, &lesson, agent_name)?
+                } else {
+                    super::lessons::applicable(loaded, &lesson, agent_name, task)?
+                };
+                if !eligible {
                     continue;
                 }
             }
-            let attempted_items = references.len().saturating_add(1);
-            let attempted_bytes = bytes.saturating_add(source.len());
-            check_budget(loaded, attempted_items, attempted_bytes, item_id)?;
-            bytes = attempted_bytes;
-            references.push(json!({
+            let mut reference = json!({
                 "itemId": item["itemId"],
                 "scope": scope,
                 "sourcePath": source_path,
@@ -112,7 +130,20 @@ pub(crate) fn resolve_for_task(
                 "ledgerHeadSha256": ledger.snapshot.last_event_sha256,
                 "state": "accepted",
                 "byteLength": source.len(),
-            }));
+            });
+            if !candidates && super::contextual::enabled(loaded) {
+                let Some(identity) =
+                    super::contextual::identity(loaded, agent_name, task, &reference)?
+                else {
+                    continue;
+                };
+                reference["contextSelection"] = identity;
+            }
+            let attempted_items = references.len().saturating_add(1);
+            let attempted_bytes = bytes.saturating_add(source.len());
+            check_budget(loaded, attempted_items, attempted_bytes, item_id)?;
+            bytes = attempted_bytes;
+            references.push(reference);
         }
     }
     Ok(references)
@@ -142,7 +173,11 @@ pub(crate) fn validate_references(value: &Value) -> Result<(), String> {
         let object = reference
             .as_object()
             .ok_or("invalid memory reference: expected an object")?;
-        if object.len() != REFERENCE_FIELDS.len()
+        if !(object.len() == REFERENCE_FIELDS.len()
+            || (object.len() == REFERENCE_FIELDS.len() + 1
+                && reference
+                    .get("contextSelection")
+                    .is_some_and(super::contextual::valid_identity)))
             || REFERENCE_FIELDS
                 .iter()
                 .any(|field| !object.contains_key(*field))

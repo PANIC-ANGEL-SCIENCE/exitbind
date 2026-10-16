@@ -14,6 +14,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("lesson-revalidate");
+        support::git_topology::repository(&root);
         let out = Command::new(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)

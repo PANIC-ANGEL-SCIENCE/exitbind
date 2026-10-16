@@ -33,6 +33,10 @@ pub(crate) fn section(loaded: &Loaded, next: &Value) -> Result<Value, String> {
 }
 
 pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
+    if let Err(reason) = crate::memory::contextual::assert_assignment(loaded, &next["packet"]) {
+        return Ok(json!({"available":false,"complete":true,
+            "reason":"contextual_memory_selection_changed","detail":reason}));
+    }
     let Some(name) = next["agent"].as_str() else {
         return Ok(json!({"complete": true, "available": false}));
     };
@@ -94,5 +98,6 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     )? {
         result["specialistExperience"] = specialist;
     }
+    crate::memory::contextual::assert_assignment(loaded, &next["packet"])?;
     Ok(result)
 }

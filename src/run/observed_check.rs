@@ -76,6 +76,7 @@ pub fn observe_check_for_requirement(
             }
             check_observation::assert_current(loaded, &state)?;
             let warning = action_drift_warning(loaded, &state)?;
+            crate::memory::contextual::assert_plan(loaded, &state)?;
             crate::run::artifact::assert_current(loaded, &state)?;
             predecessor(loaded, &events[0])?;
             let policy = active_check_policy(&state, requirement_id)?;
@@ -188,6 +189,7 @@ pub fn observe_check_for_requirement(
             return Err("observation binding changed before commit; no check was recorded".into());
         }
         let warning = action_drift_warning(loaded, &current_state)?;
+        crate::memory::contextual::assert_plan(loaded, &current_state)?;
         let warning = inputs
             .as_ref()
             .and_then(Value::as_str)

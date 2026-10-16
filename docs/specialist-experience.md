@@ -2,8 +2,11 @@
 
 Ask your Lead to use a suitable configured specialist and its relevant verified
 experience. The Lead supplies the actual purpose, role and available native
-host; a literal match is eligibility evidence, while semantic suitability stays
-with the Lead. Small routine work can remain direct.
+host. Legacy selection uses literal task eligibility; the opt-in
+[approved current-task context](project-lessons.md#select-against-approved-current-task-context)
+lets the Lead select exact qualified resource versions after assessing their
+meaning. Semantic suitability stays with the Lead. Small routine work can
+remain direct.
 
 ```sh
 exitbind project route --task "Aggregate invoice records" \
@@ -87,7 +90,8 @@ Source validation checks shape and identity; lifecycle and actual qualification
 remain separate.
 
 This is a consumer format inside the existing generic memory source; it adds no
-configuration or ledger schema. It does not rewrite shared project lessons.
+ledger schema. Contextual selection is a separate opt-in memory configuration
+and uses the same lifecycle. It does not rewrite shared project lessons.
 The source author must equal the proposal actor, an independent actor must have
 reviewed it, and the configured Lead must have promoted it. Expiry is mandatory.
 
@@ -144,3 +148,16 @@ unbound or unknown-host child receives no specialist content; a stale preparatio
 must be prepared again. A host without these hooks needs the supported native
 Work execution path. Presentation, receipt and useful use remain separate facts.
 Experience never changes frozen checks or rights, and no live refresh is claimed.
+
+When contextual selection is enabled, use `memory candidates AGENT --task TASK
+--host codex|claude --json` to discover only metadata allowed by the recipient's
+existing read rights. Expand one candidate with the optional `ITEM_ID` before
+assessing a paraphrase or a literal-match collision. Both operations remain
+read-only and do not activate source text. The configured approved task context
+must select the exact item, source and ledger-head digests with the assigned
+agent's current profile, unique role and exact purpose. Empty or other-task
+selections supply no guidance. Follow the common contextual form and bounds in
+the linked project-lessons guide; do not invent a second qualification or
+authority store. Native preparation and delivery retain their existing
+currentness checks and carry the selected context identity. A source read or
+route snapshot still does not establish actual native use or a net benefit.

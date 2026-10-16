@@ -88,6 +88,18 @@ pub(super) fn select_after_source(
     task: &str,
     role: &str,
     host: &str,
+    after_source: impl FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
+    select_resources(loaded, name, task, role, host, false, after_source)
+}
+
+pub(super) fn select_resources(
+    loaded: &Loaded,
+    name: &str,
+    task: &str,
+    role: &str,
+    host: &str,
+    candidates: bool,
     mut after_source: impl FnMut() -> Result<(), String>,
 ) -> Result<Value, String> {
     let agent = loaded
@@ -146,10 +158,12 @@ pub(super) fn select_after_source(
             );
         }
         if !item.hosts.iter().any(|h| h == host)
-            || !item
-                .task_terms
-                .iter()
-                .any(|term| task.to_lowercase().contains(&term.to_lowercase()))
+            || (!candidates
+                && !memory::contextual::enabled(loaded)
+                && !item
+                    .task_terms
+                    .iter()
+                    .any(|term| task.to_lowercase().contains(&term.to_lowercase())))
             || !item
                 .required_commands
                 .iter()
@@ -170,11 +184,22 @@ pub(super) fn select_after_source(
         }
         let mut current_reference = reference.clone();
         current_reference["byteLength"] = json!(bytes.len());
+        if !candidates && memory::contextual::enabled(loaded) {
+            let Some(identity) =
+                memory::contextual::identity(loaded, name, Some(task), &current_reference)?
+            else {
+                continue;
+            };
+            if identity["role"] != role {
+                return Err("contextual specialist role differs from the actual recipient".into());
+            }
+            current_reference["contextSelection"] = identity;
+        }
         resources.push(json!({"id":item.id,"revision":item.revision,"kind":item.kind,
-            "reference":current_reference,"content":serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
+            "reference":current_reference,"content":if candidates { Value::Null } else { serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())? },
             "coverage":"complete","state":"qualified_snapshot"}));
     }
-    if resources.len() > 3 {
+    if !candidates && resources.len() > 3 {
         return Err("more than three applicable specialist resources; narrow the policy".into());
     }
     if path::secure_bytes(&loaded.control_root, &agent.profile, "specialist profile")? != profile
