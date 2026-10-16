@@ -401,6 +401,27 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
                 continue;
             }
             assert_selected_agent(loaded, selected)?;
+            if let Some(selection) = selected.get("memoryContextSelection") {
+                let current = crate::memory::contextual::binding(
+                    loaded,
+                    name,
+                    state["goal"].as_str().unwrap_or(""),
+                );
+                let current = match current {
+                    Ok(current) if &current == selection => None,
+                    Ok(current) => Some(hash::value(&current)),
+                    Err(error) => Some(hash::text(&format!(
+                        "contextual memory unavailable: {error}"
+                    ))),
+                };
+                if let Some(current) = current {
+                    return Err(run_error::machine_drift(DriftError::memory(
+                        name.to_owned(),
+                        hash::value(selection),
+                        current,
+                    )));
+                }
+            }
             if let Some(references) = selected.get("memoryReferences") {
                 let expected = hash::value(references);
                 let current = match crate::memory::selection::resolve_for_task(
@@ -552,6 +573,7 @@ pub(super) fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result
 }
 
 pub(crate) fn assert_current_for_receipt(loaded: &Loaded, state: &Value) -> Result<(), String> {
+    crate::memory::contextual::assert_plan(loaded, state)?;
     let drift = action_drift_warning(loaded, state)?;
     warn_drift(drift.as_ref());
     crate::run::artifact::assert_current(loaded, state)

@@ -98,5 +98,6 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     )? {
         result["specialistExperience"] = specialist;
     }
+    crate::memory::contextual::assert_assignment(loaded, &next["packet"])?;
     Ok(result)
 }

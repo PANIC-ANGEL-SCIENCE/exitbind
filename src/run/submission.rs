@@ -215,6 +215,7 @@ where
             return Err("run has already reached a terminal state; no mutation was made".into());
         }
         let warning = action_drift_warning(loaded, &state)?;
+        crate::memory::contextual::assert_plan(loaded, &state)?;
         crate::run::artifact::assert_current(loaded, &state)?;
         if agent == "lead"
             && outcome == "accepted"

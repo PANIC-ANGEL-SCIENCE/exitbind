@@ -5,6 +5,8 @@ use std::process::{Command, Output, Stdio};
 pub const LEDGER: &str = ".exitbind/memory/lesson.jsonl";
 pub const TASK: &str = "Check coupled documentation for this edit";
 pub const FACT: &str = "Review coupled surfaces before returning the change.";
+pub const SPECIALIST_TASK: &str = "Combine rows while preserving whether any observation exists";
+pub const SPECIALIST_GUIDANCE: &str = "Track presence and sum independently.";
 
 pub struct Fixture {
     pub root: PathBuf,
@@ -48,6 +50,45 @@ impl Fixture {
         serde_json::from_slice(&fs::read(self.root.join("exitbind.json")).unwrap()).unwrap()
     }
 
+    pub fn specialist() -> Self {
+        let f = Self::new(true);
+        let scope = "specialist.record-specialist.v1";
+        let mut c = f.config();
+        let mut specialist = c["agents"]
+            .as_object_mut()
+            .unwrap()
+            .remove("worker")
+            .unwrap();
+        specialist["purpose"] = json!("Bounded record aggregation");
+        specialist["nativeName"] = json!("record_specialist");
+        specialist["runtime"] = json!({"host":"codex","fallback":"none"});
+        specialist["commands"] = json!(["python3"]);
+        specialist["memoryRead"] = json!([scope]);
+        specialist["memoryWrite"] = json!([scope]);
+        c["agents"]["record-specialist"] = specialist;
+        c["agents"]["reviewer"]["memoryReview"] = json!([scope]);
+        c["agents"]["lead"]["memoryPromote"] = json!([scope]);
+        c["agents"]["lead"]["memoryRevoke"] = json!([scope]);
+        c["workflows"]["change"]["workers"] = json!(["record-specialist"]);
+        c["memory"]["protocolScopes"] = json!([scope]);
+        f.save(&c);
+        let project = f.ok(&["project", "context", "--json"])["project"]["memoryIdentity"].clone();
+        let source = json!({"version":1,"id":"presence","revision":"r1","kind":"skill","author":"record-specialist",
+            "projectIdentity":project,"taskTerms":["aggregation"],"hosts":["codex"],"summary":"Distinguish absence and zero.",
+            "preconditions":["Schema distinguishes absence."],"procedure":[SPECIALIST_GUIDANCE],
+            "verification":["Exercise all-missing and observed-zero groups."],"requiredCommands":["python3"],
+            "evidence":["reviewed-fixture-report.md"],"guards":[]});
+        f.write("specialist.json", &source);
+        f.accept(
+            "record-specialist",
+            "specialist.json",
+            scope,
+            ".exitbind/memory/specialist.jsonl",
+            "reviewer",
+        );
+        f
+    }
+
     pub fn save(&self, c: &Value) {
         self.write("exitbind.json", c);
     }
@@ -61,8 +102,10 @@ impl Fixture {
         command
             .current_dir(&self.root)
             .args(args)
-            .args(["--config", "exitbind.json"])
             .env("EXITBIND_BINDINGS_DIR", self.root.join("fixture-bindings"));
+        if args.first() != Some(&"hook-run") {
+            command.args(["--config", "exitbind.json"]);
+        }
         command
     }
 
@@ -77,6 +120,12 @@ impl Fixture {
     }
 
     pub fn input(&self, args: &[&str], input: &str) -> Value {
+        let output = self.input_result(args, input);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    pub fn input_result(&self, args: &[&str], input: &str) -> Output {
         let mut child = self
             .command(args)
             .stdin(Stdio::piped())
@@ -90,9 +139,7 @@ impl Fixture {
             .unwrap()
             .write_all(input.as_bytes())
             .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success(), "{args:?}: {output:?}");
-        serde_json::from_slice(&output.stdout).unwrap()
+        child.wait_with_output().unwrap()
     }
 
     pub fn lesson(&self) -> Value {
@@ -204,6 +251,75 @@ impl Fixture {
             "Fixture bounded implementation scope.",
         );
         work.to_owned()
+    }
+
+    pub fn bind_parent(&self, work: &str) {
+        self.input(&["work", "record", work], &json!({"action":"init","sourceRef":"fixture:scope",
+            "sourceText":"Keep reviewed facts scoped.","requirements":[{"id":"facts","text":"Keep reviewed facts scoped."}]}).to_string());
+        let token = self.child_token(work);
+        self.ok(&[
+            "work",
+            "bind",
+            work,
+            "--context",
+            &token,
+            "--host",
+            "codex",
+            "--session",
+            "contextual-parent",
+            "--host-version",
+            "fixture",
+        ]);
+    }
+
+    pub fn child_token(&self, work: &str) -> String {
+        self.ok(&["work", "continuation", work])["mutationContext"]["token"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    pub fn prepare_child(&self, work: &str) -> Output {
+        let token = self.child_token(work);
+        self.call(&[
+            "work",
+            "child",
+            "prepare",
+            work,
+            "contextual-specialist",
+            "--context",
+            &token,
+            "--agent-type",
+            "record_specialist",
+        ])
+    }
+
+    pub fn select_specialist(&self) {
+        self.context(
+            SPECIALIST_TASK,
+            "B",
+            vec![self.choice("record-specialist", SPECIALIST_TASK)],
+        );
+    }
+
+    pub fn child_start(&self, child: &str) -> Value {
+        self.input(
+            &["hook-run"],
+            &json!({"hook_event_name":"SubagentStart","cwd":self.root,
+            "session_id":"contextual-parent","agent_id":child,"agent_type":"record_specialist"})
+            .to_string(),
+        )
+    }
+
+    pub fn child_stop(&self, child: &str, message: &str) {
+        let output = self.input_result(
+            &["hook-run"],
+            &json!({"hook_event_name":"SubagentStop","cwd":self.root,
+            "session_id":"contextual-parent","agent_id":child,"agent_type":"record_specialist",
+            "last_assistant_message":message})
+            .to_string(),
+        );
+        assert!(output.status.success(), "{output:?}");
     }
 }
 

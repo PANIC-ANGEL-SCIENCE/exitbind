@@ -215,6 +215,7 @@ fn project_parts_after_reads(
         )?;
     }
     after_reads()?;
+    memory::contextual::assert_assignment(loaded, packet)?;
     if super::capabilities::delivery(loaded, packet, binding.host)? != capabilities {
         return Err("approved capabilities changed before native launch".into());
     }

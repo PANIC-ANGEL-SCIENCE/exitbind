@@ -3,7 +3,7 @@
 #[path = "contextual_memory/fixture.rs"]
 mod fixture;
 mod support;
-use fixture::{digest, Fixture, FACT, LEDGER, TASK};
+use fixture::{digest, Fixture, FACT, LEDGER, SPECIALIST_GUIDANCE, SPECIALIST_TASK, TASK};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
@@ -475,43 +475,11 @@ fn assert_stale_work_is_not_guidance(f: &Fixture, work: &str, captured: &Value) 
 
 #[test]
 fn specialist_candidates_and_delivery_share_the_explicit_paraphrase_choice() {
-    let f = Fixture::new(true);
-    let scope = "specialist.record-specialist.v1";
-    let mut c = f.config();
-    let mut specialist = c["agents"]
-        .as_object_mut()
-        .unwrap()
-        .remove("worker")
-        .unwrap();
-    specialist["purpose"] = json!("Bounded record aggregation");
-    specialist["nativeName"] = json!("record_specialist");
-    specialist["runtime"] = json!({"host":"codex","fallback":"none"});
-    specialist["commands"] = json!(["python3"]);
-    specialist["memoryRead"] = json!([scope]);
-    specialist["memoryWrite"] = json!([scope]);
-    c["agents"]["record-specialist"] = specialist;
-    c["agents"]["reviewer"]["memoryReview"] = json!([scope]);
-    c["agents"]["lead"]["memoryPromote"] = json!([scope]);
-    c["agents"]["lead"]["memoryRevoke"] = json!([scope]);
-    c["workflows"]["change"]["workers"] = json!(["record-specialist"]);
-    c["memory"]["protocolScopes"] = json!([scope]);
-    f.save(&c);
-    let project = f.ok(&["project", "context", "--json"])["project"]["memoryIdentity"].clone();
-    let source = json!({"version":1,"id":"presence","revision":"r1","kind":"skill","author":"record-specialist",
-        "projectIdentity":project,"taskTerms":["aggregation"],"hosts":["codex"],"summary":"Distinguish absence and zero.",
-        "preconditions":["Schema distinguishes absence."],"procedure":["Track presence and sum independently."],
-        "verification":["Exercise all-missing and observed-zero groups."],"requiredCommands":["python3"],
-        "evidence":["reviewed-fixture-report.md"],"guards":[]});
-    f.write("specialist.json", &source);
+    let f = Fixture::specialist();
+    let source: Value =
+        serde_json::from_slice(&fs::read(f.root.join("specialist.json")).unwrap()).unwrap();
     let ledger = ".exitbind/memory/specialist.jsonl";
-    f.accept(
-        "record-specialist",
-        "specialist.json",
-        scope,
-        ledger,
-        "reviewer",
-    );
-    let task = "Combine rows while preserving whether any observation exists";
+    let task = SPECIALIST_TASK;
     let route = || {
         f.ok(&[
             "project",
@@ -540,6 +508,249 @@ fn specialist_candidates_and_delivery_share_the_explicit_paraphrase_choice() {
     );
     f.ok(&["memory", "revoke", "lead", ledger]);
     assert_eq!(route()["snapshot"]["experience"], json!([]));
+}
+
+#[test]
+fn specialist_child_preparation_refuses_a_changed_work_choice_without_an_intent() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    let captured = f.ok(&["work", "next", &work, "--full", "--json"]);
+    assert_eq!(captured["next"]["packet"]["memoryReferences"], json!([]));
+    f.bind_parent(&work);
+    let token = f.child_token(&work);
+    let intents = f.root.join(".exitbind/child-intents.json");
+    let before = fs::read(&intents).ok();
+    f.select_specialist();
+    let prepared = f.call(&[
+        "work",
+        "child",
+        "prepare",
+        &work,
+        "contextual-specialist",
+        "--context",
+        &token,
+        "--agent-type",
+        "record_specialist",
+    ]);
+    assert!(!prepared.status.success(), "{prepared:?}");
+    assert!(
+        diagnostic(&prepared).contains("contextual memory assignment is not current"),
+        "{prepared:?}"
+    );
+    assert_eq!(
+        fs::read(&intents).ok(),
+        before,
+        "a rejected contextual child preparation must not append an intent"
+    );
+}
+
+#[test]
+fn specialist_child_context_and_start_cannot_adopt_a_later_work_choice() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    let prepared = f.prepare_child(&work);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(prepared["selected"]["agent"], "record-specialist");
+    let intent = prepared["intent"].as_str().unwrap();
+    let initial = f.ok(&["work", "child", "context", &work, intent]);
+    assert_eq!(initial["specialistExperience"]["experience"], json!([]));
+    let intents = f.root.join(".exitbind/child-intents.json");
+    let before = fs::read(&intents).unwrap();
+    f.select_specialist();
+    let changed = f.ok(&["work", "detail", &work, "--json"]);
+    assert!(
+        changed["effectiveAction"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["classification"] == "memory_drift"),
+        "{changed}"
+    );
+    let context = f.call(&["work", "child", "context", &work, intent]);
+    assert!(!context.status.success(), "{context:?}");
+    assert!(
+        diagnostic(&context).contains("contextual memory selection changed")
+            || diagnostic(&context)
+                .contains("child context expired after assignment or profile change"),
+        "{context:?}"
+    );
+    assert!(!diagnostic(&context).contains(SPECIALIST_GUIDANCE));
+    assert_eq!(
+        fs::read(&intents).unwrap(),
+        before,
+        "context discovery is read-only"
+    );
+    let hook = f.child_start("late-selection-child");
+    let presented = hook["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        presented.contains("rejected the prepared child context before presentation"),
+        "{hook}"
+    );
+    assert!(!presented.contains(SPECIALIST_GUIDANCE), "{hook}");
+    assert!(
+        !presented.contains("CURRENT QUALIFIED SPECIALIST EXPERIENCE"),
+        "{hook}"
+    );
+    let state: Value = serde_json::from_slice(&fs::read(&intents).unwrap()).unwrap();
+    let selected = state["intents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == intent)
+        .unwrap();
+    assert_eq!(selected["state"], "abandoned");
+    assert_eq!(selected["nativeChild"], "late-selection-child");
+    assert_eq!(
+        f.child_start("late-selection-child"),
+        hook,
+        "a repeated hook must keep the same rejected child rejected"
+    );
+}
+
+#[test]
+fn specialist_only_context_change_refuses_worker_return_without_a_result_event() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    let current = f.ok(&["work", "next", &work, "--full", "--json"]);
+    assert_eq!(current["next"]["packet"]["memoryReferences"], json!([]));
+    let assignment = current["next"]["assignment"].as_str().unwrap();
+    let before = f.ok(&["work", "detail", &work, "--json"]);
+    assert!(
+        before["sections"]["assignment"]["residual"]["snapshot"]["headEventSha256"].is_string()
+    );
+    assert!(
+        before["sections"]["assignment"]["residual"]["snapshot"]["eventCount"]
+            .as_u64()
+            .is_some_and(|n| n >= 2)
+    );
+    f.select_specialist();
+    let returned = f.input_result(
+        &[
+            "work",
+            "return",
+            &work,
+            assignment,
+            "--outcome",
+            "completed",
+            "--reason",
+            "Fixture must refuse a result under a later specialist choice.",
+            "--json",
+        ],
+        "This result must not be accepted.",
+    );
+    assert!(!returned.status.success(), "{returned:?}");
+    assert!(
+        diagnostic(&returned).contains("contextual memory selection changed"),
+        "{returned:?}"
+    );
+    let after = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(
+        after["sections"]["evidence"]["items"],
+        before["sections"]["evidence"]["items"]
+    );
+    for field in ["headEventSha256", "eventCount"] {
+        assert_eq!(
+            after["sections"]["assignment"]["residual"]["snapshot"][field],
+            before["sections"]["assignment"]["residual"]["snapshot"][field]
+        );
+    }
+    assert!(!after["sections"]["evidence"]
+        .to_string()
+        .contains("This result must not be accepted."));
+}
+
+#[test]
+fn a_delivered_specialist_child_result_is_retained_after_its_work_choice_changes() {
+    let f = Fixture::specialist();
+    let choice = f.choice("record-specialist", SPECIALIST_TASK);
+    f.context(SPECIALIST_TASK, "A", vec![choice.clone()]);
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    let prepared = f.prepare_child(&work);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let intent = prepared["intent"].as_str().unwrap();
+    let hook = f.child_start("delivered-specialist");
+    assert!(
+        hook["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains(SPECIALIST_GUIDANCE),
+        "{hook}"
+    );
+    let history = f.root.join(".exitbind/session-goal.jsonl");
+    let before_history = fs::read(&history).unwrap();
+    let before_work = f.ok(&["work", "detail", &work, "--json"]);
+    f.context(SPECIALIST_TASK, "B", vec![choice]);
+    let message = "Retain this completed child observation without accepting it under the changed Work choice.";
+    f.child_stop("delivered-specialist", message);
+    let intents = f.root.join(".exitbind/child-intents.json");
+    let retained = fs::read(&intents).unwrap();
+    let state: Value = serde_json::from_slice(&retained).unwrap();
+    let child = state["intents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == intent)
+        .unwrap();
+    assert_eq!(child["state"], "failed");
+    assert_eq!(child["pendingResult"], message);
+    assert_eq!(child["resultSha256"], digest(message.as_bytes()));
+    assert!(
+        child["failure"]
+            .as_str()
+            .unwrap()
+            .contains("contextual child assignment is no longer current"),
+        "{child}"
+    );
+    assert_eq!(
+        fs::read(&history).unwrap(),
+        before_history,
+        "a stale delivered child must not append an accepted continuation result"
+    );
+    let after_work = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(
+        after_work["sections"]["evidence"]["items"],
+        before_work["sections"]["evidence"]["items"]
+    );
+    assert_eq!(
+        after_work["sections"]["assignment"]["residual"]["snapshot"]["headEventSha256"],
+        before_work["sections"]["assignment"]["residual"]["snapshot"]["headEventSha256"]
+    );
+    let view = f.ok(&["work", "continuation", &work]);
+    assert_eq!(view["children"], json!([]));
+    assert_eq!(
+        view["preparedChildren"][0]["retainedResultBytes"],
+        message.len()
+    );
+    let token = f.child_token(&work);
+    let recovered = f.call(&[
+        "work",
+        "child",
+        "recover",
+        &work,
+        intent,
+        "--context",
+        &token,
+    ]);
+    assert!(!recovered.status.success(), "{recovered:?}");
+    assert!(
+        diagnostic(&recovered).contains("contextual child assignment is no longer current"),
+        "{recovered:?}"
+    );
+    assert_eq!(
+        fs::read(&intents).unwrap(),
+        retained,
+        "refused recovery must preserve the exact retained observation"
+    );
+    assert_eq!(fs::read(&history).unwrap(), before_history);
 }
 
 fn diagnostic(output: &std::process::Output) -> String {

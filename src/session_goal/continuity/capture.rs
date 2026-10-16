@@ -152,6 +152,12 @@ pub(crate) fn prepare(
             return Err("bind the receiving session before preparing a child".into());
         };
         let view = crate::work::next(loaded, work)?;
+        if crate::memory::contextual::enabled(loaded) {
+            if view["next"]["action"] != "spawn" {
+                return Err("contextual memory assignment is not current; prepare no child until its recorded Work is resolved".into());
+            }
+            crate::memory::contextual::assert_assignment(loaded, &view["next"]["packet"])?;
+        }
         let specialist_enabled = view["next"]["agent"]
             .as_str()
             .is_some_and(|name| crate::project::specialists::enabled(loaded, name));
@@ -289,6 +295,7 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         .map_err(|_| "prepared perspectives are malformed")?;
     let perspectives = perspective::current(loaded, &sources)?;
     let current = crate::work::next(loaded, work)?;
+    crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
     let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
     let capabilities = crate::project::capabilities::delivery(
         loaded,
@@ -335,6 +342,7 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         result["specialistExperience"] = specialist.clone();
     }
     let fresh = crate::work::next(loaded, work)?;
+    crate::memory::contextual::assert_assignment(loaded, &fresh["next"]["packet"])?;
     let (_, fresh_binding) = current_binding(loaded, work)?;
     if fresh["next"]["assignment"] != selected["assignment"]
         || fresh_binding != binding
@@ -578,6 +586,13 @@ fn record(
     intent: &mut Value,
     message: &str,
 ) -> Result<(), String> {
+    if crate::memory::contextual::enabled(loaded) {
+        let current = crate::work::next(loaded, work)?;
+        if current["next"]["action"] != "spawn" {
+            return Err("contextual child assignment is no longer current; retain its result without acceptance".into());
+        }
+        crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
+    }
     super::continuation_child(
         loaded,
         work,

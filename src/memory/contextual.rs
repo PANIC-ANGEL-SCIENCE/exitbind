@@ -133,18 +133,63 @@ pub(crate) fn binding(l: &Loaded, agent: &str, task: &str) -> Result<Value, Stri
     let Some((c, sha)) = context(l)? else {
         return Ok(Value::Null);
     };
-    if c.task != task
-        || !c
-            .selections
-            .iter()
-            .any(|s| s.agent == agent && !s.resources.is_empty())
-    {
+    let choice = c
+        .selections
+        .iter()
+        .find(|s| s.agent == agent && !s.resources.is_empty());
+    if c.task != task || choice.is_none() {
         return Ok(Value::Null);
+    }
+    let role = unique_role(l, agent)?;
+    let configured = l
+        .agent(agent)
+        .ok_or("contextual recipient is unavailable")?;
+    let mut eligible = super::selection::candidate_references(l, agent, Some(task))?;
+    eligible.extend(crate::project::specialists::candidate_references(
+        l,
+        agent,
+        &role,
+        task,
+        configured.runtime.host.as_deref().unwrap_or(""),
+    )?);
+    for resource in &choice.ok_or("contextual choice unavailable")?.resources {
+        let reference = eligible
+            .iter()
+            .find(|r| r["itemId"] == resource.item_id)
+            .ok_or("contextual memory selected resource is no longer eligible")?;
+        identity(l, agent, Some(task), reference)?
+            .ok_or("contextual memory selected resource has no current choice")?;
+    }
+    if context(l)?.map(|(_, current)| current).as_deref() != Some(sha.as_str()) {
+        return Err("contextual memory selection changed during binding".into());
     }
     Ok(
         json!({"version":1,"contextSha256":sha,"contextRevision":c.revision,
-        "agent":agent,"role":unique_role(l,agent)?}),
+        "agent":agent,"role":role}),
     )
+}
+
+/// Mutation and check consumers keep their existing APIs; only opted-in memory
+/// requires its frozen choice and eligible resource version to remain current.
+pub(crate) fn assert_plan(l: &Loaded, state: &Value) -> Result<(), String> {
+    if !enabled(l) {
+        return Ok(());
+    }
+    for stage in state["plan"]["stages"]
+        .as_array()
+        .ok_or("contextual memory plan stages unavailable")?
+    {
+        for selected in stage["agents"]
+            .as_array()
+            .ok_or("contextual memory plan recipients unavailable")?
+        {
+            let packet = json!({"agent":selected["name"],"goal":state["goal"],
+                "memoryContextSelection":selected["memoryContextSelection"],
+                "memoryReferences":selected["memoryReferences"]});
+            assert_assignment(l, &packet)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn assert_assignment(l: &Loaded, packet: &Value) -> Result<(), String> {
