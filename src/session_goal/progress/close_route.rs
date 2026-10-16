@@ -21,10 +21,37 @@ pub(super) fn next_action(
         .filter_map(Value::as_str)
         .next();
     let (direct, result_ref) = if let Some(reference) = governed_ref {
-        super::super::validate_governed_candidate(loaded, root, record, goal_id, reference).ok()?;
+        if let Err(error) =
+            super::super::validate_governed_candidate(loaded, root, record, goal_id, reference)
+        {
+            if error == "additional direct completion is stale or unknown"
+                || error.ends_with(" direct completion is stale or unknown")
+                || error.contains(" direct completion is unavailable:")
+                || error.contains(" result reference is stale or unavailable:")
+                || error.starts_with("additional goal result in ")
+            {
+                return super::categories::category_revalidation_route(
+                    loaded,
+                    record,
+                    project_selected,
+                );
+            }
+            return None;
+        }
         (false, Some(reference))
     } else {
-        super::super::validate_direct_candidate(loaded, root, record, goal_id, None).ok()?;
+        if let Err(error) =
+            super::super::validate_direct_candidate(loaded, root, record, goal_id, None)
+        {
+            if error.contains("direct completion") {
+                return super::categories::category_revalidation_route(
+                    loaded,
+                    record,
+                    project_selected,
+                );
+            }
+            return None;
+        }
         (true, None)
     };
     let mut args = vec![

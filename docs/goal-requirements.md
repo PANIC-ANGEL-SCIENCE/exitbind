@@ -108,6 +108,14 @@ journey, coverage, integration, evidence and category predicates used by
 `goal close` currently pass; otherwise status keeps repair or integration
 actions visible without claiming readiness.
 
+Status also identifies stale or unavailable evidence attached to an additional
+Goal category. If that evidence alone blocks an otherwise current close, its
+route names the exact category item and disposition for an explicit Lead
+re-evaluation. A direct item records a new Lead observation against current
+project inputs; a result-backed item requires the Lead to select an accepted
+Work that supports that item. Neither route starts another integration Work,
+refreshes evidence automatically, or changes an earlier accepted Work.
+
 For a project-local requirement contract, retain the agreed request in a
 regular project file and explicitly select the project journal with
 `--project`. For example:

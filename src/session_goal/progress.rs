@@ -7,7 +7,7 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
-mod categories;
+pub(super) mod categories;
 mod close_route;
 
 const MAX_TASKS: usize = 32;

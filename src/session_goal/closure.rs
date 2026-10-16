@@ -90,12 +90,12 @@ pub(crate) fn validate_governed_candidate(
                     return Err(format!("{category} has no governed result evidence"));
                 }
                 for reference in refs {
-                    close_result_ref(
-                        loaded,
-                        reference
-                            .as_str()
-                            .ok_or_else(|| format!("{category} has malformed result references"))?,
-                    )?;
+                    let reference = reference
+                        .as_str()
+                        .ok_or_else(|| format!("{category} has malformed result references"))?;
+                    close_result_ref(loaded, reference).map_err(|error| {
+                        format!("{category} result reference is stale or unavailable: {error}")
+                    })?;
                 }
             }
         }

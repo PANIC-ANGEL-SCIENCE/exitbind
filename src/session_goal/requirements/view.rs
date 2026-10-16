@@ -203,32 +203,57 @@ pub(crate) fn projection_selected(
                         .is_some_and(|result| result["state"] == "current"))
                 .then_some(mapping.work.clone())
             });
-        if let Some(work) = full.filter(|work| {
-            super::validate_close_candidate(
+        if let Some(work) = full {
+            let validation = super::validate_close_candidate(
                 loaded,
                 root,
                 record,
                 record["goalId"].as_str().unwrap_or_default(),
-                work,
+                &work,
                 complete,
-            )
-            .is_ok()
-        }) {
-            let mut args = vec![
-                "goal".into(),
-                "close".into(),
-                "--goal-id".into(),
-                record["goalId"].as_str().unwrap_or_default().into(),
-                "--result-ref".into(),
-                work,
-                "--view".into(),
-                "event".into(),
-                "--json".into(),
-            ];
-            if project_selected {
-                args.push("--project".into());
+            );
+            if validation.as_ref().err().is_some_and(|error| {
+                error == "additional direct completion is stale or unknown"
+                    || error.starts_with("additional goal result in ")
+            }) {
+                super::super::progress::categories::category_revalidation_route(
+                    loaded,
+                    record,
+                    project_selected,
+                )
+                .unwrap_or(Value::Null)
+            } else if validation.is_ok() {
+                let mut args = vec![
+                    "goal".into(),
+                    "close".into(),
+                    "--goal-id".into(),
+                    record["goalId"].as_str().unwrap_or_default().into(),
+                    "--result-ref".into(),
+                    work,
+                    "--view".into(),
+                    "event".into(),
+                    "--json".into(),
+                ];
+                if project_selected {
+                    args.push("--project".into());
+                }
+                route(loaded, args)
+            } else {
+                let ids = goal
+                    .requirements
+                    .iter()
+                    .map(|item| item.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                begin_route(
+                    loaded,
+                    record,
+                    &ids,
+                    "Validate the final integration of every agreed requirement.",
+                    true,
+                    project_selected,
+                )
             }
-            route(loaded, args)
         } else {
             let ids = goal
                 .requirements

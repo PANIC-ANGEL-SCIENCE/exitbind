@@ -155,6 +155,31 @@ pub(crate) fn close(
     })
 }
 
+/// Currentness predicate shared by named-category closure and its status
+/// projection. The projection must not suggest another integration when an
+/// additional accepted category reference is the actual close blocker.
+pub(crate) fn category_result_current(
+    loaded: &Loaded,
+    previous: &Value,
+    reference: &str,
+) -> Result<bool, String> {
+    let Some(evidence) = crate::run::result_ref_evidence(loaded, reference)? else {
+        return Err("goal result is unavailable".into());
+    };
+    if !evidence.accepted || !evidence.artifact_current || evidence.drift.is_some() {
+        return Ok(false);
+    }
+    if evidence.inputs_current == Some(true) {
+        return Ok(true);
+    }
+    super::journey::result_ref_current_or_supported(
+        loaded,
+        previous,
+        reference,
+        evidence.inputs_current,
+    )
+}
+
 /// The exact read-only predicates used both by `goal close` and its offered
 /// readiness route. A displayed close route is therefore executable now.
 pub(crate) fn validate_close_candidate(
@@ -216,27 +241,22 @@ pub(crate) fn validate_close_candidate(
                 let reference = reference
                     .as_str()
                     .ok_or("goal result reference malformed")?;
-                let evidence = crate::run::result_ref_evidence(loaded, reference)?
-                    .ok_or("goal result is unavailable")?;
-                if !evidence.accepted
-                    || !evidence.artifact_current
-                    || evidence.drift.is_some()
-                    || (evidence.inputs_current != Some(true)
-                        && !super::journey::result_ref_current_or_supported(
-                            loaded,
-                            previous,
-                            reference,
-                            evidence.inputs_current,
-                        )?)
-                {
-                    return Err("additional goal result is stale or unknown".into());
+                let current =
+                    category_result_current(loaded, previous, reference).map_err(|_| {
+                        format!("additional goal result in {category} is stale or unknown")
+                    })?;
+                if !current {
+                    return Err(format!(
+                        "additional goal result in {category} is stale or unknown"
+                    ));
                 }
             }
-            if item["disposition"] == "direct"
-                && !super::direct_completion_inputs(loaded, previous, item)?
-                    .is_some_and(|(a, b)| a == b)
-            {
-                return Err("additional direct completion is stale or unknown".into());
+            if item["disposition"] == "direct" {
+                let evidence = super::direct_completion_inputs(loaded, previous, item)
+                    .map_err(|_| "additional direct completion is stale or unknown")?;
+                if !evidence.is_some_and(|(a, b)| a == b) {
+                    return Err("additional direct completion is stale or unknown".into());
+                }
             }
         }
     }

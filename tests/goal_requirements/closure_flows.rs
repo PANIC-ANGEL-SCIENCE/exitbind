@@ -364,6 +364,374 @@ fn native_direct_closure_does_not_expose_the_governed_terminal() {
 }
 
 #[test]
+fn stale_direct_category_names_the_revalidation_route_for_generic_goal_status() {
+    let p = Project::new("native-stale-direct-category")
+        .with_native_session("native-stale-direct-category-session");
+    p.file("basis.txt", "inputs A\n");
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete the direct task",
+            "--finding",
+            "The Lead verified the task against the current inputs",
+        ],
+        None,
+    );
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete the direct task",
+            "--none-applicable",
+            "obligations,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    p.file("basis.txt", "inputs B\n");
+
+    let stale = p.status();
+    let finding = &stale["goalProgress"]["categoryDispositions"]["findings"]["items"][0];
+    assert_eq!(finding["directEvidence"]["state"], "stale");
+    assert_eq!(
+        finding["directEvidence"]["reason"],
+        "direct_item_inputs_changed"
+    );
+    let route = &finding["nextActions"][0]["command"];
+    assert!(route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "incorporate"));
+    assert!(route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--direct"));
+    assert!(route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--finding"));
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete the direct task",
+            "--finding",
+            "The Lead verified the task against the current inputs",
+        ],
+        None,
+    );
+    let ready = p.status();
+    assert!(ready["goalProgress"]["nextAction"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "close"));
+    let closed = p.value(
+        &["goal", "close", "--direct", "--goal-id", "direct-goal"],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+}
+
+#[test]
+fn named_full_integration_routes_only_stale_extra_direct_item_for_explicit_revalidation() {
+    let p = Project::new("named-stale-direct-category");
+    p.setup();
+    let direct_text = "The Lead verified the exception against the current inputs";
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--direct",
+            "--finding",
+            direct_text,
+        ],
+        None,
+    );
+    let direct_before = p.status();
+    assert_eq!(
+        direct_before["goalProgress"]["categoryDispositions"]["findings"]["items"][0]
+            ["directEvidence"]["state"],
+        "current"
+    );
+
+    // Product inputs change before the genuine full integration is frozen.
+    p.file("data.txt", "alpha,x\nalpha,z\nbeta,x\n");
+    let integration = p.begin("R1,R2,R3", "sh check.sh all");
+    p.drive(&integration, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    let blocked = p.status();
+    assert_eq!(blocked["requirements"]["coverageCurrent"], true);
+    assert_eq!(
+        blocked["goalProgress"]["categoryDispositions"]["findings"]["items"][0]["directEvidence"]
+            ["state"],
+        "stale"
+    );
+    let route = &blocked["requirements"]["nextAction"];
+    assert_eq!(route["purpose"], "revalidate_stale_direct_category");
+    assert_eq!(route["evidenceState"], "stale");
+    let argv = route["command"].as_array().unwrap();
+    assert!(argv.iter().any(|arg| arg == "--direct"));
+    assert!(argv.iter().any(|arg| arg == direct_text));
+    assert!(!argv.iter().any(|arg| arg == "--scope"));
+    p.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+        ],
+        "additional direct completion is stale or unknown",
+    );
+
+    // The route is a new owner observation on the same item, not another Work.
+    let runs_before_revalidation = p.run_entries();
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            direct_text,
+        ],
+        None,
+    );
+    assert_eq!(p.run_entries(), runs_before_revalidation);
+    let ready = p.status();
+    assert_eq!(
+        ready["goalProgress"]["categoryDispositions"]["findings"]["items"][0]["directEvidence"]
+            ["state"],
+        "current"
+    );
+    let close_route = ready["requirements"]["nextAction"]["command"]
+        .as_array()
+        .unwrap();
+    assert!(close_route
+        .windows(2)
+        .any(|pair| pair == [json!("goal"), json!("close")]));
+    assert!(close_route.iter().any(|arg| arg == &integration));
+    let closed = p.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+            "--view",
+            "event",
+            "--json",
+        ],
+        None,
+    );
+    assert_eq!(closed["completionEvent"]["kind"], "session_goal_completed");
+    assert_eq!(p.status()["closure"]["closed"], true);
+}
+
+#[test]
+fn named_current_integration_routes_stale_additional_result_without_new_work() {
+    let p = Project::new("named-stale-category-result");
+    p.setup();
+    let finding = "The old proof confirms the import exception";
+    p.file("old-proof.txt", "evidence at inputs A\n");
+    let old = p.begin_ordinary(
+        "Check the original category proof",
+        "test \"$(cat old-proof.txt)\" = 'evidence at inputs A'",
+        &[],
+    );
+    p.drive(&old, true);
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            finding,
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &old,
+        ],
+        None,
+    );
+    let missing_finding = "The previous accepted evidence reference is unavailable";
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            missing_finding,
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            "missing-work-reference",
+        ],
+        None,
+    );
+
+    p.file("old-proof.txt", "evidence at inputs B\n");
+    let integration = p.begin("R1,R2,R3", "sh check.sh all");
+    p.drive(&integration, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    let blocked = p.status();
+    assert_eq!(blocked["requirements"]["coverageCurrent"], true);
+    let items = blocked["goalProgress"]["categoryDispositions"]["findings"]["items"]
+        .as_array()
+        .unwrap();
+    let item = &items[0];
+    assert_eq!(item["resultEvidence"]["state"], "stale");
+    assert_eq!(
+        item["resultEvidence"]["reason"],
+        "category_result_not_current"
+    );
+    assert_eq!(items[1]["resultEvidence"]["state"], "unavailable");
+    let route = &blocked["requirements"]["nextAction"];
+    assert_eq!(route["purpose"], "replace_stale_goal_category_evidence");
+    assert_eq!(route["disposition"], "accepted");
+    assert!(route["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| { arg == "CURRENT_ACCEPTED_WORK" }));
+    assert!(!route["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--scope"));
+    p.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+        ],
+        "additional goal result in findings is stale or unknown",
+    );
+
+    let runs_before_replacement = p.run_entries();
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            finding,
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    assert_eq!(p.run_entries(), runs_before_replacement);
+    let unavailable = p.status();
+    assert_eq!(
+        unavailable["goalProgress"]["categoryDispositions"]["findings"]["items"][1]
+            ["resultEvidence"]["state"],
+        "unavailable"
+    );
+    assert_eq!(
+        unavailable["requirements"]["nextAction"]["purpose"],
+        "replace_stale_goal_category_evidence"
+    );
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            missing_finding,
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    assert_eq!(p.run_entries(), runs_before_replacement);
+    assert_eq!(
+        p.status()["goalProgress"]["categoryDispositions"]["findings"]["items"][0]
+            ["resultEvidence"]["state"],
+        "current"
+    );
+    let closed = p.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+}
+
+#[test]
 fn three_requirements_multiple_works_interruption_drift_composition_and_closure() {
     let p = Project::new("goal-import-scenario");
     p.setup();
