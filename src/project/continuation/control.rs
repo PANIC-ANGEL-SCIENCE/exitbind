@@ -238,7 +238,9 @@ pub(crate) enum WorkState {
 pub(crate) struct WorkObservation<'a> {
     pub work: &'a str,
     /// Validated canonical Work/lineage and owned-effects observation. Ended
-    /// means the Work is terminal AND its owned effects are known ended.
+    /// means canonical termination OR durable verified predecessor retirement,
+    /// with every owned effect known ended. A caller completion claim is not
+    /// retirement; the existing successor owner must verify the exact claim.
     pub state: WorkState,
 }
 
@@ -421,7 +423,7 @@ pub(crate) fn evaluate(
             || !facts
                 .recipient_write
                 .iter()
-                .any(|scope| contains_path(scope, path))
+                .any(|scope| crate::config::boundary::maximum_contains(scope, path))
         {
             return Err(Refusal::PathDenied);
         }
@@ -456,22 +458,29 @@ pub(crate) fn evaluate(
         if account.works_spent() >= maximum {
             return Err(Refusal::WorkBudget);
         }
-        if live_slots(account, facts)? >= policy.mandate.max_parallel {
-            return Err(Refusal::ConcurrencyBudget);
-        }
         if intent.kind == Kind::Successor {
             let predecessor = intent
                 .predecessor
                 .as_deref()
                 .ok_or(Refusal::InvalidSuccessor)?;
+            let original = account
+                .operations
+                .iter()
+                .find(|o| o.intent.kind.starts_work() && o.intent.work == predecessor)
+                .ok_or(Refusal::InvalidSuccessor)?;
             if facts.successor_of != Some(predecessor)
-                || !account
-                    .operations
-                    .iter()
-                    .any(|o| o.intent.kind.starts_work() && o.intent.work == predecessor)
+                || original.association != association.association
+                || observed_work(facts, predecessor)? != WorkState::Ended
+                || account.operations.iter().any(|o| {
+                    o.intent.work == predecessor
+                        && matches!(o.outcome, Outcome::Reserved | Outcome::Unknown)
+                })
             {
                 return Err(Refusal::InvalidSuccessor);
             }
+        }
+        if live_slots(account, facts)? >= policy.mandate.max_parallel {
+            return Err(Refusal::ConcurrencyBudget);
         }
     } else {
         let admitted = admitted.ok_or(Refusal::MissingWork)?;
@@ -649,7 +658,7 @@ fn validate_account(account: &Account) -> Result<(), Refusal> {
                 return Err(Refusal::InvalidAccount);
             }
             if let Some(predecessor) = &op.intent.predecessor {
-                if !admitted.contains_key(predecessor.as_str()) {
+                if admitted.get(predecessor.as_str()) != Some(&&op.association) {
                     return Err(Refusal::InvalidAccount);
                 }
             }

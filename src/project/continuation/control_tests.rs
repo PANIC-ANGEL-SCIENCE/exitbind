@@ -19,7 +19,7 @@ impl Fixture {
             "maxElapsedSeconds":600,"externalPublication":false})).unwrap();
         Self {
             mandate,
-            paths: vec!["src".into()],
+            paths: vec!["src/**".into()],
             commands: vec!["python3 checks.py".into()],
         }
     }
@@ -443,9 +443,11 @@ fn missing_or_uncertain_work_observation_does_not_release_capacity() {
 #[test]
 fn successor_requires_actual_predecessor_and_consumes_original_aggregate() {
     let mut fixture = Fixture::new();
+    fixture.paths = vec!["src/parser.py".into()];
     fixture.mandate.max_works = 2;
+    fixture.mandate.max_parallel = 1;
     let (account, first, _) = admitted(&fixture);
-    let second = fixture.association(&work(2), "successor-task");
+    let second = fixture.association(&work(2), "task-one");
     let mut two = intent(&work(2), Kind::Successor);
     two.predecessor = Some(first.work().into());
     let observations = [WorkObservation {
@@ -917,5 +919,197 @@ fn imported_runtime_operation_must_keep_its_originating_work_association() {
     assert_eq!(
         evaluate(&fixture.policy(), &facts, &account, &Request::Inspect),
         Ok(Decision::Inspect)
+    );
+}
+
+#[test]
+fn successor_cannot_rebind_task_root_revision_or_specification_in_live_or_saved_accounts() {
+    let mut fixture = Fixture::new();
+    fixture.paths = vec!["src/parser.py".into()];
+    let (account, first, _) = admitted(&fixture);
+    let mut successor = intent(&work(2), Kind::Successor);
+    successor.predecessor = Some(first.work().into());
+    let observations = [WorkObservation {
+        work: first.work(),
+        state: WorkState::Ended,
+    }];
+    let mut facts = fixture.facts();
+    facts.works = &observations;
+    facts.successor_of = Some(first.work());
+    let exact = fixture.association(&work(2), "task-one");
+    let valid = executed(evaluate(
+        &fixture.policy(),
+        &facts,
+        &account,
+        &Request::Attempt(attempt(&account, "same-root", &successor, &exact)),
+    ));
+    let mut revised = fixture.mandate.clone();
+    revised.revision = 2;
+    for (mandate, specification_sha256, task, root) in [
+        (
+            &fixture.mandate,
+            SPEC,
+            "different-task",
+            "private-claim-root",
+        ),
+        (&fixture.mandate, SPEC, "task-one", "different-claim-root"),
+        (&revised, SPEC, "task-one", "private-claim-root"),
+        (&fixture.mandate, INPUT, "task-one", "private-claim-root"),
+    ] {
+        let policy = Policy {
+            project: "project-identity",
+            specification_sha256,
+            mandate,
+        };
+        let association = prepare_association(&policy, task, root, &work(2)).unwrap();
+        assert_eq!(
+            evaluate(
+                &policy,
+                &facts,
+                &account,
+                &Request::Attempt(attempt(&account, "rebound", &successor, &association))
+            ),
+            Err(Refusal::InvalidSuccessor)
+        );
+        let mut imported = valid.clone();
+        imported.operations.last_mut().unwrap().association = association.association().clone();
+        assert_eq!(validate_account(&imported), Err(Refusal::InvalidAccount));
+    }
+}
+
+#[test]
+fn successor_requires_actual_retirement_and_all_predecessor_effects_known_ended() {
+    let mut fixture = Fixture::new();
+    fixture.paths = vec!["src/parser.py".into()];
+    let (account, first, original) = admitted(&fixture);
+    let second = fixture.association(&work(2), "task-one");
+    let mut successor = intent(&work(2), Kind::Successor);
+    successor.predecessor = Some(first.work().into());
+    for state in [WorkState::Active, WorkState::Unknown] {
+        let observations = [WorkObservation {
+            work: first.work(),
+            state,
+        }];
+        let mut facts = fixture.facts();
+        facts.successor_of = Some(first.work());
+        facts.works = &observations;
+        assert_eq!(
+            evaluate(
+                &fixture.policy(),
+                &facts,
+                &account,
+                &Request::Attempt(attempt(&account, "replacement", &successor, &second))
+            ),
+            Err(Refusal::InvalidSuccessor)
+        );
+    }
+    let observations = [WorkObservation {
+        work: first.work(),
+        state: WorkState::Ended,
+    }];
+    let mut facts = fixture.facts();
+    facts.successor_of = Some(first.work());
+    facts.works = &observations;
+    for outcome in [Outcome::Reserved, Outcome::Unknown] {
+        let mut unsettled = account.clone();
+        unsettled.operations[0].outcome = outcome;
+        assert_eq!(
+            evaluate(
+                &fixture.policy(),
+                &facts,
+                &unsettled,
+                &Request::Attempt(attempt(&unsettled, "replacement", &successor, &second))
+            ),
+            Err(Refusal::InvalidSuccessor)
+        );
+    }
+    assert_eq!(account.operations[0].intent, original);
+    assert!(matches!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "replacement", &successor, &second))
+        ),
+        Ok(Decision::Execute { .. })
+    ));
+}
+
+#[test]
+fn configured_write_maxima_accept_globs_without_extending_mandate_or_protected_paths() {
+    let mut fixture = Fixture::new();
+    fixture.mandate.write.push("src-neighbor".into());
+    let (account, association, _) = admitted(&fixture);
+    let observations = [WorkObservation {
+        work: association.work(),
+        state: WorkState::Active,
+    }];
+    let mut facts = fixture.facts();
+    facts.works = &observations;
+    let mut mutation = intent(association.work(), Kind::Mutation);
+    assert!(matches!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(
+                &account,
+                "configured-prefix",
+                &mutation,
+                &association
+            ))
+        ),
+        Ok(Decision::Execute { .. })
+    ));
+    mutation.paths = vec!["src-neighbor/parser.py".into()];
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(
+                &account,
+                "configured-neighbor",
+                &mutation,
+                &association
+            ))
+        ),
+        Err(Refusal::PathDenied)
+    );
+    let broad = vec!["**".into()];
+    facts.recipient_write = &broad;
+    assert!(matches!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "configured-all", &mutation, &association))
+        ),
+        Ok(Decision::Execute { .. })
+    ));
+    mutation.paths = vec!["outside/parser.py".into()];
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(
+                &account,
+                "mandate-outside",
+                &mutation,
+                &association
+            ))
+        ),
+        Err(Refusal::PathDenied)
+    );
+    mutation.paths = vec![".git/config".into()];
+    assert_eq!(
+        evaluate(
+            &fixture.policy(),
+            &facts,
+            &account,
+            &Request::Attempt(attempt(&account, "protected", &mutation, &association))
+        ),
+        Err(Refusal::InvalidIntent)
     );
 }
