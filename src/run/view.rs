@@ -607,10 +607,9 @@ pub(super) fn supersede_with_policy_and_recovery(
             wanted_claim["preReturnPolicy"] = policy.clone();
         }
         if check_policy.is_some() && loaded.verification_preparation.is_some() {
-            wanted_claim["verificationPreparationProtocol"] =
-                json!(crate::run::verification_preparation::PROTOCOL);
-            wanted_claim["verificationCheckerSources"] = crate::run_value::checker_sources_value(
-                verification_checker_sources.as_deref().unwrap_or_default(),
+            crate::run::verification_preparation::add_start_fields(
+                &mut wanted_claim,
+                Some(verification_checker_sources.as_deref().unwrap_or_default()),
             );
         }
         if let (Some(protocol), Some(sha)) = (carry_protocol, carry_sha.as_ref()) {
@@ -668,10 +667,9 @@ pub(super) fn supersede_with_policy_and_recovery(
         if let Some(policy) = &check_policy {
             event_value["checkPolicy"] = policy.value();
             if loaded.verification_preparation.is_some() {
-                event_value["verificationPreparationProtocol"] =
-                    json!(crate::run::verification_preparation::PROTOCOL);
-                event_value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
-                    verification_checker_sources.as_deref().unwrap_or_default(),
+                crate::run::verification_preparation::add_start_fields(
+                    &mut event_value,
+                    Some(verification_checker_sources.as_deref().unwrap_or_default()),
                 );
             }
         }

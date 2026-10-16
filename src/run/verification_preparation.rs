@@ -8,6 +8,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+mod events;
+pub(crate) use events::{
+    add_start_fields, append_allowed_fields, validate_start_fields, EVENT_FIELDS,
+};
+
 pub(crate) const PROTOCOL: u64 = 1;
 const ENV_SCRATCH: &str = "EXITBIND_VERIFICATION_SCRATCH";
 

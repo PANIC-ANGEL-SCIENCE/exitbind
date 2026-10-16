@@ -8,6 +8,7 @@ mod governor_validation;
 mod historical_review;
 mod recovery;
 mod reviewer_transition;
+mod start_protocol;
 mod validation;
 
 use apply::apply_event;
@@ -60,18 +61,7 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
             state["reviewDecisions"] = json!([review]);
         }
     }
-    if let Some(marker) = first.get("recoveryProtocol") {
-        state["recoveryProtocol"] = marker.clone();
-    }
-    if let Some(marker) = first.get("checkObservationProtocol") {
-        state["checkObservationProtocol"] = marker.clone();
-    }
-    if let Some(marker) = first.get("verificationPreparationProtocol") {
-        state["verificationPreparationProtocol"] = marker.clone();
-    }
-    if let Some(sources) = first.get("verificationCheckerSources") {
-        state["verificationCheckerSources"] = sources.clone();
-    }
+    start_protocol::copy_fields(first, &mut state);
     let governor_enabled = super::carry::initialize_governor(first, &mut state)?;
     if let Some(receipt) = first.get("harnessReceipt") {
         state["harnessReceipt"] = receipt.clone();
@@ -209,8 +199,7 @@ fn reject_unknown(
             allowed.push("governorCarry");
             allowed.push("governorCarrySha256");
             allowed.push("checkReplacement");
-            allowed.push("verificationPreparationProtocol");
-            allowed.push("verificationCheckerSources");
+            crate::run::verification_preparation::append_allowed_fields(&mut allowed);
         }
         return object
             .keys()

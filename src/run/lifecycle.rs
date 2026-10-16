@@ -189,10 +189,9 @@ pub(crate) fn start_with_policy_and_pre_return(
         if let Some(policy) = &check_policy {
             value["checkPolicy"] = policy.value();
             if loaded.verification_preparation.is_some() {
-                value["verificationPreparationProtocol"] =
-                    json!(crate::run::verification_preparation::PROTOCOL);
-                value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
-                    verification_checker_sources.as_deref().unwrap_or_default(),
+                crate::run::verification_preparation::add_start_fields(
+                    &mut value,
+                    Some(verification_checker_sources.as_deref().unwrap_or_default()),
                 );
             }
         }
@@ -340,10 +339,9 @@ pub(crate) fn start_intent_sha256_with_pre_return(
     if let Some(policy) = &check_policy {
         value["checkPolicy"] = policy.value();
         if loaded.verification_preparation.is_some() {
-            value["verificationPreparationProtocol"] =
-                json!(crate::run::verification_preparation::PROTOCOL);
-            value["verificationCheckerSources"] = crate::run_value::checker_sources_value(
-                verification_checker_sources.as_deref().unwrap_or_default(),
+            crate::run::verification_preparation::add_start_fields(
+                &mut value,
+                Some(verification_checker_sources.as_deref().unwrap_or_default()),
             );
         }
     }
@@ -395,8 +393,6 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "basisProtocol",
         "recoveryProtocol",
         "checkObservationProtocol",
-        "verificationPreparationProtocol",
-        "verificationCheckerSources",
         "basis",
         "reviewPolicy",
         "governor",
@@ -405,7 +401,10 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         return Err("Work ledger does not begin with a start event".into());
     }
     let mut projection = serde_json::Map::new();
-    for field in FIELDS {
+    for field in FIELDS
+        .iter()
+        .chain(crate::run::verification_preparation::EVENT_FIELDS.iter())
+    {
         if let Some(value) = event.get(*field) {
             projection.insert((*field).to_owned(), value.clone());
         }
