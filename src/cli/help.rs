@@ -62,7 +62,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
-        ["work", "challenge"] => "work challenge WORK --question QUESTION [--probe-command COMMAND --probe-source PROJECT_FILE] [--json] (conditional native-host independent-evidence packet; read-only, launches no agents or probes)",
+        ["work", "challenge"] => "work challenge [prepare] WORK --question QUESTION [--probe-command COMMAND --probe-source PROJECT_FILE] [--json] | work challenge validate WORK < REPORT_JSON (read-only bounded preparation/current-identity validation; no agents or probes launched)",
         ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands and complete section routes without repeating instructions)",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
@@ -88,7 +88,8 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER [--owner-recovery STATE_ARTIFACT_PATH]"
         }
-        ["goal"] => "goal incorporate --goal-id ID --goal TEXT [--project] | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] | goal cover --goal-id ID [--project] | goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] | goal status [--project] [--json] | goal close --goal-id ID --result-ref REF [--project] | goal usage --goal-id ID [--json] | goal <child> --help",
+        ["goal"] => "goal incorporate --goal-id ID --goal TEXT [--project] | goal prepare --goal-id ID --requirement IDS --artifact CHECKER --check-command COMMAND [--project] | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] | goal cover --goal-id ID [--project] | goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] | goal status [--project] [--json] | goal close --goal-id ID --result-ref REF [--project] | goal usage --goal-id ID [--json] | goal <child> --help",
+        ["goal", "prepare"] => "goal prepare --goal-id ID --requirement IDS --artifact PROJECT_CHECKER --check-command COMMAND [--scope integration] [--basis TEXT] [--project] [--json] (read-only named coverage and checker preparation before Work begin; emits a separate begin route)",
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT [--project] (--project selects the configured project's legacy Goal journal; otherwise a valid native host identity selects its conversation Goal)",
         ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",
         ["goal", "cover"] => "goal cover --goal-id ID [--project] [--json] (Lead confirms the agreed finite set; this does not prove complete interpretation of natural language)",

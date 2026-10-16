@@ -26,7 +26,12 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             a.flags.contains_key("project"),
         )?);
     }
-    let presentation = crate::session_goal::presentation_for_loaded(l, record.as_ref())?;
+    let presentation = crate::session_goal::presentation_for_selected(
+        l,
+        record.as_ref(),
+        &scope.root,
+        a.flags.contains_key("project"),
+    )?;
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));
     value["currentReadiness"] = presentation["currentReadiness"].clone();
     value["goalProgress"] = presentation["goalProgress"].clone();
@@ -34,8 +39,10 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         .as_ref()
         .is_some_and(crate::session_goal::requirements::named);
     if named {
-        value["requirements"] = crate::session_goal::requirements::projection(
+        value["requirements"] = crate::session_goal::requirements::projection_selected(
             l,
+            &scope.root,
+            a.flags.contains_key("project"),
             record.as_ref().expect("named record"),
         )?;
     }

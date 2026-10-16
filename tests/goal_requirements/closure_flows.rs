@@ -31,6 +31,23 @@ fn native_generic_owner_close_and_status_render_only_verified_main_and_side_work
 
     let side = p.begin_ordinary("Complete a side task in this conversation", "true", &[]);
     p.drive(&side, true);
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "native-main",
+            "--goal",
+            "Complete the main task and all side tasks in this conversation",
+            "--finding",
+            "The existing evidence validates the main task",
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &historical,
+        ],
+        None,
+    );
     let current = p.status();
     let journey = &current["goalProgress"]["journeyCompletion"];
     assert_eq!(journey["state"], "current");
@@ -41,6 +58,12 @@ fn native_generic_owner_close_and_status_render_only_verified_main_and_side_work
     assert_eq!(members[0]["work"], side);
     assert!(!members.iter().any(|member| member["work"] == historical));
     assert!(current.get("requirements").is_none());
+    let close_route = current["goalProgress"]["nextAction"]["command"]
+        .as_array()
+        .expect("a valid generic governed Goal should expose its close route");
+    assert!(close_route.iter().any(|arg| arg == "close"));
+    assert!(close_route.iter().any(|arg| arg == &historical));
+    assert!(!close_route.iter().any(|arg| arg == "--direct"));
 
     let close = p.call(
         &[

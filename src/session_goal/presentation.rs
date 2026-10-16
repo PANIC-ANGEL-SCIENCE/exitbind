@@ -100,12 +100,22 @@ pub(crate) fn presentation_for_loaded(
     loaded: &crate::config::Loaded,
     value: Option<&Value>,
 ) -> Result<Value, String> {
+    presentation_for_selected(loaded, value, &loaded.state_root, false)
+}
+
+pub(crate) fn presentation_for_selected(
+    loaded: &crate::config::Loaded,
+    value: Option<&Value>,
+    root: &std::path::Path,
+    project_selected: bool,
+) -> Result<Value, String> {
     let mut rendered = presentation(value);
     let readiness = current::evaluate(loaded, value);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
-    rendered["goalProgress"] = progress::project(Some(loaded), value, &rendered, None);
+    rendered["goalProgress"] =
+        progress::project_selected(loaded, root, project_selected, value, &rendered, None);
     rendered["terminal"] = json!(crate::presentation_events::whole_goal_terminal(&rendered));
     Ok(rendered)
 }

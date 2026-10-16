@@ -8,6 +8,14 @@ exitbind work challenge WORK --question "Can a lost reply repeat the effect?" \
   --probe-command "python3 test_behavior.py" --probe-source test_behavior.py --json
 ```
 
+The explicit equivalent is `work challenge prepare WORK ...`. Its response
+includes the current machine identity, a bounded evidence template and an exact
+read-only validation route. Before returning, validate the completed report or
+ordinary result artifact with `work challenge validate WORK --json < report.json`.
+Validation gives a precise missing/invalid field error and checks that the
+requirement, candidate and probe source still match. It reports shape and
+identity only; the host must still observe any probe.
+
 This read-only packet carries the current approved requirement and candidate
 identity. It gives the host two separate first-pass assignments and at most one
 focused exchange about a relevant disagreement. It starts no model or command.
@@ -25,16 +33,35 @@ The packet supplies an `evidenceTemplate` for the agent's ordinary result
 artifact. Put the completed template in its `earlyEvidence` field, with two
 distinct contributor session references, concise claims, evidence references,
 and `whatWouldChange` statements. Set the probe observation to `discriminated`,
-`no_new_information` or `inconclusive`; retain exact authorized observations in
-their existing artifacts. These fields are reported facts, not authenticated
-independence or hidden reasoning transcripts.
+`no_new_information` or `inconclusive`; the latter two can truthfully leave the
+probe command and source empty when no probe was permitted or run. A selected
+probe needs its command hash and safe current source identity. Retain exact
+authorized observations in their existing artifacts. A completed return checks required fields, bounded
+text, distinct session references, SHA-256 field shape and the probe command
+hash before recording the return. Errors identify the missing or invalid field.
+This validates the report's structure, not the truth of its claims or whether a
+probe ran. A complete report whose saved Work, candidate or source no longer
+matches stays historical with its original hashes; it is not refreshed in place.
+These fields are reported facts, not authenticated independence or hidden
+reasoning transcripts.
 
 `work detail` shows the resulting requirement, candidate, test, observation,
-actual Lead disposition and final-check links. It reports `reported_current`
-only while the declared requirement, inputs, command and probe source match;
-changed or unavailable inputs make the old observation historical or unknown.
+actual Lead disposition and final-check links. A newer result without a report
+keeps the last counterexample visible as historical, with its original hash and
+a separate link to the newest candidate's final check. A missing, changed or
+truncated newest artifact is unknown and never promotes an older report.
+`reported_current` applies only while the declared requirement, inputs, command
+and any selected probe source match; changed or unavailable inputs make the
+observation historical or unknown.
 This advisory link never permits skipping the frozen final check, independent
 review or Lead acceptance.
+
+When the opt-in pre-return command changes a bound input, the completed return
+stays pending and the diagnostic remains passed. The refusal names the changed
+binding components (such as `inputs`, `artifact`, `config`, `assignment`,
+`grant_set` or `checker`) and supplies the exact saved-attempt read route. Read
+the retained metadata or captured bytes there; do not repeat a committed or
+uncertain diagnostic automatically.
 
 ## Select a cheap diagnostic for a new Work
 

@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod challenge;
+
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
     print_json(&crate::work::effective_action::attach(value))
 }
@@ -52,14 +54,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             print_work_json(&result)
         }
         "challenge" => {
-            args::assert_options("work challenge", a, &["config", "question", "probe-command", "probe-source", "json"])?;
-            args::assert_positionals("work challenge", a, 2)?;
-            let packet = crate::work::early_evidence::packet(l,
-                positional(a, 1, "work challenge requires WORK")?,
-                option(a, "question", "work challenge requires --question QUESTION")?)?;
-            print_work_json(&crate::work::early_evidence::with_probe(l, packet,
-                a.options.get("probe-command").map(String::as_str),
-                a.options.get("probe-source").map(String::as_str))?)
+            challenge::command(l, a)
         }
         "world" => {
             args::assert_options("work world", a,

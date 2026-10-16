@@ -1,4 +1,5 @@
 //! Opt-in, source-bound diagnostic execution before a successful Worker return.
+mod binding_diagnostic;
 mod journal;
 
 use self::journal::{
@@ -438,8 +439,6 @@ pub(super) fn assert_pass_current(
         return Ok(());
     };
     let policy = crate::run_value::pre_return_policy_from_value(policy_value, 1)?;
-    assert_current_configuration(loaded, state)?;
-    crate::run::artifact::assert_current(loaded, state)?;
     let events = state["events"]
         .as_array()
         .ok_or("current run events are unavailable")?;
@@ -454,8 +453,11 @@ pub(super) fn assert_pass_current(
         &policy,
     )?;
     let id = crate::evidence::hash::value(&json!({"binding":binding,"limits":policy.value()}));
-    if attempt_id.is_some_and(|expected| expected != id) {
-        return Err("pre-return attempt no longer matches the current result binding".into());
+    if let Some(expected) = attempt_id.filter(|expected| *expected != id) {
+        let saved = read_record(&record_path(loaded, expected, "attempt")?)?;
+        return Err(binding_diagnostic::mismatch(
+            loaded, &saved, &binding, state, expected,
+        ));
     }
     let result = read_record(&record_path(loaded, &id, "result")?)?;
     let attempt = read_record(&record_path(loaded, &id, "attempt")?)?;
@@ -475,6 +477,19 @@ pub(super) fn assert_pass_current(
         return Err(
             "pre-return result metadata does not match the current binding or producer".into(),
         );
+    }
+    if let Err(error) = assert_current_configuration(loaded, state) {
+        let category = binding_diagnostic::category(&error);
+        return Err(format!(
+            "{error}; changed components: {category}; inspect the saved attempt with {}",
+            binding_diagnostic::readback(loaded, attempt_id, &attempt)
+        ));
+    }
+    if let Err(error) = crate::run::artifact::assert_current(loaded, state) {
+        return Err(format!(
+            "{error}; changed components: artifact; inspect the saved attempt with {}",
+            binding_diagnostic::readback(loaded, attempt_id, &attempt)
+        ));
     }
     for stream in ["stdout", "stderr"] {
         let reference = result

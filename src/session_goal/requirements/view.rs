@@ -6,27 +6,35 @@ fn route(loaded: &Loaded, suffix: Vec<String>) -> Value {
     crate::work::compact::continuation_route(&loaded.path, suffix)
 }
 
-fn begin_route(loaded: &Loaded, record: &Value, ids: &str, goal: &str, integration: bool) -> Value {
-    let mut result = route(
-        loaded,
-        vec![
-            "work".into(),
-            "begin".into(),
-            "change".into(),
-            "--goal".into(),
-            goal.into(),
-            "--goal-id".into(),
-            record["goalId"].as_str().unwrap_or_default().into(),
-            "--requirement".into(),
-            ids.into(),
-            "--artifact".into(),
-            "PROJECT_CHECKER".into(),
-            "--check-command".into(),
-            "CHECK_COMMAND".into(),
-            "--review-policy".into(),
-            "REVIEW_DECISION".into(),
-        ],
-    );
+fn begin_route(
+    loaded: &Loaded,
+    record: &Value,
+    ids: &str,
+    goal: &str,
+    integration: bool,
+    project_selected: bool,
+) -> Value {
+    let mut args = vec![
+        "work".into(),
+        "begin".into(),
+        "change".into(),
+        "--goal".into(),
+        goal.into(),
+        "--goal-id".into(),
+        record["goalId"].as_str().unwrap_or_default().into(),
+        "--requirement".into(),
+        ids.into(),
+        "--artifact".into(),
+        "PROJECT_CHECKER".into(),
+        "--check-command".into(),
+        "CHECK_COMMAND".into(),
+        "--review-policy".into(),
+        "REVIEW_DECISION".into(),
+    ];
+    if project_selected {
+        args.push("--project-goal".into());
+    }
+    let mut result = route(loaded, args);
     result["placeholders"] = json!({"PROJECT_CHECKER":"a non-ignored project checker file included in tested inputs",
         "CHECK_COMMAND":"the actual check command naming that checker","REVIEW_DECISION":"the owner's required/omitted choice within this scope"});
     result["effect"] = json!("records a new legitimate Work when executed; no old grant is copied");
@@ -55,6 +63,15 @@ fn begin_route(loaded: &Loaded, record: &Value, ids: &str, goal: &str, integrati
 }
 
 pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, String> {
+    projection_selected(loaded, &loaded.state_root, false, record)
+}
+
+pub(crate) fn projection_selected(
+    loaded: &Loaded,
+    root: &Path,
+    project_selected: bool,
+    record: &Value,
+) -> Result<Value, String> {
     let goal = Goal::read(record)?;
     if goal.project_identity != identity(loaded)? {
         return Err("named goal belongs to another project".into());
@@ -144,6 +161,7 @@ pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, Strin
                 &requirement.id,
                 &format!("Validate or repair: {}", requirement.text),
                 false,
+                project_selected,
             )
         } else {
             Value::Null
@@ -156,15 +174,16 @@ pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, Strin
     let complete =
         goal.source.coverage_confirmed && rows.iter().all(|row| row["satisfied"] == true);
     let next = if !goal.source.coverage_confirmed {
-        route(
-            loaded,
-            vec![
-                "goal".into(),
-                "cover".into(),
-                "--goal-id".into(),
-                record["goalId"].as_str().unwrap_or_default().into(),
-            ],
-        )
+        let mut args = vec![
+            "goal".into(),
+            "cover".into(),
+            "--goal-id".into(),
+            record["goalId"].as_str().unwrap_or_default().into(),
+        ];
+        if project_selected {
+            args.push("--project".into());
+        }
+        route(loaded, args)
     } else if let Some(row) = rows.iter().find(|row| row["satisfied"] != true) {
         row["nextAction"].clone()
     } else {
@@ -184,21 +203,32 @@ pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, Strin
                         .is_some_and(|result| result["state"] == "current"))
                 .then_some(mapping.work.clone())
             });
-        if let Some(work) = full {
-            route(
+        if let Some(work) = full.filter(|work| {
+            super::validate_close_candidate(
                 loaded,
-                vec![
-                    "goal".into(),
-                    "close".into(),
-                    "--goal-id".into(),
-                    record["goalId"].as_str().unwrap_or_default().into(),
-                    "--result-ref".into(),
-                    work,
-                    "--view".into(),
-                    "event".into(),
-                    "--json".into(),
-                ],
+                root,
+                record,
+                record["goalId"].as_str().unwrap_or_default(),
+                work,
+                complete,
             )
+            .is_ok()
+        }) {
+            let mut args = vec![
+                "goal".into(),
+                "close".into(),
+                "--goal-id".into(),
+                record["goalId"].as_str().unwrap_or_default().into(),
+                "--result-ref".into(),
+                work,
+                "--view".into(),
+                "event".into(),
+                "--json".into(),
+            ];
+            if project_selected {
+                args.push("--project".into());
+            }
+            route(loaded, args)
         } else {
             let ids = goal
                 .requirements
@@ -212,13 +242,67 @@ pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, Strin
                 &ids,
                 "Validate the final integration of every agreed requirement.",
                 true,
+                project_selected,
             )
         }
+    };
+    let preparation_ids = if !complete {
+        rows.iter()
+            .find(|row| row["satisfied"] != true)
+            .and_then(|row| row["id"].as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| {
+                goal.requirements
+                    .iter()
+                    .map(|item| item.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+    } else {
+        goal.requirements
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let preparation = if goal.source.coverage_confirmed {
+        let mut current = vec![
+            "goal".into(),
+            "prepare".into(),
+            "--goal-id".into(),
+            record["goalId"].as_str().unwrap_or_default().into(),
+            "--requirement".into(),
+            preparation_ids.clone(),
+            "--artifact".into(),
+            "PROJECT_CHECKER".into(),
+            "--check-command".into(),
+            "CHECK_COMMAND".into(),
+            "--json".into(),
+        ];
+        if project_selected {
+            current.push("--project".into());
+        }
+        let mut project = current.clone();
+        if !project_selected {
+            project.push("--project".into());
+        }
+        if complete {
+            current.extend(["--scope".into(), "integration".into()]);
+            project.extend(["--scope".into(), "integration".into()]);
+        }
+        let current_route = route(loaded, current);
+        let project_route = route(loaded, project);
+        json!({"available":true,"phase":"before_work_freeze","selectedRequirementIds":preparation_ids.split(',').collect::<Vec<_>>(),
+            "scopeRoutes":{"currentGoal":current_route,"projectGoal":project_route},
+            "placeholders":{"PROJECT_CHECKER":"current non-ignored project checker file","CHECK_COMMAND":"check command that names PROJECT_CHECKER"},
+            "effect":"read-only validation; the returned beginRoute remains a separate Work-creation decision"})
+    } else {
+        json!({"available":false,"reason":"lead_must_confirm_finite_coverage_first","selectedRequirementIds":preparation_ids.split(',').collect::<Vec<_>>()})
     };
     Ok(
         json!({"goalId":record["goalId"],"goalRevision":record["revision"],"source":{"ref":goal.source.reference,"sha256":goal.source.sha256},
         "coverageConfirmed":goal.source.coverage_confirmed,"coverageOwner":"lead","coverageLimit":"Declared finite coverage is not proof of complete natural-language interpretation.",
-        "requirements":rows,"coverageCurrent":complete,"historicalClosure":record["closure"],"nextAction":next,"readOnly":true}),
+        "requirements":rows,"coverageCurrent":complete,"preFreezePreparation":preparation,"historicalClosure":record["closure"],"nextAction":next,"readOnly":true}),
     )
 }
 

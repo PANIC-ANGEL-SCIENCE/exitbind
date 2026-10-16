@@ -87,6 +87,114 @@ fn checker_coverage_and_intake_are_guarded_before_start() {
 }
 
 #[test]
+fn status_exposes_named_pre_freeze_selection_and_exact_category_routes() {
+    let p = Project::new("goal-pre-freeze-selection");
+    p.setup();
+    let runs_before = p.run_entries();
+    let prepared = p.value(
+        &[
+            "goal",
+            "prepare",
+            "--project",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh R1 R2",
+            "--scope",
+            "integration",
+        ],
+        None,
+    );
+    assert_eq!(prepared["kind"], "named_coverage_preparation");
+    assert_eq!(prepared["selectedRequirementIds"], json!(["R1", "R2"]));
+    assert_eq!(prepared["integration"], true);
+    assert!(prepared["beginRoute"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--project-goal"));
+    assert_eq!(
+        p.run_entries(),
+        runs_before,
+        "preparation must not create or freeze a Work"
+    );
+    let preparation = &p.status()["requirements"]["preFreezePreparation"];
+    assert_eq!(preparation["available"], true);
+    assert_eq!(preparation["phase"], "before_work_freeze");
+    assert!(preparation["scopeRoutes"]["projectGoal"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--requirement"));
+    let category_project = Project::new("goal-category-preparation");
+    category_project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            "categories",
+            "--goal",
+            "Decide each imported category",
+        ],
+        None,
+    );
+    let initial_categories = &category_project
+        .value(&["goal", "status", "--project", "--json"], None)["goalProgress"]
+        ["categoryDispositions"]["obligations"];
+    let initial_routes = initial_categories["nextActions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("category projection: {initial_categories}"));
+    assert!(initial_routes.iter().any(|route| route["command"]
+        .as_array()
+        .unwrap()
+        .windows(2)
+        .any(|pair| pair == [json!("--consider"), json!("obligations")])));
+    assert!(initial_routes.iter().any(|route| route["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--none-applicable")));
+    assert!(initial_routes[0]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--project"));
+
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely",
+            "--obligation",
+            "Retain an audit trail.",
+        ],
+        None,
+    );
+    let status = p.value(&["goal", "status", "--project", "--json"], None);
+    let dispositions = &status["goalProgress"]["categoryDispositions"]["obligations"];
+    assert_eq!(dispositions["state"], "considered");
+    assert_eq!(dispositions["items"][0]["disposition"], "open");
+    let routes = dispositions["items"][0]["nextActions"].as_array().unwrap();
+    assert!(routes.iter().any(|route| route["disposition"] == "accepted"
+        && route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "ACCEPTED_WORK")));
+    assert!(dispositions["nextActions"].as_array().unwrap().is_empty());
+    assert_eq!(dispositions["ownerDecisionRequired"], true);
+}
+
+#[test]
 fn relocated_project_cannot_reuse_a_named_goal_identity() {
     let mut p = Project::new("goal-project-identity");
     p.setup();

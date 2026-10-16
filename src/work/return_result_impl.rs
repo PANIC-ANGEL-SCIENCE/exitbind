@@ -38,7 +38,8 @@ pub(crate) fn replay_recorded_native(
     if artifact.bytes != bytes.len() as u64 || artifact.preview != bytes {
         return Err("native replay bytes differ from the committed result".into());
     }
-    let (next, _, presentation) = next_and_residual(loaded, work, &ledger, false)?;
+    let (next, _, presentation) =
+        super::next_snapshot::next_and_residual(loaded, work, &ledger, false)?;
     let response = json!({
         "work": work,
         "event": event,
@@ -196,7 +197,7 @@ pub(crate) fn return_result_with(
         },
         |events, source| {
             details::ensure_action_binding(loaded, work, current_binding)?;
-            preflight_submission(loaded, work, events, source)
+            submission_preflight::preflight(loaded, work, events, source, &bytes)
         },
         &mut recorded_protection,
     );
@@ -286,30 +287,31 @@ pub(crate) fn return_result_with(
     // cannot read the new state, report that recorded fact with the exact
     // event/head reference.  Returning an ordinary error here would invite a
     // caller to retry a submission that is already in the ledger.
-    let (next, _residual, presentation) = match next_and_residual(loaded, work, &ledger, false) {
-        Ok(value) => value,
-        Err(projection_error) => {
-            let reference = recorded_reference(loaded, &ledger, &submitted);
-            let mut response = recorded_projection_failure(
-                work,
-                &ledger,
-                &submitted,
-                &projection_error,
-                reference,
-                config_path,
-            );
-            if let Some(error) = held_cleanup_warning {
-                response["heldCleanupWarning"] = json!(error);
+    let (next, _residual, presentation) =
+        match super::next_snapshot::next_and_residual(loaded, work, &ledger, false) {
+            Ok(value) => value,
+            Err(projection_error) => {
+                let reference = recorded_reference(loaded, &ledger, &submitted);
+                let mut response = recorded_projection_failure(
+                    work,
+                    &ledger,
+                    &submitted,
+                    &projection_error,
+                    reference,
+                    config_path,
+                );
+                if let Some(error) = held_cleanup_warning {
+                    response["heldCleanupWarning"] = json!(error);
+                }
+                return Ok(bounded_mutation(
+                    &response,
+                    work,
+                    Some(assignment),
+                    &ledger,
+                    config_path,
+                ));
             }
-            return Ok(bounded_mutation(
-                &response,
-                work,
-                Some(assignment),
-                &ledger,
-                config_path,
-            ));
-        }
-    };
+        };
     let mut response = json!({"work": work, "event": submitted["event"], "next": next, "presentation": presentation});
     if let Some(error) = held_cleanup_warning {
         response["heldCleanupWarning"] = json!(error);

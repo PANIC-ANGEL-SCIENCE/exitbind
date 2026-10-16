@@ -7,6 +7,9 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+mod categories;
+mod close_route;
+
 const MAX_TASKS: usize = 32;
 const MAX_DISPLAY_CHARS: usize = 180;
 const SYSTEM_TEXT_MAX_GOAL_CHARS: usize = 64;
@@ -31,7 +34,36 @@ pub(super) fn project(
     rendered: &Value,
     result: Option<&Value>,
 ) -> Value {
-    project_with_limit(loaded, record, rendered, result, MAX_TASKS, false)
+    project_with_limit(
+        loaded,
+        record,
+        rendered,
+        result,
+        MAX_TASKS,
+        false,
+        loaded.map(|loaded| loaded.state_root.as_path()),
+        false,
+    )
+}
+
+pub(super) fn project_selected(
+    loaded: &Loaded,
+    root: &std::path::Path,
+    project_selected: bool,
+    record: Option<&Value>,
+    rendered: &Value,
+    result: Option<&Value>,
+) -> Value {
+    project_with_limit(
+        Some(loaded),
+        record,
+        rendered,
+        result,
+        MAX_TASKS,
+        false,
+        Some(root),
+        project_selected,
+    )
 }
 
 /// A bounded Goal preview for a non-owner project. It deliberately has no
@@ -68,6 +100,8 @@ fn project_with_limit(
     result: Option<&Value>,
     task_limit: usize,
     include_canonical_id: bool,
+    goal_root: Option<&std::path::Path>,
+    project_selected: bool,
 ) -> Value {
     let Some(record) = record else {
         return unavailable(
@@ -105,7 +139,15 @@ fn project_with_limit(
     }
     if super::requirements::named(record) {
         if let Some(loaded) = loaded {
-            let mut view = named_progress(loaded, record, overall_state, result, task_limit);
+            let mut view = named_progress(
+                loaded,
+                goal_root.unwrap_or(&loaded.state_root),
+                project_selected,
+                record,
+                overall_state,
+                result,
+                task_limit,
+            );
             if let Some(journey) = journey {
                 view["journeyCompletion"] = journey;
             }
@@ -113,26 +155,28 @@ fn project_with_limit(
         }
     }
     let Some(items) = record["obligations"].as_array() else {
+        let view = unavailable(
+            result,
+            "task_decomposition_unavailable",
+            "Lead task decomposition is unavailable",
+            Some(goal),
+            overall_state,
+        );
         return include_journey(
-            unavailable(
-                result,
-                "task_decomposition_unavailable",
-                "Lead task decomposition is unavailable",
-                Some(goal),
-                overall_state,
-            ),
+            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record),
             journey,
         );
     };
     if items.is_empty() {
+        let view = unavailable(
+            result,
+            "task_decomposition_unavailable",
+            "Lead has not divided the goal into tasks",
+            Some(goal),
+            overall_state,
+        );
         return include_journey(
-            unavailable(
-                result,
-                "task_decomposition_unavailable",
-                "Lead has not divided the goal into tasks",
-                Some(goal),
-                overall_state,
-            ),
+            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record),
             journey,
         );
     }
@@ -195,12 +239,15 @@ fn project_with_limit(
     });
     let overall = overall_state;
     let result_readiness = readiness(result);
+    let next_action = close_route::next_action(loaded, goal_root, project_selected, record);
     let mut view = json!({
         "overall": overall,
         "goal": display(goal),
         "decomposition": decomposition,
         "tasks": tasks,
         "resultReadiness": result_readiness,
+        "categoryDispositions": categories::project(loaded, record, project_selected),
+        "nextAction": next_action,
     });
     view["systemText"] = json!(system_text(
         overall,
@@ -213,6 +260,23 @@ fn project_with_limit(
     if let Some(journey) = journey {
         view["journeyCompletion"] = journey;
     }
+    view
+}
+
+fn with_bounded_owner_routes(
+    view: Value,
+    loaded: Option<&Loaded>,
+    goal_root: Option<&std::path::Path>,
+    project_selected: bool,
+    record: &Value,
+) -> Value {
+    let mut view = categories::attach_when_goal_is_valid(view, loaded, record, project_selected);
+    view["nextAction"] = json!(close_route::next_action(
+        loaded,
+        goal_root,
+        project_selected,
+        record
+    ));
     view
 }
 
@@ -235,23 +299,26 @@ fn overall_state(record: &Value, rendered: &Value) -> &'static str {
 
 fn named_progress(
     loaded: &Loaded,
+    root: &std::path::Path,
+    project_selected: bool,
     record: &Value,
     overall: &'static str,
     result: Option<&Value>,
     limit: usize,
 ) -> Value {
-    let projection = match super::requirements::projection(loaded, record) {
-        Ok(value) => value,
-        Err(_) => {
-            return unavailable(
-                result,
-                "named_coverage_unavailable",
-                "named requirement evidence is unavailable",
-                record["goal"].as_str(),
-                overall,
-            )
-        }
-    };
+    let projection =
+        match super::requirements::projection_selected(loaded, root, project_selected, record) {
+            Ok(value) => value,
+            Err(_) => {
+                return unavailable(
+                    result,
+                    "named_coverage_unavailable",
+                    "named requirement evidence is unavailable",
+                    record["goal"].as_str(),
+                    overall,
+                )
+            }
+        };
     let Some(rows) = projection["requirements"].as_array() else {
         return unavailable(
             result,
@@ -268,7 +335,8 @@ fn named_progress(
         "currentReason":row["state"],"nextAction":row["nextAction"]})).collect::<Vec<_>>();
     let mut view = json!({"overall":overall,"goal":display(record["goal"].as_str().unwrap_or_default()),
         "decomposition":{"available":true,"total":rows.len(),"complete":complete,"omitted":rows.len().saturating_sub(tasks.len())},
-        "tasks":tasks,"coverageConfirmed":projection["coverageConfirmed"],"nextAction":projection["nextAction"],"resultReadiness":readiness(result)});
+        "tasks":tasks,"coverageConfirmed":projection["coverageConfirmed"],"nextAction":projection["nextAction"],"resultReadiness":readiness(result),
+        "categoryDispositions":categories::project(Some(loaded), record, project_selected)});
     view["systemText"] = json!(system_text(
         overall,
         record["goal"].as_str().unwrap_or_default(),
@@ -476,6 +544,8 @@ pub(super) fn project_for_work(
         result,
         MAX_TASKS,
         false,
+        Some(&loaded.state_root),
+        false,
     );
     let association = match work_association_with_lineage(loaded, record, work) {
         Ok(value) => value,
@@ -548,6 +618,8 @@ pub(super) fn project_detail_for_work(
         result,
         usize::MAX,
         true,
+        Some(&loaded.state_root),
+        false,
     );
     let association = match work_association_with_lineage(loaded, record, work) {
         Ok(value) => value,
@@ -710,6 +782,42 @@ mod tests {
         assert_eq!(value["overall"], "blocked");
         assert_eq!(value["tasks"][0]["state"], "in_progress");
         assert_eq!(value["decomposition"]["complete"], 0);
+    }
+
+    #[test]
+    fn category_projection_is_bounded_and_lists_only_recorded_dispositions() {
+        let value = project(
+            None,
+            Some(&json!({
+                "goal":"Bounded category view",
+                "categories":{"obligations":"considered","findings":"none_applicable",
+                    "blockers":"considered","decisions":"considered","externalActions":"considered"},
+                "obligations":[{"id":"O1","disposition":"open"}],
+                "findings":[],"blockers":[],"decisions":[],"externalActions":[]
+            })),
+            &json!({"explicitLeadClosure":false}),
+            None,
+        );
+        assert_eq!(
+            value["categoryDispositions"]["obligations"]["state"],
+            "considered"
+        );
+        assert_eq!(
+            value["categoryDispositions"]["obligations"]["items"][0]["disposition"],
+            "open"
+        );
+        assert_eq!(
+            value["categoryDispositions"]["obligations"]["validStates"],
+            json!(["considered", "none_applicable"])
+        );
+        assert_eq!(
+            value["categoryDispositions"]["obligations"]["validItemDispositions"],
+            json!(["open", "accepted", "outside_scope", "successor", "direct"])
+        );
+        assert_eq!(
+            value["categoryDispositions"]["findings"]["state"],
+            "none_applicable"
+        );
     }
 
     #[test]

@@ -96,6 +96,18 @@ acceptance and the next available action. States distinguish `unmapped`, `pendin
 are separate. A fresh CLI process can inspect this same saved state; it does not
 renew a grant or change a Work's review choice.
 
+`goal status` also returns the current disposition for each of the five Goal
+categories, the valid category states, and the valid item dispositions in a
+bounded list with exact Lead-decision routes for unresolved categories and
+items. Empty categories offer their own `none-applicable` choice; status never
+marks every category on the Lead's behalf. Before Work freezes a mapping,
+`requirements.preFreezePreparation` and `goal prepare` show the named IDs,
+checker identity and separate begin route. Preparation creates no Work and
+does not change prior coverage. A close route appears only when the same
+journey, coverage, integration, evidence and category predicates used by
+`goal close` currently pass; otherwise status keeps repair or integration
+actions visible without claiming readiness.
+
 For a project-local requirement contract, retain the agreed request in a
 regular project file and explicitly select the project journal with
 `--project`. For example:

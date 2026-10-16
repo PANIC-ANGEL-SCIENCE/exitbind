@@ -709,7 +709,14 @@ fn drift_created_during_checker_execution_blocks_the_append() {
     let refused = source.submit("worker", "completed", "source-changed");
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert!(stderr.contains("checker source changed"), "{stderr}");
+    assert!(
+        stderr.contains("changed components: checker,inputs"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("inspect the saved attempt with"),
+        "{stderr}"
+    );
     assert_eq!(fs::read(source.root.join(source.ledger())).unwrap(), before);
 
     let config = Fixture::new("pre-return-config-drift-during-check");
@@ -717,7 +724,15 @@ fn drift_created_during_checker_execution_blocks_the_append() {
     let before = fs::read(config.root.join(config.ledger())).unwrap();
     let refused = config.submit("worker", "completed", "config-changed");
     assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("frozen current configuration"));
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("changed components: config,inputs"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("inspect the saved attempt with"),
+        "{stderr}"
+    );
     assert_eq!(fs::read(config.root.join(config.ledger())).unwrap(), before);
 
     let artifact = Fixture::new("pre-return-artifact-drift-during-check");
@@ -741,7 +756,9 @@ fn drift_created_during_checker_execution_blocks_the_append() {
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(
-        stderr.contains("pre-return attempt no longer matches the current result binding"),
+        stderr.contains("pre-return attempt no longer matches the current result binding")
+            && stderr.contains("changed components: inputs")
+            && stderr.contains("run\",\"pre-return\",\"read\""),
         "{stderr}"
     );
     assert_eq!(fs::read(input.root.join(input.ledger())).unwrap(), before);

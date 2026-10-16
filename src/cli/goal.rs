@@ -8,9 +8,104 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "goal requires incorporate, require, cover, assign, close, status, or usage",
+        "goal requires prepare, incorporate, require, cover, assign, close, status, or usage",
     )?;
     match action {
+        "prepare" => {
+            args::assert_options(
+                "goal prepare",
+                a,
+                &[
+                    "config",
+                    "project",
+                    "goal-id",
+                    "requirement",
+                    "artifact",
+                    "check-command",
+                    "scope",
+                    "basis",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("goal prepare", a, 1)?;
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
+            let goal_id = option(a, "goal-id", "goal prepare requires --goal-id ID")?;
+            let ids = option(a, "requirement", "goal prepare requires --requirement IDs")?;
+            let checker = option(
+                a,
+                "artifact",
+                "goal prepare requires --artifact PROJECT_CHECKER",
+            )?;
+            let command = option(
+                a,
+                "check-command",
+                "goal prepare requires --check-command COMMAND",
+            )?;
+            let integration = match a.options.get("scope").map(String::as_str) {
+                None => false,
+                Some("integration") => true,
+                Some(_) => return Err("named Work scope must be integration when supplied".into()),
+            };
+            let prepared = crate::session_goal::requirements::prepare(
+                crate::session_goal::requirements::PrepareRequest {
+                    root: &scope.root,
+                    loaded: l,
+                    goal_id,
+                    ids,
+                    checker,
+                    command,
+                    basis: a.options.get("basis").map(String::as_str),
+                    integration,
+                    scope: if scope.is_session() {
+                        crate::session_goal::requirements::ContractScope::Session
+                    } else {
+                        crate::session_goal::requirements::ContractScope::Project
+                    },
+                },
+            )?;
+            let record = crate::session_goal::read(&scope.root)?
+                .ok_or("goal prepare requires the current canonical Goal")?;
+            let mut begin = vec![
+                "work".into(),
+                "begin".into(),
+                "change".into(),
+                "--goal".into(),
+                record["goal"].as_str().unwrap_or_default().into(),
+                "--goal-id".into(),
+                goal_id.into(),
+                "--requirement".into(),
+                ids.into(),
+                "--artifact".into(),
+                checker.into(),
+                "--check-command".into(),
+                command.into(),
+                "--review-policy".into(),
+                "REVIEW_DECISION".into(),
+                "--detail".into(),
+            ];
+            if integration {
+                begin.extend(["--scope".into(), "integration".into()]);
+            }
+            if let Some(basis) = a.options.get("basis") {
+                begin.extend(["--basis".into(), basis.clone()]);
+            }
+            if a.flags.contains_key("project") {
+                begin.push("--project-goal".into());
+            }
+            let route = crate::work::compact::continuation_route(&l.path, begin);
+            let scope_label = match prepared.scope {
+                crate::session_goal::requirements::ContractScope::Project => "project",
+                crate::session_goal::requirements::ContractScope::Session => "session",
+            };
+            print_json(&json!({"kind":"named_coverage_preparation","readOnly":true,
+                "goalId":prepared.goal_id,"selectedRequirementIds":prepared.requirements.split(',').collect::<Vec<_>>(),
+                "contractScope":scope_label,"projectIdentitySha256":prepared.project_identity,
+                "checker":{"path":checker,"sha256":crate::session_goal::requirements::checker_input(l, checker, command)?.sha256},
+                "integration":integration,"beginRoute":route,
+                "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
+                "effect":"no Work is started or frozen until beginRoute is executed"}))
+        }
         "require" => {
             args::assert_options(
                 "goal require",
@@ -253,9 +348,10 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             print_json(&value)
         }
         "status" => status::goal_status(l, a),
-        _ => {
-            Err("goal requires incorporate, require, cover, assign, close, status, or usage".into())
-        }
+        _ => Err(
+            "goal requires prepare, incorporate, require, cover, assign, close, status, or usage"
+                .into(),
+        ),
     }
 }
 

@@ -100,6 +100,13 @@ impl Fixture {
         )
     }
     fn submit(&self, outcome: &str, artifact: Value) {
+        let output = self.submit_output(outcome, artifact);
+        assert!(output.status.success(), "{output:?}");
+    }
+    fn submit_output(&self, outcome: &str, artifact: Value) -> Output {
+        self.submit_raw_output(outcome, artifact.to_string().as_bytes())
+    }
+    fn submit_raw_output(&self, outcome: &str, artifact: &[u8]) -> Output {
         let detail = self.detail();
         let form = detail["actionForms"]["choices"]
             .as_array()
@@ -119,8 +126,7 @@ impl Fixture {
             })
             .collect::<Vec<_>>();
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-        let output = execute(&self.root, &args, artifact.to_string().as_bytes(), false);
-        assert!(output.status.success(), "{output:?}");
+        execute(&self.root, &args, artifact, false)
     }
     fn report(&self) -> Value {
         let mut report = self.challenge()["evidenceTemplate"].clone();
@@ -133,6 +139,14 @@ impl Fixture {
             "wrongCandidate":{"oldCheck":"passed","strengthenedCheck":"failed_semantic_assertion"},
             "correctAlternative":{"strengthenedCheck":"passed"}});
         report
+    }
+    fn validate(&self, report: &Value) -> Output {
+        execute(
+            &self.root,
+            &["work", "challenge", "validate", &self.work, "--json"],
+            report.to_string().as_bytes(),
+            true,
+        )
     }
     fn submit_events(&self) -> Vec<Value> {
         let id = self.work.strip_prefix("smw_").unwrap();
@@ -189,6 +203,56 @@ fn normal_lead_entry_prepares_conditional_packet_without_starting_any_effect() {
         challenge["requirement"]["approvedText"],
         "Repeat the same operation once; reject a changed payload; preserve receipt text."
     );
+    assert!(challenge["validation"]["route"]["command"].is_array());
+}
+
+#[test]
+fn prepared_report_has_a_bounded_explicit_validator_with_precise_errors() {
+    let fixture = Fixture::new();
+    let report = fixture.report();
+    let valid = fixture.validate(&report);
+    assert!(valid.status.success(), "{valid:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&valid.stdout).unwrap()["valid"],
+        true
+    );
+
+    let mut missing = report.clone();
+    missing["contributions"][0]["evidenceRef"] = Value::Null;
+    let invalid = fixture.validate(&missing);
+    assert!(!invalid.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid.stdout)
+            .contains("earlyEvidence.contributions[0].evidenceRef"),
+        "{invalid:?}"
+    );
+
+    let mut stale = report;
+    stale["candidateInputsSha256"] = json!("0".repeat(64));
+    let invalid = fixture.validate(&stale);
+    assert!(!invalid.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid.stdout).contains("candidateInputsSha256 does not match"),
+        "{invalid:?}"
+    );
+}
+
+#[test]
+fn inconclusive_report_can_truthfully_record_no_probe() {
+    let fixture = Fixture::new();
+    let mut report = fixture.report();
+    report["probe"]["command"] = json!("");
+    report["probe"]["commandSha256"] = Value::Null;
+    report["probe"]["source"]["path"] = json!("");
+    report["probe"]["source"]["sha256"] = Value::Null;
+    report["probe"]["observation"] =
+        json!({"outcome":"inconclusive","wrongCandidate":null,"correctAlternative":null});
+    let valid = fixture.validate(&report);
+    assert!(valid.status.success(), "{valid:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&valid.stdout).unwrap()["probeSourceSha256"],
+        Value::Null
+    );
 }
 
 #[test]
@@ -223,11 +287,10 @@ fn unsupported_independence_or_requirement_edit_stays_unknown_or_historical() {
     fixture.submit("scoped", json!({"scope":"Approved task only"}));
     let mut report = fixture.report();
     report["requirement"]["approvedText"] = json!("An invented user requirement");
-    report["contributions"][1]["sessionRef"] = report["contributions"][0]["sessionRef"].clone();
     fixture.submit("completed", json!({"earlyEvidence":report}));
     let detail = fixture.detail();
     let evidence = &detail["sections"]["evidence"]["earlyEvidence"];
-    assert_eq!(evidence["state"], "unknown");
+    assert_eq!(evidence["state"], "historical");
     assert!(evidence["reasons"]
         .as_array()
         .unwrap()
@@ -251,10 +314,57 @@ fn no_new_information_remains_an_honest_report_and_does_not_pass_final_check() {
 }
 
 #[test]
+fn malformed_selected_report_is_rejected_before_return_event() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"scope":"Approved task only"}));
+    let mut report = fixture.report();
+    report["probe"]["commandSha256"] = Value::Null;
+    let before = fixture.submit_events().len();
+    let output = fixture.submit_output("completed", json!({"earlyEvidence":report}));
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("earlyEvidence.probe.commandSha256"));
+    assert_eq!(fixture.submit_events().len(), before);
+}
+
+#[test]
+fn well_formed_historical_counterexample_remains_returnable_and_keeps_its_hash() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"scope":"Approved task only"}));
+    let mut report = fixture.report();
+    report["candidateInputsSha256"] = json!("0".repeat(64));
+    fixture.submit("completed", json!({"earlyEvidence":report}));
+    let evidence = &fixture.detail()["sections"]["evidence"]["earlyEvidence"];
+    assert_eq!(evidence["state"], "historical");
+    assert!(evidence["reasons"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("candidate_or_relevant_inputs_changed")));
+    assert_eq!(evidence["report"]["candidateInputsSha256"], "0".repeat(64));
+}
+
+#[test]
 fn missing_newest_result_keeps_next_and_world_readable_without_history_churn() {
     let fixture = Fixture::new();
     fixture.submit("scoped", json!({"earlyEvidence":fixture.report()}));
-    fixture.submit("completed", json!({"summary":"No challenge report here"}));
+    let original_report_hash =
+        fixture.submit_events().last().unwrap()["artifact"]["sha256"].clone();
+    let output = fixture.submit_raw_output("completed", b"Ordinary UTF-8 result notes\n");
+    assert!(output.status.success(), "{output:?}");
+    let check = execute(&fixture.root, &["work", "check", &fixture.work], b"", true);
+    assert!(check.status.success(), "{check:?}");
+    let historical = &fixture.detail()["sections"]["evidence"]["earlyEvidence"];
+    assert_eq!(historical["state"], "historical");
+    assert!(historical["reasons"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("newer_candidate_result_without_report")));
+    assert_eq!(historical["artifactSha256"], original_report_hash);
+    assert_eq!(
+        historical["latestCandidateEventSha256"],
+        fixture.submit_events().last().unwrap()["eventSha256"]
+    );
+    assert!(historical["finalCheck"]["eventSha256"].is_string());
+    assert_eq!(historical["finalCheck"]["distinctFromReportedProbe"], true);
     let newest = fixture.accepted_result();
     let events = fixture.submit_events();
     let ledger = fixture.root.join(format!(
@@ -326,6 +436,32 @@ fn verified_submissions_without_a_report_remain_not_selected() {
     let evidence = &fixture.detail()["sections"]["evidence"]["earlyEvidence"];
     assert_eq!(evidence["selected"], false);
     assert_eq!(evidence["state"], "not_selected");
+}
+
+#[test]
+fn ordinary_plain_text_result_keeps_optional_report_absent() {
+    let fixture = Fixture::new();
+    fixture.submit("scoped", json!({"scope":"Approved task only"}));
+    let output = fixture.submit_raw_output("completed", b"ordinary UTF-8 result notes\n");
+    assert!(output.status.success(), "{output:?}");
+    let evidence = &fixture.detail()["sections"]["evidence"]["earlyEvidence"];
+    assert_eq!(evidence["state"], "not_selected");
+}
+
+#[test]
+fn large_ordinary_result_without_optional_report_stays_supported() {
+    let fixture = Fixture::new();
+    let payload = "x".repeat(96 * 1024);
+    fixture.submit(
+        "scoped",
+        json!({"summary":"ordinary result", "payload":payload}),
+    );
+    let event = fixture.submit_events().pop().unwrap();
+    assert!(event["artifact"]["bytes"].as_u64().unwrap() > 64 * 1024);
+    assert_eq!(
+        fixture.detail()["sections"]["evidence"]["earlyEvidence"]["state"],
+        "not_selected"
+    );
 }
 
 #[cfg(unix)]

@@ -59,6 +59,20 @@ fn direct_completion_event_is_immediate_idempotent_and_recoverable_once() {
     establish_native_direct_goal(&project, session);
     let journal = native_goal_journal(&project, session);
 
+    let before = project.call_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--json"],
+    );
+    assert!(before.status.success(), "{before:?}");
+    let before: Value = serde_json::from_slice(&before.stdout).unwrap();
+    assert!(before["goalProgress"]["nextAction"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--direct"));
+
     let first_output = project.call_in_session(
         "codex",
         session,
@@ -126,6 +140,54 @@ fn direct_completion_event_is_immediate_idempotent_and_recoverable_once() {
     assert_eq!(fs::read(&journal).unwrap(), committed_journal);
     assert_no_run_files(&project);
     fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn native_and_explicit_project_status_keep_close_routes_on_the_selected_journal() {
+    let project = Project::new("direct-goal-selected-journal");
+    establish_direct_goal(&project);
+    let session = "direct-goal-selected-journal-session";
+    establish_native_direct_goal(&project, session);
+
+    let native = project.call_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--json"],
+    );
+    assert!(native.status.success(), "{native:?}");
+    let native: Value = serde_json::from_slice(&native.stdout).unwrap();
+    let native_route = &native["goalProgress"]["nextAction"]["command"];
+    assert!(native_route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "direct-event"));
+    assert!(!native_route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--project"));
+
+    let selected_project = project.call_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--project", "--json"],
+    );
+    assert!(selected_project.status.success(), "{selected_project:?}");
+    let selected_project: Value = serde_json::from_slice(&selected_project.stdout).unwrap();
+    let project_route = &selected_project["goalProgress"]["nextAction"]["command"];
+    assert!(project_route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "direct"));
+    assert!(project_route
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "--project"));
 }
 
 #[test]

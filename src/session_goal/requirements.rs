@@ -16,7 +16,7 @@ use std::path::Path;
 pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};
-pub(crate) use view::{all_current, projection};
+pub(crate) use view::{all_current, projection_selected};
 pub(crate) use work::{
     prepare, project_progress_for_work, write_scope_companion, ContractScope, PrepareRequest,
 };
@@ -136,76 +136,14 @@ pub(crate) fn close(
 ) -> Result<Value, String> {
     super::mutate(root, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
-        let goal = Goal::read(previous)?;
-        if previous["goalId"] != goal_id {
-            return Err("canonical goal identity does not match".into());
-        }
-        super::journey::require_close_ready(loaded, root, previous)?;
-        if !all_current(loaded, previous)? {
-            return Err("required goal coverage is missing, failed, stale or unknown".into());
-        }
-        let contract = work::contract(loaded, result_ref)?;
-        if !work::scope_matches_root(loaded, result_ref, root)? {
-            return Err(
-                "integration Work's frozen named contract selects a different Goal journal".into(),
-            );
-        }
-        if !contract.integration
-            || contract.goal_id != goal_id
-            || contract.project_identity != identity(loaded)?
-            || goal
-                .requirements
-                .iter()
-                .any(|requirement| !contract.covers(&requirement.reference()))
-        {
-            return Err("closure needs a checked integration Work covering every current requirement revision".into());
-        }
-        if work::evidence(loaded, result_ref, &contract)?["state"] != "current" {
-            return Err("integration Work lacks current observed checks, required review or Lead acceptance".into());
-        }
-        // Preserve conventional goal obligations and decisions as additional gates.
-        if super::CATEGORIES
-            .iter()
-            .any(|category| !super::category_resolved(previous, category))
-        {
-            return Err("additional goal obligations or decisions remain unresolved".into());
-        }
-        for category in super::CATEGORIES {
-            for item in previous[category]
-                .as_array()
-                .ok_or("goal category malformed")?
-            {
-                for reference in item["resultRefs"]
-                    .as_array()
-                    .ok_or("goal result references malformed")?
-                {
-                    let reference = reference
-                        .as_str()
-                        .ok_or("goal result reference malformed")?;
-                    let evidence = crate::run::result_ref_evidence(loaded, reference)?
-                        .ok_or("goal result is unavailable")?;
-                    if !evidence.accepted
-                        || !evidence.artifact_current
-                        || evidence.drift.is_some()
-                        || (evidence.inputs_current != Some(true)
-                            && !super::journey::result_ref_current_or_supported(
-                                loaded,
-                                previous,
-                                reference,
-                                evidence.inputs_current,
-                            )?)
-                    {
-                        return Err("additional goal result is stale or unknown".into());
-                    }
-                }
-                if item["disposition"] == "direct"
-                    && !super::direct_completion_inputs(loaded, previous, item)?
-                        .is_some_and(|(a, b)| a == b)
-                {
-                    return Err("additional direct completion is stale or unknown".into());
-                }
-            }
-        }
+        validate_close_candidate(
+            loaded,
+            root,
+            previous,
+            goal_id,
+            result_ref,
+            all_current(loaded, previous)?,
+        )?;
         if previous["closure"]["closed"] == true
             && previous["closure"]["resultRefs"] == json!([result_ref])
         {
@@ -215,4 +153,92 @@ pub(crate) fn close(
         record["closure"] = json!({"closed":true,"revision":record["revision"],"resultRefs":[result_ref],"owner":"lead"});
         Ok(super::sealed(record, Some(previous)))
     })
+}
+
+/// The exact read-only predicates used both by `goal close` and its offered
+/// readiness route. A displayed close route is therefore executable now.
+pub(crate) fn validate_close_candidate(
+    loaded: &Loaded,
+    root: &Path,
+    previous: &Value,
+    goal_id: &str,
+    result_ref: &str,
+    coverage_current: bool,
+) -> Result<(), String> {
+    let goal = Goal::read(previous)?;
+    if previous["goalId"] != goal_id {
+        return Err("canonical goal identity does not match".into());
+    }
+    super::journey::require_close_ready(loaded, root, previous)?;
+    if !coverage_current {
+        return Err("required goal coverage is missing, failed, stale or unknown".into());
+    }
+    let contract = work::contract(loaded, result_ref)?;
+    if !work::scope_matches_root(loaded, result_ref, root)? {
+        return Err(
+            "integration Work's frozen named contract selects a different Goal journal".into(),
+        );
+    }
+    if !contract.integration
+        || contract.goal_id != goal_id
+        || contract.project_identity != identity(loaded)?
+        || goal
+            .requirements
+            .iter()
+            .any(|requirement| !contract.covers(&requirement.reference()))
+    {
+        return Err(
+            "closure needs a checked integration Work covering every current requirement revision"
+                .into(),
+        );
+    }
+    if work::evidence(loaded, result_ref, &contract)?["state"] != "current" {
+        return Err(
+            "integration Work lacks current observed checks, required review or Lead acceptance"
+                .into(),
+        );
+    }
+    if super::CATEGORIES
+        .iter()
+        .any(|category| !super::category_resolved(previous, category))
+    {
+        return Err("additional goal obligations or decisions remain unresolved".into());
+    }
+    for category in super::CATEGORIES {
+        for item in previous[category]
+            .as_array()
+            .ok_or("goal category malformed")?
+        {
+            for reference in item["resultRefs"]
+                .as_array()
+                .ok_or("goal result references malformed")?
+            {
+                let reference = reference
+                    .as_str()
+                    .ok_or("goal result reference malformed")?;
+                let evidence = crate::run::result_ref_evidence(loaded, reference)?
+                    .ok_or("goal result is unavailable")?;
+                if !evidence.accepted
+                    || !evidence.artifact_current
+                    || evidence.drift.is_some()
+                    || (evidence.inputs_current != Some(true)
+                        && !super::journey::result_ref_current_or_supported(
+                            loaded,
+                            previous,
+                            reference,
+                            evidence.inputs_current,
+                        )?)
+                {
+                    return Err("additional goal result is stale or unknown".into());
+                }
+            }
+            if item["disposition"] == "direct"
+                && !super::direct_completion_inputs(loaded, previous, item)?
+                    .is_some_and(|(a, b)| a == b)
+            {
+                return Err("additional direct completion is stale or unknown".into());
+            }
+        }
+    }
+    Ok(())
 }

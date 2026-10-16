@@ -388,8 +388,9 @@ fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
 }
 
 fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    let (next, residual, presentation) = next_and_residual(loaded, work, ledger, true)
-        .map_err(|error| discovery_error(error, work))?;
+    let (next, residual, presentation) =
+        super::next_snapshot::next_and_residual(loaded, work, ledger, true)
+            .map_err(|error| discovery_error(error, work))?;
     let mut result = json!({
         "status": "resumed",
         "work": work,
@@ -514,8 +515,9 @@ fn none_result(
         json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}});
     finished.sort_by(|left, right| left.0.cmp(&right.0));
     if let Some((_, work, ledger)) = finished.pop() {
-        let (next, _residual, presentation) = next_and_residual(loaded, &work, &ledger, false)
-            .map_err(|error| discovery_error(error, &work))?;
+        let (next, _residual, presentation) =
+            super::next_snapshot::next_and_residual(loaded, &work, &ledger, false)
+                .map_err(|error| discovery_error(error, &work))?;
         // `presentation` sits where every other work response carries it, so
         // one documented path holds for every answer a host has to render.
         result["recent"] = json!({"work": work, "exitState": next["progress"]["state"]});

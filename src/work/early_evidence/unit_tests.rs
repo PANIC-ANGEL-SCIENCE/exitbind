@@ -43,7 +43,8 @@ impl Artifacts {
 
     fn event(&self, name: &str, bytes: &[u8]) -> Value {
         fs::write(self.root.join(name), bytes).unwrap();
-        json!({"action":"submit","eventSha256":format!("event-{name}"),
+        json!({"action":"submit","role":"worker","outcome":"completed",
+            "eventSha256":format!("event-{name}"),
             "subjectSha256":format!("subject-{name}"),
             "artifact":{"root":"state","path":name,"bytes":bytes.len(),
                 "sha256":hash::bytes(bytes)}})
@@ -51,7 +52,8 @@ impl Artifacts {
 
     fn missing_event(&self, name: &str) -> Value {
         let bytes = br#"{"summary":"missing candidate"}"#;
-        json!({"action":"submit","eventSha256":format!("event-{name}"),
+        json!({"action":"submit","role":"worker","outcome":"completed",
+            "eventSha256":format!("event-{name}"),
             "subjectSha256":format!("subject-{name}"),
             "artifact":{"root":"state","path":name,"bytes":bytes.len(),
                 "sha256":hash::bytes(bytes)}})
@@ -116,6 +118,19 @@ fn verified_complete_non_json_submission_does_not_select_early_evidence() {
 }
 
 #[test]
+fn legacy_malformed_report_is_returned_as_untrusted_history() {
+    let fixture = Artifacts::new();
+    let event = fixture.event("legacy.json", &report_bytes());
+    let LatestReport::Found(found_event, report) = latest_report(&fixture.loaded, &[event.clone()])
+        .expect("legacy report read should remain navigable")
+    else {
+        panic!("explicit legacy report wrapper should remain readable")
+    };
+    assert_eq!(found_event["eventSha256"], event["eventSha256"]);
+    assert!(!well_formed(&report));
+}
+
+#[test]
 fn truncated_candidate_preview_is_unknown_instead_of_falling_back() {
     let fixture = Artifacts::new();
     let older = fixture.event("older.json", &report_bytes());
@@ -151,7 +166,8 @@ fn invalid_path_and_symlink_candidates_remain_strict_refusals() {
         let link = fixture.root.join("link.json");
         symlink(Path::new("target.json"), link).unwrap();
         let bytes = fs::read(&target).unwrap();
-        let event = json!({"action":"submit","eventSha256":"event-link",
+        let event = json!({"action":"submit","role":"worker","outcome":"completed",
+            "eventSha256":"event-link",
             "artifact":{"root":"state","path":"link.json","bytes":bytes.len(),
                 "sha256":hash::bytes(&bytes)}});
         assert!(latest_report(&fixture.loaded, &[event])

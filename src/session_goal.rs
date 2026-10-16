@@ -10,14 +10,16 @@ mod continuity;
 pub(crate) mod journey;
 pub(crate) mod native;
 pub(crate) mod requirements;
-pub(crate) use closure::{close, close_direct};
+pub(crate) use closure::{
+    close, close_direct, validate_direct_candidate, validate_governed_candidate,
+};
 mod current;
 mod presentation;
 mod progress;
 pub(crate) use presentation::{
-    context_summary, presentation, presentation_for_loaded, progress_detail_for_work,
-    progress_for_loaded, progress_for_work, project_goal_progress_for_work, record_for_work,
-    terminal_for_work,
+    context_summary, presentation, presentation_for_loaded, presentation_for_selected,
+    progress_detail_for_work, progress_for_loaded, progress_for_work,
+    project_goal_progress_for_work, record_for_work, terminal_for_work,
 };
 pub(crate) mod usage;
 pub(crate) use continuity::{

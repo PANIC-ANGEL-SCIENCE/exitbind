@@ -21,6 +21,7 @@ mod held;
 mod locator;
 pub(crate) mod managed_edit;
 mod mutation_response;
+mod next_snapshot;
 pub(crate) mod packet;
 mod permit_response;
 pub(crate) mod readable;
@@ -30,6 +31,7 @@ pub(crate) mod response_recovery;
 mod resume;
 mod return_result_impl;
 pub(crate) mod start_delivery;
+mod submission_preflight;
 
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
@@ -120,8 +122,9 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
             safe_action("inspect"),
         )
     })?;
-    let (next, residual, presentation) = next_and_residual(loaded, work, &ledger, false)
-        .map_err(|error| discovery_error(error, work))?;
+    let (next, residual, presentation) =
+        next_snapshot::next_and_residual(loaded, work, &ledger, false)
+            .map_err(|error| discovery_error(error, work))?;
     if let Some(warnings) = next["warnings"]
         .as_array()
         .filter(|warnings| !warnings.is_empty())
@@ -591,77 +594,6 @@ fn discovery_error(error: String, work: &str) -> String {
         reference(work),
         safe_action("inspect"),
     )
-}
-
-/// Next action and residual packet derived from one captured revision, plus the
-/// conversational presentation that speaks only when the state moved.
-fn next_and_residual(
-    loaded: &Loaded,
-    work: &str,
-    ledger: &str,
-    resumed: bool,
-) -> Result<(Value, Value, Value), String> {
-    let snapshot = run::RunSnapshot::capture(loaded, ledger)?;
-    next_and_residual_from_snapshot(loaded, work, &snapshot, resumed, true)
-}
-
-fn preflight_submission(
-    loaded: &Loaded,
-    work: &str,
-    events: &[Value],
-    source: &str,
-) -> Result<(), String> {
-    let snapshot = run::RunSnapshot::from_events(loaded, events, source)?;
-    let _ = next_and_residual_from_snapshot(loaded, work, &snapshot, false, false)?;
-    Ok(())
-}
-
-fn next_and_residual_from_snapshot(
-    loaded: &Loaded,
-    work: &str,
-    snapshot: &run::RunSnapshot,
-    resumed: bool,
-    remember_presentation: bool,
-) -> Result<(Value, Value, Value), String> {
-    let mut next = next_from(loaded, work, snapshot)?;
-    if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
-        attach_held(loaded, work, &assignment, &mut next)?;
-    }
-    let residual = crate::work::packet::project(work, snapshot, &next)?;
-    next["resolvedActor"] = residual["humanHelp"]["nextAction"]["actor"].clone();
-    // The fingerprint is computed only when a terminal acceptance has to be
-    // compared with the tree; a running run already carries its own.
-    let facts = crate::work::packet::facts(snapshot, &next, || {
-        crate::run::inputs::fingerprint(loaded).ok()
-    })?;
-    let mut presentation = if remember_presentation {
-        crate::presentation_events::project(
-            &loaded.state_root,
-            work,
-            &residual,
-            &next["progress"],
-            &facts,
-            resumed,
-        )
-    } else {
-        crate::presentation_events::project_without_memory(
-            &loaded.state_root,
-            work,
-            &residual,
-            &next["progress"],
-            &facts,
-            resumed,
-        )
-    };
-    presentation["goalProgress"] =
-        crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
-    presentation["terminal"] = json!(crate::session_goal::terminal_for_work(
-        loaded,
-        work,
-        presentation["terminal"].is_string().then_some("EXIT READY"),
-    )?);
-    details::automatic_progress(&mut presentation["goalProgress"], &next["current"]);
-    Ok((next, residual, presentation))
 }
 
 fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
