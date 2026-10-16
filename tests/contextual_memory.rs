@@ -753,6 +753,164 @@ fn a_delivered_specialist_child_result_is_retained_after_its_work_choice_changes
     assert_eq!(fs::read(&history).unwrap(), before_history);
 }
 
+#[test]
+fn hostless_specialist_binds_an_eligible_choice_and_delivers_only_to_a_supported_host() {
+    let f = Fixture::specialist_with_host(true, None);
+    assert!(f.config()["agents"]["record-specialist"]["runtime"]
+        .get("host")
+        .is_none());
+    assert_eq!(
+        f.candidates("record-specialist", SPECIALIST_TASK)["candidates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    f.select_specialist();
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    let prepared = f.prepare_child(&work);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let context = f.ok(&[
+        "work",
+        "child",
+        "context",
+        &work,
+        prepared["intent"].as_str().unwrap(),
+    ]);
+    assert_eq!(context["specialistExperience"]["host"], "codex");
+    assert_eq!(
+        context["specialistExperience"]["experience"][0]["content"]["procedure"],
+        json!([SPECIALIST_GUIDANCE])
+    );
+    let token = f.child_token(&work);
+    f.ok(&[
+        "work",
+        "bind",
+        &work,
+        "--context",
+        &token,
+        "--host",
+        "claude",
+        "--session",
+        "contextual-parent-claude",
+        "--host-version",
+        "fixture",
+    ]);
+    let prepared = f.prepare_child(&work);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let context = f.ok(&[
+        "work",
+        "child",
+        "context",
+        &work,
+        prepared["intent"].as_str().unwrap(),
+    ]);
+    assert_eq!(context["specialistExperience"]["host"], "claude");
+    assert_eq!(context["specialistExperience"]["experience"], json!([]));
+    assert!(!context.to_string().contains(SPECIALIST_GUIDANCE));
+}
+
+#[test]
+fn contextual_migration_preserves_the_original_independent_specialist_review_profile() {
+    let f = Fixture::specialist_mode(false);
+    let ledger = ".exitbind/memory/specialist.jsonl";
+    let source = fs::read(f.root.join("specialist.json")).unwrap();
+    let original = fs::read(f.root.join("exitbind.json")).unwrap();
+    fs::write(f.root.join("prior.json"), &original).unwrap();
+    let before = fs::read(f.root.join(ledger)).unwrap();
+    let mut config = f.config();
+    config["memory"]["contextual"] = json!({"version":1,"sourcePath":"current-task.json"});
+    f.save(&config);
+    let args = [
+        "memory",
+        "revalidate",
+        "lead",
+        ledger,
+        "--from-config",
+        "prior.json",
+        "--reason",
+        "Lead reviewed only contextual selection with unchanged specialist authority.",
+        "--json",
+    ];
+    assert_eq!(f.ok(&args)["effect"], "no-change");
+    assert_eq!(fs::read(f.root.join(ledger)).unwrap(), before);
+    let mut apply = args.to_vec();
+    apply.push("--apply");
+    assert_eq!(f.ok(&apply)["effect"], "recorded");
+    assert!(fs::read(f.root.join(ledger)).unwrap().starts_with(&before));
+    f.select_specialist();
+    let route = [
+        "project",
+        "route",
+        "--task",
+        SPECIALIST_TASK,
+        "--purpose",
+        "record",
+        "--role",
+        "worker",
+        "--host",
+        "codex",
+        "--json",
+    ];
+    assert_eq!(
+        f.ok(&route)["snapshot"]["experience"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let profile = config["agents"]["reviewer"]["profile"].as_str().unwrap();
+    fs::write(
+        f.root.join(profile),
+        "Changed independent reviewer profile after migration.",
+    )
+    .unwrap();
+    for args in [
+        vec![
+            "memory",
+            "candidates",
+            "record-specialist",
+            "--task",
+            SPECIALIST_TASK,
+            "--host",
+            "codex",
+            "--json",
+        ],
+        route.to_vec(),
+        vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            SPECIALIST_TASK,
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--preserve-requirement",
+            "facts:Keep reviewed facts scoped.",
+            "--preservation-check-command",
+            "true",
+            "--json",
+        ],
+    ] {
+        let output = f.call(&args);
+        assert!(!output.status.success(), "{args:?}: {output:?}");
+        assert!(
+            diagnostic(&output).contains("specialist recorded policy or actor profile changed"),
+            "{output:?}"
+        );
+        assert!(!diagnostic(&output).contains(SPECIALIST_GUIDANCE));
+    }
+    assert_eq!(fs::read(f.root.join("prior.json")).unwrap(), original);
+    assert_eq!(fs::read(f.root.join("specialist.json")).unwrap(), source);
+}
+
 fn diagnostic(output: &std::process::Output) -> String {
     format!(
         "{}{}",

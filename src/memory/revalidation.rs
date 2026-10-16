@@ -135,6 +135,7 @@ pub(crate) fn run(
     )?;
     super::ensure_config_current(&previous)?;
     super::ensure_config_current(loaded)?;
+    super::validate_history_current(&previous, &snapshot)?;
     super::validate_source_current(loaded, &snapshot)?;
     crate::project::git_preflight::refuse_tracked_targets(
         &loaded.state_root,

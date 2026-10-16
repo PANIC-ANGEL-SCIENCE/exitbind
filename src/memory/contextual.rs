@@ -145,13 +145,23 @@ pub(crate) fn binding(l: &Loaded, agent: &str, task: &str) -> Result<Value, Stri
         .agent(agent)
         .ok_or("contextual recipient is unavailable")?;
     let mut eligible = super::selection::candidate_references(l, agent, Some(task))?;
-    eligible.extend(crate::project::specialists::candidate_references(
-        l,
-        agent,
-        &role,
-        task,
-        configured.runtime.host.as_deref().unwrap_or(""),
-    )?);
+    // A Work may precede its actual receiving host. An unspecified primary is
+    // no default host: freeze eligible identities across supported hosts and
+    // leave the actual-host restriction to the existing delivery consumer.
+    let hosts = configured
+        .runtime
+        .host
+        .as_deref()
+        .map_or_else(|| vec!["codex", "claude"], |host| vec![host]);
+    for host in hosts {
+        for reference in
+            crate::project::specialists::candidate_references(l, agent, &role, task, host)?
+        {
+            if !eligible.iter().any(|current| current == &reference) {
+                eligible.push(reference);
+            }
+        }
+    }
     for resource in &choice.ok_or("contextual choice unavailable")?.resources {
         let reference = eligible
             .iter()

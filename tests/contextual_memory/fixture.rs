@@ -51,7 +51,15 @@ impl Fixture {
     }
 
     pub fn specialist() -> Self {
-        let f = Self::new(true);
+        Self::specialist_mode(true)
+    }
+
+    pub fn specialist_mode(contextual: bool) -> Self {
+        Self::specialist_with_host(contextual, Some("codex"))
+    }
+
+    pub fn specialist_with_host(contextual: bool, host: Option<&str>) -> Self {
+        let f = Self::new(contextual);
         let scope = "specialist.record-specialist.v1";
         let mut c = f.config();
         let mut specialist = c["agents"]
@@ -61,7 +69,13 @@ impl Fixture {
             .unwrap();
         specialist["purpose"] = json!("Bounded record aggregation");
         specialist["nativeName"] = json!("record_specialist");
-        specialist["runtime"] = json!({"host":"codex","fallback":"none"});
+        specialist["runtime"] = json!({"host":host,"fallback":"none"});
+        if host.is_none() {
+            specialist["runtime"]
+                .as_object_mut()
+                .unwrap()
+                .remove("host");
+        }
         specialist["commands"] = json!(["python3"]);
         specialist["memoryRead"] = json!([scope]);
         specialist["memoryWrite"] = json!([scope]);
