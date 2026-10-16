@@ -44,21 +44,22 @@ fn begin_route(
             .expect("route command")
             .extend([json!("--scope"), json!("integration")]);
     }
-    result["afterCurrentAcceptance"] = route(
-        loaded,
-        vec![
-            "goal".into(),
-            "assign".into(),
-            "--goal-id".into(),
-            record["goalId"].as_str().unwrap_or_default().into(),
-            "--requirement".into(),
-            ids.into(),
-            "--result-ref".into(),
-            "NEW_ACCEPTED_WORK".into(),
-            "--disposition".into(),
-            "replace".into(),
-        ],
-    );
+    let mut assignment = vec![
+        "goal".into(),
+        "assign".into(),
+        "--goal-id".into(),
+        record["goalId"].as_str().unwrap_or_default().into(),
+        "--requirement".into(),
+        ids.into(),
+        "--result-ref".into(),
+        "NEW_ACCEPTED_WORK".into(),
+        "--disposition".into(),
+        "replace".into(),
+    ];
+    if project_selected {
+        assignment.push("--project".into());
+    }
+    result["afterCurrentAcceptance"] = route(loaded, assignment);
     result
 }
 

@@ -1,5 +1,191 @@
 use super::*;
 
+fn execute_emitted_route(project: &Project, route: &Value, replacements: &[(&str, &str)]) -> Value {
+    let mut args = route["command"]
+        .as_array()
+        .expect("emitted route command")
+        .iter()
+        .map(|arg| arg.as_str().expect("string argv item").to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        args.first().map(String::as_str),
+        Some(env!("CARGO_BIN_EXE_exitbind"))
+    );
+    args.remove(0);
+    let config = project.root.join("exitbind.json");
+    assert_eq!(
+        args.get(args.len().saturating_sub(2)).map(String::as_str),
+        Some("--config")
+    );
+    assert_eq!(args.last().map(String::as_str), config.to_str());
+    args.truncate(args.len() - 2);
+    for arg in &mut args {
+        if let Some((_, replacement)) = replacements
+            .iter()
+            .find(|(placeholder, _)| *placeholder == arg)
+        {
+            *arg = (*replacement).to_owned();
+        }
+    }
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    project.value(&args, None)
+}
+
+fn create_explicit_project_goal(project: &Project) {
+    project.value(
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--none-applicable",
+            "findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    for (id, text) in REQUIREMENTS {
+        project.value(
+            &[
+                "goal",
+                "require",
+                "--project",
+                "--goal-id",
+                "import",
+                "--requirement",
+                id,
+                "--obligation",
+                text,
+                "--artifact",
+                "request.txt",
+            ],
+            None,
+        );
+    }
+    project.value(&["goal", "cover", "--project", "--goal-id", "import"], None);
+}
+
+#[test]
+fn named_after_acceptance_route_preserves_selected_goal_scope() {
+    let project = Project::new("goal-route-project-assignment")
+        .with_native_session("goal-route-project-assignment-native");
+    project.setup();
+    create_explicit_project_goal(&project);
+
+    let project_status = project.value(&["goal", "status", "--project", "--json"], None);
+    let project_begin = project_status["requirements"]["nextAction"].clone();
+    let project_begin_argv = project_begin["command"].as_array().unwrap();
+    assert!(project_begin_argv.iter().any(|arg| arg == "--project-goal"));
+    let project_assignment = &project_begin["afterCurrentAcceptance"];
+    let project_assignment_argv = project_assignment["command"].as_array().unwrap();
+    assert!(project_assignment_argv.iter().any(|arg| arg == "--project"));
+
+    let started = execute_emitted_route(
+        &project,
+        &project_begin,
+        &[
+            ("PROJECT_CHECKER", "check.sh"),
+            ("CHECK_COMMAND", "sh check.sh all"),
+            ("REVIEW_DECISION", "required"),
+        ],
+    );
+    let work = started["work"].as_str().unwrap().to_owned();
+    project.drive(&work, true);
+    // Work creation and acceptance legitimately enroll this Work in the
+    // current native journey. The scope invariant applies to the following
+    // explicit project assignment, so take its baseline after that lifecycle.
+    let native_before_assignment = project.native_store_snapshot();
+
+    execute_emitted_route(
+        &project,
+        project_assignment,
+        &[("NEW_ACCEPTED_WORK", &work)],
+    );
+    let assigned_project = project.value(&["goal", "status", "--project", "--json"], None);
+    assert_eq!(assigned_project["requirements"]["coverageCurrent"], false);
+    let assigned_requirements = assigned_project["requirements"]["requirements"]
+        .as_array()
+        .unwrap();
+    let selected = assigned_requirements
+        .iter()
+        .find(|requirement| requirement["id"] == "R1")
+        .unwrap();
+    assert_eq!(selected["state"], "current");
+    assert!(selected["support"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|support| support["mapping"]["work"] == work));
+    for id in ["R2", "R3"] {
+        let pending = assigned_requirements
+            .iter()
+            .find(|requirement| requirement["id"] == id)
+            .unwrap();
+        assert_eq!(pending["mapped"], false);
+        assert_ne!(pending["state"], "current");
+    }
+    assert_eq!(
+        project.native_store_snapshot(),
+        native_before_assignment,
+        "project assignment must leave the native Goal journal unchanged"
+    );
+
+    let project_journal_after_assignment = project.goal_journal().unwrap();
+    let native_status = project.value(&["goal", "status", "--json"], None);
+    let native_begin = native_status["requirements"]["nextAction"].clone();
+    let native_begin_argv = native_begin["command"].as_array().unwrap();
+    assert!(!native_begin_argv.iter().any(|arg| arg == "--project-goal"));
+    let native_assignment = &native_begin["afterCurrentAcceptance"];
+    let native_assignment_argv = native_assignment["command"].as_array().unwrap();
+    assert!(!native_assignment_argv.iter().any(|arg| arg == "--project"));
+
+    let native_started = execute_emitted_route(
+        &project,
+        &native_begin,
+        &[
+            ("PROJECT_CHECKER", "check.sh"),
+            ("CHECK_COMMAND", "sh check.sh all"),
+            ("REVIEW_DECISION", "required"),
+        ],
+    );
+    let native_work = native_started["work"].as_str().unwrap().to_owned();
+    project.drive(&native_work, true);
+    execute_emitted_route(
+        &project,
+        native_assignment,
+        &[("NEW_ACCEPTED_WORK", &native_work)],
+    );
+    let assigned_native = project.value(&["goal", "status", "--json"], None);
+    assert_eq!(assigned_native["requirements"]["coverageCurrent"], false);
+    let native_requirements = assigned_native["requirements"]["requirements"]
+        .as_array()
+        .unwrap();
+    let selected_native = native_requirements
+        .iter()
+        .find(|requirement| requirement["id"] == "R1")
+        .unwrap();
+    assert_eq!(selected_native["state"], "current");
+    assert!(selected_native["support"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|support| support["mapping"]["work"] == native_work));
+    for id in ["R2", "R3"] {
+        let pending = native_requirements
+            .iter()
+            .find(|requirement| requirement["id"] == id)
+            .unwrap();
+        assert_eq!(pending["mapped"], false);
+        assert_ne!(pending["state"], "current");
+    }
+    assert_eq!(
+        project.goal_journal().unwrap(),
+        project_journal_after_assignment
+    );
+}
+
 #[test]
 fn checker_coverage_and_intake_are_guarded_before_start() {
     let p = Project::new("goal-checker-coverage");
