@@ -198,6 +198,8 @@ fn stop_blocks_admission_and_does_not_claim_native_termination_or_erase_work() {
         "Owner revoked continuation.",
     ]);
     assert_eq!(stopped["state"], "stopped");
+    assert_eq!(stopped["readOnly"], false);
+    assert_eq!(stopped["effect"], "stop_recorded");
     assert_eq!(
         stopped["interruption"]["termination"],
         "pending_or_unavailable"
@@ -205,6 +207,18 @@ fn stop_blocks_admission_and_does_not_claim_native_termination_or_erase_work() {
     assert_eq!(stopped["claims"][0]["actualWork"]["status"], "running");
     assert_eq!(fs::read(project.work_path(work)).unwrap(), original);
     let before = project.state();
+    let replay = project.value(&[
+        "project",
+        "advance",
+        "stop",
+        "advance-records",
+        "--reason",
+        "Repeated stop must preserve original reason and budget.",
+    ]);
+    assert_eq!(replay["readOnly"], true);
+    assert_eq!(replay["effect"], "no-change");
+    assert_eq!(project.state(), before);
+    assert_eq!(project.status()["readOnly"], true);
     project.reject(
         &["project", "advance", "admit", SPEC, "--proposal", PLAN],
         "Stopped",

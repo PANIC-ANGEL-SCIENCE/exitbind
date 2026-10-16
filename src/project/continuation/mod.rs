@@ -247,7 +247,12 @@ pub(crate) fn stop(loaded: &Loaded, mandate: &str, reason: &str) -> Result<Value
             journal::append(&selected, next, Some(&prior), &raw)?
         };
         let mut response = projection(loaded, &written)?;
-        response["effect"] = json!("stop_recorded");
+        response["readOnly"] = json!(prior.stopped);
+        response["effect"] = json!(if prior.stopped {
+            "no-change"
+        } else {
+            "stop_recorded"
+        });
         response["interruption"] = json!({"owner":"the existing owned native/check execution","requested":true,"termination":"pending_or_unavailable",
             "action":"Active associated execution rechecks this durable stop at its next owned poll, interrupts safely and retains actual exit/group facts or uncertainty. Inspect each actual Work/native journal for confirmation. An absent owner cannot confirm interruption; unknown effects remain held."});
         Ok(response)
