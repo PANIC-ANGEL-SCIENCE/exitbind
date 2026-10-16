@@ -323,7 +323,7 @@ fn selected_missing_or_managed_retargeted_checker_refuses_before_admission() {
 
     let (root, ledger, external, argument, target) =
         selected_external_checker_run("observe-verification-checker-missing");
-    fs::remove_file(&external).unwrap();
+    fs::remove_file(external).unwrap();
     let before = fs::read(root.join(&ledger)).unwrap();
     let missing = call(
         &root,
@@ -430,7 +430,7 @@ fn selected_start_marker_is_refused_by_installed_older_reader_before_effects() {
     )
     .unwrap();
     let before = fs::read(root.join(&ledger)).unwrap();
-    let output = std::process::Command::new(&old_reader)
+    let output = std::process::Command::new(old_reader)
         .current_dir(&root)
         .args([
             "run",

@@ -410,8 +410,9 @@ mod tests {
             path: loaded
                 .product_root
                 .join(".exitbind/verification")
-                .to_string_lossy()
-                .into_owned(),
+                .to_str()
+                .expect("fixture path is valid UTF-8")
+                .to_owned(),
             sha256: "a".repeat(64),
         };
         let result = refuse_input_aliases(&loaded, &state, &scratch, &[source]).unwrap_err();
