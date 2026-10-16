@@ -9,20 +9,8 @@ const MAX_ENTRY: usize = 2048;
 const MAX_ITEMS: usize = 4;
 const MAX_DELIVERY: usize = 6 * 1024;
 
-pub(crate) fn input_form(loaded: &Loaded) -> Result<Value, String> {
-    Ok(json!({"version":1,"scope":SCOPE,"effect":"no-change",
-        "bounds":{"sourceMaximumBytes":MAX_ENTRY,"factMaximumBytes":512,"unit":"UTF-8 bytes"},
-        "template":{"version":1,"id":"stable-lesson-id","fact":"One bounded reviewed project fact.",
-            "projectIdentity":crate::host::assignment_context::project_identity(loaded)?,
-            "owner":loaded.lead(),"provenance":["Reviewed source and reason"],
-            "createdRevision":"<40-or-64-lowercase-hex-original-revision>",
-            "revalidatedRevision":"<40-or-64-lowercase-hex-current-reviewed-revision>",
-            "appliesTo":{"agents":["<configured-recipient>"],"taskTerms":["<relevant-term>"]},
-            "guards":[{"path":"<relative-project-file>","sha256":"<64-lowercase-hex-digest>"}]},
-        "correction":{"stableFields":["id","createdRevision"],"reviewedRevision":"revalidatedRevision",
-            "supersedes":"exact retired predecessor itemId; propose a new immutable source/ledger; review it; retire predecessor before promotion"},
-        "authority":"the template grants no memory rights; existing scoped rights, guards and explicit expires-at still apply"}))
-}
+mod input;
+pub(crate) use input::{input_form, parse, validate_source};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -108,67 +96,6 @@ pub(crate) fn mutation_lock(loaded: &Loaded) -> Result<Option<std::fs::File>, St
         }
         Ok(Some(file))
     }
-}
-
-pub(crate) fn parse(loaded: &Loaded, bytes: &[u8]) -> Result<Lesson, String> {
-    if bytes.len() > MAX_ENTRY {
-        return Err("project lesson exceeds the 2048-byte entry bound".into());
-    }
-    let lesson: Lesson = serde_json::from_slice(bytes)
-        .map_err(|error| format!("invalid project lesson: {error}"))?;
-    if !text(&lesson.fact, 512) {
-        return Err("project lesson fact must be nonblank, without control characters, and at most 512 UTF-8 bytes; use memory form --scope project-lessons.v1".into());
-    }
-    if !revision(&lesson.created_revision) || !revision(&lesson.revalidated_revision) {
-        return Err("project lesson createdRevision and revalidatedRevision must be 40 or 64 lowercase hexadecimal characters; corrections retain the original createdRevision".into());
-    }
-    let applies = &lesson.applies_to;
-    if lesson.version != 1
-        || !text(&lesson.id, 64)
-        || !lesson
-            .id
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
-        || !text(&lesson.fact, 512)
-        || lesson.project_identity != crate::host::assignment_context::project_identity(loaded)?
-        || Some(lesson.owner.as_str()) != loaded.lead()
-        || lesson.provenance.is_empty()
-        || lesson.provenance.len() > 4
-        || !lesson.provenance.iter().all(|value| text(value, 160))
-        || !revision(&lesson.created_revision)
-        || !revision(&lesson.revalidated_revision)
-        || applies.agents.is_empty()
-        || applies.agents.len() > 8
-        || applies
-            .agents
-            .iter()
-            .any(|name| loaded.agent(name).is_none())
-        || applies.agents.iter().collect::<BTreeSet<_>>().len() != applies.agents.len()
-        || applies.task_terms.len() > 4
-        || !applies.task_terms.iter().all(|value| text(value, 64))
-        || lesson.guards.is_empty()
-        || lesson.guards.len() > 4
-        || lesson.guards.iter().any(|guard| !digest(&guard.sha256))
-        || lesson
-            .supersedes
-            .as_deref()
-            .is_some_and(|value| !digest(value))
-    {
-        return Err("invalid project lesson identity, provenance, applicability or guard".into());
-    }
-    // Validate confinement even when a guard is absent or stale. No machine paths
-    // or transient Work identifiers are needed in the project fact itself.
-    for guard in &lesson.guards {
-        if !text(&guard.path, 256)
-            || std::path::Path::new(&guard.path).is_absolute()
-            || !std::path::Path::new(&guard.path)
-                .components()
-                .all(|part| matches!(part, std::path::Component::Normal(_)))
-        {
-            return Err("lesson guard must be a confined relative project path".into());
-        }
-    }
-    Ok(lesson)
 }
 
 pub(crate) fn applicable(
