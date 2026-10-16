@@ -1,5 +1,100 @@
 use super::*;
 
+fn include_adviser_with_bounded_commands(project: &mut Project) {
+    let path = project.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut adviser = config["agents"]["reviewer"].clone();
+    adviser["commands"] = json!(["test -s src/import.txt"]);
+    config["agents"]["adviser"] = adviser;
+    config["workflows"]["change"]["advisers"] = json!(["adviser"]);
+    fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    project.spec["mandate"]["roles"] = json!(["lead", "worker", "reviewer", "adviser"]);
+    project.spec["mandate"]["commands"] = json!(["sh checks.sh", "test -s src/import.txt"]);
+    project.save_spec();
+}
+
+#[test]
+fn selected_recipient_commands_must_be_exact_subsets_of_the_mandate() {
+    for recipient in ["lead", "worker", "reviewer", "adviser"] {
+        let mut project = Project::new("continuation-recipient-command", "export");
+        include_adviser_with_bounded_commands(&mut project);
+        let path = project.root.join("exitbind.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        config["agents"][recipient]["commands"] = json!(["sh checks.sh", "publish --external"]);
+        fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        assert_eq!(project.plan["checkCommand"], "sh checks.sh");
+        assert_eq!(project.plan["preservationCheckCommand"], "sh checks.sh");
+        project.select();
+        let before = project.state();
+        let reason = format!("configured {recipient} commands exceed the selected mandate");
+        project.reject(
+            &["project", "advance", "admit", SPEC, "--proposal", PLAN],
+            &reason,
+        );
+        project.reject(
+            &[
+                "project",
+                "advance",
+                "admit",
+                SPEC,
+                "--proposal",
+                PLAN,
+                "--apply",
+                "--current-binding",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ],
+            &reason,
+        );
+        assert_eq!(
+            project.state(),
+            before,
+            "{recipient} refusal must not append a claim or journal event"
+        );
+        assert!(
+            project.runs().is_empty(),
+            "{recipient} refusal must precede Work creation"
+        );
+        let status = project.status();
+        assert!(status["claims"].as_array().unwrap().is_empty());
+        assert_eq!(status["budget"]["reservedActions"], 0);
+    }
+
+    let mut allowed = Project::new("continuation-recipient-subset", "export");
+    include_adviser_with_bounded_commands(&mut allowed);
+    allowed.select();
+    let before = allowed.state();
+    let preview = allowed.preview();
+    assert_eq!(preview["state"], "preview");
+    assert_eq!(allowed.state(), before);
+    let admitted = allowed.apply(&preview);
+    assert_eq!(admitted["state"], "work_started", "{admitted}");
+    assert_eq!(allowed.runs().len(), 1);
+    assert_eq!(allowed.status()["claims"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn recipient_command_change_after_preview_refuses_apply_without_a_new_work() {
+    let mut project = Project::new("continuation-recipient-drift", "export");
+    include_adviser_with_bounded_commands(&mut project);
+    project.select();
+    let preview = project.preview();
+    let path = project.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config["agents"]["reviewer"]["commands"] = json!(["sh checks.sh", "publish --external"]);
+    fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    assert_eq!(project.plan["checkCommand"], "sh checks.sh");
+    let before = project.state();
+    let output = project.apply_command(&preview).output().unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        message(&output).contains("selected configuration changed"),
+        "{output:?}"
+    );
+    assert_eq!(project.state(), before);
+    assert!(project.runs().is_empty());
+    assert!(project.status()["claims"].as_array().unwrap().is_empty());
+}
+
 #[test]
 fn source_drift_and_changed_head_refuse_new_work_preserving_existing_work() {
     for kind in ["git", "export"] {

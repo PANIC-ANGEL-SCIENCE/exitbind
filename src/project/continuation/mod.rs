@@ -1,5 +1,6 @@
 //! Source-grounded continuation on the existing Goal and Work protocols.
 mod admission;
+pub(crate) mod control;
 mod journal;
 mod model;
 mod sources;
