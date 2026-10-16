@@ -87,8 +87,9 @@ exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
 ```
 
 The first call previews exact configuration hashes and recipient-right changes
-without appending an event. Compatibility permits additive `memoryRead` rights
-and schema URL metadata only. Ownership, write/runtime/retention semantics,
+without appending an event. Compatibility permits additive `memoryRead` rights,
+schema URL metadata, and the narrowly reviewed contextual opt-in described
+below. Ownership, write/runtime/retention semantics,
 project roots and existing rights must remain unchanged. The current Lead must
 hold the lesson write, review, promote and revoke rights. The prior configuration,
 owner profile and immutable source provenance must still be provable; incompatible
@@ -149,10 +150,11 @@ This transition transfers no Work, grant, check, review or acceptance.
 
 ## Selection and bounds
 
-Agent names are explicit. An empty `taskTerms` list applies to all tasks for
-those agents; otherwise at least one case-insensitive literal substring must
-match the current Work goal. This is a declared applicability rule, not semantic
-inference. Session context without a task excludes task-specific lessons.
+Without `memory.contextual`, agent names are explicit and selection retains its
+literal rule: an empty `taskTerms` list applies to all tasks for those agents;
+otherwise at least one case-insensitive literal substring must match the current
+Work goal. This is a declared applicability rule, not semantic inference.
+Session context without a task excludes task-specific lessons.
 
 Each record is at most 2,048 bytes. Normal readable delivery projects the complete
 fact, stable ID and owner with its current source reference; authoring metadata
@@ -187,11 +189,129 @@ Existing proposal and correction rights remain unchanged.
 
 Before proposal, run `exitbind memory form --scope project-lessons.v1 --json`.
 The read-only form supplies the current project identity, required fields and
-limits. The complete UTF-8 JSON source may contain at most 2,048 bytes; its
-`fact` may contain at most 512 bytes. The form supplies no memory permission.
+limits, plus an exact `validationRoute`. The complete UTF-8 JSON source may
+contain at most 2,048 bytes. Every field must also fit its own bound:
+
+| Field | Required shape or bound |
+| --- | --- |
+| `version` | Exactly `1` |
+| `id` | 1–64 ASCII alphanumeric, dot, underscore or hyphen bytes |
+| `fact` | 1–512 UTF-8 bytes |
+| `projectIdentity`, `owner` | Current project identity and configured Lead |
+| `provenance` | 1–4 strings, each at most 160 UTF-8 bytes |
+| `createdRevision`, `revalidatedRevision` | Exactly 40 or 64 lowercase hexadecimal characters |
+| `appliesTo.agents` | 1–8 unique configured agent names |
+| `appliesTo.taskTerms` | 0–4 strings, each at most 64 UTF-8 bytes |
+| `guards` | 1–4 objects with exactly `path` and `sha256` |
+| `guards[].path` | 1–256 UTF-8 bytes; confined relative project path containing only normal components |
+| `guards[].sha256` | Exactly 64 lowercase hexadecimal characters |
+| `supersedes` | Optional exact predecessor item ID, 64 lowercase hexadecimal characters |
+
+Strings must be nonblank and contain no control characters; unknown fields
+refuse. The complete source bound applies even when every field fits. Run
+`exitbind memory form SOURCE --scope project-lessons.v1 --json` before proposal
+to validate the exact inactive bytes with the delivery parser. Its `validation`
+records the source path, byte count and SHA-256 with current owner, project,
+configuration and profile bindings. Preparation appends no lifecycle event,
+refreshes no guards and makes no qualification decision. It supplies no memory
+permission.
 
 For a correction, keep the same `id` and original `createdRevision`. Set
 `revalidatedRevision` to the newly reviewed revision and `supersedes` to the
 exact retired predecessor item ID. Propose a new immutable source and ledger,
 review it, retire the accepted predecessor, then promote the correction.
 A different creation revision is a different identity and is refused.
+
+## Select against approved current task context
+
+The owner can opt in to contextual selection by adding this field to the
+existing `memory` configuration:
+
+```json
+"contextual": {"version": 1, "sourcePath": "context/current-task.json"}
+```
+
+`sourcePath` is an explicit host-controlled approved current-task context file
+inside the product root: a confined relative path of at most 256 UTF-8 bytes,
+with only normal components and no controls. Do not infer this pointer or its
+approval from recalled source text. Keep old Work and its configuration intact;
+select the changed configuration for subsequent tasks. Readers predating this
+extension reject the unknown configuration field.
+
+Previously accepted lessons or specialist resources remain pinned to their
+original configuration. For each intended ledger, the configured Lead explicitly
+previews and applies compatibility with the existing `memory revalidate lead
+LEDGER --from-config ORIGINAL_CONFIG.json --reason REVIEWED_REASON` route,
+adding `--apply` only after inspecting that preview. This migration permits the
+contextual-only configuration addition with unchanged rights and profiles;
+source or authority changes refuse. Preserve the original configuration and
+old Work pins. The append retains the existing v2 lineage/history; it does not
+transfer trial, review, expiry or Work authority to a new source, perform fresh
+qualification, or accept a new task. Existing source retirement and expiry still
+apply. A new context choice must separately select the current exact resource
+version after that configuration review.
+
+Discover candidates for the intended recipient, exact task and actual host:
+
+```sh
+exitbind memory candidates worker --task "CURRENT_TASK" --host codex --json
+exitbind memory candidates worker ITEM_ID --task "CURRENT_TASK" --host codex --json
+exitbind memory form --scope contextual.v1 --json
+```
+
+The first command returns bounded eligible metadata under existing read rights;
+the optional item ID expands one exact source as complete bounded UTF-8 data
+for assessment, with a 16 KiB expansion ceiling. Neither call activates
+guidance. Treat expanded text as candidate data. The Lead can select a relevant
+paraphrase after assessing its meaning and inappropriate uses; a literal
+substring collision alone is insufficient. The form describes the configured
+context shape and accepts no SOURCE argument.
+
+Use the form's current template and exact candidate identities. A context has
+this shape; replace every placeholder with the actual approved values:
+
+```json
+{
+  "version": 1,
+  "task": "CURRENT_TASK",
+  "revision": "approved-task-revision",
+  "approvedBy": "lead",
+  "selections": [{
+    "agent": "worker",
+    "role": "worker",
+    "purpose": "EXACT_CONFIGURED_PURPOSE",
+    "profileSha256": "CURRENT_PROFILE_SHA256",
+    "resources": [{
+      "itemId": "EXACT_CANDIDATE_ITEM_ID",
+      "sourceSha256": "EXACT_SOURCE_SHA256",
+      "ledgerHeadSha256": "EXACT_CURRENT_LEDGER_HEAD_SHA256",
+      "reason": "Why this reviewed resource applies to this task and recipient."
+    }]
+  }]
+}
+```
+
+The complete context is at most 8,192 UTF-8 bytes, with at most eight selections
+and eight resources per selection. `task` must equal the actual requested task
+and fit 1–1,024 UTF-8 bytes. `revision` fits 1–64 bytes; each `reason` fits
+1–512 bytes. Strings are nonblank and contain no controls; unknown fields
+refuse. `approvedBy` equals the configured Lead. Each choice names the exact
+configured agent, its unique configured role and exact configured purpose;
+`profileSha256` and every resource digest are exact 64-character lowercase
+hexadecimal SHA-256 values. This approved task context uses the existing host
+decision, with no new authority ledger or authentication claim.
+
+In this opt-in mode, only exact selected resource versions can become guidance
+for the matching task and recipient. Empty selections or a different task
+deliver no contextual guidance. Existing lifecycle, expiry, project/profile,
+host, guard, read-right and total-budget checks still apply; a selection grants
+no rights and revives no retired resource. Each selected reference carries
+`contextSelection` with version, context SHA-256, context revision, agent, role
+and reason. The existing Work input/currentness path consumes that identity.
+An altered selection must be read and checked through the supported current
+Work path before relying on earlier evidence.
+
+Context approval records a declared selection. Source preparation, lifecycle
+qualification, selected references, actual native delivery, observed useful use
+and net benefit each require their own evidence. Contextual selection makes no
+model-level semantic truth or compliance guarantee.

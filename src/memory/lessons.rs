@@ -118,6 +118,13 @@ pub(crate) fn applicable(
     if !lesson.applies_to.task_terms.is_empty() && !task_matches {
         return Ok(false);
     }
+    eligible(loaded, lesson, agent)
+}
+
+pub(crate) fn eligible(loaded: &Loaded, lesson: &Lesson, agent: &str) -> Result<bool, String> {
+    if !lesson.applies_to.agents.iter().any(|name| name == agent) {
+        return Ok(false);
+    }
     for guard in &lesson.guards {
         if path::secure_digest_observation(&loaded.product_root, &guard.path, "lesson guard")?
             .as_deref()

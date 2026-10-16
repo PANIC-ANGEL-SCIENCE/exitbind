@@ -1,6 +1,7 @@
 //! Existing memory CLI and task-selective inspection.
 use super::*;
 use crate::memory::{self, forgetting};
+use serde_json::Value;
 
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(a, 0, "memory requires an action")?;
@@ -18,13 +19,39 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     a.positional.get(1).map(String::as_str),
                 )?);
             }
-            args::assert_positionals("memory form", a, 1)?;
+            if scope == "contextual.v1" {
+                args::assert_positionals("memory form", a, 1)?;
+                return print_json(&memory::contextual::input_form(l)?);
+            }
             if scope != memory::lessons::SCOPE {
                 return Err(
-                    "memory form requires --scope project-lessons.v1 or specialist.AGENT.v1".into(),
+                    "memory form requires --scope project-lessons.v1, specialist.AGENT.v1 or contextual.v1".into(),
                 );
             }
-            print_json(&memory::lessons::input_form(l)?)
+            let mut form = memory::lessons::input_form(l)?;
+            let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+            form["validationRoute"] = json!({"command":[executable.to_str().ok_or("executable is not UTF-8")?,"memory","form","<SOURCE>","--scope",scope,"--json","--config",l.path.to_str().ok_or("configuration path is not UTF-8")?],
+                "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current owner/project/config/profile binding only; no lifecycle or qualification decision"});
+            form["validation"] = a
+                .positional
+                .get(1)
+                .map(|source| memory::lessons::validate_source(l, source))
+                .transpose()?
+                .unwrap_or(Value::Null);
+            print_json(&form)
+        }
+        "candidates" => {
+            args::assert_options("memory candidates", a, &["config", "task", "host", "json"])?;
+            if !(2..=3).contains(&a.positional.len()) {
+                return Err("memory candidates requires AGENT and optional ITEM_ID".into());
+            }
+            print_json(&memory::contextual::candidates(
+                l,
+                positional(a, 1, "memory candidates requires AGENT")?,
+                option(a, "task", "memory candidates requires --task TASK")?,
+                option(a, "host", "memory candidates requires --host codex|claude")?,
+                a.positional.get(2).map(String::as_str),
+            )?)
         }
         "correct-policy" => {
             args::assert_options(

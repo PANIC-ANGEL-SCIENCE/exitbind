@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 
 use crate::{config::Loaded, evidence::hash};
 
+pub(crate) mod contextual;
 pub(crate) mod discovery;
 pub(crate) mod forgetting;
 pub(crate) mod ledger;

@@ -12,6 +12,7 @@ const FIELDS: &[&str] = &[
     "maxBytes",
     "protocolScopes",
     "syntheticScopes",
+    "contextual",
 ];
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,7 @@ pub(crate) struct MemoryPolicy {
     pub(crate) max_bytes: usize,
     pub(crate) protocol_scopes: BTreeSet<String>,
     pub(crate) synthetic_scopes: BTreeSet<String>,
+    pub(crate) contextual: Option<super::contextual::Policy>,
 }
 
 pub(crate) fn validate(value: &Value, errors: &mut Vec<String>) {
@@ -34,6 +36,15 @@ pub(crate) fn validate(value: &Value, errors: &mut Vec<String>) {
         if !FIELDS.contains(&key.as_str()) {
             errors.push(format!("memory.{key} is not allowed"));
         }
+    }
+    if memory
+        .get("contextual")
+        .is_some_and(|v| !super::contextual::valid_policy(v))
+    {
+        errors.push(
+            "memory.contextual requires version 1 and a confined sourcePath of 1..256 UTF-8 bytes"
+                .into(),
+        );
     }
     match memory.get("root").and_then(Value::as_str) {
         None => errors.push("memory.root must be a non-empty relative path".into()),
@@ -73,6 +84,11 @@ pub(crate) fn get(config: &Value) -> Option<MemoryPolicy> {
     let memory = config.get("memory")?.as_object()?;
     Some(MemoryPolicy {
         root: memory["root"].as_str()?.to_owned(),
+        contextual: memory
+            .get("contextual")
+            .map(|v| serde_json::from_value(v.clone()))
+            .transpose()
+            .ok()?,
         max_items: memory["maxItems"].as_u64()? as usize,
         max_bytes: memory["maxBytes"].as_u64()? as usize,
         protocol_scopes: scopes(memory.get("protocolScopes")),

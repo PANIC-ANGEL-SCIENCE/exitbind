@@ -114,6 +114,10 @@ fn attach_memory_references(
     envelope: &mut Value,
 ) -> Result<(), String> {
     if crate::memory::policy::get(&loaded.config).is_some() {
+        if crate::memory::contextual::enabled(loaded) {
+            envelope["memoryContextSelection"] =
+                crate::memory::contextual::binding(loaded, agent_name, task)?;
+        }
         envelope["memoryReferences"] = json!(crate::memory::selection::resolve_for_task(
             loaded,
             agent_name,

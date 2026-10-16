@@ -74,6 +74,7 @@ fn project_parts_after_reads(
         .as_str()
         .ok_or("native assignment has no assignment identity")?;
     let packet = &current["packet"];
+    memory::contextual::assert_assignment(loaded, packet)?;
     let packet_sha256 = hash::value(packet);
     verify_current_work(loaded, work, current, assignment, &packet_sha256)?;
 

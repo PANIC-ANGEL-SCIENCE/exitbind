@@ -147,6 +147,26 @@ fn references(loaded: &Loaded, name: &str) -> Result<Vec<Value>, String> {
     Ok(result)
 }
 
+/// Candidate metadata under the same recipient/host/lifecycle eligibility, without activation.
+pub(crate) fn candidate_references(
+    loaded: &Loaded,
+    name: &str,
+    role: &str,
+    task: &str,
+    host: &str,
+) -> Result<Vec<Value>, String> {
+    if !enabled(loaded, name) || delivery::exclusion(loaded, name, role, host).is_some() {
+        return Ok(Vec::new());
+    }
+    let value = delivery::select_resources(loaded, name, task, role, host, true, || Ok(()))?;
+    Ok(value["experience"]
+        .as_array()
+        .ok_or("invalid specialist candidates")?
+        .iter()
+        .map(|r| r["reference"].clone())
+        .collect())
+}
+
 pub(crate) fn route(
     loaded: &Loaded,
     task: &str,

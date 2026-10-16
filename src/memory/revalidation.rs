@@ -30,7 +30,12 @@ pub(crate) fn run(
         .values()
         .next()
         .ok_or("lesson ledger is empty")?;
-    if item["scope"] != super::lessons::SCOPE {
+    let contextual_migration =
+        !super::contextual::enabled(&previous) && super::contextual::enabled(loaded);
+    if item["scope"] != super::lessons::SCOPE
+        && !(contextual_migration
+            && crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")))
+    {
         return Err("revalidation is limited to project lessons".into());
     }
     let source = crate::project::path::secure_bytes(
@@ -43,8 +48,29 @@ pub(crate) fn run(
     if hash::bytes(&source) != item["source"]["sha256"] {
         return Err("lesson source changed since proposal".into());
     }
-    let lesson = super::lessons::parse(loaded, &source)?;
-    let differences = compatible(&previous, loaded, actor)?;
+    let lesson_id = if item["scope"] == super::lessons::SCOPE {
+        super::lessons::parse(loaded, &source)?.id
+    } else {
+        crate::project::specialists::input_form(
+            loaded,
+            item["scope"].as_str().ok_or("invalid scope")?,
+            item["source"]["path"].as_str(),
+        )?;
+        serde_json::from_slice::<Value>(&source).map_err(|e| e.to_string())?["id"]
+            .as_str()
+            .ok_or("invalid specialist identity")?
+            .to_owned()
+    };
+    let differences = if contextual_migration {
+        compatible_contextual(
+            &previous,
+            loaded,
+            actor,
+            item["scope"].as_str().ok_or("invalid scope")?,
+        )?
+    } else {
+        compatible(&previous, loaded, actor)?
+    };
     let old_hash = hash::text(&previous.source);
     let new_hash = hash::text(&loaded.source);
     if old_hash == new_hash {
@@ -76,7 +102,7 @@ pub(crate) fn run(
         Ok(json!(argv))
     };
     let mut response = json!({"effect":"no-change","status":"preview","itemId":item["itemId"],
-        "lessonId":lesson.id,"configSha256":new_hash,"revalidation":proof,
+        "lessonId":lesson_id,"configSha256":new_hash,"revalidation":proof,
         "nextAction":{"command":argv("inspect")?,"readOnly":true},
         "meaning":"explicit reviewed project-fact lineage; no Work, task grant, check, review approval or acceptance is transferred"});
     if !apply {
@@ -190,10 +216,62 @@ fn compatible(previous: &Loaded, current: &Loaded, actor: &str) -> Result<Vec<Va
     Ok(differences)
 }
 
+// Only the explicit contextual opt-in changes. Rights, roots, profiles and all other policy remain exact.
+fn compatible_contextual(
+    previous: &Loaded,
+    current: &Loaded,
+    actor: &str,
+    scope: &str,
+) -> Result<Vec<Value>, String> {
+    if previous.product_root != current.product_root
+        || previous.control_root != current.control_root
+        || previous.state_root != current.state_root
+        || previous.project_id != current.project_id
+        || previous.lead() != Some(actor)
+        || current.lead() != Some(actor)
+    {
+        return Err("contextual migration cannot change project roots or ownership".into());
+    }
+    let mut before: Value = serde_json::from_str(&previous.source).map_err(|e| e.to_string())?;
+    let mut after: Value = serde_json::from_str(&current.source).map_err(|e| e.to_string())?;
+    before
+        .as_object_mut()
+        .ok_or("invalid prior config")?
+        .remove("$schema");
+    after
+        .as_object_mut()
+        .ok_or("invalid current config")?
+        .remove("$schema");
+    let choice = after["memory"]
+        .as_object_mut()
+        .ok_or("memory policy missing")?
+        .remove("contextual")
+        .ok_or("contextual opt-in missing")?;
+    if before != after || !super::contextual::valid_policy(&choice) {
+        return Err("contextual migration permits only the explicit opt-in; rights and other configuration must remain unchanged".into());
+    }
+    let lead = current.agent(actor).ok_or("Lead unavailable")?;
+    if !lead.memory_promote.iter().any(|s| s == scope)
+        || !lead.memory_revoke.iter().any(|s| s == scope)
+    {
+        return Err("contextual migration requires the same configured Lead's existing promotion and revocation rights".into());
+    }
+    Ok(vec![
+        json!({"field":"memory.contextual","before":null,"after":choice}),
+    ])
+}
+
 pub(crate) fn validate_evidence(event: &Value, current: &Value) -> Result<(), String> {
     let proof = &event["revalidation"];
     let valid = event["version"] == 2
-        && event["scope"] == super::lessons::SCOPE
+        && (event["scope"] == super::lessons::SCOPE
+            || (crate::project::specialists::is_scope(event["scope"].as_str().unwrap_or(""))
+                && proof["differences"].as_array().is_some_and(|d| {
+                    d.len() == 1
+                        && d[0]["field"] == "memory.contextual"
+                        && d[0]["before"].is_null()
+                        && super::contextual::valid_policy(&d[0]["after"])
+                })))
         && proof.as_object().is_some_and(|object| object.len() == 7)
         && proof["version"] == 1
         && proof["previousConfigSha256"] == current["configSha256"]
