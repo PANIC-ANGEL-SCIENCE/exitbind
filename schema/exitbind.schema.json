@@ -181,15 +181,16 @@
           "type": "object",
           "required": ["version", "sourcePath"],
           "properties": {
-            "version": { "const": 1 },
+            "version": { "enum": [1, 2] },
             "sourcePath": {
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
               "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001f\\u007f])[^/]+(?:/[^/]+)*$",
-              "description": "Confined relative project file path; normal components only, no controls, at most 256 UTF-8 bytes."
+              "description": "Version 1: confined project file path. Version 2: fixed .exitbind/artifacts/memory-choices or .soulmate/artifacts/memory-choices under StateRoot, enforced by configuration validation."
             }
           },
+          "allOf": [{"if": {"properties": {"version": {"const": 2}}}, "then": {"properties": {"sourcePath": {"enum": [".exitbind/artifacts/memory-choices", ".soulmate/artifacts/memory-choices"]}}}}],
           "additionalProperties": false
         }
       },

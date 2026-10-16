@@ -40,6 +40,54 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 .unwrap_or(Value::Null);
             print_json(&form)
         }
+        "choice" => {
+            args::assert_options(
+                "memory choice",
+                a,
+                &["config", "task", "request-id", "json"],
+            )?;
+            args::assert_positionals("memory choice", a, 2)?;
+            print_json(&memory::choices::read(
+                l,
+                &a.positional[1],
+                option(a, "task", "memory choice requires --task")?,
+                a.options.get("request-id").map(String::as_str),
+            )?)
+        }
+        "choose" => {
+            args::assert_options(
+                "memory choose",
+                a,
+                &[
+                    "config",
+                    "task",
+                    "host",
+                    "reason",
+                    "previous",
+                    "apply",
+                    "expected-sha256",
+                    "json",
+                ],
+            )?;
+            let agent = positional(
+                a,
+                1,
+                "memory choose requires AGENT and optional eligible ITEM_IDs",
+            )?;
+            print_json(&memory::choices::choose(
+                l,
+                memory::choices::Request {
+                    agent,
+                    task: option(a, "task", "memory choose requires --task")?,
+                    host: option(a, "host", "memory choose requires --host")?,
+                    reason: option(a, "reason", "memory choose requires --reason")?,
+                    items: &a.positional[2..],
+                    previous: a.options.get("previous").map_or("absent", String::as_str),
+                    apply: a.flags.contains_key("apply"),
+                    expected: a.options.get("expected-sha256").map(String::as_str),
+                },
+            )?)
+        }
         "candidates" => {
             args::assert_options("memory candidates", a, &["config", "task", "host", "json"])?;
             if !(2..=3).contains(&a.positional.len()) {

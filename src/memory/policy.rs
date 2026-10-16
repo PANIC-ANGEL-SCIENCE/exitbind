@@ -42,7 +42,7 @@ pub(crate) fn validate(value: &Value, errors: &mut Vec<String>) {
         .is_some_and(|v| !super::contextual::valid_policy(v))
     {
         errors.push(
-            "memory.contextual requires version 1 and a confined sourcePath of 1..256 UTF-8 bytes"
+            "memory.contextual requires version 1 with a confined sourcePath, or version 2 with the fixed state artifact memory-choices path"
                 .into(),
         );
     }

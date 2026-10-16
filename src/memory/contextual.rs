@@ -1,11 +1,11 @@
 //! Opt-in choices in the existing approved task context, never another authority ledger.
 use crate::{config::Loaded, evidence::hash, project::path};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 pub(crate) const CONTEXT_BYTES: u64 = 8192;
-const CHOICES: usize = 8;
+pub(super) const CHOICES: usize = 8;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -13,43 +13,48 @@ pub(crate) struct Policy {
     pub(crate) version: u32,
     pub(crate) source_path: String,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Context {
-    version: u32,
-    task: String,
-    revision: String,
-    approved_by: String,
-    selections: Vec<Choice>,
+pub(super) struct Context {
+    pub(super) version: u32,
+    pub(super) task: String,
+    pub(super) revision: String,
+    pub(super) approved_by: String,
+    pub(super) selections: Vec<Choice>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Choice {
-    agent: String,
-    role: String,
-    purpose: String,
-    profile_sha256: String,
-    resources: Vec<Resource>,
+pub(super) struct Choice {
+    pub(super) agent: String,
+    pub(super) role: String,
+    pub(super) purpose: String,
+    pub(super) profile_sha256: String,
+    pub(super) resources: Vec<Resource>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Resource {
-    item_id: String,
-    source_sha256: String,
-    ledger_head_sha256: String,
-    reason: String,
+pub(super) struct Resource {
+    pub(super) item_id: String,
+    pub(super) source_sha256: String,
+    pub(super) ledger_head_sha256: String,
+    pub(super) reason: String,
 }
-fn text(s: &str, max: usize) -> bool {
+pub(super) fn text(s: &str, max: usize) -> bool {
     !s.trim().is_empty() && s.len() <= max && !s.chars().any(char::is_control)
 }
-fn digest(s: &str) -> bool {
+pub(super) fn digest(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 pub(crate) fn valid_policy(value: &Value) -> bool {
     serde_json::from_value::<Policy>(value.clone()).is_ok_and(|p| {
-        p.version == 1
+        matches!(p.version, 1 | 2)
+            && (p.version == 1
+                || matches!(
+                    p.source_path.as_str(),
+                    ".exitbind/artifacts/memory-choices" | ".soulmate/artifacts/memory-choices"
+                ))
             && p.source_path
                 .split('/')
                 .all(|part| !part.is_empty() && part != "." && part != "..")
@@ -74,10 +79,20 @@ fn bounded(l: &Loaded, source: &str, max: u64) -> Result<Vec<u8>, String> {
         _ => Err("contextual memory source unavailable, unsafe or exceeds its byte bound".into()),
     }
 }
-fn context(l: &Loaded) -> Result<Option<(Context, String)>, String> {
+fn context(
+    l: &Loaded,
+    agent: &str,
+    task: Option<&str>,
+) -> Result<Option<(Context, String)>, String> {
     let Some(p) = super::policy::get(&l.config).and_then(|p| p.contextual) else {
         return Ok(None);
     };
+    if p.version == 2 {
+        return task
+            .map(|task| super::choices::context(l, agent, task))
+            .transpose()
+            .map(Option::flatten);
+    }
     let bytes = bounded(l, &p.source_path, CONTEXT_BYTES)?;
     let c: Context = serde_json::from_slice(&bytes)
         .map_err(|_| "invalid contextual memory task context shape")?;
@@ -130,13 +145,13 @@ pub(crate) fn unique_role(l: &Loaded, agent: &str) -> Result<String, String> {
 
 /// Freeze only the selected approved-context identity in the existing assignment.
 pub(crate) fn binding(l: &Loaded, agent: &str, task: &str) -> Result<Value, String> {
-    let Some((c, sha)) = context(l)? else {
+    let Some((c, sha)) = context(l, agent, Some(task))? else {
         return Ok(Value::Null);
     };
     let choice = c
         .selections
         .iter()
-        .find(|s| s.agent == agent && !s.resources.is_empty());
+        .find(|s| s.agent == agent && (task_local(l) || !s.resources.is_empty()));
     if c.task != task || choice.is_none() {
         return Ok(Value::Null);
     }
@@ -144,6 +159,7 @@ pub(crate) fn binding(l: &Loaded, agent: &str, task: &str) -> Result<Value, Stri
     let configured = l
         .agent(agent)
         .ok_or("contextual recipient is unavailable")?;
+    validate_choice(l, choice.ok_or("contextual choice unavailable")?)?;
     let mut eligible = super::selection::candidate_references(l, agent, Some(task))?;
     // A Work may precede its actual receiving host. An unspecified primary is
     // no default host: freeze eligible identities across supported hosts and
@@ -170,11 +186,15 @@ pub(crate) fn binding(l: &Loaded, agent: &str, task: &str) -> Result<Value, Stri
         identity(l, agent, Some(task), reference)?
             .ok_or("contextual memory selected resource has no current choice")?;
     }
-    if context(l)?.map(|(_, current)| current).as_deref() != Some(sha.as_str()) {
+    if context(l, agent, Some(task))?
+        .map(|(_, current)| current)
+        .as_deref()
+        != Some(sha.as_str())
+    {
         return Err("contextual memory selection changed during binding".into());
     }
     Ok(
-        json!({"version":1,"contextSha256":sha,"contextRevision":c.revision,
+        json!({"version":if task_local(l) {2} else {1},"contextSha256":sha,"contextRevision":c.revision,
         "agent":agent,"role":role}),
     )
 }
@@ -246,7 +266,7 @@ pub(crate) fn identity(
     task: Option<&str>,
     reference: &Value,
 ) -> Result<Option<Value>, String> {
-    let Some((c, sha)) = context(l)? else {
+    let Some((c, sha)) = context(l, agent, task)? else {
         return Ok(None);
     };
     if task != Some(c.task.as_str()) {
@@ -255,17 +275,8 @@ pub(crate) fn identity(
     let Some(choice) = c.selections.iter().find(|s| s.agent == agent) else {
         return Ok(None);
     };
-    let a = l
-        .agent(agent)
-        .ok_or("contextual memory recipient is not configured")?;
+    validate_choice(l, choice)?;
     let role = unique_role(l, agent)?;
-    let profile = path::secure_bytes(&l.control_root, &a.profile, "contextual recipient profile")?;
-    if choice.role != role
-        || choice.purpose != a.purpose
-        || choice.profile_sha256 != hash::bytes(&profile)
-    {
-        return Err("contextual memory recipient role, purpose or profile changed; review the current task choice".into());
-    }
     let Some(r) = choice
         .resources
         .iter()
@@ -279,13 +290,33 @@ pub(crate) fn identity(
         return Err("contextual memory selected resource version changed; review its current eligible version".into());
     }
     Ok(Some(
-        json!({"version":1,"contextSha256":sha,"contextRevision":c.revision,
+        json!({"version":if task_local(l) {2} else {1},"contextSha256":sha,"contextRevision":c.revision,
         "agent":agent,"role":role,"reason":r.reason}),
     ))
 }
+fn validate_choice(l: &Loaded, choice: &Choice) -> Result<(), String> {
+    let agent = &choice.agent;
+    let a = l
+        .agent(agent)
+        .ok_or("contextual memory recipient is not configured")?;
+    let role = unique_role(l, agent)?;
+    let profile = path::secure_bytes(&l.control_root, &a.profile, "contextual recipient profile")?;
+    if choice.role != role
+        || choice.purpose != a.purpose
+        || choice.profile_sha256 != hash::bytes(&profile)
+    {
+        return Err("contextual memory recipient role, purpose or profile changed; review the current task choice".into());
+    }
+    Ok(())
+}
+pub(crate) fn task_local(l: &Loaded) -> bool {
+    super::policy::get(&l.config)
+        .and_then(|p| p.contextual)
+        .is_some_and(|p| p.version == 2)
+}
 pub(crate) fn valid_identity(v: &Value) -> bool {
     v.as_object().is_some_and(|o| o.len() == 6)
-        && v["version"] == 1
+        && matches!(v["version"].as_u64(), Some(1 | 2))
         && v["contextSha256"].as_str().is_some_and(digest)
         && v["contextRevision"].as_str().is_some_and(|s| text(s, 64))
         && v["agent"].as_str().is_some_and(|s| text(s, 64))

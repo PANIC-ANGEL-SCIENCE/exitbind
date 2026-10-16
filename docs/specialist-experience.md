@@ -161,3 +161,16 @@ the linked project-lessons guide; do not invent a second qualification or
 authority store. Native preparation and delivery retain their existing
 currentness checks and carry the selected context identity. A source read or
 route snapshot still does not establish actual native use or a net benefit.
+
+
+For separate live tasks, use the opt-in task choice preparation in
+[project lessons](project-lessons.md#keep-separate-live-task-choices). Version 2
+records each configured specialist's exact approved goal choice in the existing
+state artifacts. It reuses this qualification lifecycle, explicit primary host,
+current resource guards and aggregate delivery budgets. An actual host mismatch
+refuses a prepared child before guidance delivery. Select the older Work with
+ordinary `work focus` before a fresh native child when needed; that changes no
+choice, task status or right. Same-text Works share one choice intentionally;
+different goal identities can use different selections of the same specialist
+without reminting its identity. No first-pass conclusion or new execution right
+is stored by choosing experience.
