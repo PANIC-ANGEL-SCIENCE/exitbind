@@ -199,6 +199,15 @@ Project identity includes the canonical root path: recovery in the same project
 is supported, while moving this goal to another path requires new validated
 work. This is not a cross-path portability claim.
 
+A native Goal may follow an exact, recorded same-Goal Work successor created
+under a changed configuration when the saved member configuration and the
+explicitly selected endpoint configuration both validate the original project,
+state root, and session owner. Exitbind checks every recorded supersession
+claim and only recognizes configurations whose identities are available from
+that saved member or the selected endpoint; it does not search for missing
+intermediate configurations. If any link or identity cannot be verified, the
+member remains unresolved and cannot support current closure.
+
 ## Reproduce the process scenario
 
 From this source checkout, run:

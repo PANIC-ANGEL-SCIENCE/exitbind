@@ -260,6 +260,248 @@ fn journey_integration_refreshes_only_the_frozen_accepted_member_set() {
 }
 
 #[test]
+fn native_journey_accepts_only_the_selected_same_goal_successor_configuration() {
+    let p = Project::new("journey-selected-config-successor")
+        .with_native_session("journey-selected-config-successor-session");
+    p.file("check.sh", "set -eu\ntest -f request.txt\n");
+    p.file("request.txt", "the declared check input\n");
+    p.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "journey-goal",
+            "--goal",
+            "Validate the selected successor using current accepted evidence",
+            "--none-applicable",
+            "findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    let original_config_path = p.root.join("exitbind.json");
+    let original_config = fs::read(&original_config_path).unwrap();
+    let task_goal = "Check the declared import requirements";
+    let old_work = p.begin_ordinary(task_goal, "sh check.sh", &[]);
+    let mut old_detail = p.value_with_config(
+        &["work", "next", &old_work, "--json", "--full"],
+        None,
+        &original_config_path,
+    );
+    while old_detail["next"]["action"] == "lead_decision" {
+        let next = old_detail["next"].clone();
+        let outcome = if next["outcomes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item == "scoped")
+        {
+            "scoped"
+        } else {
+            "accepted"
+        };
+        p.return_stage_with_config(&old_work, &next, outcome, &original_config_path);
+        old_detail = p.value_with_config(
+            &["work", "next", &old_work, "--json", "--full"],
+            None,
+            &original_config_path,
+        );
+    }
+    assert_eq!(old_detail["next"]["role"], "worker");
+    p.value_with_config(
+        &[
+            "work",
+            "return",
+            &old_work,
+            old_detail["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        Some("Blocked fixture worker; preserve this member as historical evidence.\n"),
+        &original_config_path,
+    );
+    let old_ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        old_work.strip_prefix("smw_").unwrap()
+    );
+    let old_member = p.status()["journeyMembers"][0].clone();
+    assert_eq!(old_member["work"], old_work);
+    assert_eq!(
+        p.status()["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+
+    let current_config_path = p.root.join("exitbind-next.json");
+    let mut current_config: Value = serde_json::from_slice(&original_config).unwrap();
+    current_config["orchestration"]["maxParallel"] = json!(3);
+    fs::write(
+        &current_config_path,
+        serde_json::to_vec_pretty(&current_config).unwrap(),
+    )
+    .unwrap();
+    let current_config_bytes = fs::read(&current_config_path).unwrap();
+    let new_work = format!("smw_{}", "b".repeat(64));
+    let new_ledger = format!(".exitbind/runs/work-{}.jsonl", "b".repeat(64));
+    let superseded = p.call_with_config(
+        &[
+            "run",
+            "supersede",
+            &old_ledger,
+            "--workflow",
+            "change",
+            "--goal",
+            task_goal,
+            "--ledger",
+            &new_ledger,
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        None,
+        &current_config_path,
+    );
+    assert!(
+        superseded.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&superseded.stdout),
+        String::from_utf8_lossy(&superseded.stderr)
+    );
+    let superseded: Value = serde_json::from_slice(&superseded.stdout).unwrap();
+    assert_eq!(superseded["work"], new_work);
+    assert_eq!(
+        p.value_with_config(&["goal", "status", "--json"], None, &current_config_path)
+            ["goalProgress"]["journeyCompletion"]["state"],
+        "blocked",
+        "a pending successor is not current acceptance"
+    );
+
+    p.drive_with_config(&new_work, true, &current_config_path);
+    let accepted = p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert_eq!(
+        accepted["goalProgress"]["journeyCompletion"]["state"], "current",
+        "the exact selected endpoint config can validate its accepted same-Goal successor"
+    );
+    assert_eq!(accepted["journeyMembers"][0], old_member);
+    assert_eq!(fs::read(&original_config_path).unwrap(), original_config);
+    assert_eq!(
+        fs::read(&current_config_path).unwrap(),
+        current_config_bytes
+    );
+
+    let wrong_config_path = p.root.join("exitbind-unselected.json");
+    let mut wrong_config = current_config.clone();
+    wrong_config["orchestration"]["maxParallel"] = json!(4);
+    fs::write(
+        &wrong_config_path,
+        serde_json::to_vec_pretty(&wrong_config).unwrap(),
+    )
+    .unwrap();
+    let wrong_selected =
+        p.value_with_config(&["goal", "status", "--json"], None, &wrong_config_path);
+    assert_ne!(
+        wrong_selected["goalProgress"]["journeyCompletion"]["state"], "current",
+        "an unselected endpoint configuration cannot stand in for the accepted one"
+    );
+    assert!(
+        wrong_selected["goalProgress"]["journeyCompletion"]["unresolved"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("configuration")),
+        "wrong selected config must be the specific currentness failure: {wrong_selected}"
+    );
+    fs::remove_file(&wrong_config_path).unwrap();
+
+    fs::write(&original_config_path, b"{}").unwrap();
+    let changed_original =
+        p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert_ne!(
+        changed_original["goalProgress"]["journeyCompletion"]["state"], "current",
+        "the historical member config remains part of its identity"
+    );
+    assert!(
+        changed_original["goalProgress"]["journeyCompletion"]["unresolved"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.to_lowercase().contains("config")),
+        "missing historical config must be the specific currentness failure: {changed_original}"
+    );
+    fs::write(&original_config_path, original_config.clone()).unwrap();
+
+    let claim_path = p.root.join(format!("{old_ledger}.supersede"));
+    let original_claim = fs::read(&claim_path).unwrap();
+    let mut claim: Value = serde_json::from_slice(&original_claim).unwrap();
+    claim["newRunId"] = json!("0".repeat(64));
+    fs::write(&claim_path, serde_json::to_vec(&claim).unwrap()).unwrap();
+    let altered_claim =
+        p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert_ne!(
+        altered_claim["goalProgress"]["journeyCompletion"]["state"], "current",
+        "a mismatched successor claim cannot validate current acceptance"
+    );
+    assert!(
+        altered_claim["goalProgress"]["journeyCompletion"]["unresolved"][0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("claim provenance mismatch")),
+        "altered claim must be the specific currentness failure: {altered_claim}"
+    );
+    fs::write(&claim_path, original_claim).unwrap();
+
+    let restored = p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert_eq!(
+        restored["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    p.value_with_config(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "journey-goal",
+            "--goal",
+            "Validate the selected successor using current accepted evidence",
+            "--obligation",
+            "Validate the selected configuration successor using its own accepted check",
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &new_work,
+        ],
+        None,
+        &current_config_path,
+    );
+    let ready = p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert!(
+        ready["goalProgress"]["nextAction"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "close"),
+        "the governed Goal exposes its actual ready close after current successor acceptance"
+    );
+    let completion = p.value_with_config(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "journey-goal",
+            "--result-ref",
+            &new_work,
+            "--view",
+            "event",
+        ],
+        None,
+        &current_config_path,
+    );
+    assert_eq!(completion["kind"], "goal_completion_response");
+    assert_eq!(completion["effect"], "committed");
+    assert_eq!(
+        completion["completionEvent"]["kind"], "session_goal_completed",
+        "completion response: {completion}"
+    );
+    let closed = p.value_with_config(&["goal", "status", "--json"], None, &current_config_path);
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["journeyMembers"][0], old_member);
+    assert_eq!(fs::read(&original_config_path).unwrap(), original_config);
+}
+
+#[test]
 fn native_store_snapshot_distinguishes_missing_and_empty_roots() {
     let project = Project::new("native-store-empty-root-snapshot");
     let missing = project.native_store_snapshot();

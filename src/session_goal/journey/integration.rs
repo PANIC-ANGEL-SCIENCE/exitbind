@@ -1,5 +1,8 @@
 use super::*;
 
+mod lineage;
+pub(super) use lineage::{accepted_endpoint, descends_from_member};
+
 #[derive(Clone, Debug)]
 struct Contract {
     header: Header,
@@ -339,205 +342,6 @@ pub(super) fn validate_member_loaded(
     Ok(())
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct Endpoint {
-    pub(super) work: String,
-    pub(super) identity_sha256: String,
-}
-
-pub(super) fn accepted_endpoint(
-    loaded: &Loaded,
-    member: &Member,
-) -> Result<Option<Endpoint>, String> {
-    const MAX_SUCCESSORS: usize = 64;
-    let mut current_work = member.work.clone();
-    let mut expected_start = Some(member.start_event_sha256.clone());
-    let mut expected_claim: Option<Value> = None;
-    let mut seen = BTreeSet::new();
-    for depth in 0..=MAX_SUCCESSORS {
-        let relative = crate::work::resolve(loaded, &current_work)?;
-        if !seen.insert(relative.clone()) {
-            return Err("journey member successor lineage contains a cycle".into());
-        }
-        let (ledger, events, source) = crate::run::ledger::load(loaded, &relative)?;
-        let start = events
-            .first()
-            .ok_or("journey Work ledger has no start event")?;
-        let start_sha = start["eventSha256"]
-            .as_str()
-            .ok_or("journey Work start identity is missing")?;
-        if start["action"] != "start"
-            || expected_start
-                .as_deref()
-                .is_some_and(|expected| expected != start_sha)
-            || start["configSha256"] != member.config_sha256
-            || hash::text(start["goal"].as_str().unwrap_or_default()) != member.work_goal_sha256
-        {
-            return Err(
-                "journey Work start, configuration or frozen task Goal identity changed".into(),
-            );
-        }
-        if let Some(claim) = expected_claim.take() {
-            validate_successor(&claim, &relative, &ledger, &events)?;
-        }
-        let state = crate::run::state::reduce(&events)?;
-        let accepted = state["status"] == "accepted"
-            && events.last().is_some_and(|event| {
-                event["action"] == "submit"
-                    && event["role"] == "lead"
-                    && event["outcome"] == "accepted"
-            });
-        let claim_path = crate::run::ledger::claim_path(&ledger);
-        let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
-            if !accepted {
-                return Ok(None);
-            }
-            return Ok(Some(Endpoint {
-                work: current_work.clone(),
-                identity_sha256: hash::value(&json!({
-                    "work":current_work,
-                    "startEventSha256":start_sha,
-                    "acceptanceEventSha256":events.last().unwrap()["eventSha256"],
-                    "goalSha256":member.work_goal_sha256,
-                    "configSha256":start["configSha256"],
-                    "rawLedgerSha256":hash::bytes(source.as_bytes()),
-                })),
-            }));
-        };
-        if depth == MAX_SUCCESSORS {
-            return Err("journey member successor lineage exceeds the supported bound".into());
-        }
-        validate_predecessor_claim(&claim, &relative, &events, &source)?;
-        let successor = claim["newLedgerPath"]
-            .as_str()
-            .ok_or("journey successor claim has no successor ledger")?;
-        let work = crate::work::locator_for_ledger(successor)
-            .ok_or("journey successor claim names a non-Work ledger")?;
-        if crate::work::resolve(loaded, &work)? != successor {
-            return Err("journey successor claim does not bind the exact Work ledger path".into());
-        }
-        current_work = work;
-        expected_start = None;
-        expected_claim = Some(claim);
-    }
-    Ok(None)
-}
-
-/// Resolve a Work to an existing journey member through verified run
-/// supersession claims. This is read-only lineage; it never creates members.
-pub(super) fn descends_from_member(
-    loaded: &Loaded,
-    member: &Member,
-    requested_work: &str,
-) -> Result<bool, String> {
-    const MAX_SUCCESSORS: usize = 64;
-    let mut current_work = member.work.clone();
-    let mut expected_start = Some(member.start_event_sha256.clone());
-    let mut expected_claim: Option<Value> = None;
-    let mut seen = BTreeSet::new();
-    for depth in 0..=MAX_SUCCESSORS {
-        let relative = crate::work::resolve(loaded, &current_work)?;
-        if !seen.insert(relative.clone()) {
-            return Err("journey member successor lineage contains a cycle".into());
-        }
-        let (ledger, events, source) = crate::run::ledger::load(loaded, &relative)?;
-        let start = events
-            .first()
-            .ok_or("journey Work ledger has no start event")?;
-        if start["action"] != "start"
-            || expected_start
-                .as_deref()
-                .is_some_and(|expected| start["eventSha256"] != expected)
-            || start["configSha256"] != member.config_sha256
-            || hash::text(start["goal"].as_str().unwrap_or_default()) != member.work_goal_sha256
-        {
-            return Err(
-                "journey Work start, configuration or frozen task Goal identity changed".into(),
-            );
-        }
-        if let Some(claim) = expected_claim.take() {
-            validate_successor(&claim, &relative, &ledger, &events)?;
-        }
-        if current_work == requested_work {
-            return Ok(true);
-        }
-        let claim_path = crate::run::ledger::claim_path(&ledger);
-        let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
-            return Ok(false);
-        };
-        if depth == MAX_SUCCESSORS {
-            return Err("journey member successor lineage exceeds the supported bound".into());
-        }
-        validate_predecessor_claim(&claim, &relative, &events, &source)?;
-        let successor = claim["newLedgerPath"]
-            .as_str()
-            .ok_or("journey successor claim has no successor ledger")?;
-        let work = crate::work::locator_for_ledger(successor)
-            .ok_or("journey successor claim names a non-Work ledger")?;
-        if crate::work::resolve(loaded, &work)? != successor {
-            return Err("journey successor claim does not bind the exact Work ledger path".into());
-        }
-        current_work = work;
-        expected_start = None;
-        expected_claim = Some(claim);
-    }
-    Ok(false)
-}
-
-fn validate_predecessor_claim(
-    claim: &Value,
-    relative: &str,
-    events: &[Value],
-    source: &str,
-) -> Result<(), String> {
-    let start = events
-        .first()
-        .ok_or("journey predecessor ledger is empty")?;
-    let head = events.last().ok_or("journey predecessor ledger is empty")?;
-    if claim["oldLedgerPath"] != relative
-        || claim["oldLedgerSha256"] != hash::bytes(source.as_bytes())
-        || claim["oldRunId"] != start["runId"]
-        || claim["oldHeadEventSha256"] != head["eventSha256"]
-        || claim["oldConfigSha256"] != start["configSha256"]
-        || claim["goalSha256"] != hash::text(start["goal"].as_str().unwrap_or_default())
-    {
-        return Err(
-            "journey successor claim does not bind the exact predecessor or same task Goal".into(),
-        );
-    }
-    Ok(())
-}
-
-fn validate_successor(
-    claim: &Value,
-    relative: &str,
-    ledger: &crate::run::ledger::LedgerPath,
-    events: &[Value],
-) -> Result<(), String> {
-    let start = events.first().ok_or("journey successor ledger is empty")?;
-    let actual_relative = ledger
-        .expected
-        .strip_prefix(&ledger.root)
-        .map_err(|_| "journey successor escapes its configured StateRoot")?
-        .to_str()
-        .ok_or("journey successor ledger path is not UTF-8")?;
-    if actual_relative != relative
-        || claim["newLedgerPath"] != relative
-        || claim["newRunId"] != start["runId"]
-        || claim["workflow"] != start["workflow"]
-        || claim["configSha256"] != start["configSha256"]
-        || claim["goalSha256"] != hash::text(start["goal"].as_str().unwrap_or_default())
-        || start["supersedes"]["ledgerPath"] != claim["oldLedgerPath"]
-        || start["supersedes"]["ledgerSha256"] != claim["oldLedgerSha256"]
-        || start["supersedes"]["runId"] != claim["oldRunId"]
-        || start["supersedes"]["headEventSha256"] != claim["oldHeadEventSha256"]
-        || start["supersedes"]["configSha256"] != claim["oldConfigSha256"]
-    {
-        return Err("journey successor start does not match its validated same-goal claim".into());
-    }
-    Ok(())
-}
-
 fn covered_snapshot(
     loaded: &Loaded,
     members: &[Member],
@@ -549,7 +353,8 @@ fn covered_snapshot(
         .iter()
         .filter(|member| member.project_identity_sha256 == project_identity)
     {
-        validate_member_loaded(loaded, member, header)?;
+        let original = project_loaded(loaded, member)?;
+        validate_member_loaded(&original, member, header)?;
         let endpoint = accepted_endpoint(loaded, member)?
             .ok_or_else(|| format!("journey member {} has no terminal accepted result; integration cannot create acceptance", member.work))?;
         let evidence = crate::run::result_ref_evidence(loaded, &endpoint.work)?
@@ -620,14 +425,15 @@ pub(super) fn current_integration_for_project(
                 sha256: String::new(),
             },
         };
-        validate_member_loaded(loaded, member, &header_binding)?;
-        let Some((contract, start)) = contract_for_work(loaded, &member.work)? else {
+        let original = project_loaded(loaded, member)?;
+        validate_member_loaded(&original, member, &header_binding)?;
+        let Some(endpoint) = accepted_endpoint(loaded, member)? else {
             continue;
         };
-        if start["eventSha256"] != member.start_event_sha256
-            || hash::text(start["goal"].as_str().unwrap_or_default()) != member.work_goal_sha256
-            || contract_sha256(&contract) != entry.contract_sha256
-        {
+        let Some((contract, _start)) = contract_for_work(loaded, &endpoint.work)? else {
+            continue;
+        };
+        if contract_sha256(&contract) != entry.contract_sha256 {
             continue;
         }
         let expected = covered_snapshot(loaded, members, &contract.header)?;
@@ -636,19 +442,49 @@ pub(super) fn current_integration_for_project(
         }
         let evidence = super::super::requirements::current_checker_evidence(
             loaded,
-            &member.work,
+            &endpoint.work,
             &contract.header.checker,
         )?;
         if evidence["state"] == "current" && evidence["accepted"] == true {
-            return Ok(Some(member.work.clone()));
+            return Ok(Some(endpoint.work));
         }
     }
     Ok(None)
 }
 
 pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded, String> {
-    if canonical_path(&loaded.path, "configured project path")? == member.config_path {
-        return crate::config::load(Some(member.config_path.as_str()));
+    let original = crate::config::load(Some(member.config_path.as_str()))?;
+    let selected_product = canonical_path(&loaded.product_root, "configured product root")?;
+    let selected_state = canonical_path(&loaded.state_root, "configured state root")?;
+    let selected_identity = super::super::requirements::identity(loaded)?;
+    let selected_local = super::super::native::owner_for(loaded)?.identity_sha256;
+    if selected_product != member.product_root
+        || selected_state != member.state_root
+        || selected_identity != member.project_identity_sha256
+        || selected_local != member.local_identity_sha256
+        || original.project_id != loaded.project_id
+    {
+        return Err(
+            "selected journey configuration belongs to another project or state owner".into(),
+        );
     }
-    crate::config::load(Some(member.config_path.as_str()))
+    validate_member_loaded(
+        &original,
+        member,
+        &Header {
+            protocol: PROTOCOL,
+            host: member.host.clone(),
+            session_key: member.session_key.clone(),
+            owner_identity_sha256: member.owner_identity_sha256.clone(),
+            owner_project_id: member.owner_project_id.clone(),
+            project_identity_sha256: member.project_identity_sha256.clone(),
+            local_identity_sha256: member.local_identity_sha256.clone(),
+            config_binding_sha256: config_binding(&original)?,
+            checker: super::super::requirements::CheckerInput {
+                path: String::new(),
+                sha256: String::new(),
+            },
+        },
+    )?;
+    Ok(original)
 }

@@ -110,7 +110,7 @@ pub(crate) fn presentation_for_selected(
     project_selected: bool,
 ) -> Result<Value, String> {
     let mut rendered = presentation(value);
-    let readiness = current::evaluate(loaded, value);
+    let readiness = current::evaluate(loaded, value, root, project_selected);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
@@ -155,7 +155,7 @@ pub(crate) fn progress_for_loaded(
 ) -> Result<Value, String> {
     let record = read(&loaded.state_root)?;
     let mut rendered = presentation(record.as_ref());
-    let readiness = current::evaluate(loaded, record.as_ref());
+    let readiness = current::evaluate(loaded, record.as_ref(), &loaded.state_root, false);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
@@ -217,7 +217,7 @@ fn progress_from_record(
     record: Option<&Value>,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
-    let readiness = current::evaluate(loaded, record);
+    let readiness = current::evaluate(loaded, record, &loaded.state_root, false);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
@@ -281,7 +281,7 @@ fn progress_detail_from_record(
     record: Option<&Value>,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
-    let readiness = current::evaluate(loaded, record);
+    let readiness = current::evaluate(loaded, record, &loaded.state_root, false);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();

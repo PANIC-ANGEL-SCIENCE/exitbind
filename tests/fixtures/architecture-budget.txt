@@ -1,4 +1,3 @@
 # Grandfathered production sources over 32 KiB and their byte ceilings.
 # A ceiling may only fall. Remove a line when the file drops under 32 KiB.
 40087 src/host/away.rs
-37334 src/work/mod.rs

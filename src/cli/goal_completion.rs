@@ -8,7 +8,8 @@ pub(super) fn response(
     newly_closed: bool,
     project: bool,
 ) -> Result<Value, String> {
-    let rendered = session_goal::presentation_for_loaded(loaded, record);
+    let rendered =
+        session_goal::presentation_for_selected(loaded, record, &loaded.state_root, project);
     let event = rendered.as_ref().ok().and_then(|rendered| {
         record.and_then(|record| crate::presentation_events::goal_completion(record, rendered))
     });
@@ -44,7 +45,8 @@ pub(super) fn read_response(
     project: bool,
 ) -> Result<Value, String> {
     let mut response = response(loaded, record, false, project)?;
-    let rendered = session_goal::presentation_for_loaded(loaded, record)?;
+    let rendered =
+        session_goal::presentation_for_selected(loaded, record, &loaded.state_root, project)?;
     response["presentation"]["terminal"] = record
         .and_then(|record| crate::presentation_events::goal_completion(record, &rendered))
         .map_or(Value::Null, |event| event["terminal"].clone());

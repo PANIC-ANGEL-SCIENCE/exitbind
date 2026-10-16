@@ -516,6 +516,7 @@ pub(crate) fn validate_member_for_session(
     {
         return Err("native journey member belongs to another session or owner".into());
     }
+    let original = integration::project_loaded(loaded, &member)?;
     let header = Header {
         protocol: PROTOCOL,
         host: member.host.clone(),
@@ -524,13 +525,13 @@ pub(crate) fn validate_member_for_session(
         owner_project_id: member.owner_project_id.clone(),
         project_identity_sha256: member.project_identity_sha256.clone(),
         local_identity_sha256: member.local_identity_sha256.clone(),
-        config_binding_sha256: config_binding(loaded)?,
+        config_binding_sha256: config_binding(&original)?,
         checker: super::requirements::CheckerInput {
             path: String::new(),
             sha256: String::new(),
         },
     };
-    validate_member_loaded(loaded, &member, &header)
+    validate_member_loaded(&original, &member, &header)
 }
 
 pub(super) fn validate_record(record: &Value, line: usize) -> Result<(), String> {

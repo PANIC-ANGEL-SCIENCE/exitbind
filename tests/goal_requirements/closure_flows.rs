@@ -1,6 +1,119 @@
 use super::*;
 
 #[test]
+fn explicit_project_close_ignores_conflicting_native_selectors_but_native_close_refuses() {
+    let p = Project::new("project-close-native-selector-conflict");
+    p.setup();
+    let work = p.begin("R1,R2,R3", "sh check.sh all");
+    p.drive(&work, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--project",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &work,
+        ],
+        None,
+    );
+    let before = p.goal_journal().unwrap();
+    let selectors = [
+        ("CODEX_THREAD_ID", "thread-one"),
+        ("CODEX_SESSION_ID", "session-two"),
+    ];
+    let closed = p.call_with_selectors(
+        &[
+            "goal",
+            "close",
+            "--project",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &work,
+            "--view",
+            "event",
+            "--json",
+        ],
+        &p.root.join("exitbind.json"),
+        &selectors,
+    );
+    assert!(
+        closed.status.success(),
+        "explicit project selection must not consult conflicting native selectors: {closed:?}"
+    );
+    let closed: Value = serde_json::from_slice(&closed.stdout).unwrap();
+    assert_eq!(closed["kind"], "goal_completion_response");
+    assert_eq!(closed["effect"], "committed");
+    assert_eq!(
+        closed["completionEvent"]["kind"], "session_goal_completed",
+        "explicit project close response: {closed}"
+    );
+    let status = p.value(&["goal", "status", "--project", "--json"], None);
+    eprintln!("explicit project completion response: {closed}");
+    eprintln!("explicit project close status: {status}");
+    assert_eq!(status["closure"]["closed"], true);
+    assert_ne!(p.goal_journal().unwrap(), before);
+
+    let native = Project::new("native-close-native-selector-conflict")
+        .with_native_session("native-close-selector-conflict-session");
+    native.value(
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete this direct task",
+            "--finding",
+            "The Lead completed the direct task",
+        ],
+        None,
+    );
+    native.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "direct-goal",
+            "--goal",
+            "Complete this direct task",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+        None,
+    );
+    let native_before = native.native_store_snapshot();
+    let refused = native.call_with_selectors(
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "direct-goal",
+            "--json",
+        ],
+        &native.root.join("exitbind.json"),
+        &selectors,
+    );
+    assert!(
+        !refused.status.success(),
+        "native close must retain selector strictness"
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("Codex session selectors disagree")
+            || String::from_utf8_lossy(&refused.stdout)
+                .contains("Codex session selectors disagree"),
+        "{refused:?}"
+    );
+    assert_eq!(native.native_store_snapshot(), native_before);
+}
+
+#[test]
 fn native_generic_owner_close_and_status_render_only_verified_main_and_side_work() {
     let mut p = Project::new("native-generic-owner-terminal");
 

@@ -8,7 +8,7 @@ fn member_currentness(
     let project = project_loaded(loaded, member)?;
     let session =
         super::super::native::current()?.ok_or("native session identity is unavailable")?;
-    let scope = super::super::native::scope(&project, false)?;
+    let scope = super::super::native::scope(loaded, false)?;
     let owner = scope.owner.ok_or("native session owner is unavailable")?;
     if member.host != session.host
         || member.session_key != session.key
@@ -35,10 +35,10 @@ fn member_currentness(
             },
         },
     )?;
-    let Some(endpoint) = accepted_endpoint(&project, member)? else {
+    let Some(endpoint) = accepted_endpoint(loaded, member)? else {
         return Ok(("unresolved", None));
     };
-    let evidence = crate::run::result_ref_evidence(&project, &endpoint.work)?
+    let evidence = crate::run::result_ref_evidence(loaded, &endpoint.work)?
         .ok_or("journey member result evidence is unavailable")?;
     if !evidence.accepted || !evidence.artifact_current || evidence.drift.is_some() {
         return Ok(("unresolved", None));
@@ -47,7 +47,7 @@ fn member_currentness(
         Some(true) => Ok(("current", None)),
         Some(false) => {
             let supported = current_integration_for_project(
-                &project,
+                loaded,
                 state,
                 &state.members,
                 &member.project_identity_sha256,
@@ -194,6 +194,9 @@ pub(crate) fn require_close_ready(
     root: &Path,
     record: &Value,
 ) -> Result<(), String> {
+    if root == loaded.state_root {
+        return Ok(());
+    }
     let scope = super::super::native::scope(loaded, false)?;
     if !scope.is_session() || !scope.owner_matches || scope.root != root {
         return Ok(());
@@ -267,12 +270,12 @@ pub(crate) fn result_ref_current_or_supported(
         return Ok(false);
     }
     let member = matched[0];
-    let project = project_loaded(loaded, member)?;
-    let local_endpoint = accepted_endpoint(&project, member)?;
+    project_loaded(loaded, member)?;
+    let local_endpoint = accepted_endpoint(loaded, member)?;
     if local_endpoint.is_none() {
         return Ok(false);
     }
-    let evidence = crate::run::result_ref_evidence(&project, reference)?;
+    let evidence = crate::run::result_ref_evidence(loaded, reference)?;
     if !evidence
         .as_ref()
         .is_some_and(|e| e.accepted && e.artifact_current && e.drift.is_none())
@@ -280,7 +283,7 @@ pub(crate) fn result_ref_current_or_supported(
         return Ok(false);
     }
     Ok(current_integration_for_project(
-        &project,
+        loaded,
         &journey,
         &journey.members,
         &member.project_identity_sha256,

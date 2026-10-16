@@ -311,7 +311,12 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let named = crate::session_goal::requirements::named(&value);
             let native_governed = scope.is_session() && value["closure"]["kind"] != "direct";
             if named || native_governed {
-                let rendered = crate::session_goal::presentation_for_loaded(l, Some(&value))?;
+                let rendered = crate::session_goal::presentation_for_selected(
+                    l,
+                    Some(&value),
+                    &scope.root,
+                    a.flags.contains_key("project"),
+                )?;
                 value["presentation"] = json!({"terminal": rendered["terminal"]});
                 if !a.flags.contains_key("json") {
                     if let Some(terminal) = rendered["terminal"].as_str() {

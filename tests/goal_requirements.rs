@@ -71,12 +71,15 @@ impl Project {
         ));
     }
     fn call(&self, args: &[&str], input: Option<&str>) -> Output {
+        self.call_with_config(args, input, &self.root.join("exitbind.json"))
+    }
+    fn call_with_config(&self, args: &[&str], input: Option<&str>, config: &Path) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
-            .arg(self.root.join("exitbind.json"))
+            .arg(config)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
             .env_remove("CODEX_THREAD_ID")
             .env_remove("CODEX_SESSION_ID")
@@ -109,12 +112,48 @@ impl Project {
             support::run(&mut command)
         }
     }
+    fn call_with_selectors(
+        &self,
+        args: &[&str],
+        config: &Path,
+        selectors: &[(&str, &str)],
+    ) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .current_dir(&self.root)
+            .args(args)
+            .arg("--config")
+            .arg(config)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_THREAD_ID")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("EXITBIND_SESSION_GOALS_DIR")
+            .env_remove("CLAUDE_ENV_FILE")
+            .env_remove("XDG_STATE_HOME")
+            .env(
+                "EXITBIND_SESSION_GOALS_DIR",
+                self.native_session
+                    .as_ref()
+                    .map(|(_, store)| store)
+                    .unwrap_or(&self.fixture_store),
+            )
+            .stdin(Stdio::null());
+        for (name, value) in selectors {
+            command.env(name, value);
+        }
+        support::run(&mut command)
+    }
     fn value(&self, args: &[&str], input: Option<&str>) -> Value {
+        self.value_with_config(args, input, &self.root.join("exitbind.json"))
+    }
+    fn value_with_config(&self, args: &[&str], input: Option<&str>, config: &Path) -> Value {
         let mut json_args = args.to_vec();
         if args.get(..2) == Some(&["goal", "close"][..]) && !json_args.contains(&"--json") {
             json_args.push("--json");
         }
-        let output = self.call(&json_args, input);
+        let output = self.call_with_config(&json_args, input, config);
         assert!(
             output.status.success(),
             "{args:?}: {}{}",
@@ -350,8 +389,8 @@ esac
         args.extend_from_slice(extra);
         self.value(&args, None)["work"].as_str().unwrap().to_owned()
     }
-    fn return_stage(&self, work: &str, next: &Value, outcome: &str) {
-        self.value(
+    fn return_stage_with_config(&self, work: &str, next: &Value, outcome: &str, config: &Path) {
+        self.value_with_config(
             &[
                 "work",
                 "return",
@@ -361,11 +400,16 @@ esac
                 outcome,
             ],
             Some("Deterministic process fixture decision; not a semantic review.\n"),
+            config,
         );
     }
     fn drive(&self, work: &str, passing: bool) {
+        self.drive_with_config(work, passing, &self.root.join("exitbind.json"));
+    }
+    fn drive_with_config(&self, work: &str, passing: bool, config: &Path) {
         for _ in 0..12 {
-            let detail = self.value(&["work", "next", work, "--json", "--full"], None);
+            let detail =
+                self.value_with_config(&["work", "next", work, "--json", "--full"], None, config);
             let next = &detail["next"];
             match next["action"].as_str().unwrap() {
                 "lead_decision" => {
@@ -374,10 +418,45 @@ esac
                         .unwrap()
                         .iter()
                         .any(|item| item == "scoped");
-                    self.return_stage(work, next, if scoped { "scoped" } else { "accepted" });
+                    self.return_stage_with_config(
+                        work,
+                        next,
+                        if scoped { "scoped" } else { "accepted" },
+                        config,
+                    );
                 }
                 "spawn" if next["role"] == "worker" => {
-                    self.value(
+                    let current =
+                        self.value_with_config(&["work", "detail", work, "--json"], None, config);
+                    if current["actionForms"]["recovery"]["state"] == "replan_required" {
+                        let form = &current["actionForms"]["recovery"];
+                        assert_eq!(form["command"]["sameConfigRequired"], true);
+                        let argv = form["command"]["argv"].as_array().unwrap();
+                        let mut args = Vec::new();
+                        for arg in argv.iter().skip(1) {
+                            let arg = arg.as_str().unwrap();
+                            if arg == "--config" {
+                                break;
+                            }
+                            args.push(match arg {
+                                "<HYPOTHESIS>" => {
+                                    "The selected successor needs its own current check.".to_owned()
+                                }
+                                "<SCOPE_DECISION>" => {
+                                    "Keep the same task Goal and selected project roots.".to_owned()
+                                }
+                                "<EVIDENCE_REQUEST>" => {
+                                    "Run its declared check and inspect accepted evidence."
+                                        .to_owned()
+                                }
+                                other => other.to_owned(),
+                            });
+                        }
+                        let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+                        self.value_with_config(&refs, None, config);
+                        continue;
+                    }
+                    self.value_with_config(
                         &[
                             "work",
                             "permit",
@@ -387,12 +466,13 @@ esac
                             "Return fixture evidence",
                         ],
                         None,
+                        config,
                     );
-                    self.return_stage(work, next, "completed");
+                    self.return_stage_with_config(work, next, "completed", config);
                 }
-                "spawn" => self.return_stage(work, next, "approved"),
+                "spawn" => self.return_stage_with_config(work, next, "approved", config),
                 "check" => {
-                    let output = self.call(&["work", "check", work], None);
+                    let output = self.call_with_config(&["work", "check", work], None, config);
                     assert_eq!(output.status.success(), passing, "{output:?}");
                     let checked: Value = serde_json::from_slice(&output.stdout).unwrap();
                     assert_eq!(checked["effect"], "recorded");

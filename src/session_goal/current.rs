@@ -27,14 +27,27 @@ impl Readiness {
 
 /// A failure to inspect optional display applicability suppresses the room;
 /// it never edits the recorded closure or authorizes another effect.
-pub(super) fn evaluate(loaded: &Loaded, record: Option<&Value>) -> Readiness {
+pub(super) fn evaluate(
+    loaded: &Loaded,
+    record: Option<&Value>,
+    root: &std::path::Path,
+    project_selected: bool,
+) -> Readiness {
     let Some(record) = record else {
         return Readiness::Stale("no_named_goal");
     };
     if presentation(Some(record))["explicitLeadClosure"] != true {
         return Readiness::Stale("whole_goal_not_closed");
     }
-    match super::journey::readiness_for_record(loaded, record) {
+    // An explicit project selection is already bound to this loaded project
+    // journal. Do not let an unrelated native-session selector affect its
+    // presentation; native-selected routes retain the strict scope check.
+    let journey = if project_selected && root == loaded.state_root {
+        Ok(None)
+    } else {
+        super::journey::readiness_for_record(loaded, record)
+    };
+    match journey {
         Ok(Some(readiness)) if !readiness.ready() => {
             return if readiness.state == "unavailable" {
                 Readiness::Unknown("journey_completion_unavailable")
