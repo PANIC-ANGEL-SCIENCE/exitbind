@@ -1,6 +1,122 @@
 use crate::fixture::*;
 use serde_json::Value;
-use std::fs;
+use std::{
+    fs,
+    io::Write,
+    process::{Command, Stdio},
+};
+
+fn return_in_session(
+    project: &Project,
+    session: &str,
+    work: &str,
+    assignment: &str,
+    outcome: &str,
+    bytes: &[u8],
+) -> Value {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .current_dir(&project.root)
+        .args(["work", "return", work, assignment, "--outcome", outcome])
+        .arg("--config")
+        .arg(project.root.join("exitbind.json"))
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CODEX_THREAD_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", &project.session_store)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(bytes).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn complete_required_review_work(project: &Project, session: &str, work: &str) {
+    for _ in 0..12 {
+        let detail = project.value_in_session(
+            "codex",
+            session,
+            &project.session_store,
+            &["work", "next", work, "--json", "--full"],
+        );
+        let next = &detail["next"];
+        match next["action"].as_str().unwrap() {
+            "lead_decision" => {
+                let assignment = next["assignment"].as_str().unwrap();
+                let scoped = next["outcomes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|outcome| outcome == "scoped");
+                return_in_session(
+                    project,
+                    session,
+                    work,
+                    assignment,
+                    if scoped { "scoped" } else { "accepted" },
+                    b"Deterministic fixture decision; not semantic review.\n",
+                );
+            }
+            "spawn" if next["role"] == "worker" => {
+                let assignment = next["assignment"].as_str().unwrap();
+                project.value_in_session(
+                    "codex",
+                    session,
+                    &project.session_store,
+                    &[
+                        "work",
+                        "permit",
+                        work,
+                        assignment,
+                        "--operation",
+                        "Return deterministic fixture evidence",
+                    ],
+                );
+                return_in_session(
+                    project,
+                    session,
+                    work,
+                    assignment,
+                    "completed",
+                    br#"{"summary":"fixture implementation complete"}"#,
+                );
+            }
+            "spawn" => {
+                let assignment = next["assignment"].as_str().unwrap();
+                return_in_session(
+                    project,
+                    session,
+                    work,
+                    assignment,
+                    "approved",
+                    b"Deterministic fixture review; not semantic review.\n",
+                );
+            }
+            "check" => {
+                let checked = project.call_in_session(
+                    "codex",
+                    session,
+                    &project.session_store,
+                    &["work", "check", work],
+                );
+                assert!(checked.status.success(), "{checked:?}");
+            }
+            "done" => return,
+            action => panic!("unexpected required-review action {action}: {next}"),
+        }
+    }
+    panic!("required-review Work did not reach done: {work}");
+}
 
 #[test]
 fn native_sessions_are_independent_by_identity_and_host_in_one_project() {
@@ -456,5 +572,154 @@ fn project_named_contract_can_coexist_with_native_parent_context() {
     let parent = project.value_in_session("codex", session, store, &["goal", "status", "--json"]);
     assert_eq!(parent["goalId"], "same");
     assert_eq!(parent["closure"]["closed"], false);
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn native_owner_work_guidance_uses_verified_journal_root_for_close_readiness() {
+    let project = Project::new("native-owner-work-close-readiness");
+    let session = "native-owner-work-close-readiness-session";
+    let store = project.session_store.as_path();
+    project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "native-owner",
+            "--goal",
+            "Complete the current conversation request",
+            "--obligation",
+            "Record the current direct completion",
+            "--none-applicable",
+            "findings,blockers,decisions,externalActions",
+        ],
+    );
+    let started = project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Complete a governed side task",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    );
+    let work = started["work"].as_str().unwrap();
+    let journal = native_goal_journal(&project, session);
+
+    project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "goal",
+            "incorporate",
+            "--direct",
+            "--goal-id",
+            "native-owner",
+            "--goal",
+            "Complete the current conversation request",
+            "--obligation",
+            "Record the current direct completion",
+        ],
+    );
+
+    let status = project.value_in_session("codex", session, store, &["goal", "status", "--json"]);
+    assert_eq!(
+        status["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert_eq!(status["goalProgress"]["nextAction"], Value::Null);
+    let compact =
+        project.value_in_session("codex", session, store, &["work", "next", work, "--json"]);
+    let detail =
+        project.value_in_session("codex", session, store, &["work", "detail", work, "--json"]);
+    assert_eq!(
+        detail["sections"]["tasks"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert_eq!(detail["sections"]["tasks"]["nextAction"], Value::Null);
+    assert_eq!(
+        compact["presentation"]["goalProgress"]["overall"],
+        detail["sections"]["tasks"]["overall"]
+    );
+    assert!(compact["presentation"]["goalProgress"]
+        .get("nextAction")
+        .is_none());
+
+    let before_refusal = fs::read(&journal).unwrap();
+    let refusal = project.call_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "native-owner",
+            "--view",
+            "event",
+            "--json",
+        ],
+    );
+    assert!(!refusal.status.success(), "{refusal:?}");
+    let refusal: Value = serde_json::from_slice(&refusal.stdout).unwrap_or_else(|error| {
+        panic!(
+            "expected JSON close refusal, got stdout={:?}, stderr={:?}, error={error}",
+            String::from_utf8_lossy(&refusal.stdout),
+            String::from_utf8_lossy(&refusal.stderr)
+        )
+    });
+    assert_eq!(
+        refusal["error"],
+        "native session journey is not ready to close: journey_members_need_current_acceptance_or_checked_integration",
+        "close refusal must preserve the exact native readiness reason"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_refusal);
+
+    complete_required_review_work(&project, session, work);
+    let current = project.value_in_session("codex", session, store, &["goal", "status", "--json"]);
+    assert_eq!(
+        current["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    assert!(current["goalProgress"]["nextAction"]["command"].is_array());
+    let ready_detail =
+        project.value_in_session("codex", session, store, &["work", "detail", work, "--json"]);
+    let route = ready_detail["sections"]["tasks"]["nextAction"]["command"]
+        .as_array()
+        .unwrap();
+    assert!(route.iter().any(|arg| arg == "--direct"));
+    assert_eq!(
+        route.first().and_then(Value::as_str),
+        Some(env!("CARGO_BIN_EXE_exitbind"))
+    );
+    let config_index = route
+        .iter()
+        .position(|arg| arg == "--config")
+        .expect("emitted close route has an exact config");
+    assert_eq!(
+        route.get(config_index + 1).and_then(Value::as_str),
+        Some(project.root.join("exitbind.json").to_str().unwrap())
+    );
+    let args = route
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--config")
+        .map(|arg| arg.as_str().unwrap())
+        .collect::<Vec<_>>();
+    let closed = project.value_in_session("codex", session, store, &args);
+    assert_eq!(closed["completionEvent"]["kind"], "session_goal_completed");
+    assert_eq!(closed["effect"], "committed");
     fs::remove_dir_all(project.root).unwrap();
 }

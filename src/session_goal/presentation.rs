@@ -131,13 +131,21 @@ pub(crate) fn terminal_for_work(
     if standalone.is_none() {
         return Ok(None);
     }
-    let record = match super::association::context_for_work(loaded, work) {
-        super::association::WorkContext::Owner(record) => Some(record),
+    let association = super::association::context_for_work_with_root(loaded, work);
+    let (record, goal_root) = match association.context {
+        super::association::WorkContext::Owner(record) => {
+            let Some(root) = association.owner_root else {
+                return Ok(None);
+            };
+            (Some(record), root)
+        }
         super::association::WorkContext::Session(_)
         | super::association::WorkContext::NotRequested
         | super::association::WorkContext::Unavailable
         | super::association::WorkContext::Invalid => return Ok(standalone),
-        super::association::WorkContext::Local => read(&loaded.state_root)?,
+        super::association::WorkContext::Local => {
+            (read(&loaded.state_root)?, loaded.state_root.clone())
+        }
     };
     let Some(record) = record else {
         return Ok(standalone);
@@ -145,7 +153,7 @@ pub(crate) fn terminal_for_work(
     if !progress::record_bound_to_work_with_lineage(loaded, &record, work)? {
         return Ok(standalone);
     }
-    let rendered = presentation_for_loaded(loaded, Some(&record))?;
+    let rendered = presentation_for_selected(loaded, Some(&record), &goal_root, false)?;
     Ok(crate::presentation_events::whole_goal_terminal(&rendered))
 }
 
@@ -175,10 +183,20 @@ pub(crate) fn progress_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    match super::association::context_for_work(loaded, work) {
+    let association = super::association::context_for_work_with_root(loaded, work);
+    match association.context {
         super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
-            progress_from_record(loaded, work, result, Some(&record))
+            let Some(root) = association.owner_root else {
+                return Ok(progress::unavailable(
+                    Some(result),
+                    "native_session_goal_context_invalid",
+                    "verified native session Goal root is unavailable",
+                    None,
+                    "unavailable",
+                ));
+            };
+            progress_from_record(loaded, work, result, Some(&record), &root)
         }
         super::association::WorkContext::Session(record) => {
             Ok(context_progress(&record, work, result, false))
@@ -207,7 +225,7 @@ fn local_progress_for_work(
     result: &Value,
 ) -> Result<Value, String> {
     let record = read(&loaded.state_root)?;
-    progress_from_record(loaded, work, result, record.as_ref())
+    progress_from_record(loaded, work, result, record.as_ref(), &loaded.state_root)
 }
 
 fn progress_from_record(
@@ -215,15 +233,17 @@ fn progress_from_record(
     work: &str,
     result: &Value,
     record: Option<&Value>,
+    root: &std::path::Path,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
-    let readiness = current::evaluate(loaded, record, &loaded.state_root, false);
+    let readiness = current::evaluate(loaded, record, root, false);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
     Ok(progress::project_for_work(
         loaded,
         work,
+        root,
         record,
         &rendered,
         Some(result),
@@ -237,10 +257,20 @@ pub(crate) fn progress_detail_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    match super::association::context_for_work(loaded, work) {
+    let association = super::association::context_for_work_with_root(loaded, work);
+    match association.context {
         super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
-            progress_detail_from_record(loaded, work, result, Some(&record))
+            let Some(root) = association.owner_root else {
+                return Ok(progress::unavailable(
+                    Some(result),
+                    "native_session_goal_context_invalid",
+                    "verified native session Goal root is unavailable",
+                    None,
+                    "unavailable",
+                ));
+            };
+            progress_detail_from_record(loaded, work, result, Some(&record), &root)
         }
         super::association::WorkContext::Session(record) => {
             Ok(context_progress(&record, work, result, true))
@@ -271,7 +301,7 @@ fn local_progress_detail_for_work(
     result: &Value,
 ) -> Result<Value, String> {
     let record = read(&loaded.state_root)?;
-    progress_detail_from_record(loaded, work, result, record.as_ref())
+    progress_detail_from_record(loaded, work, result, record.as_ref(), &loaded.state_root)
 }
 
 fn progress_detail_from_record(
@@ -279,15 +309,17 @@ fn progress_detail_from_record(
     work: &str,
     result: &Value,
     record: Option<&Value>,
+    root: &std::path::Path,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
-    let readiness = current::evaluate(loaded, record, &loaded.state_root, false);
+    let readiness = current::evaluate(loaded, record, root, false);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
     Ok(progress::project_detail_for_work(
         loaded,
         work,
+        root,
         record,
         &rendered,
         Some(result),

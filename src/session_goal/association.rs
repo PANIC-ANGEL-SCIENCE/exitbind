@@ -28,6 +28,13 @@ pub(crate) enum WorkContext {
     Invalid,
 }
 
+/// The owner journal root is returned only when the association was verified
+/// against the current native session and its fixed owner record.
+pub(crate) struct WorkContextResolution {
+    pub(crate) context: WorkContext,
+    pub(crate) owner_root: Option<std::path::PathBuf>,
+}
+
 mod admission;
 mod companion;
 mod context;
@@ -42,7 +49,7 @@ pub(super) use companion::validate_companion;
 pub(crate) use companion::{
     read_private_companion, write_private_companion, PrivateCompanionWrite,
 };
-pub(crate) use context::context_for_work;
+pub(crate) use context::{context_for_work, context_for_work_with_root};
 pub(super) use record::{
     entries, for_work, preserve_same_goal, public_record, valid_sha, valid_work, validate_record,
 };

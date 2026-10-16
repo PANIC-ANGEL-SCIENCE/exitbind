@@ -4,6 +4,13 @@ use serde_json::json;
 /// Resolve an optional native-session context without making malformed or
 /// foreign context a failure of ordinary Work detail and recovery routes.
 pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> WorkContext {
+    context_for_work_with_root(loaded, work).context
+}
+
+pub(crate) fn context_for_work_with_root(
+    loaded: &crate::config::Loaded,
+    work: &str,
+) -> super::WorkContextResolution {
     let value = match read_private_companion(
         loaded,
         work,
@@ -24,41 +31,53 @@ pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> Wo
         Ok(None) => {
             return match super::super::native::current() {
                 Ok(None) => match super::super::read(&loaded.state_root) {
-                    Ok(None) => WorkContext::NotRequested,
-                    Ok(Some(_)) => WorkContext::Local,
-                    Err(_) => WorkContext::Invalid,
+                    Ok(None) => resolution(WorkContext::NotRequested, None),
+                    Ok(Some(_)) => resolution(WorkContext::Local, None),
+                    Err(_) => resolution(WorkContext::Invalid, None),
                 },
                 Ok(Some(session)) => {
                     let legacy_bound = match legacy_goal_is_bound(loaded, work, &session) {
                         Ok(bound) => bound,
-                        Err(_) => return WorkContext::Invalid,
+                        Err(_) => return resolution(WorkContext::Invalid, None),
                     };
                     if legacy_bound {
-                        WorkContext::Local
+                        resolution(WorkContext::Local, None)
                     } else {
                         match (session.owner(), super::super::read(&session.root)) {
-                            (Ok(None), Ok(None)) => WorkContext::NotRequested,
-                            (Err(_), _) | (_, Err(_)) => WorkContext::Invalid,
+                            (Ok(None), Ok(None)) => resolution(WorkContext::NotRequested, None),
+                            (Err(_), _) | (_, Err(_)) => resolution(WorkContext::Invalid, None),
                             (Ok(Some(_)), Ok(Some(_))) => {
                                 match native_successor_context(loaded, work, &session) {
                                     Ok(Some(context)) => context,
-                                    Ok(None) => WorkContext::Unavailable,
-                                    Err(_) => WorkContext::Invalid,
+                                    Ok(None) => resolution(WorkContext::Unavailable, None),
+                                    Err(_) => resolution(WorkContext::Invalid, None),
                                 }
                             }
-                            _ => WorkContext::Unavailable,
+                            _ => resolution(WorkContext::Unavailable, None),
                         }
                     }
                 }
-                Err(_) => WorkContext::Invalid,
+                Err(_) => resolution(WorkContext::Invalid, None),
             };
         }
-        Err(_) => return WorkContext::Invalid,
+        Err(_) => return resolution(WorkContext::Invalid, None),
     };
     match resolve_companion(loaded, work, &value) {
-        Ok((record, owner_matches)) if owner_matches => WorkContext::Owner(record),
-        Ok((record, _)) => WorkContext::Session(record),
-        Err(_) => WorkContext::Invalid,
+        Ok((record, owner_matches, root)) if owner_matches => {
+            resolution(WorkContext::Owner(record), Some(root))
+        }
+        Ok((record, _, _)) => resolution(WorkContext::Session(record), None),
+        Err(_) => resolution(WorkContext::Invalid, None),
+    }
+}
+
+fn resolution(
+    context: WorkContext,
+    owner_root: Option<std::path::PathBuf>,
+) -> super::WorkContextResolution {
+    super::WorkContextResolution {
+        context,
+        owner_root,
     }
 }
 
@@ -68,7 +87,7 @@ fn native_successor_context(
     loaded: &crate::config::Loaded,
     work: &str,
     session: &super::super::native::Session,
-) -> Result<Option<WorkContext>, String> {
+) -> Result<Option<super::WorkContextResolution>, String> {
     let ledger = crate::work::resolve(loaded, work)?;
     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
     if events
@@ -110,7 +129,7 @@ fn native_successor_context(
         .ok_or("native parent Goal is unavailable")?;
     let scope = super::super::native::scope(loaded, false)?;
     Ok(Some(if scope.owner_matches {
-        WorkContext::Owner(parent)
+        resolution(WorkContext::Owner(parent), Some(scope.root))
     } else {
         let start = events.first().ok_or("successor start is unavailable")?;
         if start["action"] != "start" {
@@ -121,7 +140,7 @@ fn native_successor_context(
             "work":work,
             "startEventSha256":start["eventSha256"],
         });
-        WorkContext::Session(parent)
+        resolution(WorkContext::Session(parent), None)
     }))
 }
 
@@ -163,7 +182,7 @@ fn resolve_companion(
     loaded: &crate::config::Loaded,
     work: &str,
     value: &Value,
-) -> Result<(Value, bool), String> {
+) -> Result<(Value, bool, std::path::PathBuf), String> {
     validate_companion(value)?;
     if value["work"].as_str() != Some(work) {
         return Err("Work Goal context companion names another Work".into());
@@ -243,5 +262,5 @@ fn resolve_companion(
     let local = super::super::native::owner_for(loaded)?;
     let owner_matches =
         owner.identity_sha256 == local.identity_sha256 && owner.project_id == local.project_id;
-    Ok((parent, owner_matches))
+    Ok((parent, owner_matches, session.root))
 }

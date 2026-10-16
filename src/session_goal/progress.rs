@@ -517,6 +517,7 @@ fn task_current(loaded: Option<&Loaded>, record: &Value, item: &Value) -> Option
 pub(super) fn project_for_work(
     loaded: &Loaded,
     work: &str,
+    goal_root: &std::path::Path,
     record: Option<&Value>,
     rendered: &Value,
     result: Option<&Value>,
@@ -554,7 +555,7 @@ pub(super) fn project_for_work(
     let mut projection = project_with_limit(
         GoalProjectionContext {
             loaded: Some(loaded),
-            root: Some(&loaded.state_root),
+            root: Some(goal_root),
             project_selected: false,
         },
         Some(record),
@@ -593,6 +594,7 @@ pub(super) fn project_for_work(
 pub(super) fn project_detail_for_work(
     loaded: &Loaded,
     work: &str,
+    goal_root: &std::path::Path,
     record: Option<&Value>,
     rendered: &Value,
     result: Option<&Value>,
@@ -630,7 +632,7 @@ pub(super) fn project_detail_for_work(
     let mut projection = project_with_limit(
         GoalProjectionContext {
             loaded: Some(loaded),
-            root: Some(&loaded.state_root),
+            root: Some(goal_root),
             project_selected: false,
         },
         Some(record),
