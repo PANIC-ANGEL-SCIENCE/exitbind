@@ -5,6 +5,7 @@
 
 mod model;
 mod mutation;
+mod successor;
 mod view;
 mod work;
 
@@ -16,9 +17,11 @@ use std::path::Path;
 pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};
+pub(crate) use successor::{assign_successor, ensure_linked_for_retirement};
 pub(crate) use view::{all_current, projection_selected};
 pub(crate) use work::{
-    prepare, project_progress_for_work, write_scope_companion, ContractScope, PrepareRequest,
+    prepare, prepare_successor_replay, project_progress_for_work, write_scope_companion,
+    ContractScope, PrepareRequest,
 };
 
 pub(crate) use work::{checker_input, current_checker_evidence};

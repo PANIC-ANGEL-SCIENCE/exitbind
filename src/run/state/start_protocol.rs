@@ -7,6 +7,7 @@ const START_PROTOCOL_FIELDS: &[&str] = &[
     "checkObservationProtocol",
     "verificationPreparationProtocol",
     "verificationCheckerSources",
+    "projectContinuation",
 ];
 
 pub(super) fn copy_fields(start: &Value, state: &mut Value) {

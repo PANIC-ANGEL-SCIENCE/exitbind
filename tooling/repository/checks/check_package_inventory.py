@@ -13,6 +13,7 @@ REQUIRED = {
     "skills/exitbind/SKILL.md", "plugins/exitbind/skills/exitbind/SKILL.md", "plugin.json",
     ".agents/plugins/marketplace.json", ".claude-plugin/marketplace.json",
     "docs/index.md", "docs/evidence/participation-comparison.md",
+    "docs/project-continuation.md",
     "tests/groups/project_user_surface.rs", "tests/setup.rs",
     "scripts/demo-checked-work.sh",
 }
@@ -42,7 +43,8 @@ def main() -> int:
         clean = {"Cargo.toml", "src/main.rs", "schema/exitbind.schema.json", "skills/exitbind/SKILL.md",
                  "tests/groups/project_user_surface.rs", "tests/setup.rs", "scripts/demo-checked-work.sh", "Cargo.lock", "compatibility/rename-matrix.json",
                  "plugins/exitbind/skills/exitbind/SKILL.md", "plugin.json", ".agents/plugins/marketplace.json",
-                 ".claude-plugin/marketplace.json", "docs/index.md", "docs/evidence/participation-comparison.md"}
+                 ".claude-plugin/marketplace.json", "docs/index.md", "docs/evidence/participation-comparison.md",
+                 "docs/project-continuation.md"}
         if validate(clean):
             print("FAIL: positive product inventory was rejected", file=sys.stderr)
             return 1

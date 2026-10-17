@@ -1720,6 +1720,18 @@
       "baselineSha256": "461b64fea780d8148f5a1e81595b39ca5d3fb0f8d0acfa1486e71801eb9ef9ba",
       "currentSha256": "dab43ebe55d8cad9c42f70211964b3534ded15bee1ec56d1176d3a14e35462a5",
       "reason": "The seven claim-registry and scenario fixture proofs are selected only with repository-checks because their canonical proof executable is repository-only; shared schema-validation helpers and schema shape assertions remain unconditional with all nine schema-lock and operational receipt tests."
+    },
+    "tests/docs_workflow.rs": {
+      "baselineSha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6",
+      "currentSha256": "7e2b63abdc54d291a8e3e05e63973a4f1e0011ac402ac62b3b897a0c7ef51c7d",
+      "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain."
     }
-  }
+  },
+  "additions": [
+    {
+      "newTarget": "project_continuation",
+      "source": "tests/project_continuation.rs",
+      "reason": "new explicit product integration target for DOT05 continuation coverage"
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 [package]
 name = "exitbind"
-version = "0.31.16"
+version = "0.31.17"
 edition = "2021"
 rust-version = "1.75"
 description = "Bounded exact-subject acceptance and evidence binding before exit"
@@ -57,6 +57,7 @@ include = [
   "docs/project-capabilities.md",
   "docs/project-lessons.md",
   "docs/project-placement.md",
+  "docs/project-continuation.md",
   "docs/prose-mechanism-audit.md",
   "docs/public-history.md",
   "docs/reference-run-and-recovery.md",
@@ -118,6 +119,10 @@ path = "tests/value_contract.rs"
 name = "plugin_distribution"
 required-features = ["repository-checks"]
 path = "tests/plugin_distribution.rs"
+
+[[test]]
+name = "project_continuation"
+path = "tests/project_continuation.rs"
 
 [[test]]
 name = "session_goal_direct"

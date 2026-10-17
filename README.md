@@ -131,6 +131,7 @@ Use the current assignment and supported next actions. Small, reversible edits m
 
 - [Onboarding](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/onboarding.md)
 - [First checked run](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/first-checked-run.md)
+- [Continue an approved project direction](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/project-continuation.md)
 - [Project-owned agents](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/user-owned-agents.md)
 - [Update or roll back](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/upgrade-and-rollback.md)
 - [Legacy compatibility](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/legacy-compatibility.md)

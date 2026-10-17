@@ -1,3 +1,60 @@
+use super::VERSION;
+
+pub(super) fn print_help() {
+    let product = if crate::producer::exitbind_surface() {
+        "Exitbind"
+    } else {
+        "Soulmate"
+    };
+    let command = if crate::producer::exitbind_surface() {
+        "exitbind"
+    } else {
+        "soulmate"
+    };
+    println!(
+        "{product} {VERSION}\n\nUsage: {command} <command> [options]\n\nCore: setup, init, brief, work, check, activity\n  setup previews approved project facts; --apply assembles them into managed setup.\n  init prepares portable project setup and reviewable agent configuration.\n  brief presents one bounded task to an existing agent host.\n  work drives a checked task through opaque next actions and managed evidence.\n  activity codex runs and privately records a direct small task from standard input.\n  check validates configuration, profiles, and declared boundaries; the host runs project tests and reports their result.\n\nRun '{command} benchmark' for the model-free checked-work demonstration.\nRun '{command} help advanced' for work/run actions, recovery, migration, hooks, receipts, and optional surfaces.\nRun '{command} context reduce|checkpoint|seal' for replayable bounded context state."
+    );
+}
+
+pub(super) fn print_advanced_help() {
+    let product = if crate::producer::exitbind_surface() {
+        "Exitbind"
+    } else {
+        "Soulmate"
+    };
+    let command = if crate::producer::exitbind_surface() {
+        "exitbind"
+    } else {
+        "soulmate"
+    };
+    let help = format!(
+        "{product} {VERSION}\n\nDo the next change\n  {command} setup --root ROOT (preview approved project facts)\n  {command} init --mode portable --root ROOT\n  {command} brief worker --task TASK --config CONFIG\n  {command} run start WORKFLOW --goal GOAL --ledger LEDGER [--check-command COMMAND]\n  {command} run next LEDGER [--text]\n  {command} run submit AGENT LEDGER --outcome OUTCOME --artifact ARTIFACT [--event-id]\n  {command} run record-check LEDGER --target EVENT_SHA --check-command COMMAND --exit-code CODE [--duration-ms MS]\n\nWhen work fails or changes\n  {command} run status LEDGER\n  {command} run explain LEDGER [--event PROTECTION_EVENT_SHA]\n  {command} run report LEDGER [LEDGER ...]\n  {command} run inspect LEDGER\n  {command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER\n  {command} project advance form --json (inspect bounded project-continuation fields)\n  --text prints a readable pending assignment; --event-id prints the submitted event hash.\n  Each output flag conflicts with --json; default JSON is unchanged.\n\nOptional surfaces\n  Advanced commands: bind, doctor, plan, verify, profile, migrate, memory (resolve/inspect/lifecycle), away, host, hooks, hook-protocol, hook-run, version.\n  Project continuation: project advance.\n  Direct small task: {command} activity codex < PROMPT; inspect the private record with activity show ID.\n  '{command} host status' reports the managed bootstrap skill installed for each supported host; '{command} host install' reinstalls or refreshes it. Installation and update manage it for you.\n  Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.\n  Run '{command} migrate layout --config CONFIG' to inspect a legacy profile migration, then repeat with --apply. Use 'migrate paths' for canonical harness and state directories.\n  Use '{command} run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER' only when you want a successor bound to changed configuration, profile, memory, boundary, or harness inputs."
+    );
+    let value_help = if crate::producer::exitbind_surface() {
+        "Run value proof: new v8 runs may observe the frozen check locally with 'run observe-check' or record a host report with 'run record-check'; historical v3-v7 runs remain readable. Use 'run status', 'run explain', and 'run report' for bounded evidence views."
+    } else {
+        "Run value proof: new v4 runs may observe the frozen check locally with 'run observe-check' or record a host report with 'run record-check'; historical v3 runs are reported-only. Use 'run status', 'run explain', and 'run report' for bounded evidence views."
+    };
+    println!(
+        "{}",
+        help.replace(
+            "Run value proof: the host executes the configured check, then reports its actual result with 'run record-check'; use 'run status', 'run explain', and 'run report' for bounded evidence views.",
+            value_help,
+        )
+    );
+    println!(
+        "  Checked {} runs may use: {command} run observe-check LEDGER --target EVENT_SHA [--timeout-ms MS]",
+        if crate::producer::exitbind_surface() {
+            "v8"
+        } else {
+            "v4"
+        }
+    );
+    println!("  Local observation defaults to a 1,800,000 ms (30 minute) timeout; --timeout-ms must be positive.");
+    println!("Run '{command} update' to explicitly install the newest allowed release.");
+    println!("Run '{command} version --json' for the build commit and executable SHA-256 to compare with release evidence.");
+}
+
 pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String> {
     let path = std::iter::once(command)
         .chain(positional.iter().map(String::as_str))

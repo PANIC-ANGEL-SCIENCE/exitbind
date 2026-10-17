@@ -203,7 +203,12 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
         "Source candidate tag: v{}",
         env!("CARGO_PKG_VERSION")
     )));
-    let cli = format!("{}{}", read("src/cli/mod.rs"), read("src/cli/run_cli.rs"));
+    let cli = format!(
+        "{}{}{}",
+        read("src/cli/mod.rs"),
+        read("src/cli/run_cli.rs"),
+        read("src/cli/help.rs")
+    );
     for document in [&readme, &reference, &security] {
         assert!(document.contains(published));
         assert!(!document.contains("unreleased v5"));
@@ -240,7 +245,8 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     assert!(cli.contains("Checked run: v8 acceptance"));
     assert!(cli.contains("Historical v1-v7 runs remain readable"));
     assert!(cli.contains("Checked {} runs may use"));
-    assert!(cli.contains("if crate::producer::exitbind_surface() { \"v8\" }"));
+    let normalized_cli = cli.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(normalized_cli.contains("if crate::producer::exitbind_surface() { \"v8\" }"));
     assert!(cli.contains("new v8 runs may observe"));
     assert!(cli.contains("[--timeout-ms MS]"));
     assert!(cli.contains("1,800,000 ms (30 minute) timeout"));

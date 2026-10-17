@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.31.17
+
+Unreleased source candidate; no stable tag or release assets are published.
+
+- Add an opt-in project continuation path with source-grounded admission,
+  visible status, stop handling and replay-safe Work accounting.
+- Transfer exact named-Goal contributor mappings to a verified successor only
+  after checking every selected reference; preserve unrelated mappings and
+  recover matching partial commits without reviving retired Works.
+- Refuse fresh associated retirement after a stop, source change or expiry
+  before writing the retirement claim. Existing saved successors remain
+  recoverable on a supporting reader.
+- Keep historical strict readers fail-closed on marked Works. Retain the old
+  pre-registration configuration for ordinary rollback and use a supporting
+  executable for the marked Work lifecycle; stop does not rewrite old ledgers.
+
 ## 0.31.16
 
 Published stable release; the `v0.31.16` tag and release assets are available.

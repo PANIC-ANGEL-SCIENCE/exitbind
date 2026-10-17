@@ -61,6 +61,24 @@ A complete detail is the sufficient ordinary read. If required profile, rules, e
 
 ## Keep decisions clear without forcing commitment
 
+## Continue an approved project direction
+
+When an owner wants a finite source-grounded project direction, use
+`project advance form --json` to inspect the specification shape, then
+`project advance propose SPECIFICATION --json` to inspect current sources and
+derive one useful plan. Proposal is read-only. Before admission, confirm the
+owner-selected direction, exact sources, write and command boundaries, finite
+limits, preservation conditions and publication choice. Use `cycle` for one
+bounded task or `continue` for later tasks within the same finite mandate.
+`project advance status MANDATE_ID --json` shows current claims and recovery;
+`project advance stop MANDATE_ID --reason REASON --json` records a stop and
+requests interruption of owned running work. Inspect process observations
+before claiming it ended. Each task still follows ordinary Work checks, review
+and Lead acceptance. The public guide `docs/project-continuation.md` describes
+source currentness, admission, replay and recovery behavior.
+
+## Keep decisions clear without forcing commitment
+
 Keep confirmed constraints, exploratory ideas, consequential unknowns, decision reasons and reconsideration conditions, and explicitly accepted changes distinct. Discuss alternatives before a goal without starting Work. Proceed on clear tasks; ask one focused question or propose a small permitted test only when an essential unknown changes a costly or hard-to-reverse choice. Accepted changes use the existing authorized update route and retain prior reasons and affected main and side commitments. Use current applicable lessons; dialogue and inferred preferences grant no policy or permission. Do not automatically ingest raw dialogue or turn tool output into permanent policy.
 
 ## Native execution and decisions

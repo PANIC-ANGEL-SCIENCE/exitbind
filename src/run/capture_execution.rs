@@ -4,6 +4,25 @@ use super::*;
 pub(crate) fn run_observed_command(
     request: &ObservationRequest,
 ) -> Result<ExecutionOutcome, ObservationError> {
+    run_observed_command_with_control(request, || Ok(()))
+}
+
+pub(crate) fn run_observed_command_with_control(
+    request: &ObservationRequest,
+    mut control: impl FnMut() -> Result<(), String>,
+) -> Result<ExecutionOutcome, ObservationError> {
+    control().map_err(|message| {
+        ObservationError::new(
+            format!("check control held before launch: {message}"),
+            ExecutionOutcome {
+                status: None,
+                duration_ms: 0,
+                capture: CaptureDisposition::Disabled,
+                group_ended: true,
+                process_started: false,
+            },
+        )
+    })?;
     #[cfg(not(unix))]
     {
         let _ = request;
@@ -33,6 +52,18 @@ pub(crate) fn run_observed_command(
             )
         })?;
         let started = Instant::now();
+        control().map_err(|message| {
+            ObservationError::new(
+                format!("check control held before launch: {message}"),
+                ExecutionOutcome {
+                    status: None,
+                    duration_ms: elapsed_ms(started),
+                    capture: CaptureDisposition::Disabled,
+                    group_ended: true,
+                    process_started: false,
+                },
+            )
+        })?;
         let mut child = crate::run::capture_supervisor::ObservedChild::spawn(
             request,
             child_stderr,
@@ -51,6 +82,23 @@ pub(crate) fn run_observed_command(
             )
         })?;
         loop {
+            if let Err(message) = control() {
+                let cleanup = child.terminate();
+                let mut failure = ObservationError::new(
+                    format!("check control held: {message}"),
+                    ExecutionOutcome {
+                        status: child.status(),
+                        duration_ms: elapsed_ms(started),
+                        capture: CaptureDisposition::Disabled,
+                        group_ended: child.ended(),
+                        process_started: child.process_started(),
+                    },
+                );
+                if let Err(cleanup) = cleanup {
+                    failure.cleanup_errors.push(cleanup);
+                }
+                return Err(failure);
+            }
             match child.try_wait() {
                 Ok(Some(status)) => {
                     if child.timed_out() || child.cancelled() {

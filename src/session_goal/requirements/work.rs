@@ -29,6 +29,7 @@ pub(crate) struct Prepared {
     pub(crate) project_identity: String,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct PrepareRequest<'a> {
     pub(crate) root: &'a Path,
     pub(crate) loaded: &'a Loaded,
@@ -63,6 +64,18 @@ pub(crate) fn checker_input(
 }
 
 pub(crate) fn prepare(request: PrepareRequest<'_>) -> Result<Prepared, String> {
+    prepare_inner(request, false)
+}
+
+/// Inspect the frozen contract for actual successor linkage recovery. Closed
+/// Goals may be read here because `assign_successor` permits only an exact
+/// already-applied mapping replay after closure; ordinary assignment continues
+/// to use `prepare` and retains its open-Goal guard.
+pub(crate) fn prepare_successor_replay(request: PrepareRequest<'_>) -> Result<Prepared, String> {
+    prepare_inner(request, true)
+}
+
+fn prepare_inner(request: PrepareRequest<'_>, allow_closed: bool) -> Result<Prepared, String> {
     let PrepareRequest {
         root,
         loaded,
@@ -78,7 +91,7 @@ pub(crate) fn prepare(request: PrepareRequest<'_>) -> Result<Prepared, String> {
     if record["goalId"] != goal_id {
         return Err("canonical goal identity does not match".into());
     }
-    if record["closure"]["closed"] != false {
+    if record["closure"]["closed"] != false && !allow_closed {
         return Err(
             "named Goal is closed; incorporate an explicit successor before assigning work".into(),
         );

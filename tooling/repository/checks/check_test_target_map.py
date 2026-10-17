@@ -76,6 +76,10 @@ def main() -> int:
         return fail("selector validator accepted the target-prefixed negative case")
 
     entries = [*mapping["standalone"]]
+    additions = mapping.get("additions", [])
+    if not isinstance(additions, list):
+        return fail("new test target additions must be a list")
+    entries.extend(additions)
     expected_targets: dict[str, str] = {}
     for item in entries:
         expected_targets[item["newTarget"]] = item["source"]
@@ -98,8 +102,28 @@ def main() -> int:
         for modules in mapping["groups"].values()
         for item in modules
     )
-    if root_sources != mapped_roots or len(root_sources) != mapping["rootCount"]:
+    if root_sources != mapped_roots or len(root_sources) != mapping["rootCount"] + len(additions):
         return fail("the original integration-test roots are missing, duplicated, or unclassified")
+
+    for item in additions:
+        path = root / item["source"]
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return fail(f"new test target source is missing: {item['source']}: {error}")
+        direct_tests = re.search(r"#\s*\[\s*test\s*\]", text)
+        included = re.findall(
+            r'^\s*#\[path\s*=\s*"([^"]+\.rs)"\]\s*\n\s*mod\s+\w+\s*;',
+            text,
+            re.MULTILINE,
+        )
+        if not direct_tests and not included:
+            return fail(f"new test target has no registered tests or explicit test modules: {item['source']}")
+        if included and not any(
+            re.search(r"#\s*\[\s*test\s*\]", (path.parent / entry).read_text(encoding="utf-8"))
+            for entry in included
+        ):
+            return fail(f"new test target's explicit modules contain no registered tests: {item['source']}")
 
     target_sections = re.findall(r"(?ms)^\[\[test\]\]\s*(.*?)(?=^\[|\Z)", manifest)
     actual_targets: dict[str, str] = {}
@@ -153,7 +177,7 @@ def main() -> int:
         return fail("baseline test or ignore declarations differ from the preserved inventory")
 
     print(
-        f"Test target map passed: {len(root_sources)} original roots, "
+        f"Test target map passed: {mapping['rootCount']} baseline roots plus {len(additions)} new root(s), "
         f"{len(actual_targets)} explicit targets, {test_count} preserved test declarations, "
         f"{len(adapted_paths)} exact fixture-oracle adaptations"
     )

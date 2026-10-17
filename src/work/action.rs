@@ -4,6 +4,15 @@ use super::*;
 
 #[path = "native_action.rs"]
 mod native_action;
+pub(crate) use native_action::continuation::NativeControlFacts;
+
+pub(crate) fn continuation_native_facts(
+    loaded: &Loaded,
+    work: &str,
+    state: &Value,
+) -> Result<NativeControlFacts, String> {
+    native_action::continuation::facts(loaded, work, state)
+}
 
 pub(crate) fn delivery_packet(assignment: &Value) -> Value {
     native_action::delivery_packet(assignment)

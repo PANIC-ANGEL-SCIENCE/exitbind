@@ -10,6 +10,7 @@
 ## Product reference
 
 - [Goal requirements](goal-requirements.md): scope and acceptance inputs.
+- [Project continuation](project-continuation.md): turn an approved direction into finite, source-grounded work with status and recovery.
 - [Run and recovery](reference-run-and-recovery.md): lifecycle reference.
 - [Legacy compatibility](legacy-compatibility.md): retained names and migration facts.
 - [Platform support](platform-support.md): supported environments.

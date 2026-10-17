@@ -1,10 +1,16 @@
-//! Read-only project context and exact current memory detail.
+//! Project context, current memory and bounded continuation commands.
+
+#[path = "project_continuation.rs"]
+mod continuation;
 
 use super::{args, print_json, Arguments};
 use crate::{config::Loaded, project::context};
 
 pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), String> {
     let action = arguments.positional.first().map(String::as_str);
+    if action == Some("advance") {
+        return continuation::command(loaded, arguments);
+    }
     if action == Some("route") {
         args::assert_options(
             "project route",
@@ -149,7 +155,7 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
     }
     args::assert_options("project context", arguments, &["config", "json", "task"])?;
     if action != Some("context") {
-        return Err("project requires context, route, agents, capabilities or architecture".into());
+        return Err("project requires context, route, agents, capabilities, architecture or advance; use project advance form --json for bounded continuation".into());
     }
     match arguments.positional.get(1).map(String::as_str) {
         None => {

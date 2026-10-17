@@ -1,9 +1,11 @@
 # Release series and compatibility
 
 Published stable tag: v0.31.16
-Source candidate tag: v0.31.16
+Source candidate tag: v0.31.17
 
-The published stable tag and current source version are 0.31.16.
+The published stable tag is v0.31.16. The current source candidate is
+0.31.17 and has not been published; its declaration does not reserve a tag or
+establish release readiness.
 README install links name the available stable assets. The published installation
 pointer has been verified against the exact release tag and asset inventory. A source version or
 passing CI alone does not establish an official release. The release-reference

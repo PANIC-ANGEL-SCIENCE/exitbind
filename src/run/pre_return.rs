@@ -1,8 +1,10 @@
 //! Opt-in, source-bound diagnostic execution before a successful Worker return.
 mod binding_diagnostic;
+mod execution;
 mod journal;
 mod response;
 
+use self::execution::run_or_recover;
 use self::journal::{
     directory_path, ensure_directory, install_captured_logs, read_record, record_bytes,
     record_path, write_durable,
@@ -10,7 +12,6 @@ use self::journal::{
 use self::response::{failure_response, read_route};
 use super::submission::matching_mutation_grants;
 use super::*;
-use std::time::{Duration, Instant};
 
 #[allow(clippy::too_many_arguments)]
 fn current_binding(
@@ -102,7 +103,8 @@ fn latest_or_create(
     loaded: &Loaded,
     binding: Value,
     policy: &crate::run_value::PreReturnPolicy,
-) -> Result<(String, Value, bool), String> {
+    state: &Value,
+) -> Result<(String, Value, bool, super::continuation_effect::Ticket), String> {
     let attempt_id =
         crate::evidence::hash::value(&json!({"binding": binding, "limits": policy.value()}));
     let attempt_path = record_path(loaded, &attempt_id, "attempt")?;
@@ -120,8 +122,16 @@ fn latest_or_create(
             {
                 return Err("pre-return result identity mismatch".into());
             }
+            execution::recover_saved_attempt(
+                loaded,
+                state,
+                &attempt_id,
+                &binding,
+                policy,
+                &result,
+            )?;
             if result["state"] == "passed" {
-                return Ok((attempt_id, result, true));
+                return Ok((attempt_id, result, true, None));
             }
             let mut replay = result;
             replay["replayed"] = json!(true);
@@ -132,148 +142,18 @@ fn latest_or_create(
     let attempt = json!({"version":1,"kind":"pre_return_attempt","attemptId":attempt_id,"binding":binding,
         "policy":policy.value(),"state":"admitted","createdAt":super::now()});
     let bytes = record_bytes(&attempt)?;
+    let ticket = super::continuation_effect::begin_check(
+        loaded,
+        state,
+        "pre-return",
+        &json!({"attemptId":attempt_id,"binding":binding,"policy":policy.value()}),
+        &policy.command,
+        binding["role"].as_str().unwrap_or("worker"),
+        binding["agent"].as_str(),
+    )?;
     ensure_directory(loaded)?;
     write_durable(&attempt_path, &bytes)?;
-    Ok((attempt_id, attempt, false))
-}
-
-fn run_or_recover(
-    loaded: &Loaded,
-    attempt_id: &str,
-    attempt: &Value,
-    policy: &crate::run_value::PreReturnPolicy,
-    state: &Value,
-    replayed: bool,
-) -> Result<Value, String> {
-    if replayed {
-        return Ok(attempt.clone());
-    }
-    let preparation = match crate::run_value::validate_checker_sources(
-        &policy.checker_sources,
-        "pre-return",
-    )
-    .and_then(|()| {
-        crate::run::verification_preparation::prepare(
-            loaded,
-            state,
-            attempt["binding"]["verificationOperationId"]
-                .as_str()
-                .unwrap_or(attempt_id),
-            &policy.checker_sources,
-        )
-    }) {
-        Ok(preparation) => preparation,
-        Err(error) => {
-            let result_path = record_path(loaded, attempt_id, "result")?;
-            let result = json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,
-                "state":"uncertain","failureKind":"preparation_refused",
-                "execution":{"started":false,"certainty":"known_not_started"},
-                "diagnostic":{"message":error,"storageStage":"preparation"},
-                "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-                "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()});
-            write_durable(&result_path, &record_bytes(&result)?)
-                .map_err(|store| format!("pre-return preparation refusal could not be recorded; attempt remains unresolved: {store}"))?;
-            return Err(failure_response(loaded, attempt_id, &result));
-        }
-    };
-    if let Some(preparation) = &preparation {
-        if attempt["binding"]["verificationPreparationSha256"] != preparation.sha256()? {
-            return Err("pre-return preparation recipe changed after attempt admission; no check was launched".into());
-        }
-    }
-    let request = crate::run::capture::ObservationRequest {
-        command: policy.command.clone(),
-        working_dir: loaded.product_root.clone(),
-        artifact_dir: loaded
-            .state_root
-            .join(crate::project::layout_types::state_namespace())
-            .join("artifacts"),
-        state_root: loaded.state_root.clone(),
-        deadline: Instant::now()
-            .checked_add(Duration::from_millis(policy.timeout_ms))
-            .unwrap_or_else(Instant::now),
-        timeout_ms: policy.timeout_ms,
-        operation_id: attempt_id.to_owned(),
-        capture: crate::run::capture::CapturePolicy {
-            per_stream_bytes: policy.capture_limit_bytes,
-            combined_bytes: policy.capture_limit_bytes.saturating_mul(2),
-        },
-        retain_partial: true,
-        preparation,
-    };
-    let result_path = record_path(loaded, attempt_id, "result")?;
-    let result = match crate::run::capture::capture_observed_command(&request) {
-        Ok(capture) if capture.group_ended => {
-            let code = capture.status.code();
-            if let Err(error) = install_captured_logs(&capture) {
-                json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,"state":"uncertain",
-                    "failureKind":"storage_failure","diagnostic":{"diagnostic":error,"storageStage":"capture_install"},
-                    "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-                    "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()})
-            } else {
-                let state = if code == Some(0) { "passed" } else { "failed" };
-                json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,"state":state,
-                "failureKind":if code.is_some() { if code==Some(0) { Value::Null } else { json!("nonzero_exit") } } else { json!("terminated") },
-                "exitCode":code,"durationMs":capture.duration_ms,"stdout":capture.stdout_artifact,"stderr":capture.stderr_artifact,
-                "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-                "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()})
-            }
-        }
-        Ok(capture) => {
-            if let Err(error) = install_captured_logs(&capture) {
-                json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,"state":"uncertain",
-                    "failureKind":"storage_failure","diagnostic":{"diagnostic":error,"storageStage":"capture_install"},
-                    "exitCode":capture.status.code(),"durationMs":capture.duration_ms,
-                    "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-                    "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()})
-            } else {
-                json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,"state":"uncertain","failureKind":"descendants_remain_or_unknown",
-            "exitCode":capture.status.code(),"durationMs":capture.duration_ms,"stdout":capture.stdout_artifact,"stderr":capture.stderr_artifact,
-            "producer":request_producer(),"bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-            "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()})
-            }
-        }
-        Err(error) => {
-            let facts = error.facts();
-            let diagnostic = facts["diagnostic"]
-                .as_str()
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let failure_kind = if facts["deadlineExceeded"] == true {
-                "timeout"
-            } else if diagnostic.contains("could not be launched") {
-                "launch_failure"
-            } else if diagnostic.contains("could not be created")
-                || diagnostic.contains("artifact")
-                || diagnostic.contains("directory")
-                || diagnostic.contains("stored")
-            {
-                "storage_failure"
-            } else if facts["capture"] == "incomplete" {
-                "capture_failure"
-            } else if facts["storageStage"] == "capture" {
-                "storage_failure"
-            } else {
-                "execution_uncertain"
-            };
-            json!({"version":1,"kind":"pre_return_result","attemptId":attempt_id,"state":"uncertain",
-                "failureKind":failure_kind,"diagnostic":facts,"producer":request_producer(),
-                "bindingSha256":crate::evidence::hash::value(&attempt["binding"]),
-                "policySha256":crate::evidence::hash::value(&attempt["policy"]),"completedAt":super::now()})
-        }
-    };
-    let bytes = record_bytes(&result)?;
-    write_durable(&result_path, &bytes).map_err(|e| {
-        format!("pre-return result storage failed; attempt remains unresolved: {e}")
-    })?;
-    if result["state"] != "passed" {
-        return Err(failure_response(loaded, attempt_id, &result));
-    }
-    Ok(result)
-}
-
-fn request_producer() -> Value {
-    json!({"executableSha256":crate::producer::build_identity()["executableSha256"],"producer":crate::producer::evidence_for_version(8)})
+    Ok((attempt_id, attempt, false, ticket))
 }
 
 fn prepare_locked(
@@ -382,11 +262,28 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
                 Some(assignment_handle_sha256),
             )?;
         }
-        let (attempt_id, attempt, replayed) = latest_or_create(loaded, binding.clone(), &policy)?;
-        Ok((artifact_path, attempt_id, attempt, replayed, policy, state))
+        let (attempt_id, attempt, replayed, ticket) =
+            latest_or_create(loaded, binding.clone(), &policy, &state)?;
+        Ok((
+            artifact_path,
+            attempt_id,
+            attempt,
+            replayed,
+            policy,
+            state,
+            ticket,
+        ))
     })?;
-    let (artifact_path, attempt_id, attempt, replayed, policy, state) = prepared;
-    run_or_recover(loaded, &attempt_id, &attempt, &policy, &state, replayed)?;
+    let (artifact_path, attempt_id, attempt, replayed, policy, state, ticket) = prepared;
+    run_or_recover(
+        loaded,
+        &attempt_id,
+        &attempt,
+        &policy,
+        &state,
+        replayed,
+        &ticket,
+    )?;
     Ok((artifact_path, attempt_id))
 }
 
@@ -427,13 +324,22 @@ pub(super) fn prepare_direct(
                 );
             }
         }
-        let (attempt_id, attempt, replayed) = latest_or_create(loaded, binding, &policy)?;
-        Ok(Some((attempt_id, attempt, replayed, policy, state)))
+        let (attempt_id, attempt, replayed, ticket) =
+            latest_or_create(loaded, binding, &policy, &state)?;
+        Ok(Some((attempt_id, attempt, replayed, policy, state, ticket)))
     })?;
-    let Some((attempt_id, attempt, replayed, policy, state)) = prepared else {
+    let Some((attempt_id, attempt, replayed, policy, state, ticket)) = prepared else {
         return Ok(None);
     };
-    run_or_recover(loaded, &attempt_id, &attempt, &policy, &state, replayed)?;
+    run_or_recover(
+        loaded,
+        &attempt_id,
+        &attempt,
+        &policy,
+        &state,
+        replayed,
+        &ticket,
+    )?;
     Ok(Some(attempt_id))
 }
 

@@ -1,8 +1,9 @@
 //! Execution, capture, and committed response for an observed check.
 
 use super::capture::{
-    capture_observed_command, cleanup_capture, install_capture, observed_result,
-    rollback_installed, run_observed_command, CapturePolicy, CapturedCheck, ObservationRequest,
+    capture_observed_command, capture_observed_command_with_control, cleanup_capture,
+    install_capture, observed_result, rollback_installed, run_observed_command,
+    run_observed_command_with_control, CapturePolicy, CapturedCheck, ObservationRequest,
 };
 use super::*;
 use std::time::{Duration, Instant};
@@ -67,6 +68,7 @@ pub fn observe_check_for_requirement(
         admission,
         operation_id,
         admitted_state,
+        continuation_ticket,
     ) = with_lock(&path, || {
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         if claim_path(&path).exists() {
@@ -120,6 +122,15 @@ pub fn observe_check_for_requirement(
             identity["verificationPreparationSha256"] = json!(preparation.sha256()?);
             identity["verificationOperationId"] = json!(preparation_operation_id.clone());
         }
+        let continuation_ticket = super::continuation_effect::begin_check(
+            loaded,
+            &state,
+            "observed-check",
+            &json!({"identity":identity,"ledgerSourceSha256":hash::text(&source),"timeoutMs":timeout_ms}),
+            &policy.command,
+            "lead",
+            None,
+        )?;
         let admission = check_observation::admit(
             loaded,
             &path,
@@ -150,65 +161,51 @@ pub fn observe_check_for_requirement(
             admission,
             operation_id,
             state,
+            continuation_ticket,
         ))
     })?;
 
     warn_drift(initial_warning.as_ref());
-    let checker_sources = match crate::run::verification_preparation::current_checker_sources(
-        loaded,
-        &admitted_state,
-        &policy.command,
-    ) {
-        Ok(sources) => sources,
-        Err(error) if admission.is_some() => {
-            return check_observation::record_failure(
-                loaded,
-                ledger,
-                &path,
-                admission.as_ref(),
-                super::capture::prelaunch_failure_facts(error),
-            )
+    let prepared: Result<_, String> = (|| {
+        let checker_sources = crate::run::verification_preparation::current_checker_sources(
+            loaded,
+            &admitted_state,
+            &policy.command,
+        )?;
+        let preparation = crate::run::verification_preparation::prepare(
+            loaded,
+            &admitted_state,
+            &operation_id,
+            &checker_sources,
+        )?;
+        if preparation
+            .as_ref()
+            .map(|value| value.sha256())
+            .transpose()?
+            .as_deref()
+            != identity["verificationPreparationSha256"].as_str()
+        {
+            return Err("verification preparation changed after observation admission; no check was launched".into());
         }
-        Err(error) => return Err(error),
-    };
-    let preparation = match crate::run::verification_preparation::prepare(
-        loaded,
-        &admitted_state,
-        &operation_id,
-        &checker_sources,
-    ) {
+        crate::project::continuation::runtime::guard(loaded, &admitted_state)?;
+        Ok(preparation)
+    })();
+    let preparation = match prepared {
         Ok(preparation) => preparation,
-        Err(error) if admission.is_some() => {
-            return check_observation::record_failure(
-                loaded,
-                ledger,
-                &path,
-                admission.as_ref(),
-                super::capture::prelaunch_failure_facts(error),
-            );
+        Err(error) => {
+            if admission.is_some() {
+                return record_failure_then_observe(
+                    loaded,
+                    ledger,
+                    &path,
+                    admission.as_ref(),
+                    super::capture::prelaunch_failure_facts(error),
+                    &continuation_ticket,
+                );
+            }
+            return Err(error);
         }
-        Err(error) => return Err(error),
     };
-    if preparation
-        .as_ref()
-        .map(|value| value.sha256())
-        .transpose()?
-        .as_deref()
-        != identity["verificationPreparationSha256"].as_str()
-    {
-        if admission.is_some() {
-            return check_observation::record_failure(
-                loaded, ledger, &path, admission.as_ref(),
-                super::capture::prelaunch_failure_facts(
-                    "verification preparation changed after observation admission; no check was launched".into(),
-                ),
-            );
-        }
-        return Err(
-            "verification preparation changed after observation admission; no check was launched"
-                .into(),
-        );
-    }
     let request = ObservationRequest {
         command: policy.command.clone(),
         working_dir: loaded.product_root.clone(),
@@ -226,20 +223,28 @@ pub fn observe_check_for_requirement(
         retain_partial: admission.is_some(),
         preparation,
     };
-    let capture = match if capture_logs {
+    let associated = admitted_state.get("projectContinuation").is_some();
+    let mut control = super::continuation_effect::checker_control(loaded, &admitted_state);
+    let capture = match if capture_logs && associated {
+        capture_observed_command_with_control(&request, &mut control)
+    } else if capture_logs {
         capture_observed_command(&request)
+    } else if associated {
+        run_observed_command_with_control(&request, &mut control).map(CapturedCheck::without_logs)
     } else {
         run_observed_command(&request).map(CapturedCheck::without_logs)
     } {
         Ok(capture) => capture,
         Err(error) => {
+            let facts = error.facts();
             if admission.is_some() {
-                return check_observation::record_failure(
+                return record_failure_then_observe(
                     loaded,
                     ledger,
                     &path,
                     admission.as_ref(),
-                    error.facts(),
+                    facts,
+                    &continuation_ticket,
                 );
             }
             return Err(error.to_string());
@@ -248,7 +253,7 @@ pub fn observe_check_for_requirement(
 
     let result = observed_result(&capture.status)?;
     let mut storage_partials = Vec::new();
-    let committed = with_lock(&path, || {
+    let mut committed = with_lock(&path, || {
         if admission.is_some() && !capture.group_ended {
             return Err("check leader ended but descendants remain or group termination is unknown; no check was recorded".into());
         }
@@ -296,6 +301,7 @@ pub fn observe_check_for_requirement(
             );
         }
         crate::run_value::validate_check_target(&current_state, target)?;
+        crate::project::continuation::runtime::guard(loaded, &current_state)?;
         let last = current_events
             .last()
             .ok_or("run ledger has no event head")?;
@@ -413,14 +419,24 @@ pub fn observe_check_for_requirement(
                 "termination": if capture.group_ended && cleanup.is_ok() { "ended" } else { "unknown" },
                 "diagnostic": error.chars().filter(|c| !c.is_control()).take(1024).collect::<String>(),
                 "cleanupErrorCount": if cleanup.is_ok() { 0 } else { 1 }, "remainingOwnedPathCount": 0});
-            return check_observation::record_failure(
+            return record_failure_then_observe(
                 loaded,
                 ledger,
                 &path,
                 admission.as_ref(),
                 facts,
+                &continuation_ticket,
             );
         }
+    }
+    if let Ok(value) = &mut committed {
+        observe_recorded(
+            loaded,
+            &continuation_ticket,
+            value,
+            capture.status.success(),
+            capture.group_ended,
+        );
     }
     match (committed, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
@@ -434,6 +450,48 @@ pub fn observe_check_for_requirement(
             &cleanup,
             &observed_capture_summary(&capture),
         )),
+    }
+}
+
+/// Failure evidence belongs to the Run first. A later account-write failure
+/// must not erase the actual termination, capture or partial-artifact facts.
+fn record_failure_then_observe(
+    loaded: &Loaded,
+    ledger: &str,
+    path: &run_ledger::LedgerPath,
+    admission: Option<&Value>,
+    facts: Value,
+    ticket: &super::continuation_effect::Ticket,
+) -> Result<Value, String> {
+    let mut recorded =
+        check_observation::record_failure(loaded, ledger, path, admission, facts.clone())?;
+    // An already acknowledged check wins over a subsequent failure record.
+    let committed = recorded["event"]["action"] == "check";
+    let success = committed
+        && recorded["event"]["result"]["kind"] == "exit"
+        && recorded["event"]["result"]["code"] == 0;
+    observe_recorded(
+        loaded,
+        ticket,
+        &mut recorded,
+        success,
+        committed || facts["termination"] == "ended",
+    );
+    Ok(recorded)
+}
+
+fn observe_recorded(
+    loaded: &Loaded,
+    ticket: &super::continuation_effect::Ticket,
+    recorded: &mut Value,
+    success: bool,
+    known_ended: bool,
+) {
+    if let Err(error) = super::continuation_effect::complete(loaded, ticket, success, known_ended) {
+        recorded["continuationAccountingRecovery"] = json!({
+            "message":error.chars().filter(|c| !c.is_control()).take(512).collect::<String>(),
+            "action":"Inspect or recover this exact recorded observation; do not execute the check again."
+        });
     }
 }
 

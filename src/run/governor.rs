@@ -203,6 +203,12 @@ pub(crate) fn permit_for_assignment(
                 if previous["governorEvent"]["action"] == "blocked" {
                     return Err("governor durably blocked; exact evidence is required".into());
                 }
+                super::continuation_effect::recover_event(
+                    loaded,
+                    &state,
+                    crate::project::continuation::control::Kind::Mutation,
+                    previous,
+                )?;
                 return Ok(json!({
                     "valid": true,
                     "allowed": previous["governorEvent"]["action"] == "mutation",
@@ -276,7 +282,18 @@ pub(crate) fn permit_for_assignment(
         let mut all = events;
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
+        let ticket = if terminal_refusal {
+            None
+        } else {
+            super::continuation_effect::begin_event(
+                loaded,
+                &state,
+                crate::project::continuation::control::Kind::Mutation,
+                &event,
+            )?
+        };
         append(&path, &event, false, &source)?;
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
         if terminal_refusal {
             return Err("governor durably blocked; exact evidence is required".into());
         }
@@ -412,7 +429,14 @@ pub(crate) fn replan_for_assignment(
         let mut all = events;
         all.push(event.clone());
         let next_state = run_state::reduce(&all)?;
+        let ticket = super::continuation_effect::begin_event(
+            loaded,
+            &state,
+            crate::project::continuation::control::Kind::Effect,
+            &event,
+        )?;
         append(&path, &event, false, &source)?;
+        super::continuation_effect::complete(loaded, &ticket, true, true)?;
         Ok(json!({"valid": true, "event": event, "governor": next_state["governor"]}))
     })
 }
