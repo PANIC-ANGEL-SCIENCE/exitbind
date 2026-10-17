@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 893,
+  "declarations": 898,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1660,7 +1660,7 @@
     }
   ],
   "sourceFileCount": 197,
-  "testAttributes": 893,
+  "testAttributes": 898,
   "ignoreAttributes": 1,
   "repositoryOnlyTargets": [
     "architecture_budget",
@@ -1725,6 +1725,21 @@
       "baselineSha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6",
       "currentSha256": "7e2b63abdc54d291a8e3e05e63973a4f1e0011ac402ac62b3b897a0c7ef51c7d",
       "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain."
+    },
+    "tests/action_forms.rs": {
+      "baselineSha256": "6b2da7728a549fd8887159e6bda82172a3dd71f62bcf772c10bbe60f711e355e",
+      "currentSha256": "7bcf6380b0dfc88f9d3d902dcc4c07066f0312e0e49efc8f633c9c00dce28129",
+      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed."
+    },
+    "tests/goal_requirements.rs": {
+      "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
+      "currentSha256": "7a232edcec27bc28fc6f0dc5291a4ab5a546b38dfe2e0a27db5b847d4924710e",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations."
+    },
+    "tests/work_check_replacement/refusal_and_native_lineage.rs": {
+      "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
+      "currentSha256": "97de94ccd2d50e2359ee42bbb79afc224526fb7910d226c23f595735a3fa7c23",
+      "reason": "Preserve all8 original cases byte-for-byte and add2 regression cases for unrelated missing historical configuration and required selected-ancestor configuration. New helpers use emitted role forms, full stdin artifacts and isolated native sessions; no original refusal or lineage assertion is removed."
     }
   },
   "additions": [
