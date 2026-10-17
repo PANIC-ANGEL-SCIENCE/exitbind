@@ -92,12 +92,13 @@ pub(crate) fn start(
     {
         return Err("feature configuration changed during quarantine admission".into());
     }
-    let owner_path = options
-        .owner_config
-        .unwrap_or_else(|| loaded.path.to_str().unwrap_or_default());
-    if owner_path.is_empty() {
-        return Err("owner configuration path is not valid UTF-8".into());
-    }
+    let owner_path = match options.owner_config {
+        Some(path) => path,
+        None => loaded
+            .path
+            .to_str()
+            .ok_or("configuration path is not valid UTF-8")?,
+    };
     let owner_loaded = crate::config::load(Some(owner_path))?;
     let owner_sha256 = hash::text(&owner_loaded.source);
     if std::fs::read_to_string(&owner_loaded.path).map_err(|e| e.to_string())?
@@ -374,7 +375,23 @@ fn ensure_pending_goal(
     owner_goal_id: &str,
     verified: &run::quarantine::admission::Verified,
 ) -> Result<(), String> {
-    let current = crate::config::load(owner_loaded.path.to_str())?;
+    let owner_config_path = owner_loaded
+        .path
+        .to_str()
+        .ok_or("native Goal owner configuration path is not valid UTF-8")?;
+    let current = crate::config::load(Some(owner_config_path))?;
+    let config_path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    let product_root = loaded
+        .product_root
+        .to_str()
+        .ok_or("product root path is not valid UTF-8")?;
+    let state_root = loaded
+        .state_root
+        .to_str()
+        .ok_or("state root path is not valid UTF-8")?;
     if current.source != owner_loaded.source
         || hash::text(&current.source) != owner_sha256
         || std::fs::read_to_string(&current.path).map_err(|e| e.to_string())? != current.source
@@ -424,10 +441,10 @@ fn ensure_pending_goal(
                     .owner
                     .as_ref()
                     .and_then(|value| value.project_id.clone())
-            || admission.config_path != loaded.path.to_string_lossy().as_ref()
+            || admission.config_path != config_path
             || admission.config_sha256 != hash::text(&loaded.source)
-            || admission.product_root != loaded.product_root.to_string_lossy().as_ref()
-            || admission.state_root != loaded.state_root.to_string_lossy().as_ref()
+            || admission.product_root != product_root
+            || admission.state_root != state_root
         {
             return Err("an unresolved native Goal admission conflicts with the exact quarantine start; inspect before recovery".into());
         }
