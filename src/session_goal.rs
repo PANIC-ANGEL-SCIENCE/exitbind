@@ -9,6 +9,7 @@ mod closure;
 mod continuity;
 pub(crate) mod journey;
 pub(crate) mod native;
+pub(crate) mod quarantine;
 pub(crate) mod recovery;
 pub(crate) mod requirements;
 pub(crate) use closure::{
@@ -131,6 +132,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
     association::validate_record(value, line)?;
     journey::validate_record(value, line)?;
     recovery::validate_record(value, line)?;
+    quarantine::validate_record(value, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -203,6 +205,7 @@ pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
         association::preserve_same_goal(previous, &mut value);
         journey::preserve_same_goal(previous, &mut value);
         recovery::preserve_same_goal(previous, &mut value);
+        quarantine::preserve_same_goal(previous, &mut value);
     }
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())

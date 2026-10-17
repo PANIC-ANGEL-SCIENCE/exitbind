@@ -32,6 +32,7 @@ mod observed_check;
 pub(crate) mod pre_return;
 pub(crate) mod preservation_assignment;
 pub(crate) mod progress;
+pub(crate) mod quarantine;
 mod reducer;
 mod repair_recovery;
 mod result_reference;
@@ -137,6 +138,7 @@ pub fn record_check_for_requirement(
         }
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        quarantine::refuse_mutation(&state, "reported-check substitution")?;
         if state["status"] != "running" {
             return Err("run has already reached a terminal state; no mutation was made".into());
         }

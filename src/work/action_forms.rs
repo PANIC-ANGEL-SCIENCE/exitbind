@@ -3,6 +3,7 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+mod quarantine;
 mod repair;
 
 pub(super) fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
@@ -185,8 +186,26 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
 }
 
 pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
+    if next["packet"]["quarantineVerification"].is_object() {
+        return quarantine::project(loaded, work, next, binding);
+    }
     let Some(assignment) = next["assignment"].as_str() else {
         if next["action"] == "done" && next["status"] == "blocked" {
+            // A terminal Lead return does not resolve the observation. Keep
+            // replacement advice consistent with the execution owner's guard.
+            if super::check::unresolved(next) {
+                return json!({
+                    "version": 1, "state": "blocked_unresolved_check_observation",
+                    "binding": binding, "leadChoiceRequired": false, "choices": [],
+                    "mechanicalAction": Value::Null,
+                    "meaning": "The check termination is unknown. Preserve this blocked Work; no retry or replacement is available.",
+                    "diagnostic": {
+                        "command": command(loaded, vec!["work".into(), "recover-check".into(), work.into(), "--json".into()]),
+                        "readOnly": true, "inspectionOnly": true,
+                        "meaning": "Inspect the retained unknown observation without execution or check credit."
+                    }
+                });
+            }
             let suffix = vec![
                 "work".into(),
                 "replace-check".into(),

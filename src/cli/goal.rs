@@ -11,6 +11,24 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         "goal requires prepare, incorporate, require, cover, assign, close, recover, status, or usage",
     )?;
     match action {
+        "quarantine" => {
+            args::assert_options(
+                "goal quarantine", a,
+                &["config", "json", "source-config", "verification-work", "request-id", "reason", "apply", "current-binding"],
+            )?;
+            args::assert_positionals("goal quarantine", a, 2)?;
+            let response = crate::session_goal::quarantine::record(l,
+                crate::session_goal::quarantine::Request {
+                    source_config: option(a, "source-config", "goal quarantine requires --source-config PATH")?,
+                    old_work: positional(a, 1, "goal quarantine requires OLD_WORK")?,
+                    verification_work: option(a, "verification-work", "goal quarantine requires --verification-work WORK")?,
+                    request_id: option(a, "request-id", "goal quarantine requires --request-id ID")?,
+                    reason: option(a, "reason", "goal quarantine requires --reason TEXT")?,
+                    apply: a.flags.contains_key("apply"),
+                    current_binding: a.options.get("current-binding").map(String::as_str),
+                })?;
+            print_json(&response)
+        }
         "recover" => {
             args::assert_options(
                 "goal recover",

@@ -24,6 +24,7 @@ mod mutation_response;
 mod next_snapshot;
 pub(crate) mod packet;
 mod permit_response;
+pub(crate) mod quarantine;
 pub(crate) mod readable;
 mod recovery;
 mod refreshed_action;
@@ -619,9 +620,13 @@ fn next_from_base(
     let progress = value["progress"].clone();
     let warnings = value["warnings"].clone();
     if value["status"] != "running" {
-        return Ok(
-            json!({"action": "done", "status": value["status"], "progress": progress, "warnings": warnings}),
-        );
+        let mut done = json!({"action": "done", "status": value["status"], "progress": progress, "warnings": warnings});
+        for field in ["checkObservation", "quarantineVerification"] {
+            if let Some(value) = snapshot.inspect_view().get(field) {
+                done["packet"][field] = value.clone();
+            }
+        }
+        return Ok(done);
     }
     let pending_check = current_check_target(snapshot)?;
     let assignment = value["assignments"]

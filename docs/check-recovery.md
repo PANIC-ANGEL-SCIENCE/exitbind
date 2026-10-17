@@ -73,3 +73,70 @@ budget and sends no cleanup signal on that normal path. Timeout cleanup signals 
 and remains a failed observation even when all children are reaped. Missing or
 incomplete proof keeps termination unknown. This does not retroactively resolve
 an older unknown execution or provide a sandbox against hostile processes.
+
+## Verify a separate artifact while preserving an unknown execution
+
+An eligible Work whose current observation is durably failed with unknown
+termination, including a blocked Work, can receive a separately authorized
+quarantine verification. The original Work stays unknown and uncredited. This
+route does not retry, repair, supersede, or reset the original execution. An
+observation that is still running is ineligible. Earlier ended check history
+stays intact; eligibility is determined by the current admission.
+
+First obtain current acceptance of a separate feature Work that checks and reviews
+the verification plan. Its Worker artifact is a JSON object with
+`kind: "quarantine-verification-plan"`, `protocol: 1`, and a `plan` object containing
+`environment`, `effectInventory`, `artifactSha256`, `inputsSha256`, `command`,
+and an explicit typed `basis`. The accepted plan's basis is frozen as the new
+verification Work's basis; the original Work's legacy basis is preserved as-is
+and is never retrofitted.
+The artifact hash identifies the exact bytes to return in the new verification;
+it is distinct from the plan report's own hash. The environment and effect
+inventory must describe the actual permitted execution. Their hashes are
+commitments to that reviewed plan; Exitbind does not create an operating-system
+sandbox from these declarations.
+
+The configured Lead previews the separate admission using the original Work's
+current binding:
+
+```sh
+exitbind work quarantine OLD_WORK --feature-config PLAN_CONFIG --feature-work PLAN_WORK --artifact-root state --artifact FROZEN_ARTIFACT --request-id ID --reason REASON --current-binding BINDING --json --config ORIGINAL_CONFIG
+```
+
+Use the emitted apply command with the same executable and configuration. The
+plan Work may use a different configuration, but must share the product and state
+roots and have compatible Lead and reviewer identities. Stale source, changed
+artifacts, unaccepted plans, retained children, or conflicting Goal admissions
+refuse the start. Preserve the original binary, configuration, ledger, captures,
+and accounting.
+
+If the original native Goal belongs to a separate project configuration, provide
+`--owner-config OWNER_CONFIG` on the preview. It must resolve to that existing
+fixed Goal owner in the current native session; Source keeps its original
+configuration. The emitted apply command binds the owner configuration's digest
+as well. This does not establish a new Goal or change its owner.
+
+Admission reserves one stable verification Work for the original check admission.
+Changing the request ID, artifact, or reason supplies no second allowance. After
+a lost reply, refresh the original Work's current navigation and binding, then
+replay the exact request; it reads back the existing Work without another start.
+A recorded start whose Goal link failed exposes that existing Work's link recovery.
+
+Follow the new Work's detail. Its Worker acknowledges the frozen artifact without
+implementation changes. It allows one actual observed check, required independent
+review, and a distinct Lead acceptance. It offers no mutation permit, replan,
+reported-check substitution, check replacement, or repair allowance. An admitted
+check is not rerun after an interrupted result; a committed identical request
+can recover its recorded event without another execution.
+
+Once the separate verification is currently accepted, the original native Goal
+owner can preview `goal quarantine OLD_WORK --source-config ORIGINAL_CONFIG
+--verification-work NEW_WORK --request-id ID --reason REASON --json`, then use
+its emitted apply command. The new verification must be a real member of that
+Goal. The original Work may be the original member or its exact validated
+same-Goal successor; the residual preserves the original member and its actual
+unknown endpoint.
+The Goal retains the original as `quarantined_uncredited`, separately from
+historical fixtures and current accepted results. Earlier accounting and unknown
+facts stay intact. Every other original outcome, admission, currentness check,
+and closure gate still applies.

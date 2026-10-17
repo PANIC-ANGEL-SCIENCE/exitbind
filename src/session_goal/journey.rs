@@ -139,7 +139,7 @@ pub(super) struct JourneyState {
     protocol: u64,
     pub(super) members: Vec<Member>,
     integrations: Vec<IntegrationEntry>,
-    admissions: Vec<Admission>,
+    pub(super) admissions: Vec<Admission>,
 }
 
 pub(crate) struct Prepared {
@@ -161,7 +161,9 @@ pub(crate) struct Readiness {
     pub(crate) current: usize,
     pub(crate) integrated: usize,
     pub(crate) historical: usize,
+    pub(crate) quarantined_uncredited: usize,
     pub(crate) historical_details: Vec<Value>,
+    pub(crate) quarantined_details: Vec<Value>,
     pub(crate) pending_admissions: usize,
     pub(crate) unresolved: Vec<Value>,
     pub(crate) integration_work: Option<String>,
@@ -177,7 +179,7 @@ impl Readiness {
             "protocol": self.protocol,
             "state": self.state,
             "reason": self.reason,
-            "members": {"total":self.total,"current":self.current,"integrationSupported":self.integrated,"historical":self.historical,"retainedHistorical":self.historical_details},
+            "members": {"total":self.total,"current":self.current,"integrationSupported":self.integrated,"historical":self.historical,"retainedHistorical":self.historical_details,"quarantinedUncredited":self.quarantined_uncredited,"retainedQuarantinedUncredited":self.quarantined_details},
             "pendingAdmissions": self.pending_admissions,
             "unresolved": self.unresolved,
             "integrationWork": self.integration_work,
@@ -258,11 +260,12 @@ pub(super) fn state(record: &Value) -> Result<Option<JourneyState>, String> {
     let membership_protocol = record["journeyMembershipProtocol"]
         .as_u64()
         .ok_or("unsupported native journey membership protocol")?;
-    if !matches!(membership_protocol, 1 | MEMBERSHIP_PROTOCOL)
-        || (has_admissions && membership_protocol != MEMBERSHIP_PROTOCOL)
+    if !matches!(membership_protocol, 1 | MEMBERSHIP_PROTOCOL | 3)
+        || (membership_protocol == 3 && !super::quarantine::protocol3_marker_valid(record))
+        || (has_admissions && membership_protocol < MEMBERSHIP_PROTOCOL)
         || !has_members
         || !has_integrations
-        || (membership_protocol == MEMBERSHIP_PROTOCOL && !has_admissions)
+        || (membership_protocol >= MEMBERSHIP_PROTOCOL && !has_admissions)
     {
         return Err("unsupported native journey membership protocol".into());
     }
@@ -363,7 +366,10 @@ pub(crate) fn ensure_member_capacity(record: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn ensure_admission_capacity(record: &Value) -> Result<(), String> {
-    if record["journeyMembershipProtocol"].as_u64() != Some(MEMBERSHIP_PROTOCOL) {
+    if record["journeyMembershipProtocol"]
+        .as_u64()
+        .map_or(true, |value| value < MEMBERSHIP_PROTOCOL)
+    {
         return Err(
             "native session Goal needs explicit journey protocol v2 before a Work can be admitted"
                 .into(),
@@ -550,8 +556,16 @@ pub(super) fn validate_record(record: &Value, line: usize) -> Result<(), String>
 }
 
 pub(super) fn preserve_same_goal(previous: &Value, next: &mut Value) {
-    if previous["goalId"] != next["goalId"]
-        || previous.get("journeyMembershipProtocol").is_none()
+    if previous["goalId"] != next["goalId"] {
+        return;
+    }
+    if previous["journeyMembershipProtocol"].as_u64()
+        == Some(super::quarantine::JOURNEY_MEMBERSHIP_PROTOCOL)
+    {
+        next["journeyMembershipProtocol"] = json!(super::quarantine::JOURNEY_MEMBERSHIP_PROTOCOL);
+        return;
+    }
+    if previous.get("journeyMembershipProtocol").is_none()
         || next.get("journeyMembershipProtocol").is_some()
     {
         return;
@@ -710,7 +724,14 @@ fn new_member(loaded: &Loaded, request: WorkLink<'_>) -> Result<Member, String> 
 }
 
 fn write_state(record: &mut Value, state: JourneyState) {
-    record["journeyMembershipProtocol"] = json!(MEMBERSHIP_PROTOCOL);
+    let protocol = if record["journeyMembershipProtocol"].as_u64()
+        == Some(super::quarantine::JOURNEY_MEMBERSHIP_PROTOCOL)
+    {
+        super::quarantine::JOURNEY_MEMBERSHIP_PROTOCOL
+    } else {
+        MEMBERSHIP_PROTOCOL
+    };
+    record["journeyMembershipProtocol"] = json!(protocol);
     record["journeyMembers"] = json!(state.members);
     record["journeyIntegrations"] = json!(state.integrations);
     record["journeyAdmissions"] = json!(state.admissions);

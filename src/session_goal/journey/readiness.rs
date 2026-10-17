@@ -130,7 +130,9 @@ fn readiness_for_state_inner(
             current: 0,
             integrated: 0,
             historical: 0,
+            quarantined_uncredited: 0,
             historical_details: Vec::new(),
+            quarantined_details: Vec::new(),
             pending_admissions: 0,
             unresolved: vec![
                 json!({"state":"unavailable","reason":"explicit_native_goal_incorporation_required"}),
@@ -141,9 +143,11 @@ fn readiness_for_state_inner(
     let mut current = 0;
     let mut integrated = 0;
     let mut historical = 0;
+    let mut quarantined_uncredited = 0;
+    let mut quarantined_details = Vec::new();
     let mut integration_work = None;
     let mut unresolved = Vec::new();
-    if state.protocol != MEMBERSHIP_PROTOCOL {
+    if state.protocol < MEMBERSHIP_PROTOCOL {
         unresolved.push(json!({
             "state":"unavailable",
             "reason":"historical_journey_membership_has_no_admission_coverage",
@@ -157,6 +161,28 @@ fn readiness_for_state_inner(
         }));
     }
     for member in &state.members {
+        if let Some(record) = record {
+            match super::super::quarantine::current_for_member(loaded, record, &member.work) {
+                Ok(Some(detail)) => {
+                    if detail["state"] == "quarantined_uncredited" {
+                        quarantined_uncredited += 1;
+                        quarantined_details.push(detail);
+                    } else if detail["state"] == "current" {
+                        current += 1;
+                    } else {
+                        unresolved.push(json!({"work":member.work,"state":"unavailable",
+                            "reason":"quarantine residual has an unsupported readiness category"}));
+                    }
+                    continue;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    unresolved
+                        .push(json!({"work":member.work,"state":"unavailable","reason":error}));
+                    continue;
+                }
+            }
+        }
         match member_currentness(loaded, record, &state, member) {
             Ok(("current", integration)) => {
                 current += 1;
@@ -191,7 +217,7 @@ fn readiness_for_state_inner(
         protocol: state.protocol,
         state: state_name,
         reason: (state_name != "current").then(|| {
-            if state.protocol != MEMBERSHIP_PROTOCOL {
+            if state.protocol < MEMBERSHIP_PROTOCOL {
                 "historical_journey_membership_has_no_admission_coverage".into()
             } else if !state.admissions.is_empty() {
                 "native_journey_has_unresolved_work_admissions".into()
@@ -203,7 +229,9 @@ fn readiness_for_state_inner(
         current,
         integrated,
         historical,
+        quarantined_uncredited,
         historical_details,
+        quarantined_details,
         pending_admissions: state.admissions.len(),
         unresolved: unresolved
             .into_iter()
@@ -253,7 +281,9 @@ pub(crate) fn readiness_for_record(
             current: 0,
             integrated: 0,
             historical: 0,
+            quarantined_uncredited: 0,
             historical_details: Vec::new(),
+            quarantined_details: Vec::new(),
             pending_admissions: state(&current)?.map_or(0, |state| state.admissions.len()),
             unresolved: vec![
                 json!({"state":"unresolved","reason":"newer_session_goal_is_current"}),
@@ -308,7 +338,7 @@ pub(crate) fn require_resolved_replacement_admissions(record: &Value) -> Result<
         return Err("check replacement belongs to an older native Goal".into());
     }
     let state = state(current)?.ok_or("native Goal admission coverage is unavailable")?;
-    if state.protocol != MEMBERSHIP_PROTOCOL || !state.admissions.is_empty() {
+    if state.protocol < MEMBERSHIP_PROTOCOL || !state.admissions.is_empty() {
         return Err("check replacement is blocked by unresolved native Goal admissions".into());
     }
     Ok(())

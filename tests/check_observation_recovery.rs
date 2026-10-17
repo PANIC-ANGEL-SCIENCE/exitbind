@@ -12,6 +12,7 @@ use std::{
 
 struct Fixture {
     root: PathBuf,
+    native_session: Option<String>,
 }
 impl Fixture {
     fn new(script: &str) -> Self {
@@ -24,7 +25,10 @@ impl Fixture {
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         fs::write(root.join("checker.sh"), script).unwrap();
-        Self { root }
+        Self {
+            root,
+            native_session: None,
+        }
     }
     fn command(&self, args: &[&str]) -> Command {
         let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
@@ -33,7 +37,16 @@ impl Fixture {
             .args(args)
             .args(["--config", "exitbind.json"])
             .env("EXITBIND_NO_UPDATE_CHECK", "1");
+        self.native_environment(&mut command);
         command
+    }
+    fn native_environment(&self, command: &mut Command) {
+        if let Some(session) = &self.native_session {
+            command.env("CODEX_THREAD_ID", session).env(
+                "EXITBIND_SESSION_GOALS_DIR",
+                self.root.join(".exitbind/native-goals"),
+            );
+        }
     }
     fn enable_owned_outputs(&self) {
         let path = self.root.join("exitbind.json");
@@ -64,9 +77,10 @@ impl Fixture {
             .map(|item| item.as_str().unwrap())
             .collect::<Vec<_>>();
         assert!(argv.len() > 1, "{command}");
-        let mut child = support::git_topology::command(argv[0])
-            .current_dir(&self.root)
-            .args(&argv[1..])
+        let mut command = support::git_topology::command(argv[0]);
+        command.current_dir(&self.root).args(&argv[1..]);
+        self.native_environment(&mut command);
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -97,20 +111,24 @@ impl Fixture {
         )
     }
     fn begin(&self) -> String {
-        let start = self.ok(
-            &[
-                "work",
-                "begin",
-                "change",
-                "--goal",
-                "repair the checker",
-                "--check-command",
-                "exec sh checker.sh",
-                "--review-policy",
-                "required",
-            ],
-            b"",
-        );
+        self.begin_with_optional_basis(None)
+    }
+    fn begin_with_optional_basis(&self, basis: Option<&str>) -> String {
+        let mut args = vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "repair the checker",
+            "--check-command",
+            "exec sh checker.sh",
+            "--review-policy",
+            "required",
+        ];
+        if let Some(basis) = basis {
+            args.extend(["--basis", basis]);
+        }
+        let start = self.ok(&args, b"");
         let work = start["work"].as_str().unwrap().to_string();
         let worker = self.give(&work, &start["next"], "scoped")["next"].clone();
         self.give(&work, &worker, "completed");
@@ -304,5 +322,7 @@ mod admission_and_recovery;
 mod drift_and_retry_limits;
 #[path = "check_observation_recovery/process_containment.rs"]
 mod process_containment;
+#[path = "check_observation_recovery/quarantine.rs"]
+mod quarantine;
 #[path = "check_observation_recovery/replay_and_claims.rs"]
 mod replay_and_claims;

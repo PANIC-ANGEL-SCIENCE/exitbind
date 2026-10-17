@@ -100,6 +100,16 @@ supported route; do not replace unrelated Work pins or rewrite old records.
 Rolling back the default executable does not make an older executable suitable
 for that recovered Goal.
 
+An opted-in quarantine verification adds a strict `quarantineVerification`
+marker to its new v8 Work. Keep a reader that understands that marker for the new
+Work; the original unknown Work retains its own reader and records. Recording
+the corresponding uncredited residual opts the native Goal into journey
+membership protocol 3. Compatible same-Goal writes preserve its residuals.
+Readers limited to membership protocols 1 and 2 refuse that marked Goal without
+appending a record. Changing only a Goal's version number or kind is insufficient
+to prevent an older writer from omitting newer fields. Do not remove markers or
+rewrite history to downgrade. See [separate verification](check-recovery.md#verify-a-separate-artifact-while-preserving-an-unknown-execution).
+
 ## Continuation journal size
 
 Continuation accounting retains its v2 record format. The current reader

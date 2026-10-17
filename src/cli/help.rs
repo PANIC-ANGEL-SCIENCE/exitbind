@@ -60,6 +60,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .chain(positional.iter().map(String::as_str))
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
+        ["goal", "quarantine"] => "goal quarantine OLD_WORK --source-config CONFIG --verification-work NEW_WORK --request-id ID --reason TEXT [--current-binding SHA --apply] [--json] (owner-context only; preserves the old unknown execution as quarantined_uncredited after a separately authorized verification has current check, review and acceptance)",
         ["goal", "recover"] => "goal recover --source-config PATH [--historical-fixtures WORK_ID,...] [--endpoint-configs JSON] --request-id ID --reason TEXT [--current-binding SHA --apply] [--json] (owner-context only; preview derives exact Source members and retained historical fixtures; apply repeats the exact selection; replay the same request ID and binding after a lost reply)",
         ["init"] => "init [--mode local|portable|auto] [--root ROOT] [--project-id ID] [--control-root ROOT] [--state-root ROOT] [--skip-skills | --refresh-skills] [--with-coffee] (creates project configuration and managed guidance; review placement and boundaries before use)",
         ["update"] => "update (checks for a stable release and may replace the current executable; an existing regular binary is required for rollback)",
@@ -116,6 +117,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (read-only preview or blocked unknown-termination diagnostic; configured Lead attests exact known-ended storage failure only; never reruns a check)",
+        ["work", "quarantine"] => "work quarantine OLD_WORK --feature-config CONFIG --feature-work WORK --artifact PATH [--artifact-root state|product] [--owner-config OWNER_CONFIG] --request-id ID --reason TEXT --current-binding SHA [--apply] [--json] (Lead-owned preview; accepted current isolation plan authorizes one separate verification with no mutation, replan, replacement or old credit)",
         ["work", "replace-check"] => "work replace-check WORK (--check-command COMMAND | --pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]) --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; Lead-owned continuation preserves predecessor, final-check policy for a diagnostic replacement, and spent accounting)",
         ["work", "usage"] => "work usage WORK [--json] [--config CONFIG] | work usage WORK --apply [--json] [--config CONFIG] < NUMERIC_JSON",
         ["work", "file-serve"] => "work file-serve SESSION --config CONFIG (host-owned stdio MCP transport)",

@@ -262,6 +262,19 @@ fn legacy_unknown_diagnostic_preserves_blocked_bytes_and_refuses_all_apply_credi
         .join(".exitbind/runs/unknown-successor.jsonl")
         .exists());
     let retained = fs::read(f.ledger(&work)).unwrap();
+    // The supported descriptor must agree with the supersession refusal,
+    // including after the Lead makes the unknown observation terminal.
+    let detail = f.ok(&["work", "detail", &work, "--json"], b"");
+    assert_eq!(
+        detail["actionForms"]["state"],
+        "blocked_unresolved_check_observation"
+    );
+    assert_eq!(detail["actionForms"]["choices"], json!([]));
+    assert!(detail["actionForms"]["mechanicalAction"].is_null());
+    assert_eq!(detail["actionForms"]["diagnostic"]["readOnly"], true);
+    assert_eq!(detail["actionForms"]["diagnostic"]["inspectionOnly"], true);
+    assert_eq!(detail["effectiveAction"]["exists"], false);
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), retained);
     let diagnostic = f.ok(&["work", "recover-check", &work, "--json"], b"");
     assert_eq!(diagnostic["effect"], "no-change");
     assert_eq!(diagnostic["status"], "historical_unknown_termination");

@@ -130,8 +130,10 @@ impl RunSnapshot {
                 },
                 |warning| json!([warning]),
             );
-        if let Some(observation) = state.get("checkObservation").filter(|v| v.is_object()) {
-            result["checkObservation"] = observation.clone();
+        for field in ["checkObservation", "quarantineVerification"] {
+            if let Some(value) = state.get(field).filter(|v| v.is_object()) {
+                result[field] = value.clone();
+            }
         }
         result["ledgerSha256"] = json!(self.ledger_sha256.clone());
         if state.get("checkPolicy").is_some() {
@@ -153,8 +155,10 @@ impl RunSnapshot {
     pub(crate) fn status_view(&self) -> Result<Value, String> {
         let mut status =
             crate::run_value::status(&self.state, Some(self.artifact_current.clone()?))?;
-        if let Some(observation) = self.state.get("checkObservation").filter(|v| v.is_object()) {
-            status["checkObservation"] = observation.clone();
+        for field in ["checkObservation", "quarantineVerification"] {
+            if let Some(value) = self.state.get(field).filter(|v| v.is_object()) {
+                status[field] = value.clone();
+            }
         }
         status["warnings"] = self
             .drift

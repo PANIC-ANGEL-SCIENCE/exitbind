@@ -111,6 +111,21 @@ apply reply is lost, repeat the same
 request ID, arguments, and original binding to recover the saved event; status
 is recomputed separately.
 
+`work quarantine OLD_WORK` is a distinct, Lead-owned route for one separately
+reviewed verification while preserving a current durably failed unknown
+observation, including on a blocked Work.
+It requires `--feature-config`, `--feature-work`, the exact frozen `--artifact`,
+`--request-id`, `--reason`, and the original Work's `--current-binding`; preview
+prints the apply command. The accepted plan includes an explicit typed basis for
+the new verification; the original Work's legacy basis is preserved without
+retrofit. The new Work has no mutation, replan or replacement allowance and
+needs its own actual check, required review and Lead acceptance.
+Then `goal quarantine OLD_WORK --source-config CONFIG --verification-work WORK
+--request-id ID --reason TEXT` previews an owner-bound, uncredited Goal residual.
+Neither operation resolves or credits the original unknown execution. See
+[separate verification](docs/check-recovery.md#verify-a-separate-artifact-while-preserving-an-unknown-execution)
+for the frozen plan and reader requirements.
+
 ## First run details
 
 `check` validates the configuration, profiles, and declared boundaries. `brief`

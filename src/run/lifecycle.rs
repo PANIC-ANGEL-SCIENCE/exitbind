@@ -100,6 +100,7 @@ pub(crate) fn start_with_policy_and_pre_return(
         pre_return_timeout_ms,
         pre_return_capture_bytes,
         None,
+        None,
     )
 }
 
@@ -143,6 +144,36 @@ pub(crate) fn start_with_continuation(
         pre_return_timeout_ms,
         pre_return_capture_bytes,
         Some(association),
+        None,
+    )
+}
+
+/// Start a run using verification authority that was constructed by the
+/// quarantine admission protocol. The ordinary Run interface cannot attach
+/// this marker.
+pub(crate) fn start_with_quarantine_verification(
+    loaded: &Loaded,
+    verified: &super::quarantine::admission::Verified,
+) -> Result<Value, String> {
+    start_with_association(
+        loaded,
+        verified.workflow(),
+        verified.goal(),
+        verified.ledger(),
+        None,
+        None,
+        Some(verified.command()),
+        Some("local_report"),
+        None,
+        None,
+        None,
+        Some(verified.basis()),
+        Some("required"),
+        None,
+        None,
+        None,
+        None,
+        Some(verified),
     )
 }
 
@@ -165,6 +196,7 @@ fn start_with_association(
     pre_return_timeout_ms: Option<&str>,
     pre_return_capture_bytes: Option<&str>,
     association: Option<&crate::project::continuation::control::VerifiedAssociation>,
+    quarantine: Option<&super::quarantine::admission::Verified>,
 ) -> Result<Value, String> {
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -241,6 +273,17 @@ fn start_with_association(
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let event = with_lock(&path, || {
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
+        if let Some(verified) = quarantine {
+            if fs::read_to_string(&loaded.path).map_err(|error| error.to_string())? != loaded.source
+                || hash::text(&loaded.source) != verified.marker()["verification"]["configSha256"]
+                || crate::run::inputs::fingerprint(loaded)?
+                    != verified.marker()["verification"]["inputsSha256"]
+            {
+                return Err(
+                    "quarantine verification inputs or configuration changed before start".into(),
+                );
+            }
+        }
         let continuation = association
             .map(|association| {
                 crate::project::continuation::runtime::validate_start_association(
@@ -307,8 +350,10 @@ fn start_with_association(
         }
         if let Some(extension) = &extension {
             value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
-            if check_policy.is_some() {
+            if check_policy.is_some() && quarantine.is_none() {
                 value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+            }
+            if check_policy.is_some() {
                 value["checkObservationProtocol"] = json!(crate::run::check_observation::PROTOCOL);
             }
             if let Some(basis) = &extension.basis {
@@ -328,7 +373,11 @@ fn start_with_association(
                     .map(|x| x.sha256.as_str()),
             );
         }
-        if version >= 6 {
+        if let Some(verified) = quarantine {
+            value["quarantineVerification"] = verified.marker().clone();
+            crate::run::quarantine::validate_start(&value, 1)?;
+        }
+        if version >= 6 && quarantine.is_none() {
             value["governor"] = json!({
                 "version": crate::context::GOVERNOR_VERSION,
                 "budget": crate::context::HARD_ITERATION_BUDGET,
@@ -585,6 +634,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "reviewPolicy",
         "governor",
         "projectContinuation",
+        "quarantineVerification",
     ];
     if event["action"] != "start" {
         return Err("Work ledger does not begin with a start event".into());
@@ -599,6 +649,51 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         }
     }
     Ok(hash::value(&Value::Object(projection)))
+}
+
+pub(crate) fn quarantine_start_intent_sha256(
+    loaded: &Loaded,
+    workflow: &str,
+    goal: &str,
+    command: &str,
+    basis: &str,
+    marker: &Value,
+) -> Result<String, String> {
+    let mut plan = crate::config::boundary::apply(
+        loaded,
+        selected_plan(envelope::plan(loaded, workflow, goal)?)?,
+        None,
+    )?;
+    crate::project::architecture::bind_plan(loaded, &mut plan)?;
+    let policy = crate::run_value::policy_from_cli(Some(command), Some("local_report"))?
+        .ok_or("quarantine verification check policy is missing")?;
+    let extension = extension_from_cli(Some(basis), Some("required"))?
+        .ok_or("quarantine verification basis is missing")?;
+    let mut value = json!({
+        "version":8,"kind":"run","producer":crate::producer::evidence_for_version(8),
+        "action":"start","workflow":workflow,"goal":goal,
+        "configSha256":hash::text(&loaded.source),"plan":plan,
+        "checkPolicy":policy.value(),"basisProtocol":crate::kernel::basis::PROTOCOL_VERSION,
+        "checkObservationProtocol":crate::run::check_observation::PROTOCOL,
+        "basis":extension.basis.ok_or("quarantine verification basis is missing")?.value(),
+        "reviewPolicy":extension.review.value(),"quarantineVerification":marker
+    });
+    let verification_checker_sources = if loaded.verification_preparation.is_some() {
+        Some(crate::run_value::verification_checker_sources(
+            loaded,
+            Some(&policy),
+            None,
+        )?)
+    } else {
+        None
+    };
+    if loaded.verification_preparation.is_some() {
+        crate::run::verification_preparation::add_start_fields(
+            &mut value,
+            Some(verification_checker_sources.as_deref().unwrap_or_default()),
+        );
+    }
+    start_event_intent_sha256(&value)
 }
 
 /// Record the owner-controlled review choice for the current marked run.
@@ -617,6 +712,7 @@ pub fn review_policy(
     with_lock(&path, || {
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        crate::run::quarantine::refuse_mutation(&state, "review-policy change")?;
         crate::project::continuation::runtime::guard_review_policy(loaded, &state, decision)?;
         let drift = action_drift_warning(loaded, &state)?;
         warn_drift(drift.as_ref());

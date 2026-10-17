@@ -1,0 +1,278 @@
+//! Acquisition and validation of the immutable old and verification Work evidence.
+
+use super::{decision_digest, Endpoint, Residual};
+use crate::{config::Loaded, evidence::hash};
+use serde_json::{json, Value};
+
+fn events_for(loaded: &Loaded, work_id: &str) -> Result<(Vec<Value>, String, String), String> {
+    let ledger = crate::work::resolve(loaded, work_id)?;
+    let (_, events, bytes) = crate::run::ledger::load(loaded, &ledger)?;
+    Ok((events, ledger, bytes))
+}
+
+fn endpoint(
+    loaded: &Loaded,
+    member: &super::super::journey::Member,
+    endpoint_work: &str,
+    events: &[Value],
+    bytes: &str,
+    state: &Value,
+    check: Option<&Value>,
+    review: Option<&Value>,
+    acceptance: Option<&Value>,
+) -> Result<Endpoint, String> {
+    let start = events.first().ok_or("quarantine Work ledger is empty")?;
+    let head = events.last().ok_or("quarantine Work ledger is empty")?;
+    let artifact = state["submissions"]
+        .as_array()
+        .and_then(|items| items.iter().rev().find(|item| item["role"] == "worker"))
+        .map(|item| item["artifact"]["sha256"].clone())
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .ok_or("quarantine Work has no worker artifact")?;
+    Ok(Endpoint {
+        work: endpoint_work.to_owned(),
+        member_sha256: super::super::journey::member_identity(member),
+        start_event_sha256: start["eventSha256"]
+            .as_str()
+            .ok_or("Work start hash missing")?
+            .into(),
+        head_event_sha256: head["eventSha256"]
+            .as_str()
+            .ok_or("Work head hash missing")?
+            .into(),
+        ledger_sha256: hash::text(bytes),
+        config_sha256: hash::text(&loaded.source),
+        run_id: start["runId"]
+            .as_str()
+            .ok_or("Work run identity missing")?
+            .into(),
+        subject_sha256: state["subject"]["sha256"]
+            .as_str()
+            .ok_or("Work subject hash missing")?
+            .into(),
+        artifact_sha256: artifact,
+        inputs_sha256: state["inputsSha256"]
+            .as_str()
+            .ok_or("Work inputs hash missing")?
+            .into(),
+        command_sha256: start["checkPolicy"]["commandSha256"]
+            .as_str()
+            .ok_or("Work check command hash missing")?
+            .into(),
+        check_event_sha256: check
+            .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
+        review_event_sha256: review
+            .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
+        acceptance_event_sha256: acceptance
+            .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
+    })
+}
+
+pub(super) fn exact_quarantine_evidence(
+    source: &Loaded,
+    old_member: &super::super::journey::Member,
+    old_work: &str,
+    verification_member: &super::super::journey::Member,
+) -> Result<(Residual, Value), String> {
+    let (old_events, old_ledger, old_bytes) = events_for(source, old_work)?;
+    let old_start = old_events.first().ok_or("predecessor ledger is empty")?;
+    let old_head = old_events.last().ok_or("predecessor ledger is empty")?;
+    let old_state = crate::run::state::reduce(&old_events)?;
+    if old_state.get("quarantineVerification").is_some()
+        || !matches!(old_state["status"].as_str(), Some("running" | "blocked"))
+        || !crate::run::state::check_observation::unresolved(&old_state)
+        || old_state["checkObservation"]["state"] != "failed"
+        || old_state["checkObservation"]["facts"]["termination"] != "unknown"
+    {
+        return Err("predecessor is no longer the exact unresolved check observation".into());
+    }
+    let observation_admission = old_state["checkObservation"]["eventSha256"]
+        .as_str()
+        .ok_or("predecessor failed observation has no admission identity")?;
+    let admission = old_events
+        .iter()
+        .find(|event| {
+            event["action"] == "check_observation" && event["eventSha256"] == observation_admission
+        })
+        .ok_or("predecessor failed observation admission event is missing")?;
+    if old_events.iter().any(|event| {
+        (event["action"] == "check" && event["observationEventSha256"] == admission["eventSha256"])
+            || (event["action"] == "check_observation_recovered"
+                && event["observation"]["admissionEventSha256"] == admission["eventSha256"])
+    }) {
+        return Err(
+            "current unknown observation admission already has a committed check or recovery"
+                .into(),
+        );
+    }
+    let old_canonical_ledger =
+        crate::run::ledger::ledger_path(&source.state_root, &old_ledger, false)?;
+    if crate::run::ledger::valid_claim(&crate::run::ledger::claim_path(&old_canonical_ledger))?
+        .is_some()
+    {
+        return Err("unknown predecessor has already been superseded".into());
+    }
+    let failure = old_events.iter().rev().find(|event| {
+        event["action"] == "check_observation_failed"
+            && event["observation"]["admissionEventSha256"] == admission["eventSha256"]
+            && event["observation"]["facts"]["termination"] == "unknown"
+    });
+    let failure = failure.ok_or("predecessor failed unknown observation event is missing")?;
+    let observation = &failure["eventSha256"];
+    let (verification_events, _verification_ledger, verification_bytes) =
+        events_for(source, &verification_member.work)?;
+    let start = verification_events
+        .first()
+        .ok_or("verification ledger is empty")?;
+    let marker = start
+        .get("quarantineVerification")
+        .ok_or("verification Work has no quarantine marker")?;
+    crate::run::quarantine::validate_marker(marker, 1)?;
+    if marker["oldCredited"] != false
+        || marker["oldReset"] != false
+        || marker["predecessor"]["work"] != old_work
+        || marker["predecessor"]["startEventSha256"] != old_start["eventSha256"]
+        || marker["predecessor"]["headEventSha256"] != old_head["eventSha256"]
+        || marker["predecessor"]["ledger"] != old_ledger
+        || marker["predecessor"]["ledgerSha256"] != hash::text(&old_bytes)
+        || marker["predecessor"]["admissionEventSha256"] != admission["eventSha256"]
+        || &marker["predecessor"]["observationEventSha256"] != observation
+        || marker["predecessor"]["runId"] != old_start["runId"]
+        || marker["predecessor"]["configSha256"] != old_start["configSha256"]
+        || marker["predecessor"]["configSha256"] != hash::text(&source.source)
+    {
+        return Err("verification marker does not bind the exact unresolved predecessor".into());
+    }
+    let old_accounting = json!({
+        "governor": crate::run::carry::accounting(&old_state, &old_start["governor"])? ,
+        "usageAccount": crate::session_goal::usage::details_for_work(source, old_work),
+    });
+    if marker["predecessor"]["accounting"] != old_accounting {
+        return Err("predecessor accounting changed since quarantine verification".into());
+    }
+
+    let new_state = crate::run::state::reduce(&verification_events)?;
+    crate::run::artifact::assert_current(source, &new_state)?;
+    let result = crate::run::result_ref_evidence(source, &verification_member.work)?
+        .ok_or("verification result evidence is unavailable")?;
+    let current_inputs = crate::run::inputs::fingerprint(source)?;
+    if new_state["status"] != "accepted"
+        || new_state["inputsSha256"].as_str() != Some(current_inputs.as_str())
+        || !result.accepted
+        || !result.artifact_current
+        || result.drift.is_some()
+        || result.inputs_current != Some(true)
+        || start["configSha256"] != marker["verification"]["configSha256"]
+        || start["configSha256"] != hash::text(&source.source)
+        || marker["verification"]["inputsSha256"] != current_inputs
+    {
+        return Err("verification Work is not currently accepted on current artifact, inputs and configuration".into());
+    }
+    let exit = crate::run::gate::exit::ExitState::reduce_with_artifact(&new_state, Some(true))?;
+    if exit.status != "accepted"
+        || !exit.lead_accepted()
+        || !exit.review_required
+        || !exit.reviewer_approved()
+    {
+        return Err(
+            "verification Work lacks its current independent review and Lead acceptance".into(),
+        );
+    }
+    let check = verification_events
+        .iter()
+        .rev()
+        .find(|event| event["action"] == "check")
+        .filter(|event| {
+            event["acquisition"] == "observed"
+                && (event["exitCode"].as_i64() == Some(0)
+                    || event["result"]["code"].as_i64() == Some(0))
+        })
+        .ok_or("verification Work has no actual successful check")?;
+    let review = verification_events
+        .iter()
+        .rev()
+        .find(|event| {
+            event["action"] == "submit"
+                && event["role"] == "reviewer"
+                && event["outcome"] == "approved"
+        })
+        .ok_or("verification Work has no independent reviewer approval")?;
+    let acceptance = verification_events
+        .iter()
+        .rev()
+        .find(|event| {
+            event["action"] == "submit" && event["role"] == "lead" && event["outcome"] == "accepted"
+        })
+        .ok_or("verification Work has no Lead acceptance")?;
+    let subject = new_state["subject"]["sha256"]
+        .as_str()
+        .ok_or("verification subject hash is missing")?;
+    if check["subjectSha256"] != subject
+        || review["subjectSha256"] != subject
+        || acceptance["subjectSha256"] != subject
+    {
+        return Err("verification check, reviewer approval and Lead acceptance do not bind the current subject".into());
+    }
+    let old_endpoint = endpoint(
+        source,
+        old_member,
+        old_work,
+        &old_events,
+        &old_bytes,
+        &old_state,
+        Some(failure),
+        None,
+        None,
+    )?;
+    let verification_endpoint = endpoint(
+        source,
+        verification_member,
+        &verification_member.work,
+        &verification_events,
+        &verification_bytes,
+        &new_state,
+        Some(check),
+        Some(review),
+        Some(acceptance),
+    )?;
+    if marker["verification"]["inputsSha256"] != verification_endpoint.inputs_sha256
+        || marker["verification"]["commandSha256"] != verification_endpoint.command_sha256
+    {
+        return Err(
+            "verification result differs from its immutable quarantine artifact, inputs or command"
+                .into(),
+        );
+    }
+    let source_config = super::super::recovery::config_binding_for_current(source)?;
+    let mut residual = Residual {
+        request_id: marker["requestId"]
+            .as_str()
+            .ok_or("quarantine request id missing")?
+            .to_owned(),
+        request_sha256: String::new(),
+        reason: marker["reason"]
+            .as_str()
+            .ok_or("quarantine reason missing")?
+            .to_owned(),
+        source_config,
+        old_member: old_member.clone(),
+        old: old_endpoint,
+        verification: verification_endpoint,
+        verified_artifact_sha256: marker["verification"]["artifactSha256"]
+            .as_str()
+            .ok_or("quarantine verified artifact hash missing")?
+            .to_owned(),
+        verification_environment_sha256: marker["verification"]["environmentSha256"]
+            .as_str()
+            .ok_or("quarantine verification environment hash missing")?
+            .to_owned(),
+        verification_decision_sha256: marker["decisionSha256"]
+            .as_str()
+            .ok_or("quarantine decision hash missing")?
+            .to_owned(),
+        old_accounting,
+        decision_sha256: String::new(),
+    };
+    residual.decision_sha256 = decision_digest(&residual)?;
+    Ok((residual, marker.clone()))
+}

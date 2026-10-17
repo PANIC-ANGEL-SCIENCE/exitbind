@@ -23,6 +23,7 @@ mod run_cli;
 mod status;
 mod work;
 mod work_check_replacement;
+mod work_quarantine;
 
 use args::Arguments;
 use run_cli::map_run_error;

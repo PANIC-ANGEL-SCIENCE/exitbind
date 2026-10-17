@@ -136,6 +136,7 @@ pub(crate) fn permit_for_assignment(
         }
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        crate::run::quarantine::refuse_mutation(&state, "mutation")?;
         let drift = action_drift_warning(loaded, &state)?;
         warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
@@ -364,6 +365,7 @@ pub(crate) fn replan_for_assignment(
         }
         let (_, events, source) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        crate::run::quarantine::refuse_mutation(&state, "replan")?;
         let drift = action_drift_warning(loaded, &state)?;
         warn_drift(drift.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;

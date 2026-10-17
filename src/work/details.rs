@@ -129,6 +129,9 @@ pub(super) fn attach(
         }
     }
     let view = snapshot.inspect_view();
+    if let Some(marker) = view.get("quarantineVerification") {
+        next["packet"]["quarantineVerification"] = marker.clone();
+    }
     let subject = if next["packet"]["context"]["subject"].is_object() {
         next["packet"]["context"]["subject"].clone()
     } else {

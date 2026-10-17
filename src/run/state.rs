@@ -81,6 +81,7 @@ pub fn reduce(events: &[Value]) -> Result<Value, String> {
     let mut request_scopes = BTreeSet::new();
     for (index, event) in events.iter().enumerate().skip(1) {
         validate_event(event, events.get(index - 1), index + 1)?;
+        crate::run::quarantine::validate_event(&state, event)?;
         if event["runId"] != first["runId"] {
             return Err(format!(
                 "invalid run ledger line {}: runId changed",
@@ -200,6 +201,7 @@ fn reject_unknown(
             allowed.push("governorCarry");
             allowed.push("governorCarrySha256");
             allowed.push("checkReplacement");
+            allowed.push("quarantineVerification");
             crate::run::verification_preparation::append_allowed_fields(&mut allowed);
         }
         return object
@@ -262,6 +264,7 @@ fn reject_unknown(
             allowed.push("basisSha256");
             allowed.push("reviewDecisionSha256");
             allowed.push("disposition");
+            allowed.push("quarantineVerificationAck");
         }
         if version >= 6 {
             allowed.push("governorEvent");

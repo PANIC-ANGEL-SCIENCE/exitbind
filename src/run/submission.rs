@@ -433,6 +433,12 @@ where
             event_value["governorEvent"] =
                 crate::context::event(previous_governor.as_ref(), mutation);
         }
+        if let Some(marker) = state.get("quarantineVerification") {
+            if assignment["role"] == "worker" && outcome == "completed" {
+                event_value["quarantineVerificationAck"] =
+                    crate::run::quarantine::acknowledgement(marker, &event_value)?;
+            }
+        }
         let event = run_state::make_event(event_value);
         let mut all = events;
         all.push(event.clone());

@@ -1703,8 +1703,13 @@
     },
     "tests/check_observation_recovery/process_containment.rs": {
       "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
-      "currentSha256": "16157e199efeec237ca14fd6a5d578107b6dd93410624085e78df4bda567b58c",
-      "reason": "Grouped self-reexec selectors now use the actual source-module path emitted by libtest, excluding the Cargo target; original subprocess guard and assertions remain."
+      "currentSha256": "25085321e312d138e67e2229a4ce00194bce0c2c7afbc2ce999a3faa64378e02",
+      "reason": "Grouped self-reexec selectors use the actual source-module path; added read-only Work-detail assertions prove the unknown diagnostic has no apply choices and the ledger bytes remain unchanged after unknown terminalization. Existing subprocess guards remain."
+    },
+    "tests/check_observation_recovery.rs": {
+      "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
+      "currentSha256": "e0b3ccf3dc73b655c2b948611bea8bcf58db716b25e5e620b5a7a5ecfbe8f83d",
+      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain."
     },
     "tests/observe_check/timeouts_and_drift.rs": {
       "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",

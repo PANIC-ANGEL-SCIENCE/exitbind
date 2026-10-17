@@ -271,6 +271,7 @@ pub(super) fn supersede_with_policy_and_recovery(
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, old_events, old_source) = load_at(loaded, &old)?;
         let old_state = run_state::reduce(&old_events)?;
+        crate::run::quarantine::refuse_mutation(&old_state, "supersession or replacement")?;
         if check_replacement.is_some()
             && old_events
                 .last()

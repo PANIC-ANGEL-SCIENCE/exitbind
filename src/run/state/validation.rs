@@ -156,6 +156,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     }
     validate_basis_extension(event, line, version)?;
     crate::run::check_replacement::validate_start(event, line)?;
+    crate::run::quarantine::validate_start(event, line)?;
     let plan = &event["plan"];
     if let Some(selection) = plan.get("architectureContract") {
         crate::project::architecture::selection(selection)
@@ -254,7 +255,8 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     if let Some(marker) = event.get("checkObservationProtocol") {
         if version != 8
             || marker != crate::run::check_observation::PROTOCOL
-            || event.get("recoveryProtocol").is_none()
+            || (event.get("recoveryProtocol").is_none()
+                && event.get("quarantineVerification").is_none())
         {
             return Err("check observation protocol requires checked governed v8 recovery".into());
         }
