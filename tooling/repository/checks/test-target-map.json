@@ -1738,7 +1738,7 @@
     },
     "tests/work_check_replacement/refusal_and_native_lineage.rs": {
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
-      "currentSha256": "97de94ccd2d50e2359ee42bbb79afc224526fb7910d226c23f595735a3fa7c23",
+      "currentSha256": "8396a4ececfe2793731d24deda11346c9850959c8c70bb0c20308c6a3c303f83",
       "reason": "Preserve all8 original cases byte-for-byte and add2 regression cases for unrelated missing historical configuration and required selected-ancestor configuration. New helpers use emitted role forms, full stdin artifacts and isolated native sessions; no original refusal or lineage assertion is removed."
     }
   },

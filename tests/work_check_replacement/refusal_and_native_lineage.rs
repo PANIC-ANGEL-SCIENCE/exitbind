@@ -498,7 +498,7 @@ fn unrelated_missing_historical_config_does_not_poison_selected_lineage() {
     );
     assert!(f.ledger(&unrelated).is_file());
     let goal_journal = native_session_root(&store, session).join(".exitbind/session-goal.jsonl");
-    let latest: Value = fs::read_to_string(&goal_journal)
+    let latest: Value = fs::read_to_string(goal_journal)
         .unwrap()
         .lines()
         .last()
@@ -594,7 +594,7 @@ fn missing_selected_ancestor_config_still_refuses_lineage() {
 
     let (work, _) = native_failed_work_with_config(&f, session, &store, &historical_path);
     let goal_journal = native_session_root(&store, session).join(".exitbind/session-goal.jsonl");
-    let latest: Value = fs::read_to_string(&goal_journal)
+    let latest: Value = fs::read_to_string(goal_journal)
         .unwrap()
         .lines()
         .last()

@@ -230,7 +230,7 @@ fn aggregate_capacity_refuses_overflow_before_changing_the_file() {
 fn secure_reader_rejects_files_over_the_journal_limit() {
     let fixture = Fixture::new();
     let selected = prepare(&fixture.loaded, &fixture.relative).unwrap();
-    fs::write(&selected.path, vec![b'x'; LIMIT as usize + 1]).unwrap();
+    fs::write(selected.path, vec![b'x'; LIMIT as usize + 1]).unwrap();
     assert!(read(&fixture.loaded, &fixture.relative).is_err());
 }
 
