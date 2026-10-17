@@ -437,7 +437,7 @@ mod tests {
                 "--config".into(),
                 config.to_owned(),
             ],
-            &config,
+            config,
         );
     }
 
