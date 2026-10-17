@@ -8,9 +8,47 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "goal requires prepare, incorporate, require, cover, assign, close, status, or usage",
+        "goal requires prepare, incorporate, require, cover, assign, close, recover, status, or usage",
     )?;
     match action {
+        "recover" => {
+            args::assert_options(
+                "goal recover",
+                a,
+                &[
+                    "config",
+                    "project",
+                    "source-config",
+                    "historical-fixtures",
+                    "endpoint-configs",
+                    "request-id",
+                    "reason",
+                    "current-binding",
+                    "apply",
+                    "json",
+                ],
+            )?;
+            args::assert_positionals("goal recover", a, 1)?;
+            if a.flags.contains_key("project") {
+                return Err("goal recover is available only in the original native Goal owner context".into());
+            }
+            let scope = journal_scope(l, a, false)?;
+            scope.require_owner()?;
+            crate::session_goal::recovery::recover(
+                &scope.root,
+                l,
+                crate::session_goal::recovery::Request {
+                    source_config: option(a, "source-config", "goal recover requires --source-config PATH")?,
+                    historical_fixtures: a.options.get("historical-fixtures").map(String::as_str).unwrap_or(""),
+                    endpoint_configs: a.options.get("endpoint-configs").map(String::as_str),
+                    request_id: option(a, "request-id", "goal recover requires --request-id ID")?,
+                    reason: option(a, "reason", "goal recover requires --reason TEXT")?,
+                    apply: a.flags.contains_key("apply"),
+                    current_binding: a.options.get("current-binding").map(String::as_str),
+                },
+            )
+            .and_then(|value| print_json(&value))
+        }
         "prepare" => {
             args::assert_options(
                 "goal prepare",
@@ -354,7 +392,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         }
         "status" => status::goal_status(l, a),
         _ => Err(
-            "goal requires prepare, incorporate, require, cover, assign, close, status, or usage"
+            "goal requires prepare, incorporate, require, cover, assign, close, recover, status, or usage"
                 .into(),
         ),
     }

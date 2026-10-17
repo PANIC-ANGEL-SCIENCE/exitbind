@@ -93,14 +93,14 @@ pub(crate) fn validate_governed_candidate(
                     let reference = reference
                         .as_str()
                         .ok_or_else(|| format!("{category} has malformed result references"))?;
-                    close_result_ref(loaded, reference).map_err(|error| {
+                    close_result_ref(loaded, previous, reference).map_err(|error| {
                         format!("{category} result reference is stale or unavailable: {error}")
                     })?;
                 }
             }
         }
     }
-    close_result_ref(loaded, result_ref)
+    close_result_ref(loaded, previous, result_ref)
 }
 
 /// Close a goal from explicit Lead-reported direct facts.  A governed result
@@ -211,6 +211,7 @@ pub(crate) fn validate_direct_candidate(
                 for reference in refs {
                     close_result_ref(
                         loaded,
+                        previous,
                         reference
                             .as_str()
                             .ok_or_else(|| format!("{category} has malformed result references"))?,
@@ -225,7 +226,7 @@ pub(crate) fn validate_direct_candidate(
         );
     }
     if let Some(result_ref) = result_ref {
-        close_result_ref(loaded, result_ref)?;
+        close_result_ref(loaded, previous, result_ref)?;
     }
     current_inputs(loaded)
 }

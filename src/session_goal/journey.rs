@@ -15,6 +15,7 @@ use std::{
 
 /// Frozen integration-marker protocol used inside Work start bases.
 pub(crate) const PROTOCOL: u64 = 1;
+pub(crate) const RECOVERY_INTEGRATION_PROTOCOL: u64 = 2;
 /// Membership v2 adds pre-start admissions. Old readers that understand v1
 /// therefore refuse an in-flight admission instead of treating it as ready.
 const MEMBERSHIP_PROTOCOL: u64 = 2;
@@ -29,22 +30,22 @@ const RESERVED_PREFIX: &str = "exitbind.session-journey-integration.";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Member {
-    work: String,
-    start_event_sha256: String,
-    parent_goal_id: String,
-    parent_observed_goal_event_sha256: String,
-    work_goal_sha256: String,
-    host: String,
-    session_key: String,
-    owner_identity_sha256: String,
-    owner_project_id: Option<String>,
-    project_identity_sha256: String,
-    local_identity_sha256: String,
-    config_path: String,
-    config_sha256: String,
-    product_root: String,
-    state_root: String,
+pub(super) struct Member {
+    pub(super) work: String,
+    pub(super) start_event_sha256: String,
+    pub(super) parent_goal_id: String,
+    pub(super) parent_observed_goal_event_sha256: String,
+    pub(super) work_goal_sha256: String,
+    pub(super) host: String,
+    pub(super) session_key: String,
+    pub(super) owner_identity_sha256: String,
+    pub(super) owner_project_id: Option<String>,
+    pub(super) project_identity_sha256: String,
+    pub(super) local_identity_sha256: String,
+    pub(super) config_path: String,
+    pub(super) config_sha256: String,
+    pub(super) product_root: String,
+    pub(super) state_root: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -127,6 +128,8 @@ struct Header {
     local_identity_sha256: String,
     #[serde(rename = "c")]
     config_binding_sha256: String,
+    #[serde(rename = "r", default, skip_serializing_if = "Option::is_none")]
+    recovery_sha256: Option<String>,
     #[serde(rename = "k")]
     checker: super::requirements::CheckerInput,
 }
@@ -134,7 +137,7 @@ struct Header {
 #[derive(Clone, Debug, Default)]
 pub(super) struct JourneyState {
     protocol: u64,
-    members: Vec<Member>,
+    pub(super) members: Vec<Member>,
     integrations: Vec<IntegrationEntry>,
     admissions: Vec<Admission>,
 }
@@ -157,6 +160,8 @@ pub(crate) struct Readiness {
     pub(crate) total: usize,
     pub(crate) current: usize,
     pub(crate) integrated: usize,
+    pub(crate) historical: usize,
+    pub(crate) historical_details: Vec<Value>,
     pub(crate) pending_admissions: usize,
     pub(crate) unresolved: Vec<Value>,
     pub(crate) integration_work: Option<String>,
@@ -172,7 +177,7 @@ impl Readiness {
             "protocol": self.protocol,
             "state": self.state,
             "reason": self.reason,
-            "members": {"total":self.total,"current":self.current,"integrationSupported":self.integrated},
+            "members": {"total":self.total,"current":self.current,"integrationSupported":self.integrated,"historical":self.historical,"retainedHistorical":self.historical_details},
             "pendingAdmissions": self.pending_admissions,
             "unresolved": self.unresolved,
             "integrationWork": self.integration_work,
@@ -485,13 +490,16 @@ pub(crate) fn member_for_work_with_lineage(
     let Some(journey) = state(record)? else {
         return Ok(None);
     };
+    if let Some(member) = member_for_work(record, work)? {
+        return Ok(Some(member));
+    }
     let candidates = journey
         .members
         .into_iter()
         .chain(journey.integrations.into_iter().map(|entry| entry.member))
         .collect::<Vec<_>>();
     for member in candidates {
-        if member.work == work || integration::descends_from_member(loaded, &member, work)? {
+        if integration::descends_from_member(loaded, &member, work)? {
             return serde_json::to_value(member)
                 .map(Some)
                 .map_err(|error| error.to_string());
@@ -526,6 +534,7 @@ pub(crate) fn validate_member_for_session(
         project_identity_sha256: member.project_identity_sha256.clone(),
         local_identity_sha256: member.local_identity_sha256.clone(),
         config_binding_sha256: config_binding(&original)?,
+        recovery_sha256: None,
         checker: super::requirements::CheckerInput {
             path: String::new(),
             sha256: String::new(),
@@ -581,8 +590,92 @@ pub(crate) fn transition(
     Ok(())
 }
 
-fn member_identity(member: &Member) -> String {
+pub(super) fn member_identity(member: &Member) -> String {
     hash::value(&serde_json::to_value(member).expect("journey member serializes"))
+}
+
+pub(super) fn validate_recovery_endpoint(selected: &Loaded, member: &Member) -> Result<(), String> {
+    let scope = super::native::scope(selected, false)?;
+    let session = scope
+        .session
+        .ok_or("recovery endpoint validation requires the original native session")?;
+    let owner = scope
+        .owner
+        .ok_or("recovery endpoint validation requires the fixed native Goal owner")?;
+    if member.host != session.host
+        || member.session_key != session.key
+        || member.owner_identity_sha256 != owner.identity_sha256
+        || member.owner_project_id != owner.project_id
+    {
+        return Err("recovery Source member belongs to a foreign native session or owner".into());
+    }
+    let original = integration::project_loaded(selected, member)?;
+    integration::validate_member_loaded(
+        &original,
+        member,
+        &Header {
+            protocol: PROTOCOL,
+            host: member.host.clone(),
+            session_key: member.session_key.clone(),
+            owner_identity_sha256: member.owner_identity_sha256.clone(),
+            owner_project_id: member.owner_project_id.clone(),
+            project_identity_sha256: member.project_identity_sha256.clone(),
+            local_identity_sha256: member.local_identity_sha256.clone(),
+            config_binding_sha256: config_binding(&original)?,
+            recovery_sha256: None,
+            checker: super::requirements::CheckerInput {
+                path: String::new(),
+                sha256: String::new(),
+            },
+        },
+    )?;
+    let _ = accepted_endpoint(selected, member)?;
+    Ok(())
+}
+
+pub(super) fn accepted_endpoint_for_recovery(
+    selected: &Loaded,
+    member: &Member,
+) -> Result<Option<String>, String> {
+    Ok(accepted_endpoint(selected, member)?.map(|endpoint| endpoint.work))
+}
+
+pub(super) fn current_recovery_integration(
+    loaded: &Loaded,
+    record: &Value,
+) -> Result<Option<(String, Loaded)>, String> {
+    let Some(context) = super::recovery::context(loaded, record)? else {
+        return Ok(None);
+    };
+    let journey = state(record)?.ok_or("native Goal journey membership is unavailable")?;
+    for entry in journey.integrations.iter().filter(|entry| {
+        entry.member.project_identity_sha256 == context.active.source_config.project_identity_sha256
+    }) {
+        let selected = crate::config::load(Some(&entry.member.config_path)).map_err(|error| {
+            format!("current integration configuration is unavailable; inspect the accepted integration: {error}")
+        })?;
+        let binding = super::recovery::config_binding_for_current(&selected)?;
+        if binding.product_root != context.active.source_config.product_root
+            || binding.state_root != context.active.source_config.state_root
+            || binding.project_identity_sha256
+                != context.active.source_config.project_identity_sha256
+            || binding.local_identity_sha256 != context.active.source_config.local_identity_sha256
+        {
+            continue;
+        }
+        let mut candidate = journey.clone();
+        candidate.integrations = vec![entry.clone()];
+        if let Some(work) = integration::current_integration_for_project(
+            &selected,
+            record,
+            &candidate,
+            &candidate.members,
+            &context.active.source_config.project_identity_sha256,
+        )? {
+            return Ok(Some((work, selected)));
+        }
+    }
+    Ok(None)
 }
 
 fn new_member(loaded: &Loaded, request: WorkLink<'_>) -> Result<Member, String> {
@@ -641,6 +734,7 @@ use integration::{
 mod tests;
 
 pub(crate) use integration::{append_work, prepare, reject_unprepared_markers};
+#[cfg(test)]
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{

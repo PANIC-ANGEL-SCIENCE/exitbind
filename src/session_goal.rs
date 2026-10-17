@@ -9,6 +9,7 @@ mod closure;
 mod continuity;
 pub(crate) mod journey;
 pub(crate) mod native;
+pub(crate) mod recovery;
 pub(crate) mod requirements;
 pub(crate) use closure::{
     close, close_direct, validate_direct_candidate, validate_governed_candidate,
@@ -129,6 +130,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
     }
     association::validate_record(value, line)?;
     journey::validate_record(value, line)?;
+    recovery::validate_record(value, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -200,12 +202,50 @@ pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     if let Some(previous) = previous {
         association::preserve_same_goal(previous, &mut value);
         journey::preserve_same_goal(previous, &mut value);
+        recovery::preserve_same_goal(previous, &mut value);
     }
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())
         .map_or(Value::Null, |hash| json!(hash));
     value["eventSha256"] = json!(crate::evidence::hash::value(&value));
     value
+}
+
+/// Append a native Goal record while allowing a recovery request to locate an
+/// earlier exact replay under the same journal lock. The ordinary mutation
+/// path deliberately keeps its latest-record-only contract.
+pub(crate) fn mutate_history<F>(root: &Path, operation: F) -> Result<Value, String>
+where
+    F: FnOnce(&[Value]) -> Result<Value, String>,
+{
+    let ledger = history_ledger(root)?;
+    crate::run::ledger::with_lock(&ledger, || {
+        let raw = raw_history(root)?;
+        let history = records_from_raw(raw.as_deref())?;
+        let record = operation(&history)?;
+        if history.iter().any(|saved| saved == &record) {
+            return Ok(record);
+        }
+        crate::run::ledger::append(
+            &ledger,
+            &record,
+            raw.is_none(),
+            raw.as_deref().unwrap_or_default(),
+        )?;
+        Ok(record)
+    })
+}
+
+pub(crate) fn with_history<T, F>(root: &Path, operation: F) -> Result<T, String>
+where
+    F: FnOnce(&[Value]) -> Result<T, String>,
+{
+    let ledger = history_ledger(root)?;
+    crate::run::ledger::with_lock(&ledger, || {
+        let raw = raw_history(root)?;
+        let history = records_from_raw(raw.as_deref())?;
+        operation(&history)
+    })
 }
 
 pub(crate) fn mutate<F>(root: &Path, operation: F) -> Result<Value, String>
@@ -762,14 +802,34 @@ fn direct_completion_inputs(
     Ok(Some((expected_inputs.to_owned(), current_inputs(loaded)?)))
 }
 
-fn close_result_ref(loaded: &crate::config::Loaded, reference: &str) -> Result<(), String> {
-    let Some(evidence) = crate::run::result_ref_evidence(loaded, reference)? else {
-        return Err("session goal result reference is not a governed result".into());
-    };
-    if !evidence.accepted || !evidence.artifact_current {
+fn close_result_ref(
+    loaded: &crate::config::Loaded,
+    record: &Value,
+    reference: &str,
+) -> Result<(), String> {
+    let (accepted, artifact_current, drift, inputs_current) =
+        if let Some(evidence) = recovery::result_ref_evidence(loaded, record, reference)? {
+            (
+                evidence.accepted,
+                evidence.artifact_current,
+                evidence.drift,
+                evidence.inputs_current,
+            )
+        } else {
+            let Some(evidence) = crate::run::result_ref_evidence(loaded, reference)? else {
+                return Err("session goal result reference is not a governed result".into());
+            };
+            (
+                evidence.accepted,
+                evidence.artifact_current,
+                evidence.drift,
+                evidence.inputs_current,
+            )
+        };
+    if !accepted || !artifact_current {
         return Err("session goal result reference is not a valid accepted result".into());
     }
-    warn_result_ref_drift(reference, evidence.drift.as_ref(), evidence.inputs_current);
+    warn_result_ref_drift(reference, drift.as_ref(), inputs_current);
     Ok(())
 }
 

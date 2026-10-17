@@ -7,6 +7,63 @@ pub(in crate::session_goal::journey) struct Endpoint {
     pub(in crate::session_goal::journey) identity_sha256: String,
 }
 
+/// Walk backward from the requested Work through its exact predecessor claims.
+/// This selects likely original members without opening unrelated historical
+/// project configurations. A matched member still goes through the complete
+/// forward validation in `descends_from_member` below.
+pub(in crate::session_goal::journey) fn ancestors(
+    selected: &Loaded,
+    requested_work: &str,
+) -> Result<BTreeSet<String>, String> {
+    const MAX_SUCCESSORS: usize = 64;
+    let mut current_work = requested_work.to_owned();
+    let mut seen = BTreeSet::new();
+    let mut ancestors = BTreeSet::new();
+    for depth in 0..=MAX_SUCCESSORS {
+        let relative = crate::work::resolve(selected, &current_work)?;
+        if !seen.insert(relative.clone()) {
+            return Err("journey member successor lineage contains a cycle".into());
+        }
+        ancestors.insert(current_work.clone());
+        let (ledger, events, _) = crate::run::ledger::load(selected, &relative)?;
+        let start = events
+            .first()
+            .ok_or("journey Work ledger has no start event")?;
+        if start["action"] != "start" || start["eventSha256"].as_str().is_none() {
+            return Err("journey Work start or predecessor identity is invalid".into());
+        }
+        if start["supersedes"].is_null() {
+            return Ok(ancestors);
+        }
+        if depth == MAX_SUCCESSORS {
+            return Err("journey member successor lineage exceeds the supported bound".into());
+        }
+        let predecessor_relative = start["supersedes"]["ledgerPath"]
+            .as_str()
+            .ok_or("journey successor start has no exact predecessor ledger")?;
+        let predecessor_work = crate::work::locator_for_ledger(predecessor_relative)
+            .ok_or("journey successor start names a non-Work predecessor")?;
+        if crate::work::resolve(selected, &predecessor_work)? != predecessor_relative {
+            return Err("journey successor start names a noncanonical predecessor ledger".into());
+        }
+        let (predecessor, predecessor_events, predecessor_source) =
+            crate::run::ledger::load(selected, predecessor_relative)?;
+        let claim_path = crate::run::ledger::claim_path(&predecessor);
+        let claim = crate::run::ledger::valid_claim(&claim_path)?
+            .ok_or("journey successor predecessor has no valid claim")?;
+        validate_predecessor_claim(
+            &claim,
+            predecessor_relative,
+            &predecessor_events,
+            &predecessor_source,
+        )?;
+        validate_successor(&claim, &relative, &ledger, &events)?;
+        ancestors.insert(predecessor_work.clone());
+        current_work = predecessor_work;
+    }
+    unreachable!("bounded lineage loop returns or errors")
+}
+
 /// Resolve the accepted end of a member's verified same-Goal successor chain.
 /// The saved member configuration and the explicitly selected current
 /// configuration are the only configuration identities accepted in a chain.
@@ -102,6 +159,9 @@ pub(in crate::session_goal::journey) fn descends_from_member(
     requested_work: &str,
 ) -> Result<bool, String> {
     const MAX_SUCCESSORS: usize = 64;
+    if !ancestors(selected, requested_work)?.contains(&member.work) {
+        return Ok(false);
+    }
     let original = super::project_loaded(selected, member)?;
     let original_config_sha256 = hash::text(&original.source);
     let selected_config_sha256 = hash::text(&selected.source);

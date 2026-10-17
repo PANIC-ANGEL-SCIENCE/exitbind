@@ -284,8 +284,10 @@ small verification needed to prove behavior.
   presentation, never the command or its acceptance evidence.
 - Measure startup and command latency before claiming the tool is lightweight.
 - Update the plan when scope, authority, or a stop gate changes.
-- Raise the minor version only when a product invariant changes or a previously
-  accepted counterexample becomes mechanically rejected.
+- Follow the [release series and compatibility policy](docs/release-version-policy.md).
+  Compatible features and fixes share its pre-1.0 series. Review changed public
+  invariants, newly rejected counterexamples and intentional compatibility breaks
+  against that policy before selecting a version.
 - Run `scripts/review-inventory.sh PREVIOUS_RELEASE` before a repository review.
   A second occurrence of a finding must add the mechanical gate that would have
   caught it; on a third occurrence, failure to adopt the gate is the finding.

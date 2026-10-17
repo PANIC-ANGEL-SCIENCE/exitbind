@@ -117,6 +117,18 @@ impl Fixture {
     }
 
     fn begin(&self, check: &str, review: bool) -> (String, Value) {
+        self.begin_with_review_policy(check, review.then_some("required"))
+    }
+
+    fn begin_with_policy(&self, check: &str, review_policy: &str) -> (String, Value) {
+        self.begin_with_review_policy(check, Some(review_policy))
+    }
+
+    fn begin_with_review_policy(
+        &self,
+        check: &str,
+        review_policy: Option<&str>,
+    ) -> (String, Value) {
         let mut args = vec![
             "work",
             "begin",
@@ -128,8 +140,8 @@ impl Fixture {
             "--proof-origin",
             "synthetic",
         ];
-        if review {
-            args.extend(["--review-policy", "required"]);
+        if let Some(review_policy) = review_policy {
+            args.extend(["--review-policy", review_policy]);
         }
         let value = self.json(&args, b"");
         let work = value["work"].as_str().unwrap().to_owned();
@@ -240,6 +252,84 @@ impl Fixture {
                 )
             })
     }
+
+    fn counting_check(&self, name: &str, exit_code: i32) -> String {
+        let directory = self.root.with_extension("action-form-counters");
+        fs::create_dir_all(&directory).unwrap();
+        let counter = directory.join(name);
+        let script = directory.join(format!("{name}.sh"));
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf x >> '{}'\nexit {exit_code}\n",
+                counter.display()
+            ),
+        )
+        .unwrap();
+        format!("sh {}", script.display())
+    }
+
+    fn check_count(&self, name: &str) -> Vec<u8> {
+        fs::read(self.root.with_extension("action-form-counters").join(name)).unwrap_or_default()
+    }
+
+    fn ledger_path(&self, work: &str) -> PathBuf {
+        self.root.join(format!(
+            ".exitbind/runs/work-{}.jsonl",
+            work.strip_prefix("smw_").unwrap()
+        ))
+    }
+
+    fn events(&self, work: &str) -> Vec<Value> {
+        fs::read_to_string(self.ledger_path(work))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn assert_observed_check_link(&self, work: &str) {
+        let events = self.events(work);
+        let start = events
+            .iter()
+            .find(|event| event["action"] == "start")
+            .unwrap();
+        assert_eq!(start["version"], 8);
+        assert_eq!(start["checkObservationProtocol"], 1);
+        let admission = events
+            .iter()
+            .find(|event| event["action"] == "check_observation")
+            .unwrap();
+        let check = events
+            .iter()
+            .find(|event| event["action"] == "check")
+            .unwrap();
+        let binding = &admission["observation"]["binding"];
+        assert!(
+            binding.is_object(),
+            "admission binding is malformed: {binding}"
+        );
+        for field in [
+            "targetEventSha256",
+            "subjectSha256",
+            "configSha256",
+            "checkCommandSha256",
+            "inputsSha256",
+        ] {
+            assert!(
+                binding[field].is_string(),
+                "missing binding {field}: {binding}"
+            );
+            assert!(check[field].is_string(), "missing check {field}: {check}");
+            assert_eq!(binding[field], check[field], "binding field {field}");
+        }
+        // Ordinary checks have no requirementId in either the binding or the
+        // check event; preserve that absence/null equivalence from JSON access.
+        assert!(binding["requirementId"].is_null());
+        assert!(check["requirementId"].is_null());
+        assert_eq!(binding["requirementId"], check["requirementId"]);
+        assert_eq!(check["observationEventSha256"], admission["eventSha256"]);
+    }
 }
 
 impl Drop for Fixture {
@@ -247,6 +337,7 @@ impl Drop for Fixture {
         if let Some(session) = &self.native_session {
             let _ = std::fs::remove_dir_all(&session.store);
         }
+        let _ = std::fs::remove_dir_all(self.root.with_extension("action-form-counters"));
         let _ = std::fs::remove_dir_all(&self.cleanup_root);
     }
 }
@@ -776,6 +867,346 @@ fn failed_check_form_offers_rework_without_reviewer_disposition() {
     );
     assert_eq!(reworked["next"]["role"], "worker");
     assert_eq!(fixture.next(&work)["packet"]["attempt"], 2);
+}
+
+#[test]
+fn stale_failed_check_exposes_only_current_lead_recovery() {
+    let fixture = Fixture::new("action-form-stale-failed");
+    let check = fixture.counting_check("failed", 1);
+    let (work, initial) = fixture.begin_with_policy(&check, "required");
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope recorded")],
+        b"scope\n",
+    );
+    let worker = fixture.next(&work);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt one\n",
+    );
+    assert_eq!(fixture.next(&work)["action"], "check");
+    let checked = fixture.call(&["work", "check", &work], b"");
+    assert!(
+        !checked.status.success(),
+        "failed check unexpectedly passed"
+    );
+    assert_eq!(fixture.check_count("failed"), b"x");
+    fixture.assert_observed_check_link(&work);
+    let current_lead = fixture.next(&work);
+    assert_eq!(current_lead["role"], "lead");
+    assert_eq!(current_lead["action"], "lead_decision");
+    let old_check = fixture
+        .events(&work)
+        .into_iter()
+        .find(|event| event["action"] == "check")
+        .unwrap();
+    let old_target = old_check["targetEventSha256"].as_str().unwrap();
+    fs::write(
+        fixture.root.join("input-drift.txt"),
+        "changed after check\n",
+    )
+    .unwrap();
+
+    let lead = fixture.next(&work);
+    assert_eq!(lead["action"], "lead_decision");
+    assert_eq!(lead["current"]["actionForm"]["state"], "failed_check");
+    assert_eq!(lead["staleEndedCheck"]["status"], "failed");
+    let labels = lead["current"]["actionForm"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        labels,
+        [
+            "rework",
+            "blocked",
+            "preview replacement of an explicitly defective frozen check"
+        ]
+    );
+    assert!(!labels.contains(&"accepted"));
+
+    let ledger = fixture.ledger_path(&work);
+    let before_replay = fs::read(&ledger).unwrap();
+    let old_target = old_target.to_owned();
+    let ledger_arg = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let replay = fixture.call(
+        &["run", "observe-check", &ledger_arg, "--target", &old_target],
+        b"",
+    );
+    assert!(
+        !replay.status.success(),
+        "stale replay unexpectedly succeeded"
+    );
+    assert_eq!(fixture.check_count("failed"), b"x");
+    assert_eq!(fs::read(&ledger).unwrap(), before_replay);
+
+    let reworked = fixture.execute_choice(
+        &fixture.choice(&lead, "rework"),
+        &[("<REASON>", "stale failed check requires repair")],
+        b"repair plan\n",
+    );
+    assert_eq!(reworked["next"]["role"], "worker");
+    let next_worker = fixture.next(&work);
+    assert_eq!(next_worker["packet"]["attempt"], 2);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            next_worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt two\n",
+    );
+    let new_target_action = fixture.next(&work);
+    assert_eq!(new_target_action["action"], "check");
+    assert!(new_target_action.get("staleEndedCheck").is_none());
+    let new_check = fixture.call(&["work", "check", &work], b"");
+    assert!(
+        !new_check.status.success(),
+        "fresh failing check unexpectedly passed"
+    );
+    assert_eq!(fixture.check_count("failed"), b"xx");
+    let events = fixture.events(&work);
+    let checked_targets = events
+        .iter()
+        .filter(|event| event["action"] == "check")
+        .map(|event| event["targetEventSha256"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(checked_targets.len(), 2);
+    assert_eq!(checked_targets[0], old_target);
+    assert_ne!(checked_targets[1], old_target);
+    assert_eq!(fixture.ledger_path(&work), ledger);
+}
+
+#[test]
+fn stale_successful_check_preserves_reviewer_rework_disposition() {
+    let fixture = Fixture::new("action-form-stale-success-review");
+    let check = fixture.counting_check("successful", 0);
+    let (work, initial) = fixture.begin(&check, true);
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope recorded")],
+        b"scope\n",
+    );
+    let worker = fixture.next(&work);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt one\n",
+    );
+    fixture.json(&["work", "check", &work], b"");
+    assert_eq!(fixture.check_count("successful"), b"x");
+    fixture.assert_observed_check_link(&work);
+    let old_check = fixture
+        .events(&work)
+        .into_iter()
+        .find(|event| event["action"] == "check")
+        .unwrap();
+    let old_target = old_check["targetEventSha256"].as_str().unwrap().to_owned();
+    let reviewer = fixture.next(&work);
+    assert_eq!(reviewer["role"], "reviewer");
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            reviewer["assignment"].as_str().unwrap(),
+            "--outcome",
+            "rework",
+        ],
+        b"finding requires repair\n",
+    );
+    let pending_finding = fixture.next(&work);
+    assert_eq!(pending_finding["role"], "lead");
+    assert_eq!(pending_finding["action"], "lead_decision");
+    assert_eq!(
+        pending_finding["current"]["actionForm"]["state"],
+        "pending_review_finding"
+    );
+    fs::write(
+        fixture.root.join("input-drift.txt"),
+        "changed after check\n",
+    )
+    .unwrap();
+
+    let lead = fixture.next(&work);
+    assert_eq!(lead["action"], "lead_decision");
+    assert_eq!(lead["staleEndedCheck"]["status"], "passed");
+    assert_eq!(
+        lead["current"]["actionForm"]["state"],
+        "pending_review_finding"
+    );
+    let labels = lead["current"]["actionForm"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, ["repair", "defer", "reject", "supersede"]);
+    let ledger = fixture.ledger_path(&work);
+    let before_replay = fs::read(&ledger).unwrap();
+    let ledger_arg = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    );
+    let replay = fixture.call(
+        &["run", "observe-check", &ledger_arg, "--target", &old_target],
+        b"",
+    );
+    assert!(
+        !replay.status.success(),
+        "stale replay unexpectedly succeeded"
+    );
+    assert_eq!(fixture.check_count("successful"), b"x");
+    assert_eq!(fs::read(&ledger).unwrap(), before_replay);
+
+    let repaired = fixture.execute_choice(
+        &fixture.choice(&lead, "repair"),
+        &[
+            ("<REASON>", "repair the reported finding"),
+            ("<REPAIR_BOUNDARY>", "the identified implementation path"),
+            ("<REGRESSION>", "the focused regression passes"),
+        ],
+        b"",
+    );
+    assert_eq!(repaired["next"]["role"], "worker");
+    let next_worker = fixture.next(&work);
+    assert_eq!(next_worker["packet"]["attempt"], 2);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            next_worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt two\n",
+    );
+    assert_eq!(fixture.next(&work)["action"], "check");
+    fixture.json(&["work", "check", &work], b"");
+    assert_eq!(fixture.check_count("successful"), b"xx");
+    let events = fixture.events(&work);
+    let checked_targets = events
+        .iter()
+        .filter(|event| event["action"] == "check")
+        .map(|event| event["targetEventSha256"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(checked_targets.len(), 2);
+    assert_eq!(checked_targets[0], old_target);
+    assert_ne!(checked_targets[1], old_target);
+    assert_eq!(fixture.ledger_path(&work), ledger);
+}
+
+#[test]
+fn stale_successful_check_cannot_offer_acceptance_or_reopen_terminal_work() {
+    let fixture = Fixture::new("action-form-stale-success-lead");
+    let check = fixture.counting_check("successful", 0);
+    let (work, initial) = fixture.begin_with_policy(&check, "omitted");
+    fixture.execute_choice(
+        &fixture.choice(&initial, "scoped"),
+        &[("<REASON>", "scope recorded")],
+        b"scope\n",
+    );
+    let worker = fixture.next(&work);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt one\n",
+    );
+    fixture.json(&["work", "check", &work], b"");
+    assert_eq!(fixture.check_count("successful"), b"x");
+    fixture.assert_observed_check_link(&work);
+    let current_lead = fixture.next(&work);
+    assert_eq!(current_lead["role"], "lead");
+    assert_eq!(current_lead["action"], "lead_decision");
+    fs::write(
+        fixture.root.join("input-drift.txt"),
+        "changed after check\n",
+    )
+    .unwrap();
+
+    let stale = fixture.next(&work);
+    assert_eq!(stale["staleEndedCheck"]["status"], "passed");
+    assert_eq!(
+        stale["current"]["actionForm"]["state"],
+        "stale_successful_check"
+    );
+    let labels = stale["current"]["actionForm"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, ["rework", "blocked"]);
+    assert!(!labels.contains(&"accepted"));
+
+    fixture.execute_choice(
+        &fixture.choice(&stale, "rework"),
+        &[("<REASON>", "current inputs require a fresh attempt")],
+        b"rework plan\n",
+    );
+    let next_worker = fixture.next(&work);
+    assert_eq!(next_worker["packet"]["attempt"], 2);
+    fixture.json(
+        &[
+            "work",
+            "return",
+            &work,
+            next_worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"implementation attempt two\n",
+    );
+    assert_eq!(fixture.next(&work)["action"], "check");
+    fixture.json(&["work", "check", &work], b"");
+    assert_eq!(fixture.check_count("successful"), b"xx");
+    let current_lead = fixture.next(&work);
+    assert_eq!(
+        current_lead["current"]["actionForm"]["state"],
+        "lead_acceptance"
+    );
+    let accepted = fixture.execute_choice(
+        &fixture.choice(&current_lead, "accepted"),
+        &[("<REASON>", "the current result satisfies the scope")],
+        b"accepted current result\n",
+    );
+    assert_eq!(accepted["presentation"]["terminal"], "EXIT READY");
+    fs::write(
+        fixture.root.join("input-drift.txt"),
+        "changed after acceptance\n",
+    )
+    .unwrap();
+    let terminal = fixture.next(&work);
+    assert_eq!(terminal["action"], "done");
+    assert_eq!(terminal["current"]["phase"]["status"], "accepted");
 }
 
 #[test]

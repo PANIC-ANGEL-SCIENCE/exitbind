@@ -112,6 +112,32 @@ impl Project {
             support::run(&mut command)
         }
     }
+    fn call_exact_argv(&self, argv: &[String]) -> Output {
+        let (executable, args) = argv
+            .split_first()
+            .expect("an emitted exact command has an executable");
+        let mut command = Command::new(executable);
+        command
+            .current_dir(&self.root)
+            .args(args)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_THREAD_ID")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("EXITBIND_SESSION_GOALS_DIR")
+            .env_remove("CLAUDE_ENV_FILE")
+            .env_remove("XDG_STATE_HOME")
+            .stdin(Stdio::null());
+        if let Some((identity, store)) = &self.native_session {
+            command
+                .env("CODEX_THREAD_ID", identity)
+                .env("EXITBIND_SESSION_GOALS_DIR", store);
+        } else {
+            command.env("EXITBIND_SESSION_GOALS_DIR", &self.fixture_store);
+        }
+        support::run(&mut command)
+    }
     fn call_with_selectors(
         &self,
         args: &[&str],
@@ -532,3 +558,5 @@ mod closure_flows;
 mod correction_and_journey;
 #[path = "goal_requirements/intake_and_identity.rs"]
 mod intake_and_identity;
+#[path = "goal_requirements/native_recovery.rs"]
+mod native_recovery;

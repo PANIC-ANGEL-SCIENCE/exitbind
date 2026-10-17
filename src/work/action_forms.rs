@@ -281,12 +281,14 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
     } else if next["packet"].get("pendingDisposition").is_some() {
         "pending_review_finding"
     } else if next["action"] == "lead_decision"
-        && matches!(
+        && (matches!(
             next["progress"]["reason"]["code"].as_str(),
             Some("check_failed" | "preservation_failed")
-        )
+        ) || next["staleEndedCheck"]["status"] == "failed")
     {
         "failed_check"
+    } else if next["action"] == "lead_decision" && next["staleEndedCheck"]["status"] == "passed" {
+        "stale_successful_check"
     } else if next["action"] == "lead_decision" && outcomes.contains(&"scoped") {
         "initial_scope"
     } else if next["action"] == "lead_decision" {
@@ -441,6 +443,12 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         }
         choices
     } else if state == "failed_check" {
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(**outcome, "rework" | "blocked"))
+            .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
+            .collect()
+    } else if state == "stale_successful_check" {
         outcomes
             .iter()
             .filter(|outcome| matches!(**outcome, "rework" | "blocked"))

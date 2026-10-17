@@ -126,9 +126,13 @@ fn result_state(
         let current = if super::super::requirements::named(record) {
             super::super::requirements::category_result_current(loaded, record, reference)
         } else {
-            crate::run::result_ref_evidence(loaded, reference).map(|evidence| {
-                evidence.is_some_and(|evidence| evidence.accepted && evidence.artifact_current)
-            })
+            match super::super::recovery::result_ref_evidence(loaded, record, reference) {
+                Ok(Some(evidence)) => Ok(evidence.accepted && evidence.artifact_current),
+                Ok(None) => crate::run::result_ref_evidence(loaded, reference).map(|evidence| {
+                    evidence.is_some_and(|evidence| evidence.accepted && evidence.artifact_current)
+                }),
+                Err(error) => Err(error),
+            }
         };
         match current {
             Ok(true) => continue,

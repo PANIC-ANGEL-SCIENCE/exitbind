@@ -495,21 +495,38 @@ fn task_current(loaded: Option<&Loaded>, record: &Value, item: &Value) -> Option
     let mut current = true;
     for reference in refs {
         let reference = reference.as_str()?;
-        let evidence = crate::run::result_ref_evidence(loaded, reference)
-            .ok()
-            .flatten()?;
-        let supported = evidence.inputs_current != Some(true)
+        let evidence = match super::recovery::result_ref_evidence(loaded, record, reference).ok()? {
+            Some(evidence) => (
+                evidence.accepted,
+                evidence.artifact_current,
+                evidence.drift,
+                evidence.inputs_current,
+            ),
+            None => {
+                let evidence = crate::run::result_ref_evidence(loaded, reference)
+                    .ok()
+                    .flatten()?;
+                (
+                    evidence.accepted,
+                    evidence.artifact_current,
+                    evidence.drift,
+                    evidence.inputs_current,
+                )
+            }
+        };
+        let (accepted, artifact_current, drift, inputs_current) = evidence;
+        let supported = inputs_current != Some(true)
             && super::journey::result_ref_current_or_supported(
                 loaded,
                 record,
                 reference,
-                evidence.inputs_current,
+                inputs_current,
             )
             .unwrap_or(false);
-        current &= evidence.accepted
-            && evidence.artifact_current
-            && evidence.drift.is_none()
-            && (evidence.inputs_current == Some(true) || supported);
+        current &= accepted
+            && artifact_current
+            && drift.is_none()
+            && (inputs_current == Some(true) || supported);
     }
     Some(current)
 }

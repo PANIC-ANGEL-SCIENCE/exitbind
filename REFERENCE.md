@@ -93,6 +93,24 @@ configuration. The host still performs the returned assignment.
 root-thread preservation rule, its distinction from durable role memory, and
 the limits of the advisory hook and regression evidence.
 
+## Native Goal recovery
+
+`goal recover` is an exceptional owner-context operation for reconnecting a
+native conversation Goal to evidence in a separate project configuration while
+retaining every original journey member. Start with a read-only preview using
+`--source-config PATH`; it derives the exact Source members, shows which
+explicitly selected verification fixtures remain historical, and prints the
+exact apply arguments. Apply only by repeating the preview's selections and
+passing its `--current-binding` with `--apply`. Selected Source contributors
+remain required and need accepted evidence plus a fresh current observed
+integration with a current approved Reviewer and Lead acceptance before normal
+Goal closure, even when every tested input is current. Unselected owner members
+keep their ordinary currentness and integration support. Historical members
+remain visible as retained history and never receive current credit. If the
+apply reply is lost, repeat the same
+request ID, arguments, and original binding to recover the saved event; status
+is recomputed separately.
+
 ## First run details
 
 `check` validates the configuration, profiles, and declared boundaries. `brief`
@@ -795,24 +813,24 @@ For the supported update and rollback path, including custom-file ownership
 and readers for marked carried work, see
 [upgrade and rollback](docs/upgrade-and-rollback.md).
 
-Exitbind uses the change in its public contract—not elapsed time or the number
-of commits—to choose a version while it remains in `0.x`:
+The authoritative pre-1.0 release scheme is the
+[release series and compatibility policy](docs/release-version-policy.md).
+Compatible features and fixes share the `0.31.10` through `0.31.99` series.
+An intentional break in CLI, configuration, privacy or persisted-state support
+requires explicit migration and version review; package numbers do not replace
+record format identities.
 
-- `0.y.Z` is a backward-compatible defect, security, documentation, packaging,
-  or release correction with no new user-visible capability or persisted shape.
-- `0.Y.0` changes a product invariant or mechanically rejects a counterexample
-  that the preceding minor line accepted. An intentional compatibility break
-  also requires a migration decision and backward inspection where the prior
-  format promised it.
+- Classify the actual public contract change before selecting a version.
+  Commit counts, elapsed time and feature counts do not decide the number.
 - A receipt, ledger, configuration, or schema shape change must version that
   persisted format, add frozen compatibility fixtures, and document its
   inspection/migration contract; changing only the package number is insufficient.
 - A new language runtime or external executable requirement is admissible only
-  when it changes such an invariant; it also needs the same
+  when it changes a product invariant; it also needs the same
   native/standard-library justification as a dependency.
 - `1.0.0` requires external-use evidence that the documented CLI and persisted
-  contracts are stable, recoverable, and supportable. It is not a completeness
-  label and is never selected only because the feature list looks substantial.
+  contracts are stable, recoverable and supportable. It is not a feature-count
+  milestone.
 
 `0.26.0` adds current readable assignment/evidence/task delivery and optional
 binding-fenced action forms. It also ships the native-context and managed-file

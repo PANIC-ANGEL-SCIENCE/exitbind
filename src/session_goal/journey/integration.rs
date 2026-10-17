@@ -44,7 +44,7 @@ pub(crate) fn append_work(
         {
             return Err("journey integration belongs to another native session or owner".into());
         }
-        let expected = covered_snapshot(loaded, &journey.members, &contract.header)?;
+        let expected = covered_snapshot(loaded, record, &journey.members, &contract.header)?;
         if expected != contract.members {
             return Err(
                 "journey integration snapshot changed before its Work start was linked".into(),
@@ -89,7 +89,10 @@ fn validate_header_for_loaded(loaded: &Loaded, header: &Header) -> Result<(), St
         .owner
         .ok_or("journey integration requires the fixed native session owner")?;
     let local = super::super::native::owner_for(loaded)?;
-    if header.protocol != PROTOCOL
+    if !matches!(header.protocol, PROTOCOL | RECOVERY_INTEGRATION_PROTOCOL)
+        || (header.protocol == PROTOCOL && header.recovery_sha256.is_some())
+        || (header.protocol == RECOVERY_INTEGRATION_PROTOCOL
+            && !header.recovery_sha256.as_deref().is_some_and(valid_sha))
         || !matches!(header.host.as_str(), "codex" | "claude")
         || !valid_sha(&header.session_key)
         || !valid_sha(&header.owner_identity_sha256)
@@ -261,11 +264,20 @@ pub(crate) fn prepare(
     let local_identity_sha256 = super::super::native::owner_for(loaded)?.identity_sha256;
     let config_binding_sha256 = config_binding(loaded)?;
     let checker = super::super::requirements::checker_input(loaded, checker, command)?;
+    let recovery = super::super::recovery::context(loaded, &record)?;
+    let recovered_context = recovery.as_ref().filter(|context| {
+        context.active.source_config.project_identity_sha256 == project_identity_sha256
+    });
     let mut covered = covered_snapshot(
         loaded,
+        &record,
         &journey.members,
         &Header {
-            protocol: PROTOCOL,
+            protocol: if recovered_context.is_some() {
+                RECOVERY_INTEGRATION_PROTOCOL
+            } else {
+                PROTOCOL
+            },
             host: session.host.to_owned(),
             session_key: session.key.clone(),
             owner_identity_sha256: owner.identity_sha256.clone(),
@@ -273,6 +285,9 @@ pub(crate) fn prepare(
             project_identity_sha256: project_identity_sha256.clone(),
             local_identity_sha256: local_identity_sha256.clone(),
             config_binding_sha256: config_binding_sha256.clone(),
+            recovery_sha256: recovered_context
+                .as_ref()
+                .map(|value| value.active.decision_sha256.clone()),
             checker: checker.clone(),
         },
     )?;
@@ -282,7 +297,11 @@ pub(crate) fn prepare(
     }
     let contract = Contract {
         header: Header {
-            protocol: PROTOCOL,
+            protocol: if recovered_context.is_some() {
+                RECOVERY_INTEGRATION_PROTOCOL
+            } else {
+                PROTOCOL
+            },
             host: session.host.to_owned(),
             session_key: session.key,
             owner_identity_sha256: owner.identity_sha256,
@@ -290,6 +309,9 @@ pub(crate) fn prepare(
             project_identity_sha256,
             local_identity_sha256,
             config_binding_sha256,
+            recovery_sha256: recovered_context
+                .as_ref()
+                .map(|value| value.active.decision_sha256.clone()),
             checker,
         },
         members: covered,
@@ -344,20 +366,41 @@ pub(super) fn validate_member_loaded(
 
 fn covered_snapshot(
     loaded: &Loaded,
+    record: &Value,
     members: &[Member],
     header: &Header,
 ) -> Result<Vec<CoveredMember>, String> {
     let mut covered = Vec::new();
     let project_identity = super::super::requirements::identity(loaded)?;
+    let recovery = super::super::recovery::context(loaded, record)?;
+    let is_recovered_source = recovery.as_ref().is_some_and(|context| {
+        context.active.source_config.project_identity_sha256 == project_identity
+    });
+    let expected_recovery = recovery
+        .as_ref()
+        .filter(|_| is_recovered_source)
+        .map(|value| value.active.decision_sha256.as_str());
+    if expected_recovery != header.recovery_sha256.as_deref()
+        || (is_recovered_source && header.protocol != RECOVERY_INTEGRATION_PROTOCOL)
+        || (!is_recovered_source && header.protocol != PROTOCOL)
+    {
+        return Err(
+            "journey integration recovery context changed; prepare a fresh integration".into(),
+        );
+    }
     for member in members
         .iter()
         .filter(|member| member.project_identity_sha256 == project_identity)
     {
         let original = project_loaded(loaded, member)?;
         validate_member_loaded(&original, member, header)?;
-        let endpoint = accepted_endpoint(loaded, member)?
+        let endpoint_loaded = recovery
+            .as_ref()
+            .and_then(|context| context.endpoints.get(&member.work))
+            .unwrap_or(loaded);
+        let endpoint = accepted_endpoint(endpoint_loaded, member)?
             .ok_or_else(|| format!("journey member {} has no terminal accepted result; integration cannot create acceptance", member.work))?;
-        let evidence = crate::run::result_ref_evidence(loaded, &endpoint.work)?
+        let evidence = crate::run::result_ref_evidence(endpoint_loaded, &endpoint.work)?
             .ok_or_else(|| format!("journey member {} evidence is unavailable", member.work))?;
         if !evidence.accepted
             || !evidence.artifact_current
@@ -394,10 +437,12 @@ fn contract_for_work(loaded: &Loaded, work: &str) -> Result<Option<(Contract, Va
 
 pub(super) fn current_integration_for_project(
     loaded: &Loaded,
+    record: &Value,
     state: &JourneyState,
     members: &[Member],
     project_identity: &str,
 ) -> Result<Option<String>, String> {
+    let recovery = super::super::recovery::context(loaded, record)?;
     let project_members = members
         .iter()
         .filter(|member| member.project_identity_sha256 == project_identity)
@@ -411,8 +456,15 @@ pub(super) fn current_integration_for_project(
         .filter(|entry| entry.member.project_identity_sha256 == project_identity)
     {
         let member = &entry.member;
+        let recovered_context = recovery.as_ref().filter(|context| {
+            context.active.source_config.project_identity_sha256 == project_identity
+        });
         let header_binding = Header {
-            protocol: PROTOCOL,
+            protocol: if recovered_context.is_some() {
+                RECOVERY_INTEGRATION_PROTOCOL
+            } else {
+                PROTOCOL
+            },
             host: member.host.clone(),
             session_key: member.session_key.clone(),
             owner_identity_sha256: member.owner_identity_sha256.clone(),
@@ -420,6 +472,9 @@ pub(super) fn current_integration_for_project(
             project_identity_sha256: member.project_identity_sha256.clone(),
             local_identity_sha256: member.local_identity_sha256.clone(),
             config_binding_sha256: config_binding(loaded)?,
+            recovery_sha256: recovered_context
+                .as_ref()
+                .map(|value| value.active.decision_sha256.clone()),
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -427,7 +482,11 @@ pub(super) fn current_integration_for_project(
         };
         let original = project_loaded(loaded, member)?;
         validate_member_loaded(&original, member, &header_binding)?;
-        let Some(endpoint) = accepted_endpoint(loaded, member)? else {
+        let endpoint_loaded = recovery
+            .as_ref()
+            .and_then(|context| context.endpoints.get(&member.work))
+            .unwrap_or(loaded);
+        let Some(endpoint) = accepted_endpoint(endpoint_loaded, member)? else {
             continue;
         };
         let Some((contract, _start)) = contract_for_work(loaded, &endpoint.work)? else {
@@ -436,9 +495,16 @@ pub(super) fn current_integration_for_project(
         if contract_sha256(&contract) != entry.contract_sha256 {
             continue;
         }
-        let expected = covered_snapshot(loaded, members, &contract.header)?;
-        if expected != contract.members {
-            continue;
+        match covered_snapshot(loaded, record, members, &contract.header) {
+            Ok(expected) if expected == contract.members => {}
+            Ok(_) => continue,
+            Err(error)
+                if error
+                    == "journey integration recovery context changed; prepare a fresh integration" =>
+            {
+                continue
+            }
+            Err(error) => return Err(error),
         }
         let evidence = super::super::requirements::current_checker_evidence(
             loaded,
@@ -446,10 +512,27 @@ pub(super) fn current_integration_for_project(
             &contract.header.checker,
         )?;
         if evidence["state"] == "current" && evidence["accepted"] == true {
+            if recovered_context.is_some() && !current_required_review(loaded, &endpoint.work)? {
+                continue;
+            }
             return Ok(Some(endpoint.work));
         }
     }
     Ok(None)
+}
+
+/// Recovery integrations have an explicit frozen independent-review
+/// obligation in addition to the ordinary Lead acceptance and check gates.
+/// Baseline integrations retain their existing owner-selected review policy.
+fn current_required_review(loaded: &Loaded, work: &str) -> Result<bool, String> {
+    let ledger = crate::work::resolve(loaded, work)?;
+    let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+    let state = crate::run::state::reduce(&events)?;
+    let exit = crate::run::gate::exit::ExitState::reduce_with_artifact(&state, Some(true))?;
+    Ok(exit.status == "accepted"
+        && exit.lead_accepted()
+        && exit.review_required
+        && exit.reviewer_approved())
 }
 
 pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded, String> {
@@ -480,6 +563,7 @@ pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded,
             project_identity_sha256: member.project_identity_sha256.clone(),
             local_identity_sha256: member.local_identity_sha256.clone(),
             config_binding_sha256: config_binding(&original)?,
+            recovery_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),

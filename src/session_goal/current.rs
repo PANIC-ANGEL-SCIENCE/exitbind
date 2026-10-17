@@ -120,22 +120,40 @@ pub(super) fn evaluate(
 
 /// Returns a non-current finding, or None for a currently valid result.
 fn reference_current(loaded: &Loaded, record: &Value, reference: &str) -> Option<Readiness> {
-    let evidence = match crate::run::result_ref_evidence(loaded, reference) {
-        Ok(Some(evidence)) => evidence,
-        Ok(None) => return Some(Readiness::Stale("governed_result_missing")),
+    let recovered = super::recovery::result_ref_evidence(loaded, record, reference);
+    let evidence = match recovered {
         Err(_) => return Some(Readiness::Unknown("governed_result_unavailable")),
+        Ok(Some(evidence)) => Some((
+            evidence.accepted,
+            evidence.artifact_current,
+            evidence.drift,
+            evidence.inputs_current,
+        )),
+        Ok(None) => match crate::run::result_ref_evidence(loaded, reference) {
+            Ok(Some(evidence)) => Some((
+                evidence.accepted,
+                evidence.artifact_current,
+                evidence.drift,
+                evidence.inputs_current,
+            )),
+            Ok(None) => return Some(Readiness::Stale("governed_result_missing")),
+            Err(_) => return Some(Readiness::Unknown("governed_result_unavailable")),
+        },
     };
-    if !evidence.accepted || !evidence.artifact_current || evidence.drift.is_some() {
+    let Some((accepted, artifact_current, drift, inputs_current)) = evidence else {
+        return Some(Readiness::Stale("governed_result_missing"));
+    };
+    if !accepted || !artifact_current || drift.is_some() {
         return Some(Readiness::Stale("governed_result_changed"));
     }
-    match evidence.inputs_current {
+    match inputs_current {
         Some(true) => None,
         Some(false)
             if super::journey::result_ref_current_or_supported(
                 loaded,
                 record,
                 reference,
-                evidence.inputs_current,
+                inputs_current,
             )
             .unwrap_or(false) =>
         {

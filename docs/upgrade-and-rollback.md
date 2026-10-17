@@ -79,6 +79,36 @@ The recovery records reported failure, preserves accounting and earlier observer
 identity, and transfers no check, grant or acceptance. Other Work pins stay as
 selected. See [check recovery](check-recovery.md).
 
+## Native Goal recovery
+
+Native Goal recovery records a versioned decision on the existing Goal. It
+preserves its identity, earlier records and members, while binding selected
+Source members and retained historical fixtures to their checked identities.
+It does not transfer checks, review or acceptance between Works.
+
+Before applying recovery, retain a compatible recovery executable for every
+subsequent command that writes that Goal. An older reader may display the raw
+recovery field without applying its meaning. An older same-Goal writer can
+omit that field from its new record, losing the latest recovery selection even
+though the earlier history remains. Alternating older and compatible writers
+on a recovered Goal is unsupported. A successful old `goal status` is not a
+compatibility test for writes or closure.
+
+Keep each Work's pinned executable, original configuration and evidence. When a
+command also updates the recovered Goal, use a compatible reader through the
+supported route; do not replace unrelated Work pins or rewrite old records.
+Rolling back the default executable does not make an older executable suitable
+for that recovered Goal.
+
+## Continuation journal size
+
+Continuation accounting retains its v2 record format. The current reader
+accepts journals up to 64 MiB; an older reader with a 1 MiB limit can refuse a
+journal that has grown beyond that limit. Keep a compatible executable for the
+continuation's lifecycle. Do not truncate the journal, recreate the mandate or
+reset usage to make an older reader accept it. A larger storage limit does not
+extend the approved time, action or Work bounds.
+
 ## Roll back the selected executable
 
 Rollback switches the executable selector to a version that can read the state

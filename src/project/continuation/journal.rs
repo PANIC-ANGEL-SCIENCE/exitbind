@@ -3,7 +3,13 @@ use super::model::{Plan, Spec};
 use crate::{config::Loaded, evidence::hash, project::path, run::ledger};
 use serde::{Deserialize, Serialize};
 
-const LIMIT: u64 = 1024 * 1024;
+const LIMIT: u64 = 64 * 1024 * 1024;
+
+fn exceeds_limit(existing: usize, addition: usize) -> bool {
+    existing
+        .checked_add(addition)
+        .map_or(true, |total| total > LIMIT as usize)
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -170,18 +176,21 @@ pub(super) fn append(
         .remove("eventSha256");
     record.event_sha256 = hash::value(&value);
     let serialized = serde_json::to_value(&record).map_err(|e| e.to_string())?;
-    if raw.len()
-        + serde_json::to_vec(&serialized)
-            .map_err(|e| e.to_string())?
-            .len()
-        + 1
-        > LIMIT as usize
-    {
+    let addition = serde_json::to_vec(&serialized)
+        .map_err(|e| e.to_string())?
+        .len()
+        .checked_add(1)
+        .ok_or("continuation metadata bound reached; no admission was made")?;
+    if exceeds_limit(raw.len(), addition) {
         return Err("continuation metadata bound reached; no admission was made".into());
     }
     ledger::append(selected, &serialized, raw.is_empty(), raw)?;
     Ok(record)
 }
+
+#[cfg(test)]
+#[path = "journal/tests.rs"]
+mod tests;
 
 impl PartialEq for Claim {
     fn eq(&self, other: &Self) -> bool {

@@ -172,6 +172,50 @@ impl RunSnapshot {
         Ok(status)
     }
 
+    /// Return the latest observed result for this exact target and requirement
+    /// only when changed tested inputs made it stale. The snapshot's reducer
+    /// has already validated the ledger and observation link.
+    pub(crate) fn stale_ended_check(
+        &self,
+        target: &str,
+        requirement_id: Option<&str>,
+    ) -> Result<Option<bool>, String> {
+        if self.state["status"] != "running" {
+            return Ok(None);
+        }
+        let InputContext::Current(current_inputs) = &self.inputs else {
+            return Ok(None);
+        };
+        let checks = self.state["checks"]
+            .as_array()
+            .ok_or("run state checks are invalid")?;
+        let Some(check) = checks.iter().rev().find(|check| {
+            check["targetEventSha256"] == target
+                && check["requirementId"].as_str() == requirement_id
+        }) else {
+            return Ok(None);
+        };
+        let expected_command = if let Some(id) = requirement_id {
+            self.state["preservation"]["requirements"]
+                .as_array()
+                .and_then(|requirements| requirements.iter().find(|item| item["id"] == id))
+                .and_then(|item| item["commandSha256"].as_str())
+        } else {
+            self.state["checkPolicy"]["commandSha256"].as_str()
+        };
+        if check["subjectSha256"] != self.state["subject"]["sha256"]
+            || check["configSha256"] != self.state["configSha256"]
+            || check["checkCommandSha256"].as_str() != expected_command
+            || check["inputsSha256"].as_str() == Some(current_inputs)
+            || check["inputsSha256"].as_str().is_none()
+            || check["acquisition"] != "observed"
+            || check["observationEventSha256"].as_str().is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(crate::run_value::check_passed(check)))
+    }
+
     pub(crate) fn next_view(&self, loaded: &Loaded) -> Result<Value, String> {
         assert_exact_receipt(loaded, &self.state)?;
         let state = &self.state;

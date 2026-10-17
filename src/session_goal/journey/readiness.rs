@@ -2,10 +2,31 @@ use super::*;
 
 fn member_currentness(
     loaded: &Loaded,
+    record: Option<&Value>,
     state: &JourneyState,
     member: &Member,
 ) -> Result<(&'static str, Option<String>), String> {
-    let project = project_loaded(loaded, member)?;
+    let recovery = record
+        .map(|record| super::super::recovery::context(loaded, record))
+        .transpose()?
+        .flatten();
+    if recovery
+        .as_ref()
+        .is_some_and(|context| context.historical.contains(&member.work))
+    {
+        return Ok(("historical", None));
+    }
+    // A recovery bridges only the exact Source members it selected. Every
+    // other retained member keeps the pre-recovery owner-config behavior.
+    let recovered_endpoint = recovery
+        .as_ref()
+        .and_then(|context| context.endpoints.get(&member.work));
+    let selected = match (recovery.as_ref(), recovered_endpoint) {
+        (Some(context), Some(_)) => &context.source,
+        _ => loaded,
+    };
+    let endpoint_loaded = recovered_endpoint.unwrap_or(selected);
+    let project = project_loaded(selected, member)?;
     let session =
         super::super::native::current()?.ok_or("native session identity is unavailable")?;
     let scope = super::super::native::scope(loaded, false)?;
@@ -29,29 +50,54 @@ fn member_currentness(
             project_identity_sha256: member.project_identity_sha256.clone(),
             local_identity_sha256: member.local_identity_sha256.clone(),
             config_binding_sha256: config_binding(&project)?,
+            recovery_sha256: recovery
+                .as_ref()
+                .map(|value| value.active.decision_sha256.clone()),
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
             },
         },
     )?;
-    let Some(endpoint) = accepted_endpoint(loaded, member)? else {
+    let Some(endpoint) = accepted_endpoint(endpoint_loaded, member)? else {
         return Ok(("unresolved", None));
     };
-    let evidence = crate::run::result_ref_evidence(loaded, &endpoint.work)?
+    let evidence = crate::run::result_ref_evidence(endpoint_loaded, &endpoint.work)?
         .ok_or("journey member result evidence is unavailable")?;
     if !evidence.accepted || !evidence.artifact_current || evidence.drift.is_some() {
         return Ok(("unresolved", None));
     }
     match evidence.inputs_current {
-        Some(true) => Ok(("current", None)),
+        Some(true) => {
+            if recovered_endpoint.is_some() {
+                let integration = super::super::journey::current_recovery_integration(
+                    loaded,
+                    record.ok_or("native Goal recovery record is unavailable")?,
+                )?;
+                let Some((work, _)) = integration else {
+                    return Ok(("unresolved", None));
+                };
+                Ok(("current", Some(work)))
+            } else {
+                Ok(("current", None))
+            }
+        }
         Some(false) => {
-            let supported = current_integration_for_project(
-                loaded,
-                state,
-                &state.members,
-                &member.project_identity_sha256,
-            )?;
+            let supported = if recovered_endpoint.is_some() {
+                super::super::journey::current_recovery_integration(
+                    loaded,
+                    record.ok_or("native Goal recovery record is unavailable")?,
+                )?
+                .map(|(work, _)| work)
+            } else {
+                current_integration_for_project(
+                    selected,
+                    record.unwrap_or(&Value::Null),
+                    state,
+                    &state.members,
+                    &member.project_identity_sha256,
+                )?
+            };
             if supported.is_some() {
                 Ok(("integration_supported", supported))
             } else {
@@ -62,8 +108,17 @@ fn member_currentness(
     }
 }
 
+#[cfg(test)]
 pub(in crate::session_goal) fn readiness_for_state(
     loaded: &Loaded,
+    state: Option<JourneyState>,
+) -> Readiness {
+    readiness_for_state_inner(loaded, None, state)
+}
+
+fn readiness_for_state_inner(
+    loaded: &Loaded,
+    record: Option<&Value>,
     state: Option<JourneyState>,
 ) -> Readiness {
     let Some(state) = state else {
@@ -74,6 +129,8 @@ pub(in crate::session_goal) fn readiness_for_state(
             total: 0,
             current: 0,
             integrated: 0,
+            historical: 0,
+            historical_details: Vec::new(),
             pending_admissions: 0,
             unresolved: vec![
                 json!({"state":"unavailable","reason":"explicit_native_goal_incorporation_required"}),
@@ -83,6 +140,7 @@ pub(in crate::session_goal) fn readiness_for_state(
     };
     let mut current = 0;
     let mut integrated = 0;
+    let mut historical = 0;
     let mut integration_work = None;
     let mut unresolved = Vec::new();
     if state.protocol != MEMBERSHIP_PROTOCOL {
@@ -99,12 +157,18 @@ pub(in crate::session_goal) fn readiness_for_state(
         }));
     }
     for member in &state.members {
-        match member_currentness(loaded, &state, member) {
-            Ok(("current", _)) => current += 1,
+        match member_currentness(loaded, record, &state, member) {
+            Ok(("current", integration)) => {
+                current += 1;
+                if let Some(work) = integration {
+                    integration_work.get_or_insert(work);
+                }
+            }
             Ok(("integration_supported", Some(work))) => {
                 integrated += 1;
                 integration_work.get_or_insert(work);
             }
+            Ok(("historical", _)) => historical += 1,
             Ok((status, _)) => unresolved.push(json!({"work":member.work,"state":status})),
             Err(error) => {
                 unresolved.push(json!({"work":member.work,"state":"unavailable","reason":error}))
@@ -116,6 +180,13 @@ pub(in crate::session_goal) fn readiness_for_state(
     } else {
         "blocked"
     };
+    let historical_details = record
+        .and_then(|record| {
+            super::super::recovery::context(loaded, record)
+                .ok()
+                .flatten()
+        })
+        .map_or_else(Vec::new, |context| context.historical_items);
     Readiness {
         protocol: state.protocol,
         state: state_name,
@@ -131,6 +202,8 @@ pub(in crate::session_goal) fn readiness_for_state(
         total: state.members.len(),
         current,
         integrated,
+        historical,
+        historical_details,
         pending_admissions: state.admissions.len(),
         unresolved: unresolved
             .into_iter()
@@ -179,6 +252,8 @@ pub(crate) fn readiness_for_record(
             total: state(&current)?.map_or(0, |state| state.members.len()),
             current: 0,
             integrated: 0,
+            historical: 0,
+            historical_details: Vec::new(),
             pending_admissions: state(&current)?.map_or(0, |state| state.admissions.len()),
             unresolved: vec![
                 json!({"state":"unresolved","reason":"newer_session_goal_is_current"}),
@@ -186,7 +261,11 @@ pub(crate) fn readiness_for_record(
             integration_work: None,
         }));
     }
-    Ok(Some(readiness_for_state(loaded, state(&current)?)))
+    Ok(Some(readiness_for_state_inner(
+        loaded,
+        Some(&current),
+        state(&current)?,
+    )))
 }
 
 pub(crate) fn require_close_ready(
@@ -201,7 +280,7 @@ pub(crate) fn require_close_ready(
     if !scope.is_session() || !scope.owner_matches || scope.root != root {
         return Ok(());
     }
-    let readiness = readiness_for_state(loaded, state(record)?);
+    let readiness = readiness_for_state_inner(loaded, Some(record), state(record)?);
     if readiness.ready() {
         Ok(())
     } else {
@@ -261,32 +340,70 @@ pub(crate) fn result_ref_current_or_supported(
     let Some(journey) = state(record)? else {
         return Ok(false);
     };
-    let matched = journey
-        .members
-        .iter()
-        .filter(|member| member.work == reference)
-        .collect::<Vec<_>>();
+    let recovery = super::super::recovery::context(loaded, record)?;
+    let mut recovered_matches = Vec::new();
+    if let Some(context) = &recovery {
+        for member in &journey.members {
+            if let Some(endpoint_loaded) = context.endpoints.get(&member.work) {
+                if super::super::journey::accepted_endpoint_for_recovery(endpoint_loaded, member)?
+                    .as_deref()
+                    == Some(reference)
+                {
+                    recovered_matches.push(member);
+                }
+            }
+        }
+    }
+    let recovered_member = if recovered_matches.len() == 1 {
+        recovered_matches.first().copied()
+    } else {
+        None
+    };
+    let selected = match (recovery.as_ref(), recovered_member) {
+        (Some(context), Some(_)) => &context.source,
+        _ => loaded,
+    };
+    let matched = if let Some(member) = recovered_member {
+        vec![member]
+    } else {
+        journey
+            .members
+            .iter()
+            .filter(|member| member.work == reference)
+            .collect::<Vec<_>>()
+    };
     if matched.len() != 1 {
         return Ok(false);
     }
     let member = matched[0];
-    project_loaded(loaded, member)?;
-    let local_endpoint = accepted_endpoint(loaded, member)?;
+    project_loaded(selected, member)?;
+    let endpoint_loaded = recovery
+        .as_ref()
+        .filter(|_| recovered_member.is_some())
+        .and_then(|context| context.endpoints.get(&member.work))
+        .unwrap_or(selected);
+    let local_endpoint = accepted_endpoint(endpoint_loaded, member)?;
     if local_endpoint.is_none() {
         return Ok(false);
     }
-    let evidence = crate::run::result_ref_evidence(loaded, reference)?;
+    let evidence = crate::run::result_ref_evidence(endpoint_loaded, reference)?;
     if !evidence
         .as_ref()
         .is_some_and(|e| e.accepted && e.artifact_current && e.drift.is_none())
     {
         return Ok(false);
     }
-    Ok(current_integration_for_project(
-        loaded,
-        &journey,
-        &journey.members,
-        &member.project_identity_sha256,
-    )?
-    .is_some())
+    let has_integration = if recovered_member.is_some() {
+        super::super::journey::current_recovery_integration(loaded, record)?.is_some()
+    } else {
+        current_integration_for_project(
+            selected,
+            record,
+            &journey,
+            &journey.members,
+            &member.project_identity_sha256,
+        )?
+        .is_some()
+    };
+    Ok(has_integration)
 }

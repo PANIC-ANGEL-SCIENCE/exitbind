@@ -60,6 +60,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         .chain(positional.iter().map(String::as_str))
         .collect::<Vec<_>>();
     let usage = match path.as_slice() {
+        ["goal", "recover"] => "goal recover --source-config PATH [--historical-fixtures WORK_ID,...] [--endpoint-configs JSON] --request-id ID --reason TEXT [--current-binding SHA --apply] [--json] (owner-context only; preview derives exact Source members and retained historical fixtures; apply repeats the exact selection; replay the same request ID and binding after a lost reply)",
         ["init"] => "init [--mode local|portable|auto] [--root ROOT] [--project-id ID] [--control-root ROOT] [--state-root ROOT] [--skip-skills | --refresh-skills] [--with-coffee] (creates project configuration and managed guidance; review placement and boundaries before use)",
         ["update"] => "update (checks for a stable release and may replace the current executable; an existing regular binary is required for rollback)",
         ["work"] => {
@@ -148,7 +149,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["run", "supersede"] => {
             "run supersede OLD_LEDGER --workflow WORKFLOW --goal GOAL --ledger NEW_LEDGER [--owner-recovery STATE_ARTIFACT_PATH]"
         }
-        ["goal"] => "goal incorporate --goal-id ID --goal TEXT [--project] | goal prepare --goal-id ID --requirement IDS --artifact CHECKER --check-command COMMAND [--project] | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] | goal cover --goal-id ID [--project] | goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] | goal status [--project] [--json] | goal close --goal-id ID --result-ref REF [--project] | goal usage --goal-id ID [--json] | goal <child> --help",
+        ["goal"] => "goal incorporate --goal-id ID --goal TEXT [--project] | goal prepare --goal-id ID --requirement IDS --artifact CHECKER --check-command COMMAND [--project] | goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] | goal cover --goal-id ID [--project] | goal assign --goal-id ID --requirement IDs --result-ref WORK [--project] | goal status [--project] [--json] | goal close --goal-id ID --result-ref REF [--project] | goal recover --source-config PATH [--historical-fixtures WORK_ID,...] [--endpoint-configs JSON] --request-id ID --reason TEXT [--current-binding SHA --apply] [--json] | goal usage --goal-id ID [--json] | goal <child> --help",
         ["goal", "prepare"] => "goal prepare --goal-id ID --requirement IDS --artifact PROJECT_CHECKER --check-command COMMAND [--scope integration] [--basis TEXT] [--project] [--json] (read-only named coverage and checker preparation before Work begin; emits a separate begin route)",
         ["goal", "incorporate"] => "goal incorporate --goal-id ID --goal TEXT [--project] (--project selects the configured project's legacy Goal journal; otherwise a valid native host identity selects its conversation Goal)",
         ["goal", "require"] => "goal require --goal-id ID --requirement ID --obligation EXACT_TEXT --artifact SOURCE [--project] [--json] (records or corrects an agreed requirement; correction retains history and invalidates old support)",

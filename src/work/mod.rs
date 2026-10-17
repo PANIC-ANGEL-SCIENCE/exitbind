@@ -638,7 +638,25 @@ fn next_from_base(
             json!({"action": "done", "status": value["status"], "progress": progress, "warnings": warnings}),
         );
     }
-    if let Some(pending) = current_check_target(snapshot)? {
+    let pending_check = current_check_target(snapshot)?;
+    let assignment = value["assignments"]
+        .as_array()
+        .and_then(|items| items.first());
+    let stale_check = match (&pending_check, assignment) {
+        (Some(pending), Some(assignment)) if assignment["role"] == "lead" => {
+            let stale = snapshot.stale_ended_check(
+                &pending.target_event_sha256,
+                pending.requirement_id.as_deref(),
+            )?;
+            if stale.is_some() && !has_supersession_claim(loaded, work)? {
+                stale
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    if let Some(pending) = pending_check.as_ref().filter(|_| stale_check.is_none()) {
         let mut result = json!({
             "action": "check",
             "check": pending.value(),
@@ -653,10 +671,7 @@ fn next_from_base(
         }
         return Ok(agent_response(result));
     }
-    let assignment = value["assignments"]
-        .as_array()
-        .and_then(|items| items.first())
-        .ok_or("validated work has no next action")?;
+    let assignment = assignment.ok_or("validated work has no next action")?;
     let assignment_handle = assignment_handle(work, assignment)?;
     let role = assignment["role"].as_str().unwrap_or("");
     let action = if role == "lead" {
@@ -688,6 +703,14 @@ fn next_from_base(
         "progress": progress,
         "warnings": warnings
     });
+    if let Some(stale_check) = stale_check {
+        result["staleEndedCheck"] = json!({
+            "status": if stale_check { "passed" } else { "failed" },
+            "targetEventSha256": pending_check.as_ref().map(|check| check.target_event_sha256.as_str()),
+            "requirementId": pending_check.as_ref().and_then(|check| check.requirement_id.as_deref()),
+            "staleReason": "tested_inputs_changed",
+        });
+    }
     let resolved_actor = crate::work::packet::resolved_actor(work, snapshot, &result)?;
     result["resolvedActor"] = resolved_actor;
     let view = snapshot.inspect_view();
@@ -706,11 +729,19 @@ fn next_from_base(
             json!(["scoped", "blocked"])
         } else if assignment.get("pendingDisposition").is_some() {
             json!(crate::run::disposition::PENDING_LEAD_OUTCOMES)
+        } else if stale_check.is_some() {
+            json!(["rework", "blocked"])
         } else {
             json!(["accepted", "rework", "blocked", "disposition"])
         };
     }
     Ok(agent_response(result))
+}
+
+fn has_supersession_claim(loaded: &Loaded, work: &str) -> Result<bool, String> {
+    let ledger = resolve(loaded, work)?;
+    let path = run::ledger::load(loaded, &ledger)?.0;
+    Ok(run::ledger::valid_claim(&run::ledger::claim_path(&path))?.is_some())
 }
 
 #[derive(Clone, Debug)]
