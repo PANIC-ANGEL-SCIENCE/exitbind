@@ -33,6 +33,7 @@ mod return_result_impl;
 pub(crate) mod start_delivery;
 mod submission_preflight;
 
+use self::packet::attach_continuation;
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
 use std::fs;
@@ -165,22 +166,6 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
     attach_continuation(loaded, work, &mut response)?;
     Ok(response)
-}
-
-fn attach_continuation(loaded: &Loaded, work: &str, response: &mut Value) -> Result<(), String> {
-    let Some(goal) = crate::session_goal::read(&loaded.state_root)? else {
-        return Ok(());
-    };
-    if goal["continuation"]["work"] == work {
-        // Receiving routes belong to `work continuation`; the Lead's views keep
-        // their bounded continuation copy without them.
-        let mut view = crate::session_goal::continuation_view(loaded, work)?;
-        if let Some(view) = view.as_object_mut() {
-            view.remove("receive");
-        }
-        response["continuation"] = view;
-    }
-    Ok(())
 }
 
 pub(crate) fn replan(

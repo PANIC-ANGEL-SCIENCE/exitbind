@@ -8,6 +8,7 @@
 //! is executed, and a terminal run is history, not permission to continue.
 
 use crate::{
+    config::Loaded,
     evidence::hash,
     run::{InputContext, RunSnapshot},
 };
@@ -757,6 +758,27 @@ fn next_outcome_is(next: &Value, expected: &str) -> bool {
     next["outcomes"]
         .as_array()
         .is_some_and(|outcomes| outcomes.iter().any(|outcome| outcome == expected))
+}
+
+/// Enrich the same Work response with its optional continuation context.
+pub(super) fn attach_continuation(
+    loaded: &Loaded,
+    work: &str,
+    response: &mut Value,
+) -> Result<(), String> {
+    let Some(goal) = crate::session_goal::read(&loaded.state_root)? else {
+        return Ok(());
+    };
+    if goal["continuation"]["work"] == work {
+        // Receiving routes belong to `work continuation`; the Lead's views keep
+        // their bounded continuation copy without them.
+        let mut view = crate::session_goal::continuation_view(loaded, work)?;
+        if let Some(view) = view.as_object_mut() {
+            view.remove("receive");
+        }
+        response["continuation"] = view;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

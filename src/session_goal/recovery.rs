@@ -1,6 +1,9 @@
 //! Explicit, owner-bound recovery for a native Goal whose retained journey
 //! contains members from a separately configured Source project.
 
+mod configuration;
+
+use self::configuration::config_binding;
 use crate::{config::Loaded, evidence::hash};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -114,26 +117,6 @@ fn valid_optional_text(value: &Option<String>, max: usize) -> bool {
 
 fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn canonical(path: &Path, label: &str) -> Result<String, String> {
-    path.canonicalize()
-        .map_err(|error| format!("{label} is unavailable: {error}"))?
-        .to_str()
-        .map(str::to_owned)
-        .ok_or_else(|| format!("{label} is not valid UTF-8"))
-}
-
-fn config_binding(loaded: &Loaded) -> Result<ConfigBinding, String> {
-    Ok(ConfigBinding {
-        path: canonical(&loaded.path, "recovery configuration")?,
-        config_sha256: hash::text(&loaded.source),
-        product_root: canonical(&loaded.product_root, "recovery product root")?,
-        state_root: canonical(&loaded.state_root, "recovery state root")?,
-        project_id: loaded.project_id.clone(),
-        project_identity_sha256: super::requirements::identity(loaded)?,
-        local_identity_sha256: super::native::owner_for(loaded)?.identity_sha256,
-    })
 }
 
 pub(crate) fn config_binding_for_current(loaded: &Loaded) -> Result<ConfigBinding, String> {
