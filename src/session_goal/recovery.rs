@@ -755,7 +755,12 @@ pub(crate) fn recover(
         let previous = history
             .last()
             .ok_or("no native session Goal is incorporated")?;
-        let fresh_owner = crate::config::load(Some(&owner_loaded.path.to_string_lossy()))
+        let fresh_owner = crate::config::load(Some(
+            owner_loaded
+                .path
+                .to_str()
+                .ok_or("owner configuration path is not valid UTF-8")?,
+        ))
             .map_err(|error| format!("owner configuration changed or became unavailable; reload and preview recovery: {error}"))?;
         let owner_scope = super::native::scope(&fresh_owner, false)?;
         owner_scope.require_owner()?;
