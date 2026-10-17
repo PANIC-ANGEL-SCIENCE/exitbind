@@ -217,7 +217,7 @@ fn controlled_managed_edit_guidance(permit: &str) -> String {
 }
 
 fn managed_edit_guidance(tool_path: &str) -> (String, String) {
-    let instructions = format!("Use the supplied managed file tool (`TOOL` in the current binding; quote its path). `TOOL read PATH` captures UTF-8 or absence; prepare edits from it. `TOOL edit PATH` replaces the full file from UTF-8 stdin; do not truncate. Retry the same command and content only. `TOOL refresh PATH` captures a new baseline only for a deliberate next edit. On conflict or uncertainty use `TOOL inspect PATH`; never blindly replay/reset. Hashes, assignment details and retry identity are product-owned. Edits do not submit results or complete checks/review. Native tools remain host-controlled; this grants no OS sandbox permission. {}\n", managed_snapshot_guidance());
+    let instructions = format!("Use the supplied managed file tool (`TOOL` in the current binding; quote its path). `TOOL read PATH` captures UTF-8 or absence; prepare edits from it. `TOOL edit PATH` uses full replacement content as UTF-8 bytes on stdin; do not truncate. Retry the same command and content only. `TOOL refresh PATH` captures a new baseline only for a deliberate next edit. On conflict or uncertainty use `TOOL inspect PATH`; never replay the write blindly. Hashes, assignment details and retry identity are product-owned. Edits do not submit results or complete checks/review. Native tools remain host-controlled; this grants no OS sandbox permission. {}\n", managed_snapshot_guidance());
     (instructions, format!("MANAGED FILE TOOL: {tool_path}\n"))
 }
 
