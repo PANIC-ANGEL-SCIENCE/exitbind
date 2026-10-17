@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 const FROZEN: &[u8] = b"Frozen verification subject; no implementation mutation.\n";
 const REASON: &str = "Preserve the old unknown and permit one separate verification";
 const REQUEST: &str = "controlled-quarantine-once";
+const OPERATION_MAX_BYTES: usize = 4096;
 
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -29,6 +30,13 @@ impl Case {
         Self::with_options(distinct, false)
     }
     fn with_options(distinct: bool, descendant: bool) -> Self {
+        Self::with_verification_command(distinct, descendant, "exec sh checker.sh")
+    }
+    fn with_verification_command(
+        distinct: bool,
+        descendant: bool,
+        verification_command: &str,
+    ) -> Self {
         let mut f = Fixture::new("exit 7\n");
         select_fixture_contract(&f);
         f.native_session = Some(format!(
@@ -189,7 +197,7 @@ impl Case {
                 "effectInventory":{"write":"none","scope":"fixture only"},
                 "artifactSha256":digest(FROZEN),"inputsSha256":inputs,
                 "basis":serde_json::from_str::<Value>(&basis).unwrap(),
-                "command":"exec sh checker.sh"}});
+                "command":verification_command}});
         case.config_return(&worker, "completed", &serde_json::to_vec(&report).unwrap());
         case
     }
@@ -475,6 +483,65 @@ fn quarantine_requires_accepted_current_plan_and_preview_has_no_start_effect() {
     assert!(!c.preview(REQUEST).status.success());
     assert!(!c.apply(&value(&preview)).status.success());
     assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+}
+
+#[test]
+fn quarantine_round_trips_realistic_long_command_through_fresh_lifecycle() {
+    let prefix = "exec sh checker.sh #";
+    let command = format!("{prefix}{}", "x".repeat(328 - prefix.len()));
+    assert_eq!(command.len(), 328);
+    let c = Case::with_verification_command(true, false, &command);
+    c.accept_feature();
+    let preview = c.preview(REQUEST);
+    assert!(preview.status.success(), "{preview:?}");
+    let applied = c.apply(&value(&preview));
+    assert!(applied.status.success(), "{applied:?}");
+    let work = value(&applied)["work"].as_str().unwrap().to_owned();
+    let start = c.f.events(&work).remove(0);
+    assert_eq!(
+        start["quarantineVerification"]["verification"]["operation"],
+        command
+    );
+    c.return_frozen(&work);
+    c.f.ok(&["work", "check", &work, "--timeout-ms", "2000"], b"");
+    let reviewer = c.f.next(&work);
+    assert_eq!(reviewer["role"], "reviewer");
+    let lead = c.f.give(&work, &reviewer, "approved")["next"].clone();
+    c.f.give(&work, &lead, "accepted");
+    assert_eq!(c.f.next(&work)["status"], "accepted");
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+}
+
+#[test]
+fn quarantine_refuses_overlong_plan_operation_before_start() {
+    let prefix = "exec sh checker.sh #";
+    let command = format!(
+        "{prefix}{}",
+        "x".repeat(OPERATION_MAX_BYTES + 1 - prefix.len())
+    );
+    let c = Case::with_verification_command(true, false, &command);
+    c.accept_feature();
+    let before = fs::read_dir(c.f.root.join(".exitbind/runs"))
+        .unwrap()
+        .count();
+    let refused = c.preview(REQUEST);
+    assert!(!refused.status.success(), "{refused:?}");
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        output.contains("verification.operation exceeds the 4096-byte limit"),
+        "{output}"
+    );
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+    assert_eq!(
+        fs::read_dir(c.f.root.join(".exitbind/runs"))
+            .unwrap()
+            .count(),
+        before
+    );
 }
 
 #[test]

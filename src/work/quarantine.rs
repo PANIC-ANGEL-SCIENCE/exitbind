@@ -219,8 +219,10 @@ pub(crate) fn start(
     }
     let command = plan["command"]
         .as_str()
-        .filter(|text| !text.trim().is_empty())
-        .ok_or("verification command is missing")?;
+        .ok_or("quarantine verification plan field verification.operation must be a string")?;
+    run::quarantine::validate_operation(command).map_err(|error| {
+        format!("quarantine verification plan field verification.operation {error}")
+    })?;
     let environment = plan
         .get("environment")
         .filter(|value| value.is_object())

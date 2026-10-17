@@ -9,6 +9,23 @@ mod verification;
 pub(crate) use verification::{acknowledgement, validate_event};
 
 pub(crate) const PROTOCOL: u64 = 1;
+pub(crate) const OPERATION_MAX_BYTES: usize = 4096;
+
+/// Validate the command text shared by the producer and persisted marker
+/// reader. The limit is measured in UTF-8 bytes because that is what the
+/// ledger stores and hashes.
+pub(crate) fn validate_operation(operation: &str) -> Result<(), &'static str> {
+    if operation.trim().is_empty() {
+        return Err("must contain non-whitespace text");
+    }
+    if operation.len() > OPERATION_MAX_BYTES {
+        return Err("exceeds the 4096-byte limit");
+    }
+    if operation.contains('\0') {
+        return Err("must not contain NUL");
+    }
+    Ok(())
+}
 
 pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     let Some(marker) = event.get("quarantineVerification") else {
@@ -171,7 +188,9 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
     ]
     .iter()
     .all(|key| sha(&verification[key]))
-        || !text(&verification["operation"], 256)
+        || !verification["operation"]
+            .as_str()
+            .is_some_and(|operation| validate_operation(operation).is_ok())
     {
         return Err(fail());
     }
@@ -318,6 +337,44 @@ mod tests {
         assert_eq!(value["predecessor"]["accounting"].to_string(), before);
         assert_eq!(value["predecessor"]["accounting"]["governor"]["spent"], 9);
         assert!(value["predecessor"]["accounting"]["usageAccount"]["totals"].is_null());
+    }
+
+    #[test]
+    fn quarantine_operation_uses_shared_utf8_byte_bound_for_producer_and_marker() {
+        let mut values = vec![
+            "x".repeat(255),
+            "x".repeat(256),
+            "x".repeat(257),
+            "x".repeat(328),
+            "x".repeat(OPERATION_MAX_BYTES),
+        ];
+        let unicode_at_limit = format!("{}é", "x".repeat(OPERATION_MAX_BYTES - 2));
+        assert_eq!(unicode_at_limit.len(), OPERATION_MAX_BYTES);
+        values.push(unicode_at_limit);
+        for operation in values {
+            assert!(validate_operation(&operation).is_ok());
+            let mut value = marker();
+            value["verification"]["operation"] = json!(operation);
+            seal(&mut value);
+            validate_marker(&value, 1).unwrap();
+        }
+
+        let over_limit = "x".repeat(OPERATION_MAX_BYTES + 1);
+        let unicode_over_limit = format!("{}é", "x".repeat(OPERATION_MAX_BYTES - 1));
+        assert_eq!(unicode_over_limit.len(), OPERATION_MAX_BYTES + 1);
+        for operation in [
+            over_limit,
+            unicode_over_limit,
+            String::new(),
+            " \t\n".to_owned(),
+            "exec sh checker.sh\0".to_owned(),
+        ] {
+            assert!(validate_operation(&operation).is_err());
+            let mut value = marker();
+            value["verification"]["operation"] = json!(operation);
+            seal(&mut value);
+            assert!(validate_marker(&value, 1).is_err());
+        }
     }
 
     #[test]
