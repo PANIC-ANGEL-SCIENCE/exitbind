@@ -290,6 +290,68 @@ mod tests {
         }
     }
 
+    fn assert_exact_recovery_route(action: &Value, expected: &[String], config: &str) {
+        let same_config = action["sameConfigRequired"] == true;
+        let same_executable = action["sameExecutableRequired"] == true;
+        let command = action["command"]
+            .as_array()
+            .expect("bounded recovery command is an argv array")
+            .iter()
+            .map(|argument| {
+                argument
+                    .as_str()
+                    .expect("bounded recovery argv entries are strings")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+
+        if same_config {
+            assert_eq!(
+                action["configArgument"],
+                "reuse the exact --config value from this invocation"
+            );
+            assert_eq!(command.last().map(String::as_str), Some("--config"));
+        } else {
+            assert!(action.get("configArgument").is_none());
+            assert_eq!(command.last().map(String::as_str), Some(config));
+        }
+        if same_executable {
+            assert_eq!(
+                action["executableArgument"],
+                "prepend the exact executable used for this invocation"
+            );
+        } else {
+            assert!(action.get("executableArgument").is_none());
+        }
+
+        let expected_kind = match (same_executable, same_config) {
+            (true, true) => Some("argv_suffix_requires_executable_and_config"),
+            (true, false) => Some("argv_suffix_requires_executable"),
+            (false, true) => Some("argv_prefix_requires_config_value"),
+            (false, false) => None,
+        };
+        match expected_kind {
+            Some(kind) => assert_eq!(action["commandKind"], kind),
+            None => assert!(action.get("commandKind").is_none()),
+        }
+
+        let mut reconstructed = command;
+        if same_config {
+            reconstructed.push(config.to_owned());
+        }
+        if same_executable {
+            reconstructed.insert(
+                0,
+                std::env::current_exe()
+                    .expect("current executable is available")
+                    .to_str()
+                    .expect("current executable path is UTF-8")
+                    .to_owned(),
+            );
+        }
+        assert_eq!(reconstructed, expected);
+    }
+
     #[test]
     fn recorded_projection_failure_is_successful_and_inspectable() {
         let submitted = json!({
@@ -357,14 +419,25 @@ mod tests {
         assert_eq!(compact["diagnostic"]["phase"], "projection");
         assert_eq!(compact["next"]["requiresExpansion"], true);
         assert_blocked_projection(&compact);
-        assert!(compact["nextAction"]["command"].is_array());
-        assert_eq!(
-            compact["nextAction"]["command"]
-                .as_array()
-                .unwrap()
-                .last()
-                .unwrap(),
-            &json!(config)
+        let config = config.as_str();
+        assert_exact_recovery_route(
+            &compact["nextAction"],
+            &[
+                std::env::current_exe()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+                "run".into(),
+                "inspect".into(),
+                ledger,
+                "--event".into(),
+                sha,
+                "--json".into(),
+                "--config".into(),
+                config.to_owned(),
+            ],
+            &config,
         );
     }
 
