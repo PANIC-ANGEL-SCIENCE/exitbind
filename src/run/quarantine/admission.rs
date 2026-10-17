@@ -363,7 +363,7 @@ where
             &json!({"protocol":1,"identity":token,"requestSha256":hash::value(&verified.marker),
             "work":verified.work,"ledger":verified.ledger,"startIntentSha256":verified.start_intent}),
         )?;
-        match fs::symlink_metadata(&path.path) {
+        match fs::symlink_metadata(path.path) {
             Ok(_) => {
                 let (_, new_events, _) = crate::run::ledger::load(loaded, &verified.ledger)?;
                 if new_events

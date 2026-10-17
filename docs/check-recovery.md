@@ -48,6 +48,14 @@ worker obtains its ordinary permit, returns its result, and completes fresh
 checks, required review and acceptance. Recovery supplies no permit, check
 credit, acceptance or accounting reset.
 
+An ordinary Work's known-ended observed check can become stale when tested
+inputs change. Follow current Work detail: a pending Reviewer may only rework or
+block, never approve stale evidence; marked runs route rework through a real
+Lead disposition, while legacy runs return to the same-Work Worker. That new
+Worker result needs a new check, fresh review and Lead acceptance, without
+replaying the old admitted check or resetting accounting; quarantine verification
+remains one-check with no ordinary repair, and unknown termination stays blocked.
+
 The distinct v8 recovery event requires a compatible 0.30.1 reader for the
 affected Work's remaining lifecycle. Keep its original binary/configuration
 and all unrelated Work pins. Older readers refuse this action without changing

@@ -78,6 +78,9 @@ fn no_input() -> Value {
 }
 
 fn allowed_outcomes(next: &Value) -> Vec<&str> {
+    if let Some(outcomes) = super::stale_check::reviewer_outcomes(next) {
+        return outcomes;
+    }
     if next["action"] == "spawn" && next["role"] != "lead" {
         return next["role"]
             .as_str()

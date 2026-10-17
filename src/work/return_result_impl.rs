@@ -128,6 +128,13 @@ pub(crate) fn return_result_with(
     let requested = result_contract::validate(role.as_str(), outcome).ok();
     let allowed = requested.is_some_and(|requested| {
         role.permits(requested)
+            && (role != Role::Reviewer
+                || !action.get("staleEndedCheck").is_some_and(Value::is_object)
+                || action["outcomes"].as_array().is_some_and(|outcomes| {
+                    outcomes
+                        .iter()
+                        .any(|item| item.as_str() == Some(requested.as_str()))
+                }))
             && (role != Role::Lead
                 || action["outcomes"].as_array().is_some_and(|outcomes| {
                     outcomes
@@ -322,7 +329,9 @@ pub(crate) fn return_result_with(
 }
 
 fn return_outcomes(action: &Value, role: Role) -> String {
-    if role == Role::Lead {
+    if role == Role::Lead
+        || (role == Role::Reviewer && action.get("staleEndedCheck").is_some_and(Value::is_object))
+    {
         return action["outcomes"]
             .as_array()
             .map(|outcomes| {

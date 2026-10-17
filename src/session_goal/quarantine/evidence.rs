@@ -10,28 +10,35 @@ fn events_for(loaded: &Loaded, work_id: &str) -> Result<(Vec<Value>, String, Str
     Ok((events, ledger, bytes))
 }
 
-fn endpoint(
-    loaded: &Loaded,
-    member: &super::super::journey::Member,
-    endpoint_work: &str,
-    events: &[Value],
-    bytes: &str,
-    state: &Value,
-    check: Option<&Value>,
-    review: Option<&Value>,
-    acceptance: Option<&Value>,
-) -> Result<Endpoint, String> {
-    let start = events.first().ok_or("quarantine Work ledger is empty")?;
-    let head = events.last().ok_or("quarantine Work ledger is empty")?;
-    let artifact = state["submissions"]
+struct EndpointEvidence<'a> {
+    member: &'a super::super::journey::Member,
+    work: &'a str,
+    events: &'a [Value],
+    bytes: &'a str,
+    state: &'a Value,
+    check: Option<&'a Value>,
+    review: Option<&'a Value>,
+    acceptance: Option<&'a Value>,
+}
+
+fn endpoint(loaded: &Loaded, evidence: EndpointEvidence<'_>) -> Result<Endpoint, String> {
+    let start = evidence
+        .events
+        .first()
+        .ok_or("quarantine Work ledger is empty")?;
+    let head = evidence
+        .events
+        .last()
+        .ok_or("quarantine Work ledger is empty")?;
+    let artifact = evidence.state["submissions"]
         .as_array()
         .and_then(|items| items.iter().rev().find(|item| item["role"] == "worker"))
         .map(|item| item["artifact"]["sha256"].clone())
         .and_then(|value| value.as_str().map(str::to_owned))
         .ok_or("quarantine Work has no worker artifact")?;
     Ok(Endpoint {
-        work: endpoint_work.to_owned(),
-        member_sha256: super::super::journey::member_identity(member),
+        work: evidence.work.to_owned(),
+        member_sha256: super::super::journey::member_identity(evidence.member),
         start_event_sha256: start["eventSha256"]
             .as_str()
             .ok_or("Work start hash missing")?
@@ -40,18 +47,18 @@ fn endpoint(
             .as_str()
             .ok_or("Work head hash missing")?
             .into(),
-        ledger_sha256: hash::text(bytes),
+        ledger_sha256: hash::text(evidence.bytes),
         config_sha256: hash::text(&loaded.source),
         run_id: start["runId"]
             .as_str()
             .ok_or("Work run identity missing")?
             .into(),
-        subject_sha256: state["subject"]["sha256"]
+        subject_sha256: evidence.state["subject"]["sha256"]
             .as_str()
             .ok_or("Work subject hash missing")?
             .into(),
         artifact_sha256: artifact,
-        inputs_sha256: state["inputsSha256"]
+        inputs_sha256: evidence.state["inputsSha256"]
             .as_str()
             .ok_or("Work inputs hash missing")?
             .into(),
@@ -59,11 +66,14 @@ fn endpoint(
             .as_str()
             .ok_or("Work check command hash missing")?
             .into(),
-        check_event_sha256: check
+        check_event_sha256: evidence
+            .check
             .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
-        review_event_sha256: review
+        review_event_sha256: evidence
+            .review
             .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
-        acceptance_event_sha256: acceptance
+        acceptance_event_sha256: evidence
+            .acceptance
             .map(|event| event["eventSha256"].as_str().unwrap_or_default().to_owned()),
     })
 }
@@ -215,25 +225,29 @@ pub(super) fn exact_quarantine_evidence(
     }
     let old_endpoint = endpoint(
         source,
-        old_member,
-        old_work,
-        &old_events,
-        &old_bytes,
-        &old_state,
-        Some(failure),
-        None,
-        None,
+        EndpointEvidence {
+            member: old_member,
+            work: old_work,
+            events: &old_events,
+            bytes: &old_bytes,
+            state: &old_state,
+            check: Some(failure),
+            review: None,
+            acceptance: None,
+        },
     )?;
     let verification_endpoint = endpoint(
         source,
-        verification_member,
-        &verification_member.work,
-        &verification_events,
-        &verification_bytes,
-        &new_state,
-        Some(check),
-        Some(review),
-        Some(acceptance),
+        EndpointEvidence {
+            member: verification_member,
+            work: &verification_member.work,
+            events: &verification_events,
+            bytes: &verification_bytes,
+            state: &new_state,
+            check: Some(check),
+            review: Some(review),
+            acceptance: Some(acceptance),
+        },
     )?;
     if marker["verification"]["inputsSha256"] != verification_endpoint.inputs_sha256
         || marker["verification"]["commandSha256"] != verification_endpoint.command_sha256

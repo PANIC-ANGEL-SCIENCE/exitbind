@@ -31,6 +31,7 @@ mod refreshed_action;
 pub(crate) mod response_recovery;
 mod resume;
 mod return_result_impl;
+mod stale_check;
 pub(crate) mod start_delivery;
 mod submission_preflight;
 
@@ -633,17 +634,14 @@ fn next_from_base(
         .as_array()
         .and_then(|items| items.first());
     let stale_check = match (&pending_check, assignment) {
-        (Some(pending), Some(assignment)) if assignment["role"] == "lead" => {
-            let stale = snapshot.stale_ended_check(
-                &pending.target_event_sha256,
-                pending.requirement_id.as_deref(),
-            )?;
-            if stale.is_some() && !has_supersession_claim(loaded, work)? {
-                stale
-            } else {
-                None
-            }
-        }
+        (Some(pending), Some(assignment)) => stale_check::for_assignment(
+            loaded,
+            work,
+            snapshot,
+            &pending.target_event_sha256,
+            pending.requirement_id.as_deref(),
+            assignment["role"].as_str().unwrap_or(""),
+        )?,
         _ => None,
     };
     if let Some(pending) = pending_check.as_ref().filter(|_| stale_check.is_none()) {
@@ -724,14 +722,10 @@ fn next_from_base(
         } else {
             json!(["accepted", "rework", "blocked", "disposition"])
         };
+    } else if role == "reviewer" && stale_check.is_some() {
+        result["outcomes"] = json!(["rework", "blocked"]);
     }
     Ok(agent_response(result))
-}
-
-fn has_supersession_claim(loaded: &Loaded, work: &str) -> Result<bool, String> {
-    let ledger = resolve(loaded, work)?;
-    let path = run::ledger::load(loaded, &ledger)?.0;
-    Ok(run::ledger::valid_claim(&run::ledger::claim_path(&path))?.is_some())
 }
 
 #[derive(Clone, Debug)]

@@ -364,6 +364,10 @@ check after repair and report the actual result, or request `rework` using the
 normal workflow and submit a fresh artifact. Passing checks and reviewer
 approval remain separate from the lead's final acceptance.
 
+When changed tested inputs stale an ordinary known-ended observed check, follow
+current Work detail; its pending Reviewer may rework or block, never approve
+stale evidence ([check recovery](docs/check-recovery.md)).
+
 ### Exit Path receipt and verification
 
 For an accepted v5 checked run, emit the deterministic Exit Path receipt from
