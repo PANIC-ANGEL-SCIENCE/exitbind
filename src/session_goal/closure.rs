@@ -1,6 +1,10 @@
 //! Canonical goal closure through existing accepted-result authority.
 
-use super::*;
+use super::{
+    continuity, current_inputs, items, journey, mutate, read, recovery, requirements, sealed, text,
+    CATEGORIES,
+};
+use serde_json::{json, Value};
 use std::path::Path;
 
 pub(crate) fn close(
@@ -352,7 +356,7 @@ pub(crate) fn direct_complete(
     })
 }
 
-fn category_resolved(record: &Value, key: &str) -> bool {
+pub(super) fn category_resolved(record: &Value, key: &str) -> bool {
     if !matches!(
         record["categories"][key].as_str(),
         Some("considered") | Some("none_applicable")
@@ -379,7 +383,7 @@ fn category_resolved(record: &Value, key: &str) -> bool {
     })
 }
 
-fn unresolved(record: &Value) -> bool {
+pub(super) fn unresolved(record: &Value) -> bool {
     if continuity::has_unresolved(record) {
         return true;
     }
@@ -388,7 +392,7 @@ fn unresolved(record: &Value) -> bool {
         .any(|category| !category_resolved(record, category))
 }
 
-fn direct_completion_inputs(
+pub(super) fn direct_completion_inputs(
     loaded: &crate::config::Loaded,
     record: &Value,
     item: &Value,

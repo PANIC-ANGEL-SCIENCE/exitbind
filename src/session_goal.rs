@@ -13,6 +13,7 @@ pub(crate) mod native;
 pub(crate) mod quarantine;
 pub(crate) mod recovery;
 pub(crate) mod requirements;
+use closure::{category_resolved, direct_completion_inputs, unresolved};
 pub(crate) use closure::{
     close, close_direct, direct_complete, validate_direct_candidate, validate_governed_candidate,
     DirectCompletionRequest,

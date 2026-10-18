@@ -4,10 +4,9 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 mod activation;
-pub(crate) use activation::{
-    assess_activation, classify_activation, Activation, ActivationAssessment, ActivationFacts,
-    ActivationReason,
-};
+#[cfg(test)]
+pub(crate) use activation::classify_activation;
+pub(crate) use activation::{assess_activation, Activation, ActivationFacts};
 
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
