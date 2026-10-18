@@ -542,7 +542,13 @@ fn successor_retains_a_real_governor_grant_and_owner_lineage() {
         after_grant["governor"]["headSha256"]
     );
     fixture.value(&["work", "check", &work]);
-    let reviewer = fixture.value(&["work", "next", &work])["next"].clone();
+    let reviewer_response = fixture.value(&["work", "next", &work]);
+    let reviewer = support::resolved_work_next(
+        &fixture.root,
+        &work,
+        &reviewer_response,
+        env!("CARGO_BIN_EXE_exitbind"),
+    );
     assert_eq!(reviewer["role"], "reviewer");
     let rework = fixture.value_with_input(
         &[

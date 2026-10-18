@@ -1760,6 +1760,11 @@
       "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
       "currentSha256": "4d4b92030a944988945dec677a417bd7fd95d6f860d4ab47129a4736672bacbb",
       "reason": "Add a shared test-only expansion helper that accepts only the exact read-only work next --full argv and verifies the current executable and fixture config before reading the pending action; it performs no check or mutation."
+    },
+    "tests/basis_lifecycle/basis_corrections.rs": {
+      "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
+      "currentSha256": "0fae2b4cb6ae136c6a05f7a32dc981f2f8a11a57c04e9c461b9c4274849bd730",
+      "reason": "Preserve the governor-lineage assertions while resolving the compact current Work response through the validated emitted read-only work next --full command; no grant, check or mutation is replayed."
     }
   },
   "additions": [
