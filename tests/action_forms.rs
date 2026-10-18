@@ -268,18 +268,12 @@ impl Fixture {
     }
 
     fn run_route(&self, route: &Value) -> Output {
-        let mut argv = route["command"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|item| item.as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
-        if route["sameExecutableRequired"] == true {
-            argv.insert(0, env!("CARGO_BIN_EXE_exitbind").into());
-        }
-        if route["sameConfigRequired"] == true {
-            argv.extend(["--config".into(), "exitbind.json".into()]);
-        }
+        let command = json!({
+            "argv": route["command"],
+            "sameExecutableRequired": route["sameExecutableRequired"],
+            "sameConfigRequired": route["sameConfigRequired"],
+        });
+        let argv = self.expand_command(&command);
         self.run_argv(&argv, b"")
     }
 
