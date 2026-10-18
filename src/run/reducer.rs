@@ -20,6 +20,14 @@ pub(crate) enum InputContext {
 }
 
 fn reduce_with_inputs(loaded: &Loaded, events: &[Value]) -> Result<(Value, InputContext), String> {
+    reduce_with_resume_budget(loaded, events, None)
+}
+
+fn reduce_with_resume_budget(
+    loaded: &Loaded,
+    events: &[Value],
+    budget: Option<&mut inputs::ResumeInputBudget>,
+) -> Result<(Value, InputContext), String> {
     let mut state = run_state::reduce(events)?;
     if state["version"].as_u64() < Some(6) {
         return Ok((state, InputContext::NotBound));
@@ -27,7 +35,11 @@ fn reduce_with_inputs(loaded: &Loaded, events: &[Value]) -> Result<(Value, Input
     if state["status"] != "running" {
         return Ok((state, InputContext::Historical));
     }
-    let context = match crate::run::inputs::fingerprint(loaded) {
+    let fingerprint = match budget {
+        Some(budget) => crate::run::inputs::fingerprint_for_resume(loaded, budget),
+        None => crate::run::inputs::fingerprint(loaded),
+    };
+    let context = match fingerprint {
         Ok(inputs) => {
             state["inputsSha256"] = json!(inputs);
             InputContext::Current(inputs)
@@ -59,9 +71,25 @@ pub(crate) struct RunSnapshot {
 
 impl RunSnapshot {
     pub(crate) fn capture(loaded: &Loaded, ledger: &str) -> Result<Self, String> {
+        Self::capture_inner(loaded, ledger, None)
+    }
+
+    pub(crate) fn capture_for_resume(
+        loaded: &Loaded,
+        ledger: &str,
+        budget: &mut inputs::ResumeInputBudget,
+    ) -> Result<Self, String> {
+        Self::capture_inner(loaded, ledger, Some(budget))
+    }
+
+    fn capture_inner(
+        loaded: &Loaded,
+        ledger: &str,
+        budget: Option<&mut inputs::ResumeInputBudget>,
+    ) -> Result<Self, String> {
         let (path, events, source) =
             load_at(loaded, &ledger_path(&loaded.state_root, ledger, false)?)?;
-        let mut snapshot = Self::from_events(loaded, &events, &source)?;
+        let mut snapshot = Self::from_events_inner(loaded, &events, &source, budget)?;
         snapshot.work = canonical_work_for_ledger(&path).ok();
         Ok(snapshot)
     }
@@ -71,10 +99,19 @@ impl RunSnapshot {
         events: &[Value],
         source: &str,
     ) -> Result<Self, String> {
+        Self::from_events_inner(loaded, events, source, None)
+    }
+
+    fn from_events_inner(
+        loaded: &Loaded,
+        events: &[Value],
+        source: &str,
+        budget: Option<&mut inputs::ResumeInputBudget>,
+    ) -> Result<Self, String> {
         if events.is_empty() {
             return Err("run ledger has no events".into());
         }
-        let (state, inputs) = reduce_with_inputs(loaded, events)?;
+        let (state, inputs) = reduce_with_resume_budget(loaded, events, budget)?;
         predecessor(loaded, &events[0])?;
         let drift = view_drift(loaded, &state);
         if let Err(error) = &drift {

@@ -2,6 +2,8 @@
 //! candidate bound before it reads any ledger contents.
 #![cfg(unix)]
 
+#[path = "resume_scope/limits.rs"]
+mod limits;
 mod support;
 
 use serde_json::Value;

@@ -20,21 +20,31 @@ struct SupersessionStatus {
 const MAX_DISCOVERED_WORK_LEDGERS: usize = 128;
 
 pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
-    let observed = count_work_ledgers(loaded)?;
-    if observed > MAX_DISCOVERED_WORK_LEDGERS {
-        return Ok(discovery_limited(loaded, observed));
+    let mut budget = run::inputs::ResumeInputBudget::new();
+    let mut result = resume_core(loaded, history, &mut budget)?;
+    if let Some(reason) = budget.limited_reason() {
+        result = discovery_limited(loaded, reason, budget.work_ledgers());
     }
-    let mut result = resume_core(loaded, history)?;
-    attach_discovery(&mut result, observed, true);
+    if result.get("discovery").is_none() {
+        result["discovery"] = discovery_value(None, budget.work_ledgers(), true);
+    }
+    result["discovery"]["allDirectoryEntries"] = json!(budget.directory_entries());
+    if let Some(detail) = budget.detail() {
+        result["discovery"]["failureDetail"] = json!(detail);
+    }
     Ok(result)
 }
 
-fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
+fn resume_core(
+    loaded: &Loaded,
+    history: bool,
+    budget: &mut run::inputs::ResumeInputBudget,
+) -> Result<Value, String> {
     let directory = loaded.state_root.join(runs_dir());
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return none_result(loaded, Vec::new())
+            return none_result(loaded, Vec::new(), budget)
         }
         Err(error) => return Err(error.to_string()),
     };
@@ -43,7 +53,11 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let mut finished: Vec<(String, String, String)> = Vec::new();
     let mut claimed_predecessors = std::collections::BTreeSet::new();
     let mut processed: usize = 0;
+    let mut matching_ledgers = Vec::new();
     for entry in entries {
+        if let Err(reason) = budget.count_directory_entry() {
+            return Ok(discovery_limited(loaded, reason, processed));
+        }
         let entry = entry.map_err(|error| error.to_string())?;
         let info = entry.file_type().map_err(|error| error.to_string())?;
         let name = entry
@@ -60,9 +74,24 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
         if !info.is_file() || !valid_token(token) {
             continue;
         }
-        processed += 1;
+        processed = budget.count_work_ledger();
         if processed > MAX_DISCOVERED_WORK_LEDGERS {
-            return Ok(discovery_limited(loaded, processed));
+            return Ok(discovery_limited(
+                loaded,
+                "matching_work_ledger_limit_exceeded",
+                processed,
+            ));
+        }
+        let token = token.to_owned();
+        matching_ledgers.push((name, token));
+    }
+    if let Some(reason) = budget.limited_reason() {
+        return Ok(discovery_limited(loaded, reason, processed));
+    }
+    // Refuse an oversized ledger set before reading or parsing any ledger.
+    for (name, token) in matching_ledgers {
+        if let Err(reason) = budget.check() {
+            return Ok(discovery_limited(loaded, reason, processed));
         }
         let ledger = format!("{}/{}", runs_dir(), name);
         let work = format!("{WORK_PREFIX}{token}");
@@ -71,7 +100,12 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
             if supersession.verified {
                 return Ok((None, supersession));
             }
-            let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+            let snapshot = run::RunSnapshot::capture_for_resume(loaded, &ledger, budget)?;
+            if let run::InputContext::Unavailable(error) = snapshot.inputs() {
+                if budget.limited_reason().is_none() {
+                    budget.mark_unavailable(error.clone());
+                }
+            }
             let view = snapshot.inspect_view();
             if view["status"] == "running" {
                 let progress = snapshot.next_view(loaded)?["progress"].clone();
@@ -97,6 +131,9 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
             }
             Ok((None, supersession))
         })();
+        if let Some(reason) = budget.limited_reason() {
+            return Ok(discovery_limited(loaded, reason, processed));
+        }
         match discovered {
             Ok((candidate, supersession)) => {
                 if supersession.has_claim {
@@ -115,8 +152,16 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
                     candidates.push(candidate);
                 }
             }
-            Err(error) => push_unreadable(loaded, &mut unreadable, &work, &ledger, &error)?,
+            Err(error) => {
+                if let Some(reason) = budget.limited_reason() {
+                    return Ok(discovery_limited(loaded, reason, processed));
+                }
+                push_unreadable(loaded, &mut unreadable, &work, &ledger, &error)?
+            }
         }
+    }
+    if let Some(reason) = budget.limited_reason() {
+        return Ok(discovery_limited(loaded, reason, processed));
     }
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
     if !unreadable.is_empty() {
@@ -133,7 +178,7 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
                     {
                         let works = candidate_values(loaded, &candidates, Some(index))?;
                         let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
-                        let mut result = resumed(loaded, &work, &ledger)?;
+                        let mut result = resumed(loaded, &work, &ledger, budget)?;
                         result["selection"] =
                             json!({"basis": "current_work_focus", "authority": "none"});
                         result["works"] = json!(works);
@@ -172,7 +217,7 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
     if !history {
         let focus = focus::read(loaded)?;
         if let focus::Focus::Unusable(detail) = &focus {
-            let mut result = none_result(loaded, finished)?;
+            let mut result = none_result(loaded, finished, budget)?;
             result["reason"] = json!({"code": "focus_unusable", "detail": detail});
             result["next"]["reason"] = json!("focus_unusable");
             if !candidates.is_empty() {
@@ -186,7 +231,7 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
                 .iter()
                 .position(|candidate| candidate.0 == selected)
             else {
-                let mut result = none_result(loaded, finished)?;
+                let mut result = none_result(loaded, finished, budget)?;
                 result["reason"] = json!({"code": "no_current_work"});
                 result["next"]["reason"] = json!("no_current_work");
                 result["focus"] = json!({"work": selected, "resumable": false});
@@ -196,7 +241,7 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
                 return Ok(result);
             };
             let (work, _, _, ledger, _, _) = candidates.swap_remove(index);
-            let mut result = resumed(loaded, &work, &ledger)?;
+            let mut result = resumed(loaded, &work, &ledger, budget)?;
             result["selection"] = json!({"basis": "current_work_focus", "authority": "none"});
             if others > 1 {
                 result["history"] = history_reference(loaded, others - 1)?;
@@ -205,10 +250,10 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
         }
     }
     match candidates.len() {
-        0 => none_result(loaded, finished),
+        0 => none_result(loaded, finished, budget),
         1 if !history => {
             let (work, _, _, ledger, _, _) = candidates.pop().expect("one candidate exists");
-            resumed(loaded, &work, &ledger)
+            resumed(loaded, &work, &ledger, budget)
         }
         _ => {
             let works = candidate_values(loaded, &candidates, None)?;
@@ -233,54 +278,21 @@ fn resume_core(loaded: &Loaded, history: bool) -> Result<Value, String> {
     }
 }
 
-fn count_work_ledgers(loaded: &Loaded) -> Result<usize, String> {
-    let directory = loaded.state_root.join(runs_dir());
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut observed: usize = 0;
-    for entry in entries {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let info = entry.file_type().map_err(|error| error.to_string())?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let Some(token) = name
-            .strip_prefix("work-")
-            .and_then(|name| name.strip_suffix(".jsonl"))
-        else {
-            continue;
-        };
-        if info.is_file() && valid_token(token) {
-            observed = observed.saturating_add(1);
-            if observed > MAX_DISCOVERED_WORK_LEDGERS {
-                return Ok(observed);
-            }
-        }
-    }
-    Ok(observed)
-}
-
-fn discovery_value(observed: usize, complete: bool) -> Value {
+fn discovery_value(reason: Option<&str>, observed: usize, complete: bool) -> Value {
     json!({
         "scope": "configured_state_root",
         "directory": "work_ledgers",
         "recursive": false,
         "automaticWidening": false,
         "maxWorkLedgers": MAX_DISCOVERED_WORK_LEDGERS,
+        "maxDirectoryEntries": 1024,
         "observed": observed,
         "complete": complete,
+        "limitedReason": reason,
     })
 }
 
-fn attach_discovery(result: &mut Value, observed: usize, complete: bool) {
-    result["discovery"] = discovery_value(observed, complete);
-}
-
-fn discovery_limited(loaded: &Loaded, observed: usize) -> Value {
+fn discovery_limited(loaded: &Loaded, reason: &str, observed: usize) -> Value {
     let (next_action, focus) = match focus::read(loaded) {
         Ok(focus::Focus::Work(work)) => match candidate_command(loaded, &work) {
             Ok(route) => (
@@ -330,10 +342,10 @@ fn discovery_limited(loaded: &Loaded, observed: usize) -> Value {
     };
     json!({
         "status": "unresolved",
-        "reason": {"code": "discovery_limited", "detail": "work ledger discovery reached its fixed bound"},
+        "reason": {"code": "discovery_limited", "detail": reason},
         "effect": "no-change",
         "compact": true,
-        "discovery": discovery_value(observed, false),
+        "discovery": discovery_value(Some(reason), observed, false),
         "focus": focus,
         "nextAction": next_action,
     })
@@ -387,9 +399,14 @@ fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
     }))
 }
 
-fn resumed(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
+fn resumed(
+    loaded: &Loaded,
+    work: &str,
+    ledger: &str,
+    budget: &mut run::inputs::ResumeInputBudget,
+) -> Result<Value, String> {
     let (next, residual, presentation) =
-        super::next_snapshot::next_and_residual(loaded, work, ledger, true)
+        super::next_snapshot::next_and_residual_for_resume(loaded, work, ledger, true, budget)
             .map_err(|error| discovery_error(error, work))?;
     let mut result = json!({
         "status": "resumed",
@@ -510,14 +527,16 @@ fn push_unreadable(
 fn none_result(
     loaded: &Loaded,
     mut finished: Vec<(String, String, String)>,
+    budget: &mut run::inputs::ResumeInputBudget,
 ) -> Result<Value, String> {
     let mut result =
         json!({"status": "none", "next": {"action": "none", "reason": "no_active_work"}});
     finished.sort_by(|left, right| left.0.cmp(&right.0));
     if let Some((_, work, ledger)) = finished.pop() {
-        let (next, _residual, presentation) =
-            super::next_snapshot::next_and_residual(loaded, &work, &ledger, false)
-                .map_err(|error| discovery_error(error, &work))?;
+        let (next, _residual, presentation) = super::next_snapshot::next_and_residual_for_resume(
+            loaded, &work, &ledger, false, budget,
+        )
+        .map_err(|error| discovery_error(error, &work))?;
         // `presentation` sits where every other work response carries it, so
         // one documented path holds for every answer a host has to render.
         result["recent"] = json!({"work": work, "exitState": next["progress"]["state"]});

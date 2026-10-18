@@ -26,6 +26,61 @@ pub(crate) fn worktree_root(path: &Path) -> Result<Option<PathBuf>, String> {
         .map_err(|error| format!("Git worktree root cannot be resolved: {error}"))
 }
 
+/// Bounded read-only counterpart used only inside a request-owned discovery
+/// budget. Other Git preflight callers retain `worktree_root` semantics.
+pub(crate) fn worktree_root_bounded(
+    path: &Path,
+    deadline: std::time::Instant,
+) -> Result<Option<PathBuf>, String> {
+    let path_text = path
+        .to_str()
+        .ok_or("Git preflight requires a UTF-8 worktree path")?;
+    let mut command = Command::new("git");
+    command.args(["-C", path_text, "rev-parse", "--show-toplevel"]);
+    let output = match crate::kernel::bounded_process::run(&mut command, 4096, 65536, deadline) {
+        Ok(output) => output,
+        Err(error)
+            if error.reason == "launch_failed"
+                && error.kind == Some(std::io::ErrorKind::NotFound)
+                && !has_git_marker(path) =>
+        {
+            // With no .git marker anywhere above the root, walking it directly
+            // has the same documented non-Git coverage. A marker keeps the
+            // existing actionable missing-Git refusal.
+            return Ok(None);
+        }
+        Err(error)
+            if error.reason == "launch_failed"
+                && error.kind == Some(std::io::ErrorKind::NotFound) =>
+        {
+            return Err(command_error(std::io::Error::from(
+                std::io::ErrorKind::NotFound,
+            )));
+        }
+        Err(error) => {
+            return Err(format!(
+                "git_classification_{}: {}",
+                error.reason, error.detail
+            ));
+        }
+    };
+    if !output.status.success() {
+        if has_git_marker(path) {
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Git topology preflight failed: a .git marker exists at or above {path_text}, but Git cannot resolve a worktree; inspect the marker and run git rev-parse --show-toplevel from the requested source directory before retrying bootstrap; suspicious markers are not a no-Git fallback{}",
+                if diagnostic.is_empty() { String::new() } else { format!("; Git reported: {}", diagnostic.trim()) }
+            ));
+        }
+        return Ok(None);
+    }
+    let value = String::from_utf8(output.stdout)
+        .map_err(|_| "Git reported a non-UTF-8 worktree path".to_owned())?;
+    std::fs::canonicalize(value.trim())
+        .map(Some)
+        .map_err(|error| format!("Git worktree root cannot be resolved: {error}"))
+}
+
 pub(crate) fn has_git_marker(path: &Path) -> bool {
     path.ancestors().any(|ancestor| {
         std::fs::symlink_metadata(ancestor.join(".git"))
