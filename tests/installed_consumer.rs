@@ -269,12 +269,21 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
     .unwrap();
     assert!(displayed.len() < 1024);
     let status = f.ok(&["work", "next", work, "--json"]);
-    let argv = status["current"]["details"]["tasks"]["command"]
-        .as_array()
-        .unwrap();
-    let section = Command::new(argv[0].as_str().unwrap())
+    let route = &status["current"]["details"]["tasks"];
+    let descriptor = json!({
+        "argv": route["command"],
+        "sameConfigRequired": route["sameConfigRequired"],
+        "sameExecutableRequired": route["sameExecutableRequired"],
+    });
+    let argv = support::reconstruct_work_command(
+        &descriptor,
+        PathBuf::from(env!("CARGO_BIN_EXE_exitbind")).as_path(),
+        &f.root.join("exitbind.json"),
+        &f.root,
+    );
+    let section = Command::new(&argv[0])
         .current_dir(&f.root)
-        .args(argv[1..].iter().map(|v| v.as_str().unwrap()))
+        .args(&argv[1..])
         .output()
         .unwrap();
     assert!(section.status.success());
@@ -329,10 +338,20 @@ fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
         let mut expected_hash = Value::Null;
         let mut pages = 0;
         loop {
-            let argv = route["command"].as_array().unwrap();
-            let out = Command::new(argv[0].as_str().unwrap())
+            let descriptor = json!({
+                "argv": route["command"],
+                "sameConfigRequired": route["sameConfigRequired"],
+                "sameExecutableRequired": route["sameExecutableRequired"],
+            });
+            let argv = support::reconstruct_work_command(
+                &descriptor,
+                PathBuf::from(env!("CARGO_BIN_EXE_exitbind")).as_path(),
+                &f.root.join("exitbind.json"),
+                &f.root,
+            );
+            let out = Command::new(&argv[0])
                 .current_dir(&f.root)
-                .args(argv[1..].iter().map(|v| v.as_str().unwrap()))
+                .args(&argv[1..])
                 .output()
                 .unwrap();
             assert!(out.status.success(), "{out:?}");
