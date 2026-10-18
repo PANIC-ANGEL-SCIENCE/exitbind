@@ -1745,6 +1745,21 @@
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
       "currentSha256": "8396a4ececfe2793731d24deda11346c9850959c8c70bb0c20308c6a3c303f83",
       "reason": "Preserve all8 original cases byte-for-byte and add2 regression cases for unrelated missing historical configuration and required selected-ancestor configuration. New helpers use emitted role forms, full stdin artifacts and isolated native sessions; no original refusal or lineage assertion is removed."
+    },
+    "tests/check_retry.rs": {
+      "baselineSha256": "a3bc2766b3bcbbaea6eb00eb9d234e1b2be8a59b975b9f74a686f95cda85a8bb",
+      "currentSha256": "64dbbf79dfcccb7b8bf538f98363ad8c037067422e90a24c36f4109c49cc82ab",
+      "reason": "Preserve every retry, preservation-order and ledger assertion while resolving compact current Work responses through the validated emitted read-only work next --full command; no check or mutation is replayed."
+    },
+    "tests/review_policy.rs": {
+      "baselineSha256": "161bd970d1578e22bfb82508bf5c89069b20d13bd87fe6022791634889aec349",
+      "currentSha256": "d228d85a5441c3a4de6ba3e43080c53e068f1ff21dea8e036b6e520459459d94",
+      "reason": "Preserve all review-policy transitions and stale-action refusals while resolving compact current Work responses through the validated emitted read-only work next --full command; no approval or other mutation is replayed."
+    },
+    "tests/support/mod.rs": {
+      "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
+      "currentSha256": "4d4b92030a944988945dec677a417bd7fd95d6f860d4ab47129a4736672bacbb",
+      "reason": "Add a shared test-only expansion helper that accepts only the exact read-only work next --full argv and verifies the current executable and fixture config before reading the pending action; it performs no check or mutation."
     }
   },
   "additions": [
