@@ -480,17 +480,31 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
 #[test]
 fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     let cleanup_root = support::temp("action-view-long-root");
-    // Calibrate total path bytes instead of relying on a fixed number of
-    // components: short TMPDIR values otherwise make this boundary fixture
-    // stop exercising the complete pre-compression response.
+    // Calibrate the canonical root length across ordinary and deep TMPDIRs.
+    // The four detail commands each retain the exact config path near their
+    // 768-byte argv budget, preserving enough aggregate route bytes to exercise
+    // the grouped fallback after action-command reprojection.
     let mut components = (0..3)
         .map(|index| format!("agent-host-managed-workspace-project-checkout-{index:02}"))
         .collect::<Vec<_>>();
     let fixed_len = cleanup_root.to_str().unwrap().len()
         + components.iter().map(String::len).sum::<usize>()
         + components.len();
-    let target_len = fixed_len.max(250);
-    components[2].push_str(&"x".repeat(target_len - fixed_len));
+    let target_len = 550;
+    assert!(
+        fixed_len <= target_len,
+        "TMPDIR leaves no room for the grouped-route path fixture: {fixed_len} > {target_len}"
+    );
+    let padding = target_len - fixed_len;
+    let per_component = padding / components.len();
+    let remainder = padding % components.len();
+    for (index, component) in components.iter_mut().enumerate() {
+        component.push_str(&"x".repeat(per_component + usize::from(index < remainder)));
+    }
+    assert!(
+        components.iter().all(|component| component.len() <= 255),
+        "grouped-route fixture exceeds the filesystem component limit"
+    );
     let mut root = cleanup_root.clone();
     for component in components {
         root.push(component);
