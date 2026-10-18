@@ -1801,6 +1801,11 @@
       "currentSha256": "c55bee967fcf5c7eedc4b10de5a1d6924d2c62bcee0db66487aa130181f3b493",
       "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks."
     },
+    "tests/installed_consumer.rs": {
+      "baselineSha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71",
+      "currentSha256": "8a8901547377ba8650d784095910ff8e489c895dec633d2b463985c5ebda7b90",
+      "reason": "The two bounded section consumers now reconstruct emitted commands through the existing fixture executor using each route's exact executable and config requirements; all original assertions remain intact."
+    },
     "tests/work_action_refresh.rs": {
       "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
       "currentSha256": "526a2c583e9b029327d6c1a3551a0d8dfdb22654eb2da2052fdc30760fc556ad",
