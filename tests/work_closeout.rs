@@ -507,10 +507,9 @@ fn unrepresentable_output_refuses_before_write_and_representable_long_output_rep
     let ledger_before = fs::read(&ledger).unwrap();
     let mut directory = fs::File::open(fixture.root.join(".exitbind/receipts")).unwrap();
     let mut destination = String::from(".exitbind/receipts");
-    // Build owned real directories one component at a time. A single OS path
-    // lookup cannot reach the negative case, while the product's secure
-    // descriptor traversal supports it and must refuse before creating a leaf.
-    for number in 0..80 {
+    // Materialize 20 ordinary components, which is enough for the supported
+    // long receipt case without exceeding common filesystem path limits.
+    for number in 0..20 {
         let segment = format!("segment{number:03}{}", "x".repeat(110));
         let name = CString::new(segment.as_str()).unwrap();
         let made = unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) };
@@ -544,6 +543,29 @@ fn unrepresentable_output_refuses_before_write_and_representable_long_output_rep
             }
         }
     }
+    // The response-boundary case needs a valid lexical path over 8 KiB, not
+    // 80 levels of real ancestry. Keep the held descriptor at the deepest
+    // owned directory and leave the first tail component physically absent.
+    let mut first_uncreated = None;
+    for number in 20..80 {
+        let segment = format!("segment{number:03}{}", "x".repeat(110));
+        if first_uncreated.is_none() {
+            first_uncreated = Some(segment.clone());
+        }
+        destination.push('/');
+        destination.push_str(&segment);
+    }
+    let mut tail_number = 80;
+    while destination.len() + "/proof.json".len() <= 8 * 1024 {
+        let segment = format!("segment{tail_number:03}{}", "x".repeat(110));
+        if first_uncreated.is_none() {
+            first_uncreated = Some(segment.clone());
+        }
+        destination.push('/');
+        destination.push_str(&segment);
+        tail_number += 1;
+    }
+    let first_uncreated = CString::new(first_uncreated.unwrap()).unwrap();
     destination.push_str("/proof.json");
     assert!(destination.len() > 8 * 1024);
     for _ in 0..2 {
@@ -551,6 +573,21 @@ fn unrepresentable_output_refuses_before_write_and_representable_long_output_rep
         assert!(!output.status.success(), "{output:?}");
         assert!(output.stdout.is_empty());
         assert!(String::from_utf8_lossy(&output.stderr).contains("exceeds its bounded channel"));
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                first_uncreated.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if descriptor >= 0 {
+            drop(unsafe { fs::File::from_raw_fd(descriptor) });
+            panic!("unrepresentable reply created its first tail component");
+        }
+        assert_eq!(
+            std::io::Error::last_os_error().kind(),
+            std::io::ErrorKind::NotFound
+        );
         let leaf = CString::new("proof.json").unwrap();
         let descriptor = unsafe {
             libc::openat(
