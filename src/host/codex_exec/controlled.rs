@@ -130,7 +130,7 @@ fn first_missing_option<'a>(help: &str, required: &'a [&'a str]) -> Option<&'a s
 
 fn help_lists_option(help: &str, option: &str) -> bool {
     help.lines().any(|line| {
-        let mut tokens = line.trim_start().split_whitespace();
+        let mut tokens = line.split_whitespace();
         let Some(first) = tokens.next() else {
             return false;
         };
