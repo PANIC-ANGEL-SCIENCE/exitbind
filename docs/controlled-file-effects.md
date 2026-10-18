@@ -12,9 +12,19 @@ The file tool checks current authority again at admission.
 
 | Host and path | UTF-8 replacement capability |
 | --- | --- |
-| Linux, Codex 0.160.0, host-writable source, explicit controlled launch, capability preflight passes | **enforced** for this file effect |
+| Linux, Codex CLI exposes the required `exec` and `sandbox` options, host-writable source, explicit controlled launch, and native read-only preflight passes | **enforced** for this file effect |
 | Ordinary native workspace-write, including the managed shell tool and expert `work write` | **mediated/advisory**; equivalent native writes remain possible |
-| Controlled launch on other OS/version, inherited project/system/managed Codex configuration, failed protection preflight, or resumed session | **unsupported**; the explicit option refuses |
+| Controlled launch on another OS, with missing CLI capabilities, inherited project/system/managed Codex configuration, failed protection preflight, or resumed session | **unsupported**; the explicit option refuses |
+
+The launcher checks the selected executable's `exec` and `sandbox` help for
+every option it relies on, then runs a native read-only probe over
+the selected source, control, state and executable roots. It does not use a
+release number as an allow-list. A changed CLI is accepted only when it exposes
+the required launch controls and the actual protection probe succeeds; this is
+an invocation-time capability check, not a guarantee for untested releases.
+The help and read-only preflight have been exercised without a model call on
+Codex CLI 0.160.0 and 0.163.0; this verifies those CLI capabilities and the
+selected-root protection probe, not every controlled effect or future release.
 
 The supported cell trusts the operator's installed Codex and Exitbind binaries
 and their launch environment. It constrains the governed worker and its child

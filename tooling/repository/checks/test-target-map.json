@@ -1765,6 +1765,11 @@
       "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
       "currentSha256": "0fae2b4cb6ae136c6a05f7a32dc981f2f8a11a57c04e9c461b9c4274849bd730",
       "reason": "Preserve the governor-lineage assertions while resolving the compact current Work response through the validated emitted read-only work next --full command; no grant, check or mutation is replayed."
+    },
+    "tests/controlled_effects.rs": {
+      "baselineSha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322",
+      "currentSha256": "9c218af5255a0bc31dbbae839b778626a34c2f87acce4b77f8389ddf1d32af08",
+      "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain."
     }
   },
   "additions": [

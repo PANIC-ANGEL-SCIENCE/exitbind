@@ -401,10 +401,15 @@ fn persistent_transport_observes_configuration_revocation_before_replay() {
 }
 
 #[test]
+// A different release is accepted only when it exposes the required capabilities.
 fn controlled_option_refuses_other_versions_project_config_and_capability_override() {
     let f = Fixture::new();
     let fake = f.root.join("codex-fixture");
-    fs::write(&fake, "#!/bin/sh\nif [ \"$1\" = '--version' ]; then printf 'codex-cli 0.159.0\\n'; exit 0; fi\nprintf unexpected-provider > provider-started\nexit 1\n").unwrap();
+    fs::write(
+        &fake,
+        "#!/bin/sh\nif [ \"$1\" = 'exec' ] && [ \"$2\" = '--help' ]; then printf 'codex-cli 0.159.0\\n  --json\\n  --ephemeral\\n  --ignore-rules\\n  --disable\\n  -c, --config\\n  --sandbox\\n  --model\\n  --output-schema\\n'; exit 0; fi\nprintf unexpected-provider > provider-started\nexit 1\n",
+    )
+    .unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
     let invoke = |extra: &[&str]| {
         let mut args = vec![
@@ -459,7 +464,7 @@ fn controlled_option_refuses_other_versions_project_config_and_capability_overri
         return;
     }
     assert!(
-        String::from_utf8_lossy(&old.stderr).contains("0.160.0"),
+        String::from_utf8_lossy(&old.stderr).contains("lacks required CLI options"),
         "{old:?}"
     );
     fs::create_dir(f.root.join(".codex")).unwrap();

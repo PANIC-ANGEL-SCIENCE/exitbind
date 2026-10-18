@@ -3,6 +3,19 @@
 use super::{Request, RunError};
 use std::{path::Path, process::Command};
 
+const EXEC_REQUIRED_OPTIONS: &[&str] = &[
+    "--json",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--disable",
+    "-c",
+    "--sandbox",
+    "--model",
+    "--output-schema",
+];
+const SANDBOX_REQUIRED_OPTIONS: &[&str] = &["-P", "-C"];
+
 #[derive(Clone, Debug)]
 pub(crate) struct Tool {
     pub(crate) executable: String,
@@ -53,15 +66,18 @@ pub(super) fn validate(request: &Request) -> Result<(), RunError> {
             ));
         }
     }
-    let output = Command::new(&request.executable)
-        .arg("--version")
-        .output()
-        .map_err(RunError::Launch)?;
-    if !output.status.success() || output.stdout != b"codex-cli 0.160.0\n" {
-        return Err(RunError::InvalidRequest(
-            "controlled effects currently support Codex 0.160.0 on Linux only",
-        ));
-    }
+    require_options(
+        &request.executable,
+        &["exec"],
+        EXEC_REQUIRED_OPTIONS,
+        "controlled effects unsupported: Codex exec lacks required CLI options",
+    )?;
+    require_options(
+        &request.executable,
+        &["sandbox"],
+        SANDBOX_REQUIRED_OPTIONS,
+        "controlled effects unsupported: Codex sandbox lacks required read-only CLI options",
+    )?;
     let tool = request.controlled_tool.as_ref().expect("validated tool");
     let probe = Command::new(&request.executable)
         .args(["sandbox", "-P", ":read-only", "-C"])
@@ -80,6 +96,52 @@ pub(super) fn validate(request: &Request) -> Result<(), RunError> {
         return Err(RunError::InvalidRequest("controlled effects unsupported: native read-only capability does not protect every selected source/control/state/tool root"));
     }
     Ok(())
+}
+
+fn require_options(
+    executable: &Path,
+    command: &[&str],
+    required: &[&str],
+    refusal: &'static str,
+) -> Result<(), RunError> {
+    let output = Command::new(executable)
+        .args(command)
+        .arg("--help")
+        .output()
+        .map_err(RunError::Launch)?;
+    if !output.status.success() {
+        return Err(RunError::InvalidRequest(refusal));
+    }
+    let mut help = output.stdout;
+    help.extend_from_slice(&output.stderr);
+    let help = String::from_utf8_lossy(&help);
+    if first_missing_option(&help, required).is_some() {
+        return Err(RunError::InvalidRequest(refusal));
+    }
+    Ok(())
+}
+
+fn first_missing_option<'a>(help: &str, required: &'a [&'a str]) -> Option<&'a str> {
+    required
+        .iter()
+        .copied()
+        .find(|option| !help_lists_option(help, option))
+}
+
+fn help_lists_option(help: &str, option: &str) -> bool {
+    help.lines().any(|line| {
+        let mut tokens = line.trim_start().split_whitespace();
+        let Some(first) = tokens.next() else {
+            return false;
+        };
+        if first.trim_end_matches(',') == option {
+            return true;
+        }
+        first.ends_with(',')
+            && tokens
+                .next()
+                .is_some_and(|alias| alias == option && alias.starts_with('-'))
+    })
 }
 
 pub(super) fn configure(command: &mut Command, tool: &Tool) {
@@ -137,7 +199,9 @@ fn protect_descriptors(command: &mut Command) {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::protect_descriptors;
+    use super::{
+        first_missing_option, help_lists_option, protect_descriptors, EXEC_REQUIRED_OPTIONS,
+    };
     use std::{fs::File, os::unix::io::AsRawFd, process::Command};
 
     #[test]
@@ -152,5 +216,18 @@ mod tests {
         assert!(child.status().unwrap().success());
         // The parent retains its descriptor and flags.
         assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, 0);
+    }
+
+    #[test]
+    fn capability_detection_uses_options_not_a_version_allowlist() {
+        let help = "codex-cli 0.163.0\n  --json\n  --ephemeral\n  --ignore-user-config\n  --ignore-rules\n  --disable <FEATURE>\n  -c, --config <key=value>\n  --sandbox <MODE>\n  --model <MODEL>\n  --output-schema <FILE>\nDescription: --missing-capability is not listed above.\n";
+        assert_eq!(first_missing_option(help, EXEC_REQUIRED_OPTIONS), None);
+        assert!(help_lists_option(help, "-c"));
+        assert!(help_lists_option(help, "--ignore-user-config"));
+        assert!(!help_lists_option(help, "--missing-capability"));
+        assert_eq!(
+            first_missing_option(help, &["-P", "--missing-capability"]),
+            Some("-P")
+        );
     }
 }
