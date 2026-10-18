@@ -13,6 +13,7 @@ pub(super) mod recipient_context;
 
 pub(crate) const PREFIX: &str = "ref:work-detail:v1:";
 pub(crate) const MAX_GROUPED_BYTES: usize = 256 * 1024;
+const ACTION_VIEW_ARGV_BUDGET: usize = 256;
 
 pub(crate) fn is_grouped(reference: &str) -> bool {
     reference.starts_with(PREFIX)
@@ -125,7 +126,7 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         routes.remove("grouped");
     }
     let result = json!({"compact":true,"version":1,"kind":"work_action","work":work,"binding":binding,
-        "actionForms":forms,"recipient":next["current"]["recipient"],
+        "actionForms":forms.clone(),"recipient":next["current"]["recipient"],
         "decision": {"goal":next["current"]["goal"], "phase":next["current"]["phase"],
             "result":next["current"]["result"], "readiness":next["current"]["readiness"],
             "obligations":next["packet"]["context"]["obligations"],
@@ -144,26 +145,27 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     if next["current"]["checkReplacement"].is_object() {
         result["checkReplacement"] = next["current"]["checkReplacement"].clone();
     }
-    let mut effective = super::effective_action::project(&result);
-    let form = result
-        .as_object_mut()
-        .unwrap()
-        .remove("actionForms")
-        .unwrap();
-    effective["formState"] = form["state"].clone();
-    for (key, value) in form.as_object().unwrap() {
-        if !effective.as_object().unwrap().contains_key(key) {
-            effective[key] = value.clone();
-        }
-    }
-    effective["source"]["location"] = json!("effectiveAction");
-    result["effectiveAction"] = effective;
+    project_action_view(&mut result);
+    result.as_object_mut().unwrap().remove("actionForms");
     if serde_json::to_vec(&result)
         .map_err(|e| e.to_string())?
         .len()
         + 1
         > super::compact::MAX_RESPONSE_BYTES
     {
+        let mut forms = forms;
+        bound_action_view_commands(loaded, &mut forms)?;
+        result["actionForms"] = forms;
+        project_action_view(&mut result);
+        result.as_object_mut().unwrap().remove("actionForms");
+    }
+    if serde_json::to_vec(&result)
+        .map_err(|e| e.to_string())?
+        .len()
+        + 1
+        > super::compact::MAX_RESPONSE_BYTES
+    {
+        result.as_object_mut().unwrap().remove("actionForms");
         if let Some(grouped_route) = grouped_route.filter(|route| route.is_object()) {
             result["details"] = json!({"grouped": grouped_route});
         }
@@ -179,6 +181,107 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         }
     }
     Ok(result)
+}
+
+fn project_action_view(result: &mut Value) {
+    let mut effective = super::effective_action::project(result);
+    let form = result
+        .get("actionForms")
+        .expect("action view projection requires action forms");
+    effective["formState"] = form["state"].clone();
+    for (key, value) in form.as_object().expect("action forms are an object") {
+        if !effective.as_object().unwrap().contains_key(key) {
+            effective[key] = value.clone();
+        }
+    }
+    effective["source"]["location"] = json!("effectiveAction");
+    result["effectiveAction"] = effective;
+}
+
+fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), String> {
+    match value {
+        Value::Object(object) => {
+            let is_command = object.get("argv").is_some_and(Value::is_array)
+                && object
+                    .get("sameConfigRequired")
+                    .is_some_and(Value::is_boolean)
+                && object
+                    .get("sameExecutableRequired")
+                    .is_some_and(Value::is_boolean);
+            if is_command {
+                let argv = object["argv"]
+                    .as_array()
+                    .ok_or("action command argv unavailable")?;
+                let argv = argv
+                    .iter()
+                    .map(|argument| {
+                        argument
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or("action command argv is not text")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let same_executable = object["sameExecutableRequired"]
+                    .as_bool()
+                    .ok_or("action command executable requirement unavailable")?;
+                let same_config = object["sameConfigRequired"]
+                    .as_bool()
+                    .ok_or("action command config requirement unavailable")?;
+                let start = if !same_executable {
+                    let expected = std::env::current_exe()
+                        .ok()
+                        .and_then(|path| path.to_str().map(str::to_owned))
+                        .ok_or("action command executable is no longer addressable")?;
+                    if argv.first() != Some(&expected) {
+                        return Err(
+                            "action command executable changed during view construction".into()
+                        );
+                    }
+                    1
+                } else {
+                    0
+                };
+                if argv.len() <= start {
+                    return Err("action command argv is malformed".into());
+                }
+                let mut suffix = argv[start..].to_vec();
+                if !same_config {
+                    if suffix.len() < 2
+                        || suffix[suffix.len() - 2] != "--config"
+                        || Some(suffix[suffix.len() - 1].as_str()) != loaded.path.to_str()
+                    {
+                        return Err("action command config changed during view construction".into());
+                    }
+                    suffix.pop();
+                } else if suffix.last().map(String::as_str) != Some("--config") {
+                    return Err("action command argv is malformed".into());
+                }
+                let command = super::response_recovery::bounded_argv(
+                    suffix,
+                    loaded.path.to_str(),
+                    ACTION_VIEW_ARGV_BUDGET,
+                );
+                object.insert("argv".into(), command.argv);
+                object.insert("sameConfigRequired".into(), json!(command.same_config));
+                object.insert(
+                    "sameExecutableRequired".into(),
+                    json!(command.same_executable),
+                );
+            }
+            for (key, child) in object.iter_mut() {
+                if key != "argv" {
+                    bound_action_view_commands(loaded, child)?;
+                }
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                bound_action_view_commands(loaded, child)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(crate) fn expand(

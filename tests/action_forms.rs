@@ -503,6 +503,68 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     assert!(output.status.success(), "{}", text(&output));
     assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
     let action: Value = serde_json::from_slice(&output.stdout).unwrap();
+    fn has_reconstructable_action_command(value: &Value) -> bool {
+        match value {
+            Value::Object(object) => {
+                if object.get("argv").and_then(Value::as_array).is_some() {
+                    assert!(object["sameConfigRequired"].is_boolean());
+                    assert!(object["sameExecutableRequired"].is_boolean());
+                    if object["sameConfigRequired"] == true
+                        || object["sameExecutableRequired"] == true
+                    {
+                        return true;
+                    }
+                }
+                object.values().any(has_reconstructable_action_command)
+            }
+            Value::Array(values) => values.iter().any(has_reconstructable_action_command),
+            _ => false,
+        }
+    }
+    assert!(
+        has_reconstructable_action_command(&action["effectiveAction"]),
+        "long-path fixture no longer exercises bounded argv reconstruction"
+    );
+
+    fn expand_action_commands(value: &Value, executable: &str, config: &str) -> Value {
+        match value {
+            Value::Object(object) => {
+                let mut expanded = object
+                    .iter()
+                    .map(|(key, child)| {
+                        (
+                            key.clone(),
+                            expand_action_commands(child, executable, config),
+                        )
+                    })
+                    .collect::<serde_json::Map<_, _>>();
+                if let Some(argv) = expanded.get("argv").and_then(Value::as_array) {
+                    if expanded["sameExecutableRequired"] == true
+                        || expanded["sameConfigRequired"] == true
+                    {
+                        let mut argv = argv.clone();
+                        if expanded["sameExecutableRequired"] == true {
+                            argv.insert(0, json!(executable));
+                        }
+                        if expanded["sameConfigRequired"] == true {
+                            argv.push(json!(config));
+                        }
+                        expanded.insert("argv".into(), Value::Array(argv));
+                        expanded.insert("sameExecutableRequired".into(), json!(false));
+                        expanded.insert("sameConfigRequired".into(), json!(false));
+                    }
+                }
+                Value::Object(expanded)
+            }
+            Value::Array(values) => Value::Array(
+                values
+                    .iter()
+                    .map(|child| expand_action_commands(child, executable, config))
+                    .collect(),
+            ),
+            value => value.clone(),
+        }
+    }
     assert_eq!(action["recipient"]["role"], "reviewer");
     assert_eq!(action["binding"], reviewer["current"]["binding"]);
     assert_eq!(action["decision"]["goal"], reviewer["current"]["goal"]);
@@ -571,9 +633,20 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
         .unwrap()
         .iter()
         .any(|check| check["kind"] == "check" && check["status"] == "passed"));
+    let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind"))
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let config = fs::canonicalize(fixture.root.join("exitbind.json"))
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
     assert_eq!(
-        grouped["actionForms"]["choices"],
-        action["effectiveAction"]["choices"]
+        expand_action_commands(&grouped["actionForms"]["choices"], &executable, &config),
+        expand_action_commands(&action["effectiveAction"]["choices"], &executable, &config),
+        "bounded action view changed choices beyond its reconstructable command paths"
     );
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before_action);
 
