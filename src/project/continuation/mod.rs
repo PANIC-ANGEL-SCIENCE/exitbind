@@ -55,17 +55,27 @@ pub(crate) fn time_amendment_hold(
 /// Project only the association already validated from this RunSnapshot's
 /// events into Work navigation. The action form consumes this checked marker;
 /// callers must not synthesize it from assignment context.
-pub(crate) fn validated_action_association(
+pub(crate) fn attach_validated_action_association(
     loaded: &Loaded,
-    events: &[Value],
-) -> Result<Option<Value>, String> {
+    snapshot: &Value,
+    next: &mut Value,
+) -> Result<(), String> {
+    let events = snapshot["events"]
+        .as_array()
+        .ok_or("validated Work snapshot has no event list")?;
     let state = crate::run::reduce_live(loaded, events)?;
     if state.get("projectContinuation").is_none() {
-        return Ok(None);
+        return Ok(());
     }
     association::for_state(loaded, &state)?
         .ok_or("frozen continuation association was not validated")?;
-    Ok(Some(state["projectContinuation"].clone()))
+    if let Some(packet) = next["packet"].as_object_mut() {
+        packet.insert(
+            "projectContinuation".into(),
+            state["projectContinuation"].clone(),
+        );
+    }
+    Ok(())
 }
 
 pub(crate) fn propose(loaded: &Loaded, source: &str) -> Result<Value, String> {

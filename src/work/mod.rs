@@ -609,16 +609,7 @@ fn attach_held(
 fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
     let mut next = next_from_base(loaded, work, snapshot)?;
     let view = snapshot.inspect_view();
-    if let Some(marker) = crate::project::continuation::validated_action_association(
-        loaded,
-        view["events"]
-            .as_array()
-            .ok_or("validated Work snapshot has no event list")?,
-    )? {
-        if let Some(packet) = next["packet"].as_object_mut() {
-            packet.insert("projectContinuation".into(), marker);
-        }
-    }
+    crate::project::continuation::attach_validated_action_association(loaded, &view, &mut next)?;
     details::attach(loaded, work, snapshot, &mut next)?;
     Ok(next)
 }
