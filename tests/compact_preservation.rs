@@ -19,11 +19,11 @@ fn route_descriptor(
         "sameExecutableRequired": value
             .get(executable_key)
             .cloned()
-            .unwrap_or_else(|| json!(false)),
+            .unwrap_or(Value::Bool(false)),
         "sameConfigRequired": value
             .get(config_key)
             .cloned()
-            .unwrap_or_else(|| json!(false)),
+            .unwrap_or(Value::Bool(false)),
     })
 }
 

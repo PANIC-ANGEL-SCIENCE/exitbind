@@ -1738,7 +1738,7 @@
     },
     "tests/compact_preservation.rs": {
       "baselineSha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9",
-      "currentSha256": "3f90b602d4bdef8028acdf1baf7981a190fe20e8e501b4d5a34f64ec56e39d20",
+      "currentSha256": "71039dfcfac69a12b0f1518daabe13b8a97c3d7b4955d5f8111e6d1eae3f36c2",
       "reason": "Preserve output bounds, assignment/event identity, and copied-executable identity requirements while replacing obsolete raw-array/no-elision assertions with exact route reconstruction. The two Work routes use the existing descriptor helper; the returned read-only run inspect route validates its command family, work-derived ledger, event selector, JSON mode, and config boundary before execution. Only absent flags default to false; present malformed values remain visible for rejection. The copied-executable case requires the canonical candidate and executes it."
     },
     "tests/goal_requirements.rs": {
