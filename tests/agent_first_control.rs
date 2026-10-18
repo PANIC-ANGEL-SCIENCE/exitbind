@@ -253,9 +253,33 @@ fn checked_facade_hides_protocol_transport_and_preserves_core_binding() {
         Some(b"worker result"),
     );
     assert_no_raw_protocol_fields(&worker_return);
-    let check_pending = fixture.value(&["work", "next", &work], None);
+    let check_pending_output = fixture.call(&["work", "next", &work], None);
+    assert!(
+        check_pending_output.stdout.len() <= 8 * 1024,
+        "compact next response exceeded 8192 bytes: {}",
+        check_pending_output.stdout.len()
+    );
+    assert!(
+        check_pending_output.status.success(),
+        "{check_pending_output:?}"
+    );
+    let check_pending: Value = serde_json::from_slice(&check_pending_output.stdout).unwrap();
     assert_no_raw_protocol_fields(&check_pending);
-    assert_eq!(check_pending["next"]["action"], "check");
+    let compact_action = check_pending["next"]["action"].as_str().unwrap_or("");
+    assert!(
+        matches!(compact_action, "check" | "inspect"),
+        "unexpected compact next action: {check_pending}"
+    );
+    if compact_action == "inspect" {
+        assert!(check_pending["fullCommand"].is_array(), "{check_pending}");
+    }
+    let complete_check = fixture.value(&["work", "next", &work, "--full"], None);
+    assert_eq!(complete_check["next"]["action"], "check");
+    assert_eq!(complete_check["work"], work);
+    assert_eq!(
+        complete_check["next"]["current"]["binding"],
+        check_pending["current"]["binding"]
+    );
     std::fs::write(fixture.root.join("marker"), b"ok").unwrap();
     let checked = fixture.value(&["work", "check", &work], None);
     assert_no_raw_protocol_fields(&checked);
@@ -317,11 +341,33 @@ fn resume_is_explicit_for_zero_and_multiple_active_work_items() {
         None,
     );
     assert_no_raw_protocol_fields(&first_begin);
-    let one = fixture.value(&["work", "resume"], None);
+    let one_output = fixture.call(&["work", "resume"], None);
+    assert!(
+        one_output.stdout.len() <= 8 * 1024,
+        "compact resume response exceeded 8192 bytes: {}",
+        one_output.stdout.len()
+    );
+    assert!(one_output.status.success(), "{one_output:?}");
+    let one: Value = serde_json::from_slice(&one_output.stdout).unwrap();
     assert_no_raw_protocol_fields(&one);
     assert_eq!(one["status"], "resumed");
     assert_eq!(one["work"], first_begin["work"]);
-    assert_eq!(one["next"]["action"], "lead_decision");
+    let compact_action = one["next"]["action"].as_str().unwrap_or("");
+    assert!(
+        matches!(compact_action, "lead_decision" | "inspect"),
+        "unexpected compact resume action: {one}"
+    );
+    if compact_action == "inspect" {
+        assert!(one["fullCommand"].is_array(), "{one}");
+    }
+    let one_full = fixture.value(&["work", "resume", "--full"], None);
+    assert_eq!(one_full["status"], "resumed");
+    assert_eq!(one_full["work"], one["work"]);
+    assert_eq!(one_full["next"]["action"], "lead_decision");
+    assert_eq!(
+        one_full["next"]["current"]["binding"],
+        one["current"]["binding"]
+    );
     let second_begin = fixture.value(
         &[
             "work",

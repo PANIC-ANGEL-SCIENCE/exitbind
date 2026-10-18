@@ -380,16 +380,16 @@ fn specialist_only_child_preparation_binds_and_rechecks_before_hook_presentation
 
 #[test]
 fn ordinary_recipient_keeps_complete_large_profile_with_specialist_memory() {
-    assert_complete_specialist_recipient(Fixture::new(), false);
+    assert_complete_specialist_recipient(Fixture::new());
 }
 
 #[test]
 fn long_action_paths_keep_complete_large_profile_with_specialist_memory() {
     let label = format!("specialist-routing-{}", "long-path-".repeat(10));
-    assert_complete_specialist_recipient(Fixture::with_label(&label), true);
+    assert_complete_specialist_recipient(Fixture::with_label(&label));
 }
 
-fn assert_complete_specialist_recipient(f: Fixture, expect_grouped: bool) {
+fn assert_complete_specialist_recipient(f: Fixture) {
     let profile = f.config()["agents"]["record-specialist"]["profile"]
         .as_str()
         .unwrap()
@@ -410,13 +410,18 @@ fn assert_complete_specialist_recipient(f: Fixture, expect_grouped: bool) {
         detail["recipientContext"]["specialistExperience"]["experience"][0]["revision"],
         "r1"
     );
-    let action = f.ok(&["work", "detail", &work, "--view", "action"]);
-    if expect_grouped {
-        assert!(action["details"]["grouped"].is_object(), "{action}");
-        assert!(action["details"]["recipient"].is_null(), "{action}");
-    }
-    // Long invocation paths can collapse section routes into the bounded
-    // grouped fallback. Full next retains the exact current section routes.
+    let action_output = f.call(&["work", "detail", &work, "--view", "action"]);
+    assert!(action_output.status.success(), "{action_output:?}");
+    assert!(
+        action_output.stdout.len() <= 8 * 1024,
+        "compact action response exceeded 8192 bytes: {}",
+        action_output.stdout.len()
+    );
+    let action: Value = serde_json::from_slice(&action_output.stdout).unwrap();
+    assert_eq!(action["compact"], true);
+    // The bounded action may carry a direct section route or a grouped route.
+    // Full next retains the exact current section route when grouped fallback
+    // omits the direct recipient route.
     let mut reference = action["details"]["recipient"]["reference"]
         .as_str()
         .map(str::to_owned)

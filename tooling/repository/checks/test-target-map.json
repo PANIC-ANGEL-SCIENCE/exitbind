@@ -1770,6 +1770,16 @@
       "baselineSha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322",
       "currentSha256": "9c218af5255a0bc31dbbae839b778626a34c2f87acce4b77f8389ddf1d32af08",
       "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain."
+    },
+    "tests/agent_first_control.rs": {
+      "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
+      "currentSha256": "aa9505232d3db79f808494602a36d7ef58ef221714adabe63eb9d45c48829113",
+      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles."
+    },
+    "tests/specialist_routing.rs": {
+      "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
+      "currentSha256": "91905c7fd652fdc1ceb8feae5fc1c51e6f0bdd85fb2f8a312c57b9d4e285ec94",
+      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision."
     }
   },
   "additions": [
