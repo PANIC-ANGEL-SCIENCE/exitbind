@@ -8,40 +8,48 @@ use std::path::Path;
 fn minimum_recovery_retains_terminal_without_inventing_completion() {
     let card = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
     for terminal in [json!(card), serde_json::Value::Null] {
-        for config_bytes in [32, 4_096, 6_000, 64_000] {
-            let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
-            let response = json!({
-                "status": "resumed", "works": [],
-                "unreadable": [{"work": "smw_old", "reason": "corrupt_ledger"}],
-                "work":"smw_work", "effect":"no-change",
-                "next":{"action":"done", "current":{"action":"done", "binding":"bound",
-                    "readiness":"READY", "details":{"summary":"x".repeat(6_400)},
-                    "actionForm":{"version":1,"state":"done"}}},
-                "presentation":{"terminal":terminal, "oversized":"x".repeat(16_000),
-                    "goalProgress":{"overall":"complete", "systemText":"s".repeat(3_000),
-                        "tasks":(0..32).map(|_|json!({"id":"x".repeat(500),
-                            "label":"x".repeat(500),"state":"complete"})).collect::<Vec<_>>()}}
-            });
-            let compact = project(&response, Path::new(&config), "next").unwrap();
-            assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
-            assert_eq!(compact["presentation"]["terminal"], terminal);
-            assert_eq!(compact["status"], "resumed");
-            assert_eq!(compact["works"], response["works"]);
-            assert_eq!(compact["unreadable"], response["unreadable"]);
-            assert_eq!(compact["current"]["binding"], "bound");
-            let argv = compact["fullCommand"].as_array().unwrap();
-            if !argv
-                .iter()
-                .any(|argument| argument.as_str() == Some(config.as_str()))
-            {
-                assert_eq!(compact["fullCommandSameConfigRequired"], true);
-                assert_eq!(argv.last().unwrap(), "--config");
-            }
-            assert!(compact["presentation"].get("goalProgress").is_none());
-            if crate::producer::exitbind_surface() {
-                assert_eq!(compact["effectiveAction"]["exists"], false);
-            } else {
-                assert!(compact.get("effectiveAction").is_none());
+        for overall in ["complete", "context_only", "unavailable"] {
+            for config_bytes in [32, 4_096, 6_000, 64_000] {
+                let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
+                let response = json!({
+                    "status": "resumed", "works": [],
+                    "unreadable": [{"work": "smw_old", "reason": "corrupt_ledger"}],
+                    "work":"smw_work", "effect":"no-change",
+                    "next":{"action":"done", "current":{"action":"done", "binding":"bound",
+                        "readiness":"READY", "details":{"summary":"x".repeat(6_400)},
+                        "actionForm":{"version":1,"state":"done"}}},
+                    "presentation":{"terminal":terminal, "oversized":"x".repeat(16_000),
+                        "goalProgress":{"overall":overall, "systemText":"s".repeat(3_000),
+                            "nextAction":{"summary":"x".repeat(3_000)},
+                            "tasks":(0..32).map(|_|json!({"id":"x".repeat(500),
+                                "label":"x".repeat(500),"state":"complete"})).collect::<Vec<_>>()}}
+                });
+                let compact = project(&response, Path::new(&config), "next").unwrap();
+                assert!(serde_json::to_vec(&compact).unwrap().len() < MAX_RESPONSE_BYTES);
+                assert_eq!(compact["presentation"]["terminal"], terminal);
+                assert_eq!(compact["status"], "resumed");
+                assert_eq!(compact["works"], response["works"]);
+                assert_eq!(compact["unreadable"], response["unreadable"]);
+                assert_eq!(compact["current"]["binding"], "bound");
+                let argv = compact["fullCommand"].as_array().unwrap();
+                if !argv
+                    .iter()
+                    .any(|argument| argument.as_str() == Some(config.as_str()))
+                {
+                    assert_eq!(compact["fullCommandSameConfigRequired"], true);
+                    assert_eq!(argv.last().unwrap(), "--config");
+                }
+                assert_eq!(compact["presentation"]["goalProgress"]["overall"], overall);
+                for detail in ["tasks", "systemText", "nextAction"] {
+                    assert!(compact["presentation"]["goalProgress"]
+                        .get(detail)
+                        .is_none());
+                }
+                if crate::producer::exitbind_surface() {
+                    assert_eq!(compact["effectiveAction"]["exists"], false);
+                } else {
+                    assert!(compact.get("effectiveAction").is_none());
+                }
             }
         }
     }

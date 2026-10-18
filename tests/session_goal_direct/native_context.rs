@@ -723,3 +723,5 @@ fn native_owner_work_guidance_uses_verified_journal_root_for_close_readiness() {
     assert_eq!(closed["effect"], "committed");
     fs::remove_dir_all(project.root).unwrap();
 }
+#[path = "native_context_recovery.rs"]
+mod native_context_recovery;

@@ -498,6 +498,24 @@ fn minimal_presentation(presentation: &Value) -> Value {
     }
     let mut result = Map::new();
     result.insert("state".into(), Value::Object(state));
+    if let Some(overall) = presentation
+        .get("goalProgress")
+        .and_then(|goal| goal.get("overall"))
+        .and_then(Value::as_str)
+        .filter(|overall| {
+            matches!(
+                *overall,
+                "not_requested"
+                    | "context_only"
+                    | "unavailable"
+                    | "in_progress"
+                    | "complete"
+                    | "blocked"
+            )
+        })
+    {
+        result.insert("goalProgress".into(), json!({"overall": overall}));
+    }
     copy_if_present(presentation, &mut result, "terminal");
     Value::Object(result)
 }

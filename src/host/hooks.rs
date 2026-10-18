@@ -13,13 +13,25 @@ use std::path::{Path, PathBuf};
 pub const PROTOCOL: &str = "soulmate-hook-v1";
 pub const HOOK_COMMAND: &str = "command -v soulmate >/dev/null 2>&1 && soulmate hook-run || true";
 const MARKER: &str = "soulmate hook-run";
-const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
+const EVENTS: [&str; 5] = [
+    "SessionStart",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+];
 
 /// Claude Code and Codex deliver SubagentStop, which Exitbind uses to capture
 /// a prepared native child's final message; other hosts keep the first two.
 fn host_events(host: &str) -> &'static [&'static str] {
-    if matches!(host, "claude" | "codex") {
-        &EVENTS
+    if host == "codex" {
+        if crate::producer::exitbind_surface() {
+            &EVENTS
+        } else {
+            &EVENTS[..3]
+        }
+    } else if host == "claude" {
+        &EVENTS[..3]
     } else {
         &EVENTS[..2]
     }
@@ -129,7 +141,7 @@ struct State {
     source: Option<String>,
     mode: Option<u32>,
     document: Value,
-    exact: [usize; 3],
+    exact: [usize; 5],
     conflicts: Vec<String>,
 }
 
@@ -174,9 +186,9 @@ fn inspect(
     document: &Value,
     host: &str,
     target: &Path,
-) -> Result<([usize; 3], Vec<String>), String> {
+) -> Result<([usize; 5], Vec<String>), String> {
     let hooks = match document.get("hooks") {
-        None => return Ok(([0, 0, 0], Vec::new())),
+        None => return Ok(([0; 5], Vec::new())),
         Some(value) => value.as_object().ok_or_else(|| {
             format!(
                 "unexpected hooks shape in {}: hooks must be an object",
@@ -188,7 +200,7 @@ fn inspect(
     let expected_object = expected
         .as_object()
         .ok_or("expected hook handler must be an object")?;
-    let mut exact = [0usize; 3];
+    let mut exact = [0usize; 5];
     let mut conflicts = Vec::new();
     for (event_index, event) in host_events(host).iter().enumerate() {
         let Some(groups) = hooks.get(*event) else {
@@ -236,7 +248,7 @@ fn retire_superseded(document: &mut Value, host: &str) -> usize {
         return 0;
     };
     let mut retired = 0;
-    for event in EVENTS {
+    for event in host_events(host).iter().copied() {
         let Some(groups) = hooks.get_mut(event).and_then(Value::as_array_mut) else {
             continue;
         };
@@ -384,4 +396,33 @@ fn expected(host: &str) -> Value {
 }
 fn same_record(left: &Map<String, Value>, right: &Map<String, Value>) -> bool {
     left == right
+}
+
+#[cfg(test)]
+mod recovery_event_tests {
+    use super::host_events;
+
+    #[test]
+    fn codex_recovery_events_are_additive_and_claude_event_scope_is_unchanged() {
+        let codex = host_events("codex");
+        if crate::producer::exitbind_surface() {
+            assert_eq!(
+                codex,
+                &[
+                    "SessionStart",
+                    "SubagentStart",
+                    "SubagentStop",
+                    "PreCompact",
+                    "PostCompact"
+                ]
+            );
+        } else {
+            assert_eq!(codex, &["SessionStart", "SubagentStart", "SubagentStop"]);
+        }
+        assert_eq!(
+            host_events("claude"),
+            &["SessionStart", "SubagentStart", "SubagentStop"]
+        );
+        assert_eq!(host_events("other"), &["SessionStart", "SubagentStart"]);
+    }
 }

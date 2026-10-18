@@ -3,6 +3,7 @@
 
 use serde_json::{json, Value};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 pub(crate) mod association;
 mod closure;
@@ -102,6 +103,98 @@ fn records_from_raw(raw: Option<&str>) -> Result<Vec<Value>, String> {
 
 pub(crate) fn read(root: &Path) -> Result<Option<Value>, String> {
     Ok(records(root)?.pop())
+}
+
+/// Bounded, read-only Goal metadata acquisition for host continuation hooks.
+/// This validates the complete retained hash chain but deliberately does not
+/// reduce currentness, usage, evidence, or acceptance.
+pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    const MAX_EVENTS: usize = 256;
+    const BUDGET: Duration = Duration::from_millis(750);
+    let started = Instant::now();
+    let relative = relative();
+    let raw = match crate::project::path::secure_bytes_observation_bounded(
+        root,
+        &relative,
+        "native recovery Goal journal",
+        MAX_BYTES,
+    ) {
+        crate::project::path::SecureBytesResult::Bytes(bytes) => Some(
+            String::from_utf8(bytes)
+                .map_err(|_| "native recovery Goal journal is not valid UTF-8")?,
+        ),
+        crate::project::path::SecureBytesResult::Absent(_) => {
+            let legacy = root.join(format!(
+                "{}/session-goal.json",
+                crate::project::layout_types::state_namespace()
+            ));
+            match std::fs::symlink_metadata(legacy) {
+                Ok(_) => {
+                    return Err("legacy session Goal format is unsupported for recovery".into())
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(format!("native recovery Goal lookup failed: {error}")),
+            }
+        }
+        crate::project::path::SecureBytesResult::Unsafe(error)
+        | crate::project::path::SecureBytesResult::Unreadable(error) => {
+            return Err(format!("native recovery Goal lookup failed: {error}"))
+        }
+        #[cfg(not(unix))]
+        crate::project::path::SecureBytesResult::Unsupported(error) => {
+            return Err(format!("native recovery Goal lookup unsupported: {error}"))
+        }
+    };
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    // Count physical records before allocating per-line storage. Blank lines
+    // are corruption (including interior blank lines); one final newline is
+    // merely the normal ledger terminator.
+    if raw.is_empty() {
+        return Err("invalid canonical session goal journal: empty physical record".into());
+    }
+    let newline_count = raw.as_bytes().iter().filter(|byte| **byte == b'\n').count();
+    let physical = newline_count.saturating_sub(usize::from(raw.ends_with('\n')))
+        + usize::from(!raw.ends_with('\n'));
+    if physical > MAX_EVENTS {
+        return Err("native recovery Goal journal exceeds 256 physical records; use the exact Goal read route".into());
+    }
+    let mut previous: Option<Value> = None;
+    let mut count = 0usize;
+    for (index, line) in raw.split_terminator('\n').enumerate() {
+        if started.elapsed() > BUDGET {
+            return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
+        }
+        if line.trim().is_empty() {
+            return Err(format!(
+                "invalid canonical session goal line {}: empty physical record",
+                index + 1
+            ));
+        }
+        count += 1;
+        if count > MAX_EVENTS {
+            return Err("native recovery Goal journal exceeds 256 physical records; use the exact Goal read route".into());
+        }
+        let value: Value = serde_json::from_str(line).map_err(|error| {
+            format!("invalid canonical session goal line {}: {error}", index + 1)
+        })?;
+        validate_record(&value, previous.as_ref(), index + 1)?;
+        previous = Some(value);
+        if started.elapsed() > BUDGET {
+            return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
+        }
+    }
+    if raw.ends_with("\n\n") {
+        return Err(
+            "invalid canonical session goal journal: trailing blank physical record".into(),
+        );
+    }
+    if started.elapsed() > BUDGET {
+        return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
+    }
+    Ok(previous)
 }
 
 fn valid_hash(value: &str) -> bool {

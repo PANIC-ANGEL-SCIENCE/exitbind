@@ -660,3 +660,6 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
     assert!(!stale.status.success());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[path = "project_context/graph.rs"]
+mod graph;

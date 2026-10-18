@@ -6,7 +6,13 @@ use std::path::{Path, PathBuf};
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
 const MAX_OUTPUT: usize = super::assignment_evidence::MAX_CONTEXT_OUTPUT;
-const EVENTS: [&str; 3] = ["SessionStart", "SubagentStart", "SubagentStop"];
+const EVENTS: [&str; 5] = [
+    "SessionStart",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+];
 
 /// Classify activation from consequence and promotion requirements. A count of
 /// touched files is intentionally absent: harmless work can span many files,
@@ -129,11 +135,18 @@ pub fn run() -> Result<(), String> {
         .or_else(|| object.get("event"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    if !crate::producer::exitbind_surface() && matches!(event, "PreCompact" | "PostCompact") {
+        return Ok(());
+    }
     if !EVENTS.contains(&event) {
         return Ok(());
     }
     if event == "SessionStart" {
         super::native_session::export(object, std::env::var_os("CLAUDE_ENV_FILE").as_deref());
+    }
+    if matches!(event, "PreCompact" | "PostCompact") {
+        super::session_recovery::checkpoint(object, event);
+        return Ok(());
     }
     let update_context = if event == "SessionStart" {
         crate::distribution::update::session_context()
@@ -148,10 +161,13 @@ pub fn run() -> Result<(), String> {
     let project = match absolute_directory(cwd) {
         Ok(project) => project,
         Err(()) => {
-            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
-            {
-                emit(event, &text)?;
-            }
+            emit_routing_with_recovery(
+                event,
+                update_context.as_deref(),
+                Routing::Unresolved,
+                object,
+                None,
+            )?;
             return Ok(());
         }
     };
@@ -164,10 +180,13 @@ pub fn run() -> Result<(), String> {
         Ok(_) => true,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(_) => {
-            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
-            {
-                emit(event, &text)?;
-            }
+            emit_routing_with_recovery(
+                event,
+                update_context.as_deref(),
+                Routing::Unresolved,
+                object,
+                None,
+            )?;
             return Ok(());
         }
     };
@@ -177,10 +196,13 @@ pub fn run() -> Result<(), String> {
             && contained(&project, &portable)
             && contained_existing(&project, &portable);
         if !safe {
-            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
-            {
-                emit(event, &text)?;
-            }
+            emit_routing_with_recovery(
+                event,
+                update_context.as_deref(),
+                Routing::Unresolved,
+                object,
+                None,
+            )?;
             return Ok(());
         }
         portable
@@ -188,19 +210,23 @@ pub fn run() -> Result<(), String> {
         match crate::project::portability::discover_from(&project) {
             Ok(Some(path)) => path,
             Ok(None) => {
-                if let Some(text) =
-                    routing_text(event, update_context.as_deref(), Routing::CleanAbsence)
-                {
-                    emit(event, &text)?;
-                }
+                emit_routing_with_recovery(
+                    event,
+                    update_context.as_deref(),
+                    Routing::CleanAbsence,
+                    object,
+                    None,
+                )?;
                 return Ok(());
             }
             Err(_) => {
-                if let Some(text) =
-                    routing_text(event, update_context.as_deref(), Routing::Unresolved)
-                {
-                    emit(event, &text)?;
-                }
+                emit_routing_with_recovery(
+                    event,
+                    update_context.as_deref(),
+                    Routing::Unresolved,
+                    object,
+                    None,
+                )?;
                 return Ok(());
             }
         }
@@ -212,10 +238,13 @@ pub fn run() -> Result<(), String> {
     {
         Ok(value) => value,
         Err(_) => {
-            if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved)
-            {
-                emit(event, &text)?;
-            }
+            emit_routing_with_recovery(
+                event,
+                update_context.as_deref(),
+                Routing::Unresolved,
+                object,
+                config_path.to_str(),
+            )?;
             return Ok(());
         }
     };
@@ -223,11 +252,20 @@ pub fn run() -> Result<(), String> {
         || (loaded.mode == crate::project::layout_types::Mode::Portable
             && !contained_existing(&loaded.product_root, &loaded.control_root))
     {
-        if let Some(text) = routing_text(event, update_context.as_deref(), Routing::Unresolved) {
-            emit(event, &text)?;
-        }
+        emit_routing_with_recovery(
+            event,
+            update_context.as_deref(),
+            Routing::Unresolved,
+            object,
+            config_path.to_str(),
+        )?;
         return Ok(());
     }
+    let recovery_context = if event == "SessionStart" && crate::producer::exitbind_surface() {
+        super::session_recovery::hook_context(object, config_path.to_str())
+    } else {
+        None
+    };
     // Prepared child capture: claim at start, finalize at stop. Failures stay
     // inside Exitbind's private state and never fail the host.
     if event == "SubagentStart" {
@@ -279,6 +317,26 @@ pub fn run() -> Result<(), String> {
             if !crate::producer::exitbind_surface() || text.len() + update.len() < 3072 {
                 text.push('\n');
                 text.push_str(&update);
+            }
+        }
+        if let Some(recovery) = recovery_context.as_deref() {
+            text.push('\n');
+            text.push_str(recovery);
+        }
+        if crate::producer::exitbind_surface() {
+            if crate::session_goal::native::current()
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                text = text.replace("\nCurrent work:", "\nProject-scoped Work focus:");
+            }
+            if text.len() > 4096 {
+                let recovery = recovery_context.as_deref().unwrap_or("Use `exitbind session recovery show --json` for the exact bounded recovery record.");
+                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}\n{recovery}");
+            }
+            if text.len() > 4096 {
+                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}");
             }
         }
         text
@@ -430,6 +488,7 @@ const UNRESOLVED: &str = "Exitbind could not verify this target or its configura
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
 const RECEIVE_WORK: &str = "For a known Work or explicit smw_ locator, run `exitbind work detail WORK --json` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `exitbind work resume --json` and its current detail route; focus is navigation, never authority. Use `exitbind work continuation WORK` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.";
+const MANDATORY_SESSION_CORE: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff. Keep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory. When a Work or Goal response carries a non-null `presentation.terminal`, print that value alone on its own line exactly as given. For a Goal `completionEvent`, print once per event ID; consume the normal closure response without status polling. Recover a lost closure reply through its exact read-only route. No model was selected or launched; declarations are not an OS sandbox.";
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {
@@ -443,11 +502,23 @@ fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     Err("child capture state stayed busy".into())
 }
 
-fn routing_text(event: &str, update: Option<&str>, routing: Routing) -> Option<String> {
+fn routing_text(
+    event: &str,
+    update: Option<&str>,
+    routing: Routing,
+    recovery: Option<&str>,
+) -> Option<String> {
     // The legacy Soulmate surface keeps its original silent contract; only the
     // Exitbind surface offers the bootstrap.
     if event != "SessionStart" || !crate::producer::exitbind_surface() {
-        return update.map(str::to_owned);
+        let mut text = update.map(str::to_owned).unwrap_or_default();
+        if let Some(recovery) = recovery {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(recovery);
+        }
+        return (!text.is_empty()).then_some(text);
     }
     let mut text = match routing {
         Routing::CleanAbsence => NATIVE_ABSENCE.to_owned(),
@@ -457,13 +528,41 @@ fn routing_text(event: &str, update: Option<&str>, routing: Routing) -> Option<S
         text.push('\n');
         text.push_str(update);
     }
+    if let Some(recovery) = recovery {
+        text.push('\n');
+        text.push_str(recovery);
+    }
+    if text.len() > 4096 {
+        return Some(format!("Exitbind could not fit the complete session context without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}"));
+    }
     Some(bounded(text))
+}
+
+fn emit_routing_with_recovery(
+    event: &str,
+    update: Option<&str>,
+    routing: Routing,
+    payload: &serde_json::Map<String, Value>,
+    cwd_config_path: Option<&str>,
+) -> Result<(), String> {
+    let recovery = if event == "SessionStart" && crate::producer::exitbind_surface() {
+        super::session_recovery::hook_context(payload, cwd_config_path)
+    } else {
+        None
+    };
+    if let Some(text) = routing_text(event, update, routing, recovery.as_deref()) {
+        emit(event, &text)?;
+    }
+    Ok(())
 }
 
 /// Emit within the host's output cap. An oversized context is shortened with
 /// a marker instead of being dropped, so the routing rules at its start stay.
 fn emit(event: &str, text: &str) -> Result<(), String> {
     let mut text = text.to_owned();
+    if event == "SessionStart" && text.len() > 4096 {
+        text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}");
+    }
     loop {
         let output = serde_json::to_string(
             &json!({"hookSpecificOutput":{"hookEventName":event,"additionalContext":text}}),
@@ -648,7 +747,7 @@ fn session_summary(config: &Value, lead_display: &str) -> String {
     } else {
         "Soulmate"
     };
-    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\nPreserve the existing root host conversation; {product} context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff.\nKeep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory.\nWhen a Work or Goal response carries a non-null `presentation.terminal`, print that value on a line of its own, exactly as given, with nothing else on that line. For a Goal `completionEvent`, print once per event ID; consume the normal closure response, without status polling. Recover a lost closure reply through its exact read-only route.\nNo model was selected or launched; declarations are not an OS sandbox.", safe_inline(lead_display), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
+    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\n{MANDATORY_SESSION_CORE}", safe_inline(lead_display), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
 }
 
 fn bounded(value: String) -> String {

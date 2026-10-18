@@ -1815,6 +1815,16 @@
       "baselineSha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246",
       "currentSha256": "5553e2bb59c353691bc88e28393eedec96f74147001b9035b3006c4b2e9590b8",
       "reason": "Register the added nonmatching-directory-entry cap regression in tests/resume_scope/limits.rs while preserving all three original fixture bodies and baseline declaration counts."
+    },
+    "tests/session_goal_direct/native_context.rs": {
+      "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
+      "currentSha256": "373971b3503f39e1368050fccce716815315db661c1b05ca22ff29105a4e53da",
+      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count."
+    },
+    "tests/project_context.rs": {
+      "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
+      "currentSha256": "eb9addbeaa787012905c1f048e5b7534c9c467b659bd79d0759328a6d49515c5",
+      "reason": "Register optional CodeGraph regression coverage in a nested child module while preserving all original fixture bodies and baseline test declarations."
     }
   },
   "additions": [

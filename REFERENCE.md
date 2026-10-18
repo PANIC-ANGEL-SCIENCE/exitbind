@@ -762,6 +762,45 @@ compliance proof. POSIX behavior is CI-tested on Linux and macOS; Windows
 mutation is refused. See [SECURITY.md](SECURITY.md) for race and transaction
 limits.
 
+On the Exitbind surface, Codex hook plans also include `PreCompact` and
+`PostCompact` checkpoints. They retain bounded private navigation metadata for
+the same native session; they do not capture transcripts or replay actions.
+After a session starts, `exitbind session recovery show` reads the native Goal,
+and `exitbind session recovery record --config OWNER_CONFIG` accepts an
+explicit bounded JSON hint only when that configuration matches the fixed
+native Goal owner. A hint is not authority or a claim that a Work is current:
+re-read the Goal and exact Work detail before acting. Post-compaction hook
+stdout is not treated as proof that the host presented refreshed context.
+The input requires the exact host-reported `sessionId`, a `currentStep`, and an
+explicit `currentWork` state. A `known` Work locator must also appear in
+`workRefs` and match an exact current Goal member, configuration, and start
+event; it remains navigation only and a fresh read-only Work detail supplies
+the current binding. Corrections are bounded caller notes, not Goal facts.
+Evidence and guidance references include a source root, relative path, source
+SHA-256, current producer identity, and a caller-reported-read marker. A
+reference may name an exact `work` locator from `workRefs` to resolve roots
+through that validated Goal-member configuration; without it, roots come from
+the fixed owner configuration. This locator does not select a current Work.
+The reader checks those bytes and producer identity again; a changed or unavailable
+source makes saved steps and pending details historical. `session recovery
+show --json` works without a launch-project configuration and returns the
+complete saved record, currentness fields, and argv/read descriptors. Pending
+operations use typed Goal-status, Work-detail, or exact evidence-file routes;
+arbitrary command text is not accepted. Hooks expose a compact path to that
+full record within the host context budget. A retained Work ID is only a
+member locator: hook and show leave current Work/action binding unresolved and
+keep the saved step, corrections, and pending operation historical until the
+exact Work detail is reread. Read argv pin the currently running executable.
+Checkpoints refresh only under the
+session-record lock and never replay work. Recovery hint protocol 2 is strict;
+older hint shapes fail closed and can be recorded again through the owner-bound
+command. Each file reference uses `root` (`product`, `control`, or `state`), a
+normalized relative `path`, `sha256`, `producerExecutableSha256`, and
+`consumption: "caller_reported_read"`. This records what the caller says it
+read; the host independently rechecks bytes and executable identity on use.
+An optional exact `work` member lets the host resolve the file under that
+member's validated configured roots when the fixed Goal owner's roots differ.
+
 In local mode, `hook-run` resolves ControlRoot only through the exact private
 machine binding whose ProductRoot matches the host `cwd`; it never searches
 arbitrary parent directories. Bindings created before ControlRoot was recorded
@@ -1016,3 +1055,7 @@ current action route; do not reuse a pre-permit return binding.
 proposal shape, 2048-byte source and 512-byte UTF-8 fact bounds, and immutable
 correction identity. See [release series](docs/release-version-policy.md) for
 the 0.31.14 release series and publication gates.
+
+### Optional CodeGraph impact queries
+
+CodeGraph is an optional per-project capability. An owner enables indexing for the exact validated project with `exitbind project graph enable [--config PATH]`; `disable` removes that project's authority marker. A bounded query uses the validated task target automatically, or an exact `--config PATH`: `exitbind project graph query --query "symbol or caller question" --json`. Results retain the provider's structured nodes, edges, entry points, related files, and code blocks with source, provider-entry, and index provenance. Unchanged results can be reused after their target, source, provider, and index bindings are checked; changed sources are synchronized or fully indexed only within the project's enabled authority and bounded preparation window. A restored graph finding is a prior observation; source currentness alone does not establish that the provider or index is current, so the saved query route must be used to revalidate it. If the project binding, provider, index, or freshness check is unavailable, continue ordinary source investigation and do not treat that state as an empty impact set. Exitbind does not install or upgrade the provider, start a daemon, or configure Git hooks.
