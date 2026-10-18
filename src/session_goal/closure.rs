@@ -1,8 +1,8 @@
 //! Canonical goal closure through existing accepted-result authority.
 
 use super::{
-    continuity, current_inputs, items, journey, mutate, read, recovery, requirements, sealed, text,
-    CATEGORIES,
+    continuity, current_inputs, direct_external_item, direct_item, items, journey, mutate, read,
+    recovery, requirements, sealed, text, CATEGORIES,
 };
 use serde_json::{json, Value};
 use std::path::Path;
