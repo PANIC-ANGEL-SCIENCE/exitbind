@@ -379,6 +379,51 @@ fn owner_time_amendment_preview(project: &Project, work: &str) -> Value {
     ])
 }
 
+#[test]
+fn owner_time_amendment_discovery_holds_before_receipt_without_effects() {
+    let (project, work) = owner_time_amendment_fixture("owner-time-amendment-discovery-hold");
+    let before = project.state();
+    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let forms = detail
+        .get("actionForms")
+        .unwrap_or(&detail["effectiveAction"]);
+    assert_eq!(
+        forms["formState"], "held_time_amendment_required",
+        "{detail}"
+    );
+    assert_eq!(forms["choices"], json!([]), "{detail}");
+    assert!(forms["mechanicalAction"].is_null(), "{detail}");
+    assert_eq!(forms["diagnostic"]["readOnly"], true, "{detail}");
+    assert_eq!(project.state(), before);
+}
+
+#[test]
+fn owner_time_amendment_discovery_holds_when_existing_receipt_is_stale() {
+    let (mut project, work) =
+        owner_time_amendment_fixture("owner-time-amendment-stale-receipt-discovery");
+    let preview = owner_time_amendment_preview(&project, &work);
+    assert_eq!(project.apply(&preview)["state"], "amended");
+    project.spec["mandate"]["revision"] = json!(3);
+    project.spec["mandate"]["expiresAt"] = json!("2099-01-04T00:00:00Z");
+    project.spec["mandate"]["maxElapsedSeconds"] = json!(259200);
+    project.save_spec();
+    project.select();
+
+    let before = project.state();
+    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let forms = detail
+        .get("actionForms")
+        .unwrap_or(&detail["effectiveAction"]);
+    assert_eq!(
+        forms["formState"], "held_time_amendment_required",
+        "{detail}"
+    );
+    assert_eq!(forms["choices"], json!([]), "{detail}");
+    assert!(forms["mechanicalAction"].is_null(), "{detail}");
+    assert_eq!(forms["diagnostic"]["readOnly"], true, "{detail}");
+    assert_eq!(project.state(), before);
+}
+
 fn owner_time_amendment_claims(project: &Project, work: &str) -> Value {
     let directory = project
         .root
@@ -568,6 +613,10 @@ fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
     let forms = detail
         .get("actionForms")
         .unwrap_or(&detail["effectiveAction"]);
+    assert_ne!(
+        forms["formState"], "held_time_amendment_required",
+        "{detail}"
+    );
     let scope = forms["choices"]
         .as_array()
         .unwrap()

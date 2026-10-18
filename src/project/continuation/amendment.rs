@@ -1,6 +1,6 @@
 //! Explicit time-only authorization for an existing frozen Work association.
 //! Selection alone never changes a claim; this separate receipt is required.
-use super::{control, journal, sources};
+use super::{association, control, journal, sources};
 use crate::{config::Loaded, evidence::hash, run::ledger};
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
@@ -364,21 +364,16 @@ pub(super) fn held_action(
     let Some(frozen) = state.get("projectContinuation") else {
         return Ok(None);
     };
-    let marker: control::Association = serde_json::from_value(frozen.clone())
-        .map_err(|_| "invalid frozen continuation association")?;
-    let relative = journal::relative(loaded, &marker.mandate_id)?;
-    let (record, _) = journal::read(loaded, &relative)?;
-    let Some(record) = record else {
-        return Ok(None);
-    };
+    let marker = association::marker(frozen)?;
+    let (_, record, claim) = association::claim(loaded, &marker)?;
     if marker.mandate_revision == record.specification.mandate.revision
         && marker.specification_sha256 == record.specification_sha256
     {
         return Ok(None);
     }
-    let claim = record.claims.iter().find(|claim| claim.work == work);
-    let Some(claim) = claim else { return Ok(None) };
-    if read_receipt(loaded, claim)?.is_some() {
+    let verified = control::verify_association(&marker, &claim.association, work)
+        .map_err(|reason| format!("invalid selected association: {reason:?}"))?;
+    if effective_association(loaded, &record, &claim, work, &verified).is_ok() {
         return Ok(None);
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
