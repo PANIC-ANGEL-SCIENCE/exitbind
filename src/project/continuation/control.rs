@@ -50,6 +50,13 @@ pub(crate) struct VerifiedAssociation {
     association: Association,
     work: String,
     prepared: bool,
+    selected_time_authority: Option<SelectedTimeAuthority>,
+}
+
+#[derive(Clone, Debug)]
+struct SelectedTimeAuthority {
+    mandate_revision: u64,
+    specification_sha256: String,
 }
 
 impl VerifiedAssociation {
@@ -59,6 +66,24 @@ impl VerifiedAssociation {
 
     pub(crate) fn work(&self) -> &str {
         &self.work
+    }
+
+    /// The amendment adapter may attach this only after it validates the exact
+    /// explicit receipt, original claim, selected source and time-only delta.
+    pub(super) fn with_selected_time_authority(
+        &self,
+        mandate_revision: u64,
+        specification_sha256: String,
+    ) -> Result<Self, Refusal> {
+        if mandate_revision <= self.association.mandate_revision || !digest(&specification_sha256) {
+            return Err(Refusal::InvalidAssociation);
+        }
+        let mut verified = self.clone();
+        verified.selected_time_authority = Some(SelectedTimeAuthority {
+            mandate_revision,
+            specification_sha256,
+        });
+        Ok(verified)
     }
 }
 
@@ -89,6 +114,7 @@ pub(super) fn prepare_association(
         association,
         work: work.into(),
         prepared: true,
+        selected_time_authority: None,
     })
 }
 
@@ -108,6 +134,7 @@ pub(super) fn verify_association(
         association: marker.clone(),
         work: work.into(),
         prepared: false,
+        selected_time_authority: None,
     })
 }
 
@@ -407,7 +434,7 @@ pub(crate) fn evaluate(
         return record_observation(facts, account, existing.ok_or(Refusal::MissingOperation)?);
     }
     validate_policy(policy)?;
-    eligibility(policy, facts, account, &association.association)?;
+    eligibility_for_verified(policy, facts, account, association)?;
     if policy.mandate.mode == Mode::Propose {
         return Err(Refusal::ProposeOnly);
     }
@@ -563,6 +590,27 @@ pub(super) fn eligibility(
         return Err(Refusal::ElapsedBudget);
     }
     Ok(())
+}
+
+/// Evaluate current policy through typed evidence while retaining the frozen
+/// association for every claim and account identity comparison.
+pub(super) fn eligibility_for_verified(
+    policy: &Policy<'_>,
+    facts: &Facts<'_>,
+    account: &Account,
+    verified: &VerifiedAssociation,
+) -> Result<(), Refusal> {
+    let mut policy_identity = verified.association.clone();
+    if let Some(selected) = &verified.selected_time_authority {
+        if selected.mandate_revision <= policy_identity.mandate_revision
+            || !digest(&selected.specification_sha256)
+        {
+            return Err(Refusal::InvalidAssociation);
+        }
+        policy_identity.mandate_revision = selected.mandate_revision;
+        policy_identity.specification_sha256 = selected.specification_sha256.clone();
+    }
+    eligibility(policy, facts, account, &policy_identity)
 }
 
 fn record_observation(

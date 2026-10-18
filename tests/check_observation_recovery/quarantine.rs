@@ -2,6 +2,7 @@
 //! unknown failure below is synthetic; it does not attest process termination.
 use super::*;
 use sha2::{Digest, Sha256};
+#[path = "quarantine/followup.rs"]
 mod followup;
 
 const FROZEN: &[u8] = b"Frozen verification subject; no implementation mutation.\n";

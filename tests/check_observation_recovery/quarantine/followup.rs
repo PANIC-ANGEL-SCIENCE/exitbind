@@ -1,7 +1,30 @@
 //! CLI coverage for the one known-ended quarantine follow-up.
 use super::*;
 use serde_json::{json, Value};
-use std::fs;
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
+
+fn state_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                visit(root, &entry.path(), files);
+            } else {
+                files.insert(
+                    entry.path().strip_prefix(root).unwrap().into(),
+                    fs::read(entry.path()).unwrap(),
+                );
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    visit(root, &root.join(".exitbind"), &mut files);
+    files
+}
 
 fn known_ended_first_verification(c: &Case) -> String {
     c.accept_feature();
@@ -165,6 +188,21 @@ fn followup_preview(c: &Case, work: &str, request: &str) -> Output {
     )
 }
 
+fn assert_refusal_contains(output: &Output, expected: &str) {
+    assert!(!output.status.success(), "expected refusal: {output:?}");
+    let response = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        response
+            .to_ascii_lowercase()
+            .contains(&expected.to_ascii_lowercase()),
+        "expected refusal containing {expected:?}: {output:?}"
+    );
+}
+
 fn legacy_reader_refuses_current_quarantine_action(c: &Case, work: &str) {
     let reader = std::env::var_os("EXITBIND_LEGACY_READER");
     let log = std::env::var_os("EXITBIND_LEGACY_PROBE_LOG");
@@ -173,26 +211,8 @@ fn legacy_reader_refuses_current_quarantine_action(c: &Case, work: &str) {
     }
     let reader = reader.expect("legacy reader and probe log must be supplied together");
     let log = log.expect("legacy reader and probe log must be supplied together");
-    let detail = c.f.ok(&["work", "detail", work, "--view", "action"], b"");
-    let forms = detail
-        .get("actionForms")
-        .unwrap_or(&detail["effectiveAction"]);
-    let scoped = forms["choices"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|choice| choice["label"] == "scoped")
-        .unwrap_or_else(|| panic!("protocol-2 Work has no current scoped action: {detail}"));
-    let argv = scoped["command"]["argv"]
-        .as_array()
-        .expect("current action form must expose exact argv");
-    let mut command = Command::new(&reader);
-    command
-        .current_dir(&c.f.root)
-        .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
-        .env("EXITBIND_NO_UPDATE_CHECK", "1");
-    c.f.native_environment(&mut command);
-    let output = command.output().unwrap();
+    let before = state_files(&c.f.root);
+    let (output, stage) = legacy_action_output(&reader, &c.f, work);
     assert!(
         !output.status.success(),
         "legacy reader accepted protocol-2 action: {output:?}"
@@ -213,6 +233,11 @@ fn legacy_reader_refuses_current_quarantine_action(c: &Case, work: &str) {
         .code()
         .expect("legacy refusal must exit normally");
     assert!(exit_code > 0);
+    assert_eq!(
+        state_files(&c.f.root),
+        before,
+        "legacy probe must not change Work or account bytes"
+    );
     let reader_sha256 = digest(&fs::read(&reader).unwrap());
     let mut evidence = std::fs::OpenOptions::new()
         .create(true)
@@ -220,11 +245,58 @@ fn legacy_reader_refuses_current_quarantine_action(c: &Case, work: &str) {
         .open(log)
         .unwrap();
     let mut line = serde_json::to_vec(
-        &json!({"kind":"quarantine-followup","readerSha256":reader_sha256,"exitCode":exit_code}),
+        &json!({"kind":"quarantine-followup","readerSha256":reader_sha256,"exitCode":exit_code,"stage":stage}),
     )
     .unwrap();
     line.push(b'\n');
     evidence.write_all(&line).unwrap();
+}
+
+fn legacy_action_output(
+    reader: &std::ffi::OsStr,
+    fixture: &Fixture,
+    work: &str,
+) -> (Output, &'static str) {
+    let mut discovery = Command::new(reader);
+    discovery
+        .current_dir(&fixture.root)
+        .args([
+            "work",
+            "detail",
+            work,
+            "--view",
+            "action",
+            "--config",
+            "exitbind.json",
+        ])
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    fixture.native_environment(&mut discovery);
+    let detail_output = discovery.output().unwrap();
+    if !detail_output.status.success() {
+        return (detail_output, "detail");
+    }
+    let detail: Value = serde_json::from_slice(&detail_output.stdout).unwrap_or_else(|error| {
+        panic!("old reader action detail is not JSON: {error}: {detail_output:?}")
+    });
+    let forms = detail
+        .get("actionForms")
+        .unwrap_or(&detail["effectiveAction"]);
+    let scoped = forms["choices"]
+        .as_array()
+        .unwrap_or_else(|| panic!("old reader action form omitted choices: {detail}"))
+        .iter()
+        .find(|choice| choice["label"] == "scoped")
+        .unwrap_or_else(|| panic!("old reader has no current scoped action: {detail}"));
+    let argv = scoped["command"]["argv"]
+        .as_array()
+        .expect("old reader action form must expose exact argv");
+    let mut action = Command::new(reader);
+    action
+        .current_dir(&fixture.root)
+        .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    fixture.native_environment(&mut action);
+    (action.output().unwrap(), "action")
 }
 
 #[test]
@@ -265,18 +337,34 @@ fn quarantine_followup_accepts_reviewed_retained_custody_once_and_replays_exact_
 fn quarantine_followup_preserves_the_configured_leads_blocked_return_after_failure() {
     let mut c = Case::with_verification_command(true, false, "exec sh fail-checker.sh");
     let first = known_ended_first_verification(&c);
-    let check = c.f.events(&first).last().unwrap().clone();
-    let lead = c.f.next(&first);
-    assert_eq!(lead["role"], "lead");
-    let returned = c.f.give(&first, &lead, "blocked");
-    assert_eq!(returned["event"]["action"], "submit");
-    assert_eq!(returned["event"]["role"], "lead");
-    assert_eq!(returned["event"]["agent"], "lead");
-    assert_eq!(returned["event"]["outcome"], "blocked");
-    assert_eq!(
-        returned["event"]["previousEventSha256"],
-        check["eventSha256"]
-    );
+    let before_navigation = c.f.events(&first);
+    let check = before_navigation.last().unwrap();
+    assert_eq!(check["action"], "check");
+    let detail = c.f.ok(&["work", "detail", &first, "--json"], b"");
+    let choices = detail["actionForms"]["choices"].as_array().unwrap();
+    let blocked = choices
+        .iter()
+        .find(|choice| choice["label"] == "blocked")
+        .unwrap_or_else(|| panic!("configured Lead has no current blocked form: {detail}"));
+    assert_eq!(detail["actionForms"]["actor"], "lead");
+    let mut blocked_command = blocked["command"].clone();
+    let argv = blocked_command["argv"].as_array_mut().unwrap();
+    let reason = "Record the observed failed first verification as blocked.";
+    let placeholder = argv
+        .iter_mut()
+        .find(|value| value.as_str() == Some("<REASON>"))
+        .expect("Lead blocked action must request a reason");
+    *placeholder = json!(reason);
+    let result = c.f.emitted(&blocked_command, reason.as_bytes());
+    assert!(result.status.success(), "{result:?}");
+    let after_navigation = c.f.events(&first);
+    assert_eq!(after_navigation.len(), before_navigation.len() + 1);
+    let blocked = after_navigation.last().unwrap();
+    assert_eq!(blocked["action"], "submit");
+    assert_eq!(blocked["role"], "lead");
+    assert_eq!(blocked["agent"], "lead");
+    assert_eq!(blocked["outcome"], "blocked");
+    assert_eq!(blocked["previousEventSha256"], check["eventSha256"]);
     let blocked_state = c.f.ok(
         &[
             "run",
@@ -288,8 +376,8 @@ fn quarantine_followup_preserves_the_configured_leads_blocked_return_after_failu
     );
     assert_eq!(blocked_state["status"], "blocked");
     assert_eq!(
-        blocked_state["currentHeadEventSha256"],
-        returned["eventSha256"]
+        blocked_state["events"].as_array().unwrap().last().unwrap()["eventSha256"],
+        blocked["eventSha256"]
     );
     let first_bytes = fs::read(c.f.ledger(&first)).unwrap();
     let custody = custody_receipt(&c, 7);
@@ -309,9 +397,8 @@ fn quarantine_followup_refuses_missing_or_changed_receipt_bytes_before_start() {
         "sha256":digest(b"missing"),"bytes":7});
     accepted_followup_feature(&mut c, &missing, None);
     let before = fs::read(c.f.ledger(&first)).unwrap();
-    assert!(!followup_preview(&c, &first, "missing-receipt")
-        .status
-        .success());
+    let missing = followup_preview(&c, &first, "missing-receipt");
+    assert_refusal_contains(&missing, "No such file or directory");
     assert_eq!(fs::read(c.f.ledger(&first)).unwrap(), before);
 
     let mut changed = Case::with_verification_command(true, false, "exec sh fail-checker.sh");
@@ -326,7 +413,11 @@ fn quarantine_followup_refuses_missing_or_changed_receipt_bytes_before_start() {
         b"altered receipt",
     )
     .unwrap();
-    assert!(!changed.apply(&value(&preview)).status.success());
+    let changed_reply = changed.apply(&value(&preview));
+    assert_refusal_contains(
+        &changed_reply,
+        "retained custody receipt artifact bytes changed",
+    );
     assert_eq!(fs::read(changed.f.ledger(&first)).unwrap(), first_bytes);
 }
 
@@ -337,9 +428,11 @@ fn quarantine_followup_refuses_receipt_for_another_observer() {
     let custody = custody_receipt_with_observer(&c, 7, digest(b"other observer"));
     accepted_followup_feature(&mut c, &custody, None);
     let first_bytes = fs::read(c.f.ledger(&first)).unwrap();
-    assert!(!followup_preview(&c, &first, "foreign-observer")
-        .status
-        .success());
+    let refusal = followup_preview(&c, &first, "foreign-observer");
+    assert_refusal_contains(
+        &refusal,
+        "retained custody receipt does not match the first verification's reviewed observer, inputs, and command",
+    );
     assert_eq!(fs::read(c.f.ledger(&first)).unwrap(), first_bytes);
 }
 
@@ -360,9 +453,11 @@ fn quarantine_followup_refuses_receipt_for_another_input_manifest() {
     custody["bytes"] = json!(bytes.len());
     accepted_followup_feature(&mut c, &custody, None);
     let before = fs::read(c.f.ledger(&first)).unwrap();
-    assert!(!followup_preview(&c, &first, "foreign-manifest")
-        .status
-        .success());
+    let refusal = followup_preview(&c, &first, "foreign-manifest");
+    assert_refusal_contains(
+        &refusal,
+        "retained custody receipt does not match the first verification's reviewed observer, inputs, and command",
+    );
     assert_eq!(fs::read(c.f.ledger(&first)).unwrap(), before);
 }
 
@@ -373,15 +468,17 @@ fn quarantine_followup_refuses_receipt_with_a_different_launcher_exit() {
     let custody = custody_receipt(&c, 9);
     accepted_followup_feature(&mut c, &custody, None);
     let before = fs::read(c.f.ledger(&first)).unwrap();
-    assert!(!followup_preview(&c, &first, "wrong-launcher-exit")
-        .status
-        .success());
+    let refusal = followup_preview(&c, &first, "wrong-launcher-exit");
+    assert_refusal_contains(
+        &refusal,
+        "retained custody receipt does not prove a known-ended failed execution",
+    );
     assert_eq!(fs::read(c.f.ledger(&first)).unwrap(), before);
 }
 
 #[test]
 fn quarantine_followup_refuses_successful_first_check() {
-    let mut c = Case::new();
+    let c = Case::new();
     c.accept_feature();
     let preview = c.preview(REQUEST);
     assert!(preview.status.success(), "{preview:?}");
@@ -389,12 +486,18 @@ fn quarantine_followup_refuses_successful_first_check() {
     assert!(started.status.success(), "{started:?}");
     let first = value(&started)["work"].as_str().unwrap().to_owned();
     c.return_frozen(&first);
-    let check =
-        c.f.ok(&["work", "check", &first, "--timeout-ms", "2000"], b"");
-    assert_eq!(check["exitCode"], 0);
-    assert!(!followup_preview(&c, &first, "successful-first-check")
-        .status
-        .success());
+    c.f.ok(&["work", "check", &first, "--timeout-ms", "2000"], b"");
+    let observed_check =
+        c.f.events(&first)
+            .into_iter()
+            .find(|event| event["action"] == "check" && event["acquisition"] == "observed")
+            .expect("successful first check must be recorded as observed");
+    assert_eq!(observed_check["result"]["code"], 0);
+    let refusal = followup_preview(&c, &first, "successful-first-check");
+    assert_refusal_contains(
+        &refusal,
+        "quarantine-followup requires the exact known-ended failed first verification",
+    );
 }
 
 #[test]

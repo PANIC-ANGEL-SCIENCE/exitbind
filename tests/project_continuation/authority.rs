@@ -379,6 +379,45 @@ fn owner_time_amendment_preview(project: &Project, work: &str) -> Value {
     ])
 }
 
+fn owner_time_amendment_claims(project: &Project, work: &str) -> Value {
+    let directory = project
+        .root
+        .join(".exitbind/artifacts/project-continuation");
+    let mut matches = Vec::new();
+    for entry in fs::read_dir(directory).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_file()
+            || entry.path().extension().and_then(|value| value.to_str()) != Some("jsonl")
+        {
+            continue;
+        }
+        let raw = fs::read_to_string(entry.path()).unwrap();
+        let record: Value = raw
+            .lines()
+            .last()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .unwrap();
+        if record["claims"]
+            .as_array()
+            .is_some_and(|claims| claims.iter().any(|claim| claim["work"] == work))
+        {
+            matches.push(record["claims"].clone());
+        }
+    }
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected one exact claim journal for {work}"
+    );
+    matches.pop().unwrap()
+}
+
+fn owner_time_amendment_start(project: &Project, work: &str) -> Value {
+    let raw = fs::read(project.work_path(work)).unwrap();
+    let first = raw.split(|byte| *byte == b'\n').next().unwrap();
+    serde_json::from_slice(first).unwrap()
+}
+
 fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind: &str) {
     let reader = std::env::var_os("EXITBIND_LEGACY_READER");
     let log = std::env::var_os("EXITBIND_LEGACY_PROBE_LOG");
@@ -387,29 +426,54 @@ fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind
     }
     let reader = reader.expect("legacy reader and probe log must be supplied together");
     let log = log.expect("legacy reader and probe log must be supplied together");
-    let detail = project.value(&["work", "detail", work, "--view", "action"]);
-    let forms = detail
-        .get("actionForms")
-        .unwrap_or(&detail["effectiveAction"]);
-    let scoped = forms["choices"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|choice| choice["label"] == "scoped")
-        .unwrap_or_else(|| panic!("current Work has no valid scoped action: {detail}"));
-    let argv = scoped["command"]["argv"]
-        .as_array()
-        .expect("current action form must expose exact argv");
-    let mut command = Command::new(&reader);
-    command
+    let before = project.state();
+    let mut discovery = Command::new(&reader);
+    discovery
         .current_dir(&project.root)
-        .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
+        .args([
+            "work",
+            "detail",
+            work,
+            "--view",
+            "action",
+            "--config",
+            "exitbind.json",
+        ])
         .env("EXITBIND_NO_UPDATE_CHECK", "1")
         .env(
             "EXITBIND_SESSION_GOALS_DIR",
             project.root.join(".planning/native-goals"),
         );
-    let output = command.output().unwrap();
+    let detail_output = discovery.output().unwrap();
+    let (output, stage) = if detail_output.status.success() {
+        let detail: Value = serde_json::from_slice(&detail_output.stdout).unwrap_or_else(|error| {
+            panic!("old reader action detail is not JSON: {error}: {detail_output:?}")
+        });
+        let forms = detail
+            .get("actionForms")
+            .unwrap_or(&detail["effectiveAction"]);
+        let scoped = forms["choices"]
+            .as_array()
+            .unwrap_or_else(|| panic!("old reader action form omitted choices: {detail}"))
+            .iter()
+            .find(|choice| choice["label"] == "scoped")
+            .unwrap_or_else(|| panic!("old reader has no current scoped action: {detail}"));
+        let argv = scoped["command"]["argv"]
+            .as_array()
+            .expect("old reader action form must expose exact argv");
+        let mut command = Command::new(&reader);
+        command
+            .current_dir(&project.root)
+            .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env(
+                "EXITBIND_SESSION_GOALS_DIR",
+                project.root.join(".planning/native-goals"),
+            );
+        (command.output().unwrap(), "action")
+    } else {
+        (detail_output, "detail")
+    };
     assert!(
         !output.status.success(),
         "legacy reader accepted {kind}: {output:?}"
@@ -435,6 +499,11 @@ fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind
         .code()
         .expect("legacy refusal must exit normally");
     assert!(exit_code > 0);
+    assert_eq!(
+        project.state(),
+        before,
+        "legacy probe must not change Work or account bytes"
+    );
     let reader_bytes = fs::read(&reader).unwrap();
     let reader_sha256 = format!("{:x}", Sha256::digest(reader_bytes));
     let mut evidence = std::fs::OpenOptions::new()
@@ -442,9 +511,10 @@ fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind
         .append(true)
         .open(log)
         .unwrap();
-    let mut line =
-        serde_json::to_vec(&json!({"kind":kind,"readerSha256":reader_sha256,"exitCode":exit_code}))
-            .unwrap();
+    let mut line = serde_json::to_vec(
+        &json!({"kind":kind,"readerSha256":reader_sha256,"exitCode":exit_code,"stage":stage}),
+    )
+    .unwrap();
     line.push(b'\n');
     evidence.write_all(&line).unwrap();
 }
@@ -469,6 +539,8 @@ fn owner_time_amendment_preview_is_read_only_and_binds_the_frozen_claim() {
 fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
     let (project, work) = owner_time_amendment_fixture("owner-time-amendment-apply");
     let before = project.status();
+    let original_claims = owner_time_amendment_claims(&project, &work);
+    let original_start = owner_time_amendment_start(&project, &work);
     let preview = owner_time_amendment_preview(&project, &work);
     let admitted = project.apply(&preview);
     assert_eq!(admitted["state"], "amended");
@@ -484,7 +556,11 @@ fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
         after["budget"]["actualActions"],
         before["budget"]["actualActions"]
     );
-    assert_eq!(after["claims"], before["claims"]);
+    assert_eq!(
+        owner_time_amendment_claims(&project, &work),
+        original_claims
+    );
+    assert_eq!(owner_time_amendment_start(&project, &work), original_start);
     assert_eq!(project.apply(&preview)["effect"], "replayed");
 
     legacy_reader_refuses_current_work_action(&project, &work, "time-amendment");
@@ -509,7 +585,11 @@ fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
             .unwrap()
             > after["budget"]["actualActions"].as_u64().unwrap()
     );
-    assert_eq!(after_first_debit["claims"], before["claims"]);
+    assert_eq!(
+        owner_time_amendment_claims(&project, &work),
+        original_claims
+    );
+    assert_eq!(owner_time_amendment_start(&project, &work), original_start);
     assert_eq!(
         after_first_debit["budget"]["since"],
         before["budget"]["since"]
@@ -530,7 +610,11 @@ fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
         continued["budget"]["actualWorks"],
         before["budget"]["actualWorks"]
     );
-    assert_eq!(continued["claims"], before["claims"]);
+    assert_eq!(
+        owner_time_amendment_claims(&project, &work),
+        original_claims
+    );
+    assert_eq!(owner_time_amendment_start(&project, &work), original_start);
 }
 
 #[test]

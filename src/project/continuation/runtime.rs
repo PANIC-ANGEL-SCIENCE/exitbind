@@ -90,11 +90,11 @@ pub(crate) fn guard(loaded: &Loaded, state: &Value) -> Result<(), String> {
     )?;
     let current = facts::Current::read(loaded, &bound.record, Some(state));
     let observed = current.value(Role::Lead, &[], &[], &[], None, None, None);
-    control::eligibility(
+    control::eligibility_for_verified(
         &policy(&bound.record),
         &observed,
         &bound.record.account,
-        verified.association(),
+        &verified,
     )
     .map_err(refusal)
 }

@@ -71,7 +71,8 @@ pub(crate) fn validate_against_first_check(
         .ok_or("first verification's accepted plan Work has no head")?;
     let feature_state = crate::run::state::reduce(&events)?;
     let reviewer = events.iter().find(|event| {
-        event["action"] == "review"
+        event["action"] == "submit"
+            && event["role"] == "reviewer"
             && event["outcome"] == "approved"
             && event["eventSha256"] == review["reviewEventSha256"]
     });

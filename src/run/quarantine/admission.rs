@@ -354,10 +354,19 @@ where
             let link = &verified.marker["followUp"];
             let (_, first_events, first_bytes) =
                 crate::run::ledger::load(predecessor_loaded, str_value(link, "ledger")?)?;
+            let first_start = first_events
+                .first()
+                .ok_or("first failed verification ledger is empty")?;
+            let first_state = crate::run::state::reduce(&first_events)?;
+            let first_check = crate::run::quarantine::validate_first_failed_check(
+                &first_events,
+                &first_state,
+                &first_start["quarantineVerification"],
+            )?;
             if hash::bytes(first_bytes.as_bytes()) != link["ledgerSha256"]
                 || first_events.last().map(|event| &event["eventSha256"])
                     != Some(&link["headEventSha256"])
-                || crate::run::state::reduce(&first_events)?["status"] != "blocked"
+                || first_check["eventSha256"] != link["checkEventSha256"]
             {
                 return Err("first failed verification changed after follow-up admission".into());
             }

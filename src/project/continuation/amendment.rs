@@ -101,8 +101,9 @@ fn validate_receipt(receipt: &Receipt) -> Result<(), String> {
 
 fn historic_spec(raw: &str, digest: &str) -> Result<journal::Record, String> {
     raw.lines()
-        .map(|line| serde_json::from_str::<journal::Record>(line))
-        .collect::<Result<Vec<_>, _>>()?
+        .map(serde_json::from_str::<journal::Record>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?
         .into_iter()
         .find(|record| record.specification_sha256 == digest)
         .ok_or_else(|| {
@@ -163,7 +164,7 @@ fn facts(
         .ok_or("Work has no exact selected continuation claim")?;
     let old_record = historic_spec(&raw, &claim.association.specification_sha256)?;
     compare_time_only(&old_record, &record)?;
-    let state = crate::run::state::reduce_live(loaded, &events)?;
+    let state = crate::run::reduce_live(loaded, &events)?;
     if start["projectContinuation"]
         != serde_json::to_value(&claim.association).map_err(|e| e.to_string())?
         || crate::run::start_event_intent_sha256(start)? != claim.start_intent_sha256
@@ -259,7 +260,7 @@ pub(crate) fn amend(
                 return Err("a conflicting time amendment receipt already exists".into());
             }
             let relative_receipt = receipt_path(loaded, &claim)?;
-            let full_receipt = loaded.state_root.join(&relative_receipt);
+            let full_receipt = loaded.state_root.join(relative_receipt);
             crate::project::managed_files::ensure_state_directory(
                 &loaded.state_root,
                 full_receipt
@@ -278,7 +279,9 @@ pub(crate) fn amend(
                 work: work.into(),
                 task_id: claim.task_id.clone(),
                 start_intent_sha256: claim.start_intent_sha256.clone(),
-                original_association_sha256: hash::value(&claim.association),
+                original_association_sha256: hash::value(
+                    &serde_json::to_value(&claim.association).map_err(|error| error.to_string())?,
+                ),
                 original_specification_sha256: claim.association.specification_sha256.clone(),
                 selected_specification_sha256: fresh.specification_sha256.clone(),
                 original_revision: claim.association.mandate_revision,
@@ -427,7 +430,10 @@ pub(super) fn effective_association(
         || receipt.project_identity != record.project_identity
         || receipt.mandate_id != record.specification.mandate.id
         || receipt.configuration_sha256 != hash::text(&loaded.source)
-        || receipt.original_association_sha256 != hash::value(&claim.association)
+        || receipt.original_association_sha256
+            != hash::value(
+                &serde_json::to_value(&claim.association).map_err(|error| error.to_string())?,
+            )
         || receipt.original_specification_sha256 != claim.association.specification_sha256
         || receipt.selected_specification_sha256 != record.specification_sha256
         || receipt.selected_revision != record.specification.mandate.revision
@@ -447,14 +453,15 @@ pub(super) fn effective_association(
         );
     }
     let original = historic_spec(&raw, &claim.association.specification_sha256)?;
-    compare_time_only(&original, &record)?;
+    compare_time_only(&original, record)?;
     let (selected_spec, digest) = sources::read(loaded, &record.specification_path)?;
     if digest != receipt.selected_specification_sha256 || selected_spec != record.specification {
         return Err("time amendment source changed after explicit owner selection".into());
     }
-    let mut amended = claim.association.clone();
-    amended.mandate_revision = receipt.selected_revision;
-    amended.specification_sha256 = receipt.selected_specification_sha256;
-    control::verify_association(&amended, &amended, work)
+    frozen
+        .with_selected_time_authority(
+            receipt.selected_revision,
+            receipt.selected_specification_sha256,
+        )
         .map_err(|reason| format!("invalid amended association: {reason:?}"))
 }
