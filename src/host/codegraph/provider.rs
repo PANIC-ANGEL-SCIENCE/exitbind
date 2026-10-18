@@ -131,6 +131,10 @@ pub(super) fn provider_identity(
     deadline: Instant,
 ) -> Result<ProviderIdentity, String> {
     let path = canonical(executable)?;
+    let entry_path = path
+        .to_str()
+        .ok_or("provider_identity_invalid: CodeGraph executable path is not UTF-8")?
+        .to_owned();
     let bytes = bounded_file(
         &path,
         MAX_PROVIDER_ENTRY,
@@ -149,9 +153,42 @@ pub(super) fn provider_identity(
     }
     Ok(ProviderIdentity {
         version,
-        entry_path: path.to_string_lossy().into_owned(),
+        entry_path,
         entry_sha256: hash::bytes(&bytes),
     })
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::provider_identity;
+    use std::{
+        fs,
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn provider_identity_refuses_non_utf8_executable_before_invocation() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "codegraph-provider-path-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        let executable = root.join(std::ffi::OsString::from_vec(b"provider-\xff".to_vec()));
+        fs::write(&executable, b"fixture executable").unwrap();
+
+        let result = provider_identity(&executable, &root, Instant::now() + Duration::from_secs(2));
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(
+            result.unwrap_err(),
+            "provider_identity_invalid: CodeGraph executable path is not UTF-8"
+        );
+    }
 }
 
 fn clear_git_environment(command: &mut Command) {

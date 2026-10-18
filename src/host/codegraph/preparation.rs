@@ -49,7 +49,7 @@ fn saved_preparation(root: &Path) -> Result<Option<PreparationIdentity>, String>
 
 fn preparation_matches(
     metadata: &PreparationIdentity,
-    root: &Path,
+    root: &str,
     project_id: &str,
     provider: &ProviderIdentity,
     index_path: &str,
@@ -58,12 +58,17 @@ fn preparation_matches(
 ) -> bool {
     metadata.kind == "exitbind_codegraph_preparation"
         && metadata.protocol == 1
-        && metadata.product_root == root.to_string_lossy()
+        && metadata.product_root == root
         && metadata.project_id == project_id
         && &metadata.provider == provider
         && metadata.index_path == index_path
         && metadata.index_identity == index_identity
         && metadata.source_identity == source
+}
+
+fn canonical_root_text(root: &Path) -> Result<&str, String> {
+    root.to_str()
+        .ok_or_else(|| "target path is not UTF-8".into())
 }
 
 #[derive(Clone, Copy)]
@@ -76,7 +81,7 @@ enum PrepareAction {
 fn prepare_action(
     status: &IndexState,
     previous: Option<&PreparationIdentity>,
-    root: &Path,
+    root: &str,
     project_id: &str,
     provider: &ProviderIdentity,
     source: &str,
@@ -98,7 +103,7 @@ fn prepare_action(
             };
             let target_matches = previous.kind == "exitbind_codegraph_preparation"
                 && previous.protocol == 1
-                && previous.product_root == root.to_string_lossy()
+                && previous.product_root == root
                 && previous.project_id == project_id
                 && previous.provider == *provider
                 && previous.index_path == *index_path
@@ -181,6 +186,7 @@ pub(super) fn prepare(
     reconciliation_left: &mut u8,
 ) -> Result<Readiness, String> {
     let root = canonical(&loaded.product_root)?;
+    let root_text = canonical_root_text(&root)?.to_owned();
     let project_id = project_id(loaded);
     let mut last_change = false;
     loop {
@@ -201,7 +207,7 @@ pub(super) fn prepare(
             if saved.as_ref().is_some_and(|metadata| {
                 preparation_matches(
                     metadata,
-                    &root,
+                    &root_text,
                     project_id,
                     provider,
                     index_path,
@@ -236,7 +242,7 @@ pub(super) fn prepare(
             prepare_action(
                 &index_state,
                 saved.as_ref(),
-                &root,
+                &root_text,
                 project_id,
                 provider,
                 &source_before,
@@ -288,7 +294,7 @@ pub(super) fn prepare(
         let metadata = PreparationIdentity {
             kind: "exitbind_codegraph_preparation".into(),
             protocol: 1,
-            product_root: root.to_string_lossy().into_owned(),
+            product_root: root_text,
             project_id: project_id.to_owned(),
             provider: provider.clone(),
             index_path: index_path.clone(),
@@ -303,5 +309,23 @@ pub(super) fn prepare(
             index_identity,
             source_identity: source_before,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_root_text;
+    use std::path::Path;
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_root_text_refuses_non_utf8_path() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/project-\xff"));
+        assert_eq!(
+            canonical_root_text(path),
+            Err("target path is not UTF-8".into())
+        );
     }
 }

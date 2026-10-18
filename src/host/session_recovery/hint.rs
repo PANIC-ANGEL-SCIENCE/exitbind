@@ -158,15 +158,20 @@ pub(super) fn safe_relative_path(value: &str) -> bool {
         return false;
     }
     let parts = Path::new(value).components().collect::<Vec<_>>();
-    parts
+    if !parts
         .iter()
         .all(|component| matches!(component, std::path::Component::Normal(_)))
-        && parts
-            .iter()
-            .map(|part| part.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/")
-            == value
+    {
+        return false;
+    }
+    let Some(normalized) = parts
+        .iter()
+        .map(|part| part.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    normalized.join("/") == value
 }
 
 pub(super) fn canonical_path(path: &Path, label: &str) -> Result<String, String> {
@@ -427,4 +432,21 @@ pub(super) fn write_hint_locked(
         let _ = fs::remove_file(staged);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_relative_path;
+
+    #[test]
+    fn safe_relative_path_preserves_unicode_and_rejects_noncanonical_components() {
+        assert!(safe_relative_path("src/解析.rs"));
+        assert!(safe_relative_path("src/café.rs"));
+        assert!(safe_relative_path("src/cafe\u{301}.rs"));
+        assert!(!safe_relative_path(""));
+        assert!(!safe_relative_path("../src/lib.rs"));
+        assert!(!safe_relative_path("src//lib.rs"));
+        assert!(!safe_relative_path("src/./lib.rs"));
+        assert!(!safe_relative_path("src\\lib.rs"));
+    }
 }
