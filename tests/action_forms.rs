@@ -17,6 +17,7 @@ use std::{
 struct Fixture {
     root: PathBuf,
     cleanup_root: PathBuf,
+    executable: PathBuf,
     native_session: Option<NativeSession>,
 }
 
@@ -48,9 +49,17 @@ impl Fixture {
     }
 
     fn at(root: PathBuf, cleanup_root: PathBuf) -> Self {
+        Self::at_with_executable(
+            root,
+            cleanup_root,
+            PathBuf::from(env!("CARGO_BIN_EXE_exitbind")),
+        )
+    }
+
+    fn at_with_executable(root: PathBuf, cleanup_root: PathBuf, executable: PathBuf) -> Self {
         fs::create_dir_all(&root).unwrap();
         support::git_topology::repository(&root);
-        let output = isolated_command(env!("CARGO_BIN_EXE_exitbind"))
+        let output = isolated_command(&executable)
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -59,6 +68,7 @@ impl Fixture {
         Self {
             root,
             cleanup_root,
+            executable,
             native_session: None,
         }
     }
@@ -97,7 +107,7 @@ impl Fixture {
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
         let mut child = self
-            .command(env!("CARGO_BIN_EXE_exitbind"))
+            .command(&self.executable)
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -210,7 +220,7 @@ impl Fixture {
             .iter()
             .map(|item| item.as_str().expect("action argv is text").to_owned())
             .collect::<Vec<_>>();
-        let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
+        let executable = fs::canonicalize(&self.executable).unwrap();
         let config = fs::canonicalize(self.root.join("exitbind.json")).unwrap();
         if command["sameExecutableRequired"] == true {
             argv.insert(
@@ -516,7 +526,46 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
         "{}",
         root.display()
     );
-    let fixture = Fixture::at(root, cleanup_root);
+    // Hold executable length constant as well as config-root length. CI's
+    // Cargo test binary lives at a substantially shorter path than the local
+    // warm-target binary, and executable bytes participate in grouped-route
+    // projection just like config bytes do.
+    let mut binary_components = ["b0".to_owned(), "b1".to_owned()];
+    let binary_fixed_len = cleanup_root.to_str().unwrap().len()
+        + binary_components.iter().map(String::len).sum::<usize>()
+        + binary_components.len()
+        + 1
+        + "exitbind".len();
+    let binary_target_len = 400;
+    let binary_component_count = binary_components.len();
+    assert!(
+        binary_fixed_len <= binary_target_len,
+        "TMPDIR leaves no room for the executable-path fixture: {binary_fixed_len} > {binary_target_len}"
+    );
+    let binary_padding = binary_target_len - binary_fixed_len;
+    for (index, component) in binary_components.iter_mut().enumerate() {
+        component.push_str(&"x".repeat(
+            binary_padding / binary_component_count
+                + usize::from(index < binary_padding % binary_component_count),
+        ));
+    }
+    assert!(
+        binary_components
+            .iter()
+            .all(|component| component.len() <= 255),
+        "executable-path fixture exceeds the filesystem component limit"
+    );
+    let mut executable = cleanup_root.join(&binary_components[0]);
+    executable.push(&binary_components[1]);
+    fs::create_dir_all(&executable).unwrap();
+    executable.push("exitbind");
+    support::place_executable(
+        std::path::Path::new(env!("CARGO_BIN_EXE_exitbind")),
+        &executable,
+    );
+    let executable = fs::canonicalize(executable).unwrap();
+    assert_eq!(executable.to_str().unwrap().len(), binary_target_len);
+    let fixture = Fixture::at_with_executable(root, cleanup_root, executable);
     let project_rule = "Reviewer: keep the complete current evidence and instructions.\n";
     fs::write(fixture.root.join("AGENTS.md"), project_rule).unwrap();
 
@@ -685,7 +734,7 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
         .unwrap()
         .iter()
         .any(|check| check["kind"] == "check" && check["status"] == "passed"));
-    let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind"))
+    let executable = fs::canonicalize(&fixture.executable)
         .unwrap()
         .to_str()
         .unwrap()
