@@ -4,6 +4,14 @@ use super::{project, MAX_RESPONSE_BYTES};
 use serde_json::json;
 use std::path::Path;
 
+fn optional_bool_field(value: &serde_json::Value, key: &str) -> bool {
+    match value.get(key) {
+        None => false,
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(other) => panic!("{key} must be a boolean when present, got {other}"),
+    }
+}
+
 #[test]
 fn minimum_recovery_retains_terminal_without_inventing_completion() {
     let card = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
@@ -285,6 +293,205 @@ fn oversized_candidate_details_keep_counts_and_a_full_resume_route() {
     assert_eq!(compact["candidateCounts"]["unreadable"], 100);
     assert_eq!(compact["omitted"][0], "candidate details; use fullCommand");
     assert_eq!(compact["fullCommand"][2], "resume");
+}
+
+#[test]
+fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths() {
+    use super::super::response_recovery::{bounded_argv, recovery_command};
+
+    let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
+    let working_directory = format!("/tmp/{}/project", "w".repeat(2_400));
+    let ledger = ".exitbind/runs/work-old.jsonl";
+    let inspect = bounded_argv(
+        vec![
+            "run".into(),
+            "inspect".into(),
+            ledger.into(),
+            "--json".into(),
+            "--config".into(),
+        ],
+        Some(&config),
+        2_048,
+    );
+    let response = json!({
+        "status": "resumed",
+        "work": "smw_focus",
+        "works": [],
+        "unreadable": [{
+            "work": "smw_old",
+            "ledger": ledger,
+            "reason": "corrupt_ledger",
+            "error": "x".repeat(9_000),
+            "command": inspect.argv.clone(),
+            "sameConfigRequired": inspect.same_config,
+            "sameExecutableRequired": inspect.same_executable,
+            "workingDirectory": working_directory.clone(),
+        }],
+        "next": {"action": "check", "assignment": "sma_assignment"},
+    });
+
+    let compact = project(&response, Path::new(&config), "resume").unwrap();
+    let bytes = serde_json::to_vec(&compact).unwrap();
+    assert!(bytes.len() <= MAX_RESPONSE_BYTES, "{} bytes", bytes.len());
+    assert_eq!(compact["status"], "resumed");
+    assert_eq!(compact["work"], "smw_focus");
+    assert_eq!(compact["works"], json!([]));
+    assert_eq!(compact["candidateCounts"]["works"], 0);
+    assert_eq!(compact["candidateCounts"]["unreadable"], 1);
+    assert_eq!(compact["truncated"], true);
+    assert_eq!(compact["omitted"][0], "candidate details; use fullCommand");
+
+    let unreadable = &compact["unreadable"][0];
+    assert_eq!(unreadable["work"], "smw_old");
+    assert_eq!(unreadable["reason"], "corrupt_ledger");
+    assert_eq!(unreadable["workingDirectory"], working_directory);
+    assert_eq!(unreadable["command"], inspect.argv);
+    assert_eq!(unreadable["sameConfigRequired"], inspect.same_config);
+    assert_eq!(
+        unreadable["sameExecutableRequired"],
+        inspect.same_executable
+    );
+    assert!(unreadable.get("error").is_none());
+    assert!(unreadable.get("ledger").is_none());
+
+    let resume = recovery_command(
+        &response,
+        Path::new(&config),
+        "resume",
+        MAX_RESPONSE_BYTES - 2_048,
+    );
+    assert_eq!(compact["fullCommand"], resume.argv);
+    assert_eq!(
+        optional_bool_field(&compact, "fullCommandSameConfigRequired"),
+        resume.same_config
+    );
+    assert_eq!(
+        optional_bool_field(&compact, "fullCommandSameExecutableRequired"),
+        resume.same_executable
+    );
+    assert_eq!(compact["fullCommand"][2], "resume");
+}
+
+#[test]
+fn fallback_preserves_work_candidate_route_after_nonessential_detail_overflow() {
+    use super::super::response_recovery::bounded_argv;
+
+    let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
+    let work = "smw_other";
+    let candidate_route = bounded_argv(
+        vec![
+            "work".into(),
+            "next".into(),
+            work.into(),
+            "--json".into(),
+            "--config".into(),
+        ],
+        Some(&config),
+        2_048,
+    );
+    let response = json!({
+        "status": "resumed",
+        "work": "smw_focus",
+        "works": [{
+            "work": work,
+            "workflow": "w".repeat(9_000),
+            "goal": "g".repeat(9_000),
+            "progress": {"state": "running", "percent": 42},
+            "command": candidate_route.argv.clone(),
+            "sameConfigRequired": candidate_route.same_config,
+            "sameExecutableRequired": candidate_route.same_executable,
+            "ledgerProducer": {"name": "exitbind", "detail": "p".repeat(2_000)},
+        }],
+        "next": {"action": "check", "assignment": "sma_assignment"},
+    });
+
+    let compact = project(&response, Path::new(&config), "resume").unwrap();
+    let bytes = serde_json::to_vec(&compact).unwrap();
+    assert!(bytes.len() <= MAX_RESPONSE_BYTES, "{} bytes", bytes.len());
+    assert_eq!(compact["truncated"], true);
+    assert_eq!(compact["candidateCounts"]["works"], 1);
+    assert_eq!(compact["works"].as_array().unwrap().len(), 1);
+    assert_eq!(compact["works"][0]["work"], work);
+    assert_eq!(
+        compact["works"][0]["progress"],
+        json!({"state": "running", "percent": 42})
+    );
+    assert_eq!(compact["works"][0]["command"], candidate_route.argv);
+    assert_eq!(
+        compact["works"][0]["sameConfigRequired"],
+        candidate_route.same_config
+    );
+    assert_eq!(
+        compact["works"][0]["sameExecutableRequired"],
+        candidate_route.same_executable
+    );
+    assert!(compact["works"][0].get("workflow").is_none());
+    assert!(compact["works"][0].get("goal").is_none());
+    assert!(compact["works"][0].get("ledgerProducer").is_none());
+}
+
+#[test]
+fn fallback_does_not_fake_empty_unreadable_when_essential_route_is_too_large() {
+    use super::super::response_recovery::{bounded_argv, recovery_command};
+
+    let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
+    let working_directory = format!("/tmp/{}/project", "w".repeat(12_000));
+    let ledger = ".exitbind/runs/work-old.jsonl";
+    let inspect = bounded_argv(
+        vec![
+            "run".into(),
+            "inspect".into(),
+            ledger.into(),
+            "--json".into(),
+            "--config".into(),
+        ],
+        Some(&config),
+        2_048,
+    );
+    let response = json!({
+        "status": "resumed",
+        "work": "smw_focus",
+        "works": [],
+        "unreadable": [{
+            "work": "smw_old",
+            "ledger": ledger,
+            "reason": "corrupt_ledger",
+            "error": "x".repeat(9_000),
+            "command": inspect.argv.clone(),
+            "sameConfigRequired": inspect.same_config,
+            "sameExecutableRequired": inspect.same_executable,
+            "workingDirectory": working_directory,
+        }],
+        "next": {"action": "check", "assignment": "sma_assignment"},
+    });
+
+    let compact = project(&response, Path::new(&config), "resume").unwrap();
+    let bytes = serde_json::to_vec(&compact).unwrap();
+    assert!(bytes.len() <= MAX_RESPONSE_BYTES, "{} bytes", bytes.len());
+    assert_eq!(compact["status"], "resumed");
+    assert_eq!(compact["work"], "smw_focus");
+    assert_eq!(compact["works"], json!([]));
+    assert_eq!(compact["candidateCounts"]["works"], 0);
+    assert_eq!(compact["candidateCounts"]["unreadable"], 1);
+    assert_eq!(compact["truncated"], true);
+    assert_eq!(compact["omitted"][0], "candidate details; use fullCommand");
+    assert!(compact.get("unreadable").is_none());
+
+    let resume = recovery_command(
+        &response,
+        Path::new(&config),
+        "resume",
+        MAX_RESPONSE_BYTES - 2_048,
+    );
+    assert_eq!(compact["fullCommand"], resume.argv);
+    assert_eq!(
+        optional_bool_field(&compact, "fullCommandSameConfigRequired"),
+        resume.same_config
+    );
+    assert_eq!(
+        optional_bool_field(&compact, "fullCommandSameExecutableRequired"),
+        resume.same_executable
+    );
 }
 
 #[test]
