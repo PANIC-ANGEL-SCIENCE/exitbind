@@ -18,13 +18,93 @@ fn route_descriptor(
         "argv": value[argv_key],
         "sameExecutableRequired": value
             .get(executable_key)
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+            .cloned()
+            .unwrap_or_else(|| json!(false)),
         "sameConfigRequired": value
             .get(config_key)
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+            .cloned()
+            .unwrap_or_else(|| json!(false)),
     })
+}
+
+fn reconstruct_inspect_command(
+    route: &Value,
+    expected_executable: &Path,
+    expected_config: &Path,
+    invocation_cwd: &Path,
+    work: &str,
+    event_sha: &str,
+) -> Vec<String> {
+    let descriptor = route_descriptor(
+        route,
+        "command",
+        "sameExecutableRequired",
+        "sameConfigRequired",
+    );
+    let same_executable = descriptor["sameExecutableRequired"]
+        .as_bool()
+        .expect("inspect route executable flag is a boolean");
+    let same_config = descriptor["sameConfigRequired"]
+        .as_bool()
+        .expect("inspect route config flag is a boolean");
+    let mut argv = descriptor["argv"]
+        .as_array()
+        .expect("inspect route argv is an array")
+        .iter()
+        .map(|argument| {
+            argument
+                .as_str()
+                .expect("inspect argument is text")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(!argv.is_empty(), "inspect route argv is not empty");
+    let executable = fs::canonicalize(expected_executable).unwrap();
+    if same_executable {
+        assert_eq!(argv[0], "run");
+        argv.insert(0, executable.to_str().unwrap().to_owned());
+    } else {
+        assert!(
+            Path::new(&argv[0]).is_absolute(),
+            "inspect executable is explicit"
+        );
+        assert_eq!(fs::canonicalize(&argv[0]).unwrap(), executable);
+    }
+
+    let config = fs::canonicalize(expected_config).unwrap();
+    if same_config {
+        assert_eq!(argv.last().map(String::as_str), Some("--config"));
+        argv.push(config.to_str().unwrap().to_owned());
+    }
+
+    assert!(
+        work.starts_with("smw_") && work.len() > 4,
+        "fixture Work handle is valid"
+    );
+    let expected_ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let expected_ledger_path = fs::canonicalize(invocation_cwd.join(&expected_ledger)).unwrap();
+    let ledger_argument = argv.get(3).expect("inspect route ledger argument");
+    let ledger_path = Path::new(ledger_argument);
+    let ledger_path = if ledger_path.is_absolute() {
+        ledger_path.to_path_buf()
+    } else {
+        invocation_cwd.join(ledger_path)
+    };
+    assert_eq!(fs::canonicalize(ledger_path).unwrap(), expected_ledger_path);
+    assert_eq!(
+        argv.len(),
+        9,
+        "inspect route has only the exact expected arguments"
+    );
+    assert_eq!(argv[1], "run");
+    assert_eq!(argv[2], "inspect");
+    assert_eq!(argv[3], expected_ledger);
+    assert_eq!(argv[4], "--event");
+    assert_eq!(argv[5], event_sha);
+    assert_eq!(argv[6], "--json");
+    assert_eq!(argv[7], "--config");
+    assert_eq!(argv[8], config.to_str().unwrap());
+    argv
 }
 
 #[test]
@@ -188,13 +268,15 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(returned.status.success(), "{returned:?}");
     assert!(returned.stdout.len() <= 8 * 1024);
     let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
-    let descriptor = route_descriptor(
+    let event_sha = returned["eventSha256"].as_str().unwrap();
+    let detail_argv = reconstruct_inspect_command(
         &returned["nextAction"],
-        "command",
-        "sameExecutableRequired",
-        "sameConfigRequired",
+        &candidate,
+        &config,
+        &root,
+        work,
+        event_sha,
     );
-    let detail_argv = support::reconstruct_work_command(&descriptor, &candidate, &config, &root);
     assert_eq!(Path::new(&detail_argv[0]), candidate);
     let mut detail = Command::new(&detail_argv[0]);
     detail.current_dir(&root).args(&detail_argv[1..]);
