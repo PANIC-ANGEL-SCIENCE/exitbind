@@ -1,16 +1,17 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.16
+Published stable tag: v0.31.17
 Source candidate tag: v0.31.17
 
-The published stable tag is v0.31.16. The current source candidate is
-0.31.17 and has not been published; its declaration does not reserve a tag or
-establish release readiness.
+The published stable tag and current source candidate are both v0.31.17. This
+records the post-delivery pointer state for the exact verified immutable
+release. A source version or passing CI alone does not establish an official
+release.
 README install links name the available stable assets. The published installation
-pointer has been verified against the exact release tag and asset inventory. A source version or
-passing CI alone does not establish an official release. The release-reference
-check validates published and candidate declarations separately; source metadata,
-schemas and installation defaults must match the current source version.
+pointer has been verified against the exact release tag and asset inventory. The
+release-reference check validates published and candidate declarations separately;
+source metadata, schemas and installation defaults must match the current source
+version.
 
 After an authorized delivery, validate the exact selected tag's offline release
 readback with `python3 scripts/check-installation-pointer.py --metadata FILE
