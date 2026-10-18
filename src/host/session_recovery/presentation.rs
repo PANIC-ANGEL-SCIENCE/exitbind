@@ -195,7 +195,7 @@ pub(crate) fn hook_context(
     if started.elapsed() > HOOK_BUDGET {
         return Some("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into());
     }
-    let locator = if let Some(reference) = known_locator.as_deref() {
+    let locator = if let Some(reference) = known_locator {
         format!("exact Goal-member locator {} is retained", reference.work)
     } else {
         "no exact Work locator is selected".to_owned()

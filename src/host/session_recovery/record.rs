@@ -328,7 +328,7 @@ pub(crate) fn checkpoint(payload: &serde_json::Map<String, Value>, event: &str) 
 }
 
 fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> Result<(), String> {
-    let result = (|| -> Result<(), String> {
+    (|| -> Result<(), String> {
         let started = Instant::now();
         let session =
             session_goal::native::current()?.ok_or("native session selector is unavailable")?;
@@ -409,6 +409,5 @@ fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> R
             return Err("native recovery checkpoint exceeded its four-second hook budget".into());
         }
         Ok(())
-    })();
-    result
+    })()
 }

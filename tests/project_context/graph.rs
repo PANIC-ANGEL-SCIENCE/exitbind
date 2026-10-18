@@ -9,16 +9,15 @@ fn fake_provider(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let source = root.join("impact.rs");
     fs::write(
         &executable,
-        format!(
-            r#"#!/bin/sh
-printf '%s|%s|%s\n' "$1" "${{CODEGRAPH_FORCE_WATCH:-}}" "${{CODEGRAPH_NO_WATCH:-}}" >> "$FAKE_CODEGRAPH_LOG"
+        r#"#!/bin/sh
+printf '%s|%s|%s\n' "$1" "${CODEGRAPH_FORCE_WATCH:-}" "${CODEGRAPH_NO_WATCH:-}" >> "$FAKE_CODEGRAPH_LOG"
 case "$1" in
   --version) printf 'CodeGraph 1.6.0-fixture\n' ;;
   status)
     project="$3"
     index="$project/.codegraph"
     if [ ! -f "$index/fake-ready" ]; then
-      printf '{{"initialized":false,"projectPath":"%s","indexPath":"%s","lastIndexed":null}}\n' "$project" "$index"
+      printf '{"initialized":false,"projectPath":"%s","indexPath":"%s","lastIndexed":null}\n' "$project" "$index"
       exit 0
     fi
     generation=1
@@ -30,7 +29,7 @@ case "$1" in
     reindex=false
     if [ -f "$index/fake-partial" ]; then state=partial; refs=1; fi
     if [ -f "$index/fake-extraction-stale" ]; then reindex=true; fi
-    printf '{{"initialized":true,"version":"1.6.0-fixture","projectPath":"%s","indexPath":"%s","lastIndexed":"fixture-%s","fileCount":1,"nodeCount":1,"edgeCount":1,"dbSizeBytes":128,"backend":"fixture","worktreeMismatch":null,"pendingChanges":{{"added":0,"modified":%s,"removed":0}},"index":{{"builtWithVersion":"1.6.0-fixture","builtWithExtractionVersion":"1","currentExtractionVersion":"1","reindexRecommended":%s,"state":"%s","pendingRefs":%s}}}}\n' "$project" "$index" "$generation" "$modified" "$reindex" "$state" "$refs"
+    printf '{"initialized":true,"version":"1.6.0-fixture","projectPath":"%s","indexPath":"%s","lastIndexed":"fixture-%s","fileCount":1,"nodeCount":1,"edgeCount":1,"dbSizeBytes":128,"backend":"fixture","worktreeMismatch":null,"pendingChanges":{"added":0,"modified":%s,"removed":0},"index":{"builtWithVersion":"1.6.0-fixture","builtWithExtractionVersion":"1","currentExtractionVersion":"1","reindexRecommended":%s,"state":"%s","pendingRefs":%s}}\n' "$project" "$index" "$generation" "$modified" "$reindex" "$state" "$refs"
     ;;
   init)
     mkdir -p "$2/.codegraph"
@@ -39,7 +38,7 @@ case "$1" in
     ;;
   sync)
     if [ -f .codegraph/fake-change-on-sync ]; then
-      printf 'fn changed_during_sync() {{}}\n' >> "$FAKE_SOURCE_FILE"
+      printf 'fn changed_during_sync() {}\n' >> "$FAKE_SOURCE_FILE"
       rm .codegraph/fake-change-on-sync
     fi
     rm -f .codegraph/fake-dirty
@@ -47,7 +46,7 @@ case "$1" in
     ;;
   index)
     if [ -f .codegraph/fake-change-on-index ]; then
-      printf 'fn changed_during_retry() {{}}\n' >> "$FAKE_SOURCE_FILE"
+      printf 'fn changed_during_retry() {}\n' >> "$FAKE_SOURCE_FILE"
       rm .codegraph/fake-change-on-index
     fi
     rm -f .codegraph/fake-dirty .codegraph/fake-partial .codegraph/fake-extraction-stale
@@ -56,21 +55,20 @@ case "$1" in
   context)
     case "$8" in
       failure) printf 'synthetic query failure\n' >&2; exit 9 ;;
-      malformed) printf '{{"nodes":[]}}\n' ;;
-      empty) printf '{{"query":"empty","summary":"No matches","nodes":[],"edges":[],"codeBlocks":[],"entryPoints":[],"relatedFiles":[],"stats":{{"nodes":0,"edges":0}}}}\n' ;;
+      malformed) printf '{"nodes":[]}\n' ;;
+      empty) printf '{"query":"empty","summary":"No matches","nodes":[],"edges":[],"codeBlocks":[],"entryPoints":[],"relatedFiles":[],"stats":{"nodes":0,"edges":0}}\n' ;;
       provider-replacement)
         printf '#!/bin/sh\nif [ "$1" = "--version" ]; then printf "CodeGraph replacement fixture\\n"; else exit 12; fi\n' > "$0.next"
         chmod +x "$0.next"
         mv "$0.next" "$0"
-        printf '{{"query":"%s","summary":"parse_config callers","nodes":[{{"name":"parse_config"}}],"edges":[{{"from":"caller","to":"parse_config"}}],"codeBlocks":[{{"file":"src/config.rs","code":"fn parse_config() {{}}"}}],"entryPoints":[{{"name":"caller"}}],"relatedFiles":[{{"path":"src/config.rs"}}],"stats":{{"nodes":1,"edges":1}}}}\n' "$8"
+        printf '{"query":"%s","summary":"parse_config callers","nodes":[{"name":"parse_config"}],"edges":[{"from":"caller","to":"parse_config"}],"codeBlocks":[{"file":"src/config.rs","code":"fn parse_config() {}"}],"entryPoints":[{"name":"caller"}],"relatedFiles":[{"path":"src/config.rs"}],"stats":{"nodes":1,"edges":1}}\n' "$8"
         ;;
-      *) printf '{{"query":"%s","summary":"parse_config callers","nodes":[{{"name":"parse_config"}}],"edges":[{{"from":"caller","to":"parse_config"}}],"codeBlocks":[{{"file":"src/config.rs","code":"fn parse_config() {{}}"}}],"entryPoints":[{{"name":"caller"}}],"relatedFiles":[{{"path":"src/config.rs"}}],"stats":{{"nodes":1,"edges":1}}}}\n' "$8" ;;
+      *) printf '{"query":"%s","summary":"parse_config callers","nodes":[{"name":"parse_config"}],"edges":[{"from":"caller","to":"parse_config"}],"codeBlocks":[{"file":"src/config.rs","code":"fn parse_config() {}"}],"entryPoints":[{"name":"caller"}],"relatedFiles":[{"path":"src/config.rs"}],"stats":{"nodes":1,"edges":1}}\n' "$8" ;;
     esac
     ;;
   *) printf 'unexpected command\n' >&2; exit 12 ;;
 esac
-"#
-        ),
+"#,
     )
     .unwrap();
     let mut permissions = fs::metadata(&executable).unwrap().permissions();

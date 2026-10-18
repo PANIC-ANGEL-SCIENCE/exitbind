@@ -46,7 +46,7 @@ fn next_and_residual_from_snapshot_inner(
     snapshot: &run::RunSnapshot,
     resumed: bool,
     remember_presentation: bool,
-    mut budget: Option<&mut run::inputs::ResumeInputBudget>,
+    budget: Option<&mut run::inputs::ResumeInputBudget>,
 ) -> Result<(Value, Value, Value), String> {
     let mut next = super::next_from(loaded, work, snapshot)?;
     if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
@@ -54,7 +54,7 @@ fn next_and_residual_from_snapshot_inner(
     }
     let residual = crate::work::packet::project(work, snapshot, &next)?;
     next["resolvedActor"] = residual["humanHelp"]["nextAction"]["actor"].clone();
-    let facts = crate::work::packet::facts(snapshot, &next, || match budget.as_deref_mut() {
+    let facts = crate::work::packet::facts(snapshot, &next, || match budget {
         Some(budget) => current_inputs_for_resume(loaded, budget),
         None => crate::run::inputs::fingerprint(loaded).ok(),
     })?;

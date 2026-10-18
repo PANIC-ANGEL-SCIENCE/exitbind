@@ -253,10 +253,15 @@ mod unix {
                     ));
                 }
             };
-            if status.is_some() && stdout_eof && stderr_eof && !group_exists {
+            let completed_status = if stdout_eof && stderr_eof && !group_exists {
+                status.take()
+            } else {
+                None
+            };
+            if let Some(status) = completed_status {
                 drop(interrupt);
                 return Ok(BoundedOutput {
-                    status: status.expect("status was checked"),
+                    status,
                     stdout: out,
                     stderr: err,
                 });
@@ -324,10 +329,10 @@ mod unix {
         let grace_deadline = Instant::now() + TERMINATE_GRACE;
         while Instant::now() < grace_deadline {
             let _ = child.try_wait();
-            if process_group_exists(group).ok() == Some(false) {
-                if child.try_wait().ok().flatten().is_some() {
-                    return true;
-                }
+            if process_group_exists(group).ok() == Some(false)
+                && child.try_wait().ok().flatten().is_some()
+            {
+                return true;
             }
             std::thread::sleep(POLL);
         }

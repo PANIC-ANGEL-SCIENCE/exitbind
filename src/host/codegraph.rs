@@ -559,18 +559,18 @@ fn graph_query(target: &Target, query: &str) -> Result<Value, String> {
                 "source_changed: source changed while revalidating the cached index".into(),
             );
         }
-        return finish_result(
+        return finish_result(ResultInput {
             target,
             query,
-            &root,
-            &ready,
-            &executable,
-            query_deadline,
-            cached,
+            root: &root,
+            ready: &ready,
+            executable: &executable,
+            deadline: query_deadline,
+            context: cached,
             artifact_path,
             artifact_sha,
-            true,
-        );
+            cached: true,
+        });
     }
     let mut result = context(&executable, &root, query, query_deadline)?;
     verify_provider_identity(&executable, &root, &ready.provider, query_deadline)?;
@@ -625,32 +625,46 @@ fn graph_query(target: &Target, query: &str) -> Result<Value, String> {
     let (artifact_path, artifact_sha) = persist_state_artifact(&target.loaded, &artifact)?;
     let key = cache_key(&root, &target.loaded, target.work.as_deref(), query, &ready);
     save_cache(&root, &key, &artifact_path, &artifact_sha)?;
-    finish_result(
+    finish_result(ResultInput {
         target,
         query,
-        &root,
-        &ready,
-        &executable,
-        query_deadline,
-        result,
+        root: &root,
+        ready: &ready,
+        executable: &executable,
+        deadline: query_deadline,
+        context: result,
         artifact_path,
         artifact_sha,
-        false,
-    )
+        cached: false,
+    })
 }
 
-fn finish_result(
-    target: &Target,
-    query: &str,
-    root: &Path,
-    ready: &Readiness,
-    executable: &Path,
+struct ResultInput<'a> {
+    target: &'a Target,
+    query: &'a str,
+    root: &'a Path,
+    ready: &'a Readiness,
+    executable: &'a Path,
     deadline: Instant,
     context: Value,
     artifact_path: String,
     artifact_sha: String,
     cached: bool,
-) -> Result<Value, String> {
+}
+
+fn finish_result(input: ResultInput<'_>) -> Result<Value, String> {
+    let ResultInput {
+        target,
+        query,
+        root,
+        ready,
+        executable,
+        deadline,
+        context,
+        artifact_path,
+        artifact_sha,
+        cached,
+    } = input;
     verify_provider_identity(executable, root, &ready.provider, deadline)?;
     let empty = context_is_empty(&context);
     let state_relative = artifact_path;

@@ -163,7 +163,7 @@ fn invoke_route(
 #[test]
 fn existing_native_hint_checkpoint_restores_and_revalidates_graph_without_losing_pending_state() {
     let root = project("project-graph-recovery-composition");
-    fs::write(&root.join("impact.rs"), "fn parse_config() {}\n").unwrap();
+    fs::write(root.join("impact.rs"), "fn parse_config() {}\n").unwrap();
     let git = |args: &[&str]| {
         let output = support::git_topology::git(&root)
             .args(args)
