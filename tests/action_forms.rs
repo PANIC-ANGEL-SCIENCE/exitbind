@@ -190,12 +190,7 @@ impl Fixture {
     }
 
     fn execute_choice(&self, choice: &Value, replacements: &[(&str, &str)], input: &[u8]) -> Value {
-        let mut argv = choice["command"]["argv"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|item| item.as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
+        let mut argv = self.expand_command(&choice["command"]);
         for argument in &mut argv {
             for (from, to) in replacements {
                 if argument == from {
@@ -206,6 +201,56 @@ impl Fixture {
         let output = self.run_argv(&argv, input);
         assert!(output.status.success(), "{}", text(&output));
         serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    fn expand_command(&self, command: &Value) -> Vec<String> {
+        let mut argv = command["argv"]
+            .as_array()
+            .expect("action command argv")
+            .iter()
+            .map(|item| item.as_str().expect("action argv is text").to_owned())
+            .collect::<Vec<_>>();
+        let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
+        let config = fs::canonicalize(self.root.join("exitbind.json")).unwrap();
+        if command["sameExecutableRequired"] == true {
+            argv.insert(
+                0,
+                executable
+                    .to_str()
+                    .expect("fixture executable path is UTF-8")
+                    .to_owned(),
+            );
+        } else {
+            assert_eq!(
+                fs::canonicalize(argv.first().expect("full action executable")).unwrap(),
+                executable,
+                "action command must use the fixture product executable"
+            );
+        }
+        if command["sameConfigRequired"] == true {
+            assert_eq!(argv.last().map(String::as_str), Some("--config"));
+            argv.push(
+                config
+                    .to_str()
+                    .expect("fixture config path is UTF-8")
+                    .to_owned(),
+            );
+        } else {
+            assert!(argv.len() >= 2);
+            assert_eq!(argv[argv.len() - 2], "--config");
+            let path = std::path::Path::new(argv.last().unwrap());
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                self.root.join(path)
+            };
+            assert_eq!(
+                fs::canonicalize(path).unwrap(),
+                config,
+                "action command must retain the fixture config"
+            );
+        }
+        argv
     }
 
     fn run_argv(&self, argv: &[String], input: &[u8]) -> Output {
@@ -400,12 +445,7 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
         .find(|c| c["label"] == "completed")
         .unwrap()
         .clone();
-    let mut permit = before["effectiveAction"]["beforeEditing"]["command"]["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s.as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
+    let mut permit = fixture.expand_command(&before["effectiveAction"]["beforeEditing"]["command"]);
     let i = permit.iter().position(|s| s == "<OPERATION>").unwrap();
     permit[i] = "edit source".into();
     let out = fixture.run_argv(&permit, b"");
@@ -428,13 +468,17 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
         work.strip_prefix("smw_").unwrap()
     );
     let recorded = fs::read(fixture.root.join(&ledger)).unwrap();
-    let argv = old_return["command"]["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s.as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    assert!(!fixture.run_argv(&argv, b"result\n").status.success());
+    let argv = fixture.expand_command(&old_return["command"]);
+    let stale = fixture.run_argv(&argv, b"result\n");
+    assert!(
+        !stale.status.success(),
+        "stale return unexpectedly succeeded"
+    );
+    assert!(
+        text(&stale).contains("current action form binding is stale"),
+        "stale return failed for the wrong reason: {}",
+        text(&stale)
+    );
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), recorded);
     assert!(current["details"]["assignment"].is_object());
 }

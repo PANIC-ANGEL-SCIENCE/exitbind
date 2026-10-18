@@ -227,19 +227,47 @@ impl Project {
     }
 
     fn form_output(&self, form: &Value, input: Option<&str>) -> Output {
-        let argv = form["command"]["argv"]
+        let mut argv = form["command"]["argv"]
             .as_array()
-            .expect("exact action argv");
+            .expect("exact action argv")
+            .iter()
+            .map(|value| value.as_str().expect("action argv is text").to_owned())
+            .collect::<Vec<_>>();
+        let expected_executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
+        let expected_config = fs::canonicalize(self.root.join("exitbind.json")).unwrap();
+        if form["command"]["sameExecutableRequired"] == true {
+            argv.insert(0, expected_executable.to_string_lossy().into_owned());
+        } else {
+            assert_eq!(
+                fs::canonicalize(&argv[0]).unwrap(),
+                expected_executable,
+                "action form must name the fixture product executable"
+            );
+        }
+        if form["command"]["sameConfigRequired"] == true {
+            assert_eq!(argv.last().map(String::as_str), Some("--config"));
+            argv.push(expected_config.to_string_lossy().into_owned());
+        } else {
+            assert!(argv.len() >= 2);
+            assert_eq!(argv[argv.len() - 2], "--config");
+            let config_arg = std::path::Path::new(argv.last().unwrap());
+            let config_arg = if config_arg.is_absolute() {
+                config_arg.to_path_buf()
+            } else {
+                self.root.join(config_arg)
+            };
+            assert_eq!(
+                fs::canonicalize(config_arg).unwrap(),
+                expected_config,
+                "action form must retain the fixture config"
+            );
+        }
         let mut command = self.command();
-        command.args(
-            argv.iter()
-                .skip(1)
-                .map(|value| match value.as_str().unwrap() {
-                    "<OPERATION>" => "Return deterministic fixture evidence",
-                    "<REASON>" => "Deterministic protocol fixture; no native-agent claim",
-                    other => other,
-                }),
-        );
+        command.args(argv.iter().skip(1).map(|value| match value.as_str() {
+            "<OPERATION>" => "Return deterministic fixture evidence",
+            "<REASON>" => "Deterministic protocol fixture; no native-agent claim",
+            other => other,
+        }));
         if let Some(input) = input {
             let mut child = command.stdin(Stdio::piped()).spawn().unwrap();
             child

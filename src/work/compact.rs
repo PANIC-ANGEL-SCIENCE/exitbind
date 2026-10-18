@@ -308,6 +308,8 @@ pub(crate) fn project(
         result["truncated"] = json!(true);
     }
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        let mut emergency_next = minimal_next(&result["next"]);
+        preserve_next_omission_markers(&result["next"], &mut emergency_next);
         let mut emergency = json!({
             "compact": true,
             "continuation": result["continuation"],
@@ -316,7 +318,7 @@ pub(crate) fn project(
             "work": response["work"],
             "obligations": {"remaining": response["residual"]["remaining"].as_array().map(|items| items.iter().take(8).cloned().collect::<Vec<_>>()),
                 "remainingOmissions": response["residual"]["remaining"].as_array().map_or(0, |items| items.len().saturating_sub(8))},
-            "next": minimal_next(&result["next"]),
+            "next": emergency_next,
             "nextAction": {"command": null, "summary": "Open the full response with fullCommand."},
             "humanHelp": {
                 "ownerDecision": response["residual"]["humanHelp"]["ownerDecision"],
@@ -375,6 +377,7 @@ pub(crate) fn project(
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
+        preserve_next_omission_markers(&result["next"], &mut minimal["next"]);
         copy_navigation(response, minimal.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             minimal["candidateCounts"] = counts;
@@ -407,6 +410,7 @@ pub(crate) fn project(
             "omitted": ["oversized response detail; use the required current executable and config"],
             "truncated": true,
         });
+        preserve_next_omission_markers(&result["next"], &mut fallback["next"]);
         copy_navigation(response, fallback.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             fallback["candidateCounts"] = counts;
@@ -536,6 +540,14 @@ fn compact_next(next: &Value) -> Value {
         );
     }
     Value::Object(result)
+}
+
+fn preserve_next_omission_markers(source: &Value, target: &mut Value) {
+    if let Some(target) = target.as_object_mut() {
+        for key in ["requiresExpansion", "constraintsOmitted"] {
+            copy_if_present(source, target, key);
+        }
+    }
 }
 
 fn compact_packet(packet: &Value) -> Value {
