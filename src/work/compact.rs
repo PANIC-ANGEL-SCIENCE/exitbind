@@ -363,21 +363,25 @@ pub(crate) fn project(
             .filter(|value| value.len() <= 128);
         let mut minimal = json!({
             "compact": true,
-            "presentation": {"terminal": response["presentation"]["terminal"]},
+            "presentation": minimal_presentation(&response["presentation"]),
             "continuation": result["continuation"],
             "status": response["status"].as_str().unwrap_or("unresolved"),
             "current": minimal_current(&response["next"]["current"]),
             "work": work,
-            "next": {"action": "inspect", "assignment": assignment},
-            "nextAction": {"command": null, "summary": "Open the full response."},
-            "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},
+            "next": minimal_inspection_next(response, &result["next"], assignment),
+            "nextAction": minimal_next_action(&result["nextAction"]),
+            "humanHelp": minimal_human_help(&response["residual"]["humanHelp"]),
             "fullCommand": recovery.argv.clone(),
             "fullCommandSameConfigRequired": recovery.same_config,
             "fullCommandSameExecutableRequired": recovery.same_executable,
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
+        preserve_next_omission_markers(&response["next"], &mut minimal["next"]);
         preserve_next_omission_markers(&result["next"], &mut minimal["next"]);
+        if let Some(obligations) = minimal_obligations(response) {
+            minimal["obligations"] = obligations;
+        }
         copy_navigation(response, minimal.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             minimal["candidateCounts"] = counts;
@@ -397,20 +401,25 @@ pub(crate) fn project(
         let recovery = recovery_command(response, config_path, invoked, 1024);
         let mut fallback = json!({
             "compact": true,
-            "presentation": {"terminal": response["presentation"]["terminal"]},
+            "presentation": minimal_presentation(&response["presentation"]),
             "continuation": result["continuation"],
             "status": response["status"].as_str().unwrap_or("unresolved"),
             "current": bounded_current_routes(&response["next"]["current"], config_path),
             "work": work,
-            "next": {"action": "inspect", "assignment": assignment},
-            "humanHelp": {"preservationAssignment": preservation_summary(&response["residual"]["humanHelp"]["preservationAssignment"])},
+            "next": minimal_inspection_next(response, &result["next"], assignment),
+            "nextAction": minimal_next_action(&result["nextAction"]),
+            "humanHelp": minimal_human_help(&response["residual"]["humanHelp"]),
             "fullCommand": recovery.argv,
             "fullCommandSameConfigRequired": recovery.same_config,
             "fullCommandSameExecutableRequired": recovery.same_executable,
             "omitted": ["oversized response detail; use the required current executable and config"],
             "truncated": true,
         });
+        preserve_next_omission_markers(&response["next"], &mut fallback["next"]);
         preserve_next_omission_markers(&result["next"], &mut fallback["next"]);
+        if let Some(obligations) = minimal_obligations(response) {
+            fallback["obligations"] = obligations;
+        }
         copy_navigation(response, fallback.as_object_mut().expect("compact object"));
         if let Some(counts) = candidate_counts(response) {
             fallback["candidateCounts"] = counts;
@@ -477,6 +486,125 @@ fn preservation_summary(assignment: &Value) -> Value {
         "requirementsCount": assignment["requirements"].as_array().map_or(0, Vec::len),
         "requiresExpansion": true,
     })
+}
+
+fn minimal_presentation(presentation: &Value) -> Value {
+    let mut state = Map::new();
+    if let Some(review) = presentation
+        .get("state")
+        .and_then(|state| state.get("review"))
+    {
+        state.insert("review".into(), bounded_value(review, 128));
+    }
+    let mut result = Map::new();
+    result.insert("state".into(), Value::Object(state));
+    copy_if_present(presentation, &mut result, "terminal");
+    Value::Object(result)
+}
+
+fn minimal_human_help(help: &Value) -> Value {
+    let mut result = Map::new();
+    if let Some(owner_decision) = help.get("ownerDecision") {
+        result.insert("ownerDecision".into(), bounded_value(owner_decision, 128));
+    }
+    if let Some(text) = help.get("whatHappened").and_then(Value::as_str) {
+        result.insert("whatHappened".into(), json!(bounded_text_bytes(text, 512)));
+    }
+    if let Some(next_action) = help.get("nextAction") {
+        let mut action = Map::new();
+        if let Some(actor) = next_action.get("actor") {
+            action.insert("actor".into(), bounded_value(actor, 128));
+        }
+        if let Some(summary) = next_action.get("summary").and_then(Value::as_str) {
+            action.insert("summary".into(), json!(bounded_text_bytes(summary, 512)));
+        }
+        result.insert("nextAction".into(), Value::Object(action));
+    }
+    if let Some(assignment) = help.get("preservationAssignment") {
+        result.insert(
+            "preservationAssignment".into(),
+            preservation_summary(assignment),
+        );
+    }
+    if let Some(instruction) = help.get("checkInstruction").and_then(Value::as_str) {
+        result.insert(
+            "checkInstruction".into(),
+            json!(bounded_text_bytes(instruction, 512)),
+        );
+    }
+    Value::Object(result)
+}
+
+fn minimal_next_action(next_action: &Value) -> Value {
+    let actor = next_action
+        .get("actor")
+        .map(|actor| bounded_value(actor, 128))
+        .unwrap_or(Value::Null);
+    let summary = next_action
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(|summary| bounded_text_bytes(summary, 512))
+        .unwrap_or_else(|| "Open the full response with fullCommand.".into());
+    json!({"actor": actor, "command": null, "summary": summary})
+}
+
+fn minimal_obligations(response: &Value) -> Option<Value> {
+    let remaining = response["residual"]["remaining"].as_array()?;
+    let mut selected = Vec::new();
+    if let Some(disposition) = remaining
+        .iter()
+        .find(|item| item["obligation"] == "lead_disposition")
+    {
+        if serde_json::to_vec(disposition).is_ok_and(|bytes| bytes.len() <= 256) {
+            selected.push(disposition.clone());
+        }
+    }
+    for item in remaining {
+        if selected.len() == 8 || selected.contains(item) {
+            continue;
+        }
+        if serde_json::to_vec(item).is_ok_and(|bytes| bytes.len() <= 256) {
+            selected.push(item.clone());
+        }
+    }
+    Some(json!({
+        "remaining": selected,
+        "remainingOmissions": remaining.len().saturating_sub(selected.len()),
+    }))
+}
+
+fn minimal_inspection_next(
+    response: &Value,
+    compact_next: &Value,
+    assignment: Option<&str>,
+) -> Value {
+    let mut next = minimal_next(&response["next"]);
+    next["action"] = json!("inspect");
+    next["assignment"] = assignment.map_or(Value::Null, |value| json!(value));
+    preserve_next_omission_markers(compact_next, &mut next);
+    next
+}
+
+fn bounded_value(value: &Value, max_bytes: usize) -> Value {
+    if serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= max_bytes) {
+        value.clone()
+    } else if let Some(text) = value.as_str() {
+        json!(bounded_text_bytes(text, max_bytes))
+    } else {
+        Value::Null
+    }
+}
+
+fn bounded_text_bytes(value: &str, max_bytes: usize) -> String {
+    let mut result = String::new();
+    for character in value.chars() {
+        if result.len().saturating_add(character.len_utf8()) > max_bytes.saturating_sub(3) {
+            result.push('…');
+            break;
+        }
+        result.push(character);
+    }
+    result
 }
 
 fn serialized_len(value: &Value) -> Result<usize, String> {
@@ -601,7 +729,6 @@ fn minimal_next(next: &Value) -> Value {
         "attempt",
         "resolvedActor",
         "check",
-        "held",
         "heldResultsCount",
         "heldResultsOmissions",
         "requiresExpansion",
@@ -609,10 +736,14 @@ fn minimal_next(next: &Value) -> Value {
     ] {
         copy_if_present(next, &mut result, key);
     }
+    if let Some(held) = next.get("held").filter(|held| !held.is_null()) {
+        result.insert("held".into(), minimal_held(held));
+    }
     if let Some(held) = next.get("heldResults").and_then(Value::as_array) {
         result.insert("heldResultsCount".into(), json!(held.len()));
-        if serde_json::to_vec(held).is_ok_and(|bytes| bytes.len() <= 1024) {
-            result.insert("heldResults".into(), json!(held));
+        let summaries = held.iter().map(minimal_held).collect::<Vec<_>>();
+        if serde_json::to_vec(&summaries).is_ok_and(|bytes| bytes.len() <= 1024) {
+            result.insert("heldResults".into(), json!(summaries));
             result.insert("heldResultsOmissions".into(), json!(0));
         } else {
             result.insert("heldResultsOmissions".into(), json!(held.len()));
@@ -627,6 +758,21 @@ fn minimal_next(next: &Value) -> Value {
         if !result.contains_key("goal") {
             if let Some(goal) = packet["goal"].as_str() {
                 result.insert("goal".into(), json!(bounded_text(goal, 192)));
+            }
+        }
+    }
+    Value::Object(result)
+}
+
+fn minimal_held(held: &Value) -> Value {
+    let Some(object) = held.as_object() else {
+        return Value::Null;
+    };
+    let mut result = Map::new();
+    for key in ["reference", "sha256", "bytes", "action"] {
+        if let Some(value) = object.get(key) {
+            if serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 256) {
+                result.insert(key.to_owned(), value.clone());
             }
         }
     }

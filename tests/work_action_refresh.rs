@@ -45,7 +45,7 @@ fn invoke(root: &Path, args: &[&str]) -> Value {
     ))
 }
 
-fn form(value: &Value, label: &str) -> Vec<String> {
+fn form(root: &Path, work: &str, value: &Value, label: &str) -> Vec<String> {
     let forms = value
         .get("actionForms")
         .unwrap_or(&value["effectiveAction"]);
@@ -55,16 +55,22 @@ fn form(value: &Value, label: &str) -> Vec<String> {
         .iter()
         .find(|c| c["label"] == label)
         .unwrap();
-    choice["command"]["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .skip(1)
-        .map(|s| match s.as_str().unwrap() {
-            "<REASON>" => "A literal fixture reason; no shell interpolation".to_owned(),
-            other => other.to_owned(),
-        })
-        .collect()
+    let mut command = choice["command"].clone();
+    for argument in command["argv"].as_array_mut().unwrap() {
+        if argument == "<REASON>" {
+            *argument = Value::String("A literal fixture reason; no shell interpolation".into());
+        }
+    }
+    let argv = support::reconstruct_work_command(
+        &command,
+        Path::new(env!("CARGO_BIN_EXE_exitbind")),
+        &root.join("exitbind.json"),
+        root,
+    );
+    assert_eq!(argv[1], "work");
+    assert_eq!(argv[2], "return");
+    assert_eq!(argv[3], work);
+    argv.into_iter().skip(1).collect()
 }
 
 #[test]
@@ -114,25 +120,28 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     let work = started["work"].as_str().unwrap();
     value(run(
         &root,
-        &form(&started, "scoped"),
+        &form(&root, work, &started, "scoped"),
         Some("Bound result-file scope"),
     ));
     let worker = invoke(&root, &["work", "detail", work, "--json"]);
     assert_eq!(worker["recipientContext"]["complete"], true);
-    let old_return = form(&worker, "completed");
-    let permit_args = worker["actionForms"]["beforeEditing"]["command"]["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .skip(1)
-        .map(|s| {
-            if s == "<OPERATION>" {
-                "Write result file".to_owned()
-            } else {
-                s.as_str().unwrap().to_owned()
-            }
-        })
-        .collect::<Vec<_>>();
+    let old_return = form(&root, work, &worker, "completed");
+    let mut permit_command = worker["actionForms"]["beforeEditing"]["command"].clone();
+    for argument in permit_command["argv"].as_array_mut().unwrap() {
+        if argument == "<OPERATION>" {
+            *argument = Value::String("Write result file".into());
+        }
+    }
+    let permit_argv = support::reconstruct_work_command(
+        &permit_command,
+        Path::new(env!("CARGO_BIN_EXE_exitbind")),
+        &root.join("exitbind.json"),
+        &root,
+    );
+    assert_eq!(permit_argv[1], "work");
+    assert_eq!(permit_argv[2], "permit");
+    assert_eq!(permit_argv[3], work);
+    let permit_args = permit_argv.into_iter().skip(1).collect::<Vec<_>>();
     let permit_output = run(&root, &permit_args, None);
     assert!(permit_output.stdout.len() <= 8192);
     let permit = value(permit_output);
@@ -151,6 +160,8 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     let returned_output = run(
         &root,
         &form(
+            &root,
+            work,
             &invoke(
                 &root,
                 &["work", "detail", work, "--view", "action", "--json"],

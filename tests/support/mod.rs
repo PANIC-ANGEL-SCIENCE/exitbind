@@ -83,6 +83,95 @@ pub fn resolved_work_next(
     expanded["next"].clone()
 }
 
+/// Reconstruct an exact current Work argv from a bounded command descriptor.
+/// The caller retains responsibility for checking command-specific operands
+/// and executing the returned argv through its fixture's original executor.
+#[allow(dead_code)]
+pub fn reconstruct_work_command(
+    descriptor: &Value,
+    expected_executable: &Path,
+    expected_config: &Path,
+    invocation_cwd: &Path,
+) -> Vec<String> {
+    let same_executable = descriptor["sameExecutableRequired"]
+        .as_bool()
+        .expect("command descriptor states its executable requirement");
+    let same_config = descriptor["sameConfigRequired"]
+        .as_bool()
+        .expect("command descriptor states its config requirement");
+    let mut argv = descriptor["argv"]
+        .as_array()
+        .expect("command descriptor argv is an array")
+        .iter()
+        .map(|argument| {
+            argument
+                .as_str()
+                .expect("command arguments are strings")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(!argv.is_empty(), "command descriptor argv is not empty");
+    assert_eq!(
+        argv.iter()
+            .filter(|argument| argument.as_str() == "--config")
+            .count(),
+        1,
+        "command descriptor has exactly one config boundary"
+    );
+
+    let expected_executable =
+        std::fs::canonicalize(expected_executable).expect("canonical expected Work executable");
+    if same_executable {
+        assert_eq!(argv.first().map(String::as_str), Some("work"));
+        argv.insert(
+            0,
+            expected_executable
+                .to_str()
+                .expect("Work executable path is UTF-8")
+                .to_owned(),
+        );
+    } else {
+        let path = std::path::Path::new(argv.first().unwrap());
+        assert!(
+            path.is_absolute(),
+            "command descriptor cannot use PATH lookup"
+        );
+        assert_eq!(
+            std::fs::canonicalize(path).expect("canonical command executable"),
+            expected_executable,
+            "command descriptor uses the current Work executable"
+        );
+    }
+    assert_eq!(argv.get(1).map(String::as_str), Some("work"));
+
+    let expected_config =
+        std::fs::canonicalize(expected_config).expect("canonical expected Work config");
+    if same_config {
+        assert_eq!(argv.last().map(String::as_str), Some("--config"));
+        argv.push(
+            expected_config
+                .to_str()
+                .expect("Work config path is UTF-8")
+                .to_owned(),
+        );
+    } else {
+        assert!(argv.len() >= 3, "complete config descriptor has a suffix");
+        assert_eq!(argv[argv.len() - 2], "--config");
+        let route_config = std::path::Path::new(argv.last().unwrap());
+        let route_config = if route_config.is_absolute() {
+            route_config.to_path_buf()
+        } else {
+            invocation_cwd.join(route_config)
+        };
+        assert_eq!(
+            std::fs::canonicalize(route_config).expect("canonical descriptor config"),
+            expected_config,
+            "command descriptor uses the current Work config"
+        );
+    }
+    argv
+}
+
 /// Run a command under a pseudo-terminal on both GNU and BSD `script`.
 ///
 /// GNU accepts `script -qec COMMAND /dev/null`; macOS uses `script -q

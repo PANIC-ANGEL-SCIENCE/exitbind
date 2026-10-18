@@ -104,9 +104,32 @@ impl Fixture {
         let mut calls = 0;
         let mut sha = None;
         loop {
-            let argv = route["command"].as_array().unwrap();
-            assert_eq!(argv[0], env!("CARGO_BIN_EXE_exitbind"));
-            let output = Command::new(argv[0].as_str().unwrap())
+            let reference = route["reference"].as_str().unwrap();
+            let parts = reference.split(':').collect::<Vec<_>>();
+            assert_eq!(parts.len(), 6);
+            assert_eq!(parts[..3], ["ref", "work-section", "v2"]);
+            assert_eq!(parts[3], next["current"]["binding"]);
+            assert_eq!(parts[4], section);
+            let page_number = parts[5].parse::<usize>().unwrap();
+            assert_eq!(page_number, calls);
+            let descriptor = json!({
+                "argv": route["command"],
+                "sameConfigRequired": route["sameConfigRequired"],
+                "sameExecutableRequired": route["sameExecutableRequired"],
+            });
+            let argv = support::reconstruct_work_command(
+                &descriptor,
+                PathBuf::from(env!("CARGO_BIN_EXE_exitbind")).as_path(),
+                &self.config,
+                &self.root,
+            );
+            assert_eq!(argv[1], "work");
+            assert_eq!(argv[2], "expand");
+            assert_eq!(argv[3], next["work"].as_str().unwrap());
+            assert_eq!(argv[4], reference);
+            assert_eq!(argv[5], "--json");
+            assert_eq!(argv[6], "--config");
+            let output = Command::new(&argv[0])
                 .current_dir(std::env::temp_dir())
                 .env(
                     "PATH",
@@ -116,7 +139,7 @@ impl Fixture {
                         std::env::var("PATH").unwrap_or_default()
                     ),
                 )
-                .args(argv[1..].iter().map(|item| item.as_str().unwrap()))
+                .args(&argv[1..])
                 .output()
                 .unwrap();
             assert!(output.status.success(), "{output:?}");
@@ -124,6 +147,10 @@ impl Fixture {
             transport_bytes += output.stdout.len();
             peak_bytes = peak_bytes.max(output.stdout.len());
             let page: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(page["work"], next["work"]);
+            assert_eq!(page["reference"], reference);
+            assert_eq!(page["section"], section);
+            assert_eq!(page["offset"], page_number * 4096);
             assert_eq!(page["offset"], bytes.len());
             assert_eq!(page["binding"], next["current"]["binding"]);
             if let Some(ref sha) = sha {

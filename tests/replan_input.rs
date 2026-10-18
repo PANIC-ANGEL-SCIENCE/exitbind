@@ -66,8 +66,25 @@ impl Fixture {
             assert!(permit.status.success(), "{permit:?}");
         }
         let next = fixture.json(&["work", "next", &fixture.work]);
-        fixture.assignment = next["next"]["assignment"].as_str().unwrap().to_owned();
-        assert_eq!(next["next"]["action"], "spawn");
+        let compact_action = next["next"]["action"]
+            .as_str()
+            .expect("compact next action is a string");
+        let resolved = match compact_action {
+            "spawn" => next["next"].clone(),
+            "inspect" => {
+                assert_eq!(next["truncated"], true);
+                assert!(next["fullCommand"].is_array());
+                support::resolved_work_next(
+                    &fixture.root,
+                    &fixture.work,
+                    &next,
+                    env!("CARGO_BIN_EXE_exitbind"),
+                )
+            }
+            action => panic!("unexpected compact next action: {action}"),
+        };
+        assert_eq!(resolved["action"], "spawn");
+        fixture.assignment = resolved["assignment"].as_str().unwrap().to_owned();
         fixture
     }
 

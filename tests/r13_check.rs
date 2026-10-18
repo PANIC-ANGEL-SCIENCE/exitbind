@@ -101,8 +101,21 @@ fn failed_work_check_is_nonzero_and_routes_lead_before_review() {
     assert_eq!(response["next"]["role"], "lead");
 
     let next = fixture.value(&["work", "next", &work]);
-    assert_eq!(next["next"]["action"], "lead_decision");
-    assert_eq!(next["next"]["role"], "lead");
+    let compact_action = next["next"]["action"]
+        .as_str()
+        .expect("compact next action is a string");
+    let resolved = match compact_action {
+        "lead_decision" => next["next"].clone(),
+        "inspect" => {
+            assert_eq!(next["truncated"], true);
+            assert!(next["fullCommand"].is_array());
+            support::resolved_work_next(&fixture.root, &work, &next, env!("CARGO_BIN_EXE_exitbind"))
+        }
+        action => panic!("unexpected compact next action: {action}"),
+    };
+    assert_eq!(resolved["action"], "lead_decision");
+    assert_eq!(resolved["role"], "lead");
+    assert_eq!(resolved["assignment"], response["next"]["assignment"]);
 
     fs::write(marker, b"pass").unwrap();
     let retry = fixture.call(&["work", "check", &work, "--json"]);

@@ -59,10 +59,51 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     );
     assert!(output.status.success(), "{}", text(&output));
     assert_eq!(fs::read(&marker).unwrap(), b"x");
-    assert_eq!(
-        fixture.value(&["work", "next", &work], b"")["next"]["action"],
-        "check"
-    );
+    let compact = fixture.value(&["work", "next", &work], b"");
+    let compact_action = compact["next"]["action"]
+        .as_str()
+        .expect("compact next action is a string");
+    let resolved = match compact_action {
+        "check" => compact["next"].clone(),
+        "inspect" => {
+            assert_eq!(compact["truncated"], true);
+            assert!(compact["fullCommand"].is_array());
+            let command = json!({
+                "argv": compact["fullCommand"],
+                "sameConfigRequired": compact["fullCommandSameConfigRequired"] == true,
+                "sameExecutableRequired": compact["fullCommandSameExecutableRequired"] == true,
+            });
+            let argv = support::reconstruct_work_command(
+                &command,
+                std::path::Path::new(env!("CARGO_BIN_EXE_exitbind")),
+                &fixture.root.join("exitbind.json"),
+                &fixture.root,
+            );
+            assert_eq!(argv[1], "work");
+            assert_eq!(argv[2], "next");
+            assert_eq!(argv[3], work);
+            assert_eq!(argv[4], "--full");
+            let mut process = support::git_topology::command(&argv[0]);
+            process
+                .current_dir(&fixture.root)
+                .args(&argv[1..])
+                .env("EXITBIND_NATIVE_RECOVERY_TEST", "1")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            let mut child = process.spawn().unwrap();
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(b"").unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "{}", text(&output));
+            let expanded: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_ne!(expanded["truncated"], true);
+            assert_eq!(expanded["work"], work);
+            expanded["next"].clone()
+        }
+        action => panic!("unexpected compact next action: {action}"),
+    };
+    assert_eq!(resolved["action"], "check");
 }
 
 #[test]

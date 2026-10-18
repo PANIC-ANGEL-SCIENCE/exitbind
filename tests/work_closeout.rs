@@ -3,7 +3,7 @@
 
 mod support;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
@@ -53,13 +53,22 @@ impl Fixture {
         self.json(&["work", "detail", work, "--json"], b"")
     }
 
-    fn execute(&self, command: &Value, input: &[u8]) -> Output {
-        assert_eq!(command["sameExecutableRequired"], false);
-        assert_eq!(command["sameConfigRequired"], false);
-        let argv = command["argv"].as_array().unwrap();
-        let mut child = support::git_topology::command(argv[0].as_str().unwrap())
+    fn execute(&self, work: &str, command: &Value, input: &[u8]) -> Output {
+        let argv = support::reconstruct_work_command(
+            command,
+            PathBuf::from(env!("CARGO_BIN_EXE_exitbind")).as_path(),
+            &self.root.join("exitbind.json"),
+            &self.root,
+        );
+        assert_eq!(argv[1], "work");
+        assert!(matches!(
+            argv[2].as_str(),
+            "return" | "permit" | "check" | "closeout"
+        ));
+        assert_eq!(argv[3], work);
+        let mut child = support::git_topology::command(&argv[0])
             .current_dir(&self.root)
-            .args(argv[1..].iter().map(|a| a.as_str().unwrap()))
+            .args(&argv[1..])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -67,6 +76,41 @@ impl Fixture {
             .unwrap();
         child.stdin.take().unwrap().write_all(input).unwrap();
         child.wait_with_output().unwrap()
+    }
+
+    fn normalized_completion(&self, work: &str, completion: &Value) -> Value {
+        let mut normalized = completion.clone();
+        for (pointer, is_export) in [
+            ("/detail/command", false),
+            ("/receipt/export/command", true),
+        ] {
+            let command = normalized.pointer(pointer).unwrap().clone();
+            let argv = support::reconstruct_work_command(
+                &command,
+                PathBuf::from(env!("CARGO_BIN_EXE_exitbind")).as_path(),
+                &self.root.join("exitbind.json"),
+                &self.root,
+            );
+            assert_eq!(argv[1], "work");
+            assert_eq!(argv[2], "closeout");
+            assert_eq!(argv[3], work);
+            let json_index = if is_export {
+                assert_eq!(argv[4], "--export");
+                5
+            } else {
+                assert_ne!(argv[4], "--export");
+                4
+            };
+            assert_eq!(argv[json_index], "--json");
+            assert_eq!(argv[json_index + 1], "--config");
+            assert_eq!(argv.len(), json_index + 3);
+            *normalized.pointer_mut(pointer).unwrap() = json!({
+                "argv": argv,
+                "sameConfigRequired": false,
+                "sameExecutableRequired": false,
+            });
+        }
+        normalized
     }
 
     fn outcome(&self, work: &str, outcome: &str) -> Value {
@@ -84,6 +128,7 @@ impl Fixture {
             }
         }
         let output = self.execute(
+            work,
             &command,
             format!("complete {outcome} role result").as_bytes(),
         );
@@ -123,7 +168,7 @@ impl Fixture {
                 *arg = Value::String("exercise closeout consumer".into());
             }
         }
-        let result = self.execute(&permit, b"");
+        let result = self.execute(&work, &permit, b"");
         assert!(result.status.success(), "{result:?}");
         assert_eq!(
             serde_json::from_slice::<Value>(&result.stdout).unwrap()["allowed"],
@@ -131,7 +176,11 @@ impl Fixture {
         );
         self.outcome(&work, "completed");
         let check = self.detail(&work);
-        let result = self.execute(&check["actionForms"]["mechanicalAction"]["command"], b"");
+        let result = self.execute(
+            &work,
+            &check["actionForms"]["mechanicalAction"]["command"],
+            b"",
+        );
         assert!(result.status.success(), "{result:?}");
         self.outcome(&work, "approved");
         let result = self.outcome(&work, "accepted");
@@ -158,7 +207,10 @@ fn terminal_export_form_is_separate_optional_verified_and_replayable() {
     assert_eq!(detail["effectiveAction"]["exists"], false);
     assert_eq!(detail["completion"]["receipt"]["state"], "not_requested");
     let next = fixture.json(&["work", "next", &work], b"");
-    assert_eq!(next["current"]["completion"], detail["completion"]);
+    assert_eq!(
+        fixture.normalized_completion(&work, &next["current"]["completion"]),
+        fixture.normalized_completion(&work, &detail["completion"])
+    );
     let export = &detail["completion"]["receipt"]["export"]["command"];
     let read = fixture.json(&["work", "closeout", &work], b"");
     assert_eq!(read["receipt"]["state"], "not_requested");
@@ -168,7 +220,7 @@ fn terminal_export_form_is_separate_optional_verified_and_replayable() {
             .count(),
         0
     );
-    let output = fixture.execute(export, b"");
+    let output = fixture.execute(&work, export, b"");
     assert!(output.status.success(), "{output:?}");
     let created: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(created["receipt"]["state"], "created_verified");
@@ -177,7 +229,7 @@ fn terminal_export_form_is_separate_optional_verified_and_replayable() {
     let before = fs::read(fixture.root.join(path)).unwrap();
     let ledger = accepted["reference"]["ledger"].as_str().unwrap();
     let ledger_before = fs::read(fixture.root.join(ledger)).unwrap();
-    let output = fixture.execute(export, b"");
+    let output = fixture.execute(&work, export, b"");
     assert!(output.status.success(), "{output:?}");
     let repeated: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(repeated["receipt"]["state"], "existing_verified");

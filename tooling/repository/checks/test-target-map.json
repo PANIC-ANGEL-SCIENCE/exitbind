@@ -1758,8 +1758,8 @@
     },
     "tests/support/mod.rs": {
       "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
-      "currentSha256": "4d4b92030a944988945dec677a417bd7fd95d6f860d4ab47129a4736672bacbb",
-      "reason": "Add a shared test-only expansion helper that accepts only the exact read-only work next --full argv and verifies the current executable and fixture config before reading the pending action; it performs no check or mutation."
+      "currentSha256": "28461f05b86d9f28cb4805b055fb6e0b91e67386037ca29f598cea543d123364",
+      "reason": "Add a pure strict command-descriptor reconstruction helper that honors executable/config requirements separately and refuses PATH fallback or duplicate config arguments; callers retain their existing fixture executors."
     },
     "tests/basis_lifecycle/basis_corrections.rs": {
       "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
@@ -1780,6 +1780,36 @@
       "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
       "currentSha256": "91905c7fd652fdc1ceb8feae5fc1c51e6f0bdd85fb2f8a312c57b9d4e285ec94",
       "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision."
+    },
+    "tests/r13_check.rs": {
+      "baselineSha256": "db84bb04677cacd771022b54ea338428133833e74fdc3d5f33e101b581f07416",
+      "currentSha256": "d8992265e4c7ef03a385b448a5b9ae7d69c059fc19747e5e91f79c439e5c759e",
+      "reason": "The read-only compact work-next consumer accepts only its original lead_decision or a strictly validated inspect/fullCommand fallback, then checks full same-Work lead decision, role, and assignment against the recorded failed-check route; exact failed-check mutation result assertions remain."
+    },
+    "tests/replan_input.rs": {
+      "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
+      "currentSha256": "3d8b82c215776b4a868622cf2337c40c7867faca494a3dc6d88c84247c97e0ac",
+      "reason": "The compact work-next consumer after two permits accepts only its original spawn or a strictly validated inspect/fullCommand fallback, then takes the worker assignment from the resolved same-Work/config action; the original spawn requirement remains."
+    },
+    "tests/save_return_recovery/worker_resume.rs": {
+      "baselineSha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32",
+      "currentSha256": "3fcc0aa629edbc974bc3100d3195ad58fd9a3232b5069396d16578d201c2c8b4",
+      "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor."
+    },
+    "tests/current_details.rs": {
+      "baselineSha256": "eed1d601dfc12dc4e7097d4347ada8b3aa146ab61ac8bf3f9b27d7ebb486fa13",
+      "currentSha256": "c55bee967fcf5c7eedc4b10de5a1d6924d2c62bcee0db66487aa130181f3b493",
+      "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks."
+    },
+    "tests/work_action_refresh.rs": {
+      "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
+      "currentSha256": "526a2c583e9b029327d6c1a3551a0d8dfdb22654eb2da2052fdc30760fc556ad",
+      "reason": "Permit and return forms reconstruct exact executable/config descriptors before the existing isolated executor; original token substitutions, byte caps, current-binding and stale-binding refusal checks remain."
+    },
+    "tests/work_closeout.rs": {
+      "baselineSha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f",
+      "currentSha256": "1b62cca4a3cf6a71dddd2d91130fb9784e85e75e66855e59c647c36a5a374fdf",
+      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained."
     }
   },
   "additions": [
