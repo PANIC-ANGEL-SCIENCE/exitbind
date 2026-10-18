@@ -1,7 +1,7 @@
 {
   "main_sha": "5be73a2774f7fc9050c3bffd88dad6e3535dcbd0",
   "ci": {
-    "label": "running",
+    "label": "failing",
     "run_id": 39149831331,
     "sha": "5be73a2774f7fc9050c3bffd88dad6e3535dcbd0"
   },
@@ -14,5 +14,5 @@
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-10-18T17:30:21.607577+00:00"
+  "checked_at": "2026-10-18T17:37:43.939365+00:00"
 }
