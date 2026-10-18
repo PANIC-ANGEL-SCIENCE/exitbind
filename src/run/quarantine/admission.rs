@@ -9,6 +9,8 @@ use std::{
 
 use crate::{config::Loaded, evidence::hash};
 
+mod followup;
+
 pub(crate) struct Verified {
     work: String,
     ledger: String,
@@ -122,6 +124,7 @@ pub(crate) fn prepare(
     {
         return Err("predecessor observation is not unresolved".into());
     }
+    followup::validate_predecessor(predecessor_loaded, marker)?;
     ensure_lead(&old_start["plan"], marker)?;
     let usage = crate::session_goal::usage::details_for_work(
         predecessor_loaded,
@@ -250,6 +253,14 @@ pub(crate) fn prepare(
             "quarantine verification plan differs from its accepted isolation review".into(),
         );
     }
+    if marker["protocol"] == super::FOLLOWUP_PROTOCOL
+        && plan.get("custodyEvidence") != Some(&marker["followUp"]["custodyEvidence"])
+    {
+        return Err(
+            "follow-up custody evidence differs from the separately accepted verification plan"
+                .into(),
+        );
+    }
     let command = plan["command"]
         .as_str()
         .filter(|value| !value.trim().is_empty())
@@ -330,16 +341,37 @@ where
         .as_str()
         .ok_or("predecessor ledger is missing")?;
     let (old_path, _, _) = crate::run::ledger::load(predecessor_loaded, old_ledger)?;
-    crate::run::ledger::with_lock(&old_path, || {
-        let (_, events, source) = crate::run::ledger::load(predecessor_loaded, old_ledger)?;
-        let state = crate::run::state::reduce(&events)?;
-        if !matches!(state["status"].as_str(), Some("running" | "blocked"))
-            || state.get("quarantineVerification").is_some()
-            || hash::text(&source) != verified.marker["predecessor"]["ledgerSha256"]
-            || events.last().map(|event| &event["eventSha256"])
-                != Some(&verified.marker["predecessor"]["headEventSha256"])
-        {
-            return Err("predecessor changed after quarantine admission".into());
+    let lock_path = if verified.marker["protocol"] == super::FOLLOWUP_PROTOCOL {
+        let first_ledger = verified.marker["followUp"]["ledger"]
+            .as_str()
+            .ok_or("first verification ledger is missing")?;
+        crate::run::ledger::load(predecessor_loaded, first_ledger)?.0
+    } else {
+        old_path.clone()
+    };
+    crate::run::ledger::with_lock(&lock_path, || {
+        if verified.marker["protocol"] == super::FOLLOWUP_PROTOCOL {
+            let link = &verified.marker["followUp"];
+            let (_, first_events, first_bytes) =
+                crate::run::ledger::load(predecessor_loaded, str_value(link, "ledger")?)?;
+            if hash::bytes(first_bytes.as_bytes()) != link["ledgerSha256"]
+                || first_events.last().map(|event| &event["eventSha256"])
+                    != Some(&link["headEventSha256"])
+                || crate::run::state::reduce(&first_events)?["status"] != "blocked"
+            {
+                return Err("first failed verification changed after follow-up admission".into());
+            }
+        } else {
+            let (_, events, source) = crate::run::ledger::load(predecessor_loaded, old_ledger)?;
+            let state = crate::run::state::reduce(&events)?;
+            if !matches!(state["status"].as_str(), Some("running" | "blocked"))
+                || state.get("quarantineVerification").is_some()
+                || hash::text(&source) != verified.marker["predecessor"]["ledgerSha256"]
+                || events.last().map(|event| &event["eventSha256"])
+                    != Some(&verified.marker["predecessor"]["headEventSha256"])
+            {
+                return Err("predecessor changed after quarantine admission".into());
+            }
         }
         if crate::run::ledger::valid_claim(&crate::run::ledger::claim_path(&old_path))?.is_some() {
             return Err("predecessor already has a supersession claim".into());

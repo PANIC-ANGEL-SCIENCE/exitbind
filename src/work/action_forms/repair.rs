@@ -17,6 +17,29 @@ pub(super) fn attach(
     next: &Value,
     result: &mut Value,
 ) {
+    if next["packet"]["projectContinuation"].is_object() {
+        match crate::project::continuation::time_amendment_hold(
+            loaded,
+            work,
+            &next["packet"],
+            binding,
+        ) {
+            Ok(Some(held)) => {
+                *result = held;
+                return;
+            }
+            Err(reason) => {
+                *result = json!({
+                    "version":1,"state":"held_time_amendment_unavailable","binding":binding,
+                    "work":work,"leadChoiceRequired":true,"choices":[],"mechanicalAction":Value::Null,
+                    "meaning":"The frozen continuation no longer matches its selected mandate, and its amendment state could not be verified. No Work action is offered.",
+                    "diagnostic":{"readOnly":true,"reason":reason}
+                });
+                return;
+            }
+            Ok(None) => {}
+        }
+    }
     if next["action"] != "spawn" || next["role"] != "worker" {
         return;
     }

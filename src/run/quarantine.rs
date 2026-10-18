@@ -5,10 +5,15 @@
 use serde_json::{json, Value};
 
 pub(crate) mod admission;
+mod custody;
+mod followup;
 mod verification;
+pub(crate) use custody::validate_against_first_check as validate_custody_against_first_check;
+pub(crate) use followup::validate_first_failed_check;
 pub(crate) use verification::{acknowledgement, validate_event};
 
 pub(crate) const PROTOCOL: u64 = 1;
+pub(crate) const FOLLOWUP_PROTOCOL: u64 = 2;
 pub(crate) const OPERATION_MAX_BYTES: usize = 4096;
 
 /// Validate the command text shared by the producer and persisted marker
@@ -96,21 +101,25 @@ pub(crate) fn refuse_mutation(state: &Value, operation: &str) -> Result<(), Stri
 
 pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> {
     let fail = || invalid(line);
-    if !exact(
-        value,
-        &[
-            "protocol",
-            "requestId",
-            "reason",
-            "leadOwner",
-            "predecessor",
-            "verification",
-            "allowance",
-            "oldCredited",
-            "oldReset",
-            "decisionSha256",
-        ],
-    ) || value["protocol"].as_u64() != Some(PROTOCOL)
+    let protocol = value["protocol"].as_u64();
+    let base_keys = [
+        "protocol",
+        "requestId",
+        "reason",
+        "leadOwner",
+        "predecessor",
+        "verification",
+        "allowance",
+        "oldCredited",
+        "oldReset",
+        "decisionSha256",
+    ];
+    let mut marker_keys = base_keys.to_vec();
+    if protocol == Some(FOLLOWUP_PROTOCOL) {
+        marker_keys.push("followUp");
+    }
+    if !exact(value, &marker_keys)
+        || !matches!(protocol, Some(PROTOCOL | FOLLOWUP_PROTOCOL))
         || !text(&value["requestId"], 128)
         || !text(&value["reason"], 1024)
         || value["oldCredited"] != false
@@ -122,6 +131,7 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
     {
         return Err(fail());
     }
+    followup::validate_marker(value, line)?;
     let predecessor = &value["predecessor"];
     if !exact(
         predecessor,
@@ -238,12 +248,16 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
 /// the same original check admission.
 pub(crate) fn one_shot_identity(marker: &Value) -> Result<String, String> {
     validate_marker(marker, 0)?;
-    Ok(crate::evidence::hash::value(&json!({
-        "protocol": PROTOCOL,
-        "oldWork": marker["predecessor"]["work"],
-        "startEventSha256": marker["predecessor"]["startEventSha256"],
-        "admissionEventSha256": marker["predecessor"]["admissionEventSha256"],
-    })))
+    if marker["protocol"] == FOLLOWUP_PROTOCOL {
+        followup::identity(marker)
+    } else {
+        Ok(crate::evidence::hash::value(&json!({
+            "protocol": PROTOCOL,
+            "oldWork": marker["predecessor"]["work"],
+            "startEventSha256": marker["predecessor"]["startEventSha256"],
+            "admissionEventSha256": marker["predecessor"]["admissionEventSha256"],
+        })))
+    }
 }
 
 fn invalid(line: usize) -> String {

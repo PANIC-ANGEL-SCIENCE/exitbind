@@ -120,11 +120,36 @@ prints the apply command. The accepted plan includes an explicit typed basis for
 the new verification; the original Work's legacy basis is preserved without
 retrofit. The new Work has no mutation, replan or replacement allowance and
 needs its own actual check, required review and Lead acceptance.
+A second, dedicated `work quarantine-followup FIRST_WORK` route is available
+once only, and only when that first verification Work has exactly one retained
+observed nonzero check result, optionally followed immediately by its configured
+Lead's normal blocked return, plus a reviewed custody receipt proving the owned
+execution and namespace ended. The current ledger head and complete bytes remain
+bound, and no other event may follow the failed check. The accepted plan binds the
+receipt bytes and first-check observer, input, configuration and command identity.
+It binds the original unknown admission plus the exact failed first-verification
+decision and check; changed requests cannot reserve another attempt. Its marker
+uses a new strict protocol
+step so readers without follow-up support refuse it. Unknown or successful
+first checks, a repeated follow-up, and live or retained child effects refuse.
+The follow-up keeps the same verification-only allowance: one check, no worker
+mutations, replans or replacements. It does not credit the first failure or
+original unknown execution.
 Then `goal quarantine OLD_WORK --source-config CONFIG --verification-work WORK
 --request-id ID --reason TEXT` previews an owner-bound, uncredited Goal residual.
 Neither operation resolves or credits the original unknown execution. See
 [separate verification](docs/check-recovery.md#verify-a-separate-artifact-while-preserving-an-unknown-execution)
 for the frozen plan and reader requirements.
+
+`project advance amend WORK --reason TEXT --request-id ID` previews an explicit
+owner time-only amendment for an existing frozen claim. Apply only with the
+emitted current binding and `--apply`. The selected revision is compared
+directly with the claim's original specification; only revision, expiry, and
+cumulative elapsed time may change, and both time limits must extend. The frozen
+Work start, claim, original clock, and spent usage remain unchanged. A changed
+selection alone keeps the Work held; inspect its action form for the amendment
+route. Exact request replay recovers the same receipt, while a changed request
+cannot reserve another amendment.
 
 ## First run details
 

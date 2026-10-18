@@ -3,8 +3,14 @@
 use super::*;
 
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
+    let followup = a.positional.first().map(String::as_str) == Some("quarantine-followup");
+    let command = if followup {
+        "work quarantine-followup"
+    } else {
+        "work quarantine"
+    };
     args::assert_options(
-        "work quarantine",
+        command,
         a,
         &[
             "config",
@@ -21,11 +27,12 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "request-id",
         ],
     )?;
-    args::assert_positionals("work quarantine", a, 2)?;
+    args::assert_positionals(command, a, 2)?;
     let response = crate::work::quarantine::start(
         l,
         positional(a, 1, "work quarantine requires WORK")?,
         crate::work::quarantine::Options {
+            followup,
             owner_config: a.options.get("owner-config").map(String::as_str),
             owner_config_sha256: a.options.get("owner-config-sha256").map(String::as_str),
             feature_config: option(

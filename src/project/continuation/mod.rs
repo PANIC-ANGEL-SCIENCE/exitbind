@@ -1,5 +1,6 @@
 //! Source-grounded continuation on the existing Goal and Work protocols.
 mod admission;
+mod amendment;
 mod association;
 pub(crate) mod control;
 mod journal;
@@ -26,7 +27,29 @@ pub(crate) fn form() -> Value {
         "planning":"The native Lead inspects the approved direction, actual source/tests and current Goal/Work evidence, derives a useful bounded slice, explains priority/dependencies/preservation and eligible recipients, and prepares a plan. No prewritten task list or model call is part of this deterministic command.",
         "continuation":"After current check, required independent review and Lead acceptance, inspect the updated project and derive the next useful slice under the same finite mandate. Stop on authority, source, budget or genuine preference gaps. No daemon or background scheduling is created.",
         "learning":"Look up existing scoped skills/lessons first. Prefer a causal mechanical correction; otherwise preserve inactive original/different/negative trials, independent review, exact-byte promotion, fresh relevant delivery/use and unrelated exclusion/revocation through the existing memory lifecycle.",
-        "scope":"Existing project Goal requirements express outcomes; plans map to them. Work owns actual execution/check/review/acceptance. Native session journey membership is not implied."})
+        "scope":"Existing project Goal requirements express outcomes; plans map to them. Work owns actual execution/check/review/acceptance. Native session journey membership is not implied.",
+        "timeAmendment":"A time-only mandate amendment applies only to an exact associated Work after a bound owner preview; frozen starts and claims are never rewritten.",
+        "amendmentFields":["revision","expiresAt","maxElapsedSeconds"]})
+}
+
+pub(crate) fn amend(
+    loaded: &Loaded,
+    work: &str,
+    reason: &str,
+    request_id: &str,
+    expected: Option<&str>,
+    apply: bool,
+) -> Result<Value, String> {
+    amendment::amend(loaded, work, reason, request_id, expected, apply)
+}
+
+pub(crate) fn time_amendment_hold(
+    loaded: &Loaded,
+    work: &str,
+    state: &Value,
+    binding: &str,
+) -> Result<Option<Value>, String> {
+    amendment::held_action(loaded, work, state, binding)
 }
 
 pub(crate) fn propose(loaded: &Loaded, source: &str) -> Result<Value, String> {

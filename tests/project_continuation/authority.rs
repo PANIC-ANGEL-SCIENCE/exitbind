@@ -354,6 +354,271 @@ fn unavailable_source_and_ungranted_reviewer_cannot_admit_work() {
     assert!(project.runs().is_empty());
 }
 
+fn owner_time_amendment_fixture(label: &str) -> (Project, String) {
+    let mut project = Project::new(label, "export");
+    project.select();
+    let work = project.admit()["work"].as_str().unwrap().to_owned();
+    project.spec["mandate"]["revision"] = json!(2);
+    project.spec["mandate"]["expiresAt"] = json!("2099-01-03T00:00:00Z");
+    project.spec["mandate"]["maxElapsedSeconds"] = json!(172800);
+    project.save_spec();
+    project.select();
+    (project, work)
+}
+
+fn owner_time_amendment_preview(project: &Project, work: &str) -> Value {
+    project.value(&[
+        "project",
+        "advance",
+        "amend",
+        work,
+        "--reason",
+        "Owner-approved time-only continuation.",
+        "--request-id",
+        "time-amendment-1",
+    ])
+}
+
+fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind: &str) {
+    let reader = std::env::var_os("EXITBIND_LEGACY_READER");
+    let log = std::env::var_os("EXITBIND_LEGACY_PROBE_LOG");
+    if reader.is_none() && log.is_none() {
+        return;
+    }
+    let reader = reader.expect("legacy reader and probe log must be supplied together");
+    let log = log.expect("legacy reader and probe log must be supplied together");
+    let detail = project.value(&["work", "detail", work, "--view", "action"]);
+    let forms = detail
+        .get("actionForms")
+        .unwrap_or(&detail["effectiveAction"]);
+    let scoped = forms["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == "scoped")
+        .unwrap_or_else(|| panic!("current Work has no valid scoped action: {detail}"));
+    let argv = scoped["command"]["argv"]
+        .as_array()
+        .expect("current action form must expose exact argv");
+    let mut command = Command::new(&reader);
+    command
+        .current_dir(&project.root)
+        .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env(
+            "EXITBIND_SESSION_GOALS_DIR",
+            project.root.join(".planning/native-goals"),
+        );
+    let output = command.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "legacy reader accepted {kind}: {output:?}"
+    );
+    let refusal = message(&output).to_ascii_lowercase();
+    match kind {
+        "time-amendment" => assert!(
+            refusal.contains("mandate")
+                && (refusal.contains("drift")
+                    || refusal.contains("association")
+                    || refusal.contains("revision")),
+            "legacy reader did not refuse the amended old association: {output:?}"
+        ),
+        "quarantine-followup" => assert!(
+            refusal.contains("quarantine")
+                && (refusal.contains("invalid") || refusal.contains("unsupported")),
+            "legacy reader did not refuse the protocol-2 Work marker: {output:?}"
+        ),
+        _ => panic!("unknown legacy probe kind"),
+    }
+    let exit_code = output
+        .status
+        .code()
+        .expect("legacy refusal must exit normally");
+    assert!(exit_code > 0);
+    let reader_bytes = fs::read(&reader).unwrap();
+    let reader_sha256 = format!("{:x}", Sha256::digest(reader_bytes));
+    let mut evidence = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .unwrap();
+    let mut line =
+        serde_json::to_vec(&json!({"kind":kind,"readerSha256":reader_sha256,"exitCode":exit_code}))
+            .unwrap();
+    line.push(b'\n');
+    evidence.write_all(&line).unwrap();
+}
+
+#[test]
+fn owner_time_amendment_preview_is_read_only_and_binds_the_frozen_claim() {
+    let (project, work) = owner_time_amendment_fixture("owner-time-amendment-preview");
+    let before = project.state();
+    let original = fs::read(project.work_path(&work)).unwrap();
+    let preview = owner_time_amendment_preview(&project, &work);
+    assert_eq!(preview["state"], "preview");
+    assert_eq!(preview["effect"], "no-change");
+    assert_eq!(
+        preview["authority"]["fields"],
+        json!(["revision", "expiresAt", "maxElapsedSeconds"])
+    );
+    assert_eq!(project.state(), before);
+    assert_eq!(fs::read(project.work_path(&work)).unwrap(), original);
+}
+
+#[test]
+fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
+    let (project, work) = owner_time_amendment_fixture("owner-time-amendment-apply");
+    let before = project.status();
+    let preview = owner_time_amendment_preview(&project, &work);
+    let admitted = project.apply(&preview);
+    assert_eq!(admitted["state"], "amended");
+    assert_eq!(admitted["originalClockPreserved"], true);
+    assert_eq!(admitted["usagePreserved"], true);
+    let after = project.status();
+    assert_eq!(after["budget"]["since"], before["budget"]["since"]);
+    assert_eq!(
+        after["budget"]["actualWorks"],
+        before["budget"]["actualWorks"]
+    );
+    assert_eq!(
+        after["budget"]["actualActions"],
+        before["budget"]["actualActions"]
+    );
+    assert_eq!(after["claims"], before["claims"]);
+    assert_eq!(project.apply(&preview)["effect"], "replayed");
+
+    legacy_reader_refuses_current_work_action(&project, &work, "time-amendment");
+    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let forms = detail
+        .get("actionForms")
+        .unwrap_or(&detail["effectiveAction"]);
+    let scope = forms["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == "scoped")
+        .unwrap_or_else(|| panic!("current Work has no scoped action: {detail}"));
+    project.execute_form(
+        scope,
+        Some("The amended same Work continues within its selected mandate.\n"),
+    );
+    let after_first_debit = project.status();
+    assert!(
+        after_first_debit["budget"]["actualActions"]
+            .as_u64()
+            .unwrap()
+            > after["budget"]["actualActions"].as_u64().unwrap()
+    );
+    assert_eq!(after_first_debit["claims"], before["claims"]);
+    assert_eq!(
+        after_first_debit["budget"]["since"],
+        before["budget"]["since"]
+    );
+    assert_eq!(
+        project.value(&["work", "next", &work, "--full"])["work"],
+        work
+    );
+
+    project.accept_fixture_work(&work);
+    let continued = project.status();
+    assert!(
+        continued["budget"]["actualActions"].as_u64().unwrap()
+            >= before["budget"]["actualActions"].as_u64().unwrap() + 2
+    );
+    assert_eq!(continued["budget"]["since"], before["budget"]["since"]);
+    assert_eq!(
+        continued["budget"]["actualWorks"],
+        before["budget"]["actualWorks"]
+    );
+    assert_eq!(continued["claims"], before["claims"]);
+}
+
+#[test]
+fn owner_time_amendment_refuses_unrelated_specification_changes() {
+    let (mut project, work) = owner_time_amendment_fixture("owner-time-amendment-unrelated");
+    project.spec["mandate"]["outcome"] = json!("Different outcome");
+    project.spec["mandate"]["revision"] = json!(3);
+    project.save_spec();
+    project.select();
+    let before = project.state();
+    let result = project.call(&[
+        "project",
+        "advance",
+        "amend",
+        &work,
+        "--reason",
+        "No unrelated scope change.",
+        "--request-id",
+        "time-amendment-other",
+    ]);
+    assert!(!result.status.success());
+    assert!(message(&result).contains("time-only"));
+    assert_eq!(project.state(), before);
+}
+
+#[test]
+fn owner_time_amendment_refuses_stale_preview_without_receipt() {
+    let (mut project, work) = owner_time_amendment_fixture("owner-time-amendment-stale");
+    let preview = owner_time_amendment_preview(&project, &work);
+    project.spec["mandate"]["revision"] = json!(3);
+    project.spec["mandate"]["expiresAt"] = json!("2099-01-04T00:00:00Z");
+    project.spec["mandate"]["maxElapsedSeconds"] = json!(172800);
+    project.save_spec();
+    project.select();
+    let before = project.state();
+    assert!(!project
+        .apply_command(&preview)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert_eq!(project.state(), before);
+}
+
+#[test]
+fn owner_time_amendment_refuses_non_extending_expiry() {
+    let (mut project, work) = owner_time_amendment_fixture("owner-time-amendment-cap");
+    project.spec["mandate"]["revision"] = json!(3);
+    project.spec["mandate"]["expiresAt"] = json!("2098-12-31T00:00:00Z");
+    project.spec["mandate"]["maxElapsedSeconds"] = json!(172800);
+    project.save_spec();
+    project.select();
+    let before = project.state();
+    let refused = project.call(&[
+        "project",
+        "advance",
+        "amend",
+        &work,
+        "--reason",
+        "Expiry must extend the frozen mandate.",
+        "--request-id",
+        "time-amendment-cap",
+    ]);
+    assert!(!refused.status.success());
+    assert!(message(&refused).contains("time-only"));
+    assert_eq!(project.state(), before);
+}
+
+#[test]
+fn owner_time_amendment_refuses_wrong_request_replay() {
+    let (project, work) = owner_time_amendment_fixture("owner-time-amendment-conflict");
+    let preview = owner_time_amendment_preview(&project, &work);
+    assert_eq!(project.apply(&preview)["state"], "amended");
+    let before = project.state();
+    let changed = project.call(&[
+        "project",
+        "advance",
+        "amend",
+        &work,
+        "--reason",
+        "Changed request cannot mint authority.",
+        "--request-id",
+        "time-amendment-conflict",
+    ]);
+    assert!(!changed.status.success());
+    assert_eq!(project.state(), before);
+}
+
 #[test]
 fn elapsed_budget_retains_original_start_time_after_reselection() {
     let mut project = Project::new("continuation-elapsed", "export");

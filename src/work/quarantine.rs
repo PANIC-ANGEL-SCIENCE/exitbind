@@ -3,7 +3,10 @@
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
 
+mod followup;
+
 pub(crate) struct Options<'a> {
+    pub(crate) followup: bool,
     pub(crate) feature_config: &'a str,
     pub(crate) feature_work: &'a str,
     pub(crate) artifact_root: Option<&'a str>,
@@ -25,7 +28,42 @@ pub(crate) fn start(
     if !super::valid_work_handle(old_work) {
         return Err("old Work handle is invalid".into());
     }
-    let old_ledger = super::resolve(loaded, old_work)?;
+    let requested_ledger = super::resolve(loaded, old_work)?;
+    let (_, requested_events, requested_bytes) = run::ledger::load(loaded, &requested_ledger)?;
+    let requested_start = requested_events
+        .first()
+        .ok_or("requested Work ledger is empty")?;
+    let requested_state = run::state::reduce(&requested_events)?;
+    let requested_check_code = requested_state["checks"]
+        .as_array()
+        .and_then(|checks| checks.first())
+        .and_then(|check| {
+            check["exitCode"]
+                .as_i64()
+                .or_else(|| check["result"]["code"].as_i64())
+        });
+    let followup = requested_start["quarantineVerification"]["protocol"]
+        == run::quarantine::PROTOCOL
+        && requested_state["checks"]
+            .as_array()
+            .is_some_and(|checks| checks.len() == 1)
+        && requested_check_code.is_some_and(|code| code != 0)
+        && !requested_state["checkObservation"].is_object();
+    if followup != options.followup {
+        return Err(if options.followup {
+            "quarantine-followup requires the exact known-ended failed first verification".into()
+        } else {
+            "a known-ended failed quarantine verification requires work quarantine-followup".into()
+        });
+    }
+    let original_work = if followup {
+        requested_start["quarantineVerification"]["predecessor"]["work"]
+            .as_str()
+            .ok_or("first verification's original predecessor is missing")?
+    } else {
+        old_work
+    };
+    let old_ledger = super::resolve(loaded, original_work)?;
     let (_, old_events, old_bytes) = run::ledger::load(loaded, &old_ledger)?;
     let old_start = old_events.first().ok_or("old Work ledger is empty")?;
     let old_head = old_events.last().ok_or("old Work ledger has no head")?;
@@ -59,11 +97,19 @@ pub(crate) fn start(
         })
         .ok_or("old Work has no durable failed observation event")?;
 
+    if requested_start["configSha256"] != hash::text(&loaded.source)
+        || run::state::reduce(&requested_events)?["runId"] != requested_start["runId"]
+    {
+        return Err("requested quarantine Work changed or has stale configuration".into());
+    }
+    if followup {
+        followup::validate_first_failure(&requested_events, &requested_state)?;
+    }
     let binding = options
         .current_binding
         .filter(|value| !value.trim().is_empty())
         .ok_or("work quarantine requires --current-binding from current Work detail")?;
-    let next = super::next_for(loaded, old_work, &old_ledger)?;
+    let next = super::next_for(loaded, old_work, &requested_ledger)?;
     if next["current"]["binding"] != binding {
         return Err(format!(
             "current action form binding is stale; refresh with work next {old_work} --json"
@@ -83,7 +129,10 @@ pub(crate) fn start(
         return Err("--request-id must be non-empty and at most 128 bytes".into());
     }
 
-    ensure_no_children(loaded, old_work)?;
+    ensure_no_children(loaded, original_work)?;
+    if followup {
+        ensure_no_children(loaded, old_work)?;
+    }
 
     let feature_loaded = crate::config::load(Some(options.feature_config))?;
     same_roots(loaded, &feature_loaded)?;
@@ -117,7 +166,7 @@ pub(crate) fn start(
     let owner_record = crate::session_goal::read(&owner_scope.root)?
         .ok_or("the fixed native Goal owner journal is unavailable")?;
     let old_context =
-        crate::session_goal::association::context_for_work_with_root(loaded, old_work);
+        crate::session_goal::association::context_for_work_with_root(loaded, original_work);
     let old_goal = match old_context.context {
         crate::session_goal::association::WorkContext::Owner(record)
         | crate::session_goal::association::WorkContext::Session(record) => record,
@@ -233,9 +282,9 @@ pub(crate) fn start(
         .ok_or("verification effect inventory must be an object")?;
 
     let governor = run::carry::accounting(&old_state, &old_start["governor"])?;
-    let usage = crate::session_goal::usage::details_for_work(loaded, old_work);
+    let usage = crate::session_goal::usage::details_for_work(loaded, original_work);
     let predecessor = json!({
-        "work": old_work, "ledger": old_ledger, "runId": old_start["runId"],
+        "work": original_work, "ledger": old_ledger, "runId": old_start["runId"],
         "configSha256": old_start["configSha256"], "startEventSha256": old_start["eventSha256"],
         "headEventSha256": old_head["eventSha256"], "ledgerSha256": hash::bytes(old_bytes.as_bytes()),
         "observationEventSha256": failure["eventSha256"], "admissionEventSha256": admission["eventSha256"],
@@ -250,7 +299,7 @@ pub(crate) fn start(
         "environmentSha256": hash::value(environment)
     });
     let mut marker = json!({
-        "protocol": run::quarantine::PROTOCOL, "requestId": options.request_id, "reason": options.reason,
+        "protocol": if followup { run::quarantine::FOLLOWUP_PROTOCOL } else { run::quarantine::PROTOCOL }, "requestId": options.request_id, "reason": options.reason,
         "leadOwner": lead, "predecessor": predecessor,
         "verification": {
             "artifactSha256": artifact_sha, "inputsSha256": inputs_sha,
@@ -261,6 +310,27 @@ pub(crate) fn start(
         "allowance": {"checks": 1, "workerMutations": 0, "replans": 0, "replacements": 0},
         "oldCredited": false, "oldReset": false
     });
+    if followup {
+        let check = requested_events
+            .iter()
+            .find(|event| {
+                event["action"] == "check"
+                    && event["eventSha256"] == requested_state["checks"][0]["eventSha256"]
+            })
+            .ok_or("first verification check event is missing")?;
+        let custody_evidence = plan
+            .get("custodyEvidence")
+            .ok_or("accepted follow-up plan must bind the retained custody evidence")?;
+        marker["followUp"] = json!({
+            "protocol":run::quarantine::PROTOCOL,"work":old_work,"ledger":requested_ledger,
+            "runId":requested_start["runId"],"startEventSha256":requested_start["eventSha256"],
+            "headEventSha256":requested_events.last().unwrap()["eventSha256"],
+            "ledgerSha256":hash::bytes(requested_bytes.as_bytes()),
+            "decisionSha256":requested_start["quarantineVerification"]["decisionSha256"],
+            "checkEventSha256":check["eventSha256"],
+            "custodyEvidence":custody_evidence
+        });
+    }
     let decision_sha = hash::value(&marker);
     marker["decisionSha256"] = json!(decision_sha);
     let verified = run::quarantine::admission::prepare(loaded, loaded, &feature_loaded, &marker)?;
@@ -275,7 +345,14 @@ pub(crate) fn start(
         &verified,
     )?;
 
-    let argv = apply_argv(old_work, &options, loaded, owner_path, &owner_sha256);
+    let argv = apply_argv(
+        old_work,
+        &options,
+        loaded,
+        owner_path,
+        &owner_sha256,
+        followup,
+    );
     if !options.apply {
         return Ok(
             json!({"work": old_work, "verificationWork": verified.work(), "preview": true,
@@ -502,10 +579,16 @@ fn apply_argv(
     loaded: &Loaded,
     owner_config: &str,
     owner_config_sha256: &str,
+    followup: bool,
 ) -> crate::work::response_recovery::RecoveryCommand {
     let mut args = vec![
         "work".into(),
-        "quarantine".into(),
+        if followup {
+            "quarantine-followup"
+        } else {
+            "quarantine"
+        }
+        .into(),
         old_work.into(),
         "--feature-config".into(),
         options.feature_config.into(),

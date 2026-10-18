@@ -2,11 +2,14 @@
 //! unknown failure below is synthetic; it does not attest process termination.
 use super::*;
 use sha2::{Digest, Sha256};
+mod followup;
 
 const FROZEN: &[u8] = b"Frozen verification subject; no implementation mutation.\n";
 const REASON: &str = "Preserve the old unknown and permit one separate verification";
 const REQUEST: &str = "controlled-quarantine-once";
 const OPERATION_MAX_BYTES: usize = 4096;
+const OBSERVER: &[u8] = b"controlled-observer-v1";
+const FIXTURE_UID: u64 = 1000;
 
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -160,6 +163,7 @@ impl Case {
             owner_config,
             old_bytes: bytes,
         };
+        fs::write(case.f.root.join("fail-checker.sh"), "exit 7\n").unwrap();
         let begin = case.config_call(
             &[
                 "work",
@@ -168,7 +172,7 @@ impl Case {
                 "--goal",
                 "Review the separate immutable verification plan",
                 "--check-command",
-                "exec sh checker.sh",
+                "exec true",
                 "--review-policy",
                 "required",
             ],
@@ -193,7 +197,11 @@ impl Case {
         let inputs = value(&inspection)["inputsSha256"].clone();
         assert!(inputs.as_str().is_some());
         let report = json!({"kind":"quarantine-verification-plan","protocol":1,
-            "plan":{"environment":{"kind":"controlled-local-check"},
+            "plan":{"environment":{"kind":"controlled-local-check",
+                    "executorUid":FIXTURE_UID,"observerSha256":digest(OBSERVER),
+                    "freshParent":case.f.root.join("fresh-parent").to_string_lossy(),
+                    "inputManifest":case.f.root.join("fixture-manifest.json").to_string_lossy(),
+                    "inputManifestSha256":digest(b"fixture input manifest")},
                 "effectInventory":{"write":"none","scope":"fixture only"},
                 "artifactSha256":digest(FROZEN),"inputsSha256":inputs,
                 "basis":serde_json::from_str::<Value>(&basis).unwrap(),

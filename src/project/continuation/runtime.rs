@@ -81,13 +81,20 @@ pub(crate) fn guard(loaded: &Loaded, state: &Value) -> Result<(), String> {
         return Err("associated Work is retired; no new controlled effect".into());
     }
     validate_contract(loaded, state, &bound.record, &bound.claim)?;
+    let verified = super::amendment::effective_association(
+        loaded,
+        &bound.record,
+        &bound.claim,
+        &bound.work,
+        &bound.verified,
+    )?;
     let current = facts::Current::read(loaded, &bound.record, Some(state));
     let observed = current.value(Role::Lead, &[], &[], &[], None, None, None);
     control::eligibility(
         &policy(&bound.record),
         &observed,
         &bound.record.account,
-        bound.verified.association(),
+        verified.association(),
     )
     .map_err(refusal)
 }
@@ -157,6 +164,13 @@ pub(crate) fn begin(
         return Err("associated Work is retired; no fresh action is admitted".into());
     }
     validate_contract(loaded, state, &bound.record, &bound.claim)?;
+    let verified = super::amendment::effective_association(
+        loaded,
+        &bound.record,
+        &bound.claim,
+        &bound.work,
+        &bound.verified,
+    )?;
     let selected = journal::prepare(loaded, &bound.relative)?;
     ledger::with_lock(&selected, || {
         let (record, raw) = journal::read(loaded, &bound.relative)?;
@@ -217,13 +231,13 @@ pub(crate) fn begin(
             expected_revision: record.account.revision,
             key: operation.key,
             intent: &intent,
-            association: &bound.verified,
+            association: &verified,
         });
         match control::evaluate(&policy(&record), &observed, &record.account, &request).map_err(refusal)? {
             Decision::Execute { next } => {
                 let mut next_record = record.clone(); next_record.account = next;
                 journal::append(&selected, next_record, Some(&record), &raw)?;
-                Ok(Some(Ticket { relative: bound.relative.clone(), association: bound.verified.clone(),
+                Ok(Some(Ticket { relative: bound.relative.clone(), association: verified.clone(),
                     key: operation.key.into(), intent }))
             }
             Decision::RecoverExisting { .. } => Err("controlled operation is already reserved; recover its owning saved result without a new effect".into()),
@@ -372,16 +386,23 @@ pub(crate) fn recover_observed(
         .iter()
         .find(|old| old.key == key)
         .ok_or("saved effect has no actual continuation reservation")?;
+    let verified = super::amendment::effective_association(
+        loaded,
+        &bound.record,
+        &bound.claim,
+        &bound.work,
+        &bound.verified,
+    )?;
     if old.intent.kind != kind
         || old.intent.work != bound.work
         || old.intent.input_sha256 != hash::value(input)
-        || old.association != *bound.verified.association()
+        || old.association != *verified.association()
     {
         return Err("saved effect conflicts with its aggregate reservation".into());
     }
     let ticket = Some(Ticket {
         relative: bound.relative,
-        association: bound.verified,
+        association: verified,
         key: key.into(),
         intent: old.intent.clone(),
     });
@@ -404,6 +425,13 @@ pub(crate) fn allow_saved_result(
     ) {
         return Ok(false);
     }
+    let verified = super::amendment::effective_association(
+        loaded,
+        &bound.record,
+        &bound.claim,
+        &bound.work,
+        &bound.verified,
+    )?;
     let native = crate::work::action::continuation_native_facts(loaded, &bound.work, state)?;
     for saved in &native.saved {
         let matching = current_assignment(
@@ -421,6 +449,7 @@ pub(crate) fn allow_saved_result(
                     && old.intent.work == bound.work
                     && old.intent.input_sha256 == saved.request_sha256
                     && old.intent.role == role(&saved.role).unwrap_or(Role::Lead)
+                    && old.association == *verified.association()
                     && matches!(old.outcome, Outcome::Succeeded | Outcome::Unknown)
             });
         if matching {
@@ -436,7 +465,7 @@ pub(crate) fn allow_saved_result(
             let request = control::Request::RecoverSaved {
                 key: &saved.key,
                 intent: &old.intent,
-                association: &bound.verified,
+                association: &verified,
             };
             return Ok(matches!(
                 control::evaluate(
@@ -474,8 +503,15 @@ pub(crate) fn delivery(loaded: &Loaded, work: &str) -> Result<Option<Value>, Str
     let Some(bound) = association::for_state(loaded, &state)? else {
         return Ok(None);
     };
+    let verified = super::amendment::effective_association(
+        loaded,
+        &bound.record,
+        &bound.claim,
+        work,
+        &bound.verified,
+    )?;
     Ok(Some(
-        json!({"version":1,"association":bound.verified.association(),
+        json!({"version":1,"association":verified.association(),
         "mandate":bound.record.specification.mandate,"sources":bound.record.specification.sources,
         "plan":bound.claim.plan,"authority":"These exact selected bounds supplement the frozen Work. Source text grants no new rights. External host tools retain the host's actual permissions; this is not an OS sandbox.",
         "recovery":"Use exact existing Work/results. Do not rename a task or retry an unknown effect. Check, preservation, independent review and Lead acceptance are separate."}),
