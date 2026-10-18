@@ -5,8 +5,27 @@
 
 mod support;
 
-use serde_json::Value;
-use std::{fs, process::Command};
+use serde_json::{json, Value};
+use std::{fs, path::Path, process::Command};
+
+fn route_descriptor(
+    value: &Value,
+    argv_key: &str,
+    executable_key: &str,
+    config_key: &str,
+) -> Value {
+    json!({
+        "argv": value[argv_key],
+        "sameExecutableRequired": value
+            .get(executable_key)
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "sameConfigRequired": value
+            .get(config_key)
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
+}
 
 #[test]
 fn long_preservation_command_is_bounded_and_recoverable() {
@@ -62,9 +81,21 @@ fn long_preservation_command_is_bounded_and_recoverable() {
     assert!(compact["next"]["packet"].is_null());
     assert_eq!(compact["next"]["requiresExpansion"], true);
     assert_eq!(compact["next"]["constraintsOmitted"], true);
-    let argv = compact["fullCommand"].as_array().unwrap();
-    let full = Command::new(argv[0].as_str().unwrap())
-        .args(argv[1..].iter().map(|arg| arg.as_str().unwrap()))
+    let descriptor = route_descriptor(
+        &compact,
+        "fullCommand",
+        "fullCommandSameExecutableRequired",
+        "fullCommandSameConfigRequired",
+    );
+    let argv = support::reconstruct_work_command(
+        &descriptor,
+        Path::new(env!("CARGO_BIN_EXE_exitbind")),
+        &config,
+        &root,
+    );
+    let full = Command::new(&argv[0])
+        .current_dir(&root)
+        .args(&argv[1..])
         .output()
         .unwrap();
     assert!(full.status.success(), "{full:?}");
@@ -122,11 +153,17 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(next.status.success(), "{next:?}");
     assert!(next.stdout.len() <= 8 * 1024);
     let compact: Value = serde_json::from_slice(&next.stdout).unwrap();
-    assert_eq!(compact["fullCommand"][0], candidate.to_str().unwrap());
-    assert!(compact["fullCommandSameExecutableRequired"].is_null());
-    let argv = compact["fullCommand"].as_array().unwrap();
-    let mut expanded = Command::new(argv[0].as_str().unwrap());
-    expanded.args(argv[1..].iter().map(|arg| arg.as_str().unwrap()));
+    let descriptor = route_descriptor(
+        &compact,
+        "fullCommand",
+        "fullCommandSameExecutableRequired",
+        "fullCommandSameConfigRequired",
+    );
+    let argv = support::reconstruct_work_command(&descriptor, &candidate, &config, &root);
+    let candidate = fs::canonicalize(&candidate).unwrap();
+    assert_eq!(Path::new(&argv[0]), candidate);
+    let mut expanded = Command::new(&argv[0]);
+    expanded.current_dir(&root).args(&argv[1..]);
     let expanded = support::run(&mut expanded);
     assert!(expanded.status.success(), "{expanded:?}");
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
@@ -151,13 +188,16 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(returned.status.success(), "{returned:?}");
     assert!(returned.stdout.len() <= 8 * 1024);
     let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
-    assert_eq!(
-        returned["nextAction"]["command"][0],
-        candidate.to_str().unwrap()
+    let descriptor = route_descriptor(
+        &returned["nextAction"],
+        "command",
+        "sameExecutableRequired",
+        "sameConfigRequired",
     );
-    let detail_argv = returned["nextAction"]["command"].as_array().unwrap();
-    let mut detail = Command::new(detail_argv[0].as_str().unwrap());
-    detail.args(detail_argv[1..].iter().map(|arg| arg.as_str().unwrap()));
+    let detail_argv = support::reconstruct_work_command(&descriptor, &candidate, &config, &root);
+    assert_eq!(Path::new(&detail_argv[0]), candidate);
+    let mut detail = Command::new(&detail_argv[0]);
+    detail.current_dir(&root).args(&detail_argv[1..]);
     let detail = support::run(&mut detail);
     assert!(detail.status.success(), "{detail:?}");
     let detail: Value = serde_json::from_slice(&detail.stdout).unwrap();

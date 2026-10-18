@@ -1736,6 +1736,11 @@
       "currentSha256": "46d3f471ac9a624464a46b7db91a44bb6a8312d37cf10b87274b75e2fcb1a7e5",
       "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and places exact section-route argv near its bounded byte budget; the existing one-grouped-route oracle continues to decide whether fallback occurs."
     },
+    "tests/compact_preservation.rs": {
+      "baselineSha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9",
+      "currentSha256": "6196e71b9349c14374293fcd73d6e95e27c308321235332970829d7fc6a984e4",
+      "reason": "Preserve output bounds, assignment/event identity, and copied-executable identity requirements while replacing obsolete raw-array and no-elision assertions with declared-flag reconstruction through the existing descriptor helper. The copied-executable case requires argv to equal its actual canonical candidate and executes that candidate; missing or incorrect identity remains rejected."
+    },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
       "currentSha256": "7a232edcec27bc28fc6f0dc5291a4ab5a546b38dfe2e0a27db5b847d4924710e",
