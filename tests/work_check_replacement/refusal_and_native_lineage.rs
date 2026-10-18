@@ -136,7 +136,7 @@ fn accepted_predecessor_and_unclassified_failure_are_refused() {
         "--outcome",
         "scoped",
     ]);
-    let worker = f.ok(&["work", "next", &work, "--json"]);
+    let worker = f.ok(&["work", "next", &work, "--json", "--full"]);
     f.ok(&[
         "work",
         "return",
@@ -146,7 +146,7 @@ fn accepted_predecessor_and_unclassified_failure_are_refused() {
         "completed",
     ]);
     f.ok(&["work", "check", &work, "--timeout-ms", "2000"]);
-    let reviewer = f.ok(&["work", "next", &work, "--json"]);
+    let reviewer = f.ok(&["work", "next", &work, "--json", "--full"]);
     assert_eq!(reviewer["next"]["role"], "reviewer");
     f.ok(&[
         "work",
@@ -156,7 +156,7 @@ fn accepted_predecessor_and_unclassified_failure_are_refused() {
         "--outcome",
         "approved",
     ]);
-    let lead = f.ok(&["work", "next", &work, "--json"]);
+    let lead = f.ok(&["work", "next", &work, "--json", "--full"]);
     assert_eq!(lead["next"]["role"], "lead");
     f.ok(&[
         "work",
@@ -1242,7 +1242,11 @@ fn prepared_native_child_blocks_replacement_until_its_ownership_resolves() {
             "scoped",
         ],
     );
-    let worker = f.ok_in_session(session, &store, &["work", "next", &work, "--json"]);
+    let worker = f.ok_in_session(
+        session,
+        &store,
+        &["work", "next", &work, "--json", "--full"],
+    );
     assert_eq!(worker["next"]["role"], "worker");
     let continuation = f.ok_in_session(session, &store, &["work", "continuation", &work]);
     let continuation_binding = continuation["mutationContext"]["token"].as_str().unwrap();

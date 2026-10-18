@@ -1743,8 +1743,8 @@
     },
     "tests/work_check_replacement/refusal_and_native_lineage.rs": {
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
-      "currentSha256": "8396a4ececfe2793731d24deda11346c9850959c8c70bb0c20308c6a3c303f83",
-      "reason": "Preserve all8 original cases byte-for-byte and add2 regression cases for unrelated missing historical configuration and required selected-ancestor configuration. New helpers use emitted role forms, full stdin artifacts and isolated native sessions; no original refusal or lineage assertion is removed."
+      "currentSha256": "6c5e8ee8db1d3997323e25d8410e956efc1667d3406b07578d84b6866db2f34f",
+      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged."
     },
     "tests/check_retry.rs": {
       "baselineSha256": "a3bc2766b3bcbbaea6eb00eb9d234e1b2be8a59b975b9f74a686f95cda85a8bb",
