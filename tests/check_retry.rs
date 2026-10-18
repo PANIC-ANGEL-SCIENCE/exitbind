@@ -220,11 +220,23 @@ fn failed_functional_check_waits_for_missing_preservation_before_retry() {
 
     let ledger = fixture.ledger(&work);
     let first_next = fixture.value(&["work", "next", &work]);
-    assert_eq!(first_next["next"]["action"], "check");
-    assert_eq!(first_next["next"]["check"]["kind"], "check");
+    let first_next_action = support::resolved_work_next(
+        &fixture.root,
+        &work,
+        &first_next,
+        env!("CARGO_BIN_EXE_exitbind"),
+    );
+    assert_eq!(first_next_action["action"], "check");
+    assert_eq!(first_next_action["check"]["kind"], "check");
     let failed = fixture.failed_value(&["work", "check", &work]);
-    assert_eq!(failed["next"]["action"], "check");
-    assert_eq!(failed["next"]["check"]["kind"], "preservation");
+    let failed_next = support::resolved_work_next(
+        &fixture.root,
+        &work,
+        &failed,
+        env!("CARGO_BIN_EXE_exitbind"),
+    );
+    assert_eq!(failed_next["action"], "check");
+    assert_eq!(failed_next["check"]["kind"], "preservation");
     let checks = observed_checks(&ledger);
     assert_eq!(checks.len(), 1);
     let failed_event = checks[0].clone();
@@ -233,14 +245,26 @@ fn failed_functional_check_waits_for_missing_preservation_before_retry() {
     assert_eq!(failed_stdout, b"functional-fail");
 
     let preservation = fixture.value(&["work", "check", &work]);
-    assert_eq!(preservation["next"]["action"], "lead_decision");
-    assert_eq!(preservation["next"]["role"], "lead");
+    let preservation_next = support::resolved_work_next(
+        &fixture.root,
+        &work,
+        &preservation,
+        env!("CARGO_BIN_EXE_exitbind"),
+    );
+    assert_eq!(preservation_next["action"], "lead_decision");
+    assert_eq!(preservation_next["role"], "lead");
     let checks = observed_checks(&ledger);
     assert_eq!(checks.len(), 2);
     assert_eq!(checks[1]["requirementId"], "precedence");
     let after_preservation = fixture.value(&["work", "next", &work]);
-    assert_eq!(after_preservation["next"]["action"], "lead_decision");
-    assert_eq!(after_preservation["next"]["role"], "lead");
+    let after_preservation_next = support::resolved_work_next(
+        &fixture.root,
+        &work,
+        &after_preservation,
+        env!("CARGO_BIN_EXE_exitbind"),
+    );
+    assert_eq!(after_preservation_next["action"], "lead_decision");
+    assert_eq!(after_preservation_next["role"], "lead");
 
     fs::write(&marker, b"pass").unwrap();
     let retried = fixture.value(&["work", "check", &work]);

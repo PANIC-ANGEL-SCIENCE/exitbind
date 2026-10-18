@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde_json::Value;
+
 #[allow(dead_code)]
 pub mod git_topology;
 
@@ -19,6 +21,66 @@ pub fn temp(label: &str) -> PathBuf {
             Err(error) => panic!("create test directory: {error}"),
         }
     }
+}
+
+/// Resolve a compact Work response's emitted read-only `work next --full` route.
+/// The returned value is the expanded current action, never a replay of the
+/// response's preceding mutation.
+#[allow(dead_code)]
+pub fn resolved_work_next(
+    root: &Path,
+    work: &str,
+    response: &Value,
+    expected_executable: &str,
+) -> Value {
+    if response["truncated"] != true {
+        return response["next"].clone();
+    }
+
+    let command = response["fullCommand"]
+        .as_array()
+        .expect("a compact response supplies its fullCommand")
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .expect("fullCommand arguments are strings")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(command.len(), 7, "unexpected fullCommand: {command:?}");
+    assert_eq!(
+        std::fs::canonicalize(&command[0]).unwrap(),
+        std::fs::canonicalize(expected_executable).unwrap(),
+        "fullCommand must use the current test executable"
+    );
+    assert_eq!(command[1], "work");
+    assert_eq!(command[2], "next");
+    assert_eq!(command[3], work);
+    assert_eq!(command[4], "--full");
+    assert_eq!(command[5], "--config");
+    assert_eq!(
+        std::fs::canonicalize(&command[6]).unwrap(),
+        std::fs::canonicalize(root.join("exitbind.json")).unwrap(),
+        "fullCommand must use the fixture's current configuration"
+    );
+
+    let expanded = Command::new(&command[0])
+        .current_dir(root)
+        .args(&command[1..])
+        .output()
+        .expect("run the emitted read-only fullCommand");
+    assert!(
+        expanded.status.success(),
+        "fullCommand failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&expanded.stdout),
+        String::from_utf8_lossy(&expanded.stderr)
+    );
+    let expanded: Value = serde_json::from_slice(&expanded.stdout)
+        .expect("fullCommand returns its complete JSON response");
+    assert_ne!(expanded["truncated"], true);
+    assert_eq!(expanded["work"], work);
+    expanded["next"].clone()
 }
 
 /// Run a command under a pseudo-terminal on both GNU and BSD `script`.

@@ -46,6 +46,11 @@ impl Fixture {
             .unwrap_or_else(|error| panic!("invalid JSON for {args:?}: {error}; {}", text(&output)))
     }
 
+    fn next(&self, work: &str) -> Value {
+        let response = self.json(&["work", "next", work, "--config", "exitbind.json"]);
+        support::resolved_work_next(&self.root, work, &response, env!("CARGO_BIN_EXE_exitbind"))
+    }
+
     fn ledger_event(&self, ledger: &str) -> Value {
         fs::read_to_string(self.root.join(ledger))
             .unwrap()
@@ -320,7 +325,7 @@ fn required_to_omitted_retires_stale_reviewer_handle_and_accepts_truthfully() {
     assert!(policy.status.success(), "{}", text(&policy));
     let stale = fixture.work_return(&work, &reviewer, "approved", "stale-review");
     assert_refused(&stale, "assignment is not the current pending work action");
-    let next = fixture.json(&["work", "next", &work, "--config", "exitbind.json"])["next"].clone();
+    let next = fixture.next(&work);
     assert_eq!(next["role"], "lead");
     let accepted = fixture.work_return_ok(&work, &next, "accepted", "accepted");
     assert_eq!(accepted["next"]["progress"]["state"], "READY");
@@ -371,8 +376,7 @@ fn omitted_to_required_requires_fresh_review_and_retires_old_lead_handle() {
     assert!(policy.status.success(), "{}", text(&policy));
     let stale = fixture.work_return(&work, &lead, "accepted", "stale-acceptance");
     assert_refused(&stale, "assignment is not the current pending work action");
-    let reviewer =
-        fixture.json(&["work", "next", &work, "--config", "exitbind.json"])["next"].clone();
+    let reviewer = fixture.next(&work);
     assert_eq!(reviewer["role"], "reviewer");
     let accepted_review = fixture.work_return_ok(&work, &reviewer, "approved", "review");
     let accepted = fixture.work_return_ok(&work, &accepted_review["next"], "accepted", "accepted");
@@ -496,7 +500,7 @@ fn omission_after_rework_retains_lead_disposition_duty() {
     assert!(policy.status.success(), "{}", text(&policy));
     let required = fixture.review_policy(&ledger, "required");
     assert!(required.status.success(), "{}", text(&required));
-    let lead = fixture.json(&["work", "next", &work, "--config", "exitbind.json"])["next"].clone();
+    let lead = fixture.next(&work);
     assert_eq!(lead["role"], "lead");
     let refused = fixture.work_return(&work, &lead, "accepted", "must-dispose");
     assert_refused(&refused, "disposition");
