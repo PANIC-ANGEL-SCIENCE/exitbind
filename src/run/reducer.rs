@@ -140,6 +140,10 @@ impl RunSnapshot {
         &self.state["status"]
     }
 
+    pub(crate) fn state(&self) -> &Value {
+        &self.state
+    }
+
     pub(crate) fn inputs(&self) -> &InputContext {
         &self.inputs
     }
@@ -474,16 +478,29 @@ pub(super) fn selected_plan(mut plan: Value) -> Result<Value, String> {
 
 pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
     crate::config::boundary::assert_current(loaded, &state["plan"])?;
-    crate::run::guidance_continuity::assert_config_current(loaded, state)?;
-    let expected = state["configSha256"].as_str().unwrap_or("");
-    let current = fs::read_to_string(&loaded.path)
-        .map_err(|error| format!("configuration cannot be read: {error}"))?;
-    let current_sha = hash::text(&current);
-    if !crate::run::guidance_continuity::enabled(state) && current_sha != expected {
-        return Err(run_error::machine_drift(DriftError::config(
-            expected.to_owned(),
-            current_sha,
-        )));
+    if crate::run::guidance_continuity::enabled(state) {
+        // Marked Work: only the strict influence projection is compared, and a
+        // strict change keeps the same machine-readable drift shape as legacy.
+        let field = crate::run::guidance_continuity::CONFIG_FIELD;
+        let expected = state[field].as_str().unwrap_or("");
+        let current = crate::run::guidance_continuity::advisory_config_sha256(&loaded.config);
+        if current != expected {
+            return Err(run_error::machine_drift(DriftError::config(
+                expected.to_owned(),
+                current,
+            )));
+        }
+    } else {
+        let expected = state["configSha256"].as_str().unwrap_or("");
+        let current = fs::read_to_string(&loaded.path)
+            .map_err(|error| format!("configuration cannot be read: {error}"))?;
+        let current_sha = hash::text(&current);
+        if current_sha != expected {
+            return Err(run_error::machine_drift(DriftError::config(
+                expected.to_owned(),
+                current_sha,
+            )));
+        }
     }
 
     crate::project::architecture::assert_current(loaded)?;

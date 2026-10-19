@@ -273,6 +273,8 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
         ],
     );
     let work = begun["work"].as_str().unwrap();
+    // The stale-profile refusal below is the legacy contract.
+    support::unmark_work(&root, work);
     let delivered = call(&root, &["work", "detail", work, "--json"]);
     let delivered_profile = delivered["recipientContext"]["profile"]["content"]
         .as_str()
@@ -336,6 +338,56 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     let stale = hook(&root, "sonic").unwrap();
     assert!(stale.contains("profile acquisition is unavailable"));
     assert!(!stale.contains("changed after assignment"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn marked_native_profile_change_is_applied_at_the_next_launch_boundary() {
+    let root = project("project-context-assignment-marked");
+    let config_path = root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["agents"]["worker"]["nativeName"] = json!("sonic");
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let begun = call(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Named worker",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    );
+    let work = begun["work"].as_str().unwrap();
+    let lead = call(&root, &["work", "next", work, "--full"]);
+    call(
+        &root,
+        &[
+            "work",
+            "return",
+            work,
+            lead["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+    );
+    let _worker = call(&root, &["work", "next", work, "--full"]);
+    assert!(hook(&root, "sonic").is_some());
+    fs::write(
+        root.join("exitbind/agents/worker.md"),
+        "changed after assignment\n",
+    )
+    .unwrap();
+    let current = hook(&root, "sonic").unwrap();
+    assert!(current.contains("changed after assignment"), "{current}");
+    assert!(
+        !current.contains("profile acquisition is unavailable"),
+        "{current}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

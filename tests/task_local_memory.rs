@@ -114,10 +114,10 @@ fn v1_interleaving_retains_its_conservative_contract() {
     let f = Fixture::new(true);
     f.accept_lesson();
     f.select(TASK);
-    let a = f.worker(TASK);
+    let a = f.worker_unmarked(TASK);
     assert_eq!(f.resolve(TASK).as_array().unwrap().len(), 1);
     f.context("Independent task B", "r2", vec![]);
-    let _b = f.worker("Independent task B");
+    let _b = f.worker_unmarked("Independent task B");
     assert_eq!(f.resolve(TASK), json!([]));
     stale(&f, &a);
 }
@@ -127,11 +127,11 @@ fn independent_tasks_and_recipients_keep_exact_choices_without_fingerprint_chang
     f.accept_lesson();
     let id = item(&f, "worker", TASK);
     let chosen = choose(&f, "worker", TASK, &[&id], "absent");
-    let a = f.worker(TASK);
+    let a = f.worker_unmarked(TASK);
     let before = packet(&f, &a);
     let btask = "Format unrelated text quoting release as data";
     let bchoice = choose(&f, "worker", btask, &[], "absent");
-    let b = f.worker(btask);
+    let b = f.worker_unmarked(btask);
     assert_eq!(f.resolve(btask), json!([]));
     assert_eq!(
         f.resolve(TASK)[0]["contextSelection"]["contextSha256"],
@@ -176,8 +176,8 @@ fn empty_choice_is_frozen_and_same_text_works_deliberately_share_currentness() {
     let f = local();
     f.accept_lesson();
     let empty = choose(&f, "worker", TASK, &[], "absent");
-    let a = f.worker(TASK);
-    let a2 = f.worker(TASK);
+    let a = f.worker_unmarked(TASK);
+    let a2 = f.worker_unmarked(TASK);
     assert_eq!(
         packet(&f, &a)["memoryContextSelection"]["contextSha256"],
         empty["contextSha256"]
@@ -292,7 +292,7 @@ fn selected_source_guard_revocation_and_profile_drift_still_refuse() {
         f.accept_lesson();
         let id = item(&f, "worker", TASK);
         choose(&f, "worker", TASK, &[&id], "absent");
-        let a = f.worker(TASK);
+        let a = f.worker_unmarked(TASK);
         match change {
             "source" => fs::write(f.root.join("lesson.json"), b"{}").unwrap(),
             "guard" => fs::write(f.root.join("guard"), b"changed").unwrap(),
@@ -530,7 +530,7 @@ fn selected_expiry_is_current_even_with_an_unchanged_frozen_record() {
     f.ok(&["memory", "promote", "lead", LEDGER]);
     let id = item(&f, "worker", TASK);
     let chosen = choose(&f, "worker", TASK, &[&id], "absent");
-    let a = f.worker(TASK);
+    let a = f.worker_unmarked(TASK);
     assert!(
         chrono::Utc::now() < expiry,
         "fixture must freeze before real expiry"
@@ -680,4 +680,83 @@ fn changed_valid_record_cannot_replay_an_old_request_token() {
     let out = apply(&f, &p);
     assert!(!out.status.success());
     assert!(diagnostic(&out).contains("request does not bind"));
+}
+
+#[test]
+fn marked_source_guard_revocation_and_profile_changes_keep_the_work_readable() {
+    for change in ["source", "guard", "revoke", "profile"] {
+        let f = local();
+        f.accept_lesson();
+        let id = item(&f, "worker", TASK);
+        choose(&f, "worker", TASK, &[&id], "absent");
+        let a = f.worker(TASK);
+        match change {
+            "source" => fs::write(f.root.join("lesson.json"), b"{}").unwrap(),
+            "guard" => fs::write(f.root.join("guard"), b"changed").unwrap(),
+            "revoke" => {
+                f.ok(&["memory", "revoke", "lead", LEDGER]);
+            }
+            _ => {
+                let profile = f.config()["agents"]["worker"]["profile"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+                fs::write(f.root.join(profile), b"Changed profile").unwrap();
+            }
+        }
+        let detail = f.ok(&["work", "detail", &a, "--json"]);
+        // Advisory changes never invalidate the Work or its current action.
+        assert_eq!(detail["valid"], true, "{change}: {detail}");
+        assert!(
+            !detail["effectiveAction"]["kind"].is_null(),
+            "{change}: {detail}"
+        );
+        assert!(
+            !detail["recipientContext"].to_string().contains(FACT),
+            "{change}: {detail}"
+        );
+        if matches!(change, "source" | "guard") {
+            assert_eq!(
+                detail["recipientContext"]["available"], true,
+                "{change}: {detail}"
+            );
+        }
+    }
+}
+
+#[test]
+fn marked_selected_expiry_keeps_the_work_valid_and_omits_the_expired_item() {
+    let f = local();
+    f.write("lesson.json", &f.lesson());
+    let expiry = chrono::Utc::now() + chrono::Duration::seconds(8);
+    f.ok(&[
+        "memory",
+        "propose",
+        "lead",
+        "lesson.json",
+        "--scope",
+        "project-lessons.v1",
+        "--ledger",
+        LEDGER,
+        "--expires-at",
+        &expiry.to_rfc3339(),
+    ]);
+    f.ok(&["memory", "review", "lead", LEDGER]);
+    f.ok(&["memory", "promote", "lead", LEDGER]);
+    let id = item(&f, "worker", TASK);
+    let chosen = choose(&f, "worker", TASK, &[&id], "absent");
+    let a = f.worker(TASK);
+    assert!(
+        chrono::Utc::now() < expiry,
+        "fixture must freeze before real expiry"
+    );
+    while chrono::Utc::now() <= expiry {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let detail = f.ok(&["work", "detail", &a, "--json"]);
+    assert_eq!(detail["recipientContext"]["available"], true, "{detail}");
+    assert!(!detail["recipientContext"].to_string().contains(FACT));
+    let read = f.ok(&["memory", "choice", "worker", "--task", TASK, "--json"]);
+    assert_eq!(read["contextSha256"], chosen["contextSha256"]);
+    assert_eq!(read["currentlyUsable"], false);
 }

@@ -239,6 +239,7 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     {
         return BTreeSet::new();
     }
+    let mut memory_candidates = std::mem::take(&mut candidates);
     add_product_path(&loaded.product_root, &loaded.path, &mut candidates);
     if let Some(stages) = state["plan"]["stages"].as_array() {
         for agent in stages
@@ -283,13 +284,23 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
                 for field in ["sourcePath", "ledgerPath"] {
                     if let Some(path) = reference[field].as_str() {
                         if safe_relative(path) {
-                            candidates.insert(path.to_owned());
+                            memory_candidates.insert(path.to_owned());
                         }
                     }
                 }
             }
         }
     }
+    // A memory item that points at tracked product source is still product
+    // source: its edits change the result, so it stays a verification input.
+    let Some(tracked) = tracked_paths(&loaded.product_root, &memory_candidates) else {
+        return BTreeSet::new();
+    };
+    candidates.extend(
+        memory_candidates
+            .into_iter()
+            .filter(|path| !tracked.contains(path)),
+    );
     // Harness receipts retain their own exact product binding. Keep every
     // input strict for them because a path may be evidence even when it is not
     // named by the selected verification recipe.
@@ -347,6 +358,42 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     candidates
 }
 
+/// The subset of `paths` tracked by Git, or `None` when Git cannot answer
+/// (callers then keep every candidate strict). Outside Git nothing is tracked.
+pub(crate) fn tracked_paths(
+    root: &std::path::Path,
+    paths: &BTreeSet<String>,
+) -> Option<BTreeSet<String>> {
+    if paths.is_empty() {
+        return Some(BTreeSet::new());
+    }
+    let inside = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .ok()?;
+    if !inside.status.success() {
+        return Some(BTreeSet::new());
+    }
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z", "--cached", "--"])
+        .args(paths)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| std::str::from_utf8(part).ok().map(str::to_owned))
+        .collect()
+}
+
 fn add_product_path(root: &std::path::Path, path: &std::path::Path, paths: &mut BTreeSet<String>) {
     if let Ok(path) = path.canonicalize() {
         if let Ok(relative) = path.strip_prefix(root) {
@@ -363,6 +410,35 @@ fn add_product_path(root: &std::path::Path, path: &std::path::Path, paths: &mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tracked_memory_sources_are_reported_and_untracked_ones_are_not() {
+        let root =
+            std::env::temp_dir().join(format!("exitbind-guidance-tracked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs/RULES.md"), "rule").unwrap();
+        std::fs::write(root.join("note.md"), "advice").unwrap();
+        let git = |args: &[&str]| {
+            assert!(std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success())
+        };
+        git(&["init", "-q"]);
+        git(&["add", "docs/RULES.md"]);
+        let paths = ["docs/RULES.md".to_owned(), "note.md".to_owned()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let tracked = tracked_paths(&root, &paths).unwrap();
+        assert!(tracked.contains("docs/RULES.md"));
+        assert!(!tracked.contains("note.md"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use crate::config::Loaded;
     use serde_json::json;
     use std::{collections::BTreeMap, path::PathBuf};

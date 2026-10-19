@@ -249,6 +249,18 @@ pub(crate) fn assert_assignment(l: &Loaded, packet: &Value) -> Result<(), String
         let cross_context = packet["frozenCrossContext"]
             .as_str()
             .ok_or("marked assignment cross-context ceiling is malformed")?;
+        // A changed valid choice is advisory, but a frozen choice whose
+        // approved artifact is missing, corrupt or aliased is not.
+        if enabled(l)
+            && packet
+                .get("memoryContextSelection")
+                .is_some_and(|value| !value.is_null())
+            && context(l, agent, Some(task))?.is_none()
+        {
+            return Err(
+                "contextual memory choice is unavailable; preserve the recorded Work".into(),
+            );
+        }
         // The selector still validates current ledgers, current read rights,
         // contextual applicability, and every source hash. Only optional
         // source absence/change is omitted. The frozen scope ceiling prevents

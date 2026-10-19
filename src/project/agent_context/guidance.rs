@@ -266,6 +266,12 @@ fn overflow_item(
     let item_id = reference["itemId"]
         .as_str()
         .ok_or("eligible guidance has no item id")?;
+    let Some(task) = task else {
+        // Without a recipient task the only memory route would resolve as the
+        // Lead, so no expansion is offered rather than another role's view.
+        return Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
+            "readRoute":null,"readRouteUnavailable":"recipient_task_required"}));
+    };
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let mut command = vec![
         executable
@@ -277,19 +283,17 @@ fn overflow_item(
         "memory".into(),
         item_id.into(),
     ];
-    if let Some(task) = task {
-        command.extend(["--agent".into(), agent.into(), "--task".into(), task.into()]);
-        if !host.is_empty() {
-            command.extend(["--host".into(), host.into()]);
-        }
-        command.extend([
-            "--expected-sha256".into(),
-            reference["sourceSha256"]
-                .as_str()
-                .ok_or("eligible guidance has no source hash")?
-                .into(),
-        ]);
+    command.extend(["--agent".into(), agent.into(), "--task".into(), task.into()]);
+    if !host.is_empty() {
+        command.extend(["--host".into(), host.into()]);
     }
+    command.extend([
+        "--expected-sha256".into(),
+        reference["sourceSha256"]
+            .as_str()
+            .ok_or("eligible guidance has no source hash")?
+            .into(),
+    ]);
     command.extend([
         "--json".into(),
         "--config".into(),

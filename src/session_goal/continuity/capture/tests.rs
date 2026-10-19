@@ -70,6 +70,16 @@ mod adviser_floor {
         }
     }
 
+    #[test]
+    fn marked_adviser_without_an_owner_floor_keeps_pre_floor_behavior() {
+        let mut unresolved = loaded(None, None, None, &[]);
+        unresolved.config["project"]
+            .as_object_mut()
+            .unwrap()
+            .remove("adviserFloor");
+        assert!(validate_requested_binding(&unresolved, &packet(true, "adviser"), "codex").is_ok());
+    }
+
     fn packet(marker: bool, role: &str) -> Value {
         let mut packet = json!({
             "agent":"adviser","role":role,"goal":"review this task",

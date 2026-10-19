@@ -42,7 +42,8 @@ pub(crate) fn recover(
         let state = run::state::reduce(&events)?;
         run::check_observation::assert_current(loaded, &state)?;
         run::artifact::assert_current(loaded, &state)?;
-        if state["checkObservation"]["binding"]["inputsSha256"] != run::inputs::fingerprint(loaded)?
+        if state["checkObservation"]["binding"]["inputsSha256"]
+            != run::inputs::fingerprint_for_state(loaded, &state)?
         {
             return Err(
                 "recovery requires the original observed inputs; no execution was launched".into(),

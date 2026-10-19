@@ -10,7 +10,10 @@ pub(super) fn validate_requested_binding(
     if packet["guidanceContinuityProtocol"].as_u64()
         != Some(crate::run::guidance_continuity::PROTOCOL)
         || packet["role"] != "adviser"
+        || loaded.config["project"]["adviserFloor"].is_null()
     {
+        // Without an owner floor the configured adviser keeps its pre-floor
+        // behavior; enforcement starts when project.adviserFloor is added.
         return Ok(());
     }
     let agent_id = packet["agent"]

@@ -208,6 +208,9 @@ fn drift_is_machine_readable_warning_and_preserves_the_assignment() {
     ])
     .status
     .success());
+    // The raw-source warning below is the legacy contract; a marked run
+    // ignores a byte-only edit because its advisory hash is unchanged.
+    support::unmark_ledger(&root, ".exitbind/run.jsonl");
     fs::OpenOptions::new()
         .append(true)
         .open(&cfg)

@@ -110,6 +110,8 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                     None,
                 );
                 let work = begin["work"].as_str().unwrap();
+                // The strict config warning below is the legacy contract.
+                support::unmark_work(&fixture.root, work);
                 let ledger = fixture.ledger(work);
                 let before = fs::read(fixture.root.join(&ledger)).unwrap();
                 let config = fixture.root.join("exitbind.json");
@@ -261,6 +263,8 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                     None,
                 );
                 let work = begin["work"].as_str().unwrap().to_owned();
+                // The memory_drift warning below is the legacy contract.
+                support::unmark_work(&fixture.root, &work);
                 let ledger = fixture.ledger(&work);
                 let before = fs::read(fixture.root.join(&ledger)).unwrap();
                 fs::write(fixture.root.join("memory.md"), b"changed memory\n").unwrap();
@@ -297,6 +301,8 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
                     None,
                 );
                 let work = begin["work"].as_str().unwrap();
+                // The profile_drift warning below is the legacy contract.
+                support::unmark_work(&fixture.root, work);
                 let config: Value =
                     serde_json::from_slice(&fs::read(fixture.root.join("exitbind.json")).unwrap())
                         .unwrap();
@@ -455,4 +461,47 @@ fn work_discovery_diagnostics_are_table_driven_and_fail_closed() {
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn marked_no_op_config_edit_does_not_invalidate_the_work() {
+    let fixture = Fixture::new_single();
+    let begin = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "marked diagnostic drift",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    let work = begin["work"].as_str().unwrap();
+    let ledger = fixture.ledger(work);
+    let before = fs::read(fixture.root.join(&ledger)).unwrap();
+    let config = fixture.root.join("exitbind.json");
+    let mut bytes = fs::read(&config).unwrap();
+    bytes.push(b'\n');
+    fs::write(&config, bytes).unwrap();
+    let output = fixture.call(&["work", "next", work, "--json"], None);
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["effect"], "no-change");
+    assert!(
+        !value["next"]["warnings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|warning| warning["classification"] == "config_drift"),
+        "{value}"
+    );
+    assert_eq!(value["nextAction"]["type"], "continue");
+    assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before);
 }

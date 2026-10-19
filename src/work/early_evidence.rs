@@ -425,7 +425,10 @@ pub(crate) fn projection(
     if report["work"] != work || report["requirement"] != expected {
         reasons.push("requirement_or_goal_revision_changed");
     }
-    let inputs = crate::run::inputs::fingerprint(loaded).ok();
+    let inputs = match snapshot.current_input_sha256() {
+        Some(current) => Some(current.to_owned()),
+        None => crate::run::inputs::fingerprint_for_state(loaded, snapshot.state()).ok(),
+    };
     if inputs.is_none() {
         reasons.push("current_inputs_unavailable");
     } else if report["candidateInputsSha256"].as_str() != inputs.as_deref() {

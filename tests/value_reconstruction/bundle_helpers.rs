@@ -23,7 +23,16 @@ fn reconstruct_bundle(root: &Path) -> Result<BundleSnapshot, String> {
         // reader adds only the fixed v8 synthetic scenario's closed fields;
         // it neither claims an exported v8 schema nor derives fields from data.
         for (action, required, allowed) in [
-            ("start", &["governor"][..], &["governor"][..]),
+            (
+                "start",
+                &["governor"][..],
+                &[
+                    "governor",
+                    "guidanceContinuityProtocol",
+                    "guidanceConfigSha256",
+                    "verificationInputContract",
+                ][..],
+            ),
             ("submit", &[][..], &["inputsSha256", "governorEvent"][..]),
             ("check", &["inputsSha256"][..], &["inputsSha256"][..]),
             ("protect", &["inputsSha256"][..], &["inputsSha256"][..]),

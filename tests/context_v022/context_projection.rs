@@ -369,7 +369,14 @@ fn pre_v022_ledger_projects_governor_as_not_applicable() {
     )
     .unwrap();
     event["version"] = json!(5);
-    event.as_object_mut().unwrap().remove("governor");
+    for field in [
+        "governor",
+        "guidanceContinuityProtocol",
+        "guidanceConfigSha256",
+        "verificationInputContract",
+    ] {
+        event.as_object_mut().unwrap().remove(field);
+    }
     let mut unsigned = event.clone();
     unsigned.as_object_mut().unwrap().remove("eventSha256");
     let digest = Sha256::digest(serde_json::to_vec(&unsigned).unwrap());

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 899,
+  "declarations": 913,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1660,7 +1660,7 @@
     }
   ],
   "sourceFileCount": 197,
-  "testAttributes": 898,
+  "testAttributes": 912,
   "ignoreAttributes": 1,
   "repositoryOnlyTargets": [
     "architecture_budget",
@@ -1714,7 +1714,7 @@
     "tests/observe_check/timeouts_and_drift.rs": {
       "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
       "currentSha256": "b3145dab0cdc7469ce70bc63b98d342611f5a3ec8233b4d927822c316a842a7e",
-      "reason": "Preserve the grouped self-reexec selector's actual libtest source-module path and exactly-one-test proof; the marked advisory-config acceptance fixture uses a local control root outside the product fingerprint and retains strict rights/checker refusal cases."
+      "reason": "Preserve original assertions and add marked R52 coverage."
     },
     "tests/init_without_skills.rs": {
       "baselineSha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce",
@@ -1763,8 +1763,8 @@
     },
     "tests/support/mod.rs": {
       "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
-      "currentSha256": "28461f05b86d9f28cb4805b055fb6e0b91e67386037ca29f598cea543d123364",
-      "reason": "Add a pure strict command-descriptor reconstruction helper that honors executable/config requirements separately and refuses PATH fallback or duplicate config arguments; callers retain their existing fixture executors."
+      "currentSha256": "5b57554ccdb1f7a7716ae530c8d251ca01fb7215623dba48697a0e6733f0f2dc",
+      "reason": "Add an unmark-ledger helper that rewrites a start event as a legacy start and recomputes the event hash chain without changing Work or assignment identities."
     },
     "tests/basis_lifecycle/basis_corrections.rs": {
       "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
@@ -1808,8 +1808,8 @@
     },
     "tests/installed_consumer.rs": {
       "baselineSha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71",
-      "currentSha256": "8a8901547377ba8650d784095910ff8e489c895dec633d2b463985c5ebda7b90",
-      "reason": "The two bounded section consumers now reconstruct emitted commands through the existing fixture executor using each route's exact executable and config requirements; all original assertions remain intact."
+      "currentSha256": "56f47381849d108ad5c98e484942c2c9bc490cc3ec078fdd25a187f2f7bc9f1f",
+      "reason": "Keep the original changed-profile expansion refusal on an unmarked Work and add the marked variant where the current profile bytes are served at the next expansion boundary."
     },
     "tests/work_action_refresh.rs": {
       "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
@@ -1833,28 +1833,88 @@
     },
     "tests/project_context.rs": {
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "eb9addbeaa787012905c1f048e5b7534c9c467b659bd79d0759328a6d49515c5",
-      "reason": "Register optional CodeGraph regression coverage in a nested child module while preserving all original fixture bodies and baseline test declarations."
+      "currentSha256": "47903f8007d4ee03c39da7a9d98e6fb1e47b86d956f6cfff0a35d517f3e6fb62",
+      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile."
     },
     "tests/work_check_replacement/source_and_binding_validation.rs": {
       "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
       "currentSha256": "4b770b012ded6ee6bb63f3e41132e2b7dfa676a40d4fe11ebb86f7116c2cd127",
-      "reason": "Prove prepared claim/start binding parity and recovery refusal for missing or unequal optional fields, preserve genuine both-absent legacy lineage, and reject malformed fields and successor identity drift."
+      "reason": "Preserve original assertions and add marked R52 coverage."
     },
     "tests/agent_context_delivery.rs": {
       "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
       "currentSha256": "8eb3c55dd9a7bc0b78d9ad14417f547f4366e281ec38aad70eabaaa7bf3e99c5",
-      "reason": "Register the focused guidance-delivery submodule, preserving the original test bodies and the grouped host_runtime target mapping."
+      "reason": "Preserve original assertions and add marked R52 coverage."
     },
     "tests/continuation_conditions.rs": {
       "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
       "currentSha256": "3e262c04345f7f3467b4fee6fd125b75ce5d4a2fc089a1caf621e950e37cb197",
-      "reason": "Add a marked accepted-result Goal continuity regression: advisory purpose changes preserve support and result-reference currentness, while frozen review-policy tampering and verification-preparation changes remain strict; the grouped target and legacy currentness unit assertion remain."
+      "reason": "Preserve original assertions and add marked R52 coverage."
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
       "currentSha256": "adebbbb48ee0b5c528a28912c2aa40dac6d56d1fe4861495755dfd8fdd74b372",
-      "reason": "The same-Goal successor fixture now rejects a v8 supersession start without the versioned guidance-continuity marker; prior journey and selected-config assertions remain."
+      "reason": "Preserve original assertions and add marked R52 coverage."
+    },
+    "tests/away_native.rs": {
+      "baselineSha256": "5a8ec747744de8914869b7db9c5e80214154e77727c7084ce2fde94b6ac6590e",
+      "currentSha256": "4e2b8ae4b0715b3a40e58fb12fc1917b4b995fd6067cb77a95e38f201acbae4e",
+      "reason": "Keep the original config-drift launch refusal on an unmarked run and add the marked variant where a byte-only config edit proceeds with a harness_receipt_drift warning."
+    },
+    "tests/context_v022/context_projection.rs": {
+      "baselineSha256": "1d69ae1bc8cc171057a0fcf879e017a84c1a265cc3b9a7dff34778d101507673",
+      "currentSha256": "bb5b6cf818b38c551b5a9679697158d905f6cb7a8e6a05c95df25d84b37e99ff",
+      "reason": "The forged pre-v0.2.2 start event drops the version-8 guidance-continuity marker fields before rehashing, matching a real historical ledger."
+    },
+    "tests/contextual_memory.rs": {
+      "baselineSha256": "3b463fe45442ceec5758c2d74f47048bb48ac6f72497403619ac1ccb68ee6af4",
+      "currentSha256": "1ac9a183b617aecb2e63dd534bb53a5e2336aad187cfff7fd4935b5577230d08",
+      "reason": "Keep every original contextual-memory assertion on an unmarked legacy Work and add marked R52 variants: the detail shows the current guidance/selection while the frozen assignment and packet stay unchanged, and a later choice no longer blocks preparation, return or child-result recording."
+    },
+    "tests/contextual_memory/fixture.rs": {
+      "baselineSha256": "2913551c8ee4b8a3227c0495a39d8474f95819bf92d8e550f0a3502fe1a1e6fb",
+      "currentSha256": "0a7deb64555819f238514b6c4beb06d1e4bd831904226196ef678bc464af40cb",
+      "reason": "Add begin/worker-unmarked fixture variants that strip the guidance-continuity marker from a freshly begun Work ledger so the original strict assertions keep running against a legacy Work."
+    },
+    "tests/memory_recall.rs": {
+      "baselineSha256": "867064bacec3ffc52b70c0df81f0fb6962f2f5e82b6380498135725da77def0b",
+      "currentSha256": "37bb98db58584e71152109f69a93d65d2656e458f7b84f9c2905b113697bc0d8",
+      "reason": "Keep the legacy memory_drift warning assertion on an unmarked run and add the marked variant where advisory revocation produces no memory_drift warning and the run stays valid."
+    },
+    "tests/presentation/session_goal_closure.rs": {
+      "baselineSha256": "40f6dad7c7d19f8f683d4138caaa989949d555afac6a2b45c14f299a7a31db2d",
+      "currentSha256": "0f1c23c6250dc965ec0381f00dab7a083584b5aa0de9da1ce42f3307f777cda6",
+      "reason": "Keep the accepted-result config_drift closure on an unmarked Work and add the marked variant where the closure keeps the result with no config_drift warning."
+    },
+    "tests/project_capabilities.rs": {
+      "baselineSha256": "c38e76a17f276e8604faef0aed71164996b027e5f9992f2cab3cc5df33988d2e",
+      "currentSha256": "6cfd7d8afb8bf48618fe849a9f8ad0ac96cc22810d2091fb062b03deb1fca061",
+      "reason": "Keep the original profile/lens/symlink refusals on an unmarked Work and add the marked variant where a changed owner profile is served without invalidating the Work."
+    },
+    "tests/rust_parity.rs": {
+      "baselineSha256": "2a7798050e81cc3a1132f478fc94d04be0479fc2fce110f050aa98d59befa4db",
+      "currentSha256": "d6b4b32f6e351eff048d5c2aa9699d39e7b7bb2766e296a19203418afa54b9ae",
+      "reason": "Keep the raw-source config_drift warning assertion on an unmarked run; a marked run ignores a byte-only edit."
+    },
+    "tests/session_goal_direct/fixture.rs": {
+      "baselineSha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1",
+      "currentSha256": "16130f3ae845c5bd912197a9d7ba3d3c13e206cc00aec01eff3a2d3f355da2f4",
+      "reason": "Mirror the product start-intent projection including the guidance-continuity marker fields plus preReturnPolicy, projectContinuation, quarantineVerification and verification-preparation fields."
+    },
+    "tests/subject_progress/opaque_discovery.rs": {
+      "baselineSha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b",
+      "currentSha256": "12805f8dc2f9bec6a496b926433a90b847d92f73b9b58835184479d93e6efda1",
+      "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged."
+    },
+    "tests/task_local_memory.rs": {
+      "baselineSha256": "3c8e0cc55bd394eb4c35f2066a3bac082781bcdef150ebc85581398f2e757840",
+      "currentSha256": "65c89e20509304e74393bb607b661b198a61d58752c2d8c9751140231ac503d5",
+      "reason": "Keep all original task-local assertions on unmarked legacy Works and add marked variants proving source/guard/revocation/profile changes stay advisory while invalid or expired selections are omitted without invalidating the Work."
+    },
+    "tests/value_reconstruction/bundle_helpers.rs": {
+      "baselineSha256": "4ebf9695251de805362bbf5605c581da8780e8af2556866cb0eca7b545e186fc",
+      "currentSha256": "3b3519a4943e9dacf56a8550ef19e897d81734f2e7c24a164e8d43e71fe5208f",
+      "reason": "The independent v8 bundle reader accepts the three versioned guidance-continuity start fields the current producer writes."
     }
   },
   "additions": [

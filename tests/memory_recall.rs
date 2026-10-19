@@ -276,6 +276,9 @@ fn run_reports_revocation_drift_without_blocking_next() {
         &config,
     ]);
     assert!(started.status.success(), "{}", text(&started));
+    // The strict warning is the legacy contract; the marked variant below
+    // asserts that advisory revocation no longer invalidates a marked run.
+    support::unmark_ledger(&root, ".exitbind/run.jsonl");
     assert!(
         invoke(&["memory", "revoke", "lead", &ledger, "--config", &config,])
             .status
@@ -301,6 +304,50 @@ fn run_reports_revocation_drift_without_blocking_next() {
         .as_str()
         .is_some());
     assert!(!text(&next).contains("accepted invariant"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn marked_run_tolerates_revocation_without_a_memory_drift_warning() {
+    let (root, config) = project();
+    configure(&root, &config, "lead", "protocol-only", 32_768);
+    let ledger = accepted(&root, &config);
+    let started = invoke(&[
+        "run",
+        "start",
+        "change",
+        "--goal",
+        "bounded",
+        "--ledger",
+        ".exitbind/run.jsonl",
+        "--config",
+        &config,
+    ]);
+    assert!(started.status.success(), "{}", text(&started));
+    assert!(
+        invoke(&["memory", "revoke", "lead", &ledger, "--config", &config,])
+            .status
+            .success()
+    );
+    let next = invoke(&[
+        "run",
+        "next",
+        ".exitbind/run.jsonl",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert!(next.status.success(), "{}", text(&next));
+    let diagnostic: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(diagnostic["valid"], true);
+    assert!(
+        !diagnostic["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["classification"] == "memory_drift"),
+        "{diagnostic}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

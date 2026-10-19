@@ -57,7 +57,7 @@ pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<
 pub(crate) fn terminal_display(loaded: &Loaded, ledger: &str) -> Option<&'static str> {
     let snapshot = RunSnapshot::capture(loaded, ledger).ok()?;
     let terminal = crate::work::packet::terminal_display(&snapshot.inspect_view(), || {
-        crate::run::inputs::fingerprint(loaded).ok()
+        crate::run::inputs::fingerprint_for_state(loaded, snapshot.state()).ok()
     });
     match crate::work::locator_for_ledger(ledger) {
         Some(work) => crate::session_goal::terminal_for_work(loaded, &work, terminal)
@@ -752,12 +752,7 @@ pub(super) fn supersede_with_policy_and_recovery(
                 event_value["checkObservationProtocol"] = protocol.clone();
             }
         }
-        let ticket = crate::project::continuation::runtime::prepare_successor(
-            loaded,
-            &old_state,
-            &mut event_value,
-            &new_rel,
-        )?;
+        // Mark before reserving so replay rebuilds the same first event.
         if version == 8 {
             crate::run::guidance_continuity::add_start_marker(&mut event_value, loaded);
             if crate::run::guidance_continuity::enabled(&old_state)
@@ -771,6 +766,12 @@ pub(super) fn supersede_with_policy_and_recovery(
                     .remove(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD);
             }
         }
+        let ticket = crate::project::continuation::runtime::prepare_successor(
+            loaded,
+            &old_state,
+            &mut event_value,
+            &new_rel,
+        )?;
         let event = run_state::make_event(event_value);
         if new.path.exists() {
             let (_, existing, _) = load_at(loaded, &new)?;

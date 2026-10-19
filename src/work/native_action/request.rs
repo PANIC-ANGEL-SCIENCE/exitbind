@@ -186,7 +186,15 @@ fn effective_binding(
     let marked_adviser = role == "adviser"
         && assignment["guidanceContinuityProtocol"].as_u64()
             == Some(crate::run::guidance_continuity::PROTOCOL);
-    if marked_adviser {
+    let floor_configured = !loaded.config["project"]["adviserFloor"].is_null();
+    if marked_adviser && !floor_configured {
+        // Projects created before the floor existed keep their configured
+        // adviser; the owner opts into enforcement by adding the floor.
+        eprintln!(
+            "notice: no project.adviserFloor is configured, so the adviser capability floor is not enforced; add project.adviserFloor to require an approved host/model/effort"
+        );
+    }
+    if marked_adviser && floor_configured {
         current_adviser_binding(loaded, assignment, options)
     } else {
         Ok((

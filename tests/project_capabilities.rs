@@ -237,6 +237,8 @@ fn user_owned_profiles_and_lens_use_confined_sources_without_migration() {
     assert_eq!(context["lead"]["displayName"], "Owner lead");
     assert_eq!(context["lead"]["profilePath"], lead);
     let (work, intent) = f.prepare();
+    // The profile refusal below is the legacy contract for changed bytes.
+    support::unmark_work(&f.root, &work);
     let detail = f.ok(&["work", "detail", &work, "--json"], b"");
     assert_eq!(detail["recipientContext"]["profile"]["path"], profile);
     assert_eq!(
@@ -282,6 +284,29 @@ fn user_owned_profiles_and_lens_use_confined_sources_without_migration() {
     fs::remove_file(f.root.join(profile)).unwrap();
     std::os::unix::fs::symlink(f.root.join("custom-agent.md"), f.root.join(profile)).unwrap();
     assert!(!f.call(&["work", "detail", &work], b"").status.success());
+}
+
+#[test]
+fn marked_profile_change_is_served_at_the_next_delivery_boundary() {
+    let f = Fixture::new();
+    let profile = "your.soulmate/agents/owned-checker/profile.md";
+    fs::create_dir_all(f.root.join(profile).parent().unwrap()).unwrap();
+    fs::write(
+        f.root.join(profile),
+        "Owner checker: preserve unknown values.\n",
+    )
+    .unwrap();
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(f.root.join("exitbind.json")).unwrap()).unwrap();
+    config["agents"]["parcel-checker"]["profile"] = json!(profile);
+    fs::write(f.root.join("exitbind.json"), config.to_string()).unwrap();
+    assert_eq!(f.register()["effect"], "applied");
+    let (work, _intent) = f.prepare();
+    let detail = f.ok(&["work", "detail", &work, "--json"], b"");
+    let reference = detail["reference"].as_str().unwrap().to_owned();
+    fs::write(f.root.join(profile), "Changed owner source.\n").unwrap();
+    let expanded = f.call(&["work", "expand", &work, &reference], b"");
+    assert!(expanded.status.success(), "{expanded:?}");
 }
 
 #[test]

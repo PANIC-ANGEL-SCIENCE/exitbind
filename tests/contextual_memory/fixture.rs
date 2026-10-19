@@ -232,8 +232,8 @@ impl Fixture {
         choice
     }
 
-    pub fn worker(&self, task: &str) -> String {
-        let begun = self.ok(&[
+    pub fn begin_work(&self, task: &str) -> Value {
+        self.ok(&[
             "work",
             "begin",
             "change",
@@ -250,7 +250,10 @@ impl Fixture {
             "--preservation-check-command",
             "true",
             "--json",
-        ]);
+        ])
+    }
+
+    fn scope_return(&self, begun: &Value) -> String {
         let work = begun["work"].as_str().unwrap();
         self.input(
             &[
@@ -265,6 +268,20 @@ impl Fixture {
             "Fixture bounded implementation scope.",
         );
         work.to_owned()
+    }
+
+    pub fn worker(&self, task: &str) -> String {
+        let begun = self.begin_work(task);
+        self.scope_return(&begun)
+    }
+
+    /// A Work that predates guidance continuity: the original strict
+    /// assertions still run against it while the marked Work keeps R52
+    /// advisory behavior.
+    pub fn worker_unmarked(&self, task: &str) -> String {
+        let begun = self.begin_work(task);
+        support::unmark_work(&self.root, begun["work"].as_str().unwrap());
+        self.scope_return(&begun)
     }
 
     pub fn bind_parent(&self, work: &str) {

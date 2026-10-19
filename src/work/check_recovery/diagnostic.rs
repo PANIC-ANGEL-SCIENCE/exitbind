@@ -47,7 +47,7 @@ pub(super) fn inspect(
                 && event["observation"]["facts"] == *facts
         })
         .ok_or("unknown diagnostic has no validated durable failure identity")?;
-    let current_inputs = match run::inputs::fingerprint(loaded) {
+    let current_inputs = match run::inputs::fingerprint_for_state(loaded, state) {
         Ok(current) => {
             json!({"state": if current == observation["binding"]["inputsSha256"] { "matches_admission" } else { "changed" }})
         }

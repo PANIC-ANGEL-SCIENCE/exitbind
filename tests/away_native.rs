@@ -156,6 +156,8 @@ fn required_harness_refuses_before_any_codex_launch() {
         None,
     );
     assert!(bound.status.success(), "{}", text(&bound));
+    // The strict raw-source drift below is the legacy contract.
+    support::unmark_ledger(&root, ".exitbind/bound.jsonl");
     let fake_tmux = root.join("fake-tmux");
     let tmux_marker = root.join("tmux-invoked");
     fs::write(
@@ -207,7 +209,57 @@ fn required_harness_refuses_before_any_codex_launch() {
         .unwrap()
         .next()
         .is_none());
-    fs::write(&config, config_bytes).unwrap();
+    fs::write(&config, &config_bytes).unwrap();
+    // A marked Work tolerates a byte-only no-op config edit: the advisory hash
+    // is unchanged, the launch proceeds, and the receipt warning stays visible.
+    let marked_bound = invoke(
+        &[
+            "run",
+            "start",
+            "change",
+            "--goal",
+            "bounded",
+            "--ledger",
+            ".exitbind/bound-marked.jsonl",
+            "--harness-receipt",
+            ".exitbind/harness-receipt.json",
+            "--config",
+            &config,
+        ],
+        None,
+    );
+    assert!(marked_bound.status.success(), "{}", text(&marked_bound));
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&config)
+        .unwrap()
+        .write_all(b"\n")
+        .unwrap();
+    let marked_drift = invoke_with_tmux(
+        &[
+            "away",
+            "start",
+            "lead",
+            ".exitbind/bound-marked.jsonl",
+            "--require-harness-receipt",
+            "--config",
+            &config,
+        ],
+        &fake,
+        &fake_tmux,
+    );
+    assert!(marked_drift.status.success(), "{}", text(&marked_drift));
+    assert!(
+        text(&marked_drift).contains("harness_receipt_drift"),
+        "{}",
+        text(&marked_drift)
+    );
+    fs::write(&config, &config_bytes).unwrap();
+    let _ = fs::remove_file(&marker);
+    let _ = fs::remove_file(&tmux_marker);
+    for entry in fs::read_dir(root.join(".exitbind/away")).unwrap() {
+        fs::remove_dir_all(entry.unwrap().path()).unwrap();
+    }
     let manifest_path = root.join("harness-manifest.json");
     let manifest_bytes = fs::read(&manifest_path).unwrap();
     let mut changed_manifest: Value = serde_json::from_slice(&manifest_bytes).unwrap();

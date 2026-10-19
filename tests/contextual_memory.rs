@@ -376,7 +376,7 @@ fn work_keeps_its_context_selection_and_hides_changed_guidance_before_native_use
     let f = Fixture::new(true);
     f.accept_lesson();
     let choice = f.select(TASK);
-    let work = f.worker(TASK);
+    let work = f.worker_unmarked(TASK);
     let current = f.ok(&["work", "next", &work, "--full", "--json"]);
     let detail = f.ok(&["work", "detail", &work, "--json"]);
     let reference = &detail["recipientContext"]["projectLessons"]["items"][0]["reference"];
@@ -407,7 +407,7 @@ fn work_keeps_its_context_selection_and_hides_changed_guidance_before_native_use
 fn an_empty_work_choice_cannot_hot_swap_to_newly_selected_guidance() {
     let f = Fixture::new(true);
     f.accept_lesson();
-    let work = f.worker(TASK);
+    let work = f.worker_unmarked(TASK);
     let current = f.ok(&["work", "next", &work, "--full", "--json"]);
     let captured = current["next"]["packet"]["memoryReferences"].clone();
     assert_eq!(captured, json!([]));
@@ -514,7 +514,7 @@ fn specialist_candidates_and_delivery_share_the_explicit_paraphrase_choice() {
 fn specialist_child_preparation_refuses_a_changed_work_choice_without_an_intent() {
     let f = Fixture::specialist();
     f.context(SPECIALIST_TASK, "A", vec![]);
-    let work = f.worker(SPECIALIST_TASK);
+    let work = f.worker_unmarked(SPECIALIST_TASK);
     let captured = f.ok(&["work", "next", &work, "--full", "--json"]);
     assert_eq!(captured["next"]["packet"]["memoryReferences"], json!([]));
     f.bind_parent(&work);
@@ -549,7 +549,7 @@ fn specialist_child_preparation_refuses_a_changed_work_choice_without_an_intent(
 fn specialist_child_context_and_start_cannot_adopt_a_later_work_choice() {
     let f = Fixture::specialist();
     f.context(SPECIALIST_TASK, "A", vec![]);
-    let work = f.worker(SPECIALIST_TASK);
+    let work = f.worker_unmarked(SPECIALIST_TASK);
     f.bind_parent(&work);
     let prepared = f.prepare_child(&work);
     assert!(prepared.status.success(), "{prepared:?}");
@@ -617,7 +617,7 @@ fn specialist_child_context_and_start_cannot_adopt_a_later_work_choice() {
 fn specialist_only_context_change_refuses_worker_return_without_a_result_event() {
     let f = Fixture::specialist();
     f.context(SPECIALIST_TASK, "A", vec![]);
-    let work = f.worker(SPECIALIST_TASK);
+    let work = f.worker_unmarked(SPECIALIST_TASK);
     let current = f.ok(&["work", "next", &work, "--full", "--json"]);
     assert_eq!(current["next"]["packet"]["memoryReferences"], json!([]));
     let assignment = current["next"]["assignment"].as_str().unwrap();
@@ -671,7 +671,7 @@ fn a_delivered_specialist_child_result_is_retained_after_its_work_choice_changes
     let f = Fixture::specialist();
     let choice = f.choice("record-specialist", SPECIALIST_TASK);
     f.context(SPECIALIST_TASK, "A", vec![choice.clone()]);
-    let work = f.worker(SPECIALIST_TASK);
+    let work = f.worker_unmarked(SPECIALIST_TASK);
     f.bind_parent(&work);
     let prepared = f.prepare_child(&work);
     assert!(prepared.status.success(), "{prepared:?}");
@@ -909,6 +909,166 @@ fn contextual_migration_preserves_the_original_independent_specialist_review_pro
     }
     assert_eq!(fs::read(f.root.join("prior.json")).unwrap(), original);
     assert_eq!(fs::read(f.root.join("specialist.json")).unwrap(), source);
+}
+
+#[test]
+fn marked_work_shows_the_current_guidance_while_keeping_its_frozen_selection() {
+    let f = Fixture::new(true);
+    f.accept_lesson();
+    let choice = f.select(TASK);
+    let work = f.worker(TASK);
+    let captured = f.ok(&["work", "next", &work, "--full", "--json"])["next"]["packet"]
+        ["memoryReferences"]
+        .clone();
+    f.context(TASK, "r2", vec![choice]);
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(detail["recipientContext"]["available"], true, "{detail}");
+    let reference = &detail["recipientContext"]["projectLessons"]["items"][0]["reference"];
+    assert_eq!(
+        reference["contextSelection"]["contextRevision"], "r2",
+        "{detail}"
+    );
+    let mut expected = captured.clone();
+    for reference in expected.as_array_mut().unwrap() {
+        let fields = reference.as_object_mut().unwrap();
+        fields.remove("sourcePath");
+        fields.remove("ledgerPath");
+    }
+    assert_eq!(
+        detail["sections"]["assignment"]["assignment"]["memoryReferences"], expected,
+        "the marked Work keeps its frozen selection"
+    );
+}
+
+#[test]
+fn marked_empty_work_choice_keeps_the_existing_work_and_delivers_the_new_selection() {
+    let f = Fixture::new(true);
+    f.accept_lesson();
+    let work = f.worker(TASK);
+    let captured = f.ok(&["work", "next", &work, "--full", "--json"])["next"]["packet"]
+        ["memoryReferences"]
+        .clone();
+    assert_eq!(captured, json!([]));
+    f.select(TASK);
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(detail["recipientContext"]["available"], true, "{detail}");
+    assert!(
+        detail["recipientContext"].to_string().contains(FACT),
+        "{detail}"
+    );
+    assert_eq!(
+        detail["sections"]["assignment"]["assignment"]["memoryReferences"],
+        json!([])
+    );
+}
+
+#[test]
+fn marked_specialist_child_preparation_uses_the_current_selection() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    let token = f.child_token(&work);
+    f.select_specialist();
+    let prepared = f.call(&[
+        "work",
+        "child",
+        "prepare",
+        &work,
+        "contextual-specialist",
+        "--context",
+        &token,
+        "--agent-type",
+        "record_specialist",
+    ]);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(prepared["selected"]["agent"], "record-specialist");
+}
+
+#[test]
+fn marked_work_tolerates_a_later_choice_without_a_memory_drift_warning() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    f.select_specialist();
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(detail["recipientContext"]["available"], true, "{detail}");
+    assert!(
+        !detail["effectiveAction"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["classification"] == "memory_drift"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn marked_specialist_context_change_does_not_block_worker_return() {
+    let f = Fixture::specialist();
+    f.context(SPECIALIST_TASK, "A", vec![]);
+    let work = f.worker(SPECIALIST_TASK);
+    let current = f.ok(&["work", "next", &work, "--full", "--json"]);
+    let assignment = current["next"]["assignment"].as_str().unwrap();
+    f.select_specialist();
+    let returned = f.input_result(
+        &[
+            "work",
+            "return",
+            &work,
+            assignment,
+            "--outcome",
+            "completed",
+            "--reason",
+            "A marked Work keeps the accepted result.",
+            "--json",
+        ],
+        "This result is accepted under the marked contract.",
+    );
+    assert!(returned.status.success(), "{returned:?}");
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert!(
+        detail["sections"]["evidence"]
+            .to_string()
+            .contains("This result is accepted under the marked contract."),
+        "{detail}"
+    );
+}
+
+#[test]
+fn marked_delivered_specialist_child_result_is_recorded_after_a_later_choice() {
+    let f = Fixture::specialist();
+    let choice = f.choice("record-specialist", SPECIALIST_TASK);
+    f.context(SPECIALIST_TASK, "A", vec![choice.clone()]);
+    let work = f.worker(SPECIALIST_TASK);
+    f.bind_parent(&work);
+    let prepared = f.prepare_child(&work);
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let intent = prepared["intent"].as_str().unwrap();
+    let hook = f.child_start("marked-specialist");
+    assert!(
+        hook["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains(SPECIALIST_GUIDANCE),
+        "{hook}"
+    );
+    f.context(SPECIALIST_TASK, "B", vec![choice]);
+    f.child_stop("marked-specialist", "Recorded under the marked contract.");
+    let state: Value =
+        serde_json::from_slice(&fs::read(f.root.join(".exitbind/child-intents.json")).unwrap())
+            .unwrap();
+    let child = state["intents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == intent)
+        .unwrap();
+    assert_eq!(child["state"], "recorded", "{child}");
+    assert!(child["resultSha256"].is_string(), "{child}");
 }
 
 fn diagnostic(output: &std::process::Output) -> String {

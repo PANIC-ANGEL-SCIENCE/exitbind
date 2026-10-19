@@ -3,6 +3,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub mod git_topology;
@@ -20,6 +21,79 @@ pub fn temp(label: &str) -> PathBuf {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => panic!("create test directory: {error}"),
         }
+    }
+}
+
+/// Rewrite a Work ledger's start event as a legacy (unmarked) start event and
+/// recompute its hash chain. A Work handle is derived from the ledger file name
+/// and assignment handles do not hash the start event, so both stay valid.
+#[allow(dead_code)]
+pub fn unmark_work(root: &Path, work: &str) {
+    let token = work.strip_prefix("smw_").expect("Work locator");
+    unmark_ledger(root, &format!(".exitbind/runs/work-{token}.jsonl"));
+}
+
+/// Same rewrite for a ledger that is not a Work locator, such as `run start`.
+#[allow(dead_code)]
+pub fn unmark_ledger(root: &Path, ledger: &str) {
+    let path = root.join(ledger);
+    let text = std::fs::read_to_string(&path).expect("read ledger");
+    let mut events = text
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("ledger event"))
+        .collect::<Vec<_>>();
+    for field in [
+        "guidanceContinuityProtocol",
+        "guidanceConfigSha256",
+        "verificationInputContract",
+    ] {
+        events[0]
+            .as_object_mut()
+            .expect("ledger start event")
+            .remove(field);
+    }
+    let mut previous = Value::Null;
+    let mut lines = Vec::with_capacity(events.len());
+    for event in &mut events {
+        event["previousEventSha256"] = previous.clone();
+        let mut unsigned = event.clone();
+        unsigned
+            .as_object_mut()
+            .expect("ledger event")
+            .remove("eventSha256");
+        let event_hash = format!("{:x}", Sha256::digest(canonical(&unsigned).as_bytes()));
+        event["eventSha256"] = Value::String(event_hash.clone());
+        previous = Value::String(event_hash);
+        lines.push(serde_json::to_string(event).expect("serialize ledger event"));
+    }
+    std::fs::write(&path, format!("{}\n", lines.join("\n"))).expect("rewrite ledger");
+}
+
+fn canonical(value: &Value) -> String {
+    match value {
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            let fields = keys
+                .into_iter()
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("JSON key serializes"),
+                        canonical(&object[key])
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{fields}}}")
+        }
+        Value::Array(values) => {
+            format!(
+                "[{}]",
+                values.iter().map(canonical).collect::<Vec<_>>().join(",")
+            )
+        }
+        _ => serde_json::to_string(value).expect("JSON value serializes"),
     }
 }
 

@@ -8,6 +8,8 @@ pub(crate) const MAX_TIMEOUT_MS: u64 = 86_400_000;
 
 /// New marked observations execute only the run's frozen configuration and
 /// its still-current selected contract. Historical runs retain drift warnings.
+const FROZEN_CONFIG_REQUIRED: &str = "check observation requires the frozen current configuration; inspect the Work and use authorized supersession for a changed configuration";
+
 pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), String> {
     if state["checkObservationProtocol"] != PROTOCOL {
         return Ok(());
@@ -24,9 +26,10 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
         || current.mode != loaded.mode
         || current.project_id != loaded.project_id
     {
-        return Err("check observation configuration layout changed; inspect the Work and use authorized supersession".into());
+        return Err(FROZEN_CONFIG_REQUIRED.into());
     }
-    crate::run::guidance_continuity::assert_config_current(&current, state)?;
+    crate::run::guidance_continuity::assert_config_current(&current, state)
+        .map_err(|_| FROZEN_CONFIG_REQUIRED.to_owned())?;
     crate::project::architecture::assert_current(&current)?;
     crate::run::verification_preparation::assert_checker_sources_current(state)
 }

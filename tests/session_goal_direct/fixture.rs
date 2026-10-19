@@ -267,6 +267,7 @@ pub(crate) fn start_intent_sha256(start: &Value) -> String {
         "plan",
         "harnessReceipt",
         "checkPolicy",
+        "preReturnPolicy",
         "preservation",
         "basisProtocol",
         "recoveryProtocol",
@@ -274,6 +275,13 @@ pub(crate) fn start_intent_sha256(start: &Value) -> String {
         "basis",
         "reviewPolicy",
         "governor",
+        "projectContinuation",
+        "quarantineVerification",
+        "verificationPreparationProtocol",
+        "verificationCheckerSources",
+        "guidanceContinuityProtocol",
+        "guidanceConfigSha256",
+        "verificationInputContract",
     ];
     let mut projection = Map::new();
     for field in FIELDS {

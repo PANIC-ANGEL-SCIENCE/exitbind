@@ -277,22 +277,13 @@ pub fn observe_check_for_requirement(
         // allowed by the frozen influence hash, while strict policy, checker,
         // architecture, and layout changes still refuse credit.
         check_observation::assert_current(loaded, &current_state)?;
-        if admission.is_some() {
-            if current_state["inputsSha256"] != identity["inputsSha256"] {
-                return Err(
-                    "tested input binding changed before commit; no check was recorded".into(),
-                );
-            }
-            if current_state["subject"]["sha256"] != identity["subjectSha256"] {
-                return Err("subject binding changed before commit; no check was recorded".into());
-            }
-            if crate::producer::build_identity()["executableSha256"]
-                != identity["observerExecutableSha256"]
-            {
-                return Err(
-                    "observer executable changed before commit; no check was recorded".into(),
-                );
-            }
+        if admission.is_some()
+            && (current_state["inputsSha256"] != identity["inputsSha256"]
+                || current_state["subject"]["sha256"] != identity["subjectSha256"]
+                || crate::producer::build_identity()["executableSha256"]
+                    != identity["observerExecutableSha256"])
+        {
+            return Err("observation binding changed before commit; no check was recorded".into());
         }
         let warning = action_drift_warning(loaded, &current_state)?;
         crate::memory::contextual::assert_plan(loaded, &current_state)?;

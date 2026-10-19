@@ -10,6 +10,8 @@ use serde_json::{json, Value};
 
 const MAX_PRETTY_BYTES: usize = 4 * 1024;
 const MAX_LINES: usize = 50;
+const MAX_NEXT_ACTIONS: usize = 3;
+const MAX_OPERATION_BYTES: usize = 120;
 
 pub(super) fn project(
     record: &Value,
@@ -31,6 +33,8 @@ pub(super) fn project(
             "assignment": {"state":"unknown"},
             "phase": {"state":"unknown"},
             "checkReferences": {"current": null, "historical": null},
+            "pendingEffects": "unknown",
+            "nextActions": [],
             "routes": [],
         }));
     };
@@ -61,6 +65,8 @@ pub(super) fn project(
             "assignment":{"state":"unknown"},
             "phase":{"state":"unknown"},
             "checkReferences":{"current":null,"historical":historical},
+            "pendingEffects":"unknown",
+            "nextActions":[],
             "routes":routes,
         });
         return bounded(result);
@@ -198,6 +204,8 @@ pub(super) fn project(
         "readiness":detail["effectiveAction"]["readiness"],
     });
     let check_references = check_references(&state, &detail, &historical);
+    let pending_effects = pending_effects(hint.pending_operation.is_some(), &state, &detail);
+    let next_actions = next_actions(&detail);
     bounded(json!({
         "protocol":1,
         "state":"current_detail_observed",
@@ -210,8 +218,55 @@ pub(super) fn project(
         "phase":{"stage":state["currentStage"],"attempt":state["attempt"],"status":state["status"]},
         "currentWorkDetail":current,
         "checkReferences":check_references,
+        "pendingEffects":pending_effects,
+        "nextActions":next_actions,
         "routes":routes,
     }))
+}
+
+/// Effects that may have started but whose outcome this read cannot confirm.
+/// They are listed, never dropped, so a short card cannot hide unresolved work.
+fn pending_effects(pending_operation: bool, state: &Value, detail: &Value) -> Vec<String> {
+    let mut effects = Vec::new();
+    if pending_operation {
+        effects.push("pending_operation|readRoutes.pendingOperation".to_owned());
+    }
+    let observation = &state["checkObservation"];
+    match observation["state"].as_str() {
+        Some("running") => effects.push("check_observation|running_or_unknown".to_owned()),
+        Some("failed") if observation["facts"]["termination"] == "unknown" => {
+            effects.push("check_observation|failed_unknown_termination".to_owned())
+        }
+        _ => {}
+    }
+    if let Some(operation) = detail["effectiveAction"]["currentGrant"]["operation"].as_str() {
+        let mut end = operation.len().min(MAX_OPERATION_BYTES);
+        while !operation.is_char_boundary(end) {
+            end -= 1;
+        }
+        effects.push(format!("mutation_grant|{}", &operation[..end]));
+    }
+    effects
+}
+
+/// Up to three intended next actions taken from the freshly rendered action
+/// form; they are navigation only and must be refreshed before execution.
+fn next_actions(detail: &Value) -> Vec<String> {
+    let action = &detail["effectiveAction"];
+    let mut actions = action["choices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|choice| choice["label"].as_str())
+        .take(MAX_NEXT_ACTIONS)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if actions.is_empty() {
+        if let Some(kind) = action["kind"].as_str() {
+            actions.push(kind.to_owned());
+        }
+    }
+    actions
 }
 
 /// Compact check anchors encode `eventSha256|targetEventSha256|attempt`.
@@ -278,6 +333,8 @@ fn unavailable(
         "phase":{"state":"unknown"},
         "currentWorkDetail":null,
         "checkReferences":{"current":null,"historical":historical},
+        "pendingEffects":"unknown",
+        "nextActions":[],
         "routes":routes,
     }))
 }
@@ -296,6 +353,37 @@ fn bounded(value: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_effects_and_next_actions_stay_bounded_and_never_drop_unknowns() {
+        let state =
+            json!({"checkObservation":{"state":"failed","facts":{"termination":"unknown"}}});
+        let detail = json!({"effectiveAction":{
+            "kind":"spawn",
+            "currentGrant":{"operation":"x".repeat(300)},
+            "choices":[{"label":"completed"},{"label":"blocked"},{"label":"contradiction"},{"label":"extra"}]
+        }});
+        let effects = pending_effects(true, &state, &detail);
+        assert_eq!(effects[0], "pending_operation|readRoutes.pendingOperation");
+        assert_eq!(effects[1], "check_observation|failed_unknown_termination");
+        assert_eq!(
+            effects[2].len(),
+            "mutation_grant|".len() + MAX_OPERATION_BYTES
+        );
+        assert_eq!(
+            next_actions(&detail),
+            ["completed", "blocked", "contradiction"]
+        );
+
+        let running = json!({"checkObservation":{"state":"running"}});
+        let idle = json!({"effectiveAction":{"kind":"check","choices":[]}});
+        assert_eq!(
+            pending_effects(false, &running, &idle),
+            ["check_observation|running_or_unknown"]
+        );
+        assert_eq!(next_actions(&idle), ["check"]);
+        assert!(pending_effects(false, &json!({}), &json!({})).is_empty());
+    }
 
     #[test]
     fn check_references_keep_current_and_historical_exact_anchors_separate() {

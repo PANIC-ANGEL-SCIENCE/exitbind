@@ -329,6 +329,8 @@ fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
     drop(cut);
     let resume = f.ok(&["work", "resume", "--json"]);
     let work = resume["work"].as_str().unwrap();
+    // The refusal below is the legacy contract for a changed profile.
+    support::unmark_work(&f.root, work);
     let status = f.ok(&["work", "next", work, "--json"]);
     let binding = &status["current"]["binding"];
     let mut recovered_recipient = Value::Null;
@@ -402,4 +404,37 @@ fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
         .call(&["work", "expand", work, reference, "--json"])
         .status
         .success());
+}
+
+#[test]
+fn marked_profile_change_is_served_at_the_next_expansion_boundary() {
+    let f = Fixture::new(Some("Mira"));
+    let config: Value =
+        serde_json::from_slice(&fs::read(f.root.join("exitbind.json")).unwrap()).unwrap();
+    let profile_path = f
+        .root
+        .join(config["agents"]["captain"]["profile"].as_str().unwrap());
+    let profile = "Own the selected goal; no worker label grants Lead authority.\n".repeat(300);
+    fs::write(&profile_path, &profile).unwrap();
+    let first = f.call(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "cut reply recovery",
+        "--check-command",
+        "true",
+        "--review-policy",
+        "required",
+    ]);
+    assert!(first.status.success(), "{first:?}");
+    let first: Value = serde_json::from_slice(&first.stdout).unwrap();
+    let work = first["work"].as_str().unwrap().to_owned();
+    let status = f.ok(&["work", "next", &work, "--json"]);
+    let reference = status["current"]["details"]["recipient"]["reference"]
+        .as_str()
+        .unwrap();
+    fs::write(&profile_path, format!("{profile}Changed instruction\n")).unwrap();
+    let expanded = f.call(&["work", "expand", &work, reference, "--json"]);
+    assert!(expanded.status.success(), "{expanded:?}");
 }
