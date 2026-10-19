@@ -4,6 +4,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 mod activation;
+mod context;
 pub(crate) use activation::{assess_activation, classify_activation, Activation, ActivationFacts};
 
 const MAX_INPUT: usize = 64 * 1024;
@@ -293,7 +294,7 @@ pub fn run() -> Result<(), String> {
                 ),
             );
         }
-        let Some(mut context) = format_agent_context(
+        let Some(mut context) = context::format_agent_context(
             &loaded.control_root,
             &agent,
             configured,
@@ -309,9 +310,10 @@ pub fn run() -> Result<(), String> {
                     let matches = child["configuredAgent"] == agent
                         && matches!(
                             &selected,
-                            super::assignment_context::Selection::Bound { work, assignment, .. }
+                            super::assignment_context::Selection::Bound { work, assignment, guidance, .. }
                                 if child["work"] == work.as_str()
                                     && child["assignment"] == assignment.as_str()
+                                    && child["guidance"] == *guidance
                         );
                     if !matches {
                         return emit(
@@ -519,108 +521,6 @@ fn exact_agent(
         selected = Some((*name).clone());
     }
     selected
-}
-
-fn format_agent_context(
-    project: &Path,
-    agent: &str,
-    config: &crate::config::types::AgentConfig,
-    path: &Path,
-    source: &str,
-    selection: &super::assignment_context::Selection,
-) -> Option<String> {
-    let list = |items: &[String]| {
-        if items.is_empty() {
-            "none".into()
-        } else {
-            items
-                .iter()
-                .map(|item| safe_inline(item))
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
-    };
-    let relative = path
-        .strip_prefix(project)
-        .ok()?
-        .to_str()?
-        .replace('\\', "/");
-    let native = config.native_name(agent);
-    let product = if crate::producer::exitbind_surface() {
-        "Exitbind"
-    } else {
-        "Soulmate"
-    };
-    let presented = redact(source);
-    let mut lines = vec![
-        format!("{product} plan-only context for {agent} (native event reported this agent)."),
-        format!("Agent ID: {}", safe_inline(agent)),
-        format!("Native task name: {}", safe_inline(&native)),
-        format!("Profile selected/presented: {}", safe_inline(&relative)),
-        format!("Profile SHA-256: {}", crate::evidence::hash::text(source)),
-        format!("Presented profile SHA-256: {} (after path redaction).", crate::evidence::hash::text(&presented)),
-        "Evidence is selected/presented bytes; it does not prove a model read or followed the profile.".into(),
-        "Declared boundary:".into(),
-    ];
-    for (key, values) in [
-        ("observe", &config.observe),
-        ("write", &config.write),
-        ("commands", &config.commands),
-        ("skills", &config.skills),
-        ("memoryRead", &config.memory_read),
-        ("memoryWrite", &config.memory_write),
-        ("memoryReview", &config.memory_review),
-        ("memoryPromote", &config.memory_promote),
-        ("memoryReject", &config.memory_reject),
-        ("memoryRevoke", &config.memory_revoke),
-        ("memoryExpire", &config.memory_expire),
-        ("memoryForget", &config.memory_forget),
-    ] {
-        lines.push(format!("  {key}: {}", list(values)));
-    }
-    lines.push(format!("  retention: {}", safe_inline(&config.retention)));
-    lines.push(format!(
-        "  crossContext: {}",
-        safe_inline(&config.cross_context)
-    ));
-    match selection {
-        super::assignment_context::Selection::Bound {
-            work,
-            assignment,
-            packet_digest,
-            provenance,
-            architecture,
-            ..
-        } => {
-            lines.push(format!(
-                "Current assignment: work {work}, assignment {assignment}, packet digest {packet_digest}."
-            ));
-            lines.push("Base profile is associated with this current assignment; model use is not inferred.".into());
-            if let Some(architecture) = architecture {
-                lines.push(format!(
-                    "Current architecture contract slice: {architecture}"
-                ));
-            }
-            lines.push(format!(
-                "Assignment provenance: project {}, work {}, assignment {}, role {}, configured agent {}, native task {}, profile source SHA-256 {}, packet context SHA-256 {}, project rules projection SHA-256 {}, root scope {}.",
-                safe_inline(&provenance.project),
-                safe_inline(&provenance.work),
-                safe_inline(&provenance.assignment),
-                safe_inline(&provenance.role),
-                safe_inline(&provenance.agent),
-                safe_inline(&provenance.native),
-                safe_inline(&provenance.profile_sha256),
-                safe_inline(&provenance.packet_digest),
-                safe_inline(&provenance.rules_sha256),
-                safe_inline(&provenance.root_scope),
-            ));
-            lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
-        }
-        _ => lines.push("No current governed assignment was acquired for this profile.".into()),
-    }
-    lines.push("Profile bytes:".into());
-    lines.push(presented);
-    Some(lines.join("\n"))
 }
 
 fn session_summary(config: &Value, lead_display: &str) -> String {

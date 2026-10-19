@@ -5,18 +5,22 @@
 //! instruction and memory source is delivered as complete UTF-8 bytes, with a
 //! bounded refusal when the complete projection cannot fit.
 
-use crate::{
-    config::Loaded,
-    evidence::hash,
-    memory,
-    project::{agent_rules, path},
-};
+use crate::{config::Loaded, evidence::hash, memory, project::agent_rules};
 use serde_json::{json, Value};
 
+mod guidance;
+pub(crate) use guidance::{guidance, guidance_for_assignment, selected_content};
+
+pub(crate) fn contextual_host_is_pinned(
+    loaded: &Loaded,
+    agent: &str,
+    task: &str,
+    host: &str,
+) -> bool {
+    guidance::contextual_host_is_pinned(loaded, agent, task, host)
+}
+
 const MAX_CONTEXT_BYTES: usize = 64 * 1024;
-const MAX_MEMORY_ITEM_BYTES: usize = 16 * 1024;
-const MAX_MEMORY_ITEMS: usize = 8;
-const MAX_REFERENCE_BYTES: usize = 8 * 1024;
 
 /// The provider binding requested for this particular native launch.  It is
 /// deliberately separate from the configured role and the Work identity.
@@ -81,22 +85,14 @@ fn project_parts_after_reads(
     let rules = current_rules(loaded)?;
     let architecture = super::architecture::delivery(loaded, packet)?;
     let capabilities = super::capabilities::delivery(loaded, packet, binding.host)?;
-    let references =
-        memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
-    let generic_references: Vec<_> = references
-        .iter()
-        .filter(|reference| reference["scope"] != memory::lessons::SCOPE)
-        .cloned()
-        .collect();
-    if generic_references.len() > MAX_MEMORY_ITEMS {
-        return Err(format!(
-            "native current context has {} eligible memory items; the limit is {MAX_MEMORY_ITEMS}; use a smaller role-scoped selection",
-            generic_references.len()
-        ));
-    }
-    let memory = current_memory(loaded, &generic_references)?;
-    let lessons =
-        memory::lessons::delivery(loaded, agent_name, packet["goal"].as_str().unwrap_or(""))?;
+    let mut guidance = guidance::guidance_for_assignment(
+        loaded,
+        agent_name,
+        packet["goal"].as_str(),
+        binding.host,
+        MAX_CONTEXT_BYTES / 2,
+        packet,
+    )?;
     let specialist = super::specialists::delivery(
         loaded,
         agent_name,
@@ -168,45 +164,9 @@ fn project_parts_after_reads(
             "requestedNativeBinding": binding_value,
         }),
     )?;
-    volatile.push_str("\nELIGIBLE ROLE-SCOPED OPTED-IN MEMORY (complete current UTF-8 bytes):\n");
-    if memory.is_empty() {
-        volatile.push_str("(none)\n");
-    } else {
-        for (reference, content) in memory {
-            let scope = reference["scope"].as_str().ok_or("invalid memory scope")?;
-            let source = reference["sourcePath"]
-                .as_str()
-                .ok_or("invalid memory source path")?;
-            let digest = reference["sourceSha256"]
-                .as_str()
-                .ok_or("invalid memory source hash")?;
-            append_block(
-                &mut volatile,
-                &format!("MEMORY [{scope}]"),
-                source,
-                digest,
-                &content,
-            )?;
-            let reference_line = format!(
-                "  reference: {}\n",
-                serde_json::to_string(&reference).map_err(|error| error.to_string())?
-            );
-            push_complete(&mut volatile, &reference_line)?;
-        }
-    }
-
-    // Re-check both the packet and the role-scoped memory after all reads.  A
-    // revoked item, changed source, or advanced Work therefore fails closed
-    // before a provider process can start.
-    if let Some(lessons) = lessons {
-        push_complete(
-            &mut volatile,
-            &format!(
-                "\nCURRENT APPLICABLE PROJECT LESSONS:\n{}\n",
-                serde_json::to_string(&lessons).map_err(|error| error.to_string())?
-            ),
-        )?;
-    }
+    // Re-check hard authority and assignment inputs after all reads. Optional
+    // guidance is filtered again below, so revocation or source loss omits its
+    // bytes without blocking the unrelated launch.
     if let Some(specialist) = &specialist {
         push_section(
             &mut volatile,
@@ -238,17 +198,37 @@ fn project_parts_after_reads(
     let fresh = crate::work::next(loaded, work)?;
     let fresh_next = &fresh["next"];
     let fresh_rules = current_rules(loaded)?;
-    let fresh_references =
-        memory::selection::resolve_for_task(loaded, agent_name, packet["goal"].as_str())?;
-    validate_fresh_context(
-        assignment,
-        &packet_sha256,
-        fresh_next,
-        &rules,
-        &fresh_rules,
-        &references,
-        &fresh_references,
+    validate_fresh_context(assignment, &packet_sha256, fresh_next, &rules, &fresh_rules)?;
+    let (scope_ceiling, cross_context_ceiling) = if crate::run::guidance_continuity::enabled(packet)
+    {
+        let scope = packet["frozenMemoryRead"]
+            .as_array()
+            .ok_or("marked assignment has no frozen memory-read ceiling")?
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("marked assignment has an invalid frozen memory-read ceiling")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let cross = packet["frozenCrossContext"]
+            .as_str()
+            .ok_or("marked assignment has no frozen cross-context ceiling")?;
+        (Some(scope), Some(cross))
+    } else {
+        (None, None)
+    };
+    guidance::retain_current(
+        loaded,
+        agent_name,
+        packet["goal"].as_str(),
+        binding.host,
+        scope_ceiling.as_deref(),
+        cross_context_ceiling,
+        &mut guidance,
     )?;
+    push_section(&mut volatile, "CURRENT ELIGIBLE GUIDANCE", &guidance)?;
     if stable.len().saturating_add(volatile.len()) > MAX_CONTEXT_BYTES {
         return Err(format!(
             "native current context exceeds the {MAX_CONTEXT_BYTES}-byte bound; launch refused so project rules and memory are not silently truncated"
@@ -263,8 +243,6 @@ fn validate_fresh_context(
     fresh_next: &Value,
     rules: &[(String, String, String)],
     fresh_rules: &[(String, String, String)],
-    references: &[Value],
-    fresh_references: &[Value],
 ) -> Result<(), String> {
     if fresh_next["action"] != "spawn"
         || fresh_next["assignment"] != assignment
@@ -278,12 +256,6 @@ fn validate_fresh_context(
     if fresh_rules != rules {
         return Err(
             "project rules changed before native launch; refresh the assignment instead of using stale instructions".into(),
-        );
-    }
-    if fresh_references != references {
-        return Err(
-            "role-scoped project memory changed before native launch; refresh the assignment"
-                .into(),
         );
     }
     Ok(())
@@ -335,39 +307,6 @@ pub(crate) fn current_rules(loaded: &Loaded) -> Result<Vec<(String, String, Stri
     agent_rules::current(loaded)
 }
 
-fn current_memory(loaded: &Loaded, references: &[Value]) -> Result<Vec<(Value, String)>, String> {
-    let mut result = Vec::with_capacity(references.len());
-    for reference in references {
-        let source = reference["sourcePath"]
-            .as_str()
-            .ok_or("invalid memory source path")?;
-        let expected = reference["sourceSha256"]
-            .as_str()
-            .ok_or("invalid memory source hash")?;
-        let bytes = path::secure_bytes(&loaded.product_root, source, "memory source")?;
-        if bytes.len() > MAX_MEMORY_ITEM_BYTES {
-            return Err(format!(
-                "memory source {source} exceeds the {MAX_MEMORY_ITEM_BYTES}-byte native delivery bound; launch refused so rules are not truncated"
-            ));
-        }
-        if hash::bytes(&bytes) != expected {
-            return Err(format!(
-                "memory source changed before native launch: {source}"
-            ));
-        }
-        let content = String::from_utf8(bytes)
-            .map_err(|_| format!("memory source {source} is not UTF-8; launch refused"))?;
-        let reference_bytes = serde_json::to_vec(reference).map_err(|error| error.to_string())?;
-        if reference_bytes.len() > MAX_REFERENCE_BYTES {
-            return Err(format!(
-                "memory reference {source} exceeds the {MAX_REFERENCE_BYTES}-byte native delivery bound"
-            ));
-        }
-        result.push((reference.clone(), content));
-    }
-    Ok(result)
-}
-
 fn push_section(text: &mut String, title: &str, value: &Value) -> Result<(), String> {
     let serialized = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
     push_complete(text, &format!("{title}:\n{serialized}\n"))
@@ -407,7 +346,6 @@ mod tests {
         String,
         serde_json::Value,
         Vec<(String, String, String)>,
-        Vec<serde_json::Value>,
     );
 
     fn baseline() -> Baseline {
@@ -419,73 +357,25 @@ mod tests {
             "rule-sha".to_owned(),
             "stable rule bytes".to_owned(),
         )];
-        let references = vec![
-            json!({"sourcePath":"memory/current.md", "sourceSha256":"memory-sha", "scope":"invariants"}),
-        ];
-        (
-            "assignment-1".to_owned(),
-            packet_sha,
-            next,
-            rules,
-            references,
-        )
+        ("assignment-1".to_owned(), packet_sha, next, rules)
     }
 
     #[test]
     fn synchronized_work_rule_and_memory_changes_fail_at_the_changed_boundary() {
-        let (assignment, packet_sha, next, rules, references) = baseline();
-        assert!(validate_fresh_context(
-            &assignment,
-            &packet_sha,
-            &next,
-            &rules,
-            &rules,
-            &references,
-            &references,
-        )
-        .is_ok());
+        let (assignment, packet_sha, next, rules) = baseline();
+        assert!(validate_fresh_context(&assignment, &packet_sha, &next, &rules, &rules,).is_ok());
 
         let mut changed_work = next.clone();
         changed_work["assignment"] = json!("assignment-2");
-        let error = validate_fresh_context(
-            &assignment,
-            &packet_sha,
-            &changed_work,
-            &rules,
-            &rules,
-            &references,
-            &references,
-        )
-        .unwrap_err();
+        let error = validate_fresh_context(&assignment, &packet_sha, &changed_work, &rules, &rules)
+            .unwrap_err();
         assert!(error.contains("current Work assignment"));
 
         let mut changed_rules = rules.clone();
         changed_rules[0].2 = "changed rule bytes".to_owned();
-        let error = validate_fresh_context(
-            &assignment,
-            &packet_sha,
-            &next,
-            &rules,
-            &changed_rules,
-            &references,
-            &references,
-        )
-        .unwrap_err();
+        let error = validate_fresh_context(&assignment, &packet_sha, &next, &rules, &changed_rules)
+            .unwrap_err();
         assert!(error.contains("project rules changed"));
-
-        let mut changed_memory = references.clone();
-        changed_memory[0]["sourceSha256"] = json!("changed-memory-sha");
-        let error = validate_fresh_context(
-            &assignment,
-            &packet_sha,
-            &next,
-            &rules,
-            &rules,
-            &references,
-            &changed_memory,
-        )
-        .unwrap_err();
-        assert!(error.contains("project memory changed"));
     }
     #[test]
     fn actual_context_reads_keep_binding_changes_volatile_and_refuse_mid_use_rule_change() {

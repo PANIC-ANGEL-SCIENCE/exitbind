@@ -66,7 +66,7 @@ pub(crate) fn result_ref_evidence(
             let expected = state["inputsSha256"]
                 .as_str()
                 .ok_or("accepted run is missing its tested-input hash")?;
-            Some(crate::run::inputs::fingerprint(loaded)? == expected)
+            Some(crate::run::inputs::fingerprint_for_state(loaded, &state)? == expected)
         } else {
             None
         };

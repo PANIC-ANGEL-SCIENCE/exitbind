@@ -153,13 +153,23 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
         };
         return print_json(&value);
     }
-    args::assert_options("project context", arguments, &["config", "json", "task"])?;
+    args::assert_options(
+        "project context",
+        arguments,
+        &["config", "json", "task", "agent", "host", "expected-sha256"],
+    )?;
     if action != Some("context") {
         return Err("project requires context, route, agents, capabilities, architecture or advance; use project advance form --json for bounded continuation".into());
     }
     match arguments.positional.get(1).map(String::as_str) {
         None => {
             args::assert_positionals("project context", arguments, 1)?;
+            if ["agent", "host", "expected-sha256"]
+                .iter()
+                .any(|name| arguments.options.contains_key(*name))
+            {
+                return Err("recipient options require project context memory ITEM_ID".into());
+            }
             let value = context::snapshot_for_task(
                 loaded,
                 arguments.options.get("task").map(String::as_str),
@@ -182,11 +192,33 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 .positional
                 .get(2)
                 .ok_or("project context memory requires ITEM_ID")?;
-            let value = context::memory_content(
-                loaded,
-                id,
-                arguments.options.get("task").map(String::as_str),
-            )?;
+            let has_agent = arguments.options.contains_key("agent");
+            let has_source_binding = arguments.options.contains_key("expected-sha256");
+            let has_host = arguments.options.contains_key("host");
+            let value = match (has_agent, has_source_binding, has_host) {
+                (false, false, false) => context::memory_content(
+                    loaded,
+                    id,
+                    arguments.options.get("task").map(String::as_str),
+                )?,
+                (true, true, _) => context::memory_content_for_recipient(
+                    loaded,
+                    id,
+                    arguments.options.get("agent").map(String::as_str).unwrap_or(""),
+                    arguments
+                        .options
+                        .get("task")
+                        .map(String::as_str)
+                        .ok_or("recipient memory requires --task TASK")?,
+                    arguments.options.get("host").map(String::as_str),
+                    arguments
+                        .options
+                        .get("expected-sha256")
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                )?,
+                _ => return Err("recipient memory requires --agent, --task and --expected-sha256; contextual items also require --host".into()),
+            };
             if arguments.flags.contains_key("json") {
                 print_json(&value)
             } else {

@@ -296,6 +296,13 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     let perspectives = perspective::current(loaded, &sources)?;
     let current = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
+    let guidance = crate::project::agent_context::guidance(
+        loaded,
+        agent_id,
+        current["next"]["packet"]["goal"].as_str(),
+        binding["host"].as_str().unwrap_or(""),
+        3 * 1024,
+    )?;
     let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
     let capabilities = crate::project::capabilities::delivery(
         loaded,
@@ -341,6 +348,7 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     if let Some(specialist) = &specialist {
         result["specialistExperience"] = specialist.clone();
     }
+    result["guidance"] = guidance;
     let fresh = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &fresh["next"]["packet"])?;
     let (_, fresh_binding) = current_binding(loaded, work)?;

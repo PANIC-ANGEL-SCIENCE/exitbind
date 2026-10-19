@@ -337,10 +337,11 @@ fn apply(loaded: &Loaded, work_id: &str, previous: &Value, input: &Value) -> Res
             if !evidence_verified(&observed) {
                 return Err("check evidence is missing or unverified".into());
             }
-            let (current_inputs, current_conditions) = current_conditions(loaded)?;
+            let state = super::current_state(loaded, work_id)?;
+            let (current_inputs, current_conditions) = current_conditions(loaded, work_id)?;
             if result["inputsSha256"] != current_inputs
                 || conditions != current_conditions
-                || !acquired_config_current(loaded, result)
+                || !acquired_config_current(loaded, result, &state)
             {
                 return Err("check or support conditions no longer match current inputs".into());
             }

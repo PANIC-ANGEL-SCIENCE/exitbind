@@ -135,6 +135,65 @@ pub(crate) fn memory_content(
     Ok(json!({"reference":reference, "content":content}))
 }
 
+/// Read one current item for the named configured recipient. The selector's
+/// role rights and current task/host choice remain the only eligibility proof.
+pub(crate) fn memory_content_for_recipient(
+    loaded: &Loaded,
+    item_id: &str,
+    agent_id: &str,
+    task: &str,
+    host: Option<&str>,
+    source_sha256: &str,
+) -> Result<Value, String> {
+    if let Some(host) = host {
+        if !matches!(host, "codex" | "claude") {
+            return Err("recipient memory host must be codex or claude".into());
+        }
+    }
+    loaded
+        .agent(agent_id)
+        .ok_or_else(|| format!("unknown configured recipient '{agent_id}'"))?;
+    let reference = memory::selection::resolve_for_task(loaded, agent_id, Some(task))?
+        .into_iter()
+        .find(|entry| entry["itemId"] == item_id)
+        .ok_or("memory item is not currently eligible for this recipient and task")?;
+    if reference.get("contextSelection").is_some() {
+        let host = host.ok_or("contextual recipient memory requires an exact --host binding")?;
+        memory::choices::assert_host(loaded, agent_id, task, host)?;
+        if !crate::project::agent_context::contextual_host_is_pinned(loaded, agent_id, task, host) {
+            return Err("contextual recipient host is not the exact configured host".into());
+        }
+    }
+    if reference["sourceSha256"].as_str() != Some(source_sha256) {
+        return Err("memory source binding does not match the current eligible item".into());
+    }
+    let source = reference["sourcePath"]
+        .as_str()
+        .ok_or("invalid memory reference")?;
+    let bytes = path::secure_bytes(&loaded.product_root, source, "memory source")?;
+    if hash::bytes(&bytes) != source_sha256 {
+        return Err("memory source changed; refresh recipient context".into());
+    }
+    if bytes.len() > 64 * 1024 {
+        return Err("memory item exceeds the bounded detail route".into());
+    }
+    if reference.get("contextSelection").is_some() {
+        let host = host.ok_or("contextual recipient memory requires an exact --host binding")?;
+        memory::choices::assert_host(loaded, agent_id, task, host)?;
+        if !crate::project::agent_context::contextual_host_is_pinned(loaded, agent_id, task, host) {
+            return Err("contextual recipient host changed during retrieval".into());
+        }
+    }
+    let still_current = memory::selection::resolve_for_task(loaded, agent_id, Some(task))?
+        .into_iter()
+        .any(|current| current == reference);
+    if !still_current {
+        return Err("memory item changed during recipient retrieval".into());
+    }
+    let content = crate::project::agent_context::selected_content(&reference, bytes)?;
+    Ok(json!({"reference":reference, "content":content}))
+}
+
 /// Fit complete references only; the host hook never cuts an instruction mid-byte.
 pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
     let facts = snapshot(loaded);

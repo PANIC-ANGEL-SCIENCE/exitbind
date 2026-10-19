@@ -75,17 +75,40 @@ fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn current_conditions(loaded: &Loaded) -> Result<(String, String), String> {
-    let inputs = run::inputs::fingerprint(loaded)?;
-    let conditions = hash::value(&json!({
-        "configSha256": hash::text(&loaded.source),
-        "inputsSha256": inputs,
-    }));
+fn current_state(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
+    let ledger = verify_work(loaded, work_id)?;
+    let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    run::state::reduce(&events)
+}
+
+fn current_conditions(loaded: &Loaded, work_id: &str) -> Result<(String, String), String> {
+    let state = current_state(loaded, work_id)?;
+    let inputs = run::inputs::fingerprint_for_state(loaded, &state)?;
+    let config_sha256 = if run::guidance_continuity::enabled(&state) {
+        run::guidance_continuity::advisory_config_sha256(&loaded.config)
+    } else {
+        hash::text(&loaded.source)
+    };
+    let conditions = if run::guidance_continuity::enabled(&state) {
+        hash::value(&json!({
+            "guidanceContinuityProtocol": state["guidanceContinuityProtocol"],
+            "guidanceConfigSha256": config_sha256,
+            "inputsSha256": inputs,
+        }))
+    } else {
+        // Preserve the exact legacy condition identity and serialization.
+        hash::value(&json!({
+            "configSha256": config_sha256,
+            "inputsSha256": inputs,
+        }))
+    };
     Ok((inputs, conditions))
 }
 
-fn acquired_config_current(loaded: &Loaded, event: &Value) -> bool {
-    event["configSha256"] == hash::text(&loaded.source)
+fn acquired_config_current(loaded: &Loaded, event: &Value, state: &Value) -> bool {
+    event["runId"] == state["runId"]
+        && event["configSha256"] == state["configSha256"]
+        && run::guidance_continuity::assert_config_current(loaded, state).is_ok()
 }
 
 fn same_intake(existing: &Value, proposed: &Value) -> bool {

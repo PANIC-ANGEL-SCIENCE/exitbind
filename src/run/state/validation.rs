@@ -156,6 +156,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
     }
     validate_basis_extension(event, line, version)?;
     crate::run::check_replacement::validate_start(event, line)?;
+    crate::run::guidance_continuity::validate_start(event, line)?;
     crate::run::quarantine::validate_start(event, line)?;
     let plan = &event["plan"];
     if let Some(selection) = plan.get("architectureContract") {
@@ -262,6 +263,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         }
     }
     crate::run::verification_preparation::validate_start_fields(event, version, line)?;
+    crate::run::guidance_continuity::validate_start(event, line)?;
     if let Some(policy) = event.get("preReturnPolicy") {
         if version != 8 || event.get("checkPolicy").is_none() {
             return Err(format!(

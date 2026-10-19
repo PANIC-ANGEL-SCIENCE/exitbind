@@ -36,8 +36,11 @@ fn reduce_with_resume_budget(
         return Ok((state, InputContext::Historical));
     }
     let fingerprint = match budget {
+        Some(budget) if crate::run::guidance_continuity::enabled(&state) => {
+            crate::run::inputs::fingerprint_for_state_resume(loaded, &state, budget)
+        }
         Some(budget) => crate::run::inputs::fingerprint_for_resume(loaded, budget),
-        None => crate::run::inputs::fingerprint(loaded),
+        None => crate::run::inputs::fingerprint_for_state(loaded, &state),
     };
     let context = match fingerprint {
         Ok(inputs) => {
@@ -139,6 +142,13 @@ impl RunSnapshot {
 
     pub(crate) fn inputs(&self) -> &InputContext {
         &self.inputs
+    }
+
+    pub(crate) fn current_input_sha256(&self) -> Option<&str> {
+        match &self.inputs {
+            InputContext::Current(value) => Some(value),
+            _ => None,
+        }
     }
 
     pub(crate) fn inspect_view(&self) -> Value {
@@ -260,7 +270,7 @@ impl RunSnapshot {
     pub(crate) fn next_view(&self, loaded: &Loaded) -> Result<Value, String> {
         assert_exact_receipt(loaded, &self.state)?;
         let state = &self.state;
-        let next = json!({
+        let mut next = json!({
             "valid": true,
             "runId": state["runId"],
             "status": state["status"],
@@ -293,6 +303,10 @@ impl RunSnapshot {
                     |warning| json!([warning]),
                 )
         });
+        if crate::run::guidance_continuity::enabled(state) {
+            next["guidanceContinuityProtocol"] = state["guidanceContinuityProtocol"].clone();
+            next["guidanceConfigSha256"] = state["guidanceConfigSha256"].clone();
+        }
         Ok(next)
     }
 }
@@ -460,11 +474,12 @@ pub(super) fn selected_plan(mut plan: Value) -> Result<Value, String> {
 
 pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), String> {
     crate::config::boundary::assert_current(loaded, &state["plan"])?;
+    crate::run::guidance_continuity::assert_config_current(loaded, state)?;
     let expected = state["configSha256"].as_str().unwrap_or("");
     let current = fs::read_to_string(&loaded.path)
         .map_err(|error| format!("configuration cannot be read: {error}"))?;
     let current_sha = hash::text(&current);
-    if current_sha != expected {
+    if !crate::run::guidance_continuity::enabled(state) && current_sha != expected {
         return Err(run_error::machine_drift(DriftError::config(
             expected.to_owned(),
             current_sha,
@@ -485,49 +500,55 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
             if !seen.insert(name) {
                 continue;
             }
-            assert_selected_agent(loaded, selected)?;
-            if let Some(selection) = selected.get("memoryContextSelection") {
-                let current = crate::memory::contextual::binding(
-                    loaded,
-                    name,
-                    state["goal"].as_str().unwrap_or(""),
-                );
-                let current = match current {
-                    Ok(current) if &current == selection => None,
-                    Ok(current) => Some(hash::value(&current)),
-                    Err(error) => Some(hash::text(&format!(
-                        "contextual memory unavailable: {error}"
-                    ))),
-                };
-                if let Some(current) = current {
+            assert_selected_agent(
+                loaded,
+                selected,
+                crate::run::guidance_continuity::enabled(state),
+            )?;
+            if !crate::run::guidance_continuity::enabled(state) {
+                if let Some(selection) = selected.get("memoryContextSelection") {
+                    let current = crate::memory::contextual::binding(
+                        loaded,
+                        name,
+                        state["goal"].as_str().unwrap_or(""),
+                    );
+                    let current = match current {
+                        Ok(current) if &current == selection => None,
+                        Ok(current) => Some(hash::value(&current)),
+                        Err(error) => Some(hash::text(&format!(
+                            "contextual memory unavailable: {error}"
+                        ))),
+                    };
+                    if let Some(current) = current {
+                        return Err(run_error::machine_drift(DriftError::memory(
+                            name.to_owned(),
+                            hash::value(selection),
+                            current,
+                        )));
+                    }
+                }
+                if let Some(references) = selected.get("memoryReferences") {
+                    let expected = hash::value(references);
+                    let current = match crate::memory::selection::resolve_for_task(
+                        loaded,
+                        name,
+                        state["goal"].as_str(),
+                    ) {
+                        Ok(current) => {
+                            let current = Value::Array(current);
+                            if &current == references {
+                                continue;
+                            }
+                            hash::value(&current)
+                        }
+                        Err(error) => hash::text(&format!("memory evidence unavailable: {error}")),
+                    };
                     return Err(run_error::machine_drift(DriftError::memory(
                         name.to_owned(),
-                        hash::value(selection),
+                        expected,
                         current,
                     )));
                 }
-            }
-            if let Some(references) = selected.get("memoryReferences") {
-                let expected = hash::value(references);
-                let current = match crate::memory::selection::resolve_for_task(
-                    loaded,
-                    name,
-                    state["goal"].as_str(),
-                ) {
-                    Ok(current) => {
-                        let current = Value::Array(current);
-                        if &current == references {
-                            continue;
-                        }
-                        hash::value(&current)
-                    }
-                    Err(error) => hash::text(&format!("memory evidence unavailable: {error}")),
-                };
-                return Err(run_error::machine_drift(DriftError::memory(
-                    name.to_owned(),
-                    expected,
-                    current,
-                )));
             }
         }
     }
@@ -600,7 +621,7 @@ pub(crate) fn input_drift_warning_for(
     let Some(expected) = expected_override.or_else(|| state["inputsSha256"].as_str()) else {
         return Ok(None);
     };
-    let current = crate::run::inputs::fingerprint(loaded)?;
+    let current = crate::run::inputs::fingerprint_for_state(loaded, state)?;
     if current == expected {
         return Ok(None);
     }
@@ -621,7 +642,11 @@ pub(crate) fn warn_drift(warning: Option<&Value>) {
 /// A selected agent's profile bytes and requested runtime must still match the
 /// configuration that produced the plan.  The authorized alternate binding is
 /// part of that runtime, so it drifts with the contract it belongs to.
-pub(super) fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result<(), String> {
+pub(super) fn assert_selected_agent(
+    loaded: &Loaded,
+    selected: &Value,
+    guidance_continuity: bool,
+) -> Result<(), String> {
     let name = selected["name"].as_str().unwrap_or("");
     let expected_profile = selected["profileSha256"].as_str().unwrap_or("").to_owned();
     let unavailable = || {
@@ -636,7 +661,7 @@ pub(super) fn assert_selected_agent(loaded: &Loaded, selected: &Value) -> Result
         config::file(&loaded.control_root, &configured.profile).map_err(|_| unavailable())?;
     let profile_sha = hash::text(&fs::read_to_string(&path).map_err(|_| unavailable())?);
     if config::rel(&loaded.control_root, &path)? != selected["profile"]
-        || profile_sha != selected["profileSha256"]
+        || (!guidance_continuity && profile_sha != selected["profileSha256"])
     {
         return Err(run_error::machine_drift(DriftError::profile(
             name.to_owned(),

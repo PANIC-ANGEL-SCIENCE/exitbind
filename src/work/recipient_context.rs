@@ -45,7 +45,9 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
         .ok_or("current recipient is not configured")?;
     let bytes = path::secure_bytes(&loaded.control_root, &agent.profile, "recipient profile")?;
     let digest = hash::bytes(&bytes);
-    if next["packet"]["profile"]["sha256"].is_string()
+    if next["packet"]["guidanceContinuityProtocol"].as_u64()
+        != Some(crate::run::guidance_continuity::PROTOCOL)
+        && next["packet"]["profile"]["sha256"].is_string()
         && next["packet"]["profile"]["sha256"] != digest
     {
         return Err(
@@ -82,6 +84,19 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
             result["capabilities"] = capabilities;
         }
     }
+    result["guidance"] = agent_context::guidance_for_assignment(
+        loaded,
+        name,
+        next["packet"]["goal"].as_str(),
+        next["packet"]["runtime"]["host"]
+            .as_str()
+            .or(agent.runtime.host.as_deref())
+            .unwrap_or(""),
+        10 * 1024,
+        &next["packet"],
+    )?;
+    // Keep the established field readable for existing Work detail clients;
+    // the canonical shared item projection above is used by every new surface.
     if let Some(lessons) = crate::memory::lessons::delivery(
         loaded,
         name,

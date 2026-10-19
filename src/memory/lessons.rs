@@ -229,9 +229,20 @@ pub(crate) fn validate_transition(
 /// metadata. Source references and the inspector retain the full record route.
 /// The cap includes all delivered metadata, rather than only the fact's text.
 pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Option<Value>, String> {
-    let references = super::selection::resolve_for_task(loaded, agent, Some(task))?;
+    let selection = super::selection::resolve_for_task_optional(loaded, agent, Some(task))?;
+    let references = selection.references;
     let mut items = Vec::new();
-    let mut omitted = 0usize;
+    let mut omitted = selection
+        .unavailable
+        .iter()
+        .filter(|entry| entry["identity"]["scope"] == SCOPE)
+        .count();
+    let mut unavailable = selection
+        .unavailable
+        .into_iter()
+        .filter(|entry| entry["identity"]["scope"] == SCOPE)
+        .map(|entry| json!({"itemId":entry["identity"]["itemId"],"reason":entry["reason"]}))
+        .collect::<Vec<_>>();
     for reference in references
         .into_iter()
         .filter(|reference| reference["scope"] == SCOPE)
@@ -239,10 +250,27 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
         let source = reference["sourcePath"]
             .as_str()
             .ok_or("lesson source missing")?;
-        let bytes = path::secure_bytes(&loaded.product_root, source, "lesson source")?;
-        if hash::bytes(&bytes) != reference["sourceSha256"] {
-            return Err("lesson changed during recipient delivery".into());
-        }
+        let bytes =
+            match path::secure_bytes_observation(&loaded.product_root, source, "lesson source") {
+                path::SecureBytesResult::Bytes(bytes)
+                    if hash::bytes(&bytes) == reference["sourceSha256"] =>
+                {
+                    bytes
+                }
+                path::SecureBytesResult::Absent(_)
+                | path::SecureBytesResult::Unreadable(_)
+                | path::SecureBytesResult::Bytes(_) => {
+                    omitted += 1;
+                    unavailable.push(json!({
+                        "itemId":reference["itemId"],
+                        "reason":"source_unavailable_or_changed"
+                    }));
+                    continue;
+                }
+                path::SecureBytesResult::Unsafe(error) => return Err(error),
+                #[cfg(not(unix))]
+                path::SecureBytesResult::Unsupported(error) => return Err(error),
+            };
         let lesson: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
         let fact = json!({"id":lesson["id"],"fact":lesson["fact"],"owner":lesson["owner"]});
         let item = json!({"reference": reference, "lesson": fact});
@@ -283,6 +311,9 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
         "maxItems":MAX_ITEMS,"maxBytes":MAX_DELIVERY,
         "meaning":"reviewed durable project facts; no permission, check, review or acceptance authority",
         "detail":{"command":command,"readOnly":true,"sameConfigRequired":false,"sameExecutableRequired":false}});
+    if !unavailable.is_empty() {
+        value["unavailable"] = json!(std::mem::take(&mut unavailable));
+    }
     while serde_json::to_vec(&value)
         .map_err(|error| error.to_string())?
         .len()

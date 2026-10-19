@@ -9,6 +9,8 @@ const START_PROTOCOL_FIELDS: &[&str] = &[
     "verificationCheckerSources",
     "projectContinuation",
     "quarantineVerification",
+    "guidanceContinuityProtocol",
+    "guidanceConfigSha256",
 ];
 
 pub(super) fn copy_fields(start: &Value, state: &mut Value) {

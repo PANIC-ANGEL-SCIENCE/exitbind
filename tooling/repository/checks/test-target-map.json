@@ -880,7 +880,7 @@
     },
     {
       "path": "tests/agent_context_delivery.rs",
-      "sha256": "523ae7d2f328f13925147ba9dc449741fd1075dfcf9688e04d061097523c2cd7"
+      "sha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78"
     },
     {
       "path": "tests/agent_first_control.rs",
@@ -1840,6 +1840,16 @@
       "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
       "currentSha256": "4b770b012ded6ee6bb63f3e41132e2b7dfa676a40d4fe11ebb86f7116c2cd127",
       "reason": "Prove prepared claim/start binding parity and recovery refusal for missing or unequal optional fields, preserve genuine both-absent legacy lineage, and reject malformed fields and successor identity drift."
+    },
+    "tests/agent_context_delivery.rs": {
+      "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
+      "currentSha256": "8eb3c55dd9a7bc0b78d9ad14417f547f4366e281ec38aad70eabaaa7bf3e99c5",
+      "reason": "Register the focused guidance-delivery submodule, preserving the original test bodies and the grouped host_runtime target mapping."
+    },
+    "tests/continuation_conditions.rs": {
+      "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
+      "currentSha256": "3e262c04345f7f3467b4fee6fd125b75ce5d4a2fc089a1caf621e950e37cb197",
+      "reason": "Add a marked accepted-result Goal continuity regression: advisory purpose changes preserve support and result-reference currentness, while frozen review-policy tampering and verification-preparation changes remain strict; the grouped target and legacy currentness unit assertion remain."
     }
   },
   "additions": [

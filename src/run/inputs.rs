@@ -9,6 +9,7 @@
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -121,7 +122,15 @@ impl ResumeInputBudget {
 /// Digest of the current tested inputs, or an error when they cannot be
 /// established (which callers must treat as "not reusable").
 pub(crate) fn fingerprint(loaded: &crate::config::Loaded) -> Result<String, String> {
-    fingerprint_impl(loaded, None)
+    fingerprint_impl(loaded, None, &BTreeSet::new())
+}
+
+pub(crate) fn fingerprint_for_state(
+    loaded: &crate::config::Loaded,
+    state: &Value,
+) -> Result<String, String> {
+    let excluded = crate::run::guidance_continuity::unambiguous_paths(loaded, state);
+    fingerprint_impl(loaded, None, &excluded)
 }
 
 pub(crate) fn fingerprint_for_resume(
@@ -135,7 +144,7 @@ pub(crate) fn fingerprint_for_resume(
             return Ok(digest.clone());
         }
     }
-    let digest = match fingerprint_impl(loaded, Some(budget)) {
+    let digest = match fingerprint_impl(loaded, Some(budget), &BTreeSet::new()) {
         Ok(digest) => digest,
         Err(error) => {
             let reason = match error.as_str() {
@@ -164,9 +173,23 @@ pub(crate) fn fingerprint_for_resume(
     Ok(digest)
 }
 
+pub(crate) fn fingerprint_for_state_resume(
+    loaded: &crate::config::Loaded,
+    state: &Value,
+    budget: &mut ResumeInputBudget,
+) -> Result<String, String> {
+    let excluded = crate::run::guidance_continuity::unambiguous_paths(loaded, state);
+    if excluded.is_empty() {
+        return fingerprint_for_resume(loaded, budget);
+    }
+    budget.check().map_err(str::to_owned)?;
+    fingerprint_impl(loaded, Some(budget), &excluded)
+}
+
 fn fingerprint_impl(
     loaded: &crate::config::Loaded,
     mut budget: Option<&mut ResumeInputBudget>,
+    excluded_paths: &BTreeSet<String>,
 ) -> Result<String, String> {
     let root = &loaded.product_root;
     let worktree = if let Some(budget) = budget.as_deref_mut() {
@@ -200,7 +223,12 @@ fn fingerprint_impl(
             None => walk_paths(root)?,
         },
     };
-    paths.retain(|path| !excluded(root, &loaded.state_root, path));
+    paths.retain(|path| {
+        !excluded(root, &loaded.state_root, path)
+            && path
+                .to_str()
+                .map_or(true, |relative| !excluded_paths.contains(relative))
+    });
     paths.sort();
     paths.dedup();
     let mut entries = Vec::with_capacity(paths.len());

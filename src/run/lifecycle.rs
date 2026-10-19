@@ -377,6 +377,9 @@ fn start_with_association(
             value["quarantineVerification"] = verified.marker().clone();
             crate::run::quarantine::validate_start(&value, 1)?;
         }
+        if version == 8 {
+            crate::run::guidance_continuity::add_start_marker(&mut value, loaded);
+        }
         if version >= 6 && quarantine.is_none() {
             value["governor"] = json!({
                 "version": crate::context::GOVERNOR_VERSION,
@@ -635,6 +638,8 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "governor",
         "projectContinuation",
         "quarantineVerification",
+        "guidanceContinuityProtocol",
+        "guidanceConfigSha256",
     ];
     if event["action"] != "start" {
         return Err("Work ledger does not begin with a start event".into());
@@ -693,6 +698,7 @@ pub(crate) fn quarantine_start_intent_sha256(
             Some(verification_checker_sources.as_deref().unwrap_or_default()),
         );
     }
+    crate::run::guidance_continuity::add_start_marker(&mut value, loaded);
     start_event_intent_sha256(&value)
 }
 

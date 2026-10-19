@@ -213,9 +213,14 @@ pub(crate) fn assert_plan(l: &Loaded, state: &Value) -> Result<(), String> {
             .as_array()
             .ok_or("contextual memory plan recipients unavailable")?
         {
-            let packet = json!({"agent":selected["name"],"goal":state["goal"],
+            let mut packet = json!({"agent":selected["name"],"goal":state["goal"],
                 "memoryContextSelection":selected["memoryContextSelection"],
                 "memoryReferences":selected["memoryReferences"]});
+            if crate::run::guidance_continuity::enabled(state) {
+                packet["guidanceContinuityProtocol"] = state["guidanceContinuityProtocol"].clone();
+                packet["frozenMemoryRead"] = selected["declaredBoundary"]["memoryRead"].clone();
+                packet["frozenCrossContext"] = selected["declaredBoundary"]["crossContext"].clone();
+            }
             assert_assignment(l, &packet)?;
         }
     }
@@ -223,6 +228,40 @@ pub(crate) fn assert_plan(l: &Loaded, state: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn assert_assignment(l: &Loaded, packet: &Value) -> Result<(), String> {
+    if crate::run::guidance_continuity::enabled(packet) {
+        let agent = packet["agent"]
+            .as_str()
+            .ok_or("contextual assignment recipient unavailable")?;
+        let task = packet["goal"]
+            .as_str()
+            .ok_or("contextual assignment task unavailable")?;
+        let ceiling = packet["frozenMemoryRead"]
+            .as_array()
+            .ok_or("marked assignment has no frozen memory-read ceiling")?
+            .iter()
+            .map(|scope| {
+                scope
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("marked assignment memory-read ceiling is malformed")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let cross_context = packet["frozenCrossContext"]
+            .as_str()
+            .ok_or("marked assignment cross-context ceiling is malformed")?;
+        // The selector still validates current ledgers, current read rights,
+        // contextual applicability, and every source hash. Only optional
+        // source absence/change is omitted. The frozen scope ceiling prevents
+        // later policy widening from adding a new memory class to this Work.
+        super::selection::resolve_for_task_optional_with_ceiling(
+            l,
+            agent,
+            Some(task),
+            &ceiling,
+            cross_context,
+        )?;
+        return Ok(());
+    }
     if !enabled(l) {
         return Ok(());
     }

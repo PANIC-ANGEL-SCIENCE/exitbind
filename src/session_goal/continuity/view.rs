@@ -69,6 +69,7 @@ pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, S
         c["work"].as_str().ok_or("continuation work missing")?,
     )?;
     let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let state = run::state::reduce(&events)?;
     let start = events.first().ok_or("work ledger has no start event")?;
     let requirements = c["requirements"]
         .as_array()
@@ -76,7 +77,7 @@ pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, S
     if super::requirements::assess(start, requirements)["compatible"] != true {
         return Ok(false);
     }
-    let (inputs, conditions) = current_conditions(loaded)?;
+    let (inputs, conditions) = current_conditions(loaded, c["work"].as_str().unwrap_or_default())?;
     for requirement in requirements {
         let mut applicable = false;
         for support in c["supports"]
@@ -95,7 +96,7 @@ pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, S
             if let Some(event) = support["resultEventSha256"].as_str() {
                 if run::inspect_event(loaded, &ledger, event).is_ok_and(|found| {
                     evidence_verified(&found)
-                        && acquired_config_current(loaded, &found["event"])
+                        && acquired_config_current(loaded, &found["event"], &state)
                         && found["eventIndex"].as_u64().unwrap_or(0)
                             >= requirement["checkFloorIndex"].as_u64().unwrap_or(0)
                 }) {
@@ -119,12 +120,13 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
     }
     let c = &record["continuation"];
     let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let state = run::state::reduce(&events)?;
     let start = events.first().ok_or("work ledger has no start event")?;
     let goal_requirements = c["requirements"]
         .as_array()
         .ok_or("requirements malformed")?;
     let work_support = super::requirements::assess(start, goal_requirements);
-    let (current_inputs, current_conditions) = current_conditions(loaded)?;
+    let (current_inputs, current_conditions) = current_conditions(loaded, work_id)?;
     let binding_revision = c["binding"]["revision"].as_u64().unwrap_or(0);
     let mut requirements = Vec::new();
     for requirement in goal_requirements {
@@ -140,7 +142,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
             let current = found.as_ref().is_ok_and(evidence_verified);
             let acquired_conditions_current = found
                 .as_ref()
-                .is_ok_and(|found| acquired_config_current(loaded, &found["event"]));
+                .is_ok_and(|found| acquired_config_current(loaded, &found["event"], &state));
             let revision_current = found.as_ref().is_ok_and(|found| {
                 found["eventIndex"].as_u64().unwrap_or(0)
                     >= requirement["checkFloorIndex"].as_u64().unwrap_or(0)

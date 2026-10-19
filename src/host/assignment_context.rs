@@ -27,6 +27,7 @@ pub(crate) enum Selection {
         /// Read routes for the evidence this assignment's packet covers.
         evidence: Vec<String>,
         architecture: Option<serde_json::Value>,
+        guidance: serde_json::Value,
     },
     Mismatch(String),
     Unavailable(String),
@@ -69,7 +70,12 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
         next["packet"]["nativeTaskName"].as_str().unwrap_or(""),
         next["packet"]["profileSha256"].as_str().unwrap_or(""),
     );
-    if expected != (agent_id, expected_native.as_str(), profile_sha) {
+    if expected.0 != agent_id
+        || expected.1 != expected_native
+        || (next["packet"]["guidanceContinuityProtocol"].as_u64()
+            != Some(crate::run::guidance_continuity::PROTOCOL)
+            && expected.2 != profile_sha)
+    {
         return Selection::Mismatch(format!(
             "pending assignment differs (agent={}, nativeTaskName={}, profileSha256={})",
             expected.0, expected.1, expected.2
@@ -112,6 +118,22 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
         Ok(slice) => slice,
         Err(reason) => return Selection::Unavailable(reason),
     };
+    let task = next["packet"]["goal"].as_str();
+    let host = next["packet"]["runtime"]["host"]
+        .as_str()
+        .or(agent.runtime.host.as_deref())
+        .unwrap_or("");
+    let guidance = match crate::project::agent_context::guidance_for_assignment(
+        loaded,
+        agent_id,
+        task,
+        host,
+        3 * 1024,
+        &next["packet"],
+    ) {
+        Ok(guidance) => guidance,
+        Err(reason) => return Selection::Unavailable(reason),
+    };
     Selection::Bound {
         work,
         assignment: assignment.to_owned(),
@@ -119,6 +141,7 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
         provenance: Box::new(provenance),
         evidence,
         architecture,
+        guidance,
     }
 }
 
@@ -142,7 +165,17 @@ pub(crate) fn verify_away_context(
             current_project
         ));
     }
-    if packet["configSha256"].as_str() != Some(expected.as_str()) {
+    let config_matches = if packet["guidanceContinuityProtocol"].as_u64()
+        == Some(crate::run::guidance_continuity::PROTOCOL)
+    {
+        packet["guidanceConfigSha256"].as_str()
+            == Some(
+                crate::run::guidance_continuity::advisory_config_sha256(&loaded.config).as_str(),
+            )
+    } else {
+        packet["configSha256"].as_str() == Some(expected.as_str())
+    };
+    if !config_matches {
         return Err(format!(
             "assignment context mismatch: current project configuration is {expected}, packet is {}",
             packet["configSha256"].as_str().unwrap_or("absent")

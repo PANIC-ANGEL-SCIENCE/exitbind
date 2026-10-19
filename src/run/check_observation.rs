@@ -12,9 +12,8 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
     if state["checkObservationProtocol"] != PROTOCOL {
         return Ok(());
     }
-    if state["configSha256"] != hash::text(&loaded.source)
-        || fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source
-    {
+    crate::run::guidance_continuity::assert_config_current(loaded, state)?;
+    if fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source {
         return Err("check observation requires the frozen current configuration; inspect the Work and use authorized supersession for a changed configuration".into());
     }
     crate::project::architecture::assert_current(loaded)?;
@@ -223,7 +222,7 @@ pub(super) fn replay_for_operation(
     if binding["observerExecutableSha256"] != crate::producer::build_identity()["executableSha256"]
         || admission["producer"] != crate::producer::evidence_for_version(8)
         || binding["inputsSha256"] != live_inputs(&state)?
-        || binding["configSha256"] != hash::text(&loaded.source)
+        || binding["configSha256"] != state["configSha256"]
         || binding["subjectSha256"] != state["subject"]["sha256"]
         || binding["checkCommandSha256"] != policy.command_sha256
         || admission["observation"]["timeoutMs"] != timeout_ms

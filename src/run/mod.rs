@@ -24,6 +24,7 @@ mod evidence_identity;
 pub(crate) mod gate;
 mod governor;
 pub(crate) mod governor_recovery;
+pub(crate) mod guidance_continuity;
 pub(crate) mod human;
 pub(crate) mod inputs;
 pub(crate) mod ledger;

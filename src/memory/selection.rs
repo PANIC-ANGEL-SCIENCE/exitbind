@@ -31,6 +31,39 @@ pub(crate) fn resolve_for_task(
     references_for_task(loaded, agent_name, task, false)
 }
 
+/// Launch-time guidance can be absent or stale without making unrelated work
+/// fail. Keep the selector's rights, ledger and contextual checks strict; only
+/// source observations are converted into content-free omission notices.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct OptionalResolution {
+    pub(crate) references: Vec<Value>,
+    pub(crate) unavailable: Vec<Value>,
+}
+
+pub(crate) fn resolve_for_task_optional(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+) -> Result<OptionalResolution, String> {
+    optional_references_for_task(loaded, agent_name, task, None, None)
+}
+
+pub(crate) fn resolve_for_task_optional_with_ceiling(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+    scope_ceiling: &[String],
+    cross_context_ceiling: &str,
+) -> Result<OptionalResolution, String> {
+    optional_references_for_task(
+        loaded,
+        agent_name,
+        task,
+        Some(scope_ceiling),
+        Some(cross_context_ceiling),
+    )
+}
+
 pub(crate) fn candidate_references(
     loaded: &config::Loaded,
     agent_name: &str,
@@ -45,17 +78,65 @@ fn references_for_task(
     task: Option<&str>,
     candidates: bool,
 ) -> Result<Vec<Value>, String> {
+    Ok(references_for_task_with_optional_sources(
+        loaded, agent_name, task, candidates, false, None, None,
+    )?
+    .references)
+}
+
+fn optional_references_for_task(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+    scope_ceiling: Option<&[String]>,
+    cross_context_ceiling: Option<&str>,
+) -> Result<OptionalResolution, String> {
+    references_for_task_with_optional_sources(
+        loaded,
+        agent_name,
+        task,
+        false,
+        true,
+        scope_ceiling,
+        cross_context_ceiling,
+    )
+}
+
+fn references_for_task_with_optional_sources(
+    loaded: &config::Loaded,
+    agent_name: &str,
+    task: Option<&str>,
+    candidates: bool,
+    tolerate_source_unavailable: bool,
+    scope_ceiling: Option<&[String]>,
+    cross_context_ceiling: Option<&str>,
+) -> Result<OptionalResolution, String> {
     let agent = loaded
         .agent(agent_name)
         .ok_or_else(|| format!("unknown agent '{agent_name}'"))?;
     let Some(policy) = policy::get(&loaded.config) else {
-        return Ok(Vec::new());
+        return Ok(OptionalResolution {
+            references: Vec::new(),
+            unavailable: Vec::new(),
+        });
     };
     let Some(ledgers) = discovery::discover(loaded)? else {
-        return Ok(Vec::new());
+        return Ok(OptionalResolution {
+            references: Vec::new(),
+            unavailable: Vec::new(),
+        });
     };
-    let scopes = eligible_scopes(agent, &policy);
+    let mut scopes = eligible_scopes(agent, &policy);
+    if let Some(ceiling) = scope_ceiling {
+        scopes.retain(|scope| {
+            ceiling.iter().any(|allowed| allowed == scope)
+                && cross_context_ceiling
+                    .map(|cross| scope_allowed_by_cross_context(scope, cross, &policy))
+                    .unwrap_or(true)
+        });
+    }
     let mut references = Vec::new();
+    let mut unavailable = Vec::new();
     let mut bytes = 0usize;
     let mut item_ids = BTreeSet::new();
     // Reserved experience cannot escape its sole applicability consumer through
@@ -77,14 +158,46 @@ fn references_for_task(
             if !item_ids.insert(item_id.to_owned()) {
                 return Err(format!("duplicate memory item id: {item_id}"));
             }
-            if item["state"] != "accepted" {
-                continue;
-            }
             let scope = item["scope"].as_str().ok_or("invalid memory item scope")?;
             if crate::project::specialists::is_scope(scope) {
                 continue;
             }
             if !scopes.iter().any(|candidate| candidate == scope) {
+                continue;
+            }
+            if item["state"] != "accepted" {
+                if tolerate_source_unavailable && item["state"] == "revoked" {
+                    let source_path = item["source"]["path"]
+                        .as_str()
+                        .ok_or("invalid memory source path")?;
+                    let source_sha = item["source"]["sha256"]
+                        .as_str()
+                        .ok_or("invalid memory source hash")?;
+                    if !reserved
+                        .iter()
+                        .any(|(path, digest)| path == source_path || digest == source_sha)
+                    {
+                        let mut identity = json!({
+                            "itemId": item["itemId"], "scope": scope,
+                            "sourcePath": source_path, "sourceSha256": source_sha,
+                            "ledgerPath": ledger.path,
+                            "ledgerHeadSha256": ledger.snapshot.last_event_sha256,
+                            "state": "revoked"
+                        });
+                        if !candidates && super::contextual::enabled(loaded) {
+                            let Some(context_selection) =
+                                super::contextual::identity(loaded, agent_name, task, &identity)?
+                            else {
+                                continue;
+                            };
+                            identity["contextSelection"] = context_selection;
+                        }
+                        unavailable.push(json!({
+                            "identity": identity,
+                            "reason": "no_longer_eligible"
+                        }));
+                    }
+                }
                 continue;
             }
             if is_expired(item)? {
@@ -105,21 +218,8 @@ fn references_for_task(
             let source_target =
                 confined_target(loaded.product_root.as_path(), source_path, "memory source")?;
             let source_path = relative_project_path(&loaded.product_root, &source_target)?;
-            let source = current_source(loaded, &source_path, source_sha)?;
-            if crate::project::specialists::reserved_source(&source) {
-                continue;
-            }
             if scope == super::lessons::SCOPE {
                 super::validate_history_current(loaded, &ledger.snapshot)?;
-                let lesson = super::lessons::parse(loaded, &source)?;
-                let eligible = if candidates || super::contextual::enabled(loaded) {
-                    super::lessons::eligible(loaded, &lesson, agent_name)?
-                } else {
-                    super::lessons::applicable(loaded, &lesson, agent_name, task)?
-                };
-                if !eligible {
-                    continue;
-                }
             }
             let mut reference = json!({
                 "itemId": item["itemId"],
@@ -129,7 +229,6 @@ fn references_for_task(
                 "ledgerPath": ledger.path,
                 "ledgerHeadSha256": ledger.snapshot.last_event_sha256,
                 "state": "accepted",
-                "byteLength": source.len(),
             });
             if !candidates && super::contextual::enabled(loaded) {
                 let Some(identity) =
@@ -139,6 +238,48 @@ fn references_for_task(
                 };
                 reference["contextSelection"] = identity;
             }
+            let source = if tolerate_source_unavailable {
+                match optional_current_source(loaded, &source_path, source_sha)? {
+                    Some(source) => source,
+                    None => {
+                        let identity = reference.clone();
+                        unavailable.push(json!({
+                            "identity": identity,
+                            "reason": "source_unavailable_or_changed"
+                        }));
+                        continue;
+                    }
+                }
+            } else {
+                current_source(loaded, &source_path, source_sha)?
+            };
+            if crate::project::specialists::reserved_source(&source) {
+                continue;
+            }
+            if scope == super::lessons::SCOPE {
+                let lesson = match super::lessons::parse(loaded, &source) {
+                    Ok(lesson) => lesson,
+                    Err(error) if tolerate_source_unavailable => {
+                        let identity = reference.clone();
+                        unavailable.push(json!({
+                            "identity": identity,
+                            "reason": "source_unavailable_or_changed"
+                        }));
+                        let _ = error;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                let eligible = if candidates || super::contextual::enabled(loaded) {
+                    super::lessons::eligible(loaded, &lesson, agent_name)?
+                } else {
+                    super::lessons::applicable(loaded, &lesson, agent_name, task)?
+                };
+                if !eligible {
+                    continue;
+                }
+            }
+            reference["byteLength"] = json!(source.len());
             let attempted_items = references.len().saturating_add(1);
             let attempted_bytes = bytes.saturating_add(source.len());
             check_budget(loaded, attempted_items, attempted_bytes, item_id)?;
@@ -146,7 +287,52 @@ fn references_for_task(
             references.push(reference);
         }
     }
-    Ok(references)
+    Ok(OptionalResolution {
+        references,
+        unavailable,
+    })
+}
+
+fn scope_allowed_by_cross_context(
+    scope: &str,
+    cross_context: &str,
+    policy: &policy::MemoryPolicy,
+) -> bool {
+    match cross_context {
+        "same-scope" => true,
+        "protocol-only" => policy
+            .protocol_scopes
+            .iter()
+            .any(|allowed| allowed == scope),
+        "synthetic-only" => policy
+            .synthetic_scopes
+            .iter()
+            .any(|allowed| allowed == scope),
+        _ => false,
+    }
+}
+
+fn optional_current_source(
+    loaded: &config::Loaded,
+    requested: &str,
+    expected_hash: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    use crate::project::path::SecureBytesResult;
+    let bytes = match project_path::secure_bytes_observation(
+        &loaded.product_root,
+        requested,
+        "memory source",
+    ) {
+        SecureBytesResult::Bytes(bytes) => bytes,
+        SecureBytesResult::Absent(_) | SecureBytesResult::Unreadable(_) => return Ok(None),
+        SecureBytesResult::Unsafe(error) => return Err(error),
+        #[cfg(not(unix))]
+        SecureBytesResult::Unsupported(error) => return Err(error),
+    };
+    if hash::bytes(&bytes) != expected_hash || std::str::from_utf8(&bytes).is_err() {
+        return Ok(None);
+    }
+    Ok(Some(bytes))
 }
 
 pub(crate) fn check_budget(

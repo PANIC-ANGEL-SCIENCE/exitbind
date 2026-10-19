@@ -1,6 +1,8 @@
 //! Native work receives complete current project rules and role-scoped memory.
 #![cfg(unix)]
 
+#[path = "agent_context_delivery/guidance.rs"]
+mod guidance;
 mod support;
 
 use serde_json::{json, Value};

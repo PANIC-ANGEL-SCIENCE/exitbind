@@ -102,7 +102,7 @@ pub fn observe_check_for_requirement(
         let mut identity = json!({
             "runId": state["runId"], "targetEventSha256": target,
             "subjectSha256": state["subject"]["sha256"], "inputsSha256": inputs,
-            "configSha256": hash::text(&loaded.source), "checkCommandSha256": policy.command_sha256,
+            "configSha256": state["configSha256"], "checkCommandSha256": policy.command_sha256,
             "requirementId": requirement_id,
             "observerExecutableSha256": if state["checkObservationProtocol"] == check_observation::PROTOCOL {
                 crate::producer::build_identity()["executableSha256"].clone()
@@ -332,7 +332,7 @@ pub fn observe_check_for_requirement(
             event_value["subjectSha256"] = current_state["subject"]["sha256"].clone();
         }
         if current_state["version"] == 8 {
-            event_value["configSha256"] = json!(hash::text(&loaded.source));
+            event_value["configSha256"] = current_state["configSha256"].clone();
         }
         if let Some(inputs) = &inputs {
             event_value["inputsSha256"] = inputs.clone();

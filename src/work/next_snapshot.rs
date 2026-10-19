@@ -46,7 +46,7 @@ fn next_and_residual_from_snapshot_inner(
     snapshot: &run::RunSnapshot,
     resumed: bool,
     remember_presentation: bool,
-    budget: Option<&mut run::inputs::ResumeInputBudget>,
+    _budget: Option<&mut run::inputs::ResumeInputBudget>,
 ) -> Result<(Value, Value, Value), String> {
     let mut next = super::next_from(loaded, work, snapshot)?;
     if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
@@ -54,9 +54,8 @@ fn next_and_residual_from_snapshot_inner(
     }
     let residual = crate::work::packet::project(work, snapshot, &next)?;
     next["resolvedActor"] = residual["humanHelp"]["nextAction"]["actor"].clone();
-    let facts = crate::work::packet::facts(snapshot, &next, || match budget {
-        Some(budget) => current_inputs_for_resume(loaded, budget),
-        None => crate::run::inputs::fingerprint(loaded).ok(),
+    let facts = crate::work::packet::facts(snapshot, &next, || {
+        snapshot.current_input_sha256().map(str::to_owned)
     })?;
     let mut presentation = if remember_presentation {
         crate::presentation_events::project(
@@ -86,19 +85,4 @@ fn next_and_residual_from_snapshot_inner(
     )?);
     super::details::automatic_progress(&mut presentation["goalProgress"], &next["current"]);
     Ok((next, residual, presentation))
-}
-
-fn current_inputs_for_resume(
-    loaded: &Loaded,
-    budget: &mut run::inputs::ResumeInputBudget,
-) -> Option<String> {
-    match crate::run::inputs::fingerprint_for_resume(loaded, budget) {
-        Ok(digest) => Some(digest),
-        Err(error) => {
-            if budget.limited_reason().is_none() {
-                budget.mark_unavailable(error);
-            }
-            None
-        }
-    }
 }

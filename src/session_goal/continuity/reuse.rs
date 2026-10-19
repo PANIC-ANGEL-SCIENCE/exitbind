@@ -48,14 +48,15 @@ pub(super) fn apply(
     let event = field(input, "resultEventSha256", 64)?;
     let applied = run::inspect_event(loaded, &ledger, event)?;
     let evidence = &applied["event"];
-    let (inputs, conditions) = current_conditions(loaded)?;
+    let state = super::current_state(loaded, work)?;
+    let (inputs, conditions) = current_conditions(loaded, work)?;
     if applied["eventIndex"].as_u64() <= source["eventIndex"].as_u64()
         || evidence["action"] != "check"
         || evidence["acquisition"] != "observed"
         || evidence["result"]["kind"] != "exit"
         || evidence["result"]["code"] != 0
         || !evidence_verified(&applied)
-        || !acquired_config_current(loaded, evidence)
+        || !acquired_config_current(loaded, evidence, &state)
         || evidence["inputsSha256"] != inputs
         || input["conditionsSha256"] != conditions
     {
@@ -91,7 +92,8 @@ pub(super) fn project(
     work: &str,
     continuation: &Value,
 ) -> Result<Vec<Value>, String> {
-    let (inputs, conditions) = current_conditions(loaded)?;
+    let state = super::current_state(loaded, work)?;
+    let (inputs, conditions) = current_conditions(loaded, work)?;
     let ledger = verify_work(loaded, work)?;
     let mut result = Vec::new();
     for reuse in continuation["reuses"].as_array().into_iter().flatten() {
@@ -106,7 +108,7 @@ pub(super) fn project(
             && source.as_ref().is_some_and(evidence_verified)
             && applied.as_ref().is_some_and(|event| {
                 evidence_verified(event)
-                    && acquired_config_current(loaded, &event["event"])
+                    && acquired_config_current(loaded, &event["event"], &state)
                     && event["event"]["inputsSha256"] == inputs
             });
         result.push(json!({"relation":reuse,"applicableCurrent":applicable}));

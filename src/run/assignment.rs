@@ -207,6 +207,12 @@ fn packet(state: &Value, agent: &Value, upstream: &[Value]) -> Value {
         "declaredBoundary": agent["declaredBoundary"],
         "upstreamArtifacts": upstream
     });
+    if crate::run::guidance_continuity::enabled(state) {
+        assignment["guidanceContinuityProtocol"] = state["guidanceContinuityProtocol"].clone();
+        assignment["guidanceConfigSha256"] = state["guidanceConfigSha256"].clone();
+        assignment["frozenMemoryRead"] = agent["declaredBoundary"]["memoryRead"].clone();
+        assignment["frozenCrossContext"] = agent["declaredBoundary"]["crossContext"].clone();
+    }
     let run_short = state["runId"]
         .as_str()
         .unwrap_or("run")

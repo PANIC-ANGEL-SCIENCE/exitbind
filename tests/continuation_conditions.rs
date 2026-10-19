@@ -41,7 +41,7 @@ fn local_call(
 }
 
 #[test]
-fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
+fn marked_observed_support_survives_advisory_config_change_and_preserves_strict_evidence() {
     let base = support::temp("w2ch-acquired-config");
     let product = base.join("product");
     let control = base.join("control");
@@ -78,6 +78,13 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
         .unwrap();
     assert!(init.status.success(), "{init:?}");
     let config = control.join("exitbind.json");
+    let mut original_value: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    original_value["project"]["verificationPreparation"] = json!({
+        "version": 1,
+        "pythonBytecode": "disabled",
+        "scratch": "taskOwned"
+    });
+    fs::write(&config, serde_json::to_vec_pretty(&original_value).unwrap()).unwrap();
     let original = fs::read_to_string(&config).unwrap();
     let started = local_call(
         &product,
@@ -103,6 +110,21 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
     assert!(started.status.success(), "{started:?}");
     let started: Value = serde_json::from_slice(&started.stdout).unwrap();
     let work = started["work"].as_str().unwrap();
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let start_event: Value = serde_json::from_str(
+        fs::read_to_string(state.join(&ledger))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        start_event
+            .get("guidanceContinuityProtocol")
+            .and_then(Value::as_u64),
+        Some(1)
+    );
     for input in [
         json!({"action":"init","sourceRef":"requirements.txt",
             "sourceText":"First requirement.",
@@ -144,8 +166,27 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
     assert!(first.status.success(), "{first:?}");
     let checked = local_call(&product, &config, &bindings, &["work", "check", work], None);
     assert!(checked.status.success(), "{checked:?}");
+    for outcome in ["approved", "accepted"] {
+        let next = local_call(
+            &product,
+            &config,
+            &bindings,
+            &["work", "next", work, "--full"],
+            None,
+        );
+        assert!(next.status.success(), "{next:?}");
+        let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+        let assignment = next["next"]["assignment"].as_str().unwrap();
+        let returned = local_call(
+            &product,
+            &config,
+            &bindings,
+            &["work", "return", work, assignment, "--outcome", outcome],
+            Some(b"Reviewed exact result"),
+        );
+        assert!(returned.status.success(), "{returned:?}");
+    }
     let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
-    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
     let inspected = local_call(
         &product,
         &config,
@@ -186,7 +227,7 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
     assert!(view_b.status.success(), "{view_b:?}");
     let view_b: Value = serde_json::from_slice(&view_b.stdout).unwrap();
     assert_eq!(view_a["currentInputsSha256"], view_b["currentInputsSha256"]);
-    assert_ne!(
+    assert_eq!(
         view_a["currentConditionsSha256"],
         view_b["currentConditionsSha256"]
     );
@@ -197,7 +238,7 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
         "bindingRevision":1,"requirementId":"first","requirementRevision":1,
         "resultEventSha256":event["eventSha256"],"conditionsSha256":conditions})
     };
-    let bad = serde_json::to_vec(&support(&view_b["currentConditionsSha256"])).unwrap();
+    let bad = serde_json::to_vec(&support(&json!("0".repeat(64)))).unwrap();
     let refused = local_call(
         &product,
         &config,
@@ -217,6 +258,20 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
         Some(&good),
     );
     assert!(accepted.status.success(), "{accepted:?}");
+    let later_purpose = serde_json::to_vec_pretty(&changed).unwrap();
+    fs::write(&config, later_purpose).unwrap();
+    let closeout = local_call(
+        &product,
+        &config,
+        &bindings,
+        &["work", "closeout", work],
+        None,
+    );
+    assert!(closeout.status.success(), "{closeout:?}");
+    let closeout: Value = serde_json::from_slice(&closeout.stdout).unwrap();
+    assert_eq!(closeout["workAcceptance"]["state"], "accepted");
+    assert_eq!(closeout["workAcceptance"]["currentEvidence"], true);
+    fs::write(&config, &original).unwrap();
     fs::write(&config, serde_json::to_string_pretty(&changed).unwrap()).unwrap();
     let later = local_call(
         &product,
@@ -227,14 +282,48 @@ fn observed_support_uses_acquired_configuration_not_later_claimed_conditions() {
     );
     assert!(later.status.success(), "{later:?}");
     let later: Value = serde_json::from_slice(&later.stdout).unwrap();
-    assert_eq!(later["requirements"][0]["unresolved"], true);
+    assert_eq!(later["requirements"][0]["unresolved"], false);
     assert_eq!(
         later["requirements"][0]["support"][0]["integrityCurrent"],
         true
     );
     assert_eq!(
         later["requirements"][0]["support"][0]["acquiredConditionsCurrent"],
-        false
+        true
     );
+    {
+        let accepted_ledger = state.join(&ledger);
+        let original_ledger = fs::read(&accepted_ledger).unwrap();
+        let mut events = original_ledger
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        events[0]["reviewPolicy"]["decision"] = json!("omitted");
+        let tampered = events
+            .iter()
+            .map(serde_json::to_vec)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .into_iter()
+            .flat_map(|mut line| {
+                line.push(b'\n');
+                line
+            })
+            .collect::<Vec<_>>();
+        fs::write(&accepted_ledger, tampered).unwrap();
+        let review_policy_drift = local_call(
+            &product,
+            &config,
+            &bindings,
+            &["work", "continuation", work],
+            None,
+        );
+        assert!(
+            !review_policy_drift.status.success(),
+            "a marked run must retain its frozen review decision"
+        );
+        fs::write(&accepted_ledger, &original_ledger).unwrap();
+    }
     fs::remove_dir_all(base).unwrap();
 }
