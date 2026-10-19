@@ -9,7 +9,7 @@ mod reconcile;
 #[path = "native_action/recovery.rs"]
 mod recovery;
 #[path = "native_action/request.rs"]
-mod request;
+pub(super) mod request;
 #[path = "native_action/result.rs"]
 mod result;
 

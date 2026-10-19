@@ -5,6 +5,7 @@ use super::*;
 #[path = "native_action.rs"]
 mod native_action;
 pub(crate) use native_action::continuation::NativeControlFacts;
+pub(crate) use native_action::request::validate_adviser_candidate;
 
 pub(crate) fn continuation_native_facts(
     loaded: &Loaded,

@@ -280,7 +280,7 @@ fn current_adviser_binding(
     Ok((host, model, effort))
 }
 
-fn validate_adviser_candidate(
+pub(crate) fn validate_adviser_candidate(
     floor: &Value,
     host: &str,
     model: &str,

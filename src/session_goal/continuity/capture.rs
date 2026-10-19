@@ -1,14 +1,10 @@
-//! Host-owned native child capture for a prepared delegation.
+//! Host-owned capture for a prepared native child.
 //!
-//! A receiving parent prepares one child intent with `work child prepare`.
-//! Claude Code and Codex SubagentStart hooks then claim it for the next
-//! compatible subagent the same bound parent session starts, and SubagentStop
-//! finalizes it from the host's final assistant message through the existing
-//! child record. The parent model never relays the child ID or result. A
-//! subagent started while no intent is prepared is never recorded. Host fields
-//! stay host-reported; nothing here authenticates them or grants acceptance,
-//! review, or permission. A capture that cannot attach stays inspectable here,
-//! and `work child recover` records a retained result without re-running it.
+//! `work child prepare` binds an intent to the parent session; SubagentStart
+//! claims it and SubagentStop records the host's final message. Unprepared
+//! children are not recorded. Host IDs are correlation locators, not
+//! authentication or authority. Failed captures remain private and
+//! inspectable; `work child recover` attaches retained results without rerun.
 
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
@@ -16,6 +12,9 @@ use std::fs;
 use std::io::Write;
 
 use super::perspective::{self, Frozen};
+
+#[path = "capture/adviser.rs"]
+mod adviser;
 
 const FILE: &str = "child-intents.json";
 const MAX_ASSIGNMENT: usize = 128;
@@ -152,6 +151,13 @@ pub(crate) fn prepare(
             return Err("bind the receiving session before preparing a child".into());
         };
         let view = crate::work::next(loaded, work)?;
+        if view["next"]["action"] == "spawn" {
+            adviser::validate_requested_binding(
+                loaded,
+                &view["next"]["packet"],
+                binding["host"].as_str().unwrap_or(""),
+            )?;
+        }
         if crate::memory::contextual::enabled(loaded) {
             if view["next"]["action"] != "spawn" {
                 return Err("contextual memory assignment is not current; prepare no child until its recorded Work is resolved".into());
@@ -296,6 +302,11 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     let perspectives = perspective::current(loaded, &sources)?;
     let current = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
+    adviser::validate_requested_binding(
+        loaded,
+        &current["next"]["packet"],
+        binding["host"].as_str().unwrap_or(""),
+    )?;
     let guidance = crate::project::agent_context::guidance(
         loaded,
         agent_id,
@@ -476,6 +487,19 @@ pub(crate) fn claim(
             let reason = "the selected assignment changed before a child started";
             intents[index]["failure"] = json!(reason);
             return Ok(Some(reason.to_owned()));
+        }
+        if intents[index]["selected"].is_null() {
+            let current = crate::work::next(loaded, &work)?;
+            if let Err(error) = adviser::validate_requested_binding(
+                loaded,
+                &current["next"]["packet"],
+                binding["host"].as_str().unwrap_or(""),
+            ) {
+                intents[index]["state"] = json!("abandoned");
+                let reason = format!("native adviser context unavailable: {error}");
+                intents[index]["failure"] = json!(&reason);
+                return Ok(Some(reason));
+            }
         }
         if !intents[index]["selected"].is_null() {
             let intent = intents[index]["id"].as_str().unwrap_or_default();
@@ -686,31 +710,5 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejected_identity_wins_over_a_new_prepared_intent() {
-        let intents = vec![
-            json!({
-                "state": "abandoned",
-                "session": "parent",
-                "nativeChild": "child-a",
-                "agentType": "worker",
-                "failure": "the selected assignment changed before a child started"
-            }),
-            json!({
-                "state": "prepared",
-                "session": "parent",
-                "nativeChild": null,
-                "agentType": "worker"
-            }),
-        ];
-        let intent = rejected(&intents, "parent", "child-a", Some("worker"))
-            .expect("the prior rejected child identity must remain decisive");
-        assert_eq!(
-            rejection_reason(intent),
-            "the selected assignment changed before a child started"
-        );
-    }
-}
+#[path = "capture/tests.rs"]
+mod tests;
