@@ -12,6 +12,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod claim;
+use self::claim::validate_claim;
+
 #[derive(Clone)]
 pub(crate) struct LedgerPath {
     pub(crate) path: PathBuf,
@@ -417,6 +420,10 @@ pub(crate) fn valid_claim(path: &Path) -> Result<Option<Value>, String> {
 }
 
 pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionClaim, String> {
+    // Validate the candidate before either comparing it with a saved claim or
+    // publishing it. In particular, a new optional protocol pair must never
+    // be persisted in a shape the reader would later reject.
+    validate_claim(wanted)?;
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -461,6 +468,14 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
                 }
             }
             for key in ["carryProtocol", "governorCarrySha256"] {
+                if value.get(key) != wanted.get(key) {
+                    return Err("a different successor is already claimed".into());
+                }
+            }
+            for key in [
+                "verificationPreparationProtocol",
+                "verificationCheckerSources",
+            ] {
                 if value.get(key) != wanted.get(key) {
                     return Err("a different successor is already claimed".into());
                 }
@@ -553,63 +568,6 @@ fn remove_owned(path: &Path, owned: &fs::Metadata) {
             let _ = fs::remove_file(path);
         }
     }
-}
-
-fn validate_claim(value: &Value) -> Result<(), String> {
-    let object = value.as_object().ok_or("invalid supersession claim")?;
-    let legacy_fields = [
-        "version",
-        "oldLedgerPath",
-        "oldLedgerSha256",
-        "oldRunId",
-        "oldHeadEventSha256",
-        "oldConfigSha256",
-        "newLedgerPath",
-        "workflow",
-        "goalSha256",
-        "configSha256",
-        "newRunId",
-        "timestamp",
-    ];
-    let carry_fields = ["carryProtocol", "governorCarrySha256"];
-    let has_replacement = value.get("checkReplacement").is_some();
-    let has_pre_return = value.get("preReturnPolicy").is_some();
-    let has_carry =
-        value.get("carryProtocol").is_some() || value.get("governorCarrySha256").is_some();
-    let expected_len = legacy_fields.len()
-        + usize::from(has_carry) * carry_fields.len()
-        + usize::from(has_replacement)
-        + usize::from(has_pre_return);
-    if object.len() != expected_len
-        || legacy_fields.iter().any(|key| !object.contains_key(*key))
-        || (has_carry
-            && (carry_fields.iter().any(|key| !object.contains_key(*key))
-                || (value["carryProtocol"] != crate::run::carry::PROTOCOL
-                    && value["carryProtocol"] != crate::run::carry::RECOVERY_PROTOCOL)
-                || !sha(value["governorCarrySha256"].as_str())))
-        || (has_replacement
-            && crate::run::check_replacement::validate_marker(&value["checkReplacement"], 1)
-                .is_err())
-        || (has_pre_return
-            && crate::run_value::pre_return_policy_from_value(&value["preReturnPolicy"], 1)
-                .is_err())
-        || value["version"] != 1
-        || [
-            "oldLedgerSha256",
-            "oldRunId",
-            "oldHeadEventSha256",
-            "oldConfigSha256",
-            "goalSha256",
-            "configSha256",
-            "newRunId",
-        ]
-        .iter()
-        .any(|key| !sha(value[key].as_str()))
-        || chrono::DateTime::parse_from_rfc3339(value["timestamp"].as_str().unwrap_or("")).is_err()
-    {
-        return Err("invalid supersession claim".into());
-    }
-    Ok(())
 }
 
 fn open_nofollow(path: &Path, create: bool, append: bool) -> Result<File, String> {

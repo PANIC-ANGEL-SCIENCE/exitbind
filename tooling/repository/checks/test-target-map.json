@@ -1835,6 +1835,11 @@
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
       "currentSha256": "eb9addbeaa787012905c1f048e5b7534c9c467b659bd79d0759328a6d49515c5",
       "reason": "Register optional CodeGraph regression coverage in a nested child module while preserving all original fixture bodies and baseline test declarations."
+    },
+    "tests/work_check_replacement/source_and_binding_validation.rs": {
+      "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
+      "currentSha256": "4b770b012ded6ee6bb63f3e41132e2b7dfa676a40d4fe11ebb86f7116c2cd127",
+      "reason": "Prove prepared claim/start binding parity and recovery refusal for missing or unequal optional fields, preserve genuine both-absent legacy lineage, and reject malformed fields and successor identity drift."
     }
   },
   "additions": [

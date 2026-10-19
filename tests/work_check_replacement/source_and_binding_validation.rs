@@ -312,4 +312,217 @@ fn stale_binding_and_non_defective_or_missing_sources_refuse_without_mutation() 
         b"retain"
     );
     assert!(source["eventSha256"].is_string());
+    prepared_replacement_claim_round_trips_with_exact_legacy_and_pair_validation();
+}
+
+fn prepared_replacement_claim_round_trips_with_exact_legacy_and_pair_validation() {
+    let f = Fixture::new();
+    let config_path = f.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["project"]["verificationPreparation"] = json!({
+        "version": 1,
+        "pythonBytecode": "disabled",
+        "scratch": "taskOwned"
+    });
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+    let (work, _) = f.begin_failed_check();
+    let binding = f.ok(&["work", "next", &work, "--json"])["current"]["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview = f.ok(&refs(&replacement_args(&work, &binding)));
+    let apply = preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let applied = f.ok(&refs(&apply));
+    let successor = applied["successor"]["work"].as_str().unwrap();
+    let claim_path = format!("{}.supersede", f.ledger(&work).display());
+    let claim: Value = serde_json::from_slice(&fs::read(&claim_path).unwrap()).unwrap();
+    assert_eq!(claim["verificationPreparationProtocol"], 1);
+    assert!(claim["verificationCheckerSources"].is_array());
+    let successor_events = f.events(successor);
+    assert_eq!(
+        claim["verificationPreparationProtocol"],
+        successor_events[0]["verificationPreparationProtocol"]
+    );
+    assert_eq!(
+        claim["verificationCheckerSources"],
+        successor_events[0]["verificationCheckerSources"],
+        "the claim preserves the successor's exact checker-source binding, including a valid empty list"
+    );
+    let predecessor_detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(predecessor_detail["work"], work);
+    assert_eq!(
+        predecessor_detail["checkReplacement"]["successor"]["work"],
+        successor
+    );
+    assert_eq!(predecessor_detail["checkReplacement"]["state"], "verified");
+
+    // Removing the optional pair from a prepared claim while its successor
+    // remains prepared must invalidate lineage and refuse recovery.
+    let mut stripped_claim = claim.clone();
+    stripped_claim
+        .as_object_mut()
+        .unwrap()
+        .remove("verificationPreparationProtocol");
+    stripped_claim
+        .as_object_mut()
+        .unwrap()
+        .remove("verificationCheckerSources");
+    fs::write(&claim_path, serde_json::to_vec(&stripped_claim).unwrap()).unwrap();
+    assert_eq!(
+        f.ok(&["work", "detail", &work, "--json"])["checkReplacement"]["state"],
+        "unverified"
+    );
+    let mut retry = replacement_args(&work, &binding);
+    retry.push("--apply".into());
+    let refused = f.call(&refs(&retry));
+    assert!(!refused.status.success(), "{refused:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        diagnostic
+            .contains("verification preparation differs from its persisted predecessor claim"),
+        "{diagnostic}"
+    );
+
+    // A genuine pre-preparation successor has no pair in either the claim or
+    // the successor start and remains readable as a legacy lineage.
+    let legacy_fixture = Fixture::new();
+    let (legacy_work, _) = legacy_fixture.begin_failed_check();
+    let legacy_binding = legacy_fixture.ok(&["work", "next", &legacy_work, "--json"])["current"]
+        ["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let legacy_preview = legacy_fixture.ok(&refs(&replacement_args(&legacy_work, &legacy_binding)));
+    let legacy_apply = legacy_preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let legacy_applied = legacy_fixture.ok(&refs(&legacy_apply));
+    let legacy_successor = legacy_applied["successor"]["work"].as_str().unwrap();
+    let legacy_claim_path = format!(
+        "{}.supersede",
+        legacy_fixture.ledger(&legacy_work).display()
+    );
+    let legacy_claim: Value =
+        serde_json::from_slice(&fs::read(legacy_claim_path).unwrap()).unwrap();
+    assert!(legacy_claim
+        .get("verificationPreparationProtocol")
+        .is_none());
+    assert!(legacy_claim.get("verificationCheckerSources").is_none());
+    let legacy_start = &legacy_fixture.events(legacy_successor)[0];
+    assert!(legacy_start
+        .get("verificationPreparationProtocol")
+        .is_none());
+    assert!(legacy_start.get("verificationCheckerSources").is_none());
+    assert_eq!(
+        legacy_fixture.ok(&["work", "detail", &legacy_work, "--json"])["checkReplacement"]["state"],
+        "verified"
+    );
+
+    let mut invalid_claims = Vec::new();
+    let mut partial = claim.clone();
+    partial
+        .as_object_mut()
+        .unwrap()
+        .remove("verificationCheckerSources");
+    invalid_claims.push(("partial pair", partial));
+    let mut bad_protocol = claim.clone();
+    bad_protocol["verificationPreparationProtocol"] = json!(2);
+    invalid_claims.push(("unsupported protocol", bad_protocol));
+    let mut malformed_sources = claim.clone();
+    malformed_sources["verificationCheckerSources"] = json!([{
+        "path": "relative/checker.sh",
+        "sha256": "0".repeat(64)
+    }]);
+    invalid_claims.push(("malformed checker sources", malformed_sources));
+    let mut unknown_field = claim.clone();
+    unknown_field["unexpected"] = json!(true);
+    invalid_claims.push(("unknown field", unknown_field));
+
+    for (label, invalid) in invalid_claims {
+        fs::write(&claim_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        let refused = f.call(&["work", "detail", &work, "--json"]);
+        assert!(!refused.status.success(), "{label}: {refused:?}");
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&refused.stdout),
+            String::from_utf8_lossy(&refused.stderr)
+        );
+        assert!(
+            diagnostic.contains("invalid supersession claim"),
+            "{label}: {diagnostic}"
+        );
+    }
+
+    // A schema-valid optional checker list that differs from the committed
+    // successor must invalidate lineage and block existing-successor recovery.
+    let source_path = fs::canonicalize(f.root.join("checker.sh")).unwrap();
+    let source_sha = format!("{:x}", Sha256::digest(fs::read(&source_path).unwrap()));
+    let source_path = source_path.to_string_lossy().into_owned();
+    let mut mismatched_sources = claim.clone();
+    mismatched_sources["verificationCheckerSources"] = json!([{
+        "path": source_path,
+        "argumentPath": source_path,
+        "sha256": source_sha
+    }]);
+    assert_ne!(
+        mismatched_sources["verificationCheckerSources"],
+        claim["verificationCheckerSources"]
+    );
+    let predecessor_bytes = fs::read(f.ledger(&work)).unwrap();
+    let successor_bytes = fs::read(f.ledger(successor)).unwrap();
+    fs::write(
+        &claim_path,
+        serde_json::to_vec(&mismatched_sources).unwrap(),
+    )
+    .unwrap();
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    assert_eq!(detail["checkReplacement"]["state"], "unverified");
+    let mut retry = replacement_args(&work, &binding);
+    retry.push("--apply".into());
+    let refused = f.call(&refs(&retry));
+    assert!(!refused.status.success(), "{refused:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        diagnostic
+            .contains("verification preparation differs from its persisted predecessor claim"),
+        "{diagnostic}"
+    );
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), predecessor_bytes);
+    assert_eq!(fs::read(f.ledger(successor)).unwrap(), successor_bytes);
+
+    // A well-formed claim whose claimed successor identity differs from the
+    // actual successor is still refused by replacement recovery.
+    let mut mismatched = claim;
+    mismatched["newRunId"] = json!("0".repeat(64));
+    fs::write(&claim_path, serde_json::to_vec(&mismatched).unwrap()).unwrap();
+    let mut retry = replacement_args(&work, &binding);
+    retry.push("--apply".into());
+    let refused = f.call(&refs(&retry));
+    assert!(!refused.status.success(), "{refused:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        diagnostic.contains("successor claim provenance mismatch"),
+        "{diagnostic}"
+    );
 }

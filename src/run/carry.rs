@@ -323,7 +323,10 @@ fn validate_edge(
         .ok_or("invalid superseded predecessor path")?;
     let marked = has_carry_fields(start);
     let replacement = start.get("checkReplacement");
-    let needs_claim = marked || replacement.is_some() || start.get("preReturnPolicy").is_some();
+    let needs_claim = marked
+        || replacement.is_some()
+        || start.get("preReturnPolicy").is_some()
+        || has_preparation_fields(start);
     let predecessor = match ledger_path(&loaded.state_root, relative, true) {
         Ok(predecessor) => predecessor,
         Err(_) if !needs_claim => return Ok(()),
@@ -341,6 +344,7 @@ fn validate_edge(
                     has_carry_fields(claim)
                         || claim.get("checkReplacement").is_some()
                         || claim.get("preReturnPolicy").is_some()
+                        || has_preparation_fields(claim)
                 }) =>
             {
                 claim
@@ -388,6 +392,11 @@ fn validate_edge(
         return Err(
             "pre-return policy is missing or differs from its persisted predecessor claim".into(),
         );
+    }
+    if claim.get("verificationPreparationProtocol") != start.get("verificationPreparationProtocol")
+        || claim.get("verificationCheckerSources") != start.get("verificationCheckerSources")
+    {
+        return Err("verification preparation differs from its persisted predecessor claim".into());
     }
     if marked
         && (start["carryProtocol"].as_u64() != carry_protocol
@@ -548,6 +557,11 @@ fn has_carry_fields(value: &Value) -> bool {
     value.get("carryProtocol").is_some()
         || value.get("governorCarry").is_some()
         || value.get("governorCarrySha256").is_some()
+}
+
+fn has_preparation_fields(value: &Value) -> bool {
+    value.get("verificationPreparationProtocol").is_some()
+        || value.get("verificationCheckerSources").is_some()
 }
 
 fn relative_path(ledger: &LedgerPath) -> Result<&str, String> {
