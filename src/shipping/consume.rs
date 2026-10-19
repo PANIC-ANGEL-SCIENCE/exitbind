@@ -67,7 +67,9 @@ pub(super) fn run(
         }
         let mut attempt = None;
         for n in 1..=3 {
-            if store::get(loaded, id, &format!("attempt-{n}"))?.is_none() {
+            if store::get(loaded, id, &format!("attempt-{n}"))?.is_none()
+                && store::get(loaded, id, &format!("result-{n}"))?.is_none()
+            {
                 attempt = Some(n);
                 break;
             }
@@ -114,8 +116,8 @@ pub(super) fn run(
 }
 
 /// A completion marker is a convenience, not the sole witness of an effect.
-/// Include orphan results and uncertain effects; only a recorded absent effect
-/// can support the bounded local retry after its destination reads absent.
+/// Include orphan results and uncertain effects. Authoritative local absence
+/// permits retry only when no retained result witnesses a prior/unknown effect.
 fn prior_effect(loaded: &Loaded, id: &str) -> Result<bool, String> {
     let mut observed = store::get(loaded, id, "completed")?.is_some();
     for n in 1..=3 {

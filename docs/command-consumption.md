@@ -163,6 +163,9 @@ previously completed output holds rather than overwriting. Complete staging with
 missing capture is reported separately. A surviving successful result remains a
 delivery witness even if its completion marker or attempt record disappears.
 Do not turn missing capture into another delivery.
+An intent without a result can retry after authoritative local absence readback;
+the missing original capture stays incomplete. A retained result reserves its
+attempt number even when the corresponding intent is missing.
 
 Use `ship observe ID --apply` to retain a bounded explicit provider or causal
 observation on stdin. Fields are `id`, `classification` (`provider`,

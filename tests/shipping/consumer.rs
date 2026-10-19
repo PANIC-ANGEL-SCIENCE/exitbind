@@ -228,6 +228,32 @@ fn bounded_failed_stage_retry_and_lost_intent_never_reopen_work() {
 }
 
 #[test]
+fn orphan_absent_result_reserves_its_attempt_and_keeps_new_capture_separate() {
+    let f = Fixture::new("ship-orphan-absent");
+    let (work, _) = f.accepted();
+    let p = packet(&f, &work, "retry-orphan");
+    let id = p["id"].as_str().unwrap();
+    let prior = br#"{"status":"failed","effect":"absent"}"#;
+    fs::write(dir(&f, id).join("result-1"), prior).unwrap();
+    let result = consume(&f, id, "retry-orphan");
+    assert_eq!(result["effect"], "verified_local_staging");
+    assert_eq!(result["state"], "staged_capture_incomplete");
+    assert_eq!(result["captureComplete"], false);
+    assert!(!dir(&f, id).join("attempt-1").exists());
+    assert_eq!(fs::read(dir(&f, id).join("result-1")).unwrap(), prior);
+    let second: Value =
+        serde_json::from_slice(&fs::read(dir(&f, id).join("result-2")).unwrap()).unwrap();
+    assert_eq!(second["status"], "completed");
+    assert_eq!(second["effect"], "verified_local_staging");
+    assert!(dir(&f, id).join("attempt-2").is_file());
+    let completed: Value =
+        serde_json::from_slice(&fs::read(dir(&f, id).join("completed")).unwrap()).unwrap();
+    assert_eq!(completed["attempt"], 2);
+    assert_eq!(consume(&f, id, "retry-orphan"), result);
+    assert!(!dir(&f, id).join("attempt-3").exists());
+}
+
+#[test]
 fn exhausted_attempts_and_invalid_observations_hold() {
     let f = Fixture::new("ship-exhausted");
     let (work, _) = f.accepted();
