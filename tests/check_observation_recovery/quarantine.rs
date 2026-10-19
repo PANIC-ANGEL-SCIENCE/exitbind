@@ -36,13 +36,35 @@ impl Case {
     fn with_options(distinct: bool, descendant: bool) -> Self {
         Self::with_verification_command(distinct, descendant, "exec sh checker.sh")
     }
+    fn with_owned_outputs(distinct: bool) -> Self {
+        Self::build(distinct, false, "exec sh verify.sh", true)
+    }
     fn with_verification_command(
         distinct: bool,
         descendant: bool,
         verification_command: &str,
     ) -> Self {
-        let mut f = Fixture::new("exit 7\n");
+        Self::build(distinct, descendant, verification_command, false)
+    }
+    fn build(
+        distinct: bool,
+        descendant: bool,
+        verification_command: &str,
+        preparation: bool,
+    ) -> Self {
+        // Verification preparation freezes checker sources at Work start. A
+        // marker file lets the same unchanged checker fail differently on the
+        // second observation instead of rewriting its bytes.
+        let script = if preparation {
+            "if [ -f trigger-events ]; then mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf captured; exit 0; fi; exit 7\n"
+        } else {
+            "exit 7\n"
+        };
+        let mut f = Fixture::new(script);
         select_fixture_contract(&f);
+        if preparation {
+            f.enable_owned_outputs();
+        }
         f.native_session = Some(format!(
             "quarantine-{}",
             f.root.file_name().unwrap().to_string_lossy()
@@ -110,7 +132,11 @@ impl Case {
         );
         let lead = f.next(&old);
         let worker = f.give(&old, &lead, "rework")["next"].clone();
-        fs::write(f.root.join("checker.sh"), "mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf captured; exit 0\n").unwrap();
+        if preparation {
+            fs::write(f.root.join("trigger-events"), b"second observation\n").unwrap();
+        } else {
+            fs::write(f.root.join("checker.sh"), "mv .exitbind/runs .exitbind/runs-retained; printf unavailable > .exitbind/runs; printf captured; exit 0\n").unwrap();
+        }
         f.give(&old, &worker, "completed");
         let failed = f.call(&["work", "check", &old, "--timeout-ms", "2000"], b"");
         assert!(!failed.status.success(), "{failed:?}");
@@ -153,7 +179,13 @@ impl Case {
         assert_eq!(current["status"], "blocked");
         assert_eq!(current["checkObservation"]["state"], "failed");
         // Prepare the new frozen source before the feature plan is checked.
-        fs::write(f.root.join("checker.sh"), "exit 0\n").unwrap();
+        // Owned outputs freeze the old Work's checker sources, so its checker
+        // stays byte-identical and the verification uses a separate command.
+        if preparation {
+            fs::write(f.root.join("verify.sh"), "exit 0\n").unwrap();
+        } else {
+            fs::write(f.root.join("checker.sh"), "exit 0\n").unwrap();
+        }
         fs::write(f.root.join(".exitbind/frozen-subject.txt"), FROZEN).unwrap();
         let mut case = Self {
             f,
@@ -707,6 +739,69 @@ fn exercise_unmarked_stale_check_remains_check_only() {
     );
     assert!(!refused.status.success(), "{refused:?}");
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), before);
+}
+
+#[test]
+fn marked_quarantine_chain_compares_each_recorded_digest_in_its_own_domain() {
+    let c = Case::with_owned_outputs(true);
+    c.accept_feature();
+    let feature_inputs =
+        c.f.events(&c.feature)
+            .into_iter()
+            .rev()
+            .find(|event| event["action"] == "check")
+            .and_then(|event| event["inputsSha256"].as_str().map(str::to_owned))
+            .expect("the accepted feature Work records its tested inputs");
+    let preview = c.preview(REQUEST);
+    assert!(preview.status.success(), "{preview:?}");
+    let applied = c.apply(&value(&preview));
+    assert!(applied.status.success(), "{applied:?}");
+    let work = value(&applied)["work"].as_str().unwrap().to_owned();
+    let start = c.f.events(&work).remove(0);
+    let marker_inputs = start["quarantineVerification"]["verification"]["inputsSha256"]
+        .as_str()
+        .expect("the marker records the full tested-input identity")
+        .to_owned();
+    assert_ne!(
+        marker_inputs, feature_inputs,
+        "the marked plan records the feature Work's state-aware digest, not the full marker digest"
+    );
+    c.return_frozen(&work);
+    c.f.ok(&["work", "check", &work, "--timeout-ms", "2000"], b"");
+    let verification_inputs =
+        c.f.events(&work)
+            .into_iter()
+            .rev()
+            .find(|event| event["action"] == "check")
+            .and_then(|event| event["inputsSha256"].as_str().map(str::to_owned))
+            .expect("the verification Work records its tested inputs");
+    assert_eq!(
+        verification_inputs, marker_inputs,
+        "a quarantine verification keeps every guidance path in the frozen full domain"
+    );
+    let reviewer = c.f.next(&work);
+    assert_eq!(reviewer["role"], "reviewer");
+    let lead = c.f.give(&work, &reviewer, "approved")["next"].clone();
+    c.f.give(&work, &lead, "accepted");
+    assert_eq!(c.f.next(&work)["status"], "accepted");
+    let goal = c.owner_ok(&[
+        "goal",
+        "quarantine",
+        &c.old,
+        "--source-config",
+        c.f.root.join("exitbind.json").to_str().unwrap(),
+        "--verification-work",
+        &work,
+        "--request-id",
+        REQUEST,
+        "--reason",
+        REASON,
+        "--json",
+    ]);
+    let recorded = c.apply(&goal);
+    assert!(recorded.status.success(), "{recorded:?}");
+    assert_eq!(value(&recorded)["residual"], "quarantined_uncredited");
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
 }
 
 fn exercise_quarantine_lifecycle(c: Case) {

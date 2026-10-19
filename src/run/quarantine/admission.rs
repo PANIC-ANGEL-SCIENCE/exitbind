@@ -153,7 +153,7 @@ pub(crate) fn prepare(
         .ok_or("isolation review ledger is empty")?;
     let feature_state = crate::run::state::reduce(&feature_events)?;
     crate::run::artifact::assert_current(feature_loaded, &feature_state)?;
-    let feature_inputs = crate::run::inputs::fingerprint(feature_loaded)?;
+    let feature_inputs = crate::run::inputs::fingerprint_for_state(feature_loaded, &feature_state)?;
     if feature_state["inputsSha256"].as_str() != Some(feature_inputs.as_str()) {
         return Err("isolation review Work inputs are no longer current".into());
     }
@@ -247,7 +247,7 @@ pub(crate) fn prepare(
         || hash::value(&plan["effectInventory"]) != review["effectInventorySha256"]
         || hash::value(&plan["environment"]) != marker["verification"]["environmentSha256"]
         || plan["artifactSha256"] != marker["verification"]["artifactSha256"]
-        || plan["inputsSha256"] != marker["verification"]["inputsSha256"]
+        || plan["inputsSha256"].as_str() != Some(feature_inputs.as_str())
     {
         return Err(
             "quarantine verification plan differs from its accepted isolation review".into(),

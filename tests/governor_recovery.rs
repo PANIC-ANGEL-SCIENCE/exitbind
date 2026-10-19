@@ -21,6 +21,9 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_owned_outputs(false)
+    }
+    fn with_owned_outputs(preparation: bool) -> Self {
         let root = support::temp("owner-governor-recovery");
         support::git_topology::repository(&root);
         let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
@@ -29,6 +32,18 @@ impl Fixture {
             .output()
             .unwrap();
         assert!(init.status.success(), "{init:?}");
+        if preparation {
+            // Select owned verification outputs so this marked Work's
+            // state-aware digest omits the in-product configuration path.
+            let path = root.join("exitbind.json");
+            let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            config["project"]["verificationPreparation"] = json!({
+                "version": 1,
+                "pythonBytecode": "disabled",
+                "scratch": "taskOwned"
+            });
+            fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        }
         let goal = "recover one exact duplicate permit without resetting accounting".to_owned();
         let mut fixture = Self {
             root,

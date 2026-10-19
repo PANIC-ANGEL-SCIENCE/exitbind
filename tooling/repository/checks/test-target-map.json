@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 913,
+  "declarations": 914,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1688,8 +1688,8 @@
     },
     "tests/recurrence_repairs.rs": {
       "baselineSha256": "793001bef55ced5eea22bcc401a9a43926c5e3befb1976efeb0e300eca90d0c6",
-      "currentSha256": "16dc732ac4ec77c203f3619b95944c69302c921bb8341c80bd508440f558d480",
-      "reason": "The native lesson-delivery assertion now reads the shared R52 guidance projection used by both Work detail and native launch, keeping the eligible-registry, complete-item and boundary assertions; the established projectLessons field keeps its none-when-no-content contract."
+      "currentSha256": "099b401f46f4ec3861341a4b90c8076c3ab413be3db5d64e2f312b3086c0d5cd",
+      "reason": "The native lesson-delivery assertion reads the shared R52 guidance projection used by Work detail and native launch and additionally measures the serialized delivered items against the pinned 32768-byte host budget instead of trusting only the product usedBytes self-report; the lesson-specific 4-item/6144-byte cap was replaced by the shared host budget, and the eligible-registry and boundary assertions remain."
     },
     "tests/release_integrity/context.rs": {
       "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
@@ -1920,6 +1920,16 @@
       "baselineSha256": "4ebf9695251de805362bbf5605c581da8780e8af2556866cb0eca7b545e186fc",
       "currentSha256": "3b3519a4943e9dacf56a8550ef19e897d81734f2e7c24a164e8d43e71fe5208f",
       "reason": "The independent v8 bundle reader accepts the three versioned guidance-continuity start fields the current producer writes."
+    },
+    "tests/governor_recovery.rs": {
+      "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
+      "currentSha256": "5af291f952947b14b160f48948a8c9a55a152a3ceabcb0124fbf046b90636f1e",
+      "reason": "Add an owned-outputs fixture constructor so one duplicate-permit owner-recovery regression runs on a marked Work whose state-aware digest differs from the full fingerprint; every original fixture body, helper and test remains."
+    },
+    "tests/governor_recovery/owner_recovery.rs": {
+      "baselineSha256": "413b1185b202395ab1fb1386365ed58f41d4e0f4e258edc839671b4ee711b4ff",
+      "currentSha256": "e215c51250578157cf77fdd5d7eca6db514e0ab41473ce535b11991df51f36bf",
+      "reason": "Preserve all original owner-recovery cases and add one marked-Work duplicate-permit regression asserting the owner draft, the grant event and the carried successor share the recorded state-aware input identity."
     }
   },
   "additions": [

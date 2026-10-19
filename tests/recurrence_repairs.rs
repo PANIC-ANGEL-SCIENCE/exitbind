@@ -298,8 +298,20 @@ fn native_delivery_uses_the_same_lesson_cap_without_rejecting_an_eligible_regist
     assert_eq!(value["selectedCount"], 9);
     assert_eq!(value["overflow"].as_array().unwrap().len(), 0);
     assert_eq!(value["unavailable"].as_array().unwrap().len(), 0);
+    let budget = value["budgetBytes"]
+        .as_u64()
+        .expect("budgetBytes is recorded");
+    assert_eq!(
+        budget, 32768,
+        "native delivery uses the shared host budget, not a lesson-specific cap"
+    );
+    let serialized_items = serde_json::to_vec(&value["items"]).unwrap();
     assert!(
-        value["usedBytes"].as_u64().unwrap() <= value["budgetBytes"].as_u64().unwrap(),
+        serialized_items.len() <= budget as usize,
+        "the serialized delivered items stay within the host budget"
+    );
+    assert!(
+        value["usedBytes"].as_u64().unwrap() <= budget,
         "complete selected items stay within the host budget"
     );
     assert!(prompt.contains("no permission, check, review or acceptance authority"));

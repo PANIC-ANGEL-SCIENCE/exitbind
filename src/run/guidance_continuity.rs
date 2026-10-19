@@ -227,6 +227,12 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     if !enabled(state) {
         return BTreeSet::new();
     }
+    // A quarantine verification is an exact frozen execution. Its marker
+    // records the full tested-input fingerprint, so the verification Work
+    // must not omit launch-only guidance from its own tested inputs.
+    if state.get("quarantineVerification").is_some() {
+        return BTreeSet::new();
+    }
     if (state.get("checkPolicy").is_some() || state.get("preservation").is_some())
         && state["verificationCheckerSources"].as_array().is_none()
     {

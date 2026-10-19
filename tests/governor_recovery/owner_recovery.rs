@@ -259,6 +259,58 @@ fn owner_recovery_preserves_old_ledger_accounting_and_requires_new_evidence() {
 }
 
 #[test]
+fn duplicate_permit_owner_recovery_binds_the_marked_works_recorded_inputs() {
+    let fixture = Fixture::with_owned_outputs(true);
+    let (old_bytes, detail) = fixture.block_duplicate_permit();
+    let events: Vec<Value> = fs::read_to_string(fixture.root.join(&fixture.old_ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let start = &events[0];
+    assert_eq!(start["guidanceContinuityProtocol"], json!(1));
+    assert!(
+        start["verificationCheckerSources"].is_array(),
+        "owned verification outputs select the marked state-aware input domain"
+    );
+    let grant = events
+        .iter()
+        .rev()
+        .find(|event| event["action"] == "govern" && event["governorEvent"]["action"] == "mutation")
+        .expect("the duplicate permit grant is recorded");
+    let draft = &detail["actionForms"]["recovery"]["ownerRecoveryDraft"];
+    assert_eq!(
+        draft["productSnapshotSha256"], grant["inputsSha256"],
+        "the owner recovery draft uses the marked input identity that the grant recorded"
+    );
+    fixture.write_recovery_artifacts(draft);
+    let recovered = fixture.execute_form(&detail["actionForms"]["recovery"], b"");
+    assert!(recovered.status.success(), "{}", display(&recovered));
+    let successor = ".exitbind/runs/work-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jsonl";
+    let carried: Value = serde_json::from_str(
+        fs::read_to_string(fixture.root.join(successor))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        carried["governorCarry"]["recovery"]["productSnapshotSha256"], grant["inputsSha256"],
+        "the carried successor binds the same marked input identity"
+    );
+    assert_eq!(
+        carried["governorCarry"]["recovery"]["identity"]["inputsSha256"], grant["inputsSha256"],
+        "the carried identity retains the grant's marked input identity"
+    );
+    assert_eq!(
+        fs::read(fixture.root.join(&fixture.old_ledger)).unwrap(),
+        old_bytes
+    );
+    fixture.assert_prior_ledgers_unchanged();
+}
+
+#[test]
 fn duplicate_blocked_protocol1_predecessor_refuses_direct_evidence_without_appending() {
     let fixture = Fixture::new();
     let (old_bytes, detail) = fixture.block_duplicate_permit();

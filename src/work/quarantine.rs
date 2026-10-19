@@ -262,10 +262,14 @@ pub(crate) fn start(
     if artifact_sha != plan_artifact_sha {
         return Err("verification artifact bytes differ from the accepted feature plan".into());
     }
-    let inputs_sha = run::inputs::fingerprint(loaded)?;
-    if plan["inputsSha256"].as_str() != Some(inputs_sha.as_str()) {
+    // The plan records the feature Work's state-aware digest. A quarantine
+    // marker stays full-domain, so each value is checked in the domain that
+    // recorded it.
+    let plan_inputs = run::inputs::fingerprint_for_state(&feature_loaded, &feature_state)?;
+    if plan["inputsSha256"].as_str() != Some(plan_inputs.as_str()) {
         return Err("verification plan inputs are no longer current".into());
     }
+    let inputs_sha = run::inputs::fingerprint(loaded)?;
     let command = plan["command"]
         .as_str()
         .ok_or("quarantine verification plan field verification.operation must be a string")?;

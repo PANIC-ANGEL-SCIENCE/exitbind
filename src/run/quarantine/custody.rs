@@ -127,10 +127,13 @@ pub(crate) fn validate_against_first_check(
         || hash::value(&plan["effectInventory"]) != review["effectInventorySha256"]
         || hash::value(environment) != first_marker["verification"]["environmentSha256"]
         || plan["artifactSha256"] != first_marker["verification"]["artifactSha256"]
-        || plan["inputsSha256"] != first_marker["verification"]["inputsSha256"]
+        || plan["inputsSha256"] != feature_state["inputsSha256"]
         || hash::text(plan["command"].as_str().unwrap_or_default())
             != first_marker["verification"]["commandSha256"]
-        || check["inputsSha256"] != plan["inputsSha256"]
+        // The plan records the accepting feature Work's state-aware digest;
+        // the marker and the first verification's check both stay full-domain
+        // because a quarantine verification keeps every guidance path strict.
+        || check["inputsSha256"] != first_marker["verification"]["inputsSha256"]
         || check["configSha256"] != first_marker["verification"]["configSha256"]
         || check["checkCommandSha256"] != hash::text(plan["command"].as_str().unwrap_or_default())
         || environment["observerSha256"] != receipt["adapterSha256"]
