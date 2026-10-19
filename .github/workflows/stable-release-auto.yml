@@ -1,0 +1,77 @@
+name: Stable release after main CI
+on:
+  workflow_run:
+    workflows: ["Exitbind / Exit"]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: stable-release-auto
+  cancel-in-progress: false
+jobs:
+  tag-and-dispatch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.id == github.repository_id
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # annotated tag object + ref
+      actions: write    # dispatch release.yml
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Assert exact CI commit checkout
+        env:
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$CI_SHA"
+      - name: Decide whether this main commit is a new stable version
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if test "$main" != "$CI_SHA"; then
+            echo "main moved ($main); newer CI run decides"; echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          version=$(awk '/^\[package\]$/{p=1;next} /^\[/{p=0} p&&/^version = "/{sub(/^version = "/,"");sub(/"$/,"");print;exit}' Cargo.toml)
+          test -n "$version"
+          case "$version" in *-*|*+*) echo "prerelease $version: paired workflow owns it"; echo "release=false" >> "$GITHUB_OUTPUT"; exit 0;; esac
+          tag="v$version"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; tags are immutable, nothing to do"; echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --paginate --jq '.[].ref' \
+            | sed 's#refs/tags/v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          if test -n "$latest" && test "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n1)" != "$version"; then
+            echo "version $version is not newer than v$latest" >&2; exit 1
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create immutable annotated tag at the CI commit
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -eu
+          object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="Exitbind $TAG" \
+            -f object="$CI_SHA" -f type=commit --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object" --jq .object.sha)" = "$CI_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)" = "$object"
+      - name: Request exactly one stable release run on the tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -eu
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f mode=release
+          echo "Dispatched release.yml for $TAG" >> "$GITHUB_STEP_SUMMARY"
