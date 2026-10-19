@@ -12,11 +12,22 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
     if state["checkObservationProtocol"] != PROTOCOL {
         return Ok(());
     }
-    crate::run::guidance_continuity::assert_config_current(loaded, state)?;
-    if fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source {
-        return Err("check observation requires the frozen current configuration; inspect the Work and use authorized supersession for a changed configuration".into());
+    let path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not UTF-8")?;
+    let current = crate::config::load(Some(path))?;
+    if current.path != loaded.path
+        || current.control_root != loaded.control_root
+        || current.product_root != loaded.product_root
+        || current.state_root != loaded.state_root
+        || current.mode != loaded.mode
+        || current.project_id != loaded.project_id
+    {
+        return Err("check observation configuration layout changed; inspect the Work and use authorized supersession".into());
     }
-    crate::project::architecture::assert_current(loaded)?;
+    crate::run::guidance_continuity::assert_config_current(&current, state)?;
+    crate::project::architecture::assert_current(&current)?;
     crate::run::verification_preparation::assert_checker_sources_current(state)
 }
 
@@ -66,9 +77,10 @@ pub(super) fn admit(
         }
         return Err("check observation is already admitted or failed; inspect Work detail and follow the Lead decision; no check was launched".into());
     }
-    if fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source {
-        return Err("configuration changed before observing; no check was launched".into());
-    }
+    // Re-read and revalidate under the ledger lock immediately before the
+    // durable admission. Marked advisory-only config edits are allowed; the
+    // frozen influence projection and strict source checks still apply.
+    assert_current(loaded, state)?;
     let admission = event(
         state,
         events.last().ok_or("run ledger has no head")?,
@@ -219,6 +231,9 @@ pub(super) fn replay_for_operation(
     {
         return Err("committed check replay has preparation fields for an unselected run".into());
     }
+    // The result may be returned only while the exact frozen influence remains
+    // current, even if an advisory-only field changed after the first check.
+    assert_current(loaded, &state)?;
     if binding["observerExecutableSha256"] != crate::producer::build_identity()["executableSha256"]
         || admission["producer"] != crate::producer::evidence_for_version(8)
         || binding["inputsSha256"] != live_inputs(&state)?
@@ -226,7 +241,6 @@ pub(super) fn replay_for_operation(
         || binding["subjectSha256"] != state["subject"]["sha256"]
         || binding["checkCommandSha256"] != policy.command_sha256
         || admission["observation"]["timeoutMs"] != timeout_ms
-        || fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source
     {
         return Err("committed check replay refused changed binding, policy, configuration or execution limit".into());
     }

@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 #[cfg(unix)]
 #[test]
@@ -244,6 +245,289 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
         .unwrap()
         .iter()
         .all(|event| event["action"] != "check"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() {
+    // This selected, frozen Python checker only waits on state-root markers;
+    // it does not read the changed config, isolating observation currentness.
+    let command = "python3 wait-check.py";
+    for (label, field, value, should_pass) in [
+        (
+            "observe-advisory-purpose-during-check",
+            "purpose",
+            json!("Updated advisory purpose while check is running."),
+            true,
+        ),
+        (
+            "observe-strict-command-right-during-check",
+            "commands",
+            json!(["git"]),
+            false,
+        ),
+    ] {
+        let root = support::temp(label);
+        support::git_topology::repository(&root);
+        let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
+        assert!(init.status.success(), "{}", text(&init));
+        fs::write(
+            root.join("wait-check.py"),
+            "from pathlib import Path\nimport time\nPath('.exitbind/observe-started').write_text('started')\nwhile not Path('.exitbind/observe-continue').exists(): time.sleep(.01)\nprint('checked')\n",
+        )
+        .unwrap();
+        let config_path = root.join("exitbind.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["project"]["verificationPreparation"] = json!({
+            "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
+        });
+        fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        let begin = run(
+            &root,
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "observe marked configuration drift",
+                "--check-command",
+                command,
+                "--review-policy",
+                "required",
+                "--config",
+                "exitbind.json",
+            ],
+        );
+        let work = begin["work"].as_str().unwrap().to_owned();
+        let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+        let lead = begin["next"]["assignment"].as_str().unwrap();
+        run(
+            &root,
+            &[
+                "work",
+                "return",
+                &work,
+                lead,
+                "--outcome",
+                "scoped",
+                "--config",
+                "exitbind.json",
+            ],
+        );
+        let worker = run(
+            &root,
+            &["work", "next", &work, "--json", "--config", "exitbind.json"],
+        );
+        let worker_return = run(
+            &root,
+            &[
+                "work",
+                "return",
+                &work,
+                worker["next"]["assignment"].as_str().unwrap(),
+                "--outcome",
+                "completed",
+                "--config",
+                "exitbind.json",
+            ],
+        );
+        let target = worker_return["event"]["eventSha256"].as_str().unwrap();
+        let start = fs::read_to_string(root.join(&ledger)).unwrap();
+        assert!(start.contains("\"checkObservationProtocol\":1"), "{start}");
+        let mut observation = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(&root)
+            .args([
+                "run",
+                "observe-check",
+                &ledger,
+                "--target",
+                target,
+                "--timeout-ms",
+                "20000",
+                "--config",
+                "exitbind.json",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = root.join(".exitbind/observe-started");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if started.exists() {
+                break;
+            }
+            if observation.try_wait().unwrap().is_some() {
+                let output = observation.wait_with_output().unwrap();
+                panic!("marked Work check exited before running: {}", text(&output));
+            }
+            if Instant::now() >= deadline {
+                let _ = observation.kill();
+                let output = observation.wait_with_output().unwrap();
+                panic!("marked Work check did not start: {}", text(&output));
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["agents"]["worker"][field] = value;
+        fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        fs::write(root.join(".exitbind/observe-continue"), "continue\n").unwrap();
+        let observed = observation.wait_with_output().unwrap();
+        let observation_result = json(&observed);
+        let check_recorded = observation_result["checkRecorded"]
+            .as_bool()
+            .unwrap_or(observation_result["event"]["action"] == "check");
+        assert_eq!(check_recorded, should_pass, "{}", text(&observed));
+        let events = fs::read_to_string(root.join(&ledger))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        if should_pass {
+            let check = events
+                .iter()
+                .find(|event| event["action"] == "check")
+                .unwrap();
+            assert_eq!(check["result"]["code"], 0);
+            assert_eq!(
+                check["acquisition"], "observed",
+                "advisory-only purpose changes preserve exact observed evidence"
+            );
+        } else {
+            assert!(!events.iter().any(|event| event["action"] == "check"));
+            assert!(events
+                .iter()
+                .any(|event| event["action"] == "check_observation_failed"));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    let root = support::temp("observe-strict-checker-source-during-check");
+    support::git_topology::repository(&root);
+    let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
+    assert!(init.status.success(), "{}", text(&init));
+    let checker = root.join("wait-check.py");
+    fs::write(
+        &checker,
+        "from pathlib import Path\nimport time\nPath('.exitbind/observe-started').write_text('started')\nwhile not Path('.exitbind/observe-continue').exists(): time.sleep(.01)\nprint('checked')\n",
+    )
+    .unwrap();
+    let config_path = root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["project"]["verificationPreparation"] = json!({
+        "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
+    });
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let begin = run(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "observe strict checker drift",
+            "--check-command",
+            "python3 wait-check.py",
+            "--review-policy",
+            "required",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    let work = begin["work"].as_str().unwrap().to_owned();
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    run(
+        &root,
+        &[
+            "work",
+            "return",
+            &work,
+            begin["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    let next = run(
+        &root,
+        &["work", "next", &work, "--json", "--config", "exitbind.json"],
+    );
+    let worker_return = run(
+        &root,
+        &[
+            "work",
+            "return",
+            &work,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    let target = worker_return["event"]["eventSha256"].as_str().unwrap();
+    let mut observation = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .args([
+            "run",
+            "observe-check",
+            &ledger,
+            "--target",
+            target,
+            "--timeout-ms",
+            "20000",
+            "--config",
+            "exitbind.json",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = root.join(".exitbind/observe-started");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if started.exists() {
+            break;
+        }
+        if observation.try_wait().unwrap().is_some() {
+            let output = observation.wait_with_output().unwrap();
+            panic!(
+                "marked Work checker exited before running: {}",
+                text(&output)
+            );
+        }
+        if Instant::now() >= deadline {
+            let _ = observation.kill();
+            let output = observation.wait_with_output().unwrap();
+            panic!("marked Work checker did not start: {}", text(&output));
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    fs::write(
+        &checker,
+        "print('changed checker must not receive credit')\n",
+    )
+    .unwrap();
+    fs::write(root.join(".exitbind/observe-continue"), "continue\n").unwrap();
+    let observed = observation.wait_with_output().unwrap();
+    assert_eq!(
+        json(&observed)["checkRecorded"],
+        false,
+        "{}",
+        text(&observed)
+    );
+    let events = fs::read_to_string(root.join(&ledger))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(!events.iter().any(|event| event["action"] == "check"));
+    assert!(events
+        .iter()
+        .any(|event| event["action"] == "check_observation_failed"));
     fs::remove_dir_all(root).unwrap();
 }
 
