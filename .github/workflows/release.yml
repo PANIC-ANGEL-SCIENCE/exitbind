@@ -172,6 +172,8 @@ jobs:
             host_arch: x86_64
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
+    # A healthy macos-15-intel build took 37.7 min (v0.31.17); bound a hung runner instead of the 6 h default.
+    timeout-minutes: 60
     env:
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
       CARGO_PROFILE_TEST_OPT_LEVEL: '1'
