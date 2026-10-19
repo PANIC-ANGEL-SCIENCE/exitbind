@@ -1713,8 +1713,8 @@
     },
     "tests/observe_check/timeouts_and_drift.rs": {
       "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
-      "currentSha256": "16138ad3f8a83cd6b35543a44f9cfbf47b6e027ebbb4603ff4dfa0817cc5fffa",
-      "reason": "Preserve the grouped self-reexec selector's actual libtest source-module path and exactly-one-test proof; add the marked concurrent advisory-config acceptance and strict rights/checker refusal regression."
+      "currentSha256": "b3145dab0cdc7469ce70bc63b98d342611f5a3ec8233b4d927822c316a842a7e",
+      "reason": "Preserve the grouped self-reexec selector's actual libtest source-module path and exactly-one-test proof; the marked advisory-config acceptance fixture uses a local control root outside the product fingerprint and retains strict rights/checker refusal cases."
     },
     "tests/init_without_skills.rs": {
       "baselineSha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce",

@@ -250,11 +250,12 @@ fn concurrent_mutation_is_not_locked_out_and_stale_observation_is_refused() {
 
 #[cfg(unix)]
 #[test]
-fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() {
-    // This selected, frozen Python checker only waits on state-root markers;
-    // it does not read the changed config, isolating observation currentness.
+fn marked_observation_preserves_advisory_config_outside_product_fingerprint() {
+    // This fixture checks the advisory config projection only. The config is
+    // outside the product input fingerprint; it makes no claim that an
+    // arbitrary Python checker's transitive reads are bounded.
     let command = "python3 wait-check.py";
-    for (label, field, value, should_pass) in [
+    for (index, (label, field, value, should_pass)) in [
         (
             "observe-advisory-purpose-during-check",
             "purpose",
@@ -267,76 +268,111 @@ fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() 
             json!(["git"]),
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let root = support::temp(label);
         support::git_topology::repository(&root);
-        let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
+        let name = root.file_name().unwrap().to_string_lossy();
+        let control_root = root.with_file_name(format!("{name}-control"));
+        let state_root = root.with_file_name(format!("{name}-state"));
+        let bindings_dir = root.with_file_name(format!("{name}-bindings"));
+        fs::create_dir_all(&control_root).unwrap();
+        fs::create_dir_all(&state_root).unwrap();
+        fs::create_dir_all(&bindings_dir).unwrap();
+        let project_id = format!("observe-b1-{index}-{}", std::process::id());
+        let root_arg = root.to_str().unwrap();
+        let control_arg = control_root.to_str().unwrap();
+        let state_arg = state_root.to_str().unwrap();
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(&root)
+            .env("EXITBIND_BINDINGS_DIR", &bindings_dir)
+            .args([
+                "init",
+                "--mode",
+                "local",
+                "--root",
+                root_arg,
+                "--control-root",
+                control_arg,
+                "--state-root",
+                state_arg,
+                "--project-id",
+                &project_id,
+                "--skip-skills",
+            ])
+            .output()
+            .unwrap();
         assert!(init.status.success(), "{}", text(&init));
+        let config_path = control_root.join("exitbind.json");
+        let config_arg = config_path.to_str().unwrap();
+        let run_local = |args: &[&str]| {
+            let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+                .current_dir(&root)
+                .env("EXITBIND_BINDINGS_DIR", &bindings_dir)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{}", text(&output));
+            json(&output)
+        };
+        let started_marker = control_root.join("observe-started");
+        let continue_marker = control_root.join("observe-continue");
         fs::write(
             root.join("wait-check.py"),
-            "from pathlib import Path\nimport time\nPath('.exitbind/observe-started').write_text('started')\nwhile not Path('.exitbind/observe-continue').exists(): time.sleep(.01)\nprint('checked')\n",
+            format!("from pathlib import Path\nimport time\nPath({started:?}).write_text('started')\nwhile not Path({continuing:?}).exists(): time.sleep(.01)\nprint('checked')\n", started=started_marker.to_string_lossy(), continuing=continue_marker.to_string_lossy()),
         )
         .unwrap();
-        let config_path = root.join("exitbind.json");
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
         config["project"]["verificationPreparation"] = json!({
             "version": 1, "pythonBytecode": "disabled", "scratch": "taskOwned"
         });
         fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-        let begin = run(
-            &root,
-            &[
-                "work",
-                "begin",
-                "change",
-                "--goal",
-                "observe marked configuration drift",
-                "--check-command",
-                command,
-                "--review-policy",
-                "required",
-                "--config",
-                "exitbind.json",
-            ],
-        );
+        let begin = run_local(&[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "observe marked configuration drift",
+            "--check-command",
+            command,
+            "--review-policy",
+            "required",
+            "--config",
+            config_arg,
+        ]);
         let work = begin["work"].as_str().unwrap().to_owned();
         let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+        let ledger_path = state_root.join(&ledger);
         let lead = begin["next"]["assignment"].as_str().unwrap();
-        run(
-            &root,
-            &[
-                "work",
-                "return",
-                &work,
-                lead,
-                "--outcome",
-                "scoped",
-                "--config",
-                "exitbind.json",
-            ],
-        );
-        let worker = run(
-            &root,
-            &["work", "next", &work, "--json", "--config", "exitbind.json"],
-        );
-        let worker_return = run(
-            &root,
-            &[
-                "work",
-                "return",
-                &work,
-                worker["next"]["assignment"].as_str().unwrap(),
-                "--outcome",
-                "completed",
-                "--config",
-                "exitbind.json",
-            ],
-        );
+        run_local(&[
+            "work",
+            "return",
+            &work,
+            lead,
+            "--outcome",
+            "scoped",
+            "--config",
+            config_arg,
+        ]);
+        let worker = run_local(&["work", "next", &work, "--json", "--config", config_arg]);
+        let worker_return = run_local(&[
+            "work",
+            "return",
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+            "--config",
+            config_arg,
+        ]);
         let target = worker_return["event"]["eventSha256"].as_str().unwrap();
-        let start = fs::read_to_string(root.join(&ledger)).unwrap();
+        let start = fs::read_to_string(&ledger_path).unwrap();
         assert!(start.contains("\"checkObservationProtocol\":1"), "{start}");
         let mut observation = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&root)
+            .env("EXITBIND_BINDINGS_DIR", &bindings_dir)
             .args([
                 "run",
                 "observe-check",
@@ -346,16 +382,15 @@ fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() 
                 "--timeout-ms",
                 "20000",
                 "--config",
-                "exitbind.json",
+                config_arg,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        let started = root.join(".exitbind/observe-started");
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
-            if started.exists() {
+            if started_marker.exists() {
                 break;
             }
             if observation.try_wait().unwrap().is_some() {
@@ -373,14 +408,14 @@ fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() 
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
         config["agents"]["worker"][field] = value;
         fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-        fs::write(root.join(".exitbind/observe-continue"), "continue\n").unwrap();
+        fs::write(&continue_marker, "continue\n").unwrap();
         let observed = observation.wait_with_output().unwrap();
         let observation_result = json(&observed);
         let check_recorded = observation_result["checkRecorded"]
             .as_bool()
             .unwrap_or(observation_result["event"]["action"] == "check");
         assert_eq!(check_recorded, should_pass, "{}", text(&observed));
-        let events = fs::read_to_string(root.join(&ledger))
+        let events = fs::read_to_string(&ledger_path)
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
@@ -402,6 +437,9 @@ fn marked_observation_revalidates_advisory_config_on_selected_literal_checker() 
                 .any(|event| event["action"] == "check_observation_failed"));
         }
         fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(control_root).unwrap();
+        fs::remove_dir_all(state_root).unwrap();
+        fs::remove_dir_all(bindings_dir).unwrap();
     }
 
     let root = support::temp("observe-strict-checker-source-during-check");

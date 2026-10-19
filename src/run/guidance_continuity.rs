@@ -170,7 +170,7 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     if !enabled(state) {
         return BTreeSet::new();
     }
-    if has_unresolved_dynamic_checker_dependency(state) {
+    if has_unbounded_verification_consumer(state) {
         return BTreeSet::new();
     }
     add_product_path(&loaded.product_root, &loaded.path, &mut candidates);
@@ -231,31 +231,6 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
         return BTreeSet::new();
     }
     let mut strict = BTreeSet::new();
-    if state.get("checkPolicy").is_some() && state.get("verificationPreparationProtocol").is_none()
-    {
-        // Without a frozen source inventory we cannot distinguish launch
-        // guidance from a checker dependency.
-        return BTreeSet::new();
-    }
-    if let Some(sources) = state["verificationCheckerSources"].as_array() {
-        for source in sources {
-            for field in ["path", "argumentPath"] {
-                if let Some(path) = source[field].as_str() {
-                    if let Ok(relative) =
-                        std::path::Path::new(path).strip_prefix(&loaded.product_root)
-                    {
-                        if let Some(relative) = relative.to_str() {
-                            strict.insert(relative.replace('\\', "/"));
-                        }
-                    }
-                }
-            }
-        }
-    } else if state.get("checkPolicy").is_some() {
-        // A checked run without a frozen source list cannot safely distinguish
-        // dynamic checker dependencies from optional guidance.
-        return BTreeSet::new();
-    }
     if let Some(path) = state["plan"]["architectureContract"]["sourcePath"].as_str() {
         strict.insert(path.to_owned());
     }
@@ -263,33 +238,20 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     candidates
 }
 
-fn has_unresolved_dynamic_checker_dependency(state: &Value) -> bool {
-    fn dynamic(command: &str) -> bool {
-        command
-            .chars()
-            .any(|character| matches!(character, '$' | '*' | '?' | '`' | '[' | ']'))
-    }
-
-    if state.get("checkPolicy").is_some() {
-        let Some(command) = state["checkPolicy"]["command"].as_str() else {
-            return true;
-        };
-        if dynamic(command) {
-            return true;
-        }
-    }
-    if let Some(preservation) = state.get("preservation") {
-        let Some(requirements) = preservation["requirements"].as_array() else {
-            return true;
-        };
-        if requirements
-            .iter()
-            .any(|requirement| requirement["command"].as_str().map_or(true, dynamic))
-        {
-            return true;
-        }
-    }
-    false
+fn has_unbounded_verification_consumer(state: &Value) -> bool {
+    // The frozen source inventory names direct command paths only. It does not
+    // prove a transitive read set for an interpreter, shell, build tool, or
+    // other executable. Keep every product input strict whenever one of these
+    // commands can consume it; advisory exclusion is sound only with no such
+    // executable consumer.
+    [
+        "checkPolicy",
+        "preservation",
+        "preReturnPolicy",
+        "verificationCheckerSources",
+    ]
+    .iter()
+    .any(|field| state.get(field).is_some())
 }
 
 fn add_product_path(root: &std::path::Path, path: &std::path::Path, paths: &mut BTreeSet<String>) {
@@ -441,19 +403,15 @@ mod tests {
     }
 
     #[test]
-    fn only_unambiguous_selected_guidance_paths_leave_the_input_fingerprint() {
+    fn selected_guidance_is_advisory_only_without_executable_consumers() {
         let loaded = loaded(config());
         let mut state = json!({
             "guidanceContinuityProtocol":PROTOCOL,
             "plan":{"stages":[{"agents":[{"memoryReferences":[
                 {"sourcePath":"memory/selected.md","ledgerPath":"memory/selected.jsonl"},
-                {"sourcePath":"memory/checker.md"},
                 {"sourcePath":"memory/architecture.md"}
             ]}]}],
-                "architectureContract":{"sourcePath":"memory/architecture.md"}},
-            "verificationPreparationProtocol":1,
-            "checkPolicy":{"command":"cargo test"},
-            "verificationCheckerSources":[{"path":"/product/memory/checker.md"}]
+                "architectureContract":{"sourcePath":"memory/architecture.md"}}
         });
         assert_eq!(
             unambiguous_paths(&loaded, &state),
@@ -471,9 +429,10 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_dynamic_checker_dependencies_keep_selected_guidance_strict() {
+    fn executable_checker_sources_keep_all_selected_guidance_strict() {
         let loaded = loaded(config());
         for command in [
+            "python3 checks/check.py",
             "python3 checks/check.py \"$ADVICE_PATH\"",
             "python3 checks/check.py memory/*.md",
         ] {
@@ -493,7 +452,7 @@ mod tests {
 
             assert!(
                 unambiguous_paths(&loaded, &state).is_empty(),
-                "dynamic checker dependency must keep selected guidance strict: {command}"
+                "checker read set is not transitively bounded: {command}"
             );
         }
 
@@ -513,7 +472,82 @@ mod tests {
         });
         assert!(
             unambiguous_paths(&loaded, &preservation).is_empty(),
-            "dynamic preservation checker dependency must keep selected guidance strict"
+            "preservation checker read set is not transitively bounded"
         );
+
+        let pre_return = json!({
+            "guidanceContinuityProtocol":PROTOCOL,
+            "plan":{"stages":[{"agents":[{"memoryReferences":[
+                {"sourcePath":"memory/advice.md","ledgerPath":"memory/advice.jsonl"}
+            ]}]}]},
+            "preReturnPolicy":{"command":"sh finalize.sh"},
+            "verificationCheckerSources":[{"path":"/product/finalize.sh"}]
+        });
+        assert!(
+            unambiguous_paths(&loaded, &pre_return).is_empty(),
+            "pre-return checker read set is not transitively bounded"
+        );
+
+        let legacy = json!({
+            "plan":{"stages":[{"agents":[{"memoryReferences":[
+                {"sourcePath":"memory/advice.md"}
+            ]}]}]}
+        });
+        assert!(unambiguous_paths(&loaded, &legacy).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn literal_python_checker_keeps_selected_memory_in_tested_inputs() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-guidance-checker-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("memory")).unwrap();
+        std::fs::write(root.join("memory/advice.md"), "first advice\n").unwrap();
+        let checker = root.join("check.py");
+        std::fs::write(
+            &checker,
+            "from pathlib import Path\nprint(Path('memory/advice.md').read_text())\n",
+        )
+        .unwrap();
+        let observed = std::process::Command::new("python3")
+            .current_dir(&root)
+            .arg("check.py")
+            .output()
+            .unwrap();
+        assert!(observed.status.success());
+        assert!(String::from_utf8_lossy(&observed.stdout).contains("first advice"));
+
+        let mut loaded = loaded(config());
+        loaded.product_root = root.clone();
+        loaded.state_root = root.join(".exitbind");
+        loaded.path = root.join("exitbind.json");
+        let state = json!({
+            "guidanceContinuityProtocol":PROTOCOL,
+            "plan":{"stages":[{"agents":[{"memoryReferences":[
+                {"sourcePath":"memory/advice.md","ledgerPath":"memory/advice.jsonl"}
+            ]}]}]},
+            "verificationPreparationProtocol":1,
+            "checkPolicy":{"command":"python3 check.py"},
+            "verificationCheckerSources":[{
+                "path":checker,"argumentPath":"check.py","sha256":"a".repeat(64)
+            }]
+        });
+        let before = crate::run::inputs::fingerprint_for_state(&loaded, &state).unwrap();
+        std::fs::write(root.join("memory/advice.md"), "changed advice\n").unwrap();
+        let after = crate::run::inputs::fingerprint_for_state(&loaded, &state).unwrap();
+        assert_ne!(
+            before, after,
+            "transitive checker input remains fingerprinted"
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
