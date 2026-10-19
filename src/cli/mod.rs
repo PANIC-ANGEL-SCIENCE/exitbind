@@ -17,6 +17,7 @@ mod goal;
 mod goal_completion;
 mod help;
 mod memory_cli;
+mod migrate;
 mod project;
 mod project_graph;
 mod replan_input;
@@ -180,6 +181,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         }
         "init" => crate::project::commands::init(&parsed),
         "setup" => crate::project::setup::command(&parsed),
+        "ship" => crate::shipping::command(&parsed),
         "bind" => crate::project::commands::bind(&parsed),
         "doctor" => crate::project::commands::doctor(&parsed),
         "hooks" => hooks_command(&parsed),
@@ -387,7 +389,7 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
         "memory" => memory_cli::command(&loaded, a),
         "run" => run_cli::run_command(&loaded, a),
         "away" => away_command(&loaded, a),
-        "migrate" => migrate_command(&loaded, a),
+        "migrate" => migrate::command(&loaded, a),
         "work" => work::work_command(&loaded, a),
         "project" => project::command(&loaded, a),
         _ => Err(format!("unknown command '{command}'")),
@@ -491,18 +493,6 @@ fn benchmark_command(a: &Arguments) -> Result<(), String> {
         print!("{}", crate::value_benchmark::render(&value)?);
         Ok(())
     }
-}
-
-fn migrate_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
-    args::assert_options("migrate", a, &["config", "apply"])?;
-    args::assert_positionals("migrate", a, 1)?;
-    let apply = a.flags.contains_key("apply");
-    let value = match positional(a, 0, "migrate requires layout or paths")? {
-        "layout" => crate::project::layout::run(l, apply),
-        "paths" => crate::project::layout::prepare_paths(l, apply),
-        _ => return Err("migrate requires layout or paths".into()),
-    }?;
-    print_json(&value)
 }
 
 fn away_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {

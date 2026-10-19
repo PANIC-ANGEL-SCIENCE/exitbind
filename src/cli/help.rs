@@ -127,6 +127,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "file"] => "work file prepare WORK ASSIGNMENT | work file read|refresh|edit|inspect SESSION PATH (native workers receive a bound edit tool)",
         ["work", "validate"] => "work validate WORK --packet FILE [--json]",
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
+        ["ship"] => "ship prepare WORK --target NAME --apply [--artifact ACCEPTED_PATH] | ship consume ID --target NAME --apply | ship status ID | ship observe ID --apply (bounded imported JSON on stdin); all commands accept --config CONFIG and --json; local staging only",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
         ["work", "challenge"] => "work challenge [prepare] WORK --question QUESTION [--probe-command COMMAND --probe-source PROJECT_FILE] [--json] | work challenge validate WORK < REPORT_JSON (read-only bounded preparation/current-identity validation; no agents or probes launched)",
         ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands and complete section routes without repeating instructions)",

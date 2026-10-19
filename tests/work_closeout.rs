@@ -710,3 +710,6 @@ fn known_and_revoked_detail_routes_keep_canonical_goal_and_export_bounds() {
         result["goalProgress"]["overall"]
     );
 }
+
+#[path = "shipping/consumer.rs"]
+mod shipping;

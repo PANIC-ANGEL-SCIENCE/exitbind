@@ -1059,3 +1059,14 @@ the 0.31.14 release series and publication gates.
 ### Optional CodeGraph impact queries
 
 CodeGraph is an optional per-project capability. An owner enables indexing for the exact validated project with `exitbind project graph enable [--config PATH]`; `disable` removes that project's authority marker. A bounded query uses the validated task target automatically, or an exact `--config PATH`: `exitbind project graph query --query "symbol or caller question" --json`. Results retain the provider's structured nodes, edges, entry points, related files, and code blocks with source, provider-entry, and index provenance. Unchanged results can be reused after their target, source, provider, and index bindings are checked; changed sources are synchronized or fully indexed only within the project's enabled authority and bounded preparation window. A restored graph finding is a prior observation; source currentness alone does not establish that the provider or index is current, so the saved query route must be used to revalidate it. If the project binding, provider, index, or freshness check is unavailable, continue ordinary source investigation and do not treat that state as an empty impact set. Exitbind does not install or upgrade the provider, start a daemon, or configure Git hooks.
+
+### Accepted-source local shipping
+
+`ship prepare WORK --target NAME --apply [--artifact ACCEPTED_PATH]` derives an
+immutable packet from current acceptance. `ship consume ID --target NAME --apply`
+stages that artifact under task-owned StateRoot storage. `ship status ID` returns
+mechanical report facts without repeating delivery. `ship observe ID --apply`
+retains bounded imported evidence or a separate product-defect repair request.
+All accept `--config CONFIG` and `--json`. See the
+[assistant procedure](docs/command-consumption.md#assistant-shipper-for-an-accepted-result)
+for custody, privacy, retries and the local-only delivery boundary.

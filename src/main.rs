@@ -13,6 +13,7 @@ mod producer;
 mod project;
 mod run;
 mod session_goal;
+mod shipping;
 mod value_benchmark;
 mod work;
 

@@ -1818,8 +1818,8 @@
     },
     "tests/work_closeout.rs": {
       "baselineSha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f",
-      "currentSha256": "8f645d85bd4494b89a9338cca1ddf0c8c7e211ee7c0928118ffeabbe9edd0afd",
-      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained. The fixture materializes 20 real 120-byte components for the supported >2.4 KiB receipt cases, then appends valid lexical-only components to the >8 KiB refusal destination. After each refusal it checks the first absent tail component and retains the original held-directory proof-leaf ENOENT probe, exact refusal, empty-stdout, ledger-stability, and receipt assertions. This avoids filesystem-depth setup failures without changing product behavior or reducing response-boundary coverage."
+      "currentSha256": "50aa7115967529d76dc803bd580f81fccc4ae01cdc49848b5cf604b06917466c",
+      "reason": "Register isolated shipping consumer regressions using the existing accepted Work fixture; preserve all baseline test declarations."
     },
     "tests/resume_scope.rs": {
       "baselineSha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246",

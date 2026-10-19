@@ -129,3 +129,51 @@ retain unknown outcomes and use the Work's supported recovery. A returned
 binary alone is not a complete-suite pass. A timeout is neither termination nor
 permission to replay. These controls cannot prevent every future caller error
 or a host reboot.
+
+## Assistant shipper for an accepted result
+
+Use an already authorized assistant in a fresh context with the same executable,
+configuration and StateRoot custody. The assistant receives a shipping ID and the
+explicit local target choice; it does not reconstruct the implementation dialogue.
+The existing current Work receipt remains the source of acceptance.
+
+```text
+exitbind ship prepare WORK --target task-output --apply --config CONFIG
+exitbind ship consume ID --target task-output --apply --config CONFIG
+exitbind ship status ID --config CONFIG
+```
+
+`prepare` derives the packet, operation identity, exact accepted artifact,
+check/review/Lead references and local destination automatically. The default
+artifact is the first accepted submission; `--artifact ACCEPTED_PATH` selects a
+specific accepted submission. No per-candidate JSON or digest wrapper is needed.
+Only artifacts up to 256 KiB are supported by this bounded route. The consumer
+copies exact bytes into private StateRoot shipping storage. It does not execute
+provider commands. The target is a logical local staging name, not a filesystem
+path, installation selection or remote grant. A packet alone grants no effect;
+consumption requires the matching explicit target and `--apply`.
+
+Assistant procedure: consume the fixed ID once, inspect `ship status` after a lost
+reply, and return its safe mechanical report plus your causal assessment. Read
+private attempt/result records only when needed. When the destination is absent,
+a retry may attempt the local stage at most three times. An existing matching
+artifact is read back without copying again. Changed, unsafe, partial or missing
+previously completed output holds rather than overwriting. Complete staging with
+missing capture is reported separately. Do not turn that into another delivery.
+
+Use `ship observe ID --apply` to retain a bounded explicit provider or causal
+observation on stdin. Fields are `id`, `classification` (`provider`,
+`infrastructure`, `product-defect`), `sourceSha256` (the report's source identity),
+`provider`, `runId`, `status`, `conclusion` (nullable), `evidence`, and `reason`.
+These are labeled imported/caller-reported and never mint acceptance. Only a
+completed run can carry a conclusion; success of a read or parser is not a passed
+provider run. A `product-defect` observation holds the packet and records a
+separate repair request with evidence. It never reopens the accepted Work or
+authorizes the repair. No supported command clears that hold.
+
+The status projection omits private arguments, errors and causal text. Private
+raw observations and immutable facts stay in StateRoot and are not uploaded.
+Local bytes do not establish live shipment, installed-platform verification or
+completion of the user's overall delivery. Current source custody is required;
+transporting just JSON to an unrelated host does not authenticate acceptance.
+Repository-specific CI/release observations remain repository administration.
