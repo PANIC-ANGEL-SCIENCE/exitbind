@@ -44,6 +44,7 @@ fn fresh_consumer_delivers_exact_accepted_artifact_and_lost_reply_is_noop() {
     );
     let before_files = fs::read_dir(dir(&f, id)).unwrap().count();
     assert_eq!(consume(&f, id, "task-output"), result);
+    assert_eq!(packet(&f, &work, "task-output")["state"], "locally_staged");
     assert_eq!(fs::read_dir(dir(&f, id)).unwrap().count(), before_files);
     assert_eq!(fs::read(ledger).unwrap(), before);
     assert_eq!(result["report"]["liveShipment"], false);
@@ -109,6 +110,10 @@ fn product_defect_holds_separate_request_without_reopening_source() {
     );
     let result = consume(&f, id, "defective");
     assert_eq!(result["state"], "held_product_defect");
+    assert_eq!(
+        packet(&f, &work, "defective")["state"],
+        "held_product_defect"
+    );
     assert!(!dir(&f, id).join("artifact").exists());
     let repair: Value =
         serde_json::from_slice(&fs::read(dir(&f, id).join("repair")).unwrap()).unwrap();
@@ -285,4 +290,100 @@ fn lost_repair_record_cannot_release_a_committed_defect_hold() {
             .success()
     );
     assert!(dir(&f, id).join("repair").is_file());
+}
+
+#[test]
+fn actual_local_storage_failure_retains_partial_effect_and_prevents_replay() {
+    use std::os::unix::process::CommandExt;
+    let f = Fixture::new("ship-storage-failure");
+    let work = f.begin();
+    f.outcome(&work, "scoped");
+    let detail = f.detail(&work);
+    let mut permit = detail["actionForms"]["beforeEditing"]["command"].clone();
+    for arg in permit["argv"].as_array_mut().unwrap() {
+        if arg == "<OPERATION>" {
+            *arg = json!("controlled local artifact delivery");
+        }
+    }
+    assert!(f.execute(&work, &permit, b"").status.success());
+    let detail = f.detail(&work);
+    let mut command = detail["actionForms"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["label"] == "completed")
+        .unwrap()["command"]
+        .clone();
+    for arg in command["argv"].as_array_mut().unwrap() {
+        if arg == "<REASON>" {
+            *arg = json!("bounded retained payload for storage-failure qualification");
+        }
+    }
+    assert!(f
+        .execute(&work, &command, &vec![b'x'; 16 * 1024])
+        .status
+        .success());
+    let detail = f.detail(&work);
+    assert!(f
+        .execute(
+            &work,
+            &detail["actionForms"]["mechanicalAction"]["command"],
+            b""
+        )
+        .status
+        .success());
+    f.outcome(&work, "approved");
+    f.outcome(&work, "accepted");
+    let p = packet(&f, &work, "storage");
+    let id = p["id"].as_str().unwrap();
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    child
+        .current_dir(&f.root)
+        .args([
+            "ship", "consume", id, "--target", "storage", "--apply", "--config",
+        ])
+        .arg(f.root.join("exitbind.json"));
+    // Limit only this owned child, never the host or another process.
+    unsafe {
+        child.pre_exec(|| {
+            let no_core = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::setrlimit(libc::RLIMIT_CORE, &no_core) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let limit = libc::rlimit {
+                rlim_cur: 4096,
+                rlim_max: 4096,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let failed = child.output().unwrap();
+    assert!(!failed.status.success(), "{failed:?}");
+    let status = f.json(&["ship", "status", id], b"");
+    assert_eq!(status["state"], "held_unknown_effect");
+    assert_eq!(status["repairRequest"], Value::Null);
+    assert_eq!(
+        fs::metadata(dir(&f, id).join("artifact")).unwrap().len(),
+        4096
+    );
+    assert!(!f
+        .call(
+            &["ship", "consume", id, "--target", "storage", "--apply"],
+            b""
+        )
+        .status
+        .success());
+    assert_eq!(
+        f.json(&["ship", "status", id], b"")["attempts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }

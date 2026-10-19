@@ -98,6 +98,7 @@ fn prepare(
         let id = hash::value(&packet);
         // Validate artifact bound and confinement before creating a packet.
         consume::artifact_bytes(loaded, &packet)?;
+        let existed = store::read(loaded, &id, "packet")?.is_some();
         store::put(loaded, &id, "packet", &packet)?;
         if current(loaded, work)? != packet["source"] {
             return Err("source changed during handoff; packet held".into());
@@ -116,9 +117,13 @@ fn prepare(
             loaded.path.to_str(),
             1024,
         );
-        Ok(json!({"id":id,"state":"handed_off","sourceAccepted":true,
-            "destinationKind":"task_owned_local_staging","effect":"packet_retained",
-            "consumer":{"argv":route.argv,"sameConfigRequired":route.same_config,"sameExecutableRequired":route.same_executable},
-            "overallDelivery":"pending"}))
+        let mut result = consume::status(loaded, &id)?;
+        result["handoffEffect"] = json!(if existed {
+            "no-change"
+        } else {
+            "packet_retained"
+        });
+        result["consumer"] = json!({"argv":route.argv,"sameConfigRequired":route.same_config,"sameExecutableRequired":route.same_executable});
+        Ok(result)
     })
 }
