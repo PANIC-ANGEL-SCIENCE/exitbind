@@ -293,6 +293,172 @@ fn lost_repair_record_cannot_release_a_committed_defect_hold() {
 }
 
 #[test]
+fn defect_hold_covers_existing_and_new_targets_and_other_accepted_artifacts() {
+    let f = Fixture::new("ship-source-hold");
+    let (work, accepted) = f.accepted();
+    let ledger = f
+        .root
+        .join(accepted["reference"]["ledger"].as_str().unwrap());
+    let before = fs::read(&ledger).unwrap();
+    let first = packet(&f, &work, "first");
+    let sibling = packet(&f, &work, "already-prepared");
+    let id = first["id"].as_str().unwrap();
+    assert!(
+        observe(&f, id, "product-defect", "completed", json!("failure"))
+            .status
+            .success()
+    );
+    let stored: Value =
+        serde_json::from_slice(&fs::read(dir(&f, id).join("packet")).unwrap()).unwrap();
+    let other_artifact = stored["source"]["artifacts"][1]["path"].as_str().unwrap();
+    let alternate = f.json(
+        &[
+            "ship",
+            "prepare",
+            &work,
+            "--target",
+            "first",
+            "--artifact",
+            other_artifact,
+            "--apply",
+        ],
+        b"",
+    );
+    let later = packet(&f, &work, "after-defect");
+    for (p, target) in [
+        (&sibling, "already-prepared"),
+        (&alternate, "first"),
+        (&later, "after-defect"),
+    ] {
+        assert_ne!(p["id"], first["id"]);
+        assert_eq!(
+            p["report"]["sourceIdentity"],
+            first["report"]["sourceIdentity"]
+        );
+        let p_id = p["id"].as_str().unwrap();
+        assert_eq!(consume(&f, p_id, target)["state"], "held_product_defect");
+        assert!(!dir(&f, p_id).join("artifact").exists());
+    }
+    // The shared hold survives loss of packet records after its first commit.
+    fs::remove_file(dir(&f, id).join("repair")).unwrap();
+    fs::remove_file(dir(&f, id).join("observation-1")).unwrap();
+    assert_eq!(
+        consume(&f, sibling["id"].as_str().unwrap(), "already-prepared")["state"],
+        "held_product_defect"
+    );
+    assert_eq!(fs::read(ledger).unwrap(), before);
+}
+
+#[test]
+fn legacy_packet_defect_and_invalid_shared_record_cannot_release_siblings() {
+    let f = Fixture::new("ship-legacy-hold");
+    let (work, _) = f.accepted();
+    let p = packet(&f, &work, "legacy");
+    let id = p["id"].as_str().unwrap();
+    assert!(
+        observe(&f, id, "product-defect", "completed", json!("failure"))
+            .status
+            .success()
+    );
+    let shared = dir(&f, p["report"]["sourceIdentity"].as_str().unwrap()).join("source-defect");
+    fs::remove_file(&shared).unwrap();
+    fs::remove_file(dir(&f, id).join("repair")).unwrap();
+    let sibling = packet(&f, &work, "legacy-sibling");
+    let sibling_id = sibling["id"].as_str().unwrap();
+    assert_eq!(
+        consume(&f, sibling_id, "legacy-sibling")["state"],
+        "held_product_defect"
+    );
+    assert!(!dir(&f, sibling_id).join("artifact").exists());
+    fs::write(&shared, b"{").unwrap();
+    assert!(!f
+        .call(
+            &[
+                "ship",
+                "consume",
+                sibling_id,
+                "--target",
+                "legacy-sibling",
+                "--apply"
+            ],
+            b""
+        )
+        .status
+        .success());
+    assert!(!dir(&f, sibling_id).join("artifact").exists());
+}
+
+#[test]
+fn source_hold_commits_before_failed_packet_storage_and_keeps_first_request() {
+    let f = Fixture::new("ship-hold-commit");
+    let (work, _) = f.accepted();
+    let p = packet(&f, &work, "failed-report");
+    let id = p["id"].as_str().unwrap();
+    let shared = dir(&f, p["report"]["sourceIdentity"].as_str().unwrap()).join("source-defect");
+    // A packet repair write/read fails after the shared hold and observation.
+    fs::create_dir(dir(&f, id).join("repair")).unwrap();
+    let mut observation = json!({"id":"defect-first","classification":"product-defect",
+        "sourceSha256":p["report"]["sourceIdentity"],"provider":"controlled-fixture",
+        "runId":"failed-report","status":"completed","conclusion":"failure",
+        "evidence":"controlled packet storage failure","reason":"source defect"});
+    assert!(!f
+        .call(
+            &["ship", "observe", id, "--apply"],
+            &serde_json::to_vec(&observation).unwrap()
+        )
+        .status
+        .success());
+    let first = fs::read(&shared).unwrap();
+    let sibling = packet(&f, &work, "after-failed-report");
+    let sibling_id = sibling["id"].as_str().unwrap();
+    assert_eq!(
+        consume(&f, sibling_id, "after-failed-report")["state"],
+        "held_product_defect"
+    );
+    observation["id"] = json!("defect-second");
+    assert!(f
+        .call(
+            &["ship", "observe", sibling_id, "--apply"],
+            &serde_json::to_vec(&observation).unwrap()
+        )
+        .status
+        .success());
+    assert_eq!(fs::read(shared).unwrap(), first);
+    assert!(!dir(&f, sibling_id).join("artifact").exists());
+}
+
+#[test]
+fn retained_success_without_completion_artifact_or_intent_refuses_replay() {
+    let f = Fixture::new("ship-success-witness");
+    let (work, _) = f.accepted();
+    let p = packet(&f, &work, "once");
+    let id = p["id"].as_str().unwrap();
+    assert_eq!(consume(&f, id, "once")["state"], "locally_staged");
+    let result = fs::read(dir(&f, id).join("result-1")).unwrap();
+    for leaf in ["completed", "artifact", "attempt-1"] {
+        fs::remove_file(dir(&f, id).join(leaf)).unwrap();
+    }
+    assert!(!f
+        .call(&["ship", "consume", id, "--target", "once", "--apply"], b"")
+        .status
+        .success());
+    assert!(!dir(&f, id).join("artifact").exists());
+    assert!(!dir(&f, id).join("attempt-1").exists());
+    assert!(!dir(&f, id).join("attempt-2").exists());
+    assert_eq!(fs::read(dir(&f, id).join("result-1")).unwrap(), result);
+    let status = f.json(&["ship", "status", id], b"");
+    assert_eq!(status["state"], "held_unknown_effect");
+    assert_eq!(status["captureComplete"], false);
+    assert_eq!(status["attempts"].as_array().unwrap().len(), 1);
+    fs::write(dir(&f, id).join("result-1"), b"{").unwrap();
+    assert!(!f
+        .call(&["ship", "consume", id, "--target", "once", "--apply"], b"")
+        .status
+        .success());
+    assert!(!dir(&f, id).join("artifact").exists());
+}
+
+#[test]
 fn actual_local_storage_failure_retains_partial_effect_and_prevents_replay() {
     use std::os::unix::process::CommandExt;
     let f = Fixture::new("ship-storage-failure");

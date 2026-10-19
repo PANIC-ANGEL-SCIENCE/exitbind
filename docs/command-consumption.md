@@ -156,10 +156,13 @@ consumption requires the matching explicit target and `--apply`.
 Assistant procedure: consume the fixed ID once, inspect `ship status` after a lost
 reply, and return its safe mechanical report plus your causal assessment. Read
 private attempt/result records only when needed. When the destination is absent,
-a retry may attempt the local stage at most three times. An existing matching
+a retry may attempt the local stage at most three times when retained results
+show no prior or uncertain effect. An existing matching
 artifact is read back without copying again. Changed, unsafe, partial or missing
 previously completed output holds rather than overwriting. Complete staging with
-missing capture is reported separately. Do not turn that into another delivery.
+missing capture is reported separately. A surviving successful result remains a
+delivery witness even if its completion marker or attempt record disappears.
+Do not turn missing capture into another delivery.
 
 Use `ship observe ID --apply` to retain a bounded explicit provider or causal
 observation on stdin. Fields are `id`, `classification` (`provider`,
@@ -167,8 +170,11 @@ observation on stdin. Fields are `id`, `classification` (`provider`,
 `provider`, `runId`, `status`, `conclusion` (nullable), `evidence`, and `reason`.
 These are labeled imported/caller-reported and never mint acceptance. Only a
 completed run can carry a conclusion; success of a read or parser is not a passed
-provider run. A `product-defect` observation holds the packet and records a
-separate repair request with evidence. It never reopens the accepted Work or
+provider run. A `product-defect` observation first retains a source-wide hold
+and separate repair request with evidence. Every destination and accepted-artifact
+variant of that source remains held, including packets prepared earlier. Initial
+packet-only development holds are also read back; history readback fails closed
+above 256 identities. It never reopens the accepted Work or
 authorizes the repair. No supported command clears that hold.
 
 The status projection omits private arguments, errors and causal text. Private

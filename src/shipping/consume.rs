@@ -48,7 +48,7 @@ pub(super) fn run(
         if current(loaded, work)? != packet["source"] {
             return Err("fixed source or acceptance changed; shipment held".into());
         }
-        if store::get(loaded, id, "repair")?.is_some() || super::observation::facts(loaded, id)?.1 {
+        if super::observation::source_hold(loaded, &packet)?.is_some() {
             return status(loaded, id);
         }
         let bytes = artifact_bytes(loaded, &packet)?;
@@ -60,7 +60,7 @@ pub(super) fn run(
             }
             return status(loaded, id);
         }
-        if store::get(loaded, id, "completed")?.is_some() {
+        if prior_effect(loaded, id)? {
             return Err(
                 "previously staged artifact disappeared; held without repeating delivery".into(),
             );
@@ -113,6 +113,19 @@ pub(super) fn run(
     })
 }
 
+/// A completion marker is a convenience, not the sole witness of an effect.
+/// Include orphan results and uncertain effects; only a recorded absent effect
+/// can support the bounded local retry after its destination reads absent.
+fn prior_effect(loaded: &Loaded, id: &str) -> Result<bool, String> {
+    let mut observed = store::get(loaded, id, "completed")?.is_some();
+    for n in 1..=3 {
+        if let Some(result) = store::get(loaded, id, &format!("result-{n}"))? {
+            observed |= result["effect"] != "absent" || result["status"] == "completed";
+        }
+    }
+    Ok(observed)
+}
+
 pub(super) fn status(loaded: &Loaded, id: &str) -> Result<Value, String> {
     let packet = store::packet(loaded, id)?;
     let source_current = packet["work"]
@@ -120,14 +133,16 @@ pub(super) fn status(loaded: &Loaded, id: &str) -> Result<Value, String> {
         .and_then(|work| current(loaded, work).ok())
         .is_some_and(|source| source == packet["source"]);
     let repair = store::get(loaded, id, "repair")?;
+    let source_hold = super::observation::source_hold(loaded, &packet)?;
     let (provider_facts, defect) = super::observation::facts(loaded, id)?;
-    let held_defect = repair.is_some() || defect;
+    let held_defect = source_hold.is_some();
     let mut attempts = Vec::new();
     let mut complete = true;
     for n in 1..=3 {
-        if store::get(loaded, id, &format!("attempt-{n}"))?.is_some() {
-            let result = store::get(loaded, id, &format!("result-{n}"))?;
-            complete &= result.is_some();
+        let intent = store::get(loaded, id, &format!("attempt-{n}"))?;
+        let result = store::get(loaded, id, &format!("result-{n}"))?;
+        if intent.is_some() || result.is_some() {
+            complete &= intent.is_some() && result.is_some();
             // Public projection omits private errors, raw arguments and paths.
             attempts.push(
                 json!({"attempt":n,"status":result.as_ref().map(|v| &v["status"]),
@@ -148,7 +163,7 @@ pub(super) fn status(loaded: &Loaded, id: &str) -> Result<Value, String> {
         "held_product_defect"
     } else if !source_current {
         "held_stale_source"
-    } else if effect == "unknown" || (completed && effect == "absent") {
+    } else if effect == "unknown" || (effect == "absent" && prior_effect(loaded, id)?) {
         "held_unknown_effect"
     } else if effect == "verified_local_staging" && (!complete || !completed) {
         "staged_capture_incomplete"
@@ -163,7 +178,7 @@ pub(super) fn status(loaded: &Loaded, id: &str) -> Result<Value, String> {
         json!({"version":1,"id":id,"state":state,"sourceAccepted":if source_current {json!(true)}else{Value::Null},"sourceCurrent":source_current,
         "effect":effect,"captureComplete":complete && (effect != "verified_local_staging" || completed),
         "artifactSha256":packet["artifact"]["sha256"],"attempts":attempts,
-        "repairRequest":repair.as_ref().map(|r| &r["id"]),"repairRecordPending":defect && repair.is_none(),"providerFacts":provider_facts,
+        "repairRequest":source_hold.as_ref().map(|r| &r["id"]),"repairRecordPending":(defect && repair.is_none()) || source_hold.as_ref().is_some_and(|r| r["recordPending"] == true),"providerFacts":provider_facts,
         "report":{"projection":"safe_mechanical_facts","sourceIdentity":hash::value(&packet["source"]),
             "deliveryScope":"task_owned_local_staging","liveShipment":false,"installedPlatformVerification":false,
             "overallUserDelivery":"not_established","causalJudgment":"shipper_supplied_separately",

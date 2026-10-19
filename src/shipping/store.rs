@@ -106,3 +106,29 @@ pub(super) fn packet(loaded: &Loaded, id: &str) -> Result<Value, String> {
     }
     Ok(value)
 }
+
+/// Bounded discovery also preserves holds written by the initial packet-only
+/// prototype. Record contents are still read through the no-follow helpers.
+pub(super) fn identities(loaded: &Loaded) -> Result<Vec<String>, String> {
+    let mut directory = loaded.state_root.clone();
+    for part in [crate::project::layout_types::state_namespace(), "shipping"] {
+        directory.push(part);
+        match std::fs::symlink_metadata(&directory) {
+            Ok(info) if info.is_dir() && !info.file_type().is_symlink() => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            _ => return Err("shipping history directory is unsafe or unavailable; hold".into()),
+        }
+    }
+    let mut ids = Vec::new();
+    for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
+        if ids.len() == 256 {
+            return Err("shipping history exceeds bounded hold readback; hold".into());
+        }
+        let name = entry.map_err(|e| e.to_string())?.file_name();
+        let id = name.to_str().ok_or("shipping identity is not UTF-8")?;
+        relative(id, "packet")?;
+        ids.push(id.to_owned());
+    }
+    ids.sort();
+    Ok(ids)
+}

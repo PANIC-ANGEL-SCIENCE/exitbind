@@ -82,6 +82,17 @@ pub(super) fn record(loaded: &Loaded, id: &str, bytes: &[u8]) -> Result<serde_js
                 _ => {}
             }
         }
+        if observation.classification == "product-defect" {
+            let source_id = hash::value(&packet["source"]);
+            let request = json!({"id":format!("repair-source-{source_id}"),"packet":id,"source":packet["source"],
+                "firstObservation":observation.id,"evidence":observation.evidence,"reason":observation.reason,
+                "state":"requested_not_authorized","sourceWorkUnchanged":true});
+            // Commit the source-wide hold first. Losing any later packet record
+            // or response cannot authorize another destination or artifact.
+            if store::get(loaded, &source_id, "source-defect")?.is_none() {
+                store::put(loaded, &source_id, "source-defect", &request)?;
+            }
+        }
         store::put(
             loaded,
             id,
@@ -99,6 +110,36 @@ pub(super) fn record(loaded: &Loaded, id: &str, bytes: &[u8]) -> Result<serde_js
         }
         consume::status(loaded, id)
     })
+}
+
+pub(super) fn source_hold(
+    loaded: &Loaded,
+    packet: &serde_json::Value,
+) -> Result<Option<serde_json::Value>, String> {
+    if let Some(hold) = store::get(loaded, &hash::value(&packet["source"]), "source-defect")? {
+        return Ok(Some(hold));
+    }
+    // Initial development packets have only packet-local defect facts. Read
+    // those too, including when the source-wide record was lost. Never infer
+    // clearance from choosing a new packet identity.
+    for id in store::identities(loaded)? {
+        if store::read(loaded, &id, "packet")?.is_none() {
+            continue;
+        }
+        let prior = store::packet(loaded, &id)?;
+        if prior["source"] != packet["source"] {
+            continue;
+        }
+        if let Some(repair) = store::get(loaded, &id, "repair")? {
+            return Ok(Some(repair));
+        }
+        if facts(loaded, &id)?.1 {
+            return Ok(Some(
+                json!({"id":format!("repair-{id}"),"recordPending":true}),
+            ));
+        }
+    }
+    Ok(None)
 }
 
 /// A committed defect fact is itself a hold, even if the repair reply/storage was lost.
