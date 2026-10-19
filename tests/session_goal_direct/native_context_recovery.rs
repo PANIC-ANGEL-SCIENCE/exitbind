@@ -305,6 +305,65 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     assert_eq!(shown["freshness"]["goalCurrent"], true);
     assert_eq!(shown["freshness"]["declaredGuidanceSourcesCurrent"], true);
     assert_eq!(shown["freshness"]["savedStepCurrent"], false);
+    assert_eq!(shown["milestone"]["protocol"], 1);
+    assert_eq!(
+        shown["milestone"]["state"], "current_detail_observed",
+        "milestone projection: {}",
+        shown["milestone"]
+    );
+    assert_eq!(shown["milestone"]["goal"], "recovery-goal");
+    assert_eq!(shown["milestone"]["goalCurrent"], true);
+    assert!(shown["milestone"]["workRef"]
+        .as_str()
+        .unwrap()
+        .contains("workDetailArgv"));
+    assert_eq!(shown["milestone"]["work"], work);
+    assert_eq!(shown["milestone"]["assignment"]["state"], "known");
+    assert_eq!(shown["milestone"]["phase"]["stage"], 2);
+    assert_eq!(shown["milestone"]["phase"]["status"], "running");
+    assert_eq!(
+        shown["milestone"]["checkReferences"]["historical"][0]["savedStepRouteRef"],
+        "savedHint.currentStep"
+    );
+    assert_eq!(
+        shown["milestone"]["checkReferences"]["historical"][0]["current"],
+        false
+    );
+    assert_eq!(
+        shown["milestone"]["checkReferences"]["current"],
+        Value::Null
+    );
+    assert_eq!(
+        shown["milestone"]["currentWorkDetail"]["bindingSha256"]
+            .as_str()
+            .unwrap()
+            .len(),
+        64
+    );
+    assert_eq!(
+        shown["milestone"]["checkReferences"]["current"],
+        Value::Null
+    );
+    assert!(shown["milestone"]["routes"].as_array().unwrap().len() <= 3);
+    assert_eq!(shown["milestone"]["routes"][0]["kind"], "work_detail");
+    assert_eq!(
+        shown["milestone"]["routes"][0]["routeRef"],
+        "readRoutes.workDetailArgv[0]"
+    );
+    assert_eq!(shown["milestone"]["routes"][1]["kind"], "action_refresh");
+    assert_eq!(
+        shown["milestone"]["routes"][1]["routeRef"],
+        "readRoutes.workDetailArgv[0]"
+    );
+    let milestone_bytes = serde_json::to_vec_pretty(&shown["milestone"]).unwrap();
+    assert!(milestone_bytes.len() <= 4 * 1024);
+    assert!(
+        milestone_bytes
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count()
+            < 50
+    );
     assert_eq!(shown["readRoutes"]["workDetailArgv"][0]["work"], work);
     let work_argv = shown["readRoutes"]["workDetailArgv"][0]["argv"]
         .as_array()
@@ -407,6 +466,14 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     let shown_after_advance: Value = serde_json::from_slice(&shown_after_advance.stdout).unwrap();
     assert_eq!(shown_after_advance["activeRecovery"], Value::Null);
     assert_eq!(shown_after_advance["freshness"]["goalCurrent"], false);
+    assert_eq!(
+        shown_after_advance["milestone"]["goalCurrent"], false,
+        "Goal advancement is reported independently from a current Work detail"
+    );
+    assert_eq!(
+        shown_after_advance["milestone"]["state"],
+        "current_detail_observed"
+    );
 
     fs::write(
         project.root.join("recovery-guidance.md"),
@@ -447,6 +514,24 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         .as_str()
         .unwrap()
         .contains("hint is unusable"));
+    let corrupt_show = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(std::env::temp_dir())
+        .args(["session", "recovery", "show", "--json"])
+        .env("CODEX_THREAD_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .output()
+        .unwrap();
+    assert!(corrupt_show.status.success());
+    let corrupt_show: Value = serde_json::from_slice(&corrupt_show.stdout).unwrap();
+    assert_eq!(corrupt_show["milestone"]["state"], "unknown");
+    assert_eq!(corrupt_show["milestone"]["workState"], "unknown");
+    let unknown_bytes = serde_json::to_vec_pretty(&corrupt_show["milestone"]).unwrap();
+    assert!(unknown_bytes.len() <= 4 * 1024);
+    assert!(unknown_bytes.iter().filter(|byte| **byte == b'\n').count() < 50);
     assert_eq!(fs::read(&goal_path).unwrap(), advanced_goal);
 }
 

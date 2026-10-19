@@ -488,6 +488,7 @@ pub(crate) fn show() -> Result<Value, String> {
         "activeSavedStep":Value::Null,
         "savedHint":hint_value,
         "activeRecovery":active_recovery,
+        "milestone":super::milestone::project(&record, &session, &owner, hint.as_ref()),
         "freshness":freshness,
         "issue":dynamic_issue,
         "readRoutes":{"recoveryShowArgv":[executable,"session","recovery","show","--json"],"goalStatusArgv":goal_route,"workDetailArgv":work_routes,"references":reference_routes,"pendingOperation":pending_route},

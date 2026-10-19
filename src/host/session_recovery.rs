@@ -4,6 +4,7 @@
 //! authoritative, and no saved route is permission to replay an operation.
 
 mod hint;
+mod milestone;
 mod presentation;
 mod record;
 mod references;
