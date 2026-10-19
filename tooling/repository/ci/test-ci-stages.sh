@@ -104,6 +104,33 @@ fi
 if ci_stage_selected pre-return unknown linux; then
   fail 'unknown stage accepted'
 fi
+first_proof_base_stage() {
+  mode=$1
+  platform=$2
+  for stage in $(selected_stages "$mode" "$platform"); do
+    if ci_stage_needs_proof_base "$mode" "$stage"; then
+      printf '%s\n' "$stage"
+      return 0
+    fi
+  done
+  return 1
+}
+# Every mode that runs value-contract or tests prepares VALUE_PROOF_BASE first,
+# so a GitHub first-push all-zero base is normalized in pre-return as in full.
+test "$(first_proof_base_stage full linux)" = fmt || fail 'full linux proof base not prepared before fmt'
+test "$(first_proof_base_stage full macos)" = tests || fail 'full macos proof base not prepared before tests'
+test "$(first_proof_base_stage pre-return linux)" = value-contract || fail 'pre-return linux proof base not prepared before value-contract'
+test "$(first_proof_base_stage pre-return macos)" = value-contract || fail 'pre-return macos proof base not prepared before value-contract'
+for stage in history workflows workflow-regression ci-stage-contract quiet-command-regression release-refs; do
+  for mode in full pre-return; do
+    if ci_stage_needs_proof_base "$mode" "$stage"; then
+      fail "proof base prepared for a stage that does not consume it: $mode $stage"
+    fi
+  done
+done
+grep -F 'if [ "$proof_base_ready" = false ] && ci_stage_needs_proof_base "$ci_mode" "$stage"; then' \
+  "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
+  fail 'ci-local must prepare the proof base through the shared stage predicate in every mode'
 for stage in $(ci_stage_order); do
   grep -F "    $stage)" "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
     fail "selected stage has no command dispatch: $stage"

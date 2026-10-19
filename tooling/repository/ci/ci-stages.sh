@@ -60,3 +60,19 @@ ci_stage_selected() {
       ;;
   esac
 }
+
+# Stages that consume VALUE_PROOF_BASE; ci-local prepares (and normalizes an
+# empty or all-zero base to HEAD^) before the first of them in either mode.
+ci_stage_needs_proof_base() {
+  mode=$1
+  stage=$2
+
+  case "$mode:$stage" in
+    full:fmt|full:tests|pre-return:value-contract)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}

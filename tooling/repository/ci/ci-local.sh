@@ -60,7 +60,7 @@ fi
 proof_base_ready=false
 for stage in $(ci_stage_order); do
   ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
-  if [ "$ci_mode" = full ] && [ "$proof_base_ready" = false ] && { [ "$stage" = fmt ] || [ "$stage" = tests ]; }; then
+  if [ "$proof_base_ready" = false ] && ci_stage_needs_proof_base "$ci_mode" "$stage"; then
     prepare_value_proof_base
     proof_base_ready=true
   fi
