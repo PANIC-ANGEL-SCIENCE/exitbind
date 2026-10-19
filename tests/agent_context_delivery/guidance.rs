@@ -66,6 +66,53 @@ impl Fixture {
         assert!(output.status.success(), "{}", text(&output));
         output
     }
+
+    fn prepare_named_child(&self, work: &str) -> Value {
+        let init = json!({"action":"init","sourceRef":"owner:request",
+            "sourceText":"Preserve the frozen memory boundary.",
+            "requirements":[{"id":"guidance","text":"Preserve the frozen memory boundary."}]});
+        let recorded = self.call(&["work", "record", work], init.to_string().as_bytes());
+        assert!(recorded.status.success(), "{}", text(&recorded));
+        let continuation = self.value(&["work", "continuation", work], b"");
+        let token = continuation["mutationContext"]["token"].as_str().unwrap();
+        self.value(
+            &[
+                "work",
+                "bind",
+                work,
+                "--context",
+                token,
+                "--host",
+                "codex",
+                "--session",
+                "prepared-child-parent",
+                "--host-version",
+                "fixture",
+            ],
+            b"",
+        );
+        let continuation = self.value(&["work", "continuation", work], b"");
+        let token = continuation["mutationContext"]["token"].as_str().unwrap();
+        let next = self.value(&["work", "next", work, "--full"], b"");
+        let assignment = next["next"]["assignment"].as_str().unwrap();
+        let agent_type = next["next"]["packet"]["nativeTaskName"].as_str().unwrap();
+        self.value(
+            &[
+                "work",
+                "child",
+                "prepare",
+                work,
+                assignment,
+                "--context",
+                token,
+                "--perspectives",
+                r#"[{"id":"frozen-memory","path":"child-perspective.md"}]"#,
+                "--agent-type",
+                agent_type,
+            ],
+            b"",
+        )
+    }
 }
 
 #[test]
@@ -422,6 +469,109 @@ fn marked_current_selection_tracks_advisory_memory_changes_and_live_rights() {
     assert!(acted.status.success(), "{}", text(&acted));
     let prompt = fs::read_to_string(capture).unwrap();
     assert!(!prompt.contains("newly selected current guidance"));
+}
+
+#[test]
+fn prepared_child_guidance_keeps_the_frozen_memory_ceiling_after_live_widening() {
+    let fixture = Fixture::new("agent-guidance-prepared-child-frozen-memory");
+    let config_path = fixture.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["memory"]["protocolScopes"] = json!(["invariants", "expanded"]);
+    config["agents"]["worker"]["memoryWrite"] = json!(["invariants", "expanded"]);
+    config["agents"]["worker"]["memoryReview"] = json!(["invariants", "expanded"]);
+    config["agents"]["lead"]["memoryPromote"] = json!(["invariants", "expanded"]);
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    fs::create_dir_all(fixture.root.join("memory")).unwrap();
+    fs::write(
+        fixture.root.join("child-perspective.md"),
+        "named child perspective fixture\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.root.join("expanded.md"),
+        "newly widened live-only guidance\n",
+    )
+    .unwrap();
+    fixture.value(
+        &[
+            "memory",
+            "propose",
+            "worker",
+            "expanded.md",
+            "--scope",
+            "expanded",
+            "--ledger",
+            "memory/expanded.jsonl",
+        ],
+        b"",
+    );
+    fixture.value(
+        &["memory", "review", "worker", "memory/expanded.jsonl"],
+        b"",
+    );
+    fixture.value(&["memory", "promote", "lead", "memory/expanded.jsonl"], b"");
+
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "deliver only the assignment's frozen memory scope",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--preserve-requirement",
+            "guidance:Preserve the frozen memory boundary.",
+            "--preservation-check-command",
+            "true",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    let lead = started["next"]["assignment"].as_str().unwrap();
+    let returned = fixture.call(
+        &["work", "return", work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    assert!(returned.status.success(), "{}", text(&returned));
+    let before = fixture.value(&["work", "detail", &work, "--json"], b"");
+    assert_eq!(
+        before["sections"]["assignment"]["assignment"]["guidanceContinuityProtocol"],
+        1
+    );
+    assert_eq!(
+        before["sections"]["assignment"]["assignment"]["frozenMemoryRead"],
+        json!(["invariants"])
+    );
+    let prepared = fixture.prepare_named_child(work);
+    assert_eq!(prepared["effect"], "prepared", "{prepared}");
+    let intent = prepared["intent"].as_str().unwrap();
+
+    config["agents"]["worker"]["memoryRead"] = json!(["invariants", "expanded"]);
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let detail = fixture.value(&["work", "detail", &work, "--json"], b"");
+    let child = fixture.value(&["work", "child", "context", &work, intent], b"");
+    assert_eq!(detail["recipientContext"]["guidance"]["items"], json!([]));
+    assert_eq!(
+        detail["recipientContext"]["guidance"]["overflow"],
+        json!([])
+    );
+    assert_eq!(
+        child["guidance"]["items"],
+        detail["recipientContext"]["guidance"]["items"]
+    );
+    assert_eq!(
+        child["guidance"]["overflow"],
+        detail["recipientContext"]["guidance"]["overflow"]
+    );
+    assert_eq!(child["guidance"]["budgetBytes"], 3 * 1024);
+    assert!(!child
+        .to_string()
+        .contains("newly widened live-only guidance"));
 }
 
 #[test]

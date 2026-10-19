@@ -307,13 +307,26 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         &current["next"]["packet"],
         binding["host"].as_str().unwrap_or(""),
     )?;
-    let guidance = crate::project::agent_context::guidance(
-        loaded,
-        agent_id,
-        current["next"]["packet"]["goal"].as_str(),
-        binding["host"].as_str().unwrap_or(""),
-        3 * 1024,
-    )?;
+    let packet = &current["next"]["packet"];
+    let host = binding["host"].as_str().unwrap_or("");
+    let guidance = if crate::run::guidance_continuity::enabled(packet) {
+        crate::project::agent_context::guidance_for_assignment(
+            loaded,
+            agent_id,
+            packet["goal"].as_str(),
+            host,
+            3 * 1024,
+            packet,
+        )?
+    } else {
+        crate::project::agent_context::guidance(
+            loaded,
+            agent_id,
+            packet["goal"].as_str(),
+            host,
+            3 * 1024,
+        )?
+    };
     let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
     let capabilities = crate::project::capabilities::delivery(
         loaded,
