@@ -232,10 +232,11 @@ fn check_references(state: &Value, detail: &Value, saved_step: &Value) -> Value 
         })
         .filter_map(|item| item["eventSha256"].as_str())
         .collect::<std::collections::BTreeSet<_>>();
-    let current_event = checks
-        .iter()
-        .rev()
-        .find(|event| attested.contains(event["eventSha256"].as_str().unwrap_or_default()));
+    let current_event = checks.last().filter(|event| {
+        has_current_check_status
+            && attested.contains(event["eventSha256"].as_str().unwrap_or_default())
+            && crate::run_value::check_passed(event)
+    });
     let current = current_event.map(compact_check_reference);
     let prior = checks
         .iter()
@@ -306,7 +307,7 @@ mod tests {
             "attempt":2,
             "checks":[
                 {"eventSha256":prior_event,"targetEventSha256":prior_target,"attempt":1,"result":{"code":1}},
-                {"eventSha256":current_event,"targetEventSha256":current_target,"attempt":2,"result":{"code":0}}
+                {"eventSha256":current_event,"targetEventSha256":current_target,"attempt":2,"result":{"kind":"exit","code":0}}
             ]
         });
         let detail = json!({"sections":{"evidence":{
@@ -350,6 +351,36 @@ mod tests {
         assert_eq!(
             references["historical"][1],
             format!("{event_sha}|{target_sha}|2")
+        );
+    }
+
+    #[test]
+    fn failed_latest_preservation_is_not_masked_by_an_earlier_pass() {
+        let check_sha = "a".repeat(64);
+        let check_target = "b".repeat(64);
+        let preservation_sha = "c".repeat(64);
+        let preservation_target = "d".repeat(64);
+        let state = json!({
+            "checks":[
+                {"eventSha256":check_sha,"targetEventSha256":check_target,"attempt":1,"result":{"kind":"exit","code":0}},
+                {"eventSha256":preservation_sha,"targetEventSha256":preservation_target,"attempt":1,"requirementId":"preserve","result":{"kind":"exit","code":1}}
+            ]
+        });
+        let detail = json!({"sections":{"evidence":{
+            "checkEvidence":[{"status":"passed"}],
+            "items":[
+                {"kind":"check","eventSha256":check_sha,"historical":false},
+                {"kind":"preservation","eventSha256":preservation_sha,"historical":false}
+            ]
+        }}});
+        let saved_step = json!({"savedStepRouteRef":"savedHint.currentStep","current":false});
+
+        let references = check_references(&state, &detail, &saved_step);
+
+        assert_eq!(references["current"], Value::Null);
+        assert_eq!(
+            references["historical"][1],
+            format!("{preservation_sha}|{preservation_target}|1")
         );
     }
 }
