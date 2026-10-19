@@ -751,6 +751,9 @@ pub(super) fn supersede_with_policy_and_recovery(
             &mut event_value,
             &new_rel,
         )?;
+        if version == 8 {
+            crate::run::guidance_continuity::add_start_marker(&mut event_value, loaded);
+        }
         let event = run_state::make_event(event_value);
         if new.path.exists() {
             let (_, existing, _) = load_at(loaded, &new)?;

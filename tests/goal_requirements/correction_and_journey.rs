@@ -367,6 +367,15 @@ fn native_journey_accepts_only_the_selected_same_goal_successor_configuration() 
     );
     let superseded: Value = serde_json::from_slice(&superseded.stdout).unwrap();
     assert_eq!(superseded["work"], new_work);
+    let successor_start = p.value_with_config(
+        &["run", "inspect", &new_ledger, "--json"],
+        None,
+        &current_config_path,
+    );
+    assert_eq!(
+        successor_start["events"][0]["guidanceContinuityProtocol"], 1,
+        "a v8 successor must use the same marked guidance semantics as a new Work"
+    );
     assert_eq!(
         p.value_with_config(&["goal", "status", "--json"], None, &current_config_path)
             ["goalProgress"]["journeyCompletion"]["state"],

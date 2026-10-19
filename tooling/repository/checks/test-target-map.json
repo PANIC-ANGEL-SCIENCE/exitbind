@@ -1850,6 +1850,11 @@
       "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
       "currentSha256": "3e262c04345f7f3467b4fee6fd125b75ce5d4a2fc089a1caf621e950e37cb197",
       "reason": "Add a marked accepted-result Goal continuity regression: advisory purpose changes preserve support and result-reference currentness, while frozen review-policy tampering and verification-preparation changes remain strict; the grouped target and legacy currentness unit assertion remain."
+    },
+    "tests/goal_requirements/correction_and_journey.rs": {
+      "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
+      "currentSha256": "adebbbb48ee0b5c528a28912c2aa40dac6d56d1fe4861495755dfd8fdd74b372",
+      "reason": "The same-Goal successor fixture now rejects a v8 supersession start without the versioned guidance-continuity marker; prior journey and selected-config assertions remain."
     }
   },
   "additions": [

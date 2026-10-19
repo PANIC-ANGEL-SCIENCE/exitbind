@@ -612,6 +612,9 @@ fn start_intent_with_association(
             "replanBinding": "assignment_packet_v1",
         });
     }
+    if version == 8 {
+        crate::run::guidance_continuity::add_start_marker(&mut value, loaded);
+    }
     Ok(hash::value(&value))
 }
 
