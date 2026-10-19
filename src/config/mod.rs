@@ -246,6 +246,7 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
             "capabilities",
             "adviserFloor",
             "verificationPreparation",
+            "verificationInputContract",
         ],
         "project",
         errors,
@@ -271,6 +272,9 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
         if !valid {
             errors.push("project.verificationPreparation must be {version: 1, pythonBytecode: 'disabled', scratch: 'taskOwned'}".into());
         }
+    }
+    if let Some(contract) = project.get("verificationInputContract") {
+        crate::run::guidance_continuity::validate_input_contract(contract, errors);
     }
     match project.get("root").and_then(Value::as_str) {
         None => errors.push("project.root must be a string".into()),

@@ -11,6 +11,7 @@ const START_PROTOCOL_FIELDS: &[&str] = &[
     "quarantineVerification",
     "guidanceContinuityProtocol",
     "guidanceConfigSha256",
+    "verificationInputContract",
 ];
 
 pub(super) fn copy_fields(start: &Value, state: &mut Value) {

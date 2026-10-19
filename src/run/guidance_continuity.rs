@@ -9,6 +9,48 @@ use std::collections::BTreeSet;
 pub(crate) const PROTOCOL: u64 = 1;
 pub(crate) const START_FIELD: &str = "guidanceContinuityProtocol";
 pub(crate) const CONFIG_FIELD: &str = "guidanceConfigSha256";
+pub(crate) const INPUT_CONTRACT_FIELD: &str = "verificationInputContract";
+
+fn empty_input_contract() -> Value {
+    json!({"version":1,"guidanceVerdictInputs":[]})
+}
+
+pub(crate) fn validate_input_contract(value: &Value, errors: &mut Vec<String>) {
+    let Some(object) = value.as_object() else {
+        errors.push("verificationInputContract must be an object".into());
+        return;
+    };
+    if object.len() != 2 || value["version"] != 1 {
+        errors.push(
+            "verificationInputContract requires version 1 and guidanceVerdictInputs only".into(),
+        );
+        return;
+    }
+    let Some(paths) = value["guidanceVerdictInputs"].as_array() else {
+        errors.push("verificationInputContract.guidanceVerdictInputs must be an array".into());
+        return;
+    };
+    if paths.len() > 128 {
+        errors.push("verificationInputContract has too many guidance verdict inputs".into());
+    }
+    let mut seen = BTreeSet::new();
+    for item in paths {
+        let Some(path) = item["path"].as_str() else {
+            errors.push("verificationInputContract entries require a path".into());
+            continue;
+        };
+        if item.as_object().map_or(true, |entry| entry.len() != 2)
+            || item["projection"] != "file"
+            || !safe_relative(path)
+            || !seen.insert(path)
+        {
+            errors.push(
+                "verificationInputContract entries require distinct safe paths and file projection"
+                    .into(),
+            );
+        }
+    }
+}
 
 pub(crate) fn enabled(state: &Value) -> bool {
     state[START_FIELD].as_u64() == Some(PROTOCOL)
@@ -17,16 +59,21 @@ pub(crate) fn enabled(state: &Value) -> bool {
 pub(crate) fn add_start_marker(event: &mut Value, loaded: &crate::config::Loaded) {
     event[START_FIELD] = json!(PROTOCOL);
     event[CONFIG_FIELD] = json!(advisory_config_sha256(&loaded.config));
+    event[INPUT_CONTRACT_FIELD] = loaded.config["project"][INPUT_CONTRACT_FIELD]
+        .as_object()
+        .map(|_| loaded.config["project"][INPUT_CONTRACT_FIELD].clone())
+        .unwrap_or_else(empty_input_contract);
 }
 
 pub(crate) fn append_allowed_fields(fields: &mut Vec<&'static str>) {
     fields.push(START_FIELD);
     fields.push(CONFIG_FIELD);
+    fields.push(INPUT_CONTRACT_FIELD);
 }
 
 pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
     let Some(marker) = event.get(START_FIELD) else {
-        if event.get(CONFIG_FIELD).is_some() {
+        if event.get(CONFIG_FIELD).is_some() || event.get(INPUT_CONTRACT_FIELD).is_some() {
             return Err(format!(
                 "invalid run ledger line {line}: guidance configuration hash requires its protocol marker"
             ));
@@ -38,6 +85,15 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
         return Err(format!(
             "invalid run ledger line {line}: unsupported guidance continuity protocol"
         ));
+    }
+    if let Some(contract) = event.get(INPUT_CONTRACT_FIELD) {
+        let mut errors = Vec::new();
+        validate_input_contract(contract, &mut errors);
+        if !errors.is_empty() {
+            return Err(format!(
+                "invalid run ledger line {line}: malformed verification input contract"
+            ));
+        }
     }
     Ok(())
 }
@@ -163,14 +219,24 @@ fn safe_relative(value: &str) -> bool {
             .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
-/// Keep any guidance file strict when it aliases a frozen checker or an
-/// architecture contract source. Unknown checker dependencies are not guessed.
+/// Advisory files are provenance unless the reviewed verification contract
+/// names them as verdict inputs. Direct checker and architecture sources stay
+/// strict; arbitrary checker reads cannot establish semantic dependence.
 pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -> BTreeSet<String> {
     let mut candidates = selected_source_paths(state);
     if !enabled(state) {
         return BTreeSet::new();
     }
-    if has_unbounded_verification_consumer(state) {
+    if (state.get("checkPolicy").is_some() || state.get("preservation").is_some())
+        && state["verificationCheckerSources"].as_array().is_none()
+    {
+        return BTreeSet::new();
+    }
+    if state.get("preReturnPolicy").is_some()
+        && state["preReturnPolicy"]["checkerSources"]
+            .as_array()
+            .is_none()
+    {
         return BTreeSet::new();
     }
     add_product_path(&loaded.product_root, &loaded.path, &mut candidates);
@@ -234,24 +300,51 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     if let Some(path) = state["plan"]["architectureContract"]["sourcePath"].as_str() {
         strict.insert(path.to_owned());
     }
-    candidates.retain(|path| !strict.contains(path));
+    for input in state[INPUT_CONTRACT_FIELD]["guidanceVerdictInputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if let Some(path) = input["path"].as_str() {
+            strict.insert(path.to_owned());
+        }
+    }
+    for source in state["verificationCheckerSources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .chain(
+            state["preReturnPolicy"]["checkerSources"]
+                .as_array()
+                .into_iter()
+                .flatten(),
+        )
+    {
+        for field in ["path", "argumentPath"] {
+            if let Some(path) = source[field].as_str() {
+                let source = std::path::Path::new(path);
+                let resolved = if source.is_absolute() {
+                    source.to_path_buf()
+                } else {
+                    loaded.product_root.join(source)
+                };
+                add_product_path(&loaded.product_root, &resolved, &mut strict);
+            }
+        }
+    }
+    let strict_canonical = strict
+        .iter()
+        .filter_map(|path| loaded.product_root.join(path).canonicalize().ok())
+        .collect::<BTreeSet<_>>();
+    candidates.retain(|path| {
+        !strict.contains(path)
+            && loaded
+                .product_root
+                .join(path)
+                .canonicalize()
+                .map_or(true, |resolved| !strict_canonical.contains(&resolved))
+    });
     candidates
-}
-
-fn has_unbounded_verification_consumer(state: &Value) -> bool {
-    // The frozen source inventory names direct command paths only. It does not
-    // prove a transitive read set for an interpreter, shell, build tool, or
-    // other executable. Keep every product input strict whenever one of these
-    // commands can consume it; advisory exclusion is sound only with no such
-    // executable consumer.
-    [
-        "checkPolicy",
-        "preservation",
-        "preReturnPolicy",
-        "verificationCheckerSources",
-    ]
-    .iter()
-    .any(|field| state.get(field).is_some())
 }
 
 fn add_product_path(root: &std::path::Path, path: &std::path::Path, paths: &mut BTreeSet<String>) {
@@ -321,6 +414,32 @@ mod tests {
         });
         config["workflows"]["change"]["advisers"] = json!(["adviser"]);
         config
+    }
+
+    #[test]
+    fn verdict_input_contract_rejects_ambiguous_or_duplicate_paths() {
+        let valid = json!({"version":1,"guidanceVerdictInputs":[
+            {"path":"memory/acceptance.md","projection":"file"}
+        ]});
+        let mut errors = Vec::new();
+        validate_input_contract(&valid, &mut errors);
+        assert!(errors.is_empty());
+        for bad in [
+            json!({"version":1,"guidanceVerdictInputs":[
+                {"path":"memory/acceptance.md","projection":"file"},
+                {"path":"memory/acceptance.md","projection":"file"}
+            ]}),
+            json!({"version":1,"guidanceVerdictInputs":[
+                {"path":"../private.md","projection":"file"}
+            ]}),
+            json!({"version":1,"guidanceVerdictInputs":[
+                {"path":"memory/acceptance.md","projection":"unknown"}
+            ]}),
+        ] {
+            let mut errors = Vec::new();
+            validate_input_contract(&bad, &mut errors);
+            assert!(!errors.is_empty());
+        }
     }
 
     #[test]
@@ -425,11 +544,11 @@ mod tests {
         assert!(unambiguous_paths(&loaded, &state).is_empty());
         state.as_object_mut().unwrap().remove("harnessReceipt");
         state["verificationCheckerSources"] = Value::Null;
-        assert!(unambiguous_paths(&loaded, &state).is_empty());
+        assert!(unambiguous_paths(&loaded, &state).contains("memory/selected.md"));
     }
 
     #[test]
-    fn executable_checker_sources_keep_all_selected_guidance_strict() {
+    fn checker_reads_do_not_make_all_guidance_verdict_inputs() {
         let loaded = loaded(config());
         for command in [
             "python3 checks/check.py",
@@ -451,8 +570,8 @@ mod tests {
             });
 
             assert!(
-                unambiguous_paths(&loaded, &state).is_empty(),
-                "checker read set is not transitively bounded: {command}"
+                unambiguous_paths(&loaded, &state).contains("memory/advice.md"),
+                "incidental reads do not establish verdict dependence: {command}"
             );
         }
 
@@ -470,23 +589,17 @@ mod tests {
                 "sha256":"a".repeat(64)
             }]
         });
-        assert!(
-            unambiguous_paths(&loaded, &preservation).is_empty(),
-            "preservation checker read set is not transitively bounded"
-        );
+        assert!(unambiguous_paths(&loaded, &preservation).contains("memory/advice.md"));
 
         let pre_return = json!({
             "guidanceContinuityProtocol":PROTOCOL,
             "plan":{"stages":[{"agents":[{"memoryReferences":[
                 {"sourcePath":"memory/advice.md","ledgerPath":"memory/advice.jsonl"}
             ]}]}]},
-            "preReturnPolicy":{"command":"sh finalize.sh"},
+            "preReturnPolicy":{"command":"sh finalize.sh","checkerSources":[]},
             "verificationCheckerSources":[{"path":"/product/finalize.sh"}]
         });
-        assert!(
-            unambiguous_paths(&loaded, &pre_return).is_empty(),
-            "pre-return checker read set is not transitively bounded"
-        );
+        assert!(unambiguous_paths(&loaded, &pre_return).contains("memory/advice.md"));
 
         let legacy = json!({
             "plan":{"stages":[{"agents":[{"memoryReferences":[
@@ -498,7 +611,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn literal_python_checker_keeps_selected_memory_in_tested_inputs() {
+    fn incidental_checker_read_preserves_evidence_but_declared_verdict_input_does_not() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let unique = SystemTime::now()
@@ -543,9 +656,37 @@ mod tests {
         let before = crate::run::inputs::fingerprint_for_state(&loaded, &state).unwrap();
         std::fs::write(root.join("memory/advice.md"), "changed advice\n").unwrap();
         let after = crate::run::inputs::fingerprint_for_state(&loaded, &state).unwrap();
-        assert_ne!(
+        assert_eq!(
             before, after,
-            "transitive checker input remains fingerprinted"
+            "an incidental read does not make guidance a verdict input"
+        );
+        let mut declared = state.clone();
+        declared[INPUT_CONTRACT_FIELD] = json!({"version":1,"guidanceVerdictInputs":[
+            {"path":"memory/advice.md","projection":"file"}
+        ]});
+        let declared_after = crate::run::inputs::fingerprint_for_state(&loaded, &declared).unwrap();
+        std::fs::write(root.join("memory/advice.md"), "new verdict advice\n").unwrap();
+        let declared_changed =
+            crate::run::inputs::fingerprint_for_state(&loaded, &declared).unwrap();
+        assert_ne!(
+            declared_after, declared_changed,
+            "declared verdict input drift blocks reuse"
+        );
+
+        let mut checker_bound = state.clone();
+        checker_bound["verificationCheckerSources"] = json!([{
+            "path":root.join("memory/advice.md"),
+            "argumentPath":"memory/advice.md",
+            "sha256":"a".repeat(64)
+        }]);
+        let source_before =
+            crate::run::inputs::fingerprint_for_state(&loaded, &checker_bound).unwrap();
+        std::fs::write(root.join("memory/advice.md"), "changed checker source\n").unwrap();
+        let source_after =
+            crate::run::inputs::fingerprint_for_state(&loaded, &checker_bound).unwrap();
+        assert_ne!(
+            source_before, source_after,
+            "direct checker source remains strict"
         );
 
         std::fs::remove_dir_all(root).unwrap();

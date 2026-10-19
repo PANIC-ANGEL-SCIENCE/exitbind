@@ -643,6 +643,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "quarantineVerification",
         "guidanceContinuityProtocol",
         "guidanceConfigSha256",
+        "verificationInputContract",
     ];
     if event["action"] != "start" {
         return Err("Work ledger does not begin with a start event".into());

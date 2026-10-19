@@ -586,6 +586,13 @@ pub(super) fn supersede_with_policy_and_recovery(
             .transpose()?;
         let carry_sha = carry_accounting.as_ref().map(crate::evidence::hash::value);
         let mut wanted_claim = wanted_claim;
+        if old_state
+            .get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+            .is_some()
+        {
+            wanted_claim[crate::run::guidance_continuity::INPUT_CONTRACT_FIELD] =
+                old_state[crate::run::guidance_continuity::INPUT_CONTRACT_FIELD].clone();
+        }
         if let Some(replacement) = &check_replacement {
             wanted_claim["checkReplacement"] = replacement.clone();
         }
@@ -753,6 +760,16 @@ pub(super) fn supersede_with_policy_and_recovery(
         )?;
         if version == 8 {
             crate::run::guidance_continuity::add_start_marker(&mut event_value, loaded);
+            if crate::run::guidance_continuity::enabled(&old_state)
+                && old_state
+                    .get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+                    .is_none()
+            {
+                event_value
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD);
+            }
         }
         let event = run_state::make_event(event_value);
         if new.path.exists() {

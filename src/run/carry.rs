@@ -393,6 +393,13 @@ fn validate_edge(
             "pre-return policy is missing or differs from its persisted predecessor claim".into(),
         );
     }
+    if claim.get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+        != start.get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+    {
+        return Err(
+            "verification input contract differs from its persisted predecessor claim".into(),
+        );
+    }
     if claim.get("verificationPreparationProtocol") != start.get("verificationPreparationProtocol")
         || claim.get("verificationCheckerSources") != start.get("verificationCheckerSources")
     {

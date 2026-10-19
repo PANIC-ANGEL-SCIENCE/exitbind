@@ -175,6 +175,7 @@ fn verify_actual(
         "checkObservationProtocol",
         "verificationPreparationProtocol",
         "verificationCheckerSources",
+        "verificationInputContract",
         "projectContinuation",
     ] {
         if old_state.get(field) != new_start.get(field) {

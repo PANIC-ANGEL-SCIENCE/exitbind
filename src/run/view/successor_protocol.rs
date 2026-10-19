@@ -42,6 +42,7 @@ pub(super) fn assert_same_request(existing: &[Value], event: &Value) -> Result<(
         "preReturnPolicy",
         "verificationPreparationProtocol",
         "verificationCheckerSources",
+        "verificationInputContract",
         "projectContinuation",
     ];
     let mismatched = existing.first().map(|current| {

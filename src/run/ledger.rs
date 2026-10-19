@@ -475,6 +475,7 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
             for key in [
                 "verificationPreparationProtocol",
                 "verificationCheckerSources",
+                "verificationInputContract",
             ] {
                 if value.get(key) != wanted.get(key) {
                     return Err("a different successor is already claimed".into());

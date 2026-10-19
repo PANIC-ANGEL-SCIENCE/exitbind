@@ -25,6 +25,9 @@ pub(super) fn validate_claim(value: &Value) -> Result<(), String> {
     ];
     let has_replacement = value.get("checkReplacement").is_some();
     let has_pre_return = value.get("preReturnPolicy").is_some();
+    let has_input_contract = value
+        .get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+        .is_some();
     let has_carry =
         value.get("carryProtocol").is_some() || value.get("governorCarrySha256").is_some();
     let has_preparation = preparation_fields
@@ -34,6 +37,7 @@ pub(super) fn validate_claim(value: &Value) -> Result<(), String> {
         + usize::from(has_carry) * carry_fields.len()
         + usize::from(has_replacement)
         + usize::from(has_pre_return)
+        + usize::from(has_input_contract)
         + usize::from(has_preparation) * preparation_fields.len();
     if object.len() != expected_len
         || legacy_fields.iter().any(|key| !object.contains_key(*key))
@@ -48,6 +52,14 @@ pub(super) fn validate_claim(value: &Value) -> Result<(), String> {
         || (has_pre_return
             && crate::run_value::pre_return_policy_from_value(&value["preReturnPolicy"], 1)
                 .is_err())
+        || (has_input_contract && {
+            let mut errors = Vec::new();
+            crate::run::guidance_continuity::validate_input_contract(
+                &value[crate::run::guidance_continuity::INPUT_CONTRACT_FIELD],
+                &mut errors,
+            );
+            !errors.is_empty()
+        })
         || (has_preparation
             && (preparation_fields
                 .iter()
