@@ -11,6 +11,8 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     let guidance =
         "Current fixture instructions; caller read these bytes before recording the hint.\n";
     fs::write(project.root.join("recovery-guidance.md"), guidance).unwrap();
+    let checked_source = project.root.join("checked-source.txt");
+    fs::write(&checked_source, "before check\n").unwrap();
     let producer = Command::new(env!("CARGO_BIN_EXE_exitbind"))
         .args(["version", "--json"])
         .output()
@@ -364,6 +366,63 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
             .count()
             < 50
     );
+
+    let worker_action = project.value_in_session(
+        "codex",
+        session,
+        store,
+        &["work", "next", &work, "--json", "--full"],
+    );
+    assert_eq!(worker_action["next"]["role"], "worker");
+    let worker_assignment = worker_action["next"]["assignment"].as_str().unwrap();
+    project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "work",
+            "permit",
+            &work,
+            worker_assignment,
+            "--operation",
+            "Return deterministic fixture evidence",
+        ],
+    );
+    return_in_session(
+        &project,
+        session,
+        &work,
+        worker_assignment,
+        "completed",
+        br#"{"summary":"fixture implementation complete"}"#,
+    );
+    let checked =
+        project.value_in_session("codex", session, store, &["work", "check", &work, "--json"]);
+    assert_eq!(checked["result"]["code"], 0);
+    let checked_event = checked["eventSha256"].as_str().unwrap();
+    let current_milestone = recovery_show(session, store);
+    let current_reference = current_milestone["milestone"]["checkReferences"]["current"]
+        .as_str()
+        .expect("fresh Work detail attests the successful check");
+    assert!(current_reference.starts_with(checked_event));
+
+    fs::write(&checked_source, "changed after check\n").unwrap();
+    let stale_milestone = recovery_show(session, store);
+    assert_eq!(
+        stale_milestone["milestone"]["checkReferences"]["current"],
+        Value::Null,
+        "a same-attempt check becomes historical after tested source changes"
+    );
+    assert!(
+        stale_milestone["milestone"]["checkReferences"]["historical"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reference| reference
+                .as_str()
+                .is_some_and(|value| value.starts_with(checked_event)))
+    );
+
     assert_eq!(shown["readRoutes"]["workDetailArgv"][0]["work"], work);
     let work_argv = shown["readRoutes"]["workDetailArgv"][0]["argv"]
         .as_array()
@@ -567,6 +626,26 @@ fn recovery_hook(
         .write_all(&serde_json::to_vec(payload).unwrap())
         .unwrap();
     child.wait_with_output().unwrap()
+}
+
+fn recovery_show(session: &str, store: &Path) -> Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(std::env::temp_dir())
+        .args(["session", "recovery", "show", "--json"])
+        .env("CODEX_THREAD_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
 }
 
 fn find_named(root: &Path, name: &str) -> Option<PathBuf> {

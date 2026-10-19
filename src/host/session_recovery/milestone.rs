@@ -197,7 +197,7 @@ pub(super) fn project(
         "action":action,
         "readiness":detail["effectiveAction"]["readiness"],
     });
-    let check_references = check_references(&state, &historical);
+    let check_references = check_references(&state, &detail, &historical);
     bounded(json!({
         "protocol":1,
         "state":"current_detail_observed",
@@ -216,18 +216,31 @@ pub(super) fn project(
 
 /// Compact check anchors encode `eventSha256|targetEventSha256|attempt`.
 /// The reducer has already validated the referenced events and their chain.
-fn check_references(state: &Value, saved_step: &Value) -> Value {
-    let attempt = state["attempt"].as_u64();
+fn check_references(state: &Value, detail: &Value, saved_step: &Value) -> Value {
     let checks = state["checks"].as_array().cloned().unwrap_or_default();
-    let current = checks
+    let has_current_check_status = detail["sections"]["evidence"]["checkEvidence"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["status"] == "passed"));
+    let attested = detail["sections"]["evidence"]["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| {
+            has_current_check_status
+                && item["historical"] == false
+                && matches!(item["kind"].as_str(), Some("check" | "preservation"))
+        })
+        .filter_map(|item| item["eventSha256"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_event = checks
         .iter()
         .rev()
-        .find(|event| event["attempt"].as_u64() == attempt)
-        .map(compact_check_reference);
+        .find(|event| attested.contains(event["eventSha256"].as_str().unwrap_or_default()));
+    let current = current_event.map(compact_check_reference);
     let prior = checks
         .iter()
         .rev()
-        .find(|event| event["attempt"].as_u64() != attempt)
+        .find(|event| Some(*event) != current_event)
         .map(compact_check_reference);
     let mut historical = vec![saved_step.clone()];
     if let Some(prior) = prior {
@@ -296,8 +309,12 @@ mod tests {
                 {"eventSha256":current_event,"targetEventSha256":current_target,"attempt":2,"result":{"code":0}}
             ]
         });
+        let detail = json!({"sections":{"evidence":{
+            "checkEvidence":[{"status":"passed"}],
+            "items":[{"kind":"check","eventSha256":current_event,"historical":false}]
+        }}});
         let saved_step = json!({"savedStepRouteRef":"savedHint.currentStep","current":false});
-        let references = check_references(&state, &saved_step);
+        let references = check_references(&state, &detail, &saved_step);
 
         assert_eq!(
             references["current"],
@@ -311,6 +328,28 @@ mod tests {
         assert_eq!(
             references["historical"][1],
             format!("{prior_event}|{prior_target}|1")
+        );
+    }
+
+    #[test]
+    fn same_attempt_check_without_fresh_detail_attestation_stays_historical() {
+        let event_sha = "c".repeat(64);
+        let target_sha = "d".repeat(64);
+        let state = json!({"attempt":2,"checks":[{
+            "eventSha256":event_sha,"targetEventSha256":target_sha,"attempt":2
+        }]});
+        let stale_detail = json!({"sections":{"evidence":{
+            "checkEvidence":[{"status":"missing"}],
+            "items":[{"kind":"check","eventSha256":event_sha,"historical":false}]
+        }}});
+        let saved_step = json!({"savedStepRouteRef":"savedHint.currentStep","current":false});
+
+        let references = check_references(&state, &stale_detail, &saved_step);
+
+        assert_eq!(references["current"], Value::Null);
+        assert_eq!(
+            references["historical"][1],
+            format!("{event_sha}|{target_sha}|2")
         );
     }
 }
