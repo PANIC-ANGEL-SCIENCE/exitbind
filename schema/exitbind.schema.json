@@ -65,6 +65,7 @@
             }
           }
         },
+        "adviserFloor": { "$ref": "#/$defs/adviserFloor" },
         "architectureContract": {
           "type": "object",
           "required": ["sourcePath", "sourceSha256", "revision"],
@@ -173,6 +174,31 @@
       },
       "additionalProperties": false,
       "minProperties": 1
+    },
+    "adviserFloor": {
+      "type": "object",
+      "required": ["version", "bindings"],
+      "properties": {
+        "version": { "const": 1 },
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/adviserBinding" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "adviserBinding": {
+      "type": "object",
+      "required": ["host", "model", "reasoningEffort", "requiredCapabilities"],
+      "properties": {
+        "host": { "enum": ["codex", "claude"] },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": ".*\\S.*" },
+        "reasoningEffort": { "enum": ["none", "low", "medium", "high", "xhigh", "max"] },
+        "requiredCapabilities": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_-]+$" } }
+      },
+      "additionalProperties": false
     },
     "memory": {
       "type": "object",

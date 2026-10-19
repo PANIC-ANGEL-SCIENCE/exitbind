@@ -640,8 +640,8 @@ pub(crate) fn warn_drift(warning: Option<&Value>) {
 }
 
 /// A selected agent's profile bytes and requested runtime must still match the
-/// configuration that produced the plan.  The authorized alternate binding is
-/// part of that runtime, so it drifts with the contract it belongs to.
+/// configuration that produced the plan, except an explicitly floored,
+/// adviser-only runtime on a marked guidance-continuity run.
 pub(super) fn assert_selected_agent(
     loaded: &Loaded,
     selected: &Value,
@@ -669,9 +669,13 @@ pub(super) fn assert_selected_agent(
             profile_sha,
         )));
     }
-    if selected
-        .get("runtime")
-        .is_some_and(|runtime| runtime != &configured.runtime_value())
+    let replaceable_adviser = guidance_continuity
+        && selected["role"] == "adviser"
+        && crate::run::guidance_continuity::adviser_runtime_replaceable(&loaded.config, name);
+    if !replaceable_adviser
+        && selected
+            .get("runtime")
+            .is_some_and(|runtime| runtime != &configured.runtime_value())
     {
         return Err(run_error::machine_drift(DriftError::profile(
             name.to_owned(),

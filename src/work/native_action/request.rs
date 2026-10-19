@@ -24,21 +24,10 @@ pub(super) fn build(
     schema_path: &Path,
     thread_id: Option<&str>,
 ) -> Result<Request, String> {
-    if assignment["runtime"]["host"]
-        .as_str()
-        .is_some_and(|host| host != "codex")
-    {
+    let (host, model, effort) = effective_binding(loaded, role, assignment, &options)?;
+    if host != "codex" {
         return Err("native Codex action requires runtime.host=codex".into());
     }
-    let model = options
-        .model
-        .map(str::to_owned)
-        .or_else(|| assignment["runtime"]["model"].as_str().map(str::to_owned));
-    let effort = options.reasoning_effort.map(str::to_owned).or_else(|| {
-        assignment["runtime"]["reasoningEffort"]
-            .as_str()
-            .map(str::to_owned)
-    });
     let timeout = options
         .timeout_ms
         .map(|value| {
@@ -188,6 +177,140 @@ pub(super) fn build(
     })
 }
 
+fn effective_binding(
+    loaded: &Loaded,
+    role: &str,
+    assignment: &Value,
+    options: &Options<'_>,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    let marked_adviser = role == "adviser"
+        && assignment["guidanceContinuityProtocol"].as_u64()
+            == Some(crate::run::guidance_continuity::PROTOCOL);
+    if marked_adviser {
+        current_adviser_binding(loaded, assignment, options)
+    } else {
+        Ok((
+            assignment["runtime"]["host"]
+                .as_str()
+                .unwrap_or("codex")
+                .to_owned(),
+            options
+                .model
+                .map(str::to_owned)
+                .or_else(|| assignment["runtime"]["model"].as_str().map(str::to_owned)),
+            options.reasoning_effort.map(str::to_owned).or_else(|| {
+                assignment["runtime"]["reasoningEffort"]
+                    .as_str()
+                    .map(str::to_owned)
+            }),
+        ))
+    }
+}
+
+fn current_adviser_binding(
+    loaded: &Loaded,
+    assignment: &Value,
+    options: &Options<'_>,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    let agent_id = assignment["agent"]
+        .as_str()
+        .ok_or("marked adviser assignment has no configured agent")?;
+    if !loaded.roles_for(agent_id).contains("adviser") {
+        return Err("marked adviser is no longer configured for the adviser role".into());
+    }
+    let configured = loaded
+        .agent(agent_id)
+        .ok_or("marked adviser is no longer configured")?;
+    let host = configured
+        .runtime
+        .host
+        .as_deref()
+        .unwrap_or("codex")
+        .to_owned();
+    if host != "codex" {
+        return Err("native work act supports the Codex adviser host only".into());
+    }
+    let model = options
+        .model
+        .map(str::to_owned)
+        .or_else(|| configured.runtime.model.clone());
+    let effort = options
+        .reasoning_effort
+        .map(str::to_owned)
+        .or_else(|| configured.runtime.reasoning_effort.clone());
+    let model_ref = model
+        .as_deref()
+        .ok_or("marked adviser model is unresolved")?;
+    let effort_ref = effort
+        .as_deref()
+        .ok_or("marked adviser reasoning effort is unresolved")?;
+    let floor = &loaded.config["project"]["adviserFloor"];
+    let binding = floor["bindings"]
+        .as_array()
+        .and_then(|bindings| {
+            bindings.iter().find(|binding| {
+                binding["host"] == host
+                    && binding["model"] == model_ref
+                    && binding["reasoningEffort"] == effort_ref
+            })
+        })
+        .ok_or("adviser runtime is outside the approved host/model/effort floor")?;
+    let required = binding["requiredCapabilities"]
+        .as_array()
+        .ok_or("adviser floor requiredCapabilities is malformed")?;
+    if !required.is_empty() {
+        let delivered = crate::project::capabilities::delivery(loaded, assignment, &host)?;
+        let available = delivered
+            .as_ref()
+            .and_then(|value| value["items"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item["id"].as_str().map(str::to_owned))
+            .collect::<std::collections::BTreeSet<_>>();
+        validate_adviser_candidate(floor, &host, model_ref, effort_ref, &available)?;
+    } else {
+        validate_adviser_candidate(
+            floor,
+            &host,
+            model_ref,
+            effort_ref,
+            &std::collections::BTreeSet::new(),
+        )?;
+    }
+    Ok((host, model, effort))
+}
+
+fn validate_adviser_candidate(
+    floor: &Value,
+    host: &str,
+    model: &str,
+    effort: &str,
+    available_capabilities: &std::collections::BTreeSet<String>,
+) -> Result<(), String> {
+    let binding = floor["bindings"]
+        .as_array()
+        .and_then(|bindings| {
+            bindings.iter().find(|binding| {
+                binding["host"] == host
+                    && binding["model"] == model
+                    && binding["reasoningEffort"] == effort
+            })
+        })
+        .ok_or("adviser runtime is outside the approved host/model/effort floor")?;
+    let required = binding["requiredCapabilities"]
+        .as_array()
+        .ok_or("adviser floor requiredCapabilities is malformed")?;
+    if required.iter().any(|id| {
+        id.as_str()
+            .map_or(true, |id| !available_capabilities.contains(id))
+    }) {
+        return Err(
+            "adviser floor requires a capability unavailable to this agent/task/host".into(),
+        );
+    }
+    Ok(())
+}
+
 fn native_lifecycle_guidance(
     role: &str,
     controlled_effects: bool,
@@ -246,8 +369,52 @@ pub(super) fn profile_bytes(
 #[cfg(test)]
 mod tests {
     use super::{
-        controlled_managed_edit_guidance, managed_edit_guidance, native_lifecycle_guidance,
+        build, controlled_managed_edit_guidance, current_adviser_binding, effective_binding,
+        managed_edit_guidance, native_lifecycle_guidance, validate_adviser_candidate, Options,
     };
+    use crate::config::{types, Loaded};
+    use serde_json::json;
+    use std::{collections::BTreeSet, path::PathBuf};
+
+    fn adviser_loaded(runtime: serde_json::Value) -> Loaded {
+        let config = json!({
+            "project":{"adviserFloor":{"version":1,"bindings":[{
+                "host":"codex","model":"gpt-approved","reasoningEffort":"xhigh",
+                "requiredCapabilities":[]
+            }]}},
+            "agents":{"adviser":{"profile":"profile.md","purpose":"advise",
+                "retention":"task","crossContext":"none","runtime":runtime}},
+            "workflows":{"change":{"advisers":["adviser"]}}
+        });
+        Loaded {
+            agents: types::from_validated_agents(&config["agents"]).unwrap(),
+            workflows: serde_json::from_value(config["workflows"].clone()).unwrap(),
+            config,
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            verification_preparation: None,
+            path: PathBuf::from("/control/exitbind.json"),
+            control_root: PathBuf::from("/control"),
+            product_root: PathBuf::from("/product"),
+            state_root: PathBuf::from("/state"),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: String::new(),
+        }
+    }
+
+    fn options<'a>(model: Option<&'a str>, reasoning_effort: Option<&'a str>) -> Options<'a> {
+        Options {
+            codex_bin: None,
+            model,
+            reasoning_effort,
+            sandbox_mode: None,
+            timeout_ms: None,
+            resume: false,
+            controlled_effects: false,
+        }
+    }
 
     #[test]
     fn managed_edit_guidance_keeps_syntax_fixed_and_path_singleton() {
@@ -294,6 +461,100 @@ mod tests {
                 .contains("checks requiring temporary writes to the existing parent check route"));
             assert!(!read_only_child.contains("work permit"));
         }
+    }
+
+    #[test]
+    fn marked_adviser_candidate_requires_an_exact_approved_binding_and_capabilities() {
+        let floor = json!({"version":1,"bindings":[{
+            "host":"codex","model":"gpt-approved","reasoningEffort":"xhigh",
+            "requiredCapabilities":["review-lens"]
+        }]});
+        let available = ["review-lens".to_owned()].into_iter().collect();
+        assert!(
+            validate_adviser_candidate(&floor, "codex", "gpt-approved", "xhigh", &available)
+                .is_ok()
+        );
+        for (host, model, effort) in [
+            ("claude", "gpt-approved", "xhigh"),
+            ("codex", "gpt-unknown", "xhigh"),
+            ("codex", "gpt-approved", "medium"),
+        ] {
+            assert!(validate_adviser_candidate(&floor, host, model, effort, &available).is_err());
+        }
+        assert!(validate_adviser_candidate(
+            &floor,
+            "codex",
+            "gpt-approved",
+            "xhigh",
+            &BTreeSet::new()
+        )
+        .unwrap_err()
+        .contains("capability unavailable"));
+    }
+
+    #[test]
+    fn marked_work_act_rejects_unapproved_adviser_before_request_or_provider_admission() {
+        let loaded = adviser_loaded(json!({
+            "host":"codex","model":"gpt-unresolved","reasoningEffort":"medium"
+        }));
+        let assignment = json!({
+            "agent":"adviser","role":"adviser","guidanceContinuityProtocol":1,
+            "runtime":{"host":"codex","model":"legacy-model","reasoningEffort":"low"},
+            "goal":"review the change"
+        });
+        let error = build(
+            &loaded,
+            options(None, None),
+            "adviser",
+            "work",
+            &json!({}),
+            &assignment,
+            String::new(),
+            String::new(),
+            None,
+            std::path::Path::new("/unreached/schema.json"),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("outside the approved host/model/effort floor"));
+    }
+
+    #[test]
+    fn marked_work_act_uses_only_an_exact_current_allowed_adviser_binding() {
+        let loaded = adviser_loaded(json!({
+            "host":"codex","model":"gpt-approved","reasoningEffort":"xhigh"
+        }));
+        let assignment = json!({"agent":"adviser","guidanceContinuityProtocol":1});
+        let (host, model, effort) =
+            current_adviser_binding(&loaded, &assignment, &options(None, None)).unwrap();
+        assert_eq!(
+            (host.as_str(), model.as_deref(), effort.as_deref()),
+            ("codex", Some("gpt-approved"), Some("xhigh"))
+        );
+
+        for options in [
+            options(Some("gpt-unlisted"), None),
+            options(None, Some("medium")),
+        ] {
+            assert!(current_adviser_binding(&loaded, &assignment, &options)
+                .unwrap_err()
+                .contains("outside the approved host/model/effort floor"));
+        }
+    }
+
+    #[test]
+    fn unmarked_adviser_launch_keeps_the_legacy_assignment_runtime() {
+        let loaded = adviser_loaded(json!({
+            "host":"codex","model":"new-config-value","reasoningEffort":"max"
+        }));
+        let assignment = json!({"agent":"adviser","role":"adviser",
+            "runtime":{"host":"codex","model":"frozen-legacy","reasoningEffort":"low"}});
+        let (host, model, effort) =
+            effective_binding(&loaded, "adviser", &assignment, &options(None, None)).unwrap();
+        assert_eq!(
+            (host.as_str(), model.as_deref(), effort.as_deref()),
+            ("codex", Some("frozen-legacy"), Some("low"))
+        );
     }
 
     #[test]

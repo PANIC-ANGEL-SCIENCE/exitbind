@@ -14,6 +14,25 @@
         "root": { "type": "string" },
         "mode": { "enum": ["local", "portable"] },
         "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["id", "revision", "descriptorPath", "descriptorSha256", "contentSha256", "approvedBy", "approvalReason"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+              "revision": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "descriptorPath": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "descriptorSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "approvedBy": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "approvalReason": { "type": "string", "minLength": 1, "maxLength": 512 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "adviserFloor": { "$ref": "#/$defs/adviserFloor" },
         "architectureContract": {
           "type": "object",
           "required": ["sourcePath", "sourceSha256", "revision"],
@@ -70,6 +89,31 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "adviserFloor": {
+      "type": "object",
+      "required": ["version", "bindings"],
+      "properties": {
+        "version": { "const": 1 },
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/adviserBinding" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "adviserBinding": {
+      "type": "object",
+      "required": ["host", "model", "reasoningEffort", "requiredCapabilities"],
+      "properties": {
+        "host": { "enum": ["codex", "claude"] },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": ".*\\S.*" },
+        "reasoningEffort": { "enum": ["none", "low", "medium", "high", "xhigh", "max"] },
+        "requiredCapabilities": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_-]+$" } }
+      },
+      "additionalProperties": false
+    },
     "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
     "strings": { "type": "array", "items": { "type": "string" } },
     "agent": {

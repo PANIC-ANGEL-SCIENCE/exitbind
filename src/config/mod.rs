@@ -244,6 +244,7 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
             "id",
             "architectureContract",
             "capabilities",
+            "adviserFloor",
             "verificationPreparation",
         ],
         "project",
@@ -256,6 +257,9 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
         if let Err(error) = crate::project::capabilities::selections(selected) {
             errors.push(format!("project.capabilities: {error}"));
         }
+    }
+    if let Some(floor) = project.get("adviserFloor") {
+        validate_adviser_floor(floor, project.get("capabilities"), errors);
     }
     if let Some(selected) = project.get("verificationPreparation") {
         let valid = selected.as_object().is_some_and(|value| {
@@ -314,6 +318,118 @@ fn validate_project(value: &Value, errors: &mut Vec<String>) {
             errors.push("portable projects must not declare project.id".into());
         }
         _ => {}
+    }
+}
+
+fn validate_adviser_floor(
+    value: &Value,
+    selected_capabilities: Option<&Value>,
+    errors: &mut Vec<String>,
+) {
+    let Some(floor) = value.as_object() else {
+        errors.push("project.adviserFloor must be an object".into());
+        return;
+    };
+    reject_unknown(
+        floor,
+        &["version", "bindings"],
+        "project.adviserFloor",
+        errors,
+    );
+    if floor.get("version").and_then(Value::as_u64) != Some(1) {
+        errors.push("project.adviserFloor.version must be 1".into());
+    }
+    let Some(bindings) = floor.get("bindings").and_then(Value::as_array) else {
+        errors.push("project.adviserFloor.bindings must be a non-empty array".into());
+        return;
+    };
+    if bindings.is_empty() || bindings.len() > 8 {
+        errors.push("project.adviserFloor.bindings must contain 1..=8 entries".into());
+    }
+    let selected_ids = selected_capabilities
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    for (index, binding) in bindings.iter().enumerate() {
+        let label = format!("project.adviserFloor.bindings[{index}]");
+        let Some(binding) = binding.as_object() else {
+            errors.push(format!("{label} must be an object"));
+            continue;
+        };
+        reject_unknown(
+            binding,
+            &["host", "model", "reasoningEffort", "requiredCapabilities"],
+            &label,
+            errors,
+        );
+        let host = binding.get("host").and_then(Value::as_str);
+        let model = binding.get("model").and_then(Value::as_str);
+        let effort = binding.get("reasoningEffort").and_then(Value::as_str);
+        if !host.is_some_and(|value| matches!(value, "codex" | "claude")) {
+            errors.push(format!("{label}.host must be codex or claude"));
+        }
+        if !model.is_some_and(|value| {
+            !value.trim().is_empty()
+                && value.trim() == value
+                && value.len() <= 128
+                && !value.chars().any(char::is_control)
+        }) {
+            errors.push(format!(
+                "{label}.model must be a non-empty exact model identifier of at most 128 bytes"
+            ));
+        }
+        if !effort.is_some_and(|value| {
+            matches!(value, "none" | "low" | "medium" | "high" | "xhigh" | "max")
+        }) {
+            errors.push(format!(
+                "{label}.reasoningEffort must be one of none, low, medium, high, xhigh, or max"
+            ));
+        }
+        let Some(capabilities) = binding
+            .get("requiredCapabilities")
+            .and_then(Value::as_array)
+        else {
+            errors.push(format!("{label}.requiredCapabilities must be an array"));
+            continue;
+        };
+        if capabilities.len() > 8 {
+            errors.push(format!(
+                "{label}.requiredCapabilities may contain at most eight ids"
+            ));
+        }
+        let mut capability_ids = BTreeSet::new();
+        for capability in capabilities {
+            let Some(id) = capability.as_str() else {
+                errors.push(format!(
+                    "{label}.requiredCapabilities entries must be strings"
+                ));
+                continue;
+            };
+            let valid = !id.is_empty()
+                && id.len() <= 64
+                && id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_-".contains(&byte)
+                });
+            if !valid || !capability_ids.insert(id) {
+                errors.push(format!(
+                    "{label}.requiredCapabilities must contain unique portable ids"
+                ));
+            } else if !selected_ids.contains(id) {
+                errors.push(format!(
+                    "{label}.requiredCapabilities id '{id}' is not in project.capabilities"
+                ));
+            }
+        }
+        if let (Some(host), Some(model), Some(effort)) = (host, model, effort) {
+            if !seen.insert((host, model, effort)) {
+                errors.push(format!(
+                    "{label} duplicates an allowed host/model/reasoningEffort tuple"
+                ));
+            }
+        }
     }
 }
 
@@ -587,4 +703,50 @@ pub fn native_name(name: &str, agent: &Value) -> String {
         .as_str()
         .map(str::to_owned)
         .unwrap_or_else(|| name.to_lowercase().replace('-', "_"))
+}
+
+#[cfg(test)]
+mod adviser_floor_tests {
+    use super::validate_adviser_floor;
+    use serde_json::json;
+
+    fn validate(value: serde_json::Value) -> Vec<String> {
+        let capabilities = json!([{"id":"review-lens"}]);
+        let mut errors = Vec::new();
+        validate_adviser_floor(&value, Some(&capabilities), &mut errors);
+        errors
+    }
+
+    #[test]
+    fn floor_requires_explicit_exact_bindings_and_registered_capabilities() {
+        let valid = json!({"version":1,"bindings":[{
+            "host":"codex","model":"gpt-approved","reasoningEffort":"xhigh",
+            "requiredCapabilities":["review-lens"]
+        }]});
+        assert!(validate(valid).is_empty());
+
+        for invalid in [
+            json!({"version":1,"bindings":[{"host":"unknown","model":"gpt-approved","reasoningEffort":"xhigh","requiredCapabilities":[]}]}),
+            json!({"version":1,"bindings":[{"host":"codex","model":" ","reasoningEffort":"xhigh","requiredCapabilities":[]}]}),
+            json!({"version":1,"bindings":[{"host":"codex","model":"gpt-approved","reasoningEffort":"mystery","requiredCapabilities":[]}]}),
+            json!({"version":1,"bindings":[{"host":"codex","model":"gpt-approved","reasoningEffort":"xhigh","requiredCapabilities":["not-selected"]}]}),
+            json!({"version":1,"bindings":[{"host":"codex","model":"gpt-approved","reasoningEffort":"xhigh","requiredCapabilities":[]}],"fallback":"guess"}),
+        ] {
+            assert!(!validate(invalid).is_empty());
+        }
+    }
+
+    #[test]
+    fn floor_rejects_duplicate_bindings_and_unknown_security_values() {
+        let duplicate = json!({"version":1,"bindings":[
+            {"host":"codex","model":"gpt-approved","reasoningEffort":"xhigh","requiredCapabilities":[]},
+            {"host":"codex","model":"gpt-approved","reasoningEffort":"xhigh","requiredCapabilities":[]}
+        ]});
+        assert!(validate(duplicate)
+            .iter()
+            .any(|error| error.contains("duplicates an allowed")));
+        assert!(validate(json!({"version":2,"bindings":[]}))
+            .iter()
+            .any(|error| error.contains("version must be 1")));
+    }
 }

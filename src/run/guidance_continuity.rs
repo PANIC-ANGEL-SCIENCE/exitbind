@@ -48,18 +48,64 @@ pub(crate) fn validate_start(event: &Value, line: usize) -> Result<(), String> {
 /// workflow, sandbox, review, checker and source fields remain strict.
 pub(crate) fn advisory_config_sha256(config: &Value) -> String {
     let mut projection = config.clone();
+    let replaceable_advisers = adviser_only_agents(config);
     if let Some(agents) = projection["agents"].as_object_mut() {
-        for agent in agents.values_mut() {
+        for (name, agent) in agents.iter_mut() {
             if let Some(agent) = agent.as_object_mut() {
                 agent.remove("purpose");
                 agent.remove("displayName");
                 agent.remove("skills");
                 agent.remove("memoryRead");
                 agent.remove("crossContext");
+                if replaceable_advisers.contains(name) {
+                    if let Some(runtime) = agent.get_mut("runtime").and_then(Value::as_object_mut) {
+                        for field in ["host", "model", "reasoningEffort"] {
+                            runtime.remove(field);
+                        }
+                        if runtime.is_empty() {
+                            agent.remove("runtime");
+                        }
+                    }
+                }
             }
         }
     }
     crate::evidence::hash::value(&projection)
+}
+
+/// Runtime replacement is launch-only only for an agent assigned exclusively
+/// as an adviser and only when the owner has supplied an explicit floor.
+pub(crate) fn adviser_runtime_replaceable(config: &Value, name: &str) -> bool {
+    adviser_only_agents(config).contains(name)
+}
+
+fn adviser_only_agents(config: &Value) -> BTreeSet<String> {
+    if config["project"]["adviserFloor"]["version"].as_u64() != Some(1) {
+        return BTreeSet::new();
+    }
+    let mut roles = std::collections::BTreeMap::<String, BTreeSet<&str>>::new();
+    if let Some(lead) = config["orchestration"]["lead"].as_str() {
+        roles.entry(lead.to_owned()).or_default().insert("lead");
+    }
+    if let Some(workflows) = config["workflows"].as_object() {
+        for workflow in workflows.values() {
+            for (role, field) in [
+                ("adviser", "advisers"),
+                ("worker", "workers"),
+                ("reviewer", "reviewers"),
+            ] {
+                for name in workflow[field].as_array().into_iter().flatten() {
+                    if let Some(name) = name.as_str() {
+                        roles.entry(name.to_owned()).or_default().insert(role);
+                    }
+                }
+            }
+        }
+    }
+    roles
+        .into_iter()
+        .filter_map(|(name, roles)| (roles.len() == 1 && roles.contains("adviser")).then_some(name))
+        .collect()
 }
 
 pub(crate) fn assert_config_current(
@@ -300,6 +346,21 @@ mod tests {
         })
     }
 
+    fn config_with_adviser_floor() -> Value {
+        let mut config = config();
+        config["project"]["adviserFloor"] = json!({"version":1,"bindings":[{
+            "host":"codex","model":"gpt-approved","reasoningEffort":"xhigh",
+            "requiredCapabilities":[]
+        }]});
+        config["agents"]["adviser"] = json!({
+            "profile":"agents/adviser.md", "purpose":"advise", "retention":"task",
+            "crossContext":"none", "runtime":{"host":"codex","model":"gpt-approved",
+                "reasoningEffort":"xhigh","fallback":"none"}
+        });
+        config["workflows"]["change"]["advisers"] = json!(["adviser"]);
+        config
+    }
+
     #[test]
     fn marked_configuration_currentness_ignores_only_presentation_fields() {
         let original = config();
@@ -341,6 +402,42 @@ mod tests {
         current_rights["agents"]["worker"]["crossContext"] = json!("none");
         current_rights["agents"]["worker"]["skills"] = json!(["review"]);
         assert!(assert_config_current(&loaded(current_rights), &state).is_ok());
+    }
+
+    #[test]
+    fn marked_floor_allows_only_adviser_runtime_replacement_and_keeps_policy_strict() {
+        let original = config_with_adviser_floor();
+        let state = json!({"guidanceContinuityProtocol":PROTOCOL,
+            "guidanceConfigSha256":advisory_config_sha256(&original),"configSha256":"frozen"});
+        let mut replacement = original.clone();
+        replacement["agents"]["adviser"]["runtime"]["model"] = json!("gpt-approved-v2");
+        replacement["agents"]["adviser"]["runtime"]["reasoningEffort"] = json!("max");
+        assert!(assert_config_current(&loaded(replacement.clone()), &state).is_ok());
+
+        let mut changed_policy = replacement.clone();
+        changed_policy["project"]["adviserFloor"]["bindings"][0]["model"] =
+            json!("gpt-approved-v2");
+        assert!(assert_config_current(&loaded(changed_policy), &state).is_err());
+
+        let mut changed_fallback = replacement.clone();
+        changed_fallback["agents"]["adviser"]["runtime"]["fallback"] =
+            json!({"host":"codex","model":"other","reasoningEffort":"high"});
+        assert!(assert_config_current(&loaded(changed_fallback), &state).is_err());
+
+        let mut overlap = original.clone();
+        overlap["workflows"]["change"]["workers"] = json!(["adviser"]);
+        let overlap_state = json!({"guidanceContinuityProtocol":PROTOCOL,
+            "guidanceConfigSha256":advisory_config_sha256(&overlap),"configSha256":"frozen"});
+        overlap["agents"]["adviser"]["runtime"]["model"] = json!("replacement");
+        assert!(assert_config_current(&loaded(overlap), &overlap_state).is_err());
+
+        let legacy = json!({"configSha256":crate::evidence::hash::text(
+            &serde_json::to_string(&original).unwrap()
+        )});
+        assert!(assert_config_current(&loaded(original.clone()), &legacy).is_ok());
+        let mut legacy_replacement = original;
+        legacy_replacement["agents"]["adviser"]["runtime"]["model"] = json!("replacement");
+        assert!(assert_config_current(&loaded(legacy_replacement), &legacy).is_err());
     }
 
     #[test]
