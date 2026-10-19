@@ -124,6 +124,9 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     if !enabled(state) {
         return BTreeSet::new();
     }
+    if has_unresolved_dynamic_checker_dependency(state) {
+        return BTreeSet::new();
+    }
     add_product_path(&loaded.product_root, &loaded.path, &mut candidates);
     if let Some(stages) = state["plan"]["stages"].as_array() {
         for agent in stages
@@ -212,6 +215,35 @@ pub(crate) fn unambiguous_paths(loaded: &crate::config::Loaded, state: &Value) -
     }
     candidates.retain(|path| !strict.contains(path));
     candidates
+}
+
+fn has_unresolved_dynamic_checker_dependency(state: &Value) -> bool {
+    fn dynamic(command: &str) -> bool {
+        command
+            .chars()
+            .any(|character| matches!(character, '$' | '*' | '?' | '`' | '[' | ']'))
+    }
+
+    if state.get("checkPolicy").is_some() {
+        let Some(command) = state["checkPolicy"]["command"].as_str() else {
+            return true;
+        };
+        if dynamic(command) {
+            return true;
+        }
+    }
+    if let Some(preservation) = state.get("preservation") {
+        let Some(requirements) = preservation["requirements"].as_array() else {
+            return true;
+        };
+        if requirements
+            .iter()
+            .any(|requirement| requirement["command"].as_str().map_or(true, dynamic))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn add_product_path(root: &std::path::Path, path: &std::path::Path, paths: &mut BTreeSet<String>) {
@@ -339,5 +371,52 @@ mod tests {
         state.as_object_mut().unwrap().remove("harnessReceipt");
         state["verificationCheckerSources"] = Value::Null;
         assert!(unambiguous_paths(&loaded, &state).is_empty());
+    }
+
+    #[test]
+    fn unresolved_dynamic_checker_dependencies_keep_selected_guidance_strict() {
+        let loaded = loaded(config());
+        for command in [
+            "python3 checks/check.py \"$ADVICE_PATH\"",
+            "python3 checks/check.py memory/*.md",
+        ] {
+            let state = json!({
+                "guidanceContinuityProtocol":PROTOCOL,
+                "plan":{"stages":[{"agents":[{"memoryReferences":[
+                    {"sourcePath":"memory/advice.md","ledgerPath":"memory/advice.jsonl"}
+                ]}]}]},
+                "verificationPreparationProtocol":1,
+                "checkPolicy":{"command":command},
+                "verificationCheckerSources":[{
+                    "path":"/product/checks/check.py",
+                    "argumentPath":"checks/check.py",
+                    "sha256":"a".repeat(64)
+                }]
+            });
+
+            assert!(
+                unambiguous_paths(&loaded, &state).is_empty(),
+                "dynamic checker dependency must keep selected guidance strict: {command}"
+            );
+        }
+
+        let preservation = json!({
+            "guidanceContinuityProtocol":PROTOCOL,
+            "plan":{"stages":[{"agents":[{"memoryReferences":[
+                {"sourcePath":"memory/advice.md","ledgerPath":"memory/advice.jsonl"}
+            ]}]}]},
+            "verificationPreparationProtocol":1,
+            "checkPolicy":{"command":"python3 checks/check.py"},
+            "preservation":{"requirements":[{"command":"python3 checks/check.py \"$ADVICE_PATH\""}]},
+            "verificationCheckerSources":[{
+                "path":"/product/checks/check.py",
+                "argumentPath":"checks/check.py",
+                "sha256":"a".repeat(64)
+            }]
+        });
+        assert!(
+            unambiguous_paths(&loaded, &preservation).is_empty(),
+            "dynamic preservation checker dependency must keep selected guidance strict"
+        );
     }
 }
