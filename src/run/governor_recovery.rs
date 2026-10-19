@@ -87,7 +87,7 @@ pub(crate) fn draft(
     )? {
         return Ok(None);
     }
-    let product_snapshot = crate::run::inputs::fingerprint(loaded)?;
+    let product_snapshot = crate::run::inputs::fingerprint_for_state(loaded, &state)?;
     let decision = json!({
         "version": 1,
         "kind": "duplicate_permit_owner_recovery",
@@ -196,7 +196,9 @@ pub(crate) fn build_carry_evidence(
         successor_config_sha256: &successor_config_sha256,
     };
     let carry = build_carry_evidence_from_decision(&decision, &effects, &binding)?;
-    let current_inputs = crate::run::inputs::fingerprint(loaded)?;
+    // The grant recorded its tested inputs with the state-aware digest of the
+    // predecessor state; compare it against that same state.
+    let current_inputs = crate::run::inputs::fingerprint_for_state(loaded, binding.state)?;
     let product_snapshot = carry["productSnapshotSha256"]
         .as_str()
         .ok_or("owner recovery product snapshot digest is missing")?;

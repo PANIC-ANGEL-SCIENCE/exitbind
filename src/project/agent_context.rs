@@ -85,6 +85,16 @@ fn project_parts_after_reads(
     let rules = current_rules(loaded)?;
     let architecture = super::architecture::delivery(loaded, packet)?;
     let capabilities = super::capabilities::delivery(loaded, packet, binding.host)?;
+    // Legacy packets keep the original pre-launch re-resolution and refusal.
+    let legacy_references = if crate::run::guidance_continuity::enabled(packet) {
+        None
+    } else {
+        Some(memory::selection::resolve_for_task(
+            loaded,
+            agent_name,
+            packet["goal"].as_str(),
+        )?)
+    };
     let mut guidance = guidance::guidance_for_assignment(
         loaded,
         agent_name,
@@ -198,7 +208,23 @@ fn project_parts_after_reads(
     let fresh = crate::work::next(loaded, work)?;
     let fresh_next = &fresh["next"];
     let fresh_rules = current_rules(loaded)?;
-    validate_fresh_context(assignment, &packet_sha256, fresh_next, &rules, &fresh_rules)?;
+    let fresh_references = match &legacy_references {
+        Some(_) => Some(memory::selection::resolve_for_task(
+            loaded,
+            agent_name,
+            packet["goal"].as_str(),
+        )?),
+        None => None,
+    };
+    validate_fresh_context(
+        assignment,
+        &packet_sha256,
+        fresh_next,
+        &rules,
+        &fresh_rules,
+        legacy_references.as_deref(),
+        fresh_references.as_deref(),
+    )?;
     let (scope_ceiling, cross_context_ceiling) = if crate::run::guidance_continuity::enabled(packet)
     {
         let scope = packet["frozenMemoryRead"]
@@ -243,6 +269,8 @@ fn validate_fresh_context(
     fresh_next: &Value,
     rules: &[(String, String, String)],
     fresh_rules: &[(String, String, String)],
+    references: Option<&[Value]>,
+    fresh_references: Option<&[Value]>,
 ) -> Result<(), String> {
     if fresh_next["action"] != "spawn"
         || fresh_next["assignment"] != assignment
@@ -257,6 +285,14 @@ fn validate_fresh_context(
         return Err(
             "project rules changed before native launch; refresh the assignment instead of using stale instructions".into(),
         );
+    }
+    if let (Some(references), Some(fresh_references)) = (references, fresh_references) {
+        if fresh_references != references {
+            return Err(
+                "role-scoped project memory changed before native launch; refresh the assignment"
+                    .into(),
+            );
+        }
     }
     Ok(())
 }
@@ -346,6 +382,7 @@ mod tests {
         String,
         serde_json::Value,
         Vec<(String, String, String)>,
+        Vec<serde_json::Value>,
     );
 
     fn baseline() -> Baseline {
@@ -357,25 +394,85 @@ mod tests {
             "rule-sha".to_owned(),
             "stable rule bytes".to_owned(),
         )];
-        ("assignment-1".to_owned(), packet_sha, next, rules)
+        let references = vec![
+            json!({"sourcePath":"memory/current.md", "sourceSha256":"memory-sha", "scope":"invariants"}),
+        ];
+        (
+            "assignment-1".to_owned(),
+            packet_sha,
+            next,
+            rules,
+            references,
+        )
     }
 
     #[test]
     fn synchronized_work_rule_and_memory_changes_fail_at_the_changed_boundary() {
-        let (assignment, packet_sha, next, rules) = baseline();
-        assert!(validate_fresh_context(&assignment, &packet_sha, &next, &rules, &rules,).is_ok());
+        let (assignment, packet_sha, next, rules, references) = baseline();
+        assert!(validate_fresh_context(
+            &assignment,
+            &packet_sha,
+            &next,
+            &rules,
+            &rules,
+            Some(&references),
+            Some(&references),
+        )
+        .is_ok());
 
         let mut changed_work = next.clone();
         changed_work["assignment"] = json!("assignment-2");
-        let error = validate_fresh_context(&assignment, &packet_sha, &changed_work, &rules, &rules)
-            .unwrap_err();
+        let error = validate_fresh_context(
+            &assignment,
+            &packet_sha,
+            &changed_work,
+            &rules,
+            &rules,
+            Some(&references),
+            Some(&references),
+        )
+        .unwrap_err();
         assert!(error.contains("current Work assignment"));
 
         let mut changed_rules = rules.clone();
         changed_rules[0].2 = "changed rule bytes".to_owned();
-        let error = validate_fresh_context(&assignment, &packet_sha, &next, &rules, &changed_rules)
-            .unwrap_err();
+        let error = validate_fresh_context(
+            &assignment,
+            &packet_sha,
+            &next,
+            &rules,
+            &changed_rules,
+            Some(&references),
+            Some(&references),
+        )
+        .unwrap_err();
         assert!(error.contains("project rules changed"));
+
+        let mut changed_memory = references.clone();
+        changed_memory[0]["sourceSha256"] = json!("changed-memory-sha");
+        let error = validate_fresh_context(
+            &assignment,
+            &packet_sha,
+            &next,
+            &rules,
+            &rules,
+            Some(&references),
+            Some(&changed_memory),
+        )
+        .unwrap_err();
+        assert!(error.contains("project memory changed"));
+
+        // Marked packets apply a fresh eligible snapshot instead of refusing.
+        assert!(validate_fresh_context(
+            &assignment,
+            &packet_sha,
+            &next,
+            &rules,
+            &rules,
+            None,
+            None,
+        )
+        .is_ok());
     }
     #[test]
     fn actual_context_reads_keep_binding_changes_volatile_and_refuse_mid_use_rule_change() {

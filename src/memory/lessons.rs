@@ -287,7 +287,10 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
             omitted += 1;
         }
     }
-    if items.is_empty() && omitted == 0 {
+    // The established field exposes content and cap omissions. Items that are
+    // unavailable or no longer eligible are reported by the canonical guidance
+    // projection instead, so an otherwise empty delivery stays absent here.
+    if items.is_empty() && omitted == unavailable.len() {
         return Ok(None);
     }
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;

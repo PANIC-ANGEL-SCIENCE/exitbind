@@ -371,9 +371,10 @@ pub(crate) fn tracked_paths(
         .arg("-C")
         .arg(root)
         .args(["rev-parse", "--is-inside-work-tree"])
+        .env("GIT_LITERAL_PATHSPECS", "1")
         .output()
         .ok()?;
-    if !inside.status.success() {
+    if !inside.status.success() || String::from_utf8_lossy(&inside.stdout).trim() != "true" {
         return Some(BTreeSet::new());
     }
     let output = std::process::Command::new("git")
@@ -381,6 +382,7 @@ pub(crate) fn tracked_paths(
         .arg(root)
         .args(["ls-files", "-z", "--cached", "--"])
         .args(paths)
+        .env("GIT_LITERAL_PATHSPECS", "1")
         .output()
         .ok()?;
     if !output.status.success() {
@@ -419,6 +421,7 @@ mod tests {
         std::fs::create_dir_all(root.join("docs")).unwrap();
         std::fs::write(root.join("docs/RULES.md"), "rule").unwrap();
         std::fs::write(root.join("note.md"), "advice").unwrap();
+        std::fs::write(root.join(":colon.md"), "literal").unwrap();
         let git = |args: &[&str]| {
             assert!(std::process::Command::new("git")
                 .arg("-C")
@@ -431,12 +434,26 @@ mod tests {
         };
         git(&["init", "-q"]);
         git(&["add", "docs/RULES.md"]);
-        let paths = ["docs/RULES.md".to_owned(), "note.md".to_owned()]
-            .into_iter()
-            .collect::<BTreeSet<_>>();
+        git(&["--literal-pathspecs", "add", "--", ":colon.md"]);
+        let paths = [
+            "docs/RULES.md".to_owned(),
+            "note.md".to_owned(),
+            ":colon.md".to_owned(),
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
         let tracked = tracked_paths(&root, &paths).unwrap();
         assert!(tracked.contains("docs/RULES.md"));
         assert!(!tracked.contains("note.md"));
+        assert!(
+            tracked.contains(":colon.md"),
+            "a tracked name beginning with ':' is matched literally"
+        );
+        assert_eq!(
+            tracked_paths(&root.join(".git"), &paths),
+            Some(BTreeSet::new()),
+            "a non-worktree answer reports nothing tracked"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
     use crate::config::Loaded;

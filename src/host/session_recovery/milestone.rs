@@ -34,7 +34,7 @@ pub(super) fn project(
             "phase": {"state":"unknown"},
             "checkReferences": {"current": null, "historical": null},
             "pendingEffects": "unknown",
-            "nextActions": [],
+            "nextActions": "unknown",
             "routes": [],
         }));
     };
@@ -66,7 +66,7 @@ pub(super) fn project(
             "phase":{"state":"unknown"},
             "checkReferences":{"current":null,"historical":historical},
             "pendingEffects":"unknown",
-            "nextActions":[],
+            "nextActions":"unknown",
             "routes":routes,
         });
         return bounded(result);
@@ -204,8 +204,17 @@ pub(super) fn project(
         "readiness":detail["effectiveAction"]["readiness"],
     });
     let check_references = check_references(&state, &detail, &historical);
-    let pending_effects = pending_effects(hint.pending_operation.is_some(), &state, &detail);
-    let next_actions = next_actions(&detail);
+    // Single-line strings keep the bounded card from overflowing its line
+    // budget precisely when effects and actions are present.
+    let pending_effects =
+        match pending_effects(hint.pending_operation.is_some(), &state, &detail).join("; ") {
+            joined if joined.is_empty() => "none".to_owned(),
+            joined => joined,
+        };
+    let next_actions = match next_actions(&detail).join(", ") {
+        joined if joined.is_empty() => "none".to_owned(),
+        joined => joined,
+    };
     bounded(json!({
         "protocol":1,
         "state":"current_detail_observed",
@@ -334,7 +343,7 @@ fn unavailable(
         "currentWorkDetail":null,
         "checkReferences":{"current":null,"historical":historical},
         "pendingEffects":"unknown",
-        "nextActions":[],
+        "nextActions":"unknown",
         "routes":routes,
     }))
 }
@@ -383,6 +392,70 @@ mod tests {
         );
         assert_eq!(next_actions(&idle), ["check"]);
         assert!(pending_effects(false, &json!({}), &json!({})).is_empty());
+    }
+
+    #[test]
+    fn worst_case_observed_card_stays_within_the_pretty_line_budget() {
+        let prior_event = "a".repeat(64);
+        let prior_target = "b".repeat(64);
+        let current_event = "c".repeat(64);
+        let current_target = "d".repeat(64);
+        let state = json!({
+            "currentStage":2,
+            "attempt":2,
+            "status":"running",
+            "checkObservation":{"state":"failed","facts":{"termination":"unknown"}},
+            "checks":[
+                {"eventSha256":prior_event,"targetEventSha256":prior_target,"attempt":1,"result":{"code":1}},
+                {"eventSha256":current_event,"targetEventSha256":current_target,"attempt":2,"result":{"kind":"exit","code":0}}
+            ]
+        });
+        let detail = json!({
+            "effectiveAction":{
+                "kind":"spawn",
+                "readiness":"IN_PROGRESS",
+                "currentGrant":{"operation":"x".repeat(MAX_OPERATION_BYTES)},
+                "choices":[{"label":"completed"},{"label":"blocked"},{"label":"contradiction"}]
+            },
+            "sections":{"evidence":{
+                "checkEvidence":[{"status":"passed"}],
+                "items":[{"kind":"check","eventSha256":current_event,"historical":false}]
+            }}
+        });
+        let historical = json!({"savedStepRouteRef":"savedHint.currentStep","current":false});
+        let pending = pending_effects(true, &state, &detail).join("; ");
+        let actions = next_actions(&detail).join(", ");
+        assert!(!pending.is_empty() && !actions.is_empty());
+        let card = json!({
+            "protocol":1,
+            "state":"current_detail_observed",
+            "goal":"e".repeat(64),
+            "goalCurrent":true,
+            "workRef":"readRoutes.workDetailArgv[0]",
+            "work":"smw_".to_owned() + &"f".repeat(60),
+            "workStartEventSha256":"1".repeat(64),
+            "assignment":{"state":"known","role":"worker","id":"sma_".to_owned() + &"2".repeat(60)},
+            "phase":{"stage":state["currentStage"],"attempt":state["attempt"],"status":state["status"]},
+            "currentWorkDetail":{"bindingSha256":"3".repeat(64),"action":"spawn","readiness":"IN_PROGRESS"},
+            "checkReferences":check_references(&state, &detail, &historical),
+            "pendingEffects":pending,
+            "nextActions":actions,
+            "routes":[
+                {"kind":"work_detail","routeRef":"readRoutes.workDetailArgv[0]"},
+                {"kind":"action_refresh","routeRef":"readRoutes.workDetailArgv[0]"}
+            ],
+        });
+        let bounded = bounded(card);
+        assert_eq!(bounded["state"], "current_detail_observed");
+        assert!(bounded.get("reason").is_none());
+        let bytes = serde_json::to_vec_pretty(&bounded).unwrap();
+        let lines = bytes.iter().filter(|byte| **byte == b'\n').count() + 1;
+        assert!(
+            bytes.len() <= MAX_PRETTY_BYTES,
+            "{lines} lines, {} bytes",
+            bytes.len()
+        );
+        assert!(lines <= MAX_LINES, "{lines} lines, {} bytes", bytes.len());
     }
 
     #[test]

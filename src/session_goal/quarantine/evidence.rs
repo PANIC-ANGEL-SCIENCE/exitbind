@@ -78,6 +78,21 @@ fn endpoint(loaded: &Loaded, evidence: EndpointEvidence<'_>) -> Result<Endpoint,
     })
 }
 
+/// The verification Work records tested inputs with the state-aware digest.
+/// The quarantine marker records the full fingerprint separately.
+fn verification_inputs_current(
+    source: &Loaded,
+    state: &Value,
+    marker: &Value,
+) -> Result<bool, String> {
+    let state_inputs = crate::run::inputs::fingerprint_for_state(source, state)?;
+    let marker_inputs = crate::run::inputs::fingerprint(source)?;
+    Ok(
+        state["inputsSha256"].as_str() == Some(state_inputs.as_str())
+            && marker["verification"]["inputsSha256"] == marker_inputs,
+    )
+}
+
 pub(super) fn exact_quarantine_evidence(
     source: &Loaded,
     old_member: &super::super::journey::Member,
@@ -165,16 +180,14 @@ pub(super) fn exact_quarantine_evidence(
     crate::run::artifact::assert_current(source, &new_state)?;
     let result = crate::run::result_ref_evidence(source, &verification_member.work)?
         .ok_or("verification result evidence is unavailable")?;
-    let current_inputs = crate::run::inputs::fingerprint(source)?;
     if new_state["status"] != "accepted"
-        || new_state["inputsSha256"].as_str() != Some(current_inputs.as_str())
+        || !verification_inputs_current(source, &new_state, marker)?
         || !result.accepted
         || !result.artifact_current
         || result.drift.is_some()
         || result.inputs_current != Some(true)
         || start["configSha256"] != marker["verification"]["configSha256"]
         || start["configSha256"] != hash::text(&source.source)
-        || marker["verification"]["inputsSha256"] != current_inputs
     {
         return Err("verification Work is not currently accepted on current artifact, inputs and configuration".into());
     }
@@ -289,4 +302,67 @@ pub(super) fn exact_quarantine_evidence(
     };
     residual.decision_sha256 = decision_digest(&residual)?;
     Ok((residual, marker.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn marked_verification_inputs_compare_with_the_state_aware_digest() {
+        let root = std::env::temp_dir().join(format!(
+            "exitbind-quarantine-inputs-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after Unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".exitbind")).unwrap();
+        std::fs::write(root.join("exitbind.json"), "{}\n").unwrap();
+        std::fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
+        let loaded = Loaded {
+            config: json!({}),
+            agents: BTreeMap::new(),
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: BTreeMap::new(),
+            verification_preparation: None,
+            path: root.join("exitbind.json"),
+            control_root: root.join(".exitbind"),
+            product_root: root.clone(),
+            state_root: root.join(".exitbind"),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: "{}\n".to_owned(),
+        };
+        let state = json!({
+            "guidanceContinuityProtocol": crate::run::guidance_continuity::PROTOCOL,
+            "plan": {"stages": []},
+            "checkPolicy": {"command": "true"},
+            "verificationCheckerSources": [{
+                "path": "checks/check.sh",
+                "argumentPath": "checks/check.sh",
+                "sha256": "a".repeat(64)
+            }]
+        });
+        let state_inputs = crate::run::inputs::fingerprint_for_state(&loaded, &state).unwrap();
+        let full_inputs = crate::run::inputs::fingerprint(&loaded).unwrap();
+        assert_ne!(
+            state_inputs, full_inputs,
+            "the marked fixture must exclude a guidance path from the state digest"
+        );
+        let mut recorded = state;
+        recorded["inputsSha256"] = json!(state_inputs);
+        let marker = json!({"verification": {"inputsSha256": full_inputs}});
+        assert!(verification_inputs_current(&loaded, &recorded, &marker).unwrap());
+
+        let mut full_recorded = recorded;
+        full_recorded["inputsSha256"] = json!(full_inputs);
+        assert!(!verification_inputs_current(&loaded, &full_recorded, &marker).unwrap());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

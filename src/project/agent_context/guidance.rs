@@ -401,7 +401,7 @@ fn guidance_with_ceiling(
     let mut result = json!({"items":selected,"overflow":overflow,"selectedCount":selected_count,
         "overflowCount":overflow_count,"unavailable":unavailable,
         "unavailableCount":unavailable_count,"budgetBytes":budget,"usedBytes":used,
-        "meaning":"current eligible complete items; overflow is available through its role/task-scoped read route"});
+        "meaning":"current eligible complete items; overflow is available through its role/task-scoped read route; no permission, check, review or acceptance authority"});
     retain_current(
         loaded,
         agent,

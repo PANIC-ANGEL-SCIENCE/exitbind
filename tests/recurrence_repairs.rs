@@ -264,7 +264,8 @@ fn native_delivery_uses_the_same_lesson_cap_without_rejecting_an_eligible_regist
             &f.lesson(&format!("native-{i}"), &"n".repeat(400), &["recipient"]),
         );
     }
-    let (work, _) = f.worker("recipient native delivery");
+    let (work, detail) = f.worker("recipient native delivery");
+    let guidance_items = detail["recipientContext"]["guidance"]["items"].clone();
     let outside = support::temp("native-lesson-capture");
     let capture = outside.join("prompt");
     let executable = outside.join("fake-codex");
@@ -283,18 +284,24 @@ fn native_delivery_uses_the_same_lesson_cap_without_rejecting_an_eligible_regist
     );
     assert!(output.status.success(), "{}", text(&output));
     let prompt = fs::read_to_string(&capture).unwrap();
-    let section = prompt
-        .split_once("CURRENT APPLICABLE PROJECT LESSONS:\n")
-        .unwrap()
-        .1
-        .lines()
-        .next()
-        .unwrap();
-    let value: Value = serde_json::from_str(section).unwrap();
-    assert!(section.len() <= 6144);
+    use serde::Deserialize;
+    let marker = "CURRENT ELIGIBLE GUIDANCE:\n";
+    let start = prompt.find(marker).expect("guidance marker is present") + marker.len();
+    let mut deserializer = serde_json::Deserializer::from_str(&prompt[start..]);
+    let value = Value::deserialize(&mut deserializer).unwrap();
     let count = value["items"].as_array().unwrap().len();
-    assert!(count <= 4);
-    assert_eq!(count + value["omittedCount"].as_u64().unwrap() as usize, 9);
+    assert_eq!(
+        value["items"], guidance_items,
+        "native delivery and Work detail share one guidance projection"
+    );
+    assert_eq!(count, 9);
+    assert_eq!(value["selectedCount"], 9);
+    assert_eq!(value["overflow"].as_array().unwrap().len(), 0);
+    assert_eq!(value["unavailable"].as_array().unwrap().len(), 0);
+    assert!(
+        value["usedBytes"].as_u64().unwrap() <= value["budgetBytes"].as_u64().unwrap(),
+        "complete selected items stay within the host budget"
+    );
     assert!(prompt.contains("no permission, check, review or acceptance authority"));
     fs::remove_dir_all(outside).unwrap();
 }
