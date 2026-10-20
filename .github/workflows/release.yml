@@ -349,6 +349,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: sh tooling/repository/release/publish-release-assets.sh
 
+  # A release published with GITHUB_TOKEN starts no `release`/`workflow_run` workflow,
+  # so request the badge refresh explicitly; workflow_dispatch is the allowed exception.
+  refresh-readme-badges:
+    needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch README badge refresh on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run readme-badges.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   installed:
     needs: [channel, publish]
     strategy:

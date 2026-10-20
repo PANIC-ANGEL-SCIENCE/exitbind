@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 915,
+  "declarations": 916,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1768,8 +1768,8 @@
     },
     "tests/ci_policy.rs": {
       "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
-      "currentSha256": "f84328feacb0aa380c8f04e2b44f875dee65ef16af98875a1157649233fb1440",
-      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "8ac8803156116ef38dcafe370b1e62545be16a2082c09a2cd023bb426a0ea825",
+      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: add one test asserting the release workflow dispatches the README badge refresh after publish with only actions: write (GITHUB_TOKEN-published releases start no release or workflow_run runs); the release checkout-identity pair now ends the publish job at that job, with the same assertion."
     },
     "tests/ci_test_execution.rs": {
       "baselineSha256": "84a1be79d74aafb1094ea972b295e51532e483ffa26077cc31126e31d475fc98",

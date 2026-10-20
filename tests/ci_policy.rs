@@ -449,7 +449,7 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
         ("linux", "macos", POSIX_SHA_ASSERTION),
         ("macos", "windows-wsl", POSIX_SHA_ASSERTION),
         ("windows-wsl", "publish", WINDOWS_SHA_ASSERTION),
-        ("publish", "installed", POSIX_SHA_ASSERTION),
+        ("publish", "refresh-readme-badges", POSIX_SHA_ASSERTION),
         ("installed", "stable-readiness-result", POSIX_SHA_ASSERTION),
         (
             "stable-readiness-result",
@@ -487,6 +487,38 @@ fn every_checkout_job_asserts_the_github_sha_once_before_use() {
     assert!(readiness_job.contains("ref: ${{ github.sha }}"));
     assert!(readiness_job.contains("fetch-depth: 1"));
     assert!(readiness_job.contains("persist-credentials: false"));
+}
+
+#[test]
+fn release_dispatches_readme_badge_refresh_after_publish_with_only_actions_write() {
+    // GITHUB_TOKEN-published releases start no `release`/`workflow_run` runs, so the
+    // release workflow must request the badge refresh itself, with least privilege.
+    let release = source(".github/workflows/release.yml");
+    let refresh = job_block(&release, "refresh-readme-badges", "installed");
+    assert_eq!(
+        refresh,
+        concat!(
+            "    needs: publish\n",
+            "    if: ${{ always() && needs.publish.result == 'success' }}\n",
+            "    runs-on: ubuntu-latest\n",
+            "    permissions:\n",
+            "      actions: write\n",
+            "    steps:\n",
+            "      - name: Dispatch README badge refresh on main\n",
+            "        env:\n",
+            "          GH_TOKEN: ${{ github.token }}\n",
+            "        run: gh workflow run readme-badges.yml --repo \"$GITHUB_REPOSITORY\" --ref main\n",
+            "\n",
+        )
+    );
+    assert_eq!(release.matches("gh workflow run").count(), 1);
+    assert_eq!(release.matches("actions: write").count(), 1);
+    let publish = job_block(&release, "publish", "refresh-readme-badges");
+    assert!(publish.contains("    permissions:\n      contents: write\n    steps:\n"));
+    assert!(!publish.contains("actions: write"));
+    let badges = source(".github/workflows/readme-badges.yml");
+    assert!(badges.contains("\n  workflow_dispatch:\n"));
+    assert!(badges.contains("          ref: main\n"));
 }
 
 #[test]

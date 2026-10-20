@@ -9,6 +9,9 @@ changes and manual dispatch. Its only published branch is `readme-badges`, conta
 `ci.svg`, `release.svg`, `license.svg` and `status.json`. That exact branch requires
 a narrowly scoped branch-rule exception. The job uses the existing job-scoped
 GITHUB_TOKEN, no personal access token. Never exempt other branches to run it.
+After publication, the release workflow's `refresh-readme-badges` job dispatches
+this workflow on main, because a release published with GITHUB_TOKEN starts no
+`release` or `workflow_run` event; that job holds only `actions: write`.
 
 CI describes the newest CI run for the exact current main SHA. A missing run is
 unknown, not a previous success. Release uses GitHub's latest published stable
