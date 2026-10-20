@@ -20,7 +20,7 @@ identifier and falls back to unknown. `status.json` records the checked subject 
 time. GitHub's image proxy can delay the visible image; these are snapshots, not a
 continuous connection. Opening the badge link shows the authoritative source.
 
-Only nonempty README.md-only diffs run the existing 13 README-related Rust gates.
+Only nonempty README.md-only diffs run the existing 15 README-related Rust gates.
 No rules are rewritten. Every other change, including tooling, assets, workflow,
 unknown bases and mixed changes, runs the existing full jobs. README-only tests
 still compile their required targets; avoiding all compilation would change the

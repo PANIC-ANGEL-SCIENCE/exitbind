@@ -2133,8 +2133,8 @@
     },
     "tests/release_integrity.rs": {
       "baselineSha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b",
-      "currentSha256": "7f3c5d520360be9a18886a7476b16b5331bdf6c01c58d21e9acb67d5f9e9a09a",
-      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module."
+      "currentSha256": "8476bcb89647a47c105c693d2799cdb35ee97a4bb30b8da296e16a7128bf3767",
+      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module. R54 docver rework: registers the readme_only_gates module."
     },
     "tests/release_integrity/context.rs": {
       "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
