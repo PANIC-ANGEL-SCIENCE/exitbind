@@ -1,8 +1,36 @@
 # Changelog
 
-## 0.31.17
+## 0.31.18
 
 Unreleased source candidate; no stable tag or release assets are published.
+
+- Deliver role-scoped guidance to the recipient that acts on it, through work
+  detail, native start and prepared child context, within one byte budget.
+- Keep opt-in guidance continuity advisory: launch-only guidance changes do
+  not invalidate checks, while declared guidance verdict inputs and checker
+  dependencies stay bound to the tested inputs.
+- Add an optional adviser floor that native actions enforce when a
+  configuration declares one.
+- Show a bounded current milestone in native session recovery, derived from
+  the native Goal and freshly rendered Work detail; a saved hint never selects
+  the action.
+- Give every Cargo test target its required features and covered `src`
+  prefixes; pre-return selects the targets affected by a change and runs each
+  with its features and without host session variables.
+- Deliver owner-declared phase guidance bodies whole with a visible count, or
+  by an exact role-scoped read route, and name the delegated agent in Lead
+  detail as a sign rather than a refusal.
+- Validate a successor's lineage once per journey lookup and reuse validated
+  ledger bytes within one process, so successor commands under a native
+  session Goal answer at once. Acceptance still rehashes current inputs.
+- Print `work detail --view action` as plain text without `--json`, carry
+  UTF-8 section pages and evidence as text, and add a `producer` envelope to
+  observation JSON.
+- Remove host session variables from every test that spawns the binary.
+
+## 0.31.17
+
+Published stable release; the `v0.31.17` tag and release assets are available.
 
 - Add an opt-in project continuation path with source-grounded admission,
   visible status, stop handling and replay-safe Work accounting.
@@ -15,17 +43,6 @@ Unreleased source candidate; no stable tag or release assets are published.
 - Keep historical strict readers fail-closed on marked Works. Retain the old
   pre-registration configuration for ordinary rollback and use a supporting
   executable for the marked Work lifecycle; stop does not rewrite old ledgers.
-- Give every Cargo test target its required features and covered `src`
-  prefixes; pre-return and the affected-test runner select changed targets and
-  run each with its features and without host session variables.
-- Deliver owner-declared `phaseGuidance` bodies whole with a count, or by an
-  exact role-scoped read route, and name delegation in Lead detail.
-- Validate a successor's lineage once per journey lookup and reuse validated
-  ledger bytes within one process, so successor commands under a native
-  session Goal answer at once. Acceptance still rehashes current inputs.
-- Print `work detail --view action` as plain text without `--json`, carry
-  UTF-8 section pages and evidence as text, and add a `producer` envelope to
-  observation JSON.
 
 ## 0.31.16
 

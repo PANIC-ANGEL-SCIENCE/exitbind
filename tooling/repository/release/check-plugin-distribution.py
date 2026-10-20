@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-VERSION = "0.31.17"
+VERSION = "0.31.18"
 NAME = "exitbind"
 REPOSITORY = "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
 AUTHOR_URL = "https://github.com/envy404"

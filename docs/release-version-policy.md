@@ -1,12 +1,12 @@
 # Release series and compatibility
 
 Published stable tag: v0.31.17
-Source candidate tag: v0.31.17
+Source candidate tag: v0.31.18
 
-The published stable tag and current source candidate are both v0.31.17. This
-records the post-delivery pointer state for the exact verified immutable
-release. A source version or passing CI alone does not establish an official
-release.
+The published stable tag is v0.31.17. The current source candidate is
+0.31.18 and has not been published; its declaration does not reserve a tag or
+establish release readiness. A source version or passing CI alone does not
+establish an official release.
 README install links name the available stable assets. The published installation
 pointer has been verified against the exact release tag and asset inventory. The
 release-reference check validates published and candidate declarations separately;
