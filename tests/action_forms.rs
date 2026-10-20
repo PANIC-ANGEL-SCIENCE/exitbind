@@ -942,10 +942,10 @@ fn stale_form_binding_rejects_same_assignment_after_goal_revision() {
         &["work", "detail", &work, "--view", "action", "--json"],
         b"",
     );
-    assert_eq!(action_view["goalAssociation"]["kind"], "context_only");
+    assert_eq!(action_view["goalAssociation"]["kind"], "journey_member");
     assert_eq!(action_view["goalAssociation"]["work"], work);
     let grouped = fixture.json(&["work", "detail", &work, "--json"], b"");
-    assert_eq!(grouped["goalAssociation"]["kind"], "context_only");
+    assert_eq!(grouped["goalAssociation"]["kind"], "journey_member");
     assert_eq!(grouped["goalAssociation"]["work"], work);
     let old_assignment = initial["assignment"].clone();
     let stale = fixture.choice(&initial, "scoped");

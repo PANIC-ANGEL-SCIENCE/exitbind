@@ -754,7 +754,8 @@ fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorpo
         old_next["presentation"]["goalProgress"]["journeyCompletion"]["state"],
         "blocked"
     );
-    assert_eq!(old_detail["goalAssociation"]["kind"], "context_only");
+    assert_eq!(old_detail["goalAssociation"]["kind"], "journey_member");
+    assert_eq!(old_detail["goalAssociation"]["goalId"], "import");
     assert_eq!(
         old_detail["sections"]["tasks"]["goal"],
         "Import names safely and show a count"

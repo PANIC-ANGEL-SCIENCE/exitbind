@@ -1,20 +1,24 @@
 use super::{
-    hint::{
-        canonical_path, current_executable_path, current_executable_sha256, read_hint,
-        PendingOperation, WorkSelection, HOOK_BUDGET,
-    },
+    current_work,
+    hint::{canonical_path, read_hint, HOOK_BUDGET},
     references::{
-        generated_result_info, known_work_locator, source_ref_current, verify_pending,
-        verify_source_refs, verify_work_refs,
+        generated_result_info, known_work_locator, verify_pending, verify_source_refs,
+        verify_work_refs,
     },
 };
 use crate::{config, evidence::hash, session_goal};
 use serde_json::{json, Value};
 use std::{path::Path, time::Instant};
 
+/// The recovery part of the SessionStart text stays within this bound so the
+/// host's oversized-context fallback, which keeps only the fixed session core
+/// and this text, still fits its 4096-byte limit.
+const RECOVERY_HOOK_BYTES: usize = 2048;
+
 /// Hook-safe context. It reads the native Goal independently of the launch
 /// project's config and reports unresolved ownership honestly when no exact
-/// owner locator is available.
+/// owner locator is available. When no valid saved hint selects a Work, the
+/// open Works are derived from the Goal's own journey members.
 pub(crate) fn hook_context(
     payload: &serde_json::Map<String, Value>,
     cwd_config_path: Option<&str>,
@@ -40,9 +44,105 @@ pub(crate) fn hook_context(
         Ok(None) => return Some("Exitbind session recovery is unresolved: no canonical native Goal is available; no Work was selected.".into()),
         Err(error) => return Some(format!("Exitbind session recovery is unresolved: {error}; no Work was selected.")),
     };
+    let hinted = hint_text(payload, cwd_config_path, &session, &owner, &record, started);
+    if !hinted.derive {
+        return Some(hinted.text);
+    }
+    let deadline = started + HOOK_BUDGET;
+    let derived = current_work::derive(
+        &record,
+        &session,
+        &owner,
+        hinted.owner_loaded.as_ref(),
+        current_work::HOOK_WORK_LIMIT,
+        deadline,
+    );
+    if derived.works.is_empty() {
+        return Some(hinted.text);
+    }
+    let base = if hinted.no_hint {
+        format!(
+            "Exitbind recovered native Goal {} revision {} from its journey; no saved recovery hint selects a Work.",
+            derived.goal_id,
+            record["revision"].as_u64().unwrap_or(0)
+        )
+    } else {
+        hinted.text
+    };
+    let budget = RECOVERY_HOOK_BYTES.saturating_sub(base.len() + 1);
+    Some(format!("{base}\n{}", derived_hook_text(&derived, budget)))
+}
+
+/// One line per derived Work in the `work detail` form the agent can run as
+/// printed.
+fn derived_hook_text(derived: &current_work::Derived, budget: usize) -> String {
+    let goal = bounded_hook_text(&derived.goal_id, 128);
+    let total = derived.works.len() + derived.more;
+    let mut out = String::new();
+    let mut shown = 0;
+    for item in &derived.works {
+        let line = format!(
+            "{}current Work {} ({} of Goal {goal}); read: exitbind work detail {} --view action --config {}; next action: {}.",
+            if total > 1 { format!("{}) ", shown + 1) } else { String::new() },
+            item.work,
+            if item.source == "journey_member" { "member" } else { "mapped Work" },
+            item.work,
+            item.config_path,
+            bounded_hook_text(item.next_action.as_deref().unwrap_or("read the Work detail"), 192),
+        );
+        // Room is kept for the count of Works not shown.
+        if shown > 0 && out.len() + 1 + line.len() + 96 > budget {
+            break;
+        }
+        if shown > 0 {
+            out.push(' ');
+        }
+        out.push_str(&line);
+        shown += 1;
+    }
+    let mut tail = String::new();
+    if total > shown {
+        tail.push_str(&format!(
+            " {} more open Work(s): `exitbind session recovery show --json`.",
+            total - shown
+        ));
+    }
+    if derived.unverified > 0 {
+        tail.push_str(&format!(
+            " {} journey member(s) could not be verified now.",
+            derived.unverified
+        ));
+    }
+    out.push_str(&tail);
+    out
+}
+
+/// The saved-hint part of the hook text, and whether the current Work must
+/// still be derived from the Goal's journey (no valid hint selected one).
+struct HintText {
+    text: String,
+    derive: bool,
+    no_hint: bool,
+    owner_loaded: Option<config::Loaded>,
+}
+
+fn hint_text(
+    payload: &serde_json::Map<String, Value>,
+    cwd_config_path: Option<&str>,
+    session: &session_goal::native::Session,
+    owner: &session_goal::native::Owner,
+    record: &Value,
+    started: Instant,
+) -> HintText {
+    let finish = |text: String, derive: bool, owner_loaded: Option<config::Loaded>| HintText {
+        text,
+        derive,
+        no_hint: false,
+        owner_loaded,
+    };
     let hint = match read_hint(&session.root) {
         Ok(value) => value,
-        Err(error) => return Some(format!("Exitbind session recovery hint is unusable: {error}; reread the native Goal and Work before acting.")),
+        Err(error) => return finish(format!("Exitbind session recovery hint is unusable: {error}; reread the native Goal and Work before acting."), true, None),
     };
     let mut owner_match = false;
     let mut hinted_owner_config_current = false;
@@ -64,7 +164,7 @@ pub(crate) fn hook_context(
     }
     for candidate in config_candidates.iter().take(16) {
         if started.elapsed() > HOOK_BUDGET {
-            return Some("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into());
+            return finish("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into(), false, None);
         }
         let Ok(loaded) = config::load(Some(candidate)) else {
             continue;
@@ -97,16 +197,18 @@ pub(crate) fn hook_context(
         }
     }
     if started.elapsed() > HOOK_BUDGET {
-        return Some("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into());
+        return finish("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into(), false, None);
     }
     let goal_id = record["goalId"].as_str().unwrap_or("unknown");
     let revision = record["revision"].as_u64().unwrap_or(0);
     let current_event = record["eventSha256"].as_str().unwrap_or("unknown");
     let Some(hint) = hint else {
-        return Some(format!(
+        let mut text = finish(format!(
             "Exitbind recovered native Goal {goal_id} revision {revision} (event {current_event}); its owner is {}. No current Work is selected by this hook. Use `exitbind session recovery show --json`; record an exact hint only with the verified owner configuration, then reread Goal and known Work details before acting.",
             if owner_match { "verified for the available configuration" } else { "known but its exact configuration is unresolved" },
-        ));
+        ), true, owner_loaded);
+        text.no_hint = true;
+        return text;
     };
     if hint.host != session.host
         || hint.session_key != session.key
@@ -115,63 +217,56 @@ pub(crate) fn hook_context(
         || !hinted_owner_config_current
         || hint.goal_id != goal_id
     {
-        return Some(format!(
+        return finish(format!(
             "Exitbind found a stale or foreign recovery hint for native Goal {goal_id} revision {revision}; do not use its saved action. Reread the exact Goal and Work detail before acting."
-        ));
+        ), true, owner_loaded);
     }
-    let Some(owner_loaded) = owner_loaded.as_ref() else {
-        return Some(format!("Exitbind native Goal {goal_id} is known, but its fixed owner configuration is unresolved. Use the exact read route `exitbind session recovery show --json`; do not infer a Work."));
+    let Some(owner_config) = owner_loaded else {
+        return finish(format!("Exitbind native Goal {goal_id} is known, but its fixed owner configuration is unresolved. Use the exact read route `exitbind session recovery show --json`; do not infer a Work from the saved hint."), true, None);
     };
-    if verify_work_refs(&record, &session, &owner, &hint.work_refs).is_err()
+    let owner_loaded = &owner_config;
+    if verify_work_refs(record, session, owner, &hint.work_refs).is_err()
         || verify_source_refs(
             owner_loaded,
-            &record,
-            &session,
-            &owner,
+            record,
+            session,
+            owner,
             &hint.work_refs,
             &hint.evidence_refs,
         )
         .is_err()
         || verify_source_refs(
             owner_loaded,
-            &record,
-            &session,
-            &owner,
+            record,
+            session,
+            owner,
             &hint.work_refs,
             &hint.guidance_refs,
         )
         .is_err()
         || verify_pending(
             owner_loaded,
-            &record,
-            &session,
-            &owner,
+            record,
+            session,
+            owner,
             &hint.work_refs,
             hint.pending_operation.as_ref(),
         )
         .is_err()
     {
-        return Some(format!(
+        return finish(format!(
             "Exitbind recovery hint Work references are stale or no longer match native Goal {goal_id}; reread the exact Goal and Work detail before acting."
-        ));
+        ), true, Some(owner_config));
     }
     let graph_observation = hint
         .evidence_refs
         .iter()
         .find(|item| item.consumption == "generated_query_result")
         .and_then(|item| {
-            generated_result_info(
-                owner_loaded,
-                &record,
-                &session,
-                &owner,
-                &hint.work_refs,
-                item,
-            )
-            .ok()
+            generated_result_info(owner_loaded, record, session, owner, &hint.work_refs, item).ok()
         });
     if started.elapsed() > HOOK_BUDGET {
-        return Some("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into());
+        return finish("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into(), false, None);
     }
     let source = payload
         .get("source")
@@ -182,9 +277,9 @@ pub(crate) fn hook_context(
     let fresh_goal = hint.goal_event_sha256 == current_event && hint.goal_revision == revision;
     let fresh_sources = verify_source_refs(
         owner_loaded,
-        &record,
-        &session,
-        &owner,
+        record,
+        session,
+        owner,
         &hint.work_refs,
         &hint.guidance_refs,
     )
@@ -193,7 +288,7 @@ pub(crate) fn hook_context(
         .ok()
         .flatten();
     if started.elapsed() > HOOK_BUDGET {
-        return Some("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into());
+        return finish("Exitbind session recovery exceeded its four-second hook budget; use the exact Goal recovery route.".into(), false, None);
     }
     let locator = if let Some(reference) = known_locator {
         format!("exact Goal-member locator {} is retained", reference.work)
@@ -220,9 +315,10 @@ pub(crate) fn hook_context(
         out.push_str(" Use the executable-bound read routes in `session recovery show --json`; no saved action is replayed.");
     }
     if graph_observation.is_none() && out.len() > 900 {
-        return Some(format!("Exitbind native Goal {goal_id} revision {revision} is known. Saved step/corrections/pending details remain historical until exact Work detail is reread; use `session recovery show --json`. No saved action is replayed."));
+        out = format!("Exitbind native Goal {goal_id} revision {revision} is known. Saved step/corrections/pending details remain historical until exact Work detail is reread; use `session recovery show --json`. No saved action is replayed.");
     }
-    Some(out)
+    let selected = known_locator.is_some();
+    finish(out, !selected, Some(owner_config))
 }
 
 fn bounded_hook_text(value: &str, max_bytes: usize) -> String {
@@ -288,221 +384,11 @@ fn graph_hook_presentation(
     "Exitbind recovery: a prior CodeGraph observation exists; saved details remain historical with no current Work/action binding. Source identity is not revalidated and provider/index currentness is not asserted. Use `exitbind session recovery show --json` for the exact Goal, member locator, full query, and project route. No saved action is replayed; requery before relying on the finding.".into()
 }
 
-pub(crate) fn show() -> Result<Value, String> {
-    let session = session_goal::native::current()?
-        .ok_or("session recovery show requires a host-reported native session")?;
-    let owner = session
-        .owner()?
-        .ok_or("native session Goal owner is unavailable")?;
-    let record = session_goal::read_for_recovery(&session.root)?
-        .ok_or("native session has no canonical Goal to recover")?;
-    let hint_result = read_hint(&session.root);
-    let (hint, hint_issue) = match hint_result {
-        Ok(Some(hint))
-            if hint.host == session.host
-                && hint.session_key == session.key
-                && hint.owner_identity_sha256 == owner.identity_sha256
-                && hint.owner_project_id == owner.project_id
-                && hint.goal_id == record["goalId"] =>
-        {
-            (Some(hint), None)
-        }
-        Ok(Some(_)) => (None, Some("saved hint belongs to another session or Goal")),
-        Ok(None) => (None, None),
-        Err(_) => (None, Some("saved hint is malformed or unsafe")),
-    };
-    let mut freshness = json!({"goalCurrent":false,"ownerConfigCurrent":false,"workRefsCurrent":false,"declaredGuidanceSourcesCurrent":false,"pendingEvidenceCurrent":false,"savedStepCurrent":false,"selectedWorkBindingCurrent":false});
-    let mut hint_value = Value::Null;
-    let mut reference_freshness = Value::Null;
-    let mut metadata_current = false;
-    let mut dynamic_issue = hint_issue.map(str::to_owned);
-    if let Some(hint) = hint.as_ref() {
-        hint_value = serde_json::to_value(hint).map_err(|error| error.to_string())?;
-        let goal_current = hint.goal_revision == record["revision"].as_u64().unwrap_or(0)
-            && hint.goal_event_sha256 == record["eventSha256"].as_str().unwrap_or("");
-        freshness["goalCurrent"] = json!(goal_current);
-        let owner_check = config::load(Some(&hint.owner_config_path)).and_then(|loaded| {
-            if canonical_path(&loaded.path, "native owner configuration")? != hint.owner_config_path
-                || hash::text(&loaded.source) != hint.owner_config_sha256
-            {
-                return Err("saved owner configuration changed".into());
-            }
-            let scope = session_goal::native::scope(&loaded, false)?;
-            if !scope.owner_matches
-                || scope
-                    .owner
-                    .as_ref()
-                    .map(|value| value.identity_sha256.as_str())
-                    != Some(owner.identity_sha256.as_str())
-            {
-                return Err(
-                    "saved owner configuration no longer matches the fixed Goal owner".into(),
-                );
-            }
-            freshness["ownerConfigCurrent"] = json!(true);
-            let work_ok = verify_work_refs(&record, &session, &owner, &hint.work_refs).is_ok();
-            let guidance_ok = verify_source_refs(
-                &loaded,
-                &record,
-                &session,
-                &owner,
-                &hint.work_refs,
-                &hint.guidance_refs,
-            )
-            .is_ok();
-            let evidence_ok = verify_source_refs(
-                &loaded,
-                &record,
-                &session,
-                &owner,
-                &hint.work_refs,
-                &hint.evidence_refs,
-            )
-            .is_ok()
-                && hint.evidence_refs.iter()
-                    .filter(|item| item.consumption == "generated_query_result")
-                    .all(|item| source_ref_current(&loaded, &record, &session, &owner, &hint.work_refs, item, &current_executable_sha256().unwrap_or_default()).unwrap_or(false));
-            let executable = current_executable_sha256().ok();
-            reference_freshness = json!(hint.evidence_refs.iter().chain(&hint.guidance_refs).map(|item| {
-                let graph = if item.consumption == "generated_query_result" {
-                    generated_result_info(&loaded,&record,&session,&owner,&hint.work_refs,item).ok()
-                } else { None };
-                let current = if let Some(graph) = graph.as_ref() {
-                    graph["sourceCurrent"].as_bool() == Some(true)
-                } else {
-                    executable.as_deref().is_some_and(|sha| source_ref_current(&loaded,&record,&session,&owner,&hint.work_refs,item,sha).unwrap_or(false))
-                };
-                json!({"root":item.root,"path":item.path,"expectedSha256":item.sha256,
-                    "work":item.work,
-                    "producerExecutableSha256":item.producer_executable_sha256,
-                    "callerReportedRead":item.consumption == "caller_reported_read",
-                    "kind":if item.consumption == "generated_query_result" {"prior_graph_observation"} else {"verified_file_read"},
-                    "current":current,
-                    "restoredPriorObservation":graph})
-            }).collect::<Vec<_>>());
-            let pending_ok = verify_pending(&loaded, &record, &session, &owner, &hint.work_refs, hint.pending_operation.as_ref()).is_ok();
-            freshness["workRefsCurrent"] = json!(work_ok);
-            freshness["declaredGuidanceSourcesCurrent"] = json!(guidance_ok);
-            freshness["pendingEvidenceCurrent"] = json!(evidence_ok && pending_ok);
-            Ok(work_ok && guidance_ok && evidence_ok && pending_ok)
-        });
-        match owner_check {
-            Ok(true) => {
-                metadata_current = goal_current;
-                if !goal_current {
-                    dynamic_issue = Some(
-                        "Goal advanced; saved steps and pending details are historical".into(),
-                    );
-                }
-            }
-            Ok(false) => {
-                dynamic_issue = Some(
-                    "one or more saved source/member references changed or are unavailable".into(),
-                )
-            }
-            Err(error) => dynamic_issue = Some(error),
-        }
-    }
-    // A hint never proves that a Work is still at the state observed when its
-    // step was recorded. The hook intentionally does not call ordinary `next`.
-    let selection = WorkSelection {
-        state: "unresolved".into(),
-        work: None,
-    };
-    let active_recovery = Value::Null;
-    let executable = current_executable_path()?;
-    let work_routes = hint
-        .as_ref()
-        .map(|hint| {
-            hint.work_refs.iter().map(|work| json!({
-        "work":work.work,
-        "argv":[executable.clone(),"work","detail",work.work,"--json","--config",work.config_path]
-    })).collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let route_owner = hint
-        .as_ref()
-        .and_then(|value| config::load(Some(&value.owner_config_path)).ok());
-    let reference_routes = hint
-        .as_ref()
-        .map(|hint| {
-            hint.evidence_refs.iter().chain(&hint.guidance_refs).map(|item| {
-                if item.consumption == "generated_query_result" {
-                    let restored = route_owner.as_ref().and_then(|loaded| {
-                        generated_result_info(loaded, &record, &session, &owner, &hint.work_refs, item).ok()
-                    });
-                    let query_argv = restored.as_ref().and_then(|value| {
-                        let work = item.work.as_deref()?;
-                        let member = hint.work_refs.iter().find(|reference| reference.work == work)?;
-                        Some(json!([executable.clone(),"project","graph","query","--query",value["query"],"--config",member.config_path,"--json"]))
-                    });
-                    json!({
-                        "label":item.label,
-                        "kind":"prior_graph_observation",
-                        "root":item.root,
-                        "path":item.path,
-                        "work":item.work,
-                        "expectedSha256":item.sha256,
-                        "producerExecutableSha256":item.producer_executable_sha256,
-                        "consumption":"generated_query_result",
-                        "authority":"read_only",
-                        "restoredPriorObservation":restored,
-                        "queryArgv":query_argv,
-                        "revalidation":"run the exact bounded query route; unchanged source/provider/index can reuse the cached result"
-                    })
-                } else {
-                    json!({
-                        "label":item.label,"kind":"verified_file_read","root":item.root,"path":item.path,"work":item.work,
-                        "expectedSha256":item.sha256,"producerExecutableSha256":item.producer_executable_sha256,
-                        "consumption":item.consumption,"authority":"read_only"
-                    })
-                }
-            }).collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let goal_route = hint.as_ref().map(|value| {
-        json!([
-            executable.clone(),
-            "goal",
-            "status",
-            "--json",
-            "--config",
-            value.owner_config_path
-        ])
-    });
-    let pending_route = hint.as_ref().and_then(|value| {
-        value.pending_operation.as_ref().map(|pending| match pending {
-            PendingOperation::GoalStatus { .. } => json!({"argv":goal_route,"authority":"read_only","historical":true}),
-            PendingOperation::WorkDetail { work, .. } => value.work_refs.iter().find(|item| &item.work == work).map(|item| json!({"argv":[executable.clone(),"work","detail",work,"--json","--config",item.config_path],"authority":"read_only","historical":true})).unwrap_or(Value::Null),
-            PendingOperation::EvidenceFile { handle, root, path, work, sha256, bytes, .. } => json!({"kind":"verified_file_read","handle":handle,"root":root,"path":path,"work":work,"sha256":sha256,"bytes":bytes,"authority":"read_only","historical":true}),
-        })
-    });
-    Ok(json!({
-        "readOnly":true,
-        "authority":"none",
-        "ownerProjectId":owner.project_id,
-        "goal":{"goalId":record["goalId"],"revision":record["revision"],"eventSha256":record["eventSha256"]},
-        "workSelection":selection,
-        "currentWorkReadSnapshot":Value::Null,
-        "savedState":if metadata_current {"Goal and declared references current; saved step remains historical until exact Work detail is reread"} else {"historical"},
-        "activeSavedStep":Value::Null,
-        "savedHint":hint_value,
-        "activeRecovery":active_recovery,
-        "milestone":super::milestone::project(&record, &session, &owner, hint.as_ref()),
-        "freshness":freshness,
-        "issue":dynamic_issue,
-        "readRoutes":{"recoveryShowArgv":[executable,"session","recovery","show","--json"],"goalStatusArgv":goal_route,"workDetailArgv":work_routes,"references":reference_routes,"pendingOperation":pending_route},
-        "referenceFreshness":reference_freshness,
-        "hintSha256":hint.as_ref().map(|value| value.sha256.as_str()),
-        "hintIssue":hint_issue,
-        "effect":"read-only navigation; saved values do not authorize actions"
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::hint::{
-        checkpoint_is_ambiguous_older, unseal, validate_hint, Checkpoint, Hint, Reference, WorkRef,
+        checkpoint_is_ambiguous_older, unseal, validate_hint, Checkpoint, Hint, PendingOperation,
+        Reference, WorkRef, WorkSelection,
     };
     use super::*;
 
@@ -644,6 +530,46 @@ mod tests {
         assert!(unseal(sealed).is_ok());
         value.current_step.push_str(" changed");
         assert!(unseal(value).is_err());
+    }
+
+    #[test]
+    fn several_derived_works_are_listed_up_to_the_limit_with_a_count_of_the_rest() {
+        let work = |index: usize| super::current_work::CurrentWork {
+            work: format!("smw_{}", format!("{index}").repeat(64)),
+            config_path: "/tmp/project/exitbind.json".into(),
+            source: "journey_member",
+            next_action: Some("lead_decision".into()),
+        };
+        let derived = super::current_work::Derived {
+            goal_id: "R54".into(),
+            works: (1..=4).map(work).collect(),
+            more: 2,
+            unverified: 0,
+            incomplete: false,
+        };
+        let text = derived_hook_text(&derived, RECOVERY_HOOK_BYTES);
+        assert!(text.len() <= RECOVERY_HOOK_BYTES, "{text}");
+        assert!(
+            text.contains(&format!("1) current Work smw_{}", "1".repeat(64))),
+            "{text}"
+        );
+        assert!(text.contains("more open Work(s)"), "{text}");
+        let listed = (1..=4)
+            .filter(|index| text.contains(&format!("{index}) current Work")))
+            .count();
+        assert!((1..=4).contains(&listed), "{text}");
+        let shown_more = 6 - listed;
+        assert!(
+            text.contains(&format!(" {shown_more} more open Work(s)")),
+            "{text}"
+        );
+
+        let small = derived_hook_text(&derived, 300);
+        assert!(
+            small.contains("1) current Work"),
+            "the first Work is always named"
+        );
+        assert!(small.contains(" 5 more open Work(s)"), "{small}");
     }
 
     #[test]

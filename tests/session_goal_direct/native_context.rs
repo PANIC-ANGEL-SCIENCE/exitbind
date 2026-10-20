@@ -468,7 +468,7 @@ fn project_named_contract_can_coexist_with_native_parent_context() {
     );
     assert_eq!(
         started["next"]["goalProgress"]["workAssociation"]["kind"],
-        "context_only"
+        "journey_member"
     );
     assert_eq!(started["next"]["projectGoalProgress"]["scope"], "project");
     assert_eq!(started["next"]["projectGoalProgress"]["goalId"], "same");
@@ -486,7 +486,7 @@ fn project_named_contract_can_coexist_with_native_parent_context() {
     );
     let detail =
         project.value_in_session("codex", session, store, &["work", "detail", work, "--json"]);
-    assert_eq!(detail["goalAssociation"]["kind"], "context_only");
+    assert_eq!(detail["goalAssociation"]["kind"], "journey_member");
     assert_eq!(detail["projectGoalProgress"]["scope"], "project");
 
     // A malformed named-scope selector is not silently reinterpreted as a
@@ -511,7 +511,7 @@ fn project_named_contract_can_coexist_with_native_parent_context() {
         serde_json::from_slice(&after_scope_corruption.stdout).unwrap();
     assert_eq!(
         after_scope_corruption["goalAssociation"]["kind"],
-        "context_only"
+        "journey_member"
     );
     assert_eq!(
         after_scope_corruption["projectGoalProgress"]["state"],

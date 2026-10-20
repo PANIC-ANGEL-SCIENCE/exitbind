@@ -790,7 +790,11 @@ arbitrary command text is not accepted. Hooks expose a compact path to that
 full record within the host context budget. A retained Work ID is only a
 member locator: hook and show leave current Work/action binding unresolved and
 keep the saved step, corrections, and pending operation historical until the
-exact Work detail is reread. Read argv pin the currently running executable.
+exact Work detail is reread. When no valid hint selects a Work, the hook names
+the Goal's open journey-member Works (up to four, with a count of the rest),
+each with its `work detail --view action` command and next action;
+`show --json` carries the same list as `currentWorks`. This is
+read-only navigation, not a selection. Read argv pin the currently running executable.
 Checkpoints refresh only under the
 session-record lock and never replay work. Recovery hint protocol 2 is strict;
 older hint shapes fail closed and can be recorded again through the owner-bound

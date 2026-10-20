@@ -1673,8 +1673,8 @@
   "sourceAdaptations": {
     "tests/action_forms.rs": {
       "baselineSha256": "6b2da7728a549fd8887159e6bda82172a3dd71f62bcf772c10bbe60f711e355e",
-      "currentSha256": "6a79272cb705fc906581db240faf7cad4dc4cdab3483a316268d4fb6b014a6ac",
-      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "ae3555ff0e691a1bc59392cf2315b68b3b10e9127a94068057e1cfed18e1945e",
+      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project plain-route Work's goalAssociation kind is now journey_member (it is an exact journey member of the Goal); the case and its assertions are otherwise unchanged."
     },
     "tests/activation_classify.rs": {
       "baselineSha256": "bcecc0b53b297cd82cb43dea0376fdade8d7ea27e8fdc844e23665250a6a1a59",
@@ -1923,8 +1923,8 @@
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
-      "currentSha256": "adebbbb48ee0b5c528a28912c2aa40dac6d56d1fe4861495755dfd8fdd74b372",
-      "reason": "Preserve original assertions and add marked R52 coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "f35abe09d4d9f0ea39159ccb9cb453dbc9ba862be8e03c05b257c672d6e3f022",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the earlier Goal's member Work now presents goalAssociation journey_member with its parent Goal ID import; no case or assertion is removed."
     },
     "tests/goal_requirements/intake_and_identity.rs": {
       "baselineSha256": "2755128744e55cfdcc4bbdd3d0352cc579add00b180b75af6911b38270ab92eb",
@@ -2201,6 +2201,16 @@
       "currentSha256": "3fcc0aa629edbc974bc3100d3195ad58fd9a3232b5069396d16578d201c2c8b4",
       "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
+    "tests/session_goal_direct.rs": {
+      "baselineSha256": "618552d2ae54fbab7c0aee6b4de0d96022550775d09acd9501298d601ed70d95",
+      "currentSha256": "5ff189c6f3091a19afff28e19600f582d3490930a8afc68190cefde9b9aea001",
+      "reason": "R54: registers the resume current-Work test module; no existing module or assertion changes."
+    },
+    "tests/session_goal_direct/direct_scope.rs": {
+      "baselineSha256": "fb6ab57f908e47ccd1700d288dfee8cde070da52acaf3bcd9afa30623109845c",
+      "currentSha256": "ab6c2c64d3e8017ce45c4e64999dd97d10da5400685704dc3235d34d1d945fb8",
+      "reason": "R54: owner-project Works begun from the plain or named route now present their goalAssociation as journey_member with membershipProtocol 2 and the Goal ID, instead of the context-only label; no case or assertion is removed."
+    },
     "tests/session_goal_direct/fixture.rs": {
       "baselineSha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1",
       "currentSha256": "20770e15099e73a1de815ffcd73b2c47cc8a138bc6df46797697ce256394bd34",
@@ -2208,8 +2218,8 @@
     },
     "tests/session_goal_direct/native_context.rs": {
       "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
-      "currentSha256": "e5c782e3342700a2e2e6228effe18750feb34a4ff334da16c8ffe41ade95fe4c",
-      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "02f1d5118db3a9fe3ac3bd851cd36a00ac4278b8f5108c5cda0792bed64341f1",
+      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project Work's goalAssociation kind is now journey_member; the project that does not own the session Goal still asserts context_only; no case or assertion is removed."
     },
     "tests/session_goal_usage.rs": {
       "baselineSha256": "f16d52e3017bf2700cb8182e1d825aa78657096d5c3f1c3fe04dc0e101992bd6",

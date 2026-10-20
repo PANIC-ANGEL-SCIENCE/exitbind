@@ -71,14 +71,17 @@ pub(crate) fn current() -> Result<Option<Session>, String> {
         return session("codex", codex_thread.or(codex_session));
     }
     if claude_present {
-        if claude_session.is_some() && claude_export.is_some() && claude_session != claude_export {
-            return Err(
-                "Claude session selectors disagree; native Goal lookup was declined".into(),
-            );
-        }
-        return session("claude", claude_session.or(claude_export));
+        return session("claude", claude_identity(claude_session, claude_export));
     }
     Ok(None)
+}
+
+/// Claude Code's own `CLAUDE_CODE_SESSION_ID` names the current process's
+/// session. The exported selector serves processes that lack it; after a host
+/// `/clear` that export can still name the cleared session, so the host value
+/// wins without a refusal or any notice to the agent.
+fn claude_identity(host: Option<String>, export: Option<String>) -> Option<String> {
+    host.or(export)
 }
 
 fn selector(name: &str) -> Result<Option<String>, String> {
@@ -355,4 +358,33 @@ pub(crate) fn valid_hash(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::claude_identity;
+
+    #[test]
+    fn claude_host_session_selector_wins_over_a_stale_export() {
+        let current = Some("current-session".to_owned());
+        let cleared = Some("cleared-session".to_owned());
+        assert_eq!(
+            claude_identity(current.clone(), cleared.clone()).as_deref(),
+            Some("current-session")
+        );
+        assert_eq!(
+            claude_identity(current.clone(), current.clone()).as_deref(),
+            Some("current-session")
+        );
+        assert_eq!(
+            claude_identity(None, cleared).as_deref(),
+            Some("cleared-session"),
+            "the export still serves processes without the host selector"
+        );
+        assert_eq!(
+            claude_identity(current, None).as_deref(),
+            Some("current-session")
+        );
+        assert_eq!(claude_identity(None, None), None);
+    }
 }

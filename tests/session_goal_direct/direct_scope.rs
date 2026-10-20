@@ -103,8 +103,10 @@ fn ordinary_work_gets_context_for_the_open_goal_without_completing_its_task() {
     );
     let work = started["work"].as_str().unwrap();
     let association = &started["next"]["goalProgress"]["workAssociation"];
-    assert_eq!(association["kind"], "context_only");
-    assert_eq!(association["protocol"], 1);
+    // An owner-project Work begun from the plain route is a journey member.
+    assert_eq!(association["kind"], "journey_member");
+    assert_eq!(association["membershipProtocol"], 2);
+    assert_eq!(association["goalId"], "session");
     assert_eq!(association["work"], work);
     assert_eq!(association["startEventSha256"].as_str().unwrap().len(), 64);
     assert_eq!(
@@ -478,7 +480,7 @@ fn link_session_recovers_only_the_exact_admitted_start_without_mutating_work() {
         store,
         &["work", "detail", &work, "--json"],
     );
-    assert_eq!(detail["goalAssociation"]["kind"], "context_only");
+    assert_eq!(detail["goalAssociation"]["kind"], "journey_member");
     let final_history = fs::read_to_string(&history_path).unwrap();
     let final_record: Value = serde_json::from_str(final_history.lines().last().unwrap()).unwrap();
     assert!(final_record["journeyAdmissions"]
@@ -744,7 +746,7 @@ fn context_association_does_not_create_named_requirement_coverage() {
     );
     assert_eq!(
         started["next"]["goalProgress"]["workAssociation"]["kind"],
-        "context_only"
+        "journey_member"
     );
     assert_eq!(started["next"]["goalProgress"]["coverageConfirmed"], true);
     assert_eq!(
@@ -780,7 +782,7 @@ fn context_association_does_not_create_named_requirement_coverage() {
     );
     assert_eq!(
         explicitly_named["next"]["goalProgress"]["workAssociation"]["kind"],
-        "context_only"
+        "journey_member"
     );
     assert!(explicitly_named["next"]
         .get("projectGoalProgress")

@@ -9,4 +9,6 @@ mod direct_scope;
 mod fixture;
 #[path = "session_goal_direct/native_context.rs"]
 mod native_context;
+#[path = "session_goal_direct/resume_current_work.rs"]
+mod resume_current_work;
 mod support;

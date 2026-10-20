@@ -6,8 +6,10 @@ When Exitbind runs with one unambiguous host-reported native session identity,
 Goal operations use that conversation's canonical Goal journal. Codex
 `CODEX_THREAD_ID` or `CODEX_SESSION_ID` and Claude Code
 `CLAUDE_CODE_SESSION_ID` are treated as correlation locators. If multiple
-selectors are present they must agree and identify one host; a conflict or
-malformed selector declines native lookup. These values identify a journal;
+selectors are present they must identify one host, and the Codex selectors
+must agree; a conflict or malformed selector declines native lookup. Claude
+Code's own `CLAUDE_CODE_SESSION_ID` names the current session, so it is used
+when an exported `EXITBIND_NATIVE_SESSION_ID` still names an earlier one. These values identify a journal;
 they do not authenticate the caller or grant host authority. Session journals
 are private user-state data, separate from configured project Work/evidence
 state, and are fixed to the project that first incorporates the Goal.
