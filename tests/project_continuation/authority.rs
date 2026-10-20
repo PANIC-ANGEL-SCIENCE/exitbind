@@ -383,7 +383,7 @@ fn owner_time_amendment_preview(project: &Project, work: &str) -> Value {
 fn owner_time_amendment_discovery_holds_before_receipt_without_effects() {
     let (project, work) = owner_time_amendment_fixture("owner-time-amendment-discovery-hold");
     let before = project.state();
-    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let detail = project.value(&["work", "detail", &work, "--view", "action", "--json"]);
     let forms = detail
         .get("actionForms")
         .unwrap_or(&detail["effectiveAction"]);
@@ -410,7 +410,7 @@ fn owner_time_amendment_discovery_holds_when_existing_receipt_is_stale() {
     project.select();
 
     let before = project.state();
-    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let detail = project.value(&["work", "detail", &work, "--view", "action", "--json"]);
     let forms = detail
         .get("actionForms")
         .unwrap_or(&detail["effectiveAction"]);
@@ -472,7 +472,7 @@ fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind
     let reader = reader.expect("legacy reader and probe log must be supplied together");
     let log = log.expect("legacy reader and probe log must be supplied together");
     let before = project.state();
-    let mut discovery = Command::new(&reader);
+    let mut discovery = super::support::git_topology::command(&reader);
     discovery
         .current_dir(&project.root)
         .args([
@@ -506,7 +506,7 @@ fn legacy_reader_refuses_current_work_action(project: &Project, work: &str, kind
         let argv = scoped["command"]["argv"]
             .as_array()
             .expect("old reader action form must expose exact argv");
-        let mut command = Command::new(&reader);
+        let mut command = super::support::git_topology::command(&reader);
         command
             .current_dir(&project.root)
             .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))
@@ -609,7 +609,7 @@ fn owner_time_amendment_applies_once_and_preserves_original_usage_and_claim() {
     assert_eq!(project.apply(&preview)["effect"], "replayed");
 
     legacy_reader_refuses_current_work_action(&project, &work, "time-amendment");
-    let detail = project.value(&["work", "detail", &work, "--view", "action"]);
+    let detail = project.value(&["work", "detail", &work, "--view", "action", "--json"]);
     let forms = detail
         .get("actionForms")
         .unwrap_or(&detail["effectiveAction"]);

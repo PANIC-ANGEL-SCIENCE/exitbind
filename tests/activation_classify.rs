@@ -4,10 +4,10 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, process::Command};
+use std::fs;
 
 fn call(root: &std::path::Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .output()
@@ -99,7 +99,7 @@ fn classify_requires_both_explicit_typed_facts() {
 #[test]
 fn classify_reports_governance_available_after_initialization() {
     let root = support::temp("activation-classify-configured");
-    let worktree = Command::new("git")
+    let worktree = support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
         .status()
         .unwrap();

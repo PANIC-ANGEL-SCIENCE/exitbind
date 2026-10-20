@@ -13,7 +13,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     fs::write(project.root.join("recovery-guidance.md"), guidance).unwrap();
     let checked_source = project.root.join("checked-source.txt");
     fs::write(&checked_source, "before check\n").unwrap();
-    let producer = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let producer = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["version", "--json"])
         .output()
         .unwrap();
@@ -60,7 +60,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         .find(|member| member["work"] == work)
         .expect("Work start is an exact native Goal member");
 
-    let mut record = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut record = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     record
         .current_dir(&project.root)
         .args(["session", "recovery", "record", "--config"])
@@ -186,7 +186,8 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     let record_bytes = serde_json::to_vec(&input).unwrap();
     let (recorded_again, checkpoint_again) = std::thread::scope(|scope| {
         let record_thread = scope.spawn(|| {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+            let mut command =
+                super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
             command
                 .current_dir(&project.root)
                 .args(["session", "recovery", "record", "--config"])
@@ -223,21 +224,22 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         let before_retry: Value = serde_json::from_slice(&fs::read(&hint_path).unwrap()).unwrap();
         assert_eq!(before_retry["lastCheckpoint"]["event"], "PostCompact");
         assert_eq!(before_retry["currentStep"], input["currentStep"]);
-        let mut retry = Command::new(env!("CARGO_BIN_EXE_exitbind"))
-            .current_dir(&project.root)
-            .args(["session", "recovery", "record", "--config"])
-            .arg(project.root.join("exitbind.json"))
-            .env("CODEX_THREAD_ID", session)
-            .env("EXITBIND_SESSION_GOALS_DIR", store)
-            .env("EXITBIND_NO_UPDATE_CHECK", "1")
-            .env_remove("CODEX_SESSION_ID")
-            .env_remove("CLAUDE_CODE_SESSION_ID")
-            .env_remove("EXITBIND_NATIVE_SESSION_ID")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut retry =
+            super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+                .current_dir(&project.root)
+                .args(["session", "recovery", "record", "--config"])
+                .arg(project.root.join("exitbind.json"))
+                .env("CODEX_THREAD_ID", session)
+                .env("EXITBIND_SESSION_GOALS_DIR", store)
+                .env("EXITBIND_NO_UPDATE_CHECK", "1")
+                .env_remove("CODEX_SESSION_ID")
+                .env_remove("CLAUDE_CODE_SESSION_ID")
+                .env_remove("EXITBIND_NATIVE_SESSION_ID")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
         retry
             .stdin
             .take()
@@ -278,7 +280,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     assert!(context.contains("session recovery show --json"));
     assert!(context.len() <= 4096);
 
-    let show = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let show = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(std::env::temp_dir())
         .args(["session", "recovery", "show", "--json"])
         .env("PATH", "")
@@ -439,7 +441,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         .iter()
         .map(|value| value.as_str().unwrap())
         .collect::<Vec<_>>();
-    let detail = Command::new(detail_route[0])
+    let detail = super::super::support::git_topology::command(detail_route[0])
         .args(&detail_route[1..])
         .env("CODEX_THREAD_ID", session)
         .env("EXITBIND_SESSION_GOALS_DIR", store)
@@ -510,17 +512,18 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     assert!(after_context.contains("goalCurrent=false"));
     assert!(!after_context.contains("Inspect the exact Goal and known Work details"));
     assert!(after_context.contains("session recovery show --json"));
-    let shown_after_advance = Command::new(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
-        .args(["session", "recovery", "show", "--json"])
-        .env("CODEX_THREAD_ID", session)
-        .env("EXITBIND_SESSION_GOALS_DIR", store)
-        .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .env_remove("CODEX_SESSION_ID")
-        .env_remove("CLAUDE_CODE_SESSION_ID")
-        .env_remove("EXITBIND_NATIVE_SESSION_ID")
-        .output()
-        .unwrap();
+    let shown_after_advance =
+        super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(std::env::temp_dir())
+            .args(["session", "recovery", "show", "--json"])
+            .env("CODEX_THREAD_ID", session)
+            .env("EXITBIND_SESSION_GOALS_DIR", store)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .output()
+            .unwrap();
     assert!(shown_after_advance.status.success());
     let shown_after_advance: Value = serde_json::from_slice(&shown_after_advance.stdout).unwrap();
     assert_eq!(shown_after_advance["activeRecovery"], Value::Null);
@@ -539,17 +542,18 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         "changed guidance bytes\n",
     )
     .unwrap();
-    let changed_guidance = Command::new(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
-        .args(["session", "recovery", "show", "--json"])
-        .env("CODEX_THREAD_ID", session)
-        .env("EXITBIND_SESSION_GOALS_DIR", store)
-        .env("EXITBIND_NO_UPDATE_CHECK", "1")
-        .env_remove("CODEX_SESSION_ID")
-        .env_remove("CLAUDE_CODE_SESSION_ID")
-        .env_remove("EXITBIND_NATIVE_SESSION_ID")
-        .output()
-        .unwrap();
+    let changed_guidance =
+        super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+            .current_dir(std::env::temp_dir())
+            .args(["session", "recovery", "show", "--json"])
+            .env("CODEX_THREAD_ID", session)
+            .env("EXITBIND_SESSION_GOALS_DIR", store)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .output()
+            .unwrap();
     assert!(changed_guidance.status.success());
     let changed_guidance: Value = serde_json::from_slice(&changed_guidance.stdout).unwrap();
     assert_eq!(
@@ -573,7 +577,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         .as_str()
         .unwrap()
         .contains("hint is unusable"));
-    let corrupt_show = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let corrupt_show = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(std::env::temp_dir())
         .args(["session", "recovery", "show", "--json"])
         .env("CODEX_THREAD_ID", session)
@@ -600,7 +604,7 @@ fn recovery_hook(
     session: &str,
     payload: &Value,
 ) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command
         .current_dir(&project.root)
         .args(["hook-run"])
@@ -629,7 +633,7 @@ fn recovery_hook(
 }
 
 fn recovery_show(session: &str, store: &Path) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(std::env::temp_dir())
         .args(["session", "recovery", "show", "--json"])
         .env("CODEX_THREAD_ID", session)

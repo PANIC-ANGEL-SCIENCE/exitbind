@@ -6,7 +6,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -32,7 +32,7 @@ impl Fixture {
             product.clone()
         };
         if mode == "local" {
-            let git = Command::new("git")
+            let git = support::git_topology::command("git")
                 .arg("-C")
                 .arg(&product)
                 .args(["init", "--quiet"])
@@ -40,7 +40,7 @@ impl Fixture {
                 .unwrap();
             assert!(git.success(), "local fixture requires its own Git root");
         }
-        let mut init = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         init.env("EXITBIND_BINDINGS_DIR", &bindings)
             .args(["init", "--mode", mode, "--root"])
             .arg(&product);
@@ -89,7 +89,7 @@ impl Fixture {
     }
 
     fn hook_with_update(&self, input: &[u8], update: bool) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .arg("hook-run")
             .env("EXITBIND_BINDINGS_DIR", &self.bindings)

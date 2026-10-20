@@ -5,13 +5,13 @@ use std::{
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
     thread,
     time::Duration,
 };
 
 fn invoke(arguments: &[&str], codex: Option<&Path>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.args(arguments);
     if let Some(codex) = codex {
         command.env("EXITBIND_AWAY_CODEX_BIN", codex);
@@ -20,7 +20,7 @@ fn invoke(arguments: &[&str], codex: Option<&Path>) -> Output {
 }
 
 fn invoke_with_tmux(arguments: &[&str], codex: &Path, tmux: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .env("EXITBIND_AWAY_CODEX_BIN", codex)
         .env("EXITBIND_AWAY_TMUX_BIN", tmux)
@@ -518,7 +518,7 @@ fn real_tmux_child_presents_bound_evidence_without_persisting_the_prompt() {
     ] {
         assert!(!state.join(private).exists(), "{private}");
     }
-    let _ = Command::new("tmux")
+    let _ = support::git_topology::command("tmux")
         .args(["-L", &socket, "kill-server"])
         .output();
     fs::remove_dir_all(root).unwrap();

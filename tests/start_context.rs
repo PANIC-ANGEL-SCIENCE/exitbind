@@ -2,14 +2,10 @@
 mod support;
 
 use serde_json::{json, Value};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::{fs, path::Path, process::Output};
 
 fn invoke(root: &Path, args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     command.current_dir(root).args(args).output().unwrap()
 }
@@ -50,7 +46,7 @@ fn setup(root: &Path, apply: bool) -> Value {
         args.push("--apply");
     }
     let bin = support::git_topology::git_only_path(root);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     value(
         command
@@ -84,7 +80,7 @@ fn applied_setup_delivers_current_context_without_a_second_discovery() {
     assert_eq!(fs::read(root.join("exitbind.json")).unwrap(), config_before);
     let argv = applied["next"]["argv"][0].as_array().unwrap();
     assert!(argv.contains(&json!("--detail")));
-    let mut command = Command::new(argv[0].as_str().unwrap());
+    let mut command = support::git_topology::command(argv[0].as_str().unwrap());
     support::git_topology::isolate(&mut command);
     let started = value(
         command

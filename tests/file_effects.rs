@@ -5,7 +5,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 mod support;
 
@@ -504,7 +504,7 @@ fn real_process_crashes_reconcile_four_cuts_without_duplicate_writes_or_new_gran
     };
     let hook_root = support::temp("effect-crash-hook");
     let hook = hook_root.join("crash.so");
-    assert!(Command::new("cc")
+    assert!(support::git_topology::command("cc")
         .args(["-shared", "-fPIC", "-Wall", "-Werror"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/file-effect-crash.c"))
         .args(["-ldl", "-o"])

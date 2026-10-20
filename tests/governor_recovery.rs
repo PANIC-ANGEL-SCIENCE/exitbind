@@ -8,7 +8,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -26,7 +26,7 @@ impl Fixture {
     fn with_owned_outputs(preparation: bool) -> Self {
         let root = support::temp("owner-governor-recovery");
         support::git_topology::repository(&root);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -112,7 +112,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -162,7 +162,7 @@ impl Fixture {
                 value => value.to_owned(),
             })
             .collect::<Vec<_>>();
-        let mut child = Command::new(&args[0])
+        let mut child = support::git_topology::command(&args[0])
             .current_dir(&self.root)
             .args(&args[1..])
             .stdin(Stdio::piped())

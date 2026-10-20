@@ -25,7 +25,7 @@ fn next(p: &Project, w: &str) -> Value {
     p.value(&["work", "next", w, "--full"])["next"].clone()
 }
 fn choice(p: &Project, w: &str, label: &str) -> Value {
-    let d = p.value(&["work", "detail", w, "--view", "action"]);
+    let d = p.value(&["work", "detail", w, "--view", "action", "--json"]);
     let f = d.get("actionForms").unwrap_or(&d["effectiveAction"]);
     f["choices"]
         .as_array()

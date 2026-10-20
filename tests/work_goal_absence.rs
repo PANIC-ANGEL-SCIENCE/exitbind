@@ -2,10 +2,10 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 fn invoke(root: &Path, args: &[&str], session: Option<&str>) -> Value {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     if let Some(session) = session {
         command.env("CODEX_THREAD_ID", session);

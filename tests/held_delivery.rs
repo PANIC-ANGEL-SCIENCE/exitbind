@@ -19,7 +19,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root);
@@ -52,7 +52,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -80,7 +80,7 @@ impl Fixture {
     }
 
     fn return_body(&self, work: &str, assignment: &str, body: &[u8]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args([

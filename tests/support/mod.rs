@@ -139,7 +139,7 @@ pub fn resolved_work_next(
         "fullCommand must use the fixture's current configuration"
     );
 
-    let expanded = Command::new(&command[0])
+    let expanded = git_topology::command(&command[0])
         .current_dir(root)
         .args(&command[1..])
         .output()
@@ -253,7 +253,7 @@ pub fn reconstruct_work_command(
 /// the TTY-dependent presentation checks without skipping them on macOS.
 #[allow(dead_code)]
 pub fn pty(command: &str) -> Command {
-    let mut process = Command::new("script");
+    let mut process = git_topology::command("script");
     if cfg!(target_os = "macos") {
         process.args(["-q", "/dev/null", "sh", "-c", command]);
     } else {
@@ -304,4 +304,32 @@ pub fn run(command: &mut std::process::Command) -> std::process::Output {
         }
     }
     panic!("test binary stayed busy for two seconds")
+}
+
+/// Exact bytes of one `work expand` section page. A UTF-8 page carries them
+/// as `contentText` with `encoding: "utf-8"`; any other page as `contentHex`
+/// with `encoding: "hex"`. Exactly one form is present.
+#[allow(dead_code)]
+pub fn page_bytes(page: &Value) -> Vec<u8> {
+    match page["encoding"].as_str() {
+        Some("utf-8") => {
+            assert!(page.get("contentHex").is_none(), "{page}");
+            page["contentText"]
+                .as_str()
+                .expect("a UTF-8 page carries contentText")
+                .as_bytes()
+                .to_vec()
+        }
+        Some("hex") => {
+            assert!(page.get("contentText").is_none(), "{page}");
+            let hex = page["contentHex"]
+                .as_str()
+                .expect("a hex page carries contentHex");
+            (0..hex.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex page bytes"))
+                .collect()
+        }
+        other => panic!("unknown page encoding {other:?}: {page}"),
+    }
 }

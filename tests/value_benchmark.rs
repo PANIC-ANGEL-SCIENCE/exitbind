@@ -1,13 +1,15 @@
+#[allow(dead_code)]
+mod support;
 use serde_json::Value;
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output},
+    process::Output,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .expect("benchmark binary should start")

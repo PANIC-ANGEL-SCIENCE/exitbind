@@ -1,7 +1,6 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::Path;
-use std::process::Command;
 
 mod support;
 
@@ -82,7 +81,7 @@ fn pinned_exitbind_keeps_identity_and_soulmate_copy_refuses_before_cli_effects()
         use std::os::{fd::AsRawFd, unix::process::CommandExt};
         let proof = std::fs::File::create(project.join("observer-proof")).unwrap();
         let fd = proof.as_raw_fd();
-        let mut command = Command::new(&soulmate_copy);
+        let mut command = support::git_topology::command(&soulmate_copy);
         command.current_dir(&project).args([
             "--exitbind-observer-capsule-v1",
             &fd.to_string(),
@@ -109,7 +108,7 @@ fn pinned_exitbind_keeps_identity_and_soulmate_copy_refuses_before_cli_effects()
     {
         use std::os::unix::process::CommandExt;
         let output = support::run(
-            Command::new(&soulmate_copy)
+            support::git_topology::command(&soulmate_copy)
                 .arg0("exitbind")
                 .current_dir(&project)
                 .args(["--config"])
@@ -149,7 +148,7 @@ fn binary_consumer_binds_exact_executable_and_refuses_same_version_mismatches() 
         .unwrap_or("0000000000000000000000000000000000000000");
     let digest = format!("{:x}", Sha256::digest(std::fs::read(&copied).unwrap()));
     let invoke = |expected_commit: &str, expected_digest: &str| {
-        Command::new("python3")
+        support::git_topology::command("python3")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-binary.py"))
             .arg(&copied)
             .args([
@@ -196,7 +195,7 @@ fn binary_consumer_keeps_null_producer_unresolved_with_matching_local_bytes() {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&fixture, std::fs::Permissions::from_mode(0o700)).unwrap();
     let digest = format!("{:x}", Sha256::digest(std::fs::read(&fixture).unwrap()));
-    let output = Command::new("python3")
+    let output = support::git_topology::command("python3")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-binary.py"))
         .arg(&fixture)
         .args([

@@ -3,7 +3,7 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 const EVALUATOR: &str = concat!(
@@ -17,7 +17,7 @@ fn root(label: &str) -> PathBuf {
 }
 
 fn run(root: &Path, arguments: &[&str]) -> Output {
-    Command::new("sh")
+    support::git_topology::command("sh")
         .arg(EVALUATOR)
         .arg(root)
         .args(arguments)

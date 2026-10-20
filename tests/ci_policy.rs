@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+mod support;
 use std::{fs, path::Path};
 
 mod matrix {
@@ -515,12 +517,10 @@ fn paired_privileged_plan_requires_main_before_checkout() {
 #[cfg(unix)]
 #[test]
 fn context_surface_inventory_is_reproducible_and_path_free() {
-    use std::process::Command;
-
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tooling/repository/ci/context-surface-inventory.sh");
     let run = |cwd: &Path| {
-        let output = Command::new("sh")
+        let output = support::git_topology::command("sh")
             .arg(&script)
             .current_dir(cwd)
             .output()

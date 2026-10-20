@@ -1,10 +1,10 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, path::PathBuf};
 
 fn call(root: &PathBuf, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .arg("--config")
@@ -16,7 +16,7 @@ fn call(root: &PathBuf, args: &[&str]) -> std::process::Output {
 #[test]
 fn current_v8_submission_records_artifact_bytes_and_replays_them() {
     let root = support::temp("artifact-bytes");
-    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()

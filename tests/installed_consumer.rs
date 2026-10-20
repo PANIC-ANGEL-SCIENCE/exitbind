@@ -8,7 +8,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -18,7 +18,7 @@ impl Fixture {
     fn new(name: Option<&str>) -> Self {
         let root = support::temp("installed-consumer");
         let out = support::run(
-            Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                 .args(["init", "--mode", "portable", "--root"])
                 .arg(&root),
         );
@@ -50,7 +50,7 @@ impl Fixture {
     }
     fn call(&self, args: &[&str]) -> Output {
         support::run(
-            Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                 .current_dir(&self.root)
                 .args(args)
                 .args(["--config", "exitbind.json"]),
@@ -92,7 +92,7 @@ impl Fixture {
                     .replace("<REASON>", "Current scope from the configured coordinator.")
             })
             .collect::<Vec<_>>();
-        let mut child = Command::new(&args[0])
+        let mut child = support::git_topology::command(&args[0])
             .current_dir(&self.root)
             .args(&args[1..])
             .stdin(Stdio::piped())
@@ -130,7 +130,7 @@ fn owner_chosen_names_reach_human_and_recipient_context_without_role_or_identity
         assert!(String::from_utf8(plain.stdout)
             .unwrap()
             .contains(&format!("Lead: {expected}")));
-        let mut hook = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut hook = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .arg("hook-run")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -215,7 +215,7 @@ fn invalid_name_controls_and_generic_flag_appenders_refuse_before_effect() {
                 .replace("<OPERATION>", "Inspect the bounded fixture.")
         })
         .collect::<Vec<_>>();
-    let out = Command::new(&args[0])
+    let out = support::git_topology::command(&args[0])
         .current_dir(&f.root)
         .args(&args[1..])
         .arg("--json")
@@ -226,8 +226,9 @@ fn invalid_name_controls_and_generic_flag_appenders_refuse_before_effect() {
         f.ok(&["work", "detail", work, "--json"])["binding"],
         detail["binding"]
     );
-    let version =
-        support::run(Command::new(env!("CARGO_BIN_EXE_exitbind")).args(["version", "--json"]));
+    let version = support::run(
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind")).args(["version", "--json"]),
+    );
     assert!(version.status.success());
     let _: Value = serde_json::from_slice(&version.stdout).unwrap();
     assert!(!f.call(&["version", "--json"]).status.success());
@@ -281,7 +282,7 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
         &f.root.join("exitbind.json"),
         &f.root,
     );
-    let section = Command::new(&argv[0])
+    let section = support::git_topology::command(&argv[0])
         .current_dir(&f.root)
         .args(&argv[1..])
         .output()
@@ -351,7 +352,7 @@ fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
                 &f.root.join("exitbind.json"),
                 &f.root,
             );
-            let out = Command::new(&argv[0])
+            let out = support::git_topology::command(&argv[0])
                 .current_dir(&f.root)
                 .args(&argv[1..])
                 .output()
@@ -365,16 +366,12 @@ fn cut_first_reply_recovers_all_instructions_without_a_saved_full_response() {
             assert_eq!(&page["binding"], binding);
             assert_eq!(page["offset"], bytes.len());
             assert_eq!(page["pageComplete"], true);
-            assert_eq!(page["encoding"], "hex");
             if pages == 0 {
                 expected_hash = page["sectionSha256"].clone();
             }
             assert_eq!(page["sectionSha256"], expected_hash);
-            let hex = page["contentHex"].as_str().unwrap();
-            let decoded: Vec<u8> = (0..hex.len())
-                .step_by(2)
-                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap())
-                .collect();
+            // UTF-8 pages carry their exact bytes as text; others as hex.
+            let decoded = support::page_bytes(&page);
             assert_eq!(page["bytes"], decoded.len());
             bytes.extend(decoded);
             pages += 1;

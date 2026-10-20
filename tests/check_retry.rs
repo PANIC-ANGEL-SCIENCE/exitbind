@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 struct Fixture {
@@ -17,7 +17,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("check-retry");
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -27,7 +27,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")

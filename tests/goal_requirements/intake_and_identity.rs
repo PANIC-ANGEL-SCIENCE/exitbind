@@ -240,7 +240,7 @@ fn checker_coverage_and_intake_are_guarded_before_start() {
         ],
         "name its declared",
     );
-    let mut git = Command::new("git");
+    let mut git = super::support::git_topology::command("git");
     git.current_dir(&p.root).args(["init", "-q"]);
     assert!(support::run(&mut git).status.success());
     p.file(".gitignore", "check.sh\n");

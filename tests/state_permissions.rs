@@ -8,14 +8,14 @@ mod unix {
     use std::fs;
     use std::os::unix::{fs::PermissionsExt, process::CommandExt};
     use std::path::Path;
-    use std::process::{Command, Output};
+    use std::process::Output;
 
     fn mode(path: &Path) -> u32 {
         fs::metadata(path).unwrap().permissions().mode() & 0o777
     }
 
     fn invoke(root: &Path, args: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command.current_dir(root).args(args);
         unsafe {
             command.pre_exec(|| {

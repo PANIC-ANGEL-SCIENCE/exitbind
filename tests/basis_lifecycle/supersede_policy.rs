@@ -106,7 +106,7 @@ fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
         let root = root.clone();
         thread::spawn(move || {
             barrier.wait();
-            let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            let output = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                 .current_dir(&root)
                 .args([
                     "run",

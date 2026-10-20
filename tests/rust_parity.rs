@@ -1,12 +1,7 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::Value;
 mod support;
-use std::{
-    fs,
-    io::Write,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, io::Write, path::PathBuf, process::Output};
 
 fn project() -> PathBuf {
     let path = support::temp("rust-test");
@@ -26,7 +21,7 @@ fn project() -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -38,7 +33,7 @@ fn config(path: &std::path::Path) -> String {
 
 #[test]
 fn version_is_the_rust_release() {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("version")
         .output()
         .unwrap();
@@ -102,7 +97,7 @@ fn entrypoint_help_and_version_forms_are_compatible() {
 
 #[test]
 fn hook_protocol_is_stable() {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-protocol")
         .output()
         .unwrap();
@@ -121,7 +116,7 @@ fn rust_inspects_frozen_v1_and_v2_run_ledgers() {
         ("tests/fixtures/v0.2.x-run.jsonl", 1),
         ("tests/fixtures/v0.7.x-run-v2.jsonl", 2),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(manifest)
             .args([
                 "run",
@@ -146,7 +141,7 @@ fn rust_inspects_frozen_v1_and_v2_run_ledgers() {
 #[test]
 fn rust_inspects_a_golden_v008_memory_ledger() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(manifest)
         .args([
             "memory",
@@ -710,7 +705,7 @@ fn doctor_reports_npx_managed_dotagents_without_invoking_it() {
     fs::write(home.join(".agents/agents.toml"), "").unwrap();
     fs::write(bin.join("npx"), "").unwrap();
     let config = root.join("exitbind.json").to_string_lossy().into_owned();
-    let doctor = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let doctor = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("HOME", &home)
         .env("PATH", &bin)
         .args(["doctor", "--config", &config])

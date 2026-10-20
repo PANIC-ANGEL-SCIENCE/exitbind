@@ -4,11 +4,7 @@
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 
 const LEDGER: &str = ".exitbind/memory/lesson.jsonl";
 const REASON: &str = "Owner selected recall and retirement for this exact project lesson.";
@@ -22,7 +18,7 @@ impl Fixture {
     fn with_expiry(expiry: &str) -> Self {
         let root = support::temp("memory-policy-correction");
         let out = support::run(
-            Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                 .args(["init", "--mode", "portable", "--root"])
                 .arg(&root),
         );
@@ -85,7 +81,7 @@ impl Fixture {
     }
     fn call(&self, args: &[&str]) -> Output {
         support::run(
-            Command::new(env!("CARGO_BIN_EXE_exitbind"))
+            support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                 .current_dir(&self.root)
                 .args(args)
                 .args(["--config", "exitbind.json"]),

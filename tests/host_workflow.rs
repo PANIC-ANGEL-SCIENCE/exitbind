@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 const CHECK: &str = "test -f actual-product-check";
@@ -47,7 +47,7 @@ impl Fixture {
 
     fn run_owned(&mut self, arguments: Vec<String>) -> Output {
         self.calls.push(arguments.clone());
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(arguments)
             .output()
@@ -130,7 +130,7 @@ impl Fixture {
     }
 
     fn execute_check(&self, check_command: &str) -> i32 {
-        Command::new("sh")
+        support::git_topology::command("sh")
             .args(["-c", check_command])
             .current_dir(&self.root)
             .status()

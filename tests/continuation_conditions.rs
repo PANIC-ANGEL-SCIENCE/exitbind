@@ -6,7 +6,7 @@ use std::{
     fs,
     io::Write,
     path::Path,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 fn sha(text: &str) -> String {
@@ -20,7 +20,7 @@ fn local_call(
     args: &[&str],
     input: Option<&[u8]>,
 ) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command
         .current_dir(product)
         .env("EXITBIND_BINDINGS_DIR", bindings)
@@ -51,7 +51,7 @@ fn marked_observed_support_survives_advisory_config_change_and_preserves_strict_
         fs::create_dir(path).unwrap();
     }
     fs::write(product.join("requirements.txt"), "First requirement.\n").unwrap();
-    let worktree = Command::new("git")
+    let worktree = support::git_topology::command("git")
         .args(["-C", product.to_str().unwrap(), "init", "--quiet"])
         .status()
         .unwrap();
@@ -59,7 +59,7 @@ fn marked_observed_support_survives_advisory_config_change_and_preserves_strict_
         worktree.success(),
         "temporary worktree initialization failed"
     );
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", &bindings)
         .args([
             "init",

@@ -1,7 +1,8 @@
 //! Integration coverage for the default bounded `work next` response.
+#[allow(dead_code)]
+mod support;
 
 use serde_json::Value;
-use std::process::Command;
 
 #[test]
 fn default_work_next_is_bounded_json_with_recovery_identity() {
@@ -15,14 +16,14 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
         "path".repeat(24)
     ));
     std::fs::create_dir(&root).unwrap();
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
     let config = root.join("exitbind.json");
-    let begin = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let begin = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",
@@ -42,7 +43,7 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert!(begin.status.success(), "{begin:?}");
     let started: Value = serde_json::from_slice(&begin.stdout).unwrap();
     let work = started["work"].as_str().unwrap();
-    let next = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let next = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["work", "next", work, "--json", "--config"])
         .arg(&config)
@@ -70,14 +71,14 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert!(command.iter().any(|arg| arg == "--full"));
     assert_eq!(command[command.len() - 2], "--config");
     assert_eq!(command.last().unwrap(), config.to_str().unwrap());
-    let recovered = Command::new(command[0].as_str().unwrap())
+    let recovered = support::git_topology::command(command[0].as_str().unwrap())
         .current_dir(std::env::temp_dir())
         .args(command[1..].iter().map(|arg| arg.as_str().unwrap()))
         .output()
         .unwrap();
     assert!(recovered.status.success(), "{recovered:?}");
     let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
-    let full = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let full = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["work", "next", work, "--full", "--config"])
         .arg(&config)
@@ -111,7 +112,7 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
         .find(|reference| reference["kind"] == "ledger_history")
         .unwrap();
     let reference = history["id"].as_str().unwrap();
-    let expanded = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let expanded = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["work", "expand", work, reference, "--config"])
         .arg(&config)
@@ -121,7 +122,7 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
     assert_eq!(expanded["valid"], true);
     assert_eq!(expanded["reference"]["id"], reference);
-    let scope = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let scope = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",
@@ -136,7 +137,7 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
         .output()
         .unwrap();
     assert!(scope.status.success(), "{scope:?}");
-    let stale = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let stale = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["work", "expand", work, reference, "--config"])
         .arg(&config)

@@ -312,7 +312,7 @@ fn long_requirement_history_has_bounded_exact_read_and_refinement_limit() {
     assert_eq!(history["historyEntry"]["text"], prior_text);
     assert_eq!(history["historyIndex"], 0);
     fs::copy(f.root.join("exitbind.json"), f.root.join("alternate.json")).unwrap();
-    let alternate = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let alternate = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&f.root)
         .args([
             "work",
@@ -343,7 +343,7 @@ fn long_requirement_history_has_bounded_exact_read_and_refinement_limit() {
             }
         })
         .collect::<Vec<_>>();
-    let read = Command::new(argv[0])
+    let read = super::support::git_topology::command(argv[0])
         .args(&argv[1..])
         .current_dir(&f.root)
         .output()

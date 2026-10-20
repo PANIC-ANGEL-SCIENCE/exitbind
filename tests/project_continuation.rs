@@ -327,7 +327,7 @@ impl Project {
                 "spawn" if next["role"] == "reviewer" => "approved",
                 other => panic!("unexpected fixture action {other}: {current}"),
             };
-            let fresh = self.value(&["work", "detail", work, "--view", "action"]);
+            let fresh = self.value(&["work", "detail", work, "--view", "action", "--json"]);
             let forms = fresh
                 .get("actionForms")
                 .unwrap_or(&fresh["effectiveAction"]);

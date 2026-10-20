@@ -68,7 +68,7 @@ fn isolate_removes_seeded_context_and_explicit_fixture_context_still_works() {
 
     // Confirm the shared constructor removes every selected context name while
     // retaining ordinary credential roots that fixture hosts may need.
-    let mut probe = Command::new("/usr/bin/env");
+    let mut probe = support::git_topology::command("/usr/bin/env");
     for name in HOST_CONTEXT {
         probe.env(name, format!("controlled-{name}"));
     }
@@ -120,7 +120,7 @@ fn isolate_removes_seeded_context_and_explicit_fixture_context_still_works() {
 
     // Seed a controlled private Goal context before isolation, matching the
     // inherited-host failure mode without using any real session identifier.
-    let mut isolated = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut isolated = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     isolated
         .current_dir(&fixture.0)
         .args(["goal", "status", "--json", "--config"])
@@ -143,7 +143,7 @@ fn isolate_removes_seeded_context_and_explicit_fixture_context_still_works() {
 
     // A test that deliberately re-adds only its fake identity after isolate
     // still exercises the intended native session Goal path.
-    let mut explicit = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut explicit = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     explicit
         .current_dir(&fixture.0)
         .args(["goal", "status", "--json", "--config"])
@@ -234,7 +234,7 @@ exit 92
         fs::set_permissions(executable, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    let mut launcher = Command::new("/bin/sh");
+    let mut launcher = support::git_topology::command("/bin/sh");
     launcher
         .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-local.sh"))
         .arg("--preflight")
@@ -316,5 +316,51 @@ exit 92
             .count(),
         2,
         "CODEX_HOME must remain available to preflight children"
+    );
+}
+
+/// Every process a test spawns, including the exitbind binary, is built by
+/// `support::git_topology::command`, which removes the host session variables.
+/// A spawn that bypassed it would inherit the invoking session's Goal identity
+/// (the R52 incident wrote 32 test Works into a real Lead session Goal).
+#[test]
+fn every_test_spawn_goes_through_the_isolating_helper() {
+    let helper = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    let removed: Vec<_> = helper
+        .get_envs()
+        .filter(|(_, value)| value.is_none())
+        .map(|(name, _)| name.to_string_lossy().into_owned())
+        .collect();
+    for name in HOST_CONTEXT {
+        assert!(
+            removed.iter().any(|item| item == name),
+            "{name} would be inherited"
+        );
+    }
+    let mut offenders = Vec::new();
+    let mut pending = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs")
+                && !path.ends_with("support/git_topology.rs")
+            {
+                let text = fs::read_to_string(&path).unwrap();
+                let lines: Vec<&str> = text.lines().collect();
+                for (index, line) in lines.iter().enumerate() {
+                    // A deliberate raw probe names its reason on the line above.
+                    let excepted = index > 0 && lines[index - 1].contains("raw-spawn:");
+                    if line.contains(concat!("Command", "::new(")) && !excepted {
+                        offenders.push(format!("{}:{}", path.display(), index + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "spawn through support::git_topology::command so host session variables are removed: {offenders:?}"
     );
 }

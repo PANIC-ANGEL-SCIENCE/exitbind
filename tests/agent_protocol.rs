@@ -5,7 +5,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -14,7 +14,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("agent-protocol");
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--skip-skills", "--root"])
             .arg(&root)
             .output()
@@ -24,7 +24,7 @@ impl Fixture {
         Self { root }
     }
     fn call(&self, args: &[&str], body: Option<&[u8]>) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -247,7 +247,7 @@ fn large_recipient_profile_has_explicit_incomplete_expansion() {
     let route = j["recipientContext"]["profile"]["access"]["command"]
         .as_array()
         .unwrap();
-    let r = Command::new(route[0].as_str().unwrap())
+    let r = support::git_topology::command(route[0].as_str().unwrap())
         .args(route[1..].iter().map(|v| v.as_str().unwrap()))
         .output()
         .unwrap();
@@ -256,7 +256,7 @@ fn large_recipient_profile_has_explicit_incomplete_expansion() {
 }
 
 fn setup(root: &Path, apply: bool, extra: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.args(["setup", "--root"]).arg(root).args([
         "--json",
         "--skip-skills",
@@ -317,7 +317,7 @@ fn approved_roles_apply_once_preserve_asymmetry_and_return_validated_begin() {
         assert_eq!(parsed["agents"][role]["commands"], json!([]));
     }
     assert_eq!(parsed["agents"]["worker"]["write"], json!(["src"]));
-    let checked = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let checked = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["check", "--json", "--config"])
         .arg(root.join("exitbind.json"))
         .output()
@@ -345,7 +345,7 @@ fn approved_roles_apply_once_preserve_asymmetry_and_return_validated_begin() {
         modified
     );
     let begin = actions[0].as_array().unwrap();
-    let run = Command::new(begin[0].as_str().unwrap())
+    let run = support::git_topology::command(begin[0].as_str().unwrap())
         .current_dir(std::env::temp_dir())
         .args(begin[1..].iter().map(|v| v.as_str().unwrap()))
         .output()

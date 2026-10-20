@@ -1,8 +1,11 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
 fn benchmark_reports_the_current_exitbind_surface() {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["benchmark", "--json"])
         .output()
         .expect("benchmark binary should start");
@@ -24,7 +27,7 @@ fn benchmark_reports_the_current_exitbind_surface() {
 #[test]
 fn current_away_surface_names_exitbind_configuration_and_state() {
     let parent = TempDir::new("away-surface");
-    let missing = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let missing = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(parent.path())
         .args(["away", "list"])
         .output()
@@ -40,13 +43,13 @@ fn current_away_surface_names_exitbind_configuration_and_state() {
 
     let project = parent.path().join("project");
     fs::create_dir(&project).expect("project directory");
-    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&project)
         .args(["init", "--mode", "portable"])
         .output()
         .expect("exitbind init should start");
     assert!(initialized.status.success());
-    let listed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let listed = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&project)
         .args(["away", "list"])
         .output()

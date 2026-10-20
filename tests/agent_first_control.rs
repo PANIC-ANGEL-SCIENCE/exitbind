@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Output, Stdio};
+use std::process::{Child, ChildStdin, Output, Stdio};
 
 const EVALUATION_DOC: &str = include_str!("../docs/agent-first-evaluation.md");
 const BLOCKED_RESULT_BYTES: usize = 2 * 1024 * 1024;
@@ -31,7 +31,7 @@ impl Fixture {
 
     fn with_label(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -44,7 +44,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -68,7 +68,7 @@ impl Fixture {
     }
 
     fn blocked_return(&self, work: &str, assignment: &str, outcome: &str) -> (Child, ChildStdin) {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args([

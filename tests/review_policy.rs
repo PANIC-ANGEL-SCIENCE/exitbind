@@ -10,7 +10,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const CHECK: &str = "true";
@@ -22,7 +22,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -32,7 +32,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .output()
@@ -196,7 +196,7 @@ impl Fixture {
     }
 
     fn work_return(&self, work: &str, action: &Value, outcome: &str, body: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args([
                 "work",
@@ -533,13 +533,13 @@ fn receipt_tamper_is_rejected_and_historical_run_has_no_new_policy_marker() {
     assert_refused(&tampered, "receipt");
 
     let root = support::temp("review-policy-historical");
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
     assert!(init.status.success(), "{}", text(&init));
-    let start = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let start = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "run",

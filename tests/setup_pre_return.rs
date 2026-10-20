@@ -3,7 +3,7 @@ mod support;
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 fn fixture(label: &str) -> PathBuf {
@@ -40,7 +40,7 @@ fn setup(root: &Path, extra: &[&str], apply: bool) -> Output {
     if apply {
         args.push("--apply");
     }
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     command
         .env("PATH", support::git_topology::git_only_path(root))
@@ -50,7 +50,7 @@ fn setup(root: &Path, extra: &[&str], apply: bool) -> Output {
 }
 
 fn invoke(args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     command.args(args).output().unwrap()
 }
@@ -77,7 +77,7 @@ fn emitted_begin(report: &Value) -> &str {
 }
 
 fn run_emitted(command: &str) -> Value {
-    let mut process = Command::new("sh");
+    let mut process = support::git_topology::command("sh");
     support::git_topology::isolate(&mut process);
     let output = process.args(["-c", command]).output().unwrap();
     value(&output)

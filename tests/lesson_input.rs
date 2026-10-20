@@ -3,11 +3,7 @@
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
     root: PathBuf,
@@ -15,14 +11,14 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("lesson-input");
-        assert!(Command::new("git")
+        assert!(support::git_topology::command("git")
             .args(["init", "-q"])
             .arg(&root)
             .status()
             .unwrap()
             .success());
         let f = Self { root };
-        let out = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let out = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--skip-skills", "--root"])
             .arg(&f.root)
             .output()
@@ -39,7 +35,7 @@ impl Fixture {
         f
     }
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])

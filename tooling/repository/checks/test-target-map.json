@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 914,
+  "declarations": 915,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1660,7 +1660,7 @@
     }
   ],
   "sourceFileCount": 197,
-  "testAttributes": 912,
+  "testAttributes": 913,
   "ignoreAttributes": 1,
   "repositoryOnlyTargets": [
     "architecture_budget",
@@ -1671,265 +1671,695 @@
     "repository_contracts"
   ],
   "sourceAdaptations": {
-    "tests/ci_policy.rs": {
-      "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
-      "currentSha256": "ea0a8bdb56ced1c006ad0ab22882327061710bc9f31ff9d93ec56a0d1a5996e0",
-      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain."
-    },
-    "tests/compatibility_matrix/matrix_validation.rs": {
-      "baselineSha256": "553980e338b25be74cd64e7a34d77ca07e49dea0cc4d4d3117dc500805d3e01d",
-      "currentSha256": "fde6b916863cdce8e8ba87ecceb7bb59efe39c96330c369d2fbd2b95f8faec1a",
-      "reason": "The repository-only projection source proof remains active under repository-checks, while default product tests no longer require excluded tooling or .github files. Product parser, installer and update cases remain unconditional."
-    },
-    "tests/plugin_distribution.rs": {
-      "baselineSha256": "75fa9f5f6d5cae7c3a077b2cc05d9da119e0cbeec5ab68de4c22995c10843ed9",
-      "currentSha256": "da424b94ee9c17f1c2de2d53d08115aba0544810d83b5c97d88492f816c193f8",
-      "reason": "The deterministic archive and validation tests now exercise repository-owned packager/checker implementations; the target is gated by repository-checks so excluded admin paths are not called by product archive tests."
-    },
-    "tests/recurrence_repairs.rs": {
-      "baselineSha256": "793001bef55ced5eea22bcc401a9a43926c5e3befb1976efeb0e300eca90d0c6",
-      "currentSha256": "099b401f46f4ec3861341a4b90c8076c3ab413be3db5d64e2f312b3086c0d5cd",
-      "reason": "The native lesson-delivery assertion reads the shared R52 guidance projection used by Work detail and native launch and additionally measures the serialized delivered items against the pinned 32768-byte host budget instead of trusting only the product usedBytes self-report; the lesson-specific 4-item/6144-byte cap was replaced by the shared host budget, and the eligible-registry and boundary assertions remain."
-    },
-    "tests/release_integrity/context.rs": {
-      "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
-      "currentSha256": "4376575a86df676604edd135db09532c0ead6caa811e2360bf592a1ff57c4581",
-      "reason": "Release fixtures now copy the exact repository-owned verifier and execute the actual Verify transferred release evidence and Publish tag assets workflow steps; original behavioral checks remain."
-    },
-    "tests/release_integrity/publication_workflows.rs": {
-      "baselineSha256": "e7863d6ed6cc43070357e9ab2cdc2d36af99111339ebd7c991e147355eaf5244",
-      "currentSha256": "f2da5d2b47d23c6930b705a2115b6e4e71cb85559dac0105da5f56a3d464c695",
-      "reason": "Release provenance assertions now point to the repository-owned verifier and its actual workflow invocation; behavioral tamper cases and workflow safety assertions remain."
-    },
-    "tests/release_integrity/release_policy.rs": {
-      "baselineSha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e",
-      "currentSha256": "e9e84a80e53c9085483f8153198d2b90f1741b9e8a44f4be5bb0583ca5d6428b",
-      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent."
-    },
-    "tests/check_observation_recovery/process_containment.rs": {
-      "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
-      "currentSha256": "25085321e312d138e67e2229a4ce00194bce0c2c7afbc2ce999a3faa64378e02",
-      "reason": "Grouped self-reexec selectors use the actual source-module path; added read-only Work-detail assertions prove the unknown diagnostic has no apply choices and the ledger bytes remain unchanged after unknown terminalization. Existing subprocess guards remain."
-    },
-    "tests/check_observation_recovery.rs": {
-      "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
-      "currentSha256": "e0b3ccf3dc73b655c2b948611bea8bcf58db716b25e5e620b5a7a5ecfbe8f83d",
-      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain."
-    },
-    "tests/observe_check/timeouts_and_drift.rs": {
-      "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
-      "currentSha256": "b3145dab0cdc7469ce70bc63b98d342611f5a3ec8233b4d927822c316a842a7e",
-      "reason": "Preserve original assertions and add marked R52 coverage."
-    },
-    "tests/init_without_skills.rs": {
-      "baselineSha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce",
-      "currentSha256": "a7d59280f7013aca4005e0cd9f8078fd26211896de73983e251dfb300a380411",
-      "reason": "Grouped self-reexec selector now uses the actual source-module path emitted by libtest, excluding the Cargo target; child summary must prove exactly one test executed."
-    },
-    "tests/value_contract.rs": {
-      "baselineSha256": "461b64fea780d8148f5a1e81595b39ca5d3fb0f8d0acfa1486e71801eb9ef9ba",
-      "currentSha256": "dab43ebe55d8cad9c42f70211964b3534ded15bee1ec56d1176d3a14e35462a5",
-      "reason": "The seven claim-registry and scenario fixture proofs are selected only with repository-checks because their canonical proof executable is repository-only; shared schema-validation helpers and schema shape assertions remain unconditional with all nine schema-lock and operational receipt tests."
-    },
-    "tests/docs_workflow.rs": {
-      "baselineSha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6",
-      "currentSha256": "7e2b63abdc54d291a8e3e05e63973a4f1e0011ac402ac62b3b897a0c7ef51c7d",
-      "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain."
-    },
     "tests/action_forms.rs": {
       "baselineSha256": "6b2da7728a549fd8887159e6bda82172a3dd71f62bcf772c10bbe60f711e355e",
       "currentSha256": "6a79272cb705fc906581db240faf7cad4dc4cdab3483a316268d4fb6b014a6ac",
-      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive."
+      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/compact_preservation.rs": {
-      "baselineSha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9",
-      "currentSha256": "71039dfcfac69a12b0f1518daabe13b8a97c3d7b4955d5f8111e6d1eae3f36c2",
-      "reason": "Preserve output bounds, assignment/event identity, and copied-executable identity requirements while replacing obsolete raw-array/no-elision assertions with exact route reconstruction. The two Work routes use the existing descriptor helper; the returned read-only run inspect route validates its command family, work-derived ledger, event selector, JSON mode, and config boundary before execution. Only absent flags default to false; present malformed values remain visible for rejection. The copied-executable case requires the canonical candidate and executes it."
+    "tests/activation_classify.rs": {
+      "baselineSha256": "bcecc0b53b297cd82cb43dea0376fdade8d7ea27e8fdc844e23665250a6a1a59",
+      "currentSha256": "9a0741ddac6a40b178a5fabf3baa9373c7365cf757512473203368290e539162",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/goal_requirements.rs": {
-      "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "7a232edcec27bc28fc6f0dc5291a4ab5a546b38dfe2e0a27db5b847d4924710e",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations."
+    "tests/agent_context_delivery.rs": {
+      "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
+      "currentSha256": "ee4aa5a17da51ff5cef363ce818fbcf1da5f1530ed3d1fc7185081aec506404c",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: registers the phase-guidance delivery tests module and routes spawns through the isolating helper; existing assertions unchanged."
     },
-    "tests/work_check_replacement/refusal_and_native_lineage.rs": {
-      "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
-      "currentSha256": "6c5e8ee8db1d3997323e25d8410e956efc1667d3406b07578d84b6866db2f34f",
-      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged."
+    "tests/agent_first_control.rs": {
+      "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
+      "currentSha256": "f643b7bdad808124370c3837af19396923aa1fd1fa298196cc1e27567105e02b",
+      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/check_retry.rs": {
-      "baselineSha256": "a3bc2766b3bcbbaea6eb00eb9d234e1b2be8a59b975b9f74a686f95cda85a8bb",
-      "currentSha256": "64dbbf79dfcccb7b8bf538f98363ad8c037067422e90a24c36f4109c49cc82ab",
-      "reason": "Preserve every retry, preservation-order and ledger assertion while resolving compact current Work responses through the validated emitted read-only work next --full command; no check or mutation is replayed."
+    "tests/agent_protocol.rs": {
+      "baselineSha256": "d80c10e4e68dc2a4c0b3f7c451b1cff6e884c399f2a4cf5e9168c6a689ecd486",
+      "currentSha256": "45fd4a1a845502915067d322ea0f4392d4d98ef70c72c6247482bd20455bd485",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/review_policy.rs": {
-      "baselineSha256": "161bd970d1578e22bfb82508bf5c89069b20d13bd87fe6022791634889aec349",
-      "currentSha256": "d228d85a5441c3a4de6ba3e43080c53e068f1ff21dea8e036b6e520459459d94",
-      "reason": "Preserve all review-policy transitions and stale-action refusals while resolving compact current Work responses through the validated emitted read-only work next --full command; no approval or other mutation is replayed."
+    "tests/architecture_contract.rs": {
+      "baselineSha256": "86e772e4e2ccf50b60a346400ca4fbb58d7205fb2f77a71949eb7659723ea8a0",
+      "currentSha256": "99aa579ae25765b28ebcc3131115ac54f2a24a3b3787f4b1f32803035e90ca5c",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/support/mod.rs": {
-      "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
-      "currentSha256": "5b57554ccdb1f7a7716ae530c8d251ca01fb7215623dba48697a0e6733f0f2dc",
-      "reason": "Add an unmark-ledger helper that rewrites a start event as a legacy start and recomputes the event hash chain without changing Work or assignment identities."
+    "tests/artifact_bytes.rs": {
+      "baselineSha256": "abb6157ec60233fdf27b77899d0346c4055709291bfaf9bffaf3f02ed253e275",
+      "currentSha256": "88c71f2d14b9a65934ca281c2c10751539629630c168d979c940405772c5d803",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/away_native.rs": {
+      "baselineSha256": "5a8ec747744de8914869b7db9c5e80214154e77727c7084ce2fde94b6ac6590e",
+      "currentSha256": "41289611f61b38aace3578572c957d405c704380be4b9644af926b562dc3604f",
+      "reason": "Keep the original config-drift launch refusal on an unmarked run and add the marked variant where a byte-only config edit proceeds with a harness_receipt_drift warning. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/basis_lifecycle.rs": {
+      "baselineSha256": "a5a707b20759c8941b3188d6c07252878a3e7b1bab1475d6964fbb66350fcffb",
+      "currentSha256": "faea1e9e499f50229d72ace946e85edf5980b5703b16cd4e14962a1a845b0051",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/basis_lifecycle/basis_corrections.rs": {
       "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
       "currentSha256": "0fae2b4cb6ae136c6a05f7a32dc981f2f8a11a57c04e9c461b9c4274849bd730",
-      "reason": "Preserve the governor-lineage assertions while resolving the compact current Work response through the validated emitted read-only work next --full command; no grant, check or mutation is replayed."
+      "reason": "Preserve the governor-lineage assertions while resolving the compact current Work response through the validated emitted read-only work next --full command; no grant, check or mutation is replayed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/controlled_effects.rs": {
-      "baselineSha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322",
-      "currentSha256": "9c218af5255a0bc31dbbae839b778626a34c2f87acce4b77f8389ddf1d32af08",
-      "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain."
+    "tests/basis_lifecycle/reader_compatibility.rs": {
+      "baselineSha256": "c23739decfec439bdf932f281bf509fcd941d5ccd52b8eecc95821b7264e93cd",
+      "currentSha256": "279b5da4ee2f84af55cd52b2e4ca5aeaf6ce3722413f29e64e4d2196ca091190",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/agent_first_control.rs": {
-      "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
-      "currentSha256": "aa9505232d3db79f808494602a36d7ef58ef221714adabe63eb9d45c48829113",
-      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles."
+    "tests/basis_lifecycle/supersede_policy.rs": {
+      "baselineSha256": "fb8f1b5888a2a0539f2ac4c8da567b0f6b14c73b1927a4f577c7d4d18f605c9b",
+      "currentSha256": "d80c4fc8f9e00a5c927681062d49d7b8f4f4fe071eca47b883fa3330402f3ee9",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/specialist_routing.rs": {
-      "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
-      "currentSha256": "91905c7fd652fdc1ceb8feae5fc1c51e6f0bdd85fb2f8a312c57b9d4e285ec94",
-      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision."
+    "tests/behavioral_evaluation.rs": {
+      "baselineSha256": "c48ffb737417f96909eb50477bb14800e93f544f765306436606d1606161b0bb",
+      "currentSha256": "24a01c5ddee3a7d256a259886e5fa78a29bc3cf4f1aa0669c6908025cd20fc65",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/r13_check.rs": {
-      "baselineSha256": "db84bb04677cacd771022b54ea338428133833e74fdc3d5f33e101b581f07416",
-      "currentSha256": "d8992265e4c7ef03a385b448a5b9ae7d69c059fc19747e5e91f79c439e5c759e",
-      "reason": "The read-only compact work-next consumer accepts only its original lead_decision or a strictly validated inspect/fullCommand fallback, then checks full same-Work lead decision, role, and assignment against the recorded failed-check route; exact failed-check mutation result assertions remain."
+    "tests/build_identity.rs": {
+      "baselineSha256": "bd104bdbbd58f9a6842efbbe10e3c05bbd853824411ae2edc5990a050c9643f3",
+      "currentSha256": "7273c117086c787394ec0faf45df649229fa35c468cbfaef21a72b22359731dd",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/replan_input.rs": {
-      "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
-      "currentSha256": "3d8b82c215776b4a868622cf2337c40c7867faca494a3dc6d88c84247c97e0ac",
-      "reason": "The compact work-next consumer after two permits accepts only its original spawn or a strictly validated inspect/fullCommand fallback, then takes the worker assignment from the resolved same-Work/config action; the original spawn requirement remains."
+    "tests/check_observation_recovery.rs": {
+      "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
+      "currentSha256": "e0b3ccf3dc73b655c2b948611bea8bcf58db716b25e5e620b5a7a5ecfbe8f83d",
+      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/save_return_recovery/worker_resume.rs": {
-      "baselineSha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32",
-      "currentSha256": "3fcc0aa629edbc974bc3100d3195ad58fd9a3232b5069396d16578d201c2c8b4",
-      "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor."
+    "tests/check_observation_recovery/process_containment.rs": {
+      "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
+      "currentSha256": "25085321e312d138e67e2229a4ce00194bce0c2c7afbc2ce999a3faa64378e02",
+      "reason": "Grouped self-reexec selectors use the actual source-module path; added read-only Work-detail assertions prove the unknown diagnostic has no apply choices and the ledger bytes remain unchanged after unknown terminalization. Existing subprocess guards remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/current_details.rs": {
-      "baselineSha256": "eed1d601dfc12dc4e7097d4347ada8b3aa146ab61ac8bf3f9b27d7ebb486fa13",
-      "currentSha256": "c55bee967fcf5c7eedc4b10de5a1d6924d2c62bcee0db66487aa130181f3b493",
-      "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks."
+    "tests/check_retry.rs": {
+      "baselineSha256": "a3bc2766b3bcbbaea6eb00eb9d234e1b2be8a59b975b9f74a686f95cda85a8bb",
+      "currentSha256": "6ab28a26104afa835f6902c27c83f39771f5ff759e02145e8699576045cb78b3",
+      "reason": "Preserve every retry, preservation-order and ledger assertion while resolving compact current Work responses through the validated emitted read-only work next --full command; no check or mutation is replayed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/installed_consumer.rs": {
-      "baselineSha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71",
-      "currentSha256": "56f47381849d108ad5c98e484942c2c9bc490cc3ec078fdd25a187f2f7bc9f1f",
-      "reason": "Keep the original changed-profile expansion refusal on an unmarked Work and add the marked variant where the current profile bytes are served at the next expansion boundary."
+    "tests/checked_work_ux.rs": {
+      "baselineSha256": "552ab58e361e3ecdcb514e63995cd17858d1ec89a5eef3dc33f4072d21060e8d",
+      "currentSha256": "450b5c6432db058cd6e59fe165bf4b480ecbc3fe24b1f8f565ed02ca82074345",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/work_action_refresh.rs": {
-      "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
-      "currentSha256": "526a2c583e9b029327d6c1a3551a0d8dfdb22654eb2da2052fdc30760fc556ad",
-      "reason": "Permit and return forms reconstruct exact executable/config descriptors before the existing isolated executor; original token substitutions, byte caps, current-binding and stale-binding refusal checks remain."
+    "tests/child_capture.rs": {
+      "baselineSha256": "32e65bdd296132c1e3596d8184727ac8863a1b419bbc323212befa8bef6b0077",
+      "currentSha256": "625e036deddb5beb99ca874640d2830e3e21a68c0aa70f1d6d5e9bbf1ce0ff41",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/work_closeout.rs": {
-      "baselineSha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f",
-      "currentSha256": "8f645d85bd4494b89a9338cca1ddf0c8c7e211ee7c0928118ffeabbe9edd0afd",
-      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained. The fixture materializes 20 real 120-byte components for the supported >2.4 KiB receipt cases, then appends valid lexical-only components to the >8 KiB refusal destination. After each refusal it checks the first absent tail component and retains the original held-directory proof-leaf ENOENT probe, exact refusal, empty-stdout, ledger-stability, and receipt assertions. This avoids filesystem-depth setup failures without changing product behavior or reducing response-boundary coverage."
+    "tests/ci_policy.rs": {
+      "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
+      "currentSha256": "f84328feacb0aa380c8f04e2b44f875dee65ef16af98875a1157649233fb1440",
+      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/resume_scope.rs": {
-      "baselineSha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246",
-      "currentSha256": "5553e2bb59c353691bc88e28393eedec96f74147001b9035b3006c4b2e9590b8",
-      "reason": "Register the added nonmatching-directory-entry cap regression in tests/resume_scope/limits.rs while preserving all three original fixture bodies and baseline declaration counts."
+    "tests/ci_test_execution.rs": {
+      "baselineSha256": "84a1be79d74aafb1094ea972b295e51532e483ffa26077cc31126e31d475fc98",
+      "currentSha256": "6940c8996e11abc430635d2d2f5d66cd8bbcd6c00926e2436d11cf29d2008942",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/session_goal_direct/native_context.rs": {
-      "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
-      "currentSha256": "373971b3503f39e1368050fccce716815315db661c1b05ca22ff29105a4e53da",
-      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count."
+    "tests/compact_preservation.rs": {
+      "baselineSha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9",
+      "currentSha256": "e7d53bd337c51e319bd416503813b5af354649ff3131d43bf263ebbf6c6fb05e",
+      "reason": "Preserve output bounds, assignment/event identity, and copied-executable identity requirements while replacing obsolete raw-array/no-elision assertions with exact route reconstruction. The two Work routes use the existing descriptor helper; the returned read-only run inspect route validates its command family, work-derived ledger, event selector, JSON mode, and config boundary before execution. Only absent flags default to false; present malformed values remain visible for rejection. The copied-executable case requires the canonical candidate and executes it. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/project_context.rs": {
-      "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "47903f8007d4ee03c39da7a9d98e6fb1e47b86d956f6cfff0a35d517f3e6fb62",
-      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile."
+    "tests/compact_work.rs": {
+      "baselineSha256": "4c218d3277dae911e5cae064d1ce63f4d9be790a45292acad10efaadb283575d",
+      "currentSha256": "36aa39028dec2dfa4643ef06bbf8f16ae31c6ad24371bc2e6901f7c3d60d3caf",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/work_check_replacement/source_and_binding_validation.rs": {
-      "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
-      "currentSha256": "4b770b012ded6ee6bb63f3e41132e2b7dfa676a40d4fe11ebb86f7116c2cd127",
-      "reason": "Preserve original assertions and add marked R52 coverage."
+    "tests/compatibility_matrix.rs": {
+      "baselineSha256": "187e381dddf24a7dd505b6473e2c33ee7df01eade9db99c1708ef73a7a5ae3ba",
+      "currentSha256": "bb9293d56be032d8f11a7b3ccf19db74604ccfcb478af61b327a4343bc6c0bc1",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/agent_context_delivery.rs": {
-      "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
-      "currentSha256": "8eb3c55dd9a7bc0b78d9ad14417f547f4366e281ec38aad70eabaaa7bf3e99c5",
-      "reason": "Preserve original assertions and add marked R52 coverage."
+    "tests/compatibility_matrix/matrix_validation.rs": {
+      "baselineSha256": "553980e338b25be74cd64e7a34d77ca07e49dea0cc4d4d3117dc500805d3e01d",
+      "currentSha256": "fde6b916863cdce8e8ba87ecceb7bb59efe39c96330c369d2fbd2b95f8faec1a",
+      "reason": "The repository-only projection source proof remains active under repository-checks, while default product tests no longer require excluded tooling or .github files. Product parser, installer and update cases remain unconditional. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/continuation_conditions.rs": {
-      "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
-      "currentSha256": "3e262c04345f7f3467b4fee6fd125b75ce5d4a2fc089a1caf621e950e37cb197",
-      "reason": "The marked R52 variant replaced the original negative assertions; the legacy end-to-end twin is deferred (F9)."
+    "tests/compatibility_matrix/projection_compatibility.rs": {
+      "baselineSha256": "fa4cb436ea15c45bcd9bbdd18bcbc2de8de9e6a4fb3f4c95cb514b3ebd12216a",
+      "currentSha256": "d2b405fb5e9e615df7735fde1718055e8e4870b0da0359f3e028c97806304310",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/goal_requirements/correction_and_journey.rs": {
-      "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
-      "currentSha256": "adebbbb48ee0b5c528a28912c2aa40dac6d56d1fe4861495755dfd8fdd74b372",
-      "reason": "Preserve original assertions and add marked R52 coverage."
-    },
-    "tests/away_native.rs": {
-      "baselineSha256": "5a8ec747744de8914869b7db9c5e80214154e77727c7084ce2fde94b6ac6590e",
-      "currentSha256": "4e2b8ae4b0715b3a40e58fb12fc1917b4b995fd6067cb77a95e38f201acbae4e",
-      "reason": "Keep the original config-drift launch refusal on an unmarked run and add the marked variant where a byte-only config edit proceeds with a harness_receipt_drift warning."
+    "tests/context_v022.rs": {
+      "baselineSha256": "b4753b736fe3589c50d1ec18722aa636cb37d22088c92f9a4db3cb6f90a13091",
+      "currentSha256": "a3c1a3c3ffd698bf201b14e38e4e033b5e7ecbde1895f7b2f703f487d832142f",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/context_v022/context_projection.rs": {
       "baselineSha256": "1d69ae1bc8cc171057a0fcf879e017a84c1a265cc3b9a7dff34778d101507673",
-      "currentSha256": "bb5b6cf818b38c551b5a9679697158d905f6cb7a8e6a05c95df25d84b37e99ff",
-      "reason": "The forged pre-v0.2.2 start event drops the version-8 guidance-continuity marker fields before rehashing, matching a real historical ledger."
+      "currentSha256": "3de0abb846a5366d5d1182419caa60dc178d4194018d0911a21bbfbfd1d8f60e",
+      "reason": "The forged pre-v0.2.2 start event drops the version-8 guidance-continuity marker fields before rehashing, matching a real historical ledger. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/context_v022/governor_policy.rs": {
+      "baselineSha256": "b7e923afd458d0202787783cc4998dd0cd0e746c988b00e9a97da8ab7435b16c",
+      "currentSha256": "d8adf16471f404bf75d78fb113d7959e4fad37001f0d2dadfbbb764d3cb6cad9",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/contextual_memory.rs": {
       "baselineSha256": "3b463fe45442ceec5758c2d74f47048bb48ac6f72497403619ac1ccb68ee6af4",
       "currentSha256": "1ac9a183b617aecb2e63dd534bb53a5e2336aad187cfff7fd4935b5577230d08",
-      "reason": "Keep every original contextual-memory assertion on an unmarked legacy Work and add marked R52 variants: the detail shows the current guidance/selection while the frozen assignment and packet stay unchanged, and a later choice no longer blocks preparation, return or child-result recording."
+      "reason": "Keep every original contextual-memory assertion on an unmarked legacy Work and add marked R52 variants: the detail shows the current guidance/selection while the frozen assignment and packet stay unchanged, and a later choice no longer blocks preparation, return or child-result recording. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/contextual_memory/fixture.rs": {
       "baselineSha256": "2913551c8ee4b8a3227c0495a39d8474f95819bf92d8e550f0a3502fe1a1e6fb",
       "currentSha256": "0a7deb64555819f238514b6c4beb06d1e4bd831904226196ef678bc464af40cb",
-      "reason": "Add begin/worker-unmarked fixture variants that strip the guidance-continuity marker from a freshly begun Work ledger so the original strict assertions keep running against a legacy Work."
+      "reason": "Add begin/worker-unmarked fixture variants that strip the guidance-continuity marker from a freshly begun Work ledger so the original strict assertions keep running against a legacy Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/continuation_conditions.rs": {
+      "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
+      "currentSha256": "3ee9da302f338d28896880078f0e7fe7ab6cc59fd1f9c9388ab83497a4c1344f",
+      "reason": "The marked R52 variant replaced the original negative assertions; the legacy end-to-end twin is deferred (F9). R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/controlled_effects.rs": {
+      "baselineSha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322",
+      "currentSha256": "9c218af5255a0bc31dbbae839b778626a34c2f87acce4b77f8389ddf1d32af08",
+      "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/cross_host_continuity.rs": {
+      "baselineSha256": "862948fb607c0fe22565328eb61e16449cd8356f33fa0d3614bc49caef896307",
+      "currentSha256": "c64f7b560d210ac433275d580675a537a3279c13d3b9cc6c1fb1a4d44c4cee4c",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/cross_host_continuity/handoff_and_checks.rs": {
+      "baselineSha256": "8cf311a7eb36899a4e387a4d5029dcb00e985d13fd824554209d8fd9831a8372",
+      "currentSha256": "d14602f72ff4f3a5449df30b0bb34a2c767ef52dbdca20c5dc1d1eca0e485ac6",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/cross_host_continuity/readiness_continuity.rs": {
+      "baselineSha256": "14844588088043107ef36634a87b3fefa68bae5792bc9cd2efdef2c773b0b62b",
+      "currentSha256": "20bae1f5fc5cd1f32a16e3fdeb90b227453e8888e66ba100ffc6f6174da1b832",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/current_details.rs": {
+      "baselineSha256": "eed1d601dfc12dc4e7097d4347ada8b3aa146ab61ac8bf3f9b27d7ebb486fa13",
+      "currentSha256": "186fdcc2b0c9fbc94cc533e87dc6a9a49029bedb3975d069ef4fa708472d4f17",
+      "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/current_work_focus.rs": {
+      "baselineSha256": "abfa617d3aaff3c213f368df0ef4c93cf3cd1031023eaa7ae4be96484f6f3a50",
+      "currentSha256": "1fd5296f21b833be1acafbac39d3eed5c68b4b9dde4749821ed3f52e391237b7",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/docs_workflow.rs": {
+      "baselineSha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6",
+      "currentSha256": "7e2b63abdc54d291a8e3e05e63973a4f1e0011ac402ac62b3b897a0c7ef51c7d",
+      "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/early_evidence.rs": {
+      "baselineSha256": "198392eb1741e61d0a171fd96080470e51d2ce4b68128e3f0362263db6d8cf70",
+      "currentSha256": "6fd7ed458001748bdf795d6c4c6aac34dc63a87e4af938c26d65291fce782484",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/event_detail_integrity.rs": {
+      "baselineSha256": "f95d34e3535ea22ced1c90a5edc60b3913eaf86988d1e9abbeffeb9e7bb7d38e",
+      "currentSha256": "51867de9825ecb22e403548656198298b5611bcda7b7deed08c7845f5444a997",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/evidence_expansion_v022.rs": {
+      "baselineSha256": "c5193dc9b78efe6606c26bd8d274f79e88e035524a0652fe5ebf72533fa7b567",
+      "currentSha256": "3bd18d9e6eefe0b464a882ed9015b6d6704b22fa533a44446d9b00ee93610358",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/exit_transition_conformance.rs": {
+      "baselineSha256": "a9b986a8bc6b68135760e6b874dbe6ad6d712a0e3b385224f5a3b661992b4ec4",
+      "currentSha256": "17572278441f16952e58a483dc53570f0428f81dd9faf99497ade4d374bb4a52",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/exit_transition_conformance/historical_compatibility.rs": {
+      "baselineSha256": "5ed85afd8c986efa05ce0eae57eaa69c45cdf2d4a42bbea62febc3952c8385fc",
+      "currentSha256": "b1926b9582a523e940ec41051fab5cc168e0525c41af1b3aea49d0dc928ed889",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/external_selection.rs": {
+      "baselineSha256": "deabb753ff25967f1f5ddb740c6e8ea9d70c604e0d73c99ba64d8f18b5d88e86",
+      "currentSha256": "f71ab0d3e10ef27f1e7731ed28baddc23b89dce8a7e13c6db472aad1fc8192a0",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/file_effects.rs": {
+      "baselineSha256": "b35352cdd79f33f16e28e1727bdbc44bff501151a527a43df85e18d5ac09b20c",
+      "currentSha256": "3674471ecd09a95d3ac07ac82efb53b4d354c6d9d2ad3670d6fb237de5cd4727",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/first_impression.rs": {
+      "baselineSha256": "7a3a60b54d701dbf27860988805c84cf21a72a1dcd15b9badbf0d5e43563e538",
+      "currentSha256": "21c7cfec1b58ced56afa53ad0797670dc316e2b4583d5876f15488dc0de76ad0",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/fixture_host_isolation.rs": {
+      "baselineSha256": "74d11342f4ef66840cdd446871b682c62b7fed0b72894ec7054f4c1fe5091628",
+      "currentSha256": "0cb4e6fdcb993b0daf8d92d9bee25de2030c6bf2e9b837a05bb9877eff7dfb51",
+      "reason": "R53: adds a test that every test spawn goes through the isolating helper and that the helper removes each host session variable; existing assertions unchanged."
+    },
+    "tests/fresh_user_surface.rs": {
+      "baselineSha256": "1954df4ba0a2d35f221a0124b127e5dc6596bd0f9607ff59537d361ba258f948",
+      "currentSha256": "e48194a18df7261d6d5f89bd609efb38ef10488bbad2944bccf3dca1401165f1",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/goal_requirements.rs": {
+      "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
+      "currentSha256": "3e95b0c1e761ab8d505d5eecec0ee72643cdc486aee421878800073ea995fcee",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged."
+    },
+    "tests/goal_requirements/correction_and_journey.rs": {
+      "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
+      "currentSha256": "adebbbb48ee0b5c528a28912c2aa40dac6d56d1fe4861495755dfd8fdd74b372",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/goal_requirements/intake_and_identity.rs": {
+      "baselineSha256": "2755128744e55cfdcc4bbdd3d0352cc579add00b180b75af6911b38270ab92eb",
+      "currentSha256": "9075337662c8c6fe67bbe4af66b6cbaa7f6bcac6bcc232e3dc5b1ce60f660f70",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/governor_recovery.rs": {
+      "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
+      "currentSha256": "72a599f50167d30fe65a538771e1f1911292cfbb30c63f5fb82b6f8b28b50227",
+      "reason": "Add an owned-outputs fixture constructor so one duplicate-permit owner-recovery regression runs on a marked Work whose state-aware digest differs from the full fingerprint; every original fixture body, helper and test remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/governor_recovery/owner_recovery.rs": {
+      "baselineSha256": "413b1185b202395ab1fb1386365ed58f41d4e0f4e258edc839671b4ee711b4ff",
+      "currentSha256": "f9abd28657d778f859625950eb3fd511e98eaa6ef559dec9b21b7cb1357783fe",
+      "reason": "Preserve all original owner-recovery cases and add one marked-Work duplicate-permit regression asserting the owner draft, the grant event and the carried successor share the recorded state-aware input identity. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/harness_receipt.rs": {
+      "baselineSha256": "119af8d7e42cf649598306f7147b203f4faa2f2eaa6ec6394b145f2ec7cf2127",
+      "currentSha256": "055ab127ae7736b11b496605b41458bc71b4807ba504e93f5d934c7859f2e9e5",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/harness_run.rs": {
+      "baselineSha256": "ef1da565ecd11abf493ee83a1a26f7401ed586ad0672d91e836b24d525dc2c0c",
+      "currentSha256": "d61610c0ee5b12cd53bf6fb1a709cff92fbd82b33270f5f3ac46a0319c38ed00",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/held_delivery.rs": {
+      "baselineSha256": "6b7d27e3c7ca49934fa7123143b966ade6181a370b06952ea174b64d23fa386a",
+      "currentSha256": "8f01154172bd3d82a91ae9dd4f7b2a9c06978a1aac1bef0f343c3d3fbc582217",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/host_bridge.rs": {
+      "baselineSha256": "74c47215d0f81759c9c06c18eaa7f1cf4dcbbc3ce4efa183b94b2ac289e45f1b",
+      "currentSha256": "2e626a6922f0d2a8dc7508cdd9cdb3dedc50688e6b6fe80548ebe41d89bd02de",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/host_help.rs": {
+      "baselineSha256": "1ea3b9232af3dbcc894a35b679ba5d8d9c1180b9328c9e1e95ee637cc7df981e",
+      "currentSha256": "8e95a5270a7c5e1410751b51e900ec3046529210367c915661d97576690a9543",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/host_workflow.rs": {
+      "baselineSha256": "44490cd7ca96973da1f4d53649b9896b774495f35d3be1e3ab617076fb8344d9",
+      "currentSha256": "bfbc6f9e405e66b9aa5d72cf4a7a6a319895ba18ef482db7fa5726b1dec8ee98",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/init_without_skills.rs": {
+      "baselineSha256": "7c6e6f0de109e2513b2ae866f1715031b748a608a565a1c5ebd4091b3a05d9ce",
+      "currentSha256": "3c36b23197af511fb9ccef22c99976e1fd88236bed753eb9080d81f060a7b3da",
+      "reason": "Grouped self-reexec selector now uses the actual source-module path emitted by libtest, excluding the Cargo target; child summary must prove exactly one test executed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/installed_consumer.rs": {
+      "baselineSha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71",
+      "currentSha256": "ff3b295afcd61420d2b864255ca732a95d873cb2f91dab76c2fa75b0c742d419",
+      "reason": "Keep the original changed-profile expansion refusal on an unmarked Work and add the marked variant where the current profile bytes are served at the next expansion boundary. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/installer_platform.rs": {
+      "baselineSha256": "c60a898d0a90ececa608fede2342e0a98b3b6d59e352870e8afc4cb9b0904582",
+      "currentSha256": "2be9d099f25475ddb97be44d0a93620e818d8a868bbb62d092eae4e58f66b482",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/layout_migration.rs": {
+      "baselineSha256": "07ecc199957295379b85cf2947971160a71703b0ee0db865e57cbc41bce790a4",
+      "currentSha256": "1e8b2ab6f85e880a851718349b20c4ea57271544f71967cb502c52bb36f441aa",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/legacy_installer_bridge.rs": {
+      "baselineSha256": "010bde494eb192df47e3e9d2a53c32746617036b6c55a30c9769f8020ea13738",
+      "currentSha256": "5afd24f870a89feec191156d008e9147db9190ae255a0f709dcd64d662a352a2",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/lesson_input.rs": {
+      "baselineSha256": "457df3430bb380ea8bd4a7a49adf2ec94bc9c7b77ec81a55564b014ddc7f5323",
+      "currentSha256": "210a094f098c6df070336fd1b271faa1816ff7e431851c530dd2405f0fd6a73c",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/lesson_revalidation.rs": {
+      "baselineSha256": "7fd425ba51ce832061177e78783871c9981a349513d67ad7caac8ae23260862c",
+      "currentSha256": "dadcb4fa061fa914b2a512352c21800f735332e0ca3e3bedebf63d9fad1efd18",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/managed_edits.rs": {
+      "baselineSha256": "a1445aeb2d071066bdc9c5c78b7ee3d451ee842e3230688389452f6a0c920e11",
+      "currentSha256": "1b6f6c02a2f39ff7ba6d470340d692732abf3a8b7351259d4b3f6aeb39d6d52a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/managed_edits/managed_reads_and_writes.rs": {
+      "baselineSha256": "0fb4b3661b758f97724bfca6e2bdf77f08b8e2ac60c9f4b39141333165998339",
+      "currentSha256": "6206c47d9ed83caeef41e90cabd34fbfa6c7b919d808e43ee214648208a5435a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/memory_policy_correction.rs": {
+      "baselineSha256": "fdb7ee9b91e9a16eb696efdc03791e5a6b26ef8b603c50c2c62fcf3c0fbf93a6",
+      "currentSha256": "6d5e38171a11254696bdbb489219a7202be721d009fa9bd74be7d40e75f25791",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/memory_recall.rs": {
       "baselineSha256": "867064bacec3ffc52b70c0df81f0fb6962f2f5e82b6380498135725da77def0b",
-      "currentSha256": "37bb98db58584e71152109f69a93d65d2656e458f7b84f9c2905b113697bc0d8",
-      "reason": "Keep the legacy memory_drift warning assertion on an unmarked run and add the marked variant where advisory revocation produces no memory_drift warning and the run stays valid."
+      "currentSha256": "b0118b61dc6b4be2d4f1cdefe4e552fb75a6a1f50967b33b62a3c805e2625ac6",
+      "reason": "Keep the legacy memory_drift warning assertion on an unmarked run and add the marked variant where advisory revocation produces no memory_drift warning and the run stays valid. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/native_continuity.rs": {
+      "baselineSha256": "36a26b31a2257d8615b00f248eac38105ef422423cf0b0dae2d72d498d35f38f",
+      "currentSha256": "11ae643a82eaa88f0c9a0064bdbdf3e28e8911a9da4cfd9aa783f6f60fc31119",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/native_session_export.rs": {
+      "baselineSha256": "f1fd9925bae3c53faec7dba3ee9e20b550ccba49a3c13b312726f58b75b173ff",
+      "currentSha256": "26381888f975d03b6127a565ece78cec7d974571de8115b1aa84f36bbdbd69fa",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/observe_check/timeouts_and_drift.rs": {
+      "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
+      "currentSha256": "b3145dab0cdc7469ce70bc63b98d342611f5a3ec8233b4d927822c316a842a7e",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/observe_check/verification_preparation.rs": {
+      "baselineSha256": "af429aaf36b539c9b12b149169bf32031a8accc6abaa4e5000ea89ecbbe081e3",
+      "currentSha256": "9d39c78ef56dfd5f98e8a9be2b60795977ff4f0bd63a833a69448db3e0c89487",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/path_compatibility.rs": {
+      "baselineSha256": "cfb77beba33f5b02f6d946ef194d82cbdb9f0bd557914b0c8c587d2c46b627b8",
+      "currentSha256": "4e1e893cff240fd922ffd931769be2ccce5c18c5aaad9bbe1aaa9609f73d2dcd",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/plugin_distribution.rs": {
+      "baselineSha256": "75fa9f5f6d5cae7c3a077b2cc05d9da119e0cbeec5ab68de4c22995c10843ed9",
+      "currentSha256": "813b8650abcf6d697daecff58b05e94faa3833e974db0ed4e2c119447d3a0d77",
+      "reason": "The deterministic archive and validation tests now exercise repository-owned packager/checker implementations; the target is gated by repository-checks so excluded admin paths are not called by product archive tests. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/portability.rs": {
+      "baselineSha256": "9f7419e75be79843602c9e21134d40edc29b377f4e77a8a1b69783fe6f69b6ba",
+      "currentSha256": "22da2030b26a0fc31fc1e0cd6470314fee4e0b16535f8887f0fc97688eded144",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/pre_return.rs": {
+      "baselineSha256": "96226b800fc4971030ab2e931a7dd67227cfe247c3284d815f3f2a86330cab12",
+      "currentSha256": "5ceb75e8f5d87bef3a67b62ca10f6b5e9a5eccb975ed543d1d8628664cc81f3b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/presentation/context.rs": {
+      "baselineSha256": "2ee14fa57ebdf2a89273628e44110cf8862c21404427003bc08052afb16d31e6",
+      "currentSha256": "cec65a8cf4af072367960d4cf89a38584fda13c0766b286efce111544ca7b493",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/presentation/session_goal_closure.rs": {
       "baselineSha256": "40f6dad7c7d19f8f683d4138caaa989949d555afac6a2b45c14f299a7a31db2d",
-      "currentSha256": "0f1c23c6250dc965ec0381f00dab7a083584b5aa0de9da1ce42f3307f777cda6",
-      "reason": "Keep the accepted-result config_drift closure on an unmarked Work and add the marked variant where the closure keeps the result with no config_drift warning."
+      "currentSha256": "bf3a23d7be968fa5e1f7fbc4f9c75a052d55999992288749d2b8507abb48ac26",
+      "reason": "Keep the accepted-result config_drift closure on an unmarked Work and add the marked variant where the closure keeps the result with no config_drift warning. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/preservation_assignment_stages.rs": {
+      "baselineSha256": "675b83ce1630281d21ef89d50d97269ed701e7f2626bf5ec369df4768ddc1c56",
+      "currentSha256": "858599dd550f8b58036fd278fe0d34315eb1193a4eaf7cc7f1c39231a7a77a05",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/preservation_independence.rs": {
+      "baselineSha256": "8a3b292a6cc369ae71f32895898dbfee7db885294473ecafd8cb59c17e0c817b",
+      "currentSha256": "aad8d7799612752efdb5d353f87323fced3c3d3f270fdad80c5383e1be7c5375",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/privacy_gate.rs": {
+      "baselineSha256": "cdea5db79087b1e26be6450f7c19ca19684aa0191367b2a6e8e5f7fe93e0c153",
+      "currentSha256": "1db6f18e801c94bd3b4bdda7eb49176c220f6f8a7bef1671ecd14636661db6f4",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/project_capabilities.rs": {
       "baselineSha256": "c38e76a17f276e8604faef0aed71164996b027e5f9992f2cab3cc5df33988d2e",
       "currentSha256": "6cfd7d8afb8bf48618fe849a9f8ad0ac96cc22810d2091fb062b03deb1fca061",
-      "reason": "Keep the original profile/lens/symlink refusals on an unmarked Work and add the marked variant where a changed owner profile is served without invalidating the Work."
+      "reason": "Keep the original profile/lens/symlink refusals on an unmarked Work and add the marked variant where a changed owner profile is served without invalidating the Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/project_context.rs": {
+      "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
+      "currentSha256": "47903f8007d4ee03c39da7a9d98e6fb1e47b86d956f6cfff0a35d517f3e6fb62",
+      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/project_memory_projection.rs": {
+      "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
+      "currentSha256": "b59223e9d804b932209cfc7ecbb55b65245627d2251848e6b5b2d1c6f91eab9a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/provider_fallback.rs": {
+      "baselineSha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2",
+      "currentSha256": "57a10195853b71a1d6e723410df5c69d10d36d3680f04efd78e52b27ec85e840",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/r13_check.rs": {
+      "baselineSha256": "db84bb04677cacd771022b54ea338428133833e74fdc3d5f33e101b581f07416",
+      "currentSha256": "b0f2f712f2d6b32b55ff41d50b5497ddce35a3d21c56f4686f249c09d1bd2c66",
+      "reason": "The read-only compact work-next consumer accepts only its original lead_decision or a strictly validated inspect/fullCommand fallback, then checks full same-Work lead decision, role, and assignment against the recorded failed-check route; exact failed-check mutation result assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/receiving_entry.rs": {
+      "baselineSha256": "1489ef98a7d4505be57dec00661c20cd96e1ba6459665efa791a5c354591f749",
+      "currentSha256": "7f29f19becbb1bc0cd8dc647a0894aeff64ef13def8db6ec7f17d07c737cdafe",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/recovery_config.rs": {
+      "baselineSha256": "c2f1939154f271e2b76d8c692debc8329b92fdc54912b14c79504e2ab4d83b05",
+      "currentSha256": "0467a385158402c360ff33f81bd47deeae836b46157e79c29ebfc88124f7d541",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/recurrence_repairs.rs": {
+      "baselineSha256": "793001bef55ced5eea22bcc401a9a43926c5e3befb1976efeb0e300eca90d0c6",
+      "currentSha256": "d90b999a8ae0247fb1b957aac2c1e1a9a0272ae997d44c0c3e7d72757ad8b26e",
+      "reason": "The native lesson-delivery assertion reads the shared R52 guidance projection used by Work detail and native launch and additionally measures the serialized delivered items against the pinned 32768-byte host budget instead of trusting only the product usedBytes self-report; the lesson-specific 4-item/6144-byte cap was replaced by the shared host budget, and the eligible-registry and boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/release_integrity/context.rs": {
+      "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
+      "currentSha256": "9d15a26437ab37ab2ee43cf736519d5830f62c826f1e0ff377c71e0e41b7371c",
+      "reason": "Release fixtures now copy the exact repository-owned verifier and execute the actual Verify transferred release evidence and Publish tag assets workflow steps; original behavioral checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/release_integrity/publication_workflows.rs": {
+      "baselineSha256": "e7863d6ed6cc43070357e9ab2cdc2d36af99111339ebd7c991e147355eaf5244",
+      "currentSha256": "102fa115ce15057ae9340b491af0fca6ebf27728c481350dc96e4fb528873ba4",
+      "reason": "Release provenance assertions now point to the repository-owned verifier and its actual workflow invocation; behavioral tamper cases and workflow safety assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/release_integrity/release_policy.rs": {
+      "baselineSha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e",
+      "currentSha256": "4a16966c47f74e251f8dd30d83bdae7e89d882dfd094ebb3a93f174403792416",
+      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/release_integrity/source_and_history_integrity.rs": {
+      "baselineSha256": "f2ee8d69ccbb2eb4d8015fe91170375040d83d1945909ff926ca698789e019f2",
+      "currentSha256": "33ca323517e8a3f4c7cd1dbba3ab21d1d4fb8a720272a0e12acedb5822fc6f1d",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/replan_input.rs": {
+      "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
+      "currentSha256": "3b206331272da9ba99850c15f44ab8b2c8059c826845a23b55c92b472d976d99",
+      "reason": "The compact work-next consumer after two permits accepts only its original spawn or a strictly validated inspect/fullCommand fallback, then takes the worker assignment from the resolved same-Work/config action; the original spawn requirement remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/resume_scope.rs": {
+      "baselineSha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246",
+      "currentSha256": "e9c7ccffdd2e7dfa668152fcb9c8fa943383a0cabb851b21cd9e649702ad2d27",
+      "reason": "Register the added nonmatching-directory-entry cap regression in tests/resume_scope/limits.rs while preserving all three original fixture bodies and baseline declaration counts. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/review_policy.rs": {
+      "baselineSha256": "161bd970d1578e22bfb82508bf5c89069b20d13bd87fe6022791634889aec349",
+      "currentSha256": "342486b1d47e180a857c2bc7c9be71b4cd9d4e1de98585b3714a66bc6fe999ac",
+      "reason": "Preserve all review-policy transitions and stale-action refusals while resolving compact current Work responses through the validated emitted read-only work next --full command; no approval or other mutation is replayed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/reviewer_evidence_handoff.rs": {
+      "baselineSha256": "e475217565157f2df0502e55a880a31953a4e090392b7837f85fb467f48b9066",
+      "currentSha256": "147159129353e466352fd4e5f8afda90c67eedca2855f66502a1a265a499c27b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/run_boundary.rs": {
+      "baselineSha256": "ecd859ee61fe79cc1e73cc6a9d78b12328a162b4b2552be1774c43ec3adcf4a5",
+      "currentSha256": "c1f934c6326fdb362f7bdda6adc682a5e7f0b96f930c6c90bc9561a7b0c73868",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/rust_contract.rs": {
+      "baselineSha256": "0dcff343e0901a7e3681665447fd69d4af1a4459eaac8c4cf45adbbeacf8250b",
+      "currentSha256": "bc070e6f9c542ca7c89353d90601728f3002903b489c1ffd4bb15df7427fa29e",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/rust_parity.rs": {
       "baselineSha256": "2a7798050e81cc3a1132f478fc94d04be0479fc2fce110f050aa98d59befa4db",
-      "currentSha256": "d6b4b32f6e351eff048d5c2aa9699d39e7b7bb2766e296a19203418afa54b9ae",
-      "reason": "Keep the raw-source config_drift warning assertion on an unmarked run; a marked run ignores a byte-only edit."
+      "currentSha256": "59bb61f2d9750eac409a25b22ec2f574824bd650f77d445c6d7fb92831fc0cdb",
+      "reason": "Keep the raw-source config_drift warning assertion on an unmarked run; a marked run ignores a byte-only edit. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/save_return_contract.rs": {
+      "baselineSha256": "1a0123eebf30d7f763f6d0f4d3462f1b6c842e9c1446d2c3f38fea52618ba6ae",
+      "currentSha256": "de3be1054815f36db5cfb5dbd780ac617a44d90cd67981db36f62f9c4656c162",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/save_return_preservation.rs": {
+      "baselineSha256": "e7177a0d2b35e5e7185b8bcb04a934252b85e81050826f59f0a6bdef742ea5d6",
+      "currentSha256": "3cdb71fd305ab15370d85adceb72c41ff0180ceaf01e7e1b96edb3aee975ad82",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/save_return_recovery/worker_resume.rs": {
+      "baselineSha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32",
+      "currentSha256": "3fcc0aa629edbc974bc3100d3195ad58fd9a3232b5069396d16578d201c2c8b4",
+      "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/session_goal_direct/fixture.rs": {
       "baselineSha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1",
-      "currentSha256": "16130f3ae845c5bd912197a9d7ba3d3c13e206cc00aec01eff3a2d3f355da2f4",
-      "reason": "Mirror the product start-intent projection including the guidance-continuity marker fields plus preReturnPolicy, projectContinuation, quarantineVerification and verification-preparation fields."
+      "currentSha256": "20770e15099e73a1de815ffcd73b2c47cc8a138bc6df46797697ce256394bd34",
+      "reason": "Mirror the product start-intent projection including the guidance-continuity marker fields plus preReturnPolicy, projectContinuation, quarantineVerification and verification-preparation fields. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/session_goal_direct/native_context.rs": {
+      "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
+      "currentSha256": "e5c782e3342700a2e2e6228effe18750feb34a4ff334da16c8ffe41ade95fe4c",
+      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/session_goal_usage.rs": {
+      "baselineSha256": "f16d52e3017bf2700cb8182e1d825aa78657096d5c3f1c3fe04dc0e101992bd6",
+      "currentSha256": "7e167f945267ad055513b741bc5f2785a33647ca6d4b05b288cd556dada44a55",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/setup.rs": {
+      "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
+      "currentSha256": "6decf4d549ec78302eca0a6c837deb57a7de95e17baabf630eac2e96a9578746",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/setup_pre_return.rs": {
+      "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",
+      "currentSha256": "310c09c7a7f79812f9af50e9e45120fabb55f5b587eb87463793751c2625b63a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/singleton_options.rs": {
+      "baselineSha256": "e73d329b2e23edbce6e47456fdb05902e467bf5cb290c488d289a64d00906d8f",
+      "currentSha256": "32490dbba9c4776acef176d932892226c8882bc9112ffcdb812baa514c6802a4",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/skill_diagnostics.rs": {
+      "baselineSha256": "40d1d0b4e75a0add74562628c4739a47e96950a7cbc17f4b6c6d17ce2765c7d3",
+      "currentSha256": "09c6208feb8b5de5d293233a7b70376df33ef1d6a85593c10c00d675a767218f",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/skill_refresh.rs": {
+      "baselineSha256": "582cbfdb098054cb4961b7a8dd308b83cf8355b3d30ff9eeb2e4e4163b7ba0fa",
+      "currentSha256": "3a66e2863ab53d2b797498e7a15a0e7b2a9744e914c5fe77325d4f6258328dc1",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/specialist_routing.rs": {
+      "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
+      "currentSha256": "5e22c70efffdc734a608ca69490e148753ab9c71ec8ba5e21981bd4d60bdedd1",
+      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/start_context.rs": {
+      "baselineSha256": "e25531cc4e3071eaaa3e6e682f4e0ea583b02ae32c07782d10ba56e501063029",
+      "currentSha256": "4125e57f84e1890814e9b5f43309ba1f34cb7ab85b328c7f644031eee9a0d842",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/state_permissions.rs": {
+      "baselineSha256": "b804338e97875c5e63648ef3941c6b88c2afc2dcd7be40c0aa3fea7096b4d107",
+      "currentSha256": "ec5aebfa0ac89c7706f00eefcbffdb0527da80100cecfffb6c76f20c58d8fe25",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/subject_progress/context.rs": {
+      "baselineSha256": "388d24a71e2cf3d821d41ad51d840b93789fb0546fecd61e29d1e7fca946e412",
+      "currentSha256": "19651f7675df432f1fbeeafb1daf318440227314341aa6462cc65f673961688d",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/subject_progress/opaque_discovery.rs": {
       "baselineSha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b",
       "currentSha256": "12805f8dc2f9bec6a496b926433a90b847d92f73b9b58835184479d93e6efda1",
-      "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged."
+      "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/subject_progress/saved_packet_reuse.rs": {
+      "baselineSha256": "5d27f6bc7ff2c2994fc2bbbc65aff8d2e11eb6d2b58118fa30ec71608cdcc4fa",
+      "currentSha256": "a791f006fffe1b7ccd119d3ef0d1a061a6ac0851c17273de3210c27a4e9612ae",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/support/mod.rs": {
+      "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
+      "currentSha256": "01b886c18d1f3e2cff16af2602f5369356eb0dcfb0125a3b590c3de18d396105",
+      "reason": "Add an unmark-ledger helper that rewrites a start event as a legacy start and recomputes the event hash chain without changing Work or assignment identities. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/task_local_memory.rs": {
       "baselineSha256": "3c8e0cc55bd394eb4c35f2066a3bac082781bcdef150ebc85581398f2e757840",
       "currentSha256": "65c89e20509304e74393bb607b661b198a61d58752c2d8c9751140231ac503d5",
-      "reason": "Keep all original task-local assertions on unmarked legacy Works and add marked variants proving source/guard/revocation/profile changes stay advisory while invalid or expired selections are omitted without invalidating the Work."
+      "reason": "Keep all original task-local assertions on unmarked legacy Works and add marked variants proving source/guard/revocation/profile changes stay advisory while invalid or expired selections are omitted without invalidating the Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/update.rs": {
+      "baselineSha256": "9d39179c2ab783d80b51c44d161f3a599bb08d6ca5df3c038e68a33b79465cf4",
+      "currentSha256": "c8b2bc5b71ffb2bc92d8b7f4d7182723cd4cd8fedc495667ba863cb2c0d399be",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_benchmark.rs": {
+      "baselineSha256": "8b3fd2cb2a71aa88efb4d71326da154f962e21cfb9c8d719388d7ed2b13d1ebb",
+      "currentSha256": "1a691284ab0bf821d1bc855fcab4c160dc232887014b1792ba110626a82fa132",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_contract.rs": {
+      "baselineSha256": "461b64fea780d8148f5a1e81595b39ca5d3fb0f8d0acfa1486e71801eb9ef9ba",
+      "currentSha256": "565485b8be9d4bb1db5a5e4e556d86fbe13f540f28db375d95a73e2c420af85a",
+      "reason": "The seven claim-registry and scenario fixture proofs are selected only with repository-checks because their canonical proof executable is repository-only; shared schema-validation helpers and schema shape assertions remain unconditional with all nine schema-lock and operational receipt tests. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_proof/context.rs": {
+      "baselineSha256": "b4b302b2660dc8ad4de7ae26a56c783bcfb52c6538aaef823b1027c08bd7e655",
+      "currentSha256": "5eee7ad191b331a12e8fa1e06ca217c8d2d233ebfdcd311de5df92a56f4d0408",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_proof/status_and_check_evidence.rs": {
+      "baselineSha256": "d481550844f81c742d66485e0ba61fe931256f8837a4785b0cc06b75388aff9b",
+      "currentSha256": "1637cbfd280e3a178c5c630c3c18bce5ff28139e814ac648d81100f27c572543",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_receipt.rs": {
+      "baselineSha256": "8f2b72369e5c47adbc62f0820e48165632dd54a31c8c051c56b00ca810dbfdca",
+      "currentSha256": "236773fc41676d743801f149da61a75dadf4fbc98ed46ad6c806a54779d0b112",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
     "tests/value_reconstruction/bundle_helpers.rs": {
       "baselineSha256": "4ebf9695251de805362bbf5605c581da8780e8af2556866cb0eca7b545e186fc",
       "currentSha256": "3b3519a4943e9dacf56a8550ef19e897d81734f2e7c24a164e8d43e71fe5208f",
-      "reason": "The independent v8 bundle reader accepts the three versioned guidance-continuity start fields the current producer writes."
+      "reason": "The independent v8 bundle reader accepts the three versioned guidance-continuity start fields the current producer writes. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/governor_recovery.rs": {
-      "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
-      "currentSha256": "5af291f952947b14b160f48948a8c9a55a152a3ceabcb0124fbf046b90636f1e",
-      "reason": "Add an owned-outputs fixture constructor so one duplicate-permit owner-recovery regression runs on a marked Work whose state-aware digest differs from the full fingerprint; every original fixture body, helper and test remains."
+    "tests/value_reconstruction/bundle_reconstruction.rs": {
+      "baselineSha256": "bf046aacdce87f6b31dc02d216d50f6ca652ed9184ff31eb27480df96d9a9a51",
+      "currentSha256": "a849420f7e640605bbe6146115acd9be352865cd41523a304d2664ee4e980c3c",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
-    "tests/governor_recovery/owner_recovery.rs": {
-      "baselineSha256": "413b1185b202395ab1fb1386365ed58f41d4e0f4e258edc839671b4ee711b4ff",
-      "currentSha256": "e215c51250578157cf77fdd5d7eca6db514e0ab41473ce535b11991df51f36bf",
-      "reason": "Preserve all original owner-recovery cases and add one marked-Work duplicate-permit regression asserting the owner draft, the grant event and the carried successor share the recorded state-aware input identity."
+    "tests/value_reconstruction/context.rs": {
+      "baselineSha256": "31bf2f2cff54ad830dca416834893e994f5bab58ca92fac0b270b5c36ca7a5b8",
+      "currentSha256": "1ec2abb12407558ed82d52571d08193b3e90c2671db7edc5dfb83fd433b7483b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_reconstruction/surface_compatibility.rs": {
+      "baselineSha256": "d1871a6d20457ef259cf1c16953c43a8e47cc62006a4408956bbbcf94beff730",
+      "currentSha256": "e3a393dbdba24475c2f8c12ee9b9d7a9cbc190d03ac53b23ce41de0e525bcf91",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/value_replay.rs": {
+      "baselineSha256": "763736f6f662d2b3692ba51ab7756f0cf85ed566800dfd34bd3f271e7d8519a5",
+      "currentSha256": "3d98f8464099de0e4386ae9354fbe9fefb195b2a25b0482edcf48b36ffd35e2f",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/work_action_refresh.rs": {
+      "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
+      "currentSha256": "cfb2e18804fe64ed2af4d0ccb1ed442eacd0b271dfb13606073da5b033e7c1e1",
+      "reason": "Permit and return forms reconstruct exact executable/config descriptors before the existing isolated executor; original token substitutions, byte caps, current-binding and stale-binding refusal checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/work_check_replacement/refusal_and_native_lineage.rs": {
+      "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
+      "currentSha256": "6c5e8ee8db1d3997323e25d8410e956efc1667d3406b07578d84b6866db2f34f",
+      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/work_check_replacement/source_and_binding_validation.rs": {
+      "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
+      "currentSha256": "4b770b012ded6ee6bb63f3e41132e2b7dfa676a40d4fe11ebb86f7116c2cd127",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/work_closeout.rs": {
+      "baselineSha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f",
+      "currentSha256": "8f645d85bd4494b89a9338cca1ddf0c8c7e211ee7c0928118ffeabbe9edd0afd",
+      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained. The fixture materializes 20 real 120-byte components for the supported >2.4 KiB receipt cases, then appends valid lexical-only components to the >8 KiB refusal destination. After each refusal it checks the first absent tail component and retains the original held-directory proof-leaf ENOENT probe, exact refusal, empty-stdout, ledger-stability, and receipt assertions. This avoids filesystem-depth setup failures without changing product behavior or reducing response-boundary coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/work_goal_absence.rs": {
+      "baselineSha256": "b00aa5743d90da24e09366acab2010905bf91912ae4dd4f7d77af324a4bc2ddd",
+      "currentSha256": "11934f37091447c722ac94356eef5bdd3fd57e9952473a40733a0261d0326c73",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     }
   },
   "additions": [

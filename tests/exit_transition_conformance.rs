@@ -9,7 +9,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const CHECK: &str = "test -f actual-product-check";
@@ -21,7 +21,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -31,7 +31,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .output()
@@ -176,7 +176,7 @@ impl Fixture {
             "--config".to_owned(),
             "exitbind.json".to_owned(),
         ];
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(&args)
             .stdin(Stdio::piped())
@@ -283,7 +283,7 @@ struct LegacyFixture {
 impl LegacyFixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -293,7 +293,7 @@ impl LegacyFixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
             .current_dir(&self.root)
             .args(args)
             .output()

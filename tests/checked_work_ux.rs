@@ -4,7 +4,7 @@ mod support;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::Output;
 
 const CHECK: &str = "test -f actual-product-check";
 
@@ -16,7 +16,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("checked UX's $(touch SHOULD_NOT_EXIST)");
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -30,7 +30,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -276,7 +276,7 @@ fn follow_hint(f: &Fixture, label: &str) -> String {
         std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_exitbind"), bin_dir.join("exitbind"))
             .unwrap();
     }
-    let result = Command::new("/bin/sh")
+    let result = support::git_topology::command("/bin/sh")
         .args(["-c", command])
         .env("PATH", &bin_dir)
         .current_dir(&f.root)
@@ -319,7 +319,7 @@ fn quoted_next_hints_execute_as_data_and_drift_or_terminal_guides_to_inspect() {
 #[cfg(unix)]
 #[test]
 fn public_checked_work_demo_runs_with_the_built_binary() {
-    let output = Command::new("sh")
+    let output = support::git_topology::command("sh")
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/scripts/demo-checked-work.sh"

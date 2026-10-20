@@ -1,10 +1,12 @@
+#[allow(dead_code)]
+mod support;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     env, fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
     sync::atomic::{AtomicU64, Ordering},
 };
 #[cfg(feature = "repository-checks")]
@@ -521,7 +523,7 @@ fn validate_schema_lock(root: &Path, base: Option<&str>) -> Result<(), String> {
 }
 
 fn git(root: &Path, args: &[String]) -> Output {
-    Command::new("git")
+    support::git_topology::command("git")
         .arg("-C")
         .arg(root)
         .args(args)
@@ -620,7 +622,7 @@ fn git_schema_fixture() -> (TempDir, String) {
             .status
             .success()
     );
-    let mut commit = Command::new("git");
+    let mut commit = support::git_topology::command("git");
     commit
         .arg("-C")
         .arg(fixture.path())
@@ -643,7 +645,7 @@ fn git_schema_fixture_without_lock() -> (TempDir, String) {
     assert!(git_static(fixture.path(), &["add", "schema"])
         .status
         .success());
-    let mut commit = Command::new("git");
+    let mut commit = support::git_topology::command("git");
     commit
         .arg("-C")
         .arg(fixture.path())
@@ -925,14 +927,14 @@ fn schema_lock_rejects_unknown_or_unversioned_lock_paths() {
 fn current_receipt_verification_refusal_does_not_emit_lifecycle_labels() {
     let fixture = TempDir::new("verify-operational-refusal");
     let root = fixture.path();
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(root)
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args([
             "verify",
             ".exitbind/receipts/missing.json",

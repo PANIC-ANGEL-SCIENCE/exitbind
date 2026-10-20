@@ -471,7 +471,7 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
     assert_eq!(refused["reason"], "malformed_context_projection");
 
     let assignment = started["next"]["assignment"].as_str().unwrap();
-    let mut returner = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut returner = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     returner
         .current_dir(&fixture.root)
         .args(["work", "return", &work, assignment, "--outcome", "scoped"])
@@ -501,7 +501,7 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
     // rather than living only in the standalone context reducer fixture.
     let worker = fixture.json(&["work", "next", &work]);
     let worker_assignment = worker["next"]["assignment"].as_str().unwrap();
-    let mut completion = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut completion = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     completion
         .current_dir(&fixture.root)
         .args([

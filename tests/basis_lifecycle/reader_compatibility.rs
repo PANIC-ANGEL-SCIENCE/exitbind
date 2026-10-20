@@ -178,7 +178,10 @@ fn marked_extension_is_rejected_by_the_installed_older_reader() {
         eprintln!("skipped: set EXITBIND_V022_BIN to the installed v0.22 reader");
         return;
     };
-    let version = Command::new(&old_reader).arg("--version").output().unwrap();
+    let version = super::support::git_topology::command(&old_reader)
+        .arg("--version")
+        .output()
+        .unwrap();
     assert!(version.status.success(), "older reader --version failed");
     let version_text = format!(
         "{}{}",
@@ -209,7 +212,7 @@ fn marked_extension_is_rejected_by_the_installed_older_reader() {
         "--review-policy",
         "required",
     ]);
-    let output = Command::new(&old_reader)
+    let output = super::support::git_topology::command(&old_reader)
         .current_dir(&fixture.root)
         .args([
             "run",

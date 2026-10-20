@@ -8,7 +8,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
     sync::{Arc, Barrier},
     thread,
 };
@@ -20,7 +20,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -30,7 +30,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)

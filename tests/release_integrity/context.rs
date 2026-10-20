@@ -141,7 +141,7 @@ fn gate_args(name: &str, root: &Path, arguments: &[&str]) -> Output {
 }
 
 fn gate_command(name: &str, root: &Path, arguments: &[&str]) -> Command {
-    let mut command = Command::new("sh");
+    let mut command = support::git_topology::command("sh");
     command
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -178,7 +178,7 @@ fn current_changelog_heading() -> &'static str {
 }
 
 fn git(root: &Path, args: &[&str]) -> Output {
-    Command::new("git")
+    support::git_topology::command("git")
         .args([
             "-c",
             "user.name=Soulmate Test",
@@ -240,9 +240,12 @@ fn release_workflow_step(workflow: &str, name: &str) -> String {
 
 #[cfg(unix)]
 fn host_sha256(path: &Path) -> String {
-    let output = match Command::new("sha256sum").arg(path).output() {
+    let output = match support::git_topology::command("sha256sum")
+        .arg(path)
+        .output()
+    {
         Ok(output) if output.status.success() => output,
-        _ => Command::new("shasum")
+        _ => support::git_topology::command("shasum")
             .args(["-a", "256"])
             .arg(path)
             .output()
@@ -279,7 +282,7 @@ fn publisher_fixture(label: &str, tampered_target: Option<&str>) -> Fixture {
     fs::create_dir_all(&payloads).unwrap();
     fs::create_dir_all(&bin).unwrap();
 
-    let real_sha256sum = Command::new("sh")
+    let real_sha256sum = support::git_topology::command("sh")
         .args(["-c", "command -v sha256sum"])
         .output()
         .unwrap();
@@ -291,7 +294,7 @@ fn publisher_fixture(label: &str, tampered_target: Option<&str>) -> Fixture {
         )
         .unwrap();
     } else {
-        let real_shasum = Command::new("sh")
+        let real_shasum = support::git_topology::command("sh")
             .args(["-c", "command -v shasum"])
             .output()
             .unwrap();
@@ -379,7 +382,7 @@ esac
         fs::write(&payload, format!("verified fixture payload {target}\n")).unwrap();
         make_executable(&payload);
         let archive = evidence.join(format!("{stem}.tar.gz"));
-        let output = Command::new("tar")
+        let output = support::git_topology::command("tar")
             .args(["-czf"])
             .arg(&archive)
             .args(["-C"])
@@ -455,18 +458,18 @@ fn run_publisher_steps_for_targets(
     .unwrap();
     let calls = fixture.0.join("gh-calls");
     let marker = fixture.0.join("upload-marker");
-    let real_sha256sum = Command::new("sh")
+    let real_sha256sum = support::git_topology::command("sh")
         .args(["-c", "command -v sha256sum || true"])
         .output()
         .unwrap();
     let real_sha256sum = String::from_utf8(real_sha256sum.stdout).unwrap();
-    let real_shasum = Command::new("sh")
+    let real_shasum = support::git_topology::command("sh")
         .args(["-c", "command -v shasum || true"])
         .output()
         .unwrap();
     let real_shasum = String::from_utf8(real_shasum.stdout).unwrap();
     fs::write(&calls, b"").unwrap();
-    Command::new("bash")
+    support::git_topology::command("bash")
         .args(["--noprofile", "--norc", "-eo", "pipefail", "-c", &script])
         .current_dir(&fixture.0)
         .env("PATH", path)
@@ -495,17 +498,17 @@ fn run_attestation_shim(fixture: &Fixture, arguments: &[&str]) -> Output {
         std::iter::once(fixture.0.join("bin")).chain(std::env::split_paths(&old_path)),
     )
     .unwrap();
-    let real_sha256sum = Command::new("sh")
+    let real_sha256sum = support::git_topology::command("sh")
         .args(["-c", "command -v sha256sum || true"])
         .output()
         .unwrap();
     let real_sha256sum = String::from_utf8(real_sha256sum.stdout).unwrap();
-    let real_shasum = Command::new("sh")
+    let real_shasum = support::git_topology::command("sh")
         .args(["-c", "command -v shasum || true"])
         .output()
         .unwrap();
     let real_shasum = String::from_utf8(real_shasum.stdout).unwrap();
-    Command::new(fixture.0.join("bin/gh"))
+    support::git_topology::command(fixture.0.join("bin/gh"))
         .args(arguments)
         .current_dir(&fixture.0)
         .env("PATH", path)

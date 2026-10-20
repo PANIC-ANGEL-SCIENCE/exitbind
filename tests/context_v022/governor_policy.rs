@@ -5,7 +5,7 @@ fn cooperative_checkpoint_cli_refuses_after_a_replayed_bound() {
     let fixture = Fixture::new();
     let events = fixture.root.join("governor.json");
     fs::write(&events, "[]").unwrap();
-    let reduced = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let reduced = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&fixture.root)
         .args(["context", "reduce", "--events"])
         .arg(&events)
@@ -20,7 +20,7 @@ fn cooperative_checkpoint_cli_refuses_after_a_replayed_bound() {
     let proposal_path = fixture.root.join("proposal.json");
     fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
     fs::write(&proposal_path, br#"{"unit":"worker-mutation"}"#).unwrap();
-    let checkpoint = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let checkpoint = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&fixture.root)
         .args(["context", "checkpoint", "--state"])
         .arg(&state_path)

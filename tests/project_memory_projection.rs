@@ -8,12 +8,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 mod support;
 
 fn call(root: &Path, args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
         .args(["--config", "exitbind.json"])
@@ -40,7 +40,7 @@ fn ok(root: &Path, args: &[&str]) -> Value {
 /// the `project-rules` and `findings` scopes.
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -88,7 +88,7 @@ fn accept(root: &Path, file: &str, text: &str, scope: &str, ledger: &str) {
 
 fn session_context(root: &Path) -> String {
     let cwd = root.canonicalize().unwrap().display().to_string();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

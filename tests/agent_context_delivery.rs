@@ -3,6 +3,8 @@
 
 #[path = "agent_context_delivery/guidance.rs"]
 mod guidance;
+#[path = "agent_context_delivery/phase_guidance.rs"]
+mod phase_guidance;
 mod support;
 
 use serde_json::{json, Value};

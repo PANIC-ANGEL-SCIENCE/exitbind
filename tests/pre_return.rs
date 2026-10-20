@@ -3,11 +3,7 @@
 mod support;
 
 use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 
 const CHECK: &str = "test -f actual-product-check";
 
@@ -18,7 +14,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -27,7 +23,7 @@ impl Fixture {
         Self { root }
     }
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -96,7 +92,7 @@ impl Fixture {
             .find(|path| path.is_file())
             .expect("git is available for integration tests");
         std::os::unix::fs::symlink(git, bin.join("git")).unwrap();
-        let result = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let result = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args([
                 "run",
@@ -140,7 +136,7 @@ impl Fixture {
         )
     }
     fn work_return(&self, work: &str, assignment: &Value, outcome: &str, body: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args([
                 "work",
@@ -628,7 +624,7 @@ fn valid_grant_survives_failure_and_lead_can_replace_only_the_defective_pre_retu
     let command = successor_event["preReturnPolicy"]["command"]
         .as_str()
         .unwrap();
-    let probe = Command::new("sh")
+    let probe = support::git_topology::command("sh")
         .args(["-c", command])
         .current_dir(&f.root)
         .output()

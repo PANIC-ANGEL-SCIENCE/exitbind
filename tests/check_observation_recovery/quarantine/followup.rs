@@ -257,7 +257,7 @@ fn legacy_action_output(
     fixture: &Fixture,
     work: &str,
 ) -> (Output, &'static str) {
-    let mut discovery = Command::new(reader);
+    let mut discovery = super::super::support::git_topology::command(reader);
     discovery
         .current_dir(&fixture.root)
         .args([
@@ -290,7 +290,7 @@ fn legacy_action_output(
     let argv = scoped["command"]["argv"]
         .as_array()
         .expect("old reader action form must expose exact argv");
-    let mut action = Command::new(reader);
+    let mut action = super::super::support::git_topology::command(reader);
     action
         .current_dir(&fixture.root)
         .args(argv.iter().skip(1).map(|value| value.as_str().unwrap()))

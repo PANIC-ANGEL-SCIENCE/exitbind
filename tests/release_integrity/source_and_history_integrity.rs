@@ -19,7 +19,7 @@ fn source_scan_does_not_depend_on_recursive_grep_link_or_error_behavior() {
     let fixture = Fixture::release();
     let bin = fixture.0.join("test-bin");
     fs::create_dir(&bin).unwrap();
-    let lookup = Command::new("sh")
+    let lookup = super::support::git_topology::command("sh")
         .args(["-c", "command -v grep"])
         .output()
         .unwrap();

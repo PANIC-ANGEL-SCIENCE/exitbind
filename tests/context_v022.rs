@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 struct Fixture {
     root: PathBuf,
@@ -15,7 +15,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("context-v022");
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -26,7 +26,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command.current_dir(&self.root).args(args);
         if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
             command.arg("--full");
@@ -41,7 +41,7 @@ impl Fixture {
     }
 
     fn return_body(&self, work: &str, assignment: &str, outcome: &str, body: &[u8]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(["work", "return", work, assignment, "--outcome", outcome])

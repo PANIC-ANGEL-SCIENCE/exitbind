@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
@@ -214,7 +217,7 @@ fn pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees() {
     let old = PathBuf::from(old);
     let run_with =
         |binary: &std::path::Path, root: &std::path::Path, args: &[&str], input: Option<&[u8]>| {
-            let mut command = Command::new(binary);
+            let mut command = git_topology::command(binary);
             command
                 .current_dir(root)
                 .args(args)

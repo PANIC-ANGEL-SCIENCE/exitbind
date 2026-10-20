@@ -6,7 +6,7 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 const CHECK: &str = "exitbind check --config verification.json";
@@ -19,7 +19,7 @@ fn project(label: &str) -> PathBuf {
 }
 
 fn invoke(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()
@@ -27,7 +27,7 @@ fn invoke(root: &Path, arguments: &[&str]) -> Output {
 }
 
 fn invoke_owned(root: &Path, arguments: Vec<String>) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(arguments)
         .output()

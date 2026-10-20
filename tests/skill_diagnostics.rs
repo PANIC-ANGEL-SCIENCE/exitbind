@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
@@ -16,7 +16,7 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(arguments: &[&str], bindings: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
@@ -25,7 +25,7 @@ fn invoke(arguments: &[&str], bindings: &Path) -> Output {
 
 #[cfg(unix)]
 fn invoke_with_path(arguments: &[&str], bindings: &Path, path: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", bindings)
         .env("PATH", path)
         .args(arguments)
@@ -72,7 +72,7 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&product, &control, &state, &bindings] {
         fs::create_dir(path).unwrap();
     }
-    let product_repository = Command::new("git")
+    let product_repository = support::git_topology::command("git")
         .args(["init", "--quiet"])
         .current_dir(&product)
         .status()

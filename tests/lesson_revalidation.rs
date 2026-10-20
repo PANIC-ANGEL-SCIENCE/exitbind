@@ -3,11 +3,7 @@
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::{fs, path::PathBuf, process::Output};
 struct Fixture {
     root: PathBuf,
 }
@@ -15,7 +11,7 @@ impl Fixture {
     fn new() -> Self {
         let root = support::temp("lesson-revalidate");
         support::git_topology::repository(&root);
-        let out = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let out = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -76,7 +72,7 @@ impl Fixture {
         .unwrap();
     }
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -199,7 +195,7 @@ fn reviewed_compatible_lineage_enables_retirement_and_correction_without_rewriti
     let retired = f.ok(&["memory", "revoke", "lead", ".exitbind/memory/lesson.jsonl"]);
     assert_eq!(retired["nextAction"]["state"], "revoked");
     let argv = retired["nextAction"]["command"].as_array().unwrap();
-    let observed = Command::new(argv[0].as_str().unwrap())
+    let observed = support::git_topology::command(argv[0].as_str().unwrap())
         .current_dir(&f.root)
         .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
         .output()

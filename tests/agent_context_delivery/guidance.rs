@@ -1,7 +1,6 @@
 use super::*;
 use serde::Deserialize;
 use sha2::Digest;
-use std::process::Command;
 
 fn run_route(root: &Path, route: &Value, override_option: Option<(&str, &str)>) -> Output {
     let command = route["readRoute"]["command"].as_array().unwrap();
@@ -17,7 +16,7 @@ fn run_route(root: &Path, route: &Value, override_option: Option<(&str, &str)>) 
             arguments.extend([option.to_owned(), replacement.to_owned()]);
         }
     }
-    Command::new(executable)
+    super::support::git_topology::command(executable)
         .args(arguments)
         .current_dir(root)
         .output()

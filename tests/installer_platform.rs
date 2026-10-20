@@ -26,7 +26,7 @@ fn command_path(name: &str) -> PathBuf {
 }
 
 fn optional_command_path(name: &str) -> Option<PathBuf> {
-    let output = Command::new("sh")
+    let output = support::git_topology::command("sh")
         .args(["-c", "command -v \"$1\"", "sh", name])
         .output()
         .unwrap();
@@ -38,9 +38,12 @@ fn optional_command_path(name: &str) -> Option<PathBuf> {
 
 fn digest(path: &Path) -> String {
     let output = if optional_command_path("sha256sum").is_some() {
-        Command::new("sha256sum").arg(path).output().unwrap()
+        support::git_topology::command("sha256sum")
+            .arg(path)
+            .output()
+            .unwrap()
     } else {
-        Command::new("shasum")
+        support::git_topology::command("shasum")
             .args(["-a", "256"])
             .arg(path)
             .output()
@@ -79,7 +82,7 @@ impl Fixture {
         let payload_path = payload_dir.join(&stem);
         executable(&payload_path, &payload);
         let archive = server.join(format!("{stem}.tar.gz"));
-        let status = Command::new("tar")
+        let status = support::git_topology::command("tar")
             .args(["-czf"])
             .arg(&archive)
             .args(["-C"])
@@ -144,7 +147,7 @@ esac
         let checksum = format!("{archive}.sha256");
         let calls = self.root.join("calls");
         fs::write(&calls, b"").unwrap();
-        let mut command = Command::new("/bin/sh");
+        let mut command = support::git_topology::command("/bin/sh");
         command
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(INSTALLER))
             .env("PATH", path)

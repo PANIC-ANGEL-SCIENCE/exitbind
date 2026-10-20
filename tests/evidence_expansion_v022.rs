@@ -6,7 +6,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::thread;
 use std::time::Duration;
 
@@ -18,7 +18,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("evidence-expansion-v022");
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -29,7 +29,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command.current_dir(&self.root).args(args);
         if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
             command.arg("--full");
@@ -38,7 +38,7 @@ impl Fixture {
     }
 
     fn call_with_env(&self, args: &[&str], key: &str, value: &str) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -52,7 +52,7 @@ impl Fixture {
     fn call_with_file_limit(&self, args: &[&str], limit: u64) -> Output {
         use std::os::unix::process::CommandExt;
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -102,7 +102,7 @@ impl Fixture {
     }
 
     fn return_body(&self, work: &str, assignment: &str, outcome: &str, body: &[u8]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(["work", "return", work, assignment, "--outcome", outcome])
@@ -479,7 +479,7 @@ fn observed_v8_logs_round_trip_and_failure_paths_leave_no_logs() {
     let drift = Fixture::new();
     let (_started, _drift_work, drift_ledger, drift_target) = drift.start_worker("sleep 1");
     let before_drift = fs::read_to_string(drift.root.join(&drift_ledger)).unwrap();
-    let mut observing = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut observing = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     observing
         .current_dir(&drift.root)
         .args([

@@ -1,7 +1,8 @@
+#[allow(dead_code)]
+mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -23,7 +24,7 @@ fn temp_dir(label: &str) -> PathBuf {
 
 fn run_check(archive: Option<&Path>) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut command = Command::new("python3");
+    let mut command = support::git_topology::command("python3");
     command.arg(script("check-plugin-distribution.py"));
     if let Some(archive) = archive {
         command.args(["--archive", archive.to_str().unwrap()]);
@@ -44,7 +45,7 @@ fn archive_is_reproducible_and_existing_output_is_not_overwritten() {
     let second = output_dir.join("two.tar.gz");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for output in [&first, &second] {
-        let result = Command::new("sh")
+        let result = support::git_topology::command("sh")
             .arg(script("package-plugin.sh"))
             .arg(output)
             .current_dir(root)
@@ -55,7 +56,7 @@ fn archive_is_reproducible_and_existing_output_is_not_overwritten() {
     assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
     run_check(Some(&first));
 
-    let result = Command::new("sh")
+    let result = support::git_topology::command("sh")
         .arg(script("package-plugin.sh"))
         .arg(&first)
         .current_dir(root)

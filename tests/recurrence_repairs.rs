@@ -7,7 +7,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const SCOPE: &str = "project-lessons.v1";
@@ -29,7 +29,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("recurrence");
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -61,7 +61,7 @@ impl Fixture {
         f
     }
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -248,7 +248,10 @@ fn lesson_delivery_is_bounded_and_emits_an_exact_inspection_route() {
         .iter()
         .map(|x| x.as_str().unwrap())
         .collect();
-    let out = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    let out = support::git_topology::command(argv[0])
+        .args(&argv[1..])
+        .output()
+        .unwrap();
     assert!(out.status.success(), "{}", text(&out));
     let value: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(value["references"].as_array().unwrap().len(), 8);
@@ -383,7 +386,7 @@ fn preflight_resolves_cargo_once_and_refuses_product_target_log_or_temp() {
     // Preserve restricted system-tool PATH and explicit Cargo selection while
     // retaining the caller's actual Linux prerequisite, including local tools.
     let command_path = if cfg!(target_os = "linux") {
-        let tmux = Command::new("sh")
+        let tmux = support::git_topology::command("sh")
             .args(["-c", "command -v tmux"])
             .output()
             .unwrap();
@@ -404,7 +407,7 @@ fn preflight_resolves_cargo_once_and_refuses_product_target_log_or_temp() {
         std::ffi::OsString::from("/usr/bin:/bin")
     };
     let run = |field: &str, value: &std::path::Path| {
-        Command::new(&script)
+        support::git_topology::command(&script)
             .arg("--preflight")
             .env("PATH", &command_path)
             .env("CARGO", &cargo)
@@ -447,7 +450,7 @@ fn preflight_resolves_cargo_once_and_refuses_product_target_log_or_temp() {
         assert!(text(&out).contains("no build launched"));
         assert!(lock.exists());
         let launched = outside.join("dependent-launched");
-        let gate = Command::new("sh")
+        let gate = support::git_topology::command("sh")
             .args([
                 "-c",
                 "\"$1\" --preflight && printf launched > \"$2\"",
@@ -495,7 +498,10 @@ fn current_action_forms_and_basis_help_remove_guesswork() {
                 .replace("<OPERATION>", "current-action-probe")
         })
         .collect();
-    let out = Command::new(&args[0]).args(&args[1..]).output().unwrap();
+    let out = support::git_topology::command(&args[0])
+        .args(&args[1..])
+        .output()
+        .unwrap();
     assert!(out.status.success(), "{}", text(&out));
     assert_eq!(
         serde_json::from_slice::<Value>(&out.stdout).unwrap()["allowed"],

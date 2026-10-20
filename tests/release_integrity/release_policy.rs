@@ -52,7 +52,7 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
     let metadata_path = fixture.0.join("release.json");
     let check = |metadata: &Value, version: &str, producer: &str| {
         fs::write(&metadata_path, serde_json::to_vec(metadata).unwrap()).unwrap();
-        Command::new("python3")
+        super::support::git_topology::command("python3")
             .arg(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tooling/repository/release/check-installation-pointer.py"),
@@ -132,7 +132,7 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
     );
 
     let missing_metadata = fixture.0.join("missing-release.json");
-    let unavailable = Command::new("python3")
+    let unavailable = super::support::git_topology::command("python3")
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tooling/repository/release/check-installation-pointer.py"),

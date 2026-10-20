@@ -111,7 +111,7 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     let before = f.history();
     let continuation = if entry["continuation"]["requiresExpansion"] == true {
         let argv = entry["continuation"]["command"].as_array().unwrap();
-        let expanded = Command::new(argv[0].as_str().unwrap())
+        let expanded = super::support::git_topology::command(argv[0].as_str().unwrap())
             .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
             .output()
             .unwrap();
@@ -319,7 +319,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     let argv = corrected["nextAction"]["command"].as_array().unwrap();
     assert_eq!(corrected["nextAction"]["sameConfigRequired"], false);
     assert_eq!(corrected["nextAction"]["sameExecutableRequired"], false);
-    let recovered = Command::new(argv[0].as_str().unwrap())
+    let recovered = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
         .output()
@@ -328,7 +328,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
     assert_eq!(recovered["goalRevision"], 11);
     fs::copy(f.root.join("exitbind.json"), f.root.join("alternate.json")).unwrap();
-    let entry = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let entry = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&f.root)
         .args(["work", "next", &f.work, "--config", "alternate.json"])
         .output()
@@ -340,7 +340,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     assert_eq!(route["sameConfigRequired"], false);
     assert_eq!(route["sameExecutableRequired"], false);
     let argv = route["command"].as_array().unwrap();
-    let expanded = Command::new(argv[0].as_str().unwrap())
+    let expanded = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
         .output()
@@ -354,7 +354,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
         .find(|section| section["name"] == "children")
         .unwrap();
     let argv = children["command"].as_array().unwrap();
-    let section = Command::new(argv[0].as_str().unwrap())
+    let section = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
         .output()
@@ -362,7 +362,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     assert!(section.status.success(), "{section:?}");
     let section: Value = serde_json::from_slice(&section.stdout).unwrap();
     let argv = section["items"][7]["command"].as_array().unwrap();
-    let item = Command::new(argv[0].as_str().unwrap())
+    let item = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
         .output()

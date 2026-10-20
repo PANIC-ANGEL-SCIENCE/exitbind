@@ -6,11 +6,11 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 fn execute(root: &Path, args: &[&str], input: &[u8], config: bool) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.current_dir(root).args(args);
     if config {
         command.args(["--config", "exitbind.json"]);
@@ -509,7 +509,7 @@ fn weak_check_survives_wrong_candidate_and_strong_oracle_accepts_correct_alterna
         let path = root.join(format!("{name}.py"));
         fs::write(&path, source).unwrap();
         for mode in ["old", "strong"] {
-            let output = Command::new("python3")
+            let output = support::git_topology::command("python3")
                 .arg(root.join("probe.py"))
                 .arg(&path)
                 .arg(mode)

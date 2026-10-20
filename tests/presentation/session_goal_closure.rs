@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
@@ -519,7 +522,7 @@ fn concurrent_goal_incorporation_preserves_each_successful_revision() {
             let root = project.root.clone();
             thread::spawn(move || {
                 let finding = format!("finding-{index}");
-                let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+                let output = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                     .current_dir(&root)
                     .args([
                         "goal",

@@ -4,7 +4,7 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 fn temp(label: &str) -> PathBuf {
@@ -12,7 +12,7 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(root: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", root.join("machine-bindings"))
         .args(arguments)
         .output()

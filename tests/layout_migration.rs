@@ -2,10 +2,10 @@ use serde_json::{json, Value};
 mod support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -54,7 +54,7 @@ fn text(output: &Output) -> String {
 }
 
 fn git(root: &Path, arguments: &[&str]) -> Output {
-    Command::new("git")
+    support::git_topology::command("git")
         .arg("-C")
         .arg(root)
         .args(arguments)

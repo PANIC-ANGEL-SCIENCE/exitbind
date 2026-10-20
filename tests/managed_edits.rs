@@ -7,7 +7,7 @@ use std::{
     io::Write,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -43,7 +43,7 @@ impl Fixture {
             PathBuf::from(env!("CARGO_BIN_EXE_exitbind"))
         };
         let output = support::run(
-            Command::new(&executable)
+            support::git_topology::command(&executable)
                 .args(["init", "--mode", "portable", "--skip-skills", "--root"])
                 .arg(&root),
         );
@@ -73,7 +73,7 @@ impl Fixture {
         f
     }
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(&self.executable)
+        let mut child = support::git_topology::command(&self.executable)
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -133,7 +133,7 @@ impl Fixture {
         );
     }
     fn edit(&self, action: &str, path: &str, content: &[u8]) -> Output {
-        let mut child = Command::new(&self.tool)
+        let mut child = support::git_topology::command(&self.tool)
             .args([action, path])
             .current_dir(std::env::temp_dir())
             .env("PATH", "/missing-native-tools")

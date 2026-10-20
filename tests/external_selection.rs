@@ -1,11 +1,11 @@
 mod support;
 
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, path::PathBuf};
 
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
 
 fn init(root: &PathBuf) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(root)
         .output()
@@ -45,7 +45,7 @@ fn explicit_begin_records_the_first_current_work_item() {
     let root = support::temp("exitbind-external-selection-begin");
     let output = init(&root);
     assert!(output.status.success(), "{output:?}");
-    let begin = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let begin = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",

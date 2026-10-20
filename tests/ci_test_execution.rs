@@ -1,8 +1,10 @@
+#[allow(dead_code)]
+mod support;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 fn guard(log: &str) -> bool {
-    let mut child = Command::new("sh")
+    let mut child = support::git_topology::command("sh")
         .args([
             concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/assert-test-ran.sh"),
             "real_tmux_child_presents_bound_evidence_without_persisting_the_prompt",

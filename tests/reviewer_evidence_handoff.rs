@@ -11,7 +11,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const MARKER: &str = "reviewer-evidence-marker";
@@ -27,7 +27,7 @@ fn run_config(
     args: &[&str],
     input: &[u8],
 ) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command
         .current_dir(root)
         .args(args)
@@ -64,7 +64,7 @@ fn ok_config(
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -82,13 +82,13 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&root, &control, &state, &bindings] {
         fs::create_dir_all(path).unwrap();
     }
-    let product_repository = Command::new("git")
+    let product_repository = support::git_topology::command("git")
         .args(["init", "--quiet"])
         .current_dir(&root)
         .status()
         .unwrap();
     assert!(product_repository.success());
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", &bindings)
         .args([
             "init",
@@ -185,7 +185,7 @@ fn give_with_config(
 
 fn reviewer_context(root: &Path, bindings: Option<&Path>) -> String {
     let payload = json!({"hook_event_name":"SubagentStart", "cwd":root, "agent_type":"reviewer"});
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command
         .arg("hook-run")
         .stdin(Stdio::piped())
@@ -225,7 +225,7 @@ fn routes(context: &str) -> Vec<(String, Value)> {
 fn execute_route(route: &Value, path: Option<&Path>) -> Output {
     let argv = route["argv"].as_array().unwrap();
     let program = argv[0].as_str().unwrap();
-    let mut command = Command::new(program);
+    let mut command = support::git_topology::command(program);
     for argument in argv.iter().skip(1) {
         command.arg(argument.as_str().unwrap());
     }

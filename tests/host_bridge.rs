@@ -5,7 +5,7 @@
 
 mod support;
 
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 fn host_home(label: &str) -> std::path::PathBuf {
     let root = support::temp(label);
@@ -28,7 +28,7 @@ fn path_with_binary(home: &Path) -> String {
 }
 
 fn exitbind(home: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(args)
         .env("HOME", home)
         .env("PATH", path_with_binary(home))
@@ -217,13 +217,13 @@ fn the_installer_installs_the_bridge_so_one_installation_is_enough() {
     let staged = release.join(format!("exitbind-{target}"));
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &staged);
     let archive = format!("exitbind-{target}.tar.gz");
-    assert!(Command::new("tar")
+    assert!(support::git_topology::command("tar")
         .current_dir(&release)
         .args(["-czf", &archive, &format!("exitbind-{target}")])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("sh")
+    assert!(support::git_topology::command("sh")
         .current_dir(&release)
         .args([
             "-c",
@@ -246,7 +246,7 @@ fn the_installer_installs_the_bridge_so_one_installation_is_enough() {
     .unwrap();
     fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let output = Command::new("sh")
+    let output = support::git_topology::command("sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
         .env(
             "PATH",
@@ -294,7 +294,7 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
     fs::create_dir_all(&project).unwrap();
 
     let hook = |event: &str| -> String {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .arg("hook-run")
             .env("HOME", &home)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
@@ -335,7 +335,7 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
 
     // A subagent start in an unconfigured project stays silent.
     assert!(hook("SubagentStart").trim().is_empty());
-    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&project)
         .env("HOME", &home)
@@ -369,7 +369,7 @@ fn malformed_or_unsafe_target_config_never_claims_clean_native_absence() {
         .collect();
 
     let hook = || -> String {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .arg("hook-run")
             .env("HOME", &home)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
@@ -571,7 +571,7 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
     let installed = prefix.join("exitbind");
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &installed);
 
-    let mut without_path_command = Command::new(&installed);
+    let mut without_path_command = support::git_topology::command(&installed);
     without_path_command
         .args(["host", "install", "--json"])
         .env("HOME", &home)
@@ -588,7 +588,7 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
             .unwrap()
             .contains("PATH"));
     }
-    let mut status_command = Command::new(&installed);
+    let mut status_command = support::git_topology::command(&installed);
     status_command
         .args(["host", "status", "--json"])
         .env("HOME", &home)
@@ -603,7 +603,7 @@ fn a_clean_install_without_the_cli_on_path_reports_the_hook_dependency() {
     }
 
     // Once the CLI resolves on PATH, the same command completes the bridge.
-    let mut with_path_command = Command::new(&installed);
+    let mut with_path_command = support::git_topology::command(&installed);
     with_path_command
         .args(["host", "install", "--json"])
         .env("HOME", &home)

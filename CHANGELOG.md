@@ -15,6 +15,17 @@ Unreleased source candidate; no stable tag or release assets are published.
 - Keep historical strict readers fail-closed on marked Works. Retain the old
   pre-registration configuration for ordinary rollback and use a supporting
   executable for the marked Work lifecycle; stop does not rewrite old ledgers.
+- Give every Cargo test target its required features and covered `src`
+  prefixes; pre-return and the affected-test runner select changed targets and
+  run each with its features and without host session variables.
+- Deliver owner-declared `phaseGuidance` bodies whole with a count, or by an
+  exact role-scoped read route, and name delegation in Lead detail.
+- Validate a successor's lineage once per journey lookup and reuse validated
+  ledger bytes within one process, so successor commands under a native
+  session Goal answer at once. Acceptance still rehashes current inputs.
+- Print `work detail --view action` as plain text without `--json`, carry
+  UTF-8 section pages and evidence as text, and add a `producer` envelope to
+  observation JSON.
 
 ## 0.31.16
 

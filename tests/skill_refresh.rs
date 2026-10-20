@@ -4,7 +4,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
@@ -21,7 +21,7 @@ fn temp(label: &str) -> PathBuf {
 fn invoke(arguments: &[&str], bindings: &Path) -> Output {
     let home = bindings.parent().unwrap().join("home");
     fs::create_dir_all(&home).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("HOME", home)
         .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
@@ -47,7 +47,7 @@ fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     for path in [&product, &control, &state, &bindings] {
         fs::create_dir(path).unwrap();
     }
-    let product_repository = Command::new("git")
+    let product_repository = support::git_topology::command("git")
         .args(["init", "--quiet"])
         .current_dir(&product)
         .status()
@@ -405,7 +405,7 @@ fn reality_and_decision_guidance_is_embedded_and_distributed() {
 #[test]
 fn refresh_accepts_the_current_managed_marker() {
     let root = support::temp("refresh-current-marker");
-    let initialized = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -416,7 +416,7 @@ fn refresh_accepts_the_current_managed_marker() {
     assert!(managed.contains("<!-- exitbind-managed-skill:v1 -->"));
     std::fs::write(&skill, format!("{managed}\nan older managed body\n")).unwrap();
 
-    let refreshed = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let refreshed = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--refresh-skills", "--root"])
         .arg(&root)
         .output()
@@ -431,7 +431,7 @@ fn refresh_accepts_the_current_managed_marker() {
 
     // A file Exitbind does not manage is still refused.
     std::fs::write(&skill, "# the operator's own skill\n").unwrap();
-    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let refused = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--refresh-skills", "--root"])
         .arg(&root)
         .output()

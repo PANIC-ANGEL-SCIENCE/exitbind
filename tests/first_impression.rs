@@ -2,7 +2,7 @@
 #![cfg(unix)]
 
 mod support;
-use std::{fs, os::unix::fs::symlink, path::Path, process::Command};
+use std::{fs, os::unix::fs::symlink, path::Path};
 
 fn run_readme(command: &str, root: &Path, bin: &Path, temporary: &Path) -> String {
     let path = std::env::join_paths(
@@ -10,7 +10,7 @@ fn run_readme(command: &str, root: &Path, bin: &Path, temporary: &Path) -> Strin
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();
-    let output = Command::new("sh")
+    let output = support::git_topology::command("sh")
         .args(["-eu", "-c", command])
         .current_dir(root)
         .env("PATH", path)
@@ -36,7 +36,7 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
         fs::create_dir(path).unwrap();
     }
     symlink(env!("CARGO_BIN_EXE_exitbind"), bin.join("exitbind")).unwrap();
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["init", "-q"])
         .arg(&project)
         .status()
@@ -44,7 +44,7 @@ fn conversation_first_readme_keeps_setup_and_proof_safe_inside_git() {
         .success());
     fs::write(project.join("work.txt"), b"unfinished user work\n").unwrap();
     let git_status = || {
-        let out = Command::new("git")
+        let out = support::git_topology::command("git")
             .args(["status", "--porcelain", "--untracked-files=all"])
             .current_dir(&project)
             .output()

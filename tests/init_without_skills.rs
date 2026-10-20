@@ -3,7 +3,7 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 fn temp(label: &str) -> PathBuf {
@@ -44,7 +44,8 @@ fn fixture_git_environment_is_isolated_in_a_dedicated_subprocess() {
     if let Some(foreign) = std::env::var_os(CHILD) {
         // Confirm the subprocess inherited a different Git subject. Never
         // mutate the parallel test runner's process-global environment.
-        let inherited = Command::new("git")
+        // raw-spawn: this probe must see the inherited foreign Git environment.
+        let inherited = std::process::Command::new("git")
             .args(["rev-parse", "--show-toplevel"])
             .output()
             .unwrap();
@@ -64,7 +65,7 @@ fn fixture_git_environment_is_isolated_in_a_dedicated_subprocess() {
     let config = fs::read(git_dir.join("config")).unwrap();
     fs::write(foreign.join("caller.txt"), b"caller-owned sentinel\n").unwrap();
     assert!(!index.exists());
-    let output = Command::new(std::env::current_exe().unwrap())
+    let output = support::git_topology::command(std::env::current_exe().unwrap())
         .args([
             "--exact",
             "init_without_skills::fixture_git_environment_is_isolated_in_a_dedicated_subprocess",

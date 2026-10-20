@@ -1,10 +1,6 @@
 use crate::fixture::*;
 use serde_json::Value;
-use std::{
-    fs,
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::{fs, io::Write, process::Stdio};
 
 fn return_in_session(
     project: &Project,
@@ -14,7 +10,7 @@ fn return_in_session(
     outcome: &str,
     bytes: &[u8],
 ) -> Value {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command
         .current_dir(&project.root)
         .args(["work", "return", work, assignment, "--outcome", outcome])

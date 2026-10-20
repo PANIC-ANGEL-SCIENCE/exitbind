@@ -1,7 +1,7 @@
 //! Repeated value options must fail in the ordinary CLI before any action.
 mod support;
 
-use std::{collections::BTreeMap, fs, path::Path, process::Command};
+use std::{collections::BTreeMap, fs, path::Path};
 
 fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
     fn visit(root: &Path, path: &Path, files: &mut BTreeMap<std::path::PathBuf, Vec<u8>>) {
@@ -26,7 +26,7 @@ fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
 fn duplicate_value_options_refuse_before_configuration_or_goal_effects() {
     let root = support::temp("singleton-options");
     let invoke = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&root)
             .args(args)
             .output()
@@ -58,7 +58,7 @@ fn duplicate_value_options_refuse_before_configuration_or_goal_effects() {
                         args.push(format!("--{key}={value}"));
                     }
                 }
-                let out = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+                let out = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
                     .current_dir(&root)
                     .args(&args)
                     .output()

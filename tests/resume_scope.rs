@@ -7,10 +7,10 @@ mod limits;
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 fn init(root: &Path) {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(root)
         .output()
@@ -19,7 +19,7 @@ fn init(root: &Path) {
 }
 
 fn invoke(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(std::env::temp_dir())
         .env("PATH", "/nonexistent")
         .args(args)
@@ -29,7 +29,7 @@ fn invoke(args: &[&str]) -> std::process::Output {
 
 fn begin(root: &Path) -> String {
     let config = root.join("exitbind.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args([
             "work",

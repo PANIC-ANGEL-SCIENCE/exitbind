@@ -3,7 +3,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 pub(crate) const CARD: &str =
@@ -17,7 +17,8 @@ pub(crate) struct Project {
 impl Project {
     pub(crate) fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let mut init_command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut init_command =
+            super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         init_command
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root);
@@ -60,7 +61,7 @@ impl Project {
         store: Option<&std::path::Path>,
         args: &[&str],
     ) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -96,7 +97,7 @@ impl Project {
         selectors: &[(&str, &str)],
         args: &[&str],
     ) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)

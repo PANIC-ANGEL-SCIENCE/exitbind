@@ -6,11 +6,11 @@ use std::{
     fs,
     io::Write,
     path::Path,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 fn run(root: &Path, args: &[String], input: Option<&str>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     command
         .current_dir(root)

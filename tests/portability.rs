@@ -85,7 +85,7 @@ impl Fixture {
     }
     fn command(&self, cwd: &Path, args: &[&str]) -> Command {
         self.preflight(cwd);
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(cwd)
             .args(args)
@@ -212,7 +212,7 @@ fn readonly_xdg_uses_home_registry_and_keeps_it_after_xdg_becomes_writable() {
     };
     let call = |args: &[&str]| {
         f.preflight(&f.source.join("nested"));
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         support::git_topology::isolate(&mut command);
         command
             .current_dir(f.source.join("nested"))

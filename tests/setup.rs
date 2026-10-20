@@ -1,10 +1,6 @@
 mod support;
 
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::{fs, path::Path, process::Output};
 
 fn fixture(label: &str) -> std::path::PathBuf {
     let root = support::temp(label);
@@ -17,7 +13,7 @@ fn invoke(arguments: &[&str]) -> Output {
 }
 
 fn invoke_env(arguments: &[&str], environment: &[(&str, &Path)]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     support::git_topology::isolate(&mut command);
     command.args(arguments);
     for (name, value) in environment {

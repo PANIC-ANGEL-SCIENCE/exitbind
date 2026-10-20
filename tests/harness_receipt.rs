@@ -4,7 +4,7 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Output,
 };
 
 fn project() -> PathBuf {
@@ -21,14 +21,14 @@ fn project() -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
 }
 
 fn invoke_with_bindings(arguments: &[&str], bindings: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .env("EXITBIND_BINDINGS_DIR", bindings)
         .args(arguments)
         .output()
@@ -528,7 +528,7 @@ fn local_mode_manifest_cannot_claim_a_different_project() {
     for path in [&product, &control, &state] {
         fs::create_dir_all(path).unwrap();
     }
-    let product_repository = Command::new("git")
+    let product_repository = support::git_topology::command("git")
         .args(["init", "--quiet"])
         .current_dir(&product)
         .status()

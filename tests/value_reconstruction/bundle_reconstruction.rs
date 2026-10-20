@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
@@ -7,7 +10,7 @@ fn exported_bundle_reconstructs_without_result_or_report() {
     let destination_text = destination
         .to_str()
         .expect("temporary output path should be UTF-8");
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["benchmark", "--output", destination_text, "--json"])
         .output()
         .expect("benchmark binary should start");

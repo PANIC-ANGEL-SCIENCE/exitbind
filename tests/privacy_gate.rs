@@ -3,7 +3,6 @@ mod support;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const IGNORED: &[&str] = &[".git", "node_modules", ".cache", "coverage", "target"];
 const ALLOWED_NAME: &str = "envy404";
@@ -601,7 +600,7 @@ fn scan_patch(bytes: &[u8], findings: &mut Findings) {
 }
 
 fn git(root: &Path, arguments: &[&str]) -> Option<Vec<u8>> {
-    let output = Command::new("git")
+    let output = support::git_topology::command("git")
         .arg("-C")
         .arg(root)
         .args(arguments)
@@ -651,17 +650,17 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
     )
     .unwrap();
     fs::write(root.join("notes.txt"), "clean\n").unwrap();
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "init", "-q"])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "add", "."])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -679,7 +678,7 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
         .unwrap()
         .success());
     assert!(scan(&root).is_empty());
-    let canonical = Command::new("git")
+    let canonical = support::git_topology::command("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -719,12 +718,12 @@ fn mailmap_accepts_only_role_specific_github_squash_identities() {
         .any(|(category, _)| category == "public-identity-email-mismatch"));
 
     fs::write(root.join("notes.txt"), "outsider\n").unwrap();
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "add", "notes.txt"])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -771,17 +770,17 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
         .iter()
         .any(|(category, _)| category == "private-config-filename"));
 
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "init", "-q"])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "add", "notes.txt"])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -797,12 +796,12 @@ fn privacy_categories_detect_candidate_and_historical_exposure_without_echoing_v
         .unwrap()
         .success());
     fs::write(root.join("notes.txt"), "clean\n").unwrap();
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args(["-C", root.to_str().unwrap(), "add", "notes.txt"])
         .status()
         .unwrap()
         .success());
-    assert!(Command::new("git")
+    assert!(support::git_topology::command("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -834,7 +833,7 @@ fn credential_assignment_distinguishes_method_expressions_and_retains_history_ch
     assert!(scan(&root).is_empty(), "method-call candidate was flagged");
 
     fn git_ok(root: &Path, arguments: &[&str]) {
-        let status = Command::new("git")
+        let status = support::git_topology::command("git")
             .args(["-C", root.to_str().unwrap()])
             .args(arguments)
             .status()

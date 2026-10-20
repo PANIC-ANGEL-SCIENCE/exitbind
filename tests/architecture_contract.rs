@@ -9,7 +9,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 #[cfg(unix)]
@@ -32,7 +32,7 @@ fn away_stubs(root: &Path) -> (PathBuf, PathBuf) {
 #[cfg(unix)]
 fn away(root: &Path, agent: &str, work: &str) -> Output {
     let (codex, tmux) = away_stubs(root);
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args([
             "away",
@@ -78,7 +78,7 @@ fn codex_roles(root: &Path) {
 const CONTRACT: &str = include_str!("fixtures/architecture-contract.json");
 
 fn invoke(root: &Path, args: &[&str], input: Option<&Value>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.current_dir(root).args(args);
     if args.first() != Some(&"hook-run") {
         command.args(["--config", "exitbind.json"]);
@@ -127,7 +127,7 @@ fn select(root: &Path, contract: &Value) {
 
 fn project(label: &str) -> PathBuf {
     let root = support::temp(label);
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--skip-skills", "--root"])
         .arg(&root)
         .output()

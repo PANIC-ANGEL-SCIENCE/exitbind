@@ -6,7 +6,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -16,7 +16,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("current-details");
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -37,7 +37,7 @@ impl Fixture {
         }
     }
     fn call(&self, args: &[&str], body: Option<&[u8]>) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .arg("--config")
@@ -129,7 +129,7 @@ impl Fixture {
             assert_eq!(argv[4], reference);
             assert_eq!(argv[5], "--json");
             assert_eq!(argv[6], "--config");
-            let output = Command::new(&argv[0])
+            let output = support::git_topology::command(&argv[0])
                 .current_dir(std::env::temp_dir())
                 .env(
                     "PATH",
@@ -158,12 +158,7 @@ impl Fixture {
             } else {
                 sha = Some(page["sectionSha256"].clone());
             }
-            let hex = page["contentHex"].as_str().unwrap();
-            bytes.extend(
-                (0..hex.len())
-                    .step_by(2)
-                    .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap()),
-            );
+            bytes.extend(support::page_bytes(&page));
             calls += 1;
             if page["next"].is_null() {
                 assert_eq!(page["totalBytes"], bytes.len());

@@ -8,7 +8,6 @@ use serde_json::Value;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn fake_curl(root: &Path) {
     let curl = root.join("curl");
@@ -70,7 +69,7 @@ fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
     fake_curl(&bin);
     binary(&prefix.join(target_name), "0.17.0");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(binary_path)
+    let output = support::git_topology::command(binary_path)
         .arg("update")
         .env("PATH", path)
         .env("HOME", &root)
@@ -109,7 +108,7 @@ fn exercise_matrix_origin(binary_path: &str, route_id: &str) {
     );
     assert_eq!(
         String::from_utf8_lossy(
-            &Command::new(prefix.join(target_name))
+            &support::git_topology::command(prefix.join(target_name))
                 .arg("version")
                 .output()
                 .unwrap()
@@ -132,7 +131,7 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
     let target = prefix.join("exitbind");
     binary(&target, "0.14.0-rc.1");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
@@ -146,14 +145,17 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let installed = Command::new(&target).arg("version").output().unwrap();
+    let installed = support::git_topology::command(&target)
+        .arg("version")
+        .output()
+        .unwrap();
     assert_eq!(
         String::from_utf8_lossy(&installed.stdout).trim(),
         available_update_tag().trim_start_matches('v')
     );
 
     binary(&target, "0.14.0-rc.1");
-    let failed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let failed = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
@@ -163,13 +165,16 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
         .output()
         .unwrap();
     assert!(!failed.status.success());
-    let restored = Command::new(&target).arg("version").output().unwrap();
+    let restored = support::git_topology::command(&target)
+        .arg("version")
+        .output()
+        .unwrap();
     assert_eq!(
         String::from_utf8_lossy(&restored.stdout).trim(),
         "0.14.0-rc.1"
     );
 
-    let wrong = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let wrong = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
@@ -179,7 +184,10 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
         .output()
         .unwrap();
     assert!(!wrong.status.success());
-    let restored_again = Command::new(&target).arg("version").output().unwrap();
+    let restored_again = support::git_topology::command(&target)
+        .arg("version")
+        .output()
+        .unwrap();
     assert_eq!(
         String::from_utf8_lossy(&restored_again.stdout).trim(),
         "0.14.0-rc.1"
@@ -188,7 +196,7 @@ fn explicit_update_uses_fixed_fake_release_and_restores_on_failure() {
 
 #[test]
 fn update_is_discoverable_in_advanced_help() {
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["help", "advanced"])
         .output()
         .unwrap();
@@ -213,7 +221,7 @@ fn double_update_failure_names_and_retains_private_backup() {
     binary(&target, "0.14.0-rc.1");
     let original = fs::read(&target).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let failed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let failed = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("HOME", &root)
@@ -260,7 +268,7 @@ fn malformed_release_response_and_missing_curl_are_errors() {
     fake_curl(&bin);
     binary(&prefix.join("exitbind"), "0.14.0-rc.1");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let bad = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let bad = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", &path)
         .env("FAKE_BAD", "1")
@@ -274,7 +282,7 @@ fn malformed_release_response_and_missing_curl_are_errors() {
         String::from_utf8_lossy(&bad.stderr)
     );
     assert!(bad_text.contains("release metadata"), "{bad_text}");
-    let missing = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let missing = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", root.join("missing"))
         .env("EXITBIND_INSTALL_PREFIX", &prefix)
@@ -309,7 +317,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         let body = format!(
             "[{{\"tag_name\":\"{malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{discriminating_malformed}\",\"draft\":false,\"prerelease\":false}},{{\"tag_name\":\"{valid}\",\"draft\":false,\"prerelease\":false}}]"
         );
-        let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .arg("update")
             .env("PATH", path)
             .env("HOME", &root)
@@ -330,7 +338,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         );
         assert_eq!(
             String::from_utf8_lossy(
-                &Command::new(&target)
+                &support::git_topology::command(&target)
                     .arg("version")
                     .output()
                     .unwrap()
@@ -383,7 +391,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         stable_bin.display(),
         std::env::var("PATH").unwrap()
     );
-    let ignored = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let ignored = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", stable_path)
         .env("HOME", &stable_root)
@@ -395,7 +403,13 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         .unwrap();
     assert!(ignored.status.success(), "{ignored:?}");
     assert_eq!(
-        String::from_utf8_lossy(&Command::new(&stable_target).output().unwrap().stdout).trim(),
+        String::from_utf8_lossy(
+            &support::git_topology::command(&stable_target)
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .trim(),
         "0.17.0"
     );
     fs::remove_dir_all(stable_root).unwrap();
@@ -414,7 +428,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
         upgrade_bin.display(),
         std::env::var("PATH").unwrap()
     );
-    let upgraded = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let upgraded = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("update")
         .env("PATH", upgrade_path)
         .env("HOME", &upgrade_root)
@@ -426,7 +440,7 @@ fn updater_matrix_cases_preserve_parser_boundaries_with_a_valid_control() {
     assert!(upgraded.status.success(), "{upgraded:?}");
     assert_eq!(
         String::from_utf8_lossy(
-            &Command::new(&upgrade_target)
+            &support::git_topology::command(&upgrade_target)
                 .arg("version")
                 .output()
                 .unwrap()
@@ -453,7 +467,7 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
     support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &target);
     fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let mut update = Command::new(&target);
+    let mut update = support::git_topology::command(&target);
     update
         .arg("update")
         .env("PATH", &path)
@@ -475,7 +489,7 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
         fs::metadata(&target).unwrap().len() > 0,
         "installed binary was truncated"
     );
-    let mut version = Command::new(&target);
+    let mut version = support::git_topology::command(&target);
     version.arg("version");
     let installed = support::run(&mut version);
     assert_eq!(
@@ -533,8 +547,14 @@ impl FakeRelease {
         let release = root.join("release");
         fs::create_dir(&bin).unwrap();
         fs::create_dir(&release).unwrap();
-        let os = Command::new("uname").arg("-s").output().unwrap();
-        let arch = Command::new("uname").arg("-m").output().unwrap();
+        let os = support::git_topology::command("uname")
+            .arg("-s")
+            .output()
+            .unwrap();
+        let arch = support::git_topology::command("uname")
+            .arg("-m")
+            .output()
+            .unwrap();
         let target = match (
             String::from_utf8_lossy(&os.stdout)
                 .trim()
@@ -560,13 +580,13 @@ impl FakeRelease {
             }
         }
         let archive = format!("exitbind-{target}.tar.gz");
-        let packed = Command::new("tar")
+        let packed = support::git_topology::command("tar")
             .current_dir(&release)
             .args(["-czf", &archive, &format!("exitbind-{target}")])
             .status()
             .unwrap();
         assert!(packed.success());
-        let checksum = Command::new("sh")
+        let checksum = support::git_topology::command("sh")
             .current_dir(&release)
             .args([
                 "-c",
@@ -622,7 +642,7 @@ esac
         let target = prefix.join("exitbind");
         support::place_executable(updater, &target);
         let output = support::run(
-            Command::new(&target)
+            support::git_topology::command(&target)
                 .arg("update")
                 .env("PATH", &self.path)
                 .env("HOME", self.root.join("home"))
@@ -648,7 +668,7 @@ esac
             fs::metadata(target).unwrap().len() > 0,
             "installed binary was truncated"
         );
-        let installed = support::run(Command::new(target).arg("version"));
+        let installed = support::run(support::git_topology::command(target).arg("version"));
         assert_eq!(
             String::from_utf8_lossy(&installed.stdout).trim(),
             self.version
@@ -671,7 +691,7 @@ fn real_installer_self_update_keeps_the_new_binary_and_one_aside_copy() {
     assert_eq!(asides.len(), 1, "{asides:?}");
     assert!(prefix.join(&asides[0]).join("exitbind").is_file());
     // A later install removes the earlier aside copy before creating its own.
-    let again = Command::new("sh")
+    let again = support::git_topology::command("sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
         .env("PATH", &release.path)
         .env("HOME", release.root.join("home"))
@@ -757,7 +777,7 @@ fn a_released_updater_installs_this_candidate_and_its_guidance_needs_one_repair(
         "the installed binary is not the candidate: {said}"
     );
     assert!(fs::metadata(&target).unwrap().len() > 0);
-    let installed = support::run(Command::new(&target).arg("version"));
+    let installed = support::run(support::git_topology::command(&target).arg("version"));
     assert!(installed.status.success());
     assert_eq!(
         String::from_utf8_lossy(&installed.stdout).trim(),
@@ -768,7 +788,7 @@ fn a_released_updater_installs_this_candidate_and_its_guidance_needs_one_repair(
     // reference that only this version ships.
     let bootstrap = home.join(".codex/skills/exitbind/SKILL.md");
     let status = support::run(
-        Command::new(&target)
+        support::git_topology::command(&target)
             .args(["host", "status", "--json"])
             .env("HOME", &home)
             .env("PATH", &release.path)
@@ -800,7 +820,7 @@ fn a_released_updater_installs_this_candidate_and_its_guidance_needs_one_repair(
 
     // The documented one-time repair, run with the binary that was installed.
     let repaired = support::run(
-        Command::new(&target)
+        support::git_topology::command(&target)
             .args(["host", "install", "--hosts", "codex"])
             .env("HOME", &home)
             .env("PATH", &release.path)
@@ -808,7 +828,7 @@ fn a_released_updater_installs_this_candidate_and_its_guidance_needs_one_repair(
     );
     assert!(repaired.status.success(), "{repaired:?}");
     let after = support::run(
-        Command::new(&target)
+        support::git_topology::command(&target)
             .args(["host", "status", "--json"])
             .env("HOME", &home)
             .env("PATH", &release.path)

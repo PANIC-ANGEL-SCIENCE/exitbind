@@ -4,12 +4,12 @@
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 mod support;
 
 fn run(root: &Path, argv: &[String], input: &[u8]) -> Output {
-    let mut child = Command::new(&argv[0])
+    let mut child = support::git_topology::command(&argv[0])
         .current_dir(root)
         .args(&argv[1..])
         .stdin(Stdio::piped())
@@ -47,7 +47,7 @@ fn fill(template: &Value, values: &[(&str, &str)]) -> Vec<String> {
 
 fn project(label: &str, requirements: Value, source: &str) -> (PathBuf, String) {
     let root = support::temp(label);
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()

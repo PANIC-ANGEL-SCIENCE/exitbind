@@ -7,7 +7,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 const REQUIREMENTS: [(&str, &str); 3] = [
@@ -27,7 +27,7 @@ type NativeStoreSnapshot = (bool, Vec<(String, Option<Vec<u8>>)>);
 impl Project {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let mut init = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         init.args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .arg("--skip-skills");
@@ -74,7 +74,7 @@ impl Project {
         self.call_with_config(args, input, &self.root.join("exitbind.json"))
     }
     fn call_with_config(&self, args: &[&str], input: Option<&str>, config: &Path) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -116,7 +116,7 @@ impl Project {
         let (executable, args) = argv
             .split_first()
             .expect("an emitted exact command has an executable");
-        let mut command = Command::new(executable);
+        let mut command = support::git_topology::command(executable);
         command
             .current_dir(&self.root)
             .args(args)
@@ -144,7 +144,7 @@ impl Project {
         config: &Path,
         selectors: &[(&str, &str)],
     ) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)
@@ -560,3 +560,5 @@ mod correction_and_journey;
 mod intake_and_identity;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
+#[path = "goal_requirements/successor_timing.rs"]
+mod successor_timing;

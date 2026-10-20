@@ -10,7 +10,6 @@ mod support;
 
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::{fs, io};
 
 const LEGACY: &str = "soulmate";
@@ -35,7 +34,7 @@ impl Fresh {
             Path::new(env!("CARGO_BIN_EXE_exitbind")),
             &bin.join("exitbind"),
         );
-        assert!(Command::new("git")
+        assert!(support::git_topology::command("git")
             .args(["init", "-q"])
             .arg(&project)
             .status()
@@ -58,7 +57,7 @@ impl Fresh {
             std::env::var("PATH").unwrap_or_default()
         );
         let output = support::run(
-            Command::new(self.bin.join("exitbind"))
+            support::git_topology::command(self.bin.join("exitbind"))
                 .args(arguments)
                 .current_dir(&self.project)
                 .env("HOME", &self.home)
@@ -190,7 +189,7 @@ fn a_historical_project_stays_readable_under_its_own_identity() {
     let before = fs::read_to_string(&frozen).unwrap();
 
     // The current binary reads a ledger written by the previous product.
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(manifest)
         .args([
             "run",

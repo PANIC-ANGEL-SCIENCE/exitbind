@@ -11,7 +11,7 @@ fn temp(label: &str) -> PathBuf {
 }
 
 fn invoke(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(arguments)
         .output()
         .unwrap()
@@ -171,7 +171,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     fs::create_dir(root.join(".codex")).unwrap();
     fs::write(root.join(".codex/hooks.json"), "{\"keep\":true}\n").unwrap();
 
-    let mut apply = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut apply = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     with_binary_path(&mut apply, &bin);
     let applied = apply
         .args([
@@ -197,7 +197,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     assert_eq!(settings["keep"], true);
     assert!(settings["hooks"]["SessionStart"].is_array());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -218,7 +218,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     assert!(text.contains("Profile selected/presented"));
     assert!(text.contains("does not prove a model read or followed"));
 
-    let mut remove = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut remove = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     with_binary_path(&mut remove, &bin);
     let removed = remove
         .args([

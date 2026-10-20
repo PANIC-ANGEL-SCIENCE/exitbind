@@ -3,7 +3,7 @@
 fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_control() {
     let legacy = |label: &str| {
         let root = support::temp(label);
-        let output = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+        let output = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -13,7 +13,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
     };
 
     let v1_root = legacy("transition-history-v1");
-    let v1 = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v1 = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v1_root)
         .args([
             "run",
@@ -29,7 +29,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v1.status.success(), "{}", text(&v1));
-    let v1_status = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v1_status = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v1_root)
         .args([
             "run",
@@ -42,7 +42,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v1_status.status.success(), "{}", text(&v1_status));
-    let v1_next = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v1_next = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v1_root)
         .args([
             "run",
@@ -59,7 +59,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         &serde_json::from_slice(&v1_next.stdout).unwrap(),
         "historical_run",
     );
-    let old_receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let old_receipt = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v1_root)
         .args([
             "receipt",
@@ -83,7 +83,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         "activations": [{"kind": "skill", "name": "soulmate", "evidence": "configured"}]
     });
     write_json(&v2_root.join("harness-manifest.json"), &manifest);
-    let planned = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let planned = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v2_root)
         .args([
             "plan",
@@ -100,7 +100,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(planned.status.success(), "{}", text(&planned));
-    let v2 = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v2 = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v2_root)
         .args([
             "run",
@@ -118,7 +118,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v2.status.success(), "{}", text(&v2));
-    let v2_status = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v2_status = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v2_root)
         .args([
             "run",
@@ -131,7 +131,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v2_status.status.success(), "{}", text(&v2_status));
-    let v2_next = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v2_next = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v2_root)
         .args([
             "run",
@@ -148,7 +148,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         &serde_json::from_slice(&v2_next.stdout).unwrap(),
         "historical_run",
     );
-    let v2_receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v2_receipt = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v2_root)
         .args([
             "receipt",
@@ -161,7 +161,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
     assert_exit_1(&v2_receipt);
 
     let v3_root = legacy("transition-history-v3");
-    let v3_start = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v3_start = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v3_root)
         .args([
             "run",
@@ -188,7 +188,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         format!("{}\n", serde_json::to_string(&v3_event).unwrap()),
     )
     .unwrap();
-    let v3_status = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v3_status = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v3_root)
         .args([
             "run",
@@ -201,7 +201,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v3_status.status.success(), "{}", text(&v3_status));
-    let v3_next = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v3_next = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v3_root)
         .args([
             "run",
@@ -218,7 +218,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         &serde_json::from_slice(&v3_next.stdout).unwrap(),
         "historical_run",
     );
-    let v3_receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v3_receipt = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v3_root)
         .args([
             "receipt",
@@ -231,7 +231,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
     assert_exit_1(&v3_receipt);
 
     let v4_root = legacy("transition-history-v4");
-    let v4 = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v4 = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v4_root)
         .args([
             "run",
@@ -249,7 +249,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v4.status.success(), "{}", text(&v4));
-    let v4_status = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v4_status = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v4_root)
         .args([
             "run",
@@ -262,7 +262,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         .output()
         .unwrap();
     assert!(v4_status.status.success(), "{}", text(&v4_status));
-    let v4_next = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v4_next = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v4_root)
         .args([
             "run",
@@ -279,7 +279,7 @@ fn historical_v1_to_v4_and_unchecked_v5_remain_non_applicable_with_checked_v5_co
         &serde_json::from_slice(&v4_next.stdout).unwrap(),
         "historical_run",
     );
-    let v4_receipt = Command::new(env!("CARGO_BIN_EXE_soulmate"))
+    let v4_receipt = super::support::git_topology::command(env!("CARGO_BIN_EXE_soulmate"))
         .current_dir(&v4_root)
         .args([
             "receipt",

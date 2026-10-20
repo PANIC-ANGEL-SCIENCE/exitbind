@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
@@ -595,7 +598,7 @@ fn checked_guard_covers_all_worker_stages_and_parallel_workers() {
         std::iter::once(binary_dir.to_owned()).chain(std::env::split_paths(&inherited_path)),
     )
     .unwrap();
-    let observed = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let observed = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .env("PATH", check_path)
         .args([

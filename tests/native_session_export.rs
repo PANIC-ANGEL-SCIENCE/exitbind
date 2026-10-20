@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 mod support;
 
 fn hook(payload: &str, env_file: &std::path::Path) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.arg("hook-run");
     run_hook(command, payload, env_file)
 }
@@ -42,7 +42,7 @@ fn private_session_export_respects_creation_and_host_owned_existing_files() {
     let fresh = root.join("fresh");
     // Set umask in the child only: changing the test process would race its
     // other tests. The new file must be private even with no masking.
-    let mut command = Command::new("sh");
+    let mut command = support::git_topology::command("sh");
     command
         .args(["-c", "umask 000; exec \"$@\"", "session-export-test"])
         .arg(env!("CARGO_BIN_EXE_exitbind"))

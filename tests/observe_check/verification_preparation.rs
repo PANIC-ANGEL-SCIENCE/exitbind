@@ -9,7 +9,7 @@ fn selected_preparation_suppresses_product_bytecode_and_owns_generic_scratch() {
     assert!(init.status.success(), "{}", text(&init));
     fs::write(root.join("cache_probe.py"), "VALUE = 'ready'\n").unwrap();
 
-    let ordinary = std::process::Command::new("python3")
+    let ordinary = super::support::git_topology::command("python3")
         .current_dir(&root)
         .env_remove("PYTHONDONTWRITEBYTECODE")
         .env_remove("PYTHONPYCACHEPREFIX")
@@ -621,7 +621,7 @@ fn selected_start_marker_is_refused_by_installed_older_reader_before_effects() {
     )
     .unwrap();
     let before = fs::read(root.join(&ledger)).unwrap();
-    let output = std::process::Command::new(old_reader)
+    let output = super::support::git_topology::command(old_reader)
         .current_dir(&root)
         .args([
             "run",

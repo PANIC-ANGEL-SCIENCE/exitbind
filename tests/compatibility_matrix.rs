@@ -2,7 +2,6 @@ use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MATRIX_PATH: &str = "compatibility/rename-matrix.json";

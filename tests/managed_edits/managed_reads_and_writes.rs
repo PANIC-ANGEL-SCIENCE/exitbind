@@ -104,12 +104,12 @@ fn focus_is_navigation_and_grants_and_config_cannot_be_inherited() {
     let other_tool = PathBuf::from(tool["tool"].as_str().unwrap());
     f.edit_ok("edit", "src/a.txt", b"first work");
     value(
-        Command::new(&other_tool)
+        super::support::git_topology::command(&other_tool)
             .args(["read", "src/b.txt"])
             .output()
             .unwrap(),
     );
-    let mut child = Command::new(&other_tool)
+    let mut child = super::support::git_topology::command(&other_tool)
         .args(["edit", "src/b.txt"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -242,7 +242,7 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
         .find(|arg| arg.as_str() == "<OPERATION>")
         .unwrap();
     *operation = "managed-handoff-regression".into();
-    let permit = Command::new(&permit_argv[0])
+    let permit = super::support::git_topology::command(&permit_argv[0])
         .args(&permit_argv[1..])
         .output()
         .unwrap();
@@ -344,7 +344,7 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
     // required for any next mutation request.
     let prepared = f.ok(&["work", "file", "prepare", &f.work, &f.assignment], b"");
     let tool = PathBuf::from(prepared["tool"].as_str().unwrap());
-    let output = Command::new(tool)
+    let output = super::support::git_topology::command(tool)
         .args(["read", "src/fresh.txt"])
         .current_dir(std::env::temp_dir())
         .env("PATH", "/missing-native-tools")

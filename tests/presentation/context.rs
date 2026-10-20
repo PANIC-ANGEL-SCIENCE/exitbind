@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
     thread,
 };
 
@@ -54,7 +54,7 @@ struct Project {
 impl Project {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -64,7 +64,7 @@ impl Project {
     }
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command.current_dir(&self.root).args(args);
         if args.first() == Some(&"work") && matches!(args.get(1), Some(&"next" | &"resume")) {
             command.arg("--full");

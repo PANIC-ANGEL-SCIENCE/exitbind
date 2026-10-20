@@ -6,7 +6,7 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Output, Stdio},
 };
 
 struct Fixture {
@@ -25,13 +25,13 @@ impl Fixture {
 
     fn with_preservation_command(label: &str, preservation_command: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
             .unwrap();
         assert!(init.status.success(), "{init:?}");
-        let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let started = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&root)
             .args([
                 "work",
@@ -59,13 +59,13 @@ impl Fixture {
     }
     fn without_preservation(label: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
             .unwrap();
         assert!(init.status.success(), "{init:?}");
-        let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let started = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&root)
             .args([
                 "work",
@@ -88,7 +88,7 @@ impl Fixture {
         Self { root, work }
     }
     fn call(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -96,7 +96,7 @@ impl Fixture {
             .unwrap()
     }
     fn call_with_stdin(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
             .args(["--config", "exitbind.json"])
@@ -113,7 +113,7 @@ impl Fixture {
     }
 
     fn record_work(&self, work: &str, value: Value) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(["work", "record", work, "--config", "exitbind.json"])
             .stdin(Stdio::piped())
@@ -154,7 +154,7 @@ impl Fixture {
         assert!(next.status.success(), "{next:?}");
         let next: Value = serde_json::from_slice(&next.stdout).unwrap();
         let assignment = next["next"]["assignment"].as_str().unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args([
                 "work",

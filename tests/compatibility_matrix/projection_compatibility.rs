@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../support/git_topology.rs"]
+mod git_topology;
 use super::*;
 
 #[test]
@@ -19,7 +22,7 @@ fn current_exitbind_paths_are_active_and_legacy_paths_are_historical() {
         .as_nanos();
     let root = std::env::temp_dir().join(format!("exitbind-matrix-current-{stamp}"));
     fs::create_dir_all(&root).unwrap();
-    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -28,7 +31,7 @@ fn current_exitbind_paths_are_active_and_legacy_paths_are_historical() {
     assert!(root.join("exitbind.json").is_file());
     assert!(root.join("exitbind/agents").is_dir());
     assert!(root.join(".exitbind/runs").is_dir());
-    let checked = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let checked = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["check", "--config"])
         .arg(root.join("exitbind.json"))
         .output()
@@ -45,14 +48,14 @@ fn producer_projection_keeps_current_writes_and_reads_frozen_historical_bytes() 
         .as_nanos();
     let root = std::env::temp_dir().join(format!("exitbind-producer-matrix-{stamp}"));
     fs::create_dir_all(&root).unwrap();
-    let initialized = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let initialized = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
     assert!(initialized.status.success(), "{initialized:?}");
     let ledger = ".exitbind/runs/producer.jsonl";
-    let started = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let started = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args([
             "run",
             "start",
@@ -89,7 +92,7 @@ fn producer_projection_keeps_current_writes_and_reads_frozen_historical_bytes() 
     let historical = ".exitbind/runs/historical-v3.jsonl";
     let fixture_bytes = fs::read(fixture).unwrap();
     fs::write(root.join(historical), &fixture_bytes).unwrap();
-    let inspected = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let inspected = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["run", "inspect", historical, "--config", "exitbind.json"])
         .current_dir(&root)
         .output()

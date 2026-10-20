@@ -1,10 +1,10 @@
 //! Parent host help exposes supported children and their direct help forms.
 #![cfg(unix)]
-
-use std::process::Command;
+#[allow(dead_code)]
+mod support;
 
 fn invoke(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(args)
         .output()
         .unwrap()

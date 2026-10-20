@@ -291,10 +291,22 @@ fn published_install_smoke_refuses_a_non_native_target_before_network_access() {
     fs::write(&expected, "#!/bin/sh\nexit 0\n").unwrap();
     make_executable(&expected);
 
-    let host_os =
-        String::from_utf8(Command::new("uname").arg("-s").output().unwrap().stdout).unwrap();
-    let host_arch =
-        String::from_utf8(Command::new("uname").arg("-m").output().unwrap().stdout).unwrap();
+    let host_os = String::from_utf8(
+        super::support::git_topology::command("uname")
+            .arg("-s")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let host_arch = String::from_utf8(
+        super::support::git_topology::command("uname")
+            .arg("-m")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
     let target =
         non_native_target_for_host(host_os.trim(), host_arch.trim()).unwrap_or_else(|| {
             panic!(
@@ -320,7 +332,7 @@ fn published_install_smoke_refuses_a_non_native_target_before_network_access() {
     }
     let path = std::env::join_paths(path_entries).unwrap();
 
-    let output = Command::new(
+    let output = super::support::git_topology::command(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/published-install-smoke.sh"),
     )
     .args([target, expected.to_str().unwrap()])

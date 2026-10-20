@@ -13,7 +13,7 @@ mod support;
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::{fs, io::Write};
 
 const PRESERVATION: &str = include_str!("../skills/exitbind/references/preservation.md");
@@ -58,7 +58,7 @@ impl Fixture {
     }
 
     fn call(&self, args: &[&str], input: Option<&[u8]>) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command
             .current_dir(&self.root)
             .args(args)

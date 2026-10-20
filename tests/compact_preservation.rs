@@ -6,7 +6,7 @@
 mod support;
 
 use serde_json::{json, Value};
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 fn route_descriptor(
     value: &Value,
@@ -110,7 +110,7 @@ fn reconstruct_inspect_command(
 #[test]
 fn long_preservation_command_is_bounded_and_recoverable() {
     let root = support::temp("compact-preservation");
-    let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
@@ -118,7 +118,7 @@ fn long_preservation_command_is_bounded_and_recoverable() {
     assert!(init.status.success(), "{init:?}");
     let config = root.join("exitbind.json");
     let command = format!("true # {}", "x".repeat(9_000));
-    let begin = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let begin = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args([
             "work",
@@ -140,7 +140,7 @@ fn long_preservation_command_is_bounded_and_recoverable() {
     assert!(begin.status.success(), "{begin:?}");
     let started: Value = serde_json::from_slice(&begin.stdout).unwrap();
     let work = started["work"].as_str().unwrap();
-    let next = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let next = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&root)
         .args(["work", "next", work, "--config"])
         .arg(&config)
@@ -173,7 +173,7 @@ fn long_preservation_command_is_bounded_and_recoverable() {
         &config,
         &root,
     );
-    let full = Command::new(&argv[0])
+    let full = support::git_topology::command(&argv[0])
         .current_dir(&root)
         .args(&argv[1..])
         .output()
@@ -191,14 +191,14 @@ fn long_preservation_command_is_bounded_and_recoverable() {
 fn recovery_uses_the_exact_long_executable_path() {
     let root = support::temp("long-executable-recovery");
     let original = env!("CARGO_BIN_EXE_exitbind");
-    let init = Command::new(original)
+    let init = support::git_topology::command(original)
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
     let config = root.join("exitbind.json");
-    let begin = Command::new(original)
+    let begin = support::git_topology::command(original)
         .current_dir(&root)
         .args([
             "work",
@@ -225,7 +225,7 @@ fn recovery_uses_the_exact_long_executable_path() {
     let candidate = nested.join("exitbind");
     support::place_executable(std::path::Path::new(original), &candidate);
     assert!(candidate.to_str().unwrap().len() > 512);
-    let mut next = Command::new(&candidate);
+    let mut next = support::git_topology::command(&candidate);
     next.current_dir(&root)
         .args(["work", "next", work, "--config"])
         .arg(&config);
@@ -242,7 +242,7 @@ fn recovery_uses_the_exact_long_executable_path() {
     let argv = support::reconstruct_work_command(&descriptor, &candidate, &config, &root);
     let candidate = fs::canonicalize(&candidate).unwrap();
     assert_eq!(Path::new(&argv[0]), candidate);
-    let mut expanded = Command::new(&argv[0]);
+    let mut expanded = support::git_topology::command(&argv[0]);
     expanded.current_dir(&root).args(&argv[1..]);
     let expanded = support::run(&mut expanded);
     assert!(expanded.status.success(), "{expanded:?}");
@@ -251,7 +251,7 @@ fn recovery_uses_the_exact_long_executable_path() {
         expanded["next"]["assignment"],
         compact["next"]["assignment"]
     );
-    let mut returned = Command::new(&candidate);
+    let mut returned = support::git_topology::command(&candidate);
     returned
         .current_dir(&root)
         .args([
@@ -278,7 +278,7 @@ fn recovery_uses_the_exact_long_executable_path() {
         event_sha,
     );
     assert_eq!(Path::new(&detail_argv[0]), candidate);
-    let mut detail = Command::new(&detail_argv[0]);
+    let mut detail = support::git_topology::command(&detail_argv[0]);
     detail.current_dir(&root).args(&detail_argv[1..]);
     let detail = support::run(&mut detail);
     assert!(detail.status.success(), "{detail:?}");

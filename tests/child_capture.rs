@@ -5,12 +5,12 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 mod support;
 
 fn run(root: &Path, args: &[&str], input: &[u8], config: bool) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_exitbind"));
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     command.current_dir(root).args(args);
     if config {
         command.args(["--config", "exitbind.json"]);
@@ -39,7 +39,7 @@ struct Fixture {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        let init = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+        let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)
             .output()
@@ -246,7 +246,7 @@ fn managed_claude_and_codex_hooks_include_subagent_stop() {
     let home = support::temp("capture-host-install");
     fs::create_dir_all(home.join(".claude")).unwrap();
     fs::create_dir_all(home.join(".codex")).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_exitbind"))
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["host", "install", "--json"])
         .env("HOME", &home)
         .env(

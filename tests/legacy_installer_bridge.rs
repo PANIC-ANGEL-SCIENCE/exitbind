@@ -1,11 +1,12 @@
 #![cfg(unix)]
+#[allow(dead_code)]
+mod support;
 
 use std::{
     collections::BTreeSet,
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -26,7 +27,7 @@ fn stable_installer_refuses_legacy_command_before_fetch() {
             .as_nanos()
     ));
     fs::create_dir_all(&root).unwrap();
-    let output = Command::new("sh")
+    let output = support::git_topology::command("sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
         .env("HOME", &root)
         .env("SOULMATE_VERSION", "v0.25.0")
@@ -72,7 +73,7 @@ impl Fixture {
         let payload_path = payload_dir.join(&stem);
         executable(&payload_path, &payload);
         let archive = server.join(format!("{stem}.tar.gz"));
-        assert!(Command::new("tar")
+        assert!(support::git_topology::command("tar")
             .args(["-czf"])
             .arg(&archive)
             .args(["-C"])
@@ -83,7 +84,7 @@ impl Fixture {
             .success());
         let checksum = server.join(format!("{stem}.tar.gz.sha256"));
         let digest = String::from_utf8(
-            Command::new("sha256sum")
+            support::git_topology::command("sha256sum")
                 .arg(&archive)
                 .output()
                 .unwrap()
@@ -144,7 +145,7 @@ esac
             "https://github.com/{fetch_value}/releases/download/{version}/{asset}-{TARGET}.tar.gz.sha256"
         );
         let source_value = repository["value"].as_str().unwrap();
-        let mut command = Command::new("sh");
+        let mut command = support::git_topology::command("sh");
         command
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
             .env("PATH", self.path())

@@ -75,7 +75,7 @@ fn owner_recovery_preserves_old_ledger_accounting_and_requires_new_evidence() {
                 "exitbind.json",
             ],
         ] {
-            let output = Command::new(&old_binary)
+            let output = super::support::git_topology::command(&old_binary)
                 .current_dir(&fixture.root)
                 .args(args)
                 .output()
@@ -612,7 +612,7 @@ fn frozen_old_reader_can_read_the_exact_blocked_work_detail_when_configured() {
     };
     let fixture = Fixture::new();
     let (old_bytes, _) = fixture.block_duplicate_permit();
-    let output = Command::new(old_binary)
+    let output = super::support::git_topology::command(old_binary)
         .current_dir(&fixture.root)
         .args([
             "work",

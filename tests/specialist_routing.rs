@@ -410,7 +410,7 @@ fn assert_complete_specialist_recipient(f: Fixture) {
         detail["recipientContext"]["specialistExperience"]["experience"][0]["revision"],
         "r1"
     );
-    let action_output = f.call(&["work", "detail", &work, "--view", "action"]);
+    let action_output = f.call(&["work", "detail", &work, "--view", "action", "--json"]);
     assert!(action_output.status.success(), "{action_output:?}");
     assert!(
         action_output.stdout.len() <= 8 * 1024,
@@ -436,12 +436,7 @@ fn assert_complete_specialist_recipient(f: Fixture) {
     let mut bytes = Vec::new();
     loop {
         let page = f.ok(&["work", "expand", &work, &reference]);
-        let hex = page["contentHex"].as_str().unwrap();
-        bytes.extend(
-            (0..hex.len())
-                .step_by(2)
-                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap()),
-        );
+        bytes.extend(support::page_bytes(&page));
         if page["next"].is_null() {
             break;
         }

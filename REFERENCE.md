@@ -1050,6 +1050,23 @@ The metadata is navigation, not evidence of complete instruction delivery or
 review. Its exact section routes
 retain mandatory context. After a permit/edit, follow the permit response's
 current action route; do not reuse a pre-permit return binding.
+Without `--json` the action view prints the same action as plain text. For an
+open assignment, `effectiveAction.delegation` reads `next action: delegate`
+and names the agent; it is a sign for the Lead, not a refusal. A section page
+whose bytes are UTF-8 carries them as `contentText` (`encoding: "utf-8"`);
+other pages keep `contentHex`, and `sectionSha256` verifies either form.
+Evidence artifact and check-log reads add `contentText` beside `contentHex`.
+Observation JSON (`work detail`, `work next`, `work resume`,
+`goal status`, `run status`, `session recovery show`) carries
+`producer: {version, commit, executableSha256, hostClass}`.
+
+An agent may declare `phaseGuidance: [{"id", "phase", "path"}]` with phases
+`implementation`, `test`, `repair`, `review` or `advice`. A relative path
+resolves against the configuration directory. An assignment entering a phase
+receives that agent's declared bodies whole in its guidance, with a count; a
+body over the recipient budget gets an exact read route,
+`exitbind project context guidance ITEM_ID --agent AGENT --expected-sha256 SHA`,
+that returns only that agent's own declared item. Declarations grant nothing.
 
 `exitbind memory form --scope project-lessons.v1 --json` reports the complete
 proposal shape, 2048-byte source and 512-byte UTF-8 fact bounds, and immutable
