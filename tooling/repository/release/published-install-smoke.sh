@@ -56,6 +56,19 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+# Run the installer this release published, after proving its checksum and that
+# it is byte-identical to the tag's checked-in install.sh.
+base="https://github.com/$repository/releases/download/$version"
+curl -fsSL "$base/install.sh" -o "$root/install.sh" || fail 'published install.sh asset is unavailable'
+curl -fsSL "$base/install.sh.sha256" -o "$root/install.sh.sha256" || fail 'published install.sh.sha256 asset is unavailable'
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$root" && sha256sum -c install.sh.sha256) >/dev/null || fail 'published install.sh does not match its checksum'
+else
+  (cd "$root" && shasum -a 256 -c install.sh.sha256) >/dev/null || fail 'published install.sh does not match its checksum'
+fi
+cmp -s "$installer" "$root/install.sh" || fail 'published install.sh differs from the tagged install.sh'
+installer="$root/install.sh"
+
 prefix="$root/prefix with spaces"
 global="$home/.local/bin/exitbind"
 global_state="$root/global-state"

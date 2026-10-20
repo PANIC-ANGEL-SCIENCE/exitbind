@@ -458,7 +458,7 @@ fn publisher_rejects_tampered_transferred_raw_bytes_before_upload_for_each_targe
 
 #[cfg(unix)]
 #[test]
-fn linux_prerelease_inventory_and_tamper_checks_require_exactly_three_assets() {
+fn linux_prerelease_inventory_and_tamper_checks_require_three_target_assets_and_the_installer() {
     let workflow = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
     )
@@ -477,6 +477,7 @@ fn linux_prerelease_inventory_and_tamper_checks_require_exactly_three_assets() {
             "[package]\nname = \"fixture\"\nversion = \"99.0.0-rc.1\"\n",
         )
         .unwrap();
+        set_fixture_installer_default(&fixture, "v99.0.0-rc.1");
         for target in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {
             for suffix in ["", ".tar.gz", ".tar.gz.sha256"] {
                 fs::remove_file(
@@ -510,7 +511,7 @@ fn linux_prerelease_inventory_and_tamper_checks_require_exactly_three_assets() {
         } else {
             expect_success(output);
             assert!(fixture.0.join("upload-marker").exists());
-            assert_eq!(fs::read_dir(fixture.0.join("dist")).unwrap().count(), 3);
+            assert_eq!(fs::read_dir(fixture.0.join("dist")).unwrap().count(), 5);
         }
         assert_eq!(
             fs::read_to_string(fixture.0.join("gh-calls"))

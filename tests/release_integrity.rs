@@ -1,5 +1,7 @@
 include!("release_integrity/context.rs");
 
+#[path = "release_integrity/installer_asset.rs"]
+mod installer_asset;
 #[path = "release_integrity/publication_workflows.rs"]
 mod publication_workflows;
 #[path = "release_integrity/release_policy.rs"]

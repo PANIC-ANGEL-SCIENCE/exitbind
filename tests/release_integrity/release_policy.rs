@@ -34,6 +34,7 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
             format!("{archive}.sha256"),
         ]
     })
+    .chain(["install.sh".to_owned(), "install.sh.sha256".to_owned()])
     .map(|name| {
         serde_json::json!({
             "name":name,
@@ -112,6 +113,15 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
     metadata["prerelease"] = serde_json::json!(false);
     let _ = metadata["assets"].as_array_mut().unwrap().pop();
     expect_failure(check(&metadata, stable, PRODUCER), "missing release asset");
+    metadata["assets"] = serde_json::json!(assets.clone());
+    metadata["assets"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|asset| asset["name"] != "install.sh");
+    expect_failure(
+        check(&metadata, stable, PRODUCER),
+        "missing published installer asset",
+    );
     metadata["assets"] = serde_json::json!(assets.clone());
     metadata["assets"]
         .as_array_mut()

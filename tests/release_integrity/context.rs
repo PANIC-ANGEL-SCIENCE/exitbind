@@ -409,6 +409,7 @@ esac
             fs::write(&transferred, b"unverified transferred raw binary\n").unwrap();
         }
     }
+    set_fixture_installer_default(&fixture, "v99.0.0");
     fs::create_dir_all(fixture.0.join("tooling/repository/release")).unwrap();
     fs::copy(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -427,6 +428,17 @@ esac
     )
     .unwrap();
     fixture
+}
+
+/// The publish job ships the tag's own install.sh; the fixture carries one whose
+/// default names `tag`, as the release commit's installer does.
+#[cfg(unix)]
+fn set_fixture_installer_default(fixture: &Fixture, tag: &str) {
+    fs::write(
+        fixture.0.join("install.sh"),
+        format!("#!/bin/sh\nversion=\"${{EXITBIND_VERSION:-{tag}}}\"\n"),
+    )
+    .unwrap();
 }
 
 #[cfg(unix)]
@@ -481,7 +493,8 @@ fn run_publisher_steps_for_targets(
         .env("RELEASE_TARGETS", targets)
         .env(
             "EXITBIND_EXPECTED_ASSET_COUNT",
-            (targets.split_whitespace().count() * 3).to_string(),
+            // Three files per target, plus install.sh and install.sh.sha256.
+            (targets.split_whitespace().count() * 3 + 2).to_string(),
         )
         .env("GITHUB_REF_NAME", tag)
         .env("GITHUB_REF", format!("refs/tags/{tag}"))

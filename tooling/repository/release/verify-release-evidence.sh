@@ -6,6 +6,7 @@ set -eu
 : "${GITHUB_REPOSITORY:?repository identity is required}"
 : "${GITHUB_REF:?source ref is required}"
 : "${GITHUB_SHA:?source digest is required}"
+: "${GITHUB_REF_NAME:?release tag is required}"
 expected=$(for target in $RELEASE_TARGETS; do
   printf '%s\n' "$target.bundle.json" "exitbind-$target" \
     "exitbind-$target.tar.gz" "exitbind-$target.tar.gz.sha256"
@@ -15,6 +16,12 @@ test "$actual" = "$expected"
 verified_payloads=$(mktemp -d)
 cleanup_verified_payloads() { rm -rf "$verified_payloads"; }
 trap cleanup_verified_payloads EXIT HUP INT TERM
+# The published installer is the tag's own install.sh; it must default to this tag.
+installer_default=$(sed -n 's/^version="${EXITBIND_VERSION:-\([^}]*\)}"$/\1/p' install.sh)
+test "$installer_default" = "$GITHUB_REF_NAME" || {
+  printf '%s\n' "install.sh defaults to '$installer_default', not the release tag '$GITHUB_REF_NAME'" >&2
+  exit 1
+}
 # Validate every transferred digest and archive inventory before invoking any
 # attestation verifier. This preserves the release gate's all-target phases.
 for target in $RELEASE_TARGETS; do
@@ -48,3 +55,7 @@ for target in $RELEASE_TARGETS; do
   cp "release-evidence/exitbind-$target.tar.gz" dist/
   cp "release-evidence/exitbind-$target.tar.gz.sha256" dist/
 done
+# Publish the installer with its checksum, like the binaries, so
+# releases/latest/download/install.sh always names the latest published release.
+cp install.sh dist/install.sh
+(cd dist && sha256sum install.sh > install.sh.sha256)

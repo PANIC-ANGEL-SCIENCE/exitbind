@@ -36,6 +36,7 @@ def expected_assets():
     for target in TARGETS:
         archive = f"exitbind-{target}.tar.gz"
         names.extend((f"exitbind-{target}", archive, f"{archive}.sha256"))
+    names.extend(("install.sh", "install.sh.sha256"))
     return set(names)
 
 
