@@ -1,8 +1,12 @@
 #!/bin/sh
 # Shared preparation for owned repository verification, never real agent work.
 
+# Host session identity a verification child must never inherit.
+host_session_variables='CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_CODE_SESSION_ID EXITBIND_NATIVE_SESSION_ID EXITBIND_SESSION_GOALS_DIR CLAUDE_ENV_FILE XDG_STATE_HOME'
+
 isolate_verification_context() {
-  unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_CODE_SESSION_ID EXITBIND_NATIVE_SESSION_ID EXITBIND_SESSION_GOALS_DIR CLAUDE_ENV_FILE XDG_STATE_HOME
+  # shellcheck disable=SC2086
+  unset $host_session_variables
   unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
 }
 

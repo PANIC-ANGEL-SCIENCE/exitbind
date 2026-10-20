@@ -82,6 +82,11 @@ for stage in $(ci_stage_order); do
     first-impression) run first-impression "$CARGO" test --locked --test first_impression ;;
     value-contract) run value-contract "$CARGO" test --locked --test value_contract ;;
     plugin-distribution) run plugin-distribution "$CARGO" test --locked --features repository-checks --test plugin_distribution ;;
+    affected-tests)
+      affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
+      test -n "$affected_base" || fail 'affected-tests needs PRE_RETURN_BASE or VALUE_PROOF_BASE'
+      run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"
+      ;;
     value-proof) run value-proof ./scripts/run-value-proof-suite.sh ;;
     drift-warning) run drift-warning ./scripts/demo-drift-warning.sh ;;
     native-handoff)

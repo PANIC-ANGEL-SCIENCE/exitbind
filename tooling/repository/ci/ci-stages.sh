@@ -20,6 +20,7 @@ ci_stage_order() {
     first-impression \
     value-contract \
     plugin-distribution \
+    affected-tests \
     value-proof \
     drift-warning \
     native-handoff \
@@ -39,7 +40,7 @@ ci_stage_selected() {
       test "$platform" = linux
       return
       ;;
-    architecture-budget|privacy-gate|release-integrity|docs-workflow|first-impression|value-contract|plugin-distribution)
+    architecture-budget|privacy-gate|release-integrity|docs-workflow|first-impression|value-contract|plugin-distribution|affected-tests)
       test "$mode" = pre-return
       return
       ;;

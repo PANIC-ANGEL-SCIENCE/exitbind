@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Optional
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_target_sources  # noqa: E402
 
 SELECTOR_RULE = (
     "<old target>::<nested modules>::<test> maps to "
@@ -57,6 +62,30 @@ def selector_contract_self_test() -> bool:
     }
     error = selector_contract_error(incorrect)
     return error is not None and "exclude Cargo target cargo_target" in error
+
+
+def target_declaration_self_test(root: Path, mapping: dict, manifest: dict) -> Optional[str]:
+    """Reject a gated target declared without its feature and an uncovered module."""
+    gated = [
+        name for name, (path, required) in manifest.items()
+        if not required and test_target_sources.gated_features(
+            root, test_target_sources.target_sources(root, path))
+    ]
+    if gated:
+        dropped = copy.deepcopy(mapping)
+        dropped["targets"][gated[0]]["features"] = []
+        if not any(gated[0] in error for error in test_target_sources.declaration_errors(root, dropped, manifest)):
+            return f"feature check accepted {gated[0]} without its gated feature"
+    module, files = next(iter(sorted(test_target_sources.top_level_modules(root).items())))
+    uncovered = copy.deepcopy(mapping)
+    for item in uncovered["targets"].values():
+        item["covers"] = [c for c in item["covers"] if not any(f.startswith(c) for f in files)] or ["src/main.rs"]
+    if module != "main" and not any(
+        f"covered by no product test target: {module}" in error
+        for error in test_target_sources.declaration_errors(root, uncovered, manifest)
+    ):
+        return f"coverage check accepted uncovered module {module}"
+    return None
 
 
 def main() -> int:
@@ -139,6 +168,13 @@ def main() -> int:
         name = re.search(r'^name\s*=\s*"([^"]+)"\s*$', section, re.MULTILINE)
         if name and name.group(1) in repository_targets and 'required-features = ["repository-checks"]' not in section:
             return fail(f"repository-only test target lacks its package feature gate: {name.group(1)}")
+    target_manifest = test_target_sources.manifest_targets(manifest)
+    declaration_errors = test_target_sources.declaration_errors(root, mapping, target_manifest)
+    if declaration_errors:
+        return fail("; ".join(declaration_errors))
+    self_test_error = target_declaration_self_test(root, mapping, target_manifest)
+    if self_test_error:
+        return fail(self_test_error)
     if "autotests = false" not in manifest:
         return fail("Cargo must disable implicit integration-test target discovery")
 

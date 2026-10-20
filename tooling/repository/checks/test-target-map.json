@@ -1938,5 +1938,212 @@
       "source": "tests/project_continuation.rs",
       "reason": "new explicit product integration target for DOT05 continuation coverage"
     }
-  ]
+  ],
+  "targetsRule": "features: every feature the target must run with (Cargo required-features plus features gating test code it compiles); covers: src path prefixes whose change selects the target for affected-test runs; every top-level src module needs a product (non repository-only) cover.",
+  "targets": {
+    "architecture_budget": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/"
+      ]
+    },
+    "away_native": {
+      "features": [],
+      "covers": [
+        "src/host/"
+      ]
+    },
+    "check_review_recovery": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/work/",
+        "src/run/",
+        "src/evidence/",
+        "src/kernel/",
+        "src/config/"
+      ]
+    },
+    "context_continuity": {
+      "features": [],
+      "covers": [
+        "src/context",
+        "src/host/session_recovery",
+        "src/host/native_session.rs",
+        "src/run/"
+      ]
+    },
+    "docs_workflow": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/cli/"
+      ]
+    },
+    "first_impression": {
+      "features": [],
+      "covers": [
+        "src/main.rs",
+        "src/cli/",
+        "src/config/",
+        "src/project/",
+        "src/presentation/"
+      ]
+    },
+    "goal_basis_requirements": {
+      "features": [],
+      "covers": [
+        "src/session_goal",
+        "src/kernel/basis.rs",
+        "src/work/"
+      ]
+    },
+    "goal_progress_presentation": {
+      "features": [],
+      "covers": [
+        "src/presentation/",
+        "src/session_goal",
+        "src/run/"
+      ]
+    },
+    "host_runtime": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/host/",
+        "src/context",
+        "src/kernel/",
+        "src/project/agent_context/",
+        "src/envelope.rs",
+        "src/producer.rs"
+      ]
+    },
+    "memory": {
+      "features": [],
+      "covers": [
+        "src/memory/",
+        "src/host/project_memory.rs",
+        "src/cli/memory_cli.rs"
+      ]
+    },
+    "plugin_distribution": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/distribution/"
+      ]
+    },
+    "privacy_gate": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/"
+      ]
+    },
+    "project_continuation": {
+      "features": [],
+      "covers": [
+        "src/project/",
+        "src/cli/project_continuation.rs"
+      ]
+    },
+    "project_installation": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/distribution/",
+        "src/compatibility/",
+        "src/config/",
+        "src/project/"
+      ]
+    },
+    "project_user_surface": {
+      "features": [],
+      "covers": [
+        "src/main.rs",
+        "src/cli/",
+        "src/config/",
+        "src/project/",
+        "src/presentation/"
+      ]
+    },
+    "release_integrity": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/distribution/",
+        "src/producer.rs",
+        "src/main.rs",
+        "src/cli/"
+      ]
+    },
+    "repository_contracts": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/"
+      ]
+    },
+    "run_evidence_lifecycle": {
+      "features": [],
+      "covers": [
+        "src/run/",
+        "src/evidence/",
+        "src/kernel/",
+        "src/envelope.rs",
+        "src/work/"
+      ]
+    },
+    "session_goal_direct": {
+      "features": [],
+      "covers": [
+        "src/session_goal"
+      ]
+    },
+    "value_contract": {
+      "features": [
+        "repository-checks"
+      ],
+      "covers": [
+        "src/value_benchmark",
+        "src/evidence/"
+      ]
+    },
+    "value_evidence": {
+      "features": [],
+      "covers": [
+        "src/value_benchmark",
+        "src/evidence/",
+        "src/run/"
+      ]
+    },
+    "work_admission_return": {
+      "features": [],
+      "covers": [
+        "src/work/",
+        "src/run/",
+        "src/kernel/",
+        "src/session_goal",
+        "src/project/agent_context/"
+      ]
+    },
+    "work_persistence_recovery": {
+      "features": [],
+      "covers": [
+        "src/work/",
+        "src/run/",
+        "src/kernel/"
+      ]
+    }
+  }
 }

@@ -148,6 +148,22 @@ Run a selected integration target with the shared verification preparation:
 ./scripts/test-focused.sh --test work_admission_return pre_return::selected_test_name -- --exact
 ```
 
+Run every target a change affects, each with the features it needs:
+
+```sh
+./tooling/repository/ci/test-affected.sh --base origin/main --list
+./tooling/repository/ci/test-affected.sh --base origin/main
+```
+
+Changed files are the diff against the base plus untracked files. A changed
+`src` file selects the targets whose `covers` prefixes in
+`tooling/repository/checks/test-target-map.json` match it, a changed test file
+selects its own target, and `Cargo.toml`, `Cargo.lock` or `tests/support`
+select all targets. Each target runs with its declared `features` and without
+host session variables, prints its exact command, and must run at least one
+test. Pre-return runs it as the `affected-tests` stage against
+`PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`.
+
 Focused selectors use the new target name followed by the module-qualified test path. Repository-only checks are included in focused and full developer CI with the `repository-checks` feature; distributed Cargo source tests omit that feature. Focused, pre-return and full checks share `scripts/verification-context.sh`.
 It removes ambient native Goal and Git selectors only for these owned checks,
 preserves the selected command arguments, uses a checkout-owned external cache,

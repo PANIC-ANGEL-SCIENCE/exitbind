@@ -48,6 +48,7 @@ docs-workflow
 first-impression
 value-contract
 plugin-distribution
+affected-tests
 release-refs"
 pre_return_macos="$pre_return_common
 architecture-budget
@@ -56,7 +57,8 @@ release-integrity
 docs-workflow
 first-impression
 value-contract
-plugin-distribution"
+plugin-distribution
+affected-tests"
 full_linux='history
 workflows
 workflow-regression
@@ -92,7 +94,7 @@ for stage in tests value-proof drift-warning native-handoff; do
     fail "full-only stage selected for pre-return: $stage"
   fi
 done
-for stage in architecture-budget privacy-gate release-integrity docs-workflow first-impression value-contract plugin-distribution; do
+for stage in architecture-budget privacy-gate release-integrity docs-workflow first-impression value-contract plugin-distribution affected-tests; do
   ci_stage_selected pre-return "$stage" linux || fail "pre-return invariant omitted: $stage"
   if ci_stage_selected full "$stage" linux; then
     fail "invariant target reruns in full mode: $stage"
@@ -111,6 +113,12 @@ done
 grep -F 'plugin-distribution) run plugin-distribution "$CARGO" test --locked --features repository-checks --test plugin_distribution ;;' \
   "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
   fail 'plugin distribution tests must execute behind the repository-checks feature'
+grep -F 'run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"' \
+  "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
+  fail 'pre-return must run the affected test targets with their declared features'
+grep -F 'affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}' \
+  "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
+  fail 'affected tests must default to PRE_RETURN_BASE, then VALUE_PROOF_BASE'
 grep -F 'run focused "$CARGO" test --locked --features repository-checks "$@"' \
   "$root/tooling/repository/ci/test-focused.sh" >/dev/null ||
   fail 'focused tests must include repository-only contract targets'
