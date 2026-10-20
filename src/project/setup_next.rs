@@ -31,6 +31,8 @@ pub(super) fn next_actions(
     ];
     let mut actions = Vec::new();
     let mut argv = Vec::new();
+    let mut task_card = None;
+    let card = super::setup_card::plan(facts)?;
     if !facts.apply {
         actions.push(shell_command(&check_argv));
         argv.push(check_argv);
@@ -61,20 +63,101 @@ pub(super) fn next_actions(
             "--review-policy".into(),
             review_policy.clone(),
             "--detail".into(),
-            "--config".into(),
-            config.into(),
         ]);
+        let mut start = Vec::new();
+        if let Some(card) = &card {
+            let (named, card_view) = card_start(card, check, config)?;
+            work_argv.splice(6..6, named.begin);
+            if named.project {
+                work_argv.push("--project-goal".into());
+            }
+            start = named.goal_commands;
+            task_card = Some(card_view);
+        }
+        work_argv.extend(["--config".into(), config.into()]);
+        for mut command in start {
+            command.insert(0, executable.to_owned());
+            command.extend(["--config".into(), config.into()]);
+            actions.push(shell_command(&command));
+            argv.push(command);
+        }
         actions.push(shell_command(&work_argv));
         argv.push(work_argv);
     }
-    Ok(json!({
+    let mut next = json!({
         "root": root,
         "workingDirectory": cwd,
         "argv": argv,
         "commands": actions,
         "hosts": hosts,
         "sessionReload": "not performed",
-    }))
+    });
+    if let Some(card) = task_card {
+        next["taskCard"] = card;
+    }
+    Ok(next)
+}
+
+struct NamedStart {
+    /// `goal cover` and `goal prepare`, without executable and config.
+    goal_commands: Vec<Vec<String>>,
+    /// Named options inserted into the printed `work begin`.
+    begin: Vec<String>,
+    project: bool,
+}
+
+/// The card's start path: cover the registered rows, prepare all of them with
+/// the checker the check command names, then begin the prepared named Work.
+fn card_start(
+    card: &super::setup_card::Card,
+    check: &str,
+    config: &str,
+) -> Result<(NamedStart, Value), String> {
+    let project = crate::session_goal::native::current()?.is_none();
+    let checker = if Path::new(config).is_file() {
+        crate::config::load(Some(config)).and_then(|loaded| {
+            crate::session_goal::requirements::resolve_checker(&loaded, None, check)
+        })
+    } else {
+        Err("the configuration does not exist yet; goal prepare derives the checker".into())
+    };
+    let ids = card.ids();
+    let mut named = vec![
+        "--goal-id".to_owned(),
+        card.goal_id.clone(),
+        "--requirement".into(),
+        ids,
+    ];
+    if let Ok(derived) = &checker {
+        named.extend(["--artifact".into(), derived.path.clone()]);
+    }
+    let mut cover = vec![
+        "goal".to_owned(),
+        "cover".into(),
+        "--goal-id".into(),
+        card.goal_id.clone(),
+    ];
+    let mut prepare = vec!["goal".to_owned(), "prepare".into()];
+    prepare.extend(named.iter().cloned());
+    prepare.extend(["--check-command".into(), check.into()]);
+    if project {
+        cover.push("--project".into());
+        prepare.push("--project".into());
+    }
+    let mut view = card.view();
+    view["scope"] = json!(if project { "project" } else { "session" });
+    view["checker"] = match checker {
+        Ok(derived) => json!({"path": derived.path, "via": derived.via}),
+        Err(error) => json!({"path": null, "reason": error}),
+    };
+    Ok((
+        NamedStart {
+            goal_commands: vec![cover, prepare],
+            begin: named,
+            project,
+        },
+        view,
+    ))
 }
 
 fn shell_command(argv: &[String]) -> String {

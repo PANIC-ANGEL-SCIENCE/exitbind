@@ -562,5 +562,7 @@ mod correction_and_journey;
 mod intake_and_identity;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
+#[path = "goal_requirements/setup_start_path.rs"]
+mod setup_start_path;
 #[path = "goal_requirements/successor_timing.rs"]
 mod successor_timing;

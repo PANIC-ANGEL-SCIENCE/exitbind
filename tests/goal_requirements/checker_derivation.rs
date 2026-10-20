@@ -5,16 +5,16 @@
 use super::*;
 
 /// A directory outside the fixture project, removed with the test.
-struct Outside(PathBuf);
+pub(super) struct Outside(PathBuf);
 
 impl Outside {
-    fn new(project: &Project) -> Self {
+    pub(super) fn new(project: &Project) -> Self {
         let name = project.root.file_name().unwrap().to_string_lossy();
         let path = project.root.with_file_name(format!("{name}-outside"));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
-    fn script(&self, name: &str, body: &str) -> String {
+    pub(super) fn script(&self, name: &str, body: &str) -> String {
         let path = self.0.join(name);
         fs::write(&path, body).unwrap();
         path.to_str().unwrap().to_owned()

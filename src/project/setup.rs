@@ -17,6 +17,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "setup_card.rs"]
+mod setup_card;
 #[path = "setup_next.rs"]
 mod setup_next;
 #[path = "setup_roles.rs"]
@@ -44,6 +46,8 @@ pub(crate) struct SetupFacts {
     verification_preparation: Option<String>,
     review_policy: Option<String>,
     goal: Option<String>,
+    task_card: Option<String>,
+    goal_id: Option<String>,
     hosts: Vec<String>,
     hosts_explicit: bool,
     project_id: Option<String>,
@@ -90,6 +94,8 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         "verification-preparation",
         "review-policy",
         "goal",
+        "task-card",
+        "goal-id",
         "hosts",
         "project-id",
         "control-root",
@@ -131,6 +137,8 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         verification_preparation: arguments.options.get("verification-preparation").cloned(),
         review_policy: arguments.options.get("review-policy").cloned(),
         goal: arguments.options.get("goal").cloned(),
+        task_card: arguments.options.get("task-card").cloned(),
+        goal_id: arguments.options.get("goal-id").cloned(),
         hosts: split_list(arguments.options.get("hosts"), "hosts")?.unwrap_or_default(),
         hosts_explicit: arguments.options.contains_key("hosts"),
         project_id: arguments.options.get("project-id").cloned(),
@@ -312,6 +320,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     }
     report["applyRequired"] = json!(false);
     report["next"] = setup_next::next_actions(&facts.root, &loaded.path, &hosts, facts)?;
+    setup_card::register(&loaded, facts, &mut report["next"])?;
     Ok(report)
 }
 
@@ -838,6 +847,8 @@ mod tests {
             verification_preparation: None,
             review_policy: Some("required".into()),
             goal: Some("test setup".into()),
+            task_card: None,
+            goal_id: None,
             hosts: Vec::new(),
             hosts_explicit: false,
             project_id: None,

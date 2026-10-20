@@ -145,6 +145,17 @@ approved values into the emitted `work begin` action. Setup and Work begin only
 record the policy; the diagnostic runs later at the Worker return boundary.
 Either limit requires `--pre-return-command`.
 
+When the round has a task card with a step table, add `--task-card PATH`
+(project-relative). Setup reads the first markdown table with a `Done when`
+column: each row becomes requirement `S<step>` with the exact `Done when` cell
+as its text. The Goal ID is the card's directory name, or `--goal-id ID`.
+Preview lists those rows; `--apply` incorporates the Goal and registers the
+rows (in the native session Goal when one is present, otherwise the project
+journal) and prints three commands in order: `goal cover`, `goal prepare` and
+the named `work begin`. Running them maps every row to the begun Work before
+the first edit. The checker is derived from `--check-command` as `goal
+prepare` does.
+
 To opt new checked runs into verification output preparation, add
 `--verification-preparation owned-outputs` to setup. Preview shows the exact
 policy and the private `.exitbind/verification/<run-id>/<operation-id>` path;

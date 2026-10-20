@@ -1918,8 +1918,8 @@
     },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "8ba91d69722a41c669f68ea97fef4f6cd456be8f88182e0138594807bc838687",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact); existing assertions unchanged."
+      "currentSha256": "48b7277244b569e8a3e9a65610c30c840184f9db337bef682413f9cb3a5e1e39",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged."
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
