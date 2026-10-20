@@ -125,6 +125,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "state",
     "task",
     "task-card",
+    "lessons-from",
     "target",
     "host",
     "agent-type",

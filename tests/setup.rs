@@ -1,5 +1,9 @@
 mod support;
 
+#[cfg(unix)]
+#[path = "setup/lesson_carry.rs"]
+mod lesson_carry;
+
 use std::{fs, path::Path, process::Output};
 
 fn fixture(label: &str) -> std::path::PathBuf {

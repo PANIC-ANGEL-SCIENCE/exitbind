@@ -73,6 +73,23 @@ duplicate is refused. History remains attributable instead of being overwritten.
 An expiry is mandatory. Changed/missing guarded files exclude the lesson until
 the Lead revalidates it; unsafe paths refuse. A foreign project identity refuses.
 
+## Carry lessons into a new project
+
+A new round set up as a new project starts without the previous round's
+lessons. `exitbind setup ... --lessons-from PREVIOUS_CONFIG --apply` reads the
+previous project and records each accepted, unexpired lesson in the new
+project through the same propose, review and promote lifecycle as its
+configured Lead. The new immutable source lives under `.exitbind/lessons/`,
+keeps `id`, `createdRevision`, expiry and the other lesson fields, is bound to
+the new `projectIdentity`, and names the previous project, item ID and source
+SHA-256 in its provenance. Guards follow the usual rule: a guarded file
+present with the recorded hash is kept, one absent here but unchanged in the
+previous project is copied byte-identical, and one that differs here excludes
+the lesson until the Lead revalidates it. Setup adds the `memory` section, the
+Lead's lesson rights and `memoryRead` for the recipients. Expired, revoked and
+excluded lessons are listed with their reason; without `--apply` the same
+lists are previewed and nothing changes. The previous project is not modified.
+
 ## Review compatible configuration evolution
 
 Save the original authorized configuration before changing recipient rights.

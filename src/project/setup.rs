@@ -19,12 +19,19 @@ use std::{
 
 #[path = "setup_card.rs"]
 mod setup_card;
+#[path = "setup_lessons.rs"]
+mod setup_lessons;
 #[path = "setup_next.rs"]
 mod setup_next;
+#[path = "setup_projection.rs"]
+mod setup_projection;
 #[path = "setup_roles.rs"]
 mod setup_roles;
 #[path = "setup_verification.rs"]
 mod setup_verification;
+use setup_projection::{
+    has_projection_conflict, preflight_new_projections, projection_needs_write,
+};
 use setup_roles::{single_command, split_list, RoleFacts};
 
 const ROLES: [&str; 3] = ["lead", "worker", "reviewer"];
@@ -48,6 +55,7 @@ pub(crate) struct SetupFacts {
     goal: Option<String>,
     task_card: Option<String>,
     goal_id: Option<String>,
+    lessons_from: Option<String>,
     hosts: Vec<String>,
     hosts_explicit: bool,
     project_id: Option<String>,
@@ -96,6 +104,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         "goal",
         "task-card",
         "goal-id",
+        "lessons-from",
         "hosts",
         "project-id",
         "control-root",
@@ -139,6 +148,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         goal: arguments.options.get("goal").cloned(),
         task_card: arguments.options.get("task-card").cloned(),
         goal_id: arguments.options.get("goal-id").cloned(),
+        lessons_from: arguments.options.get("lessons-from").cloned(),
         hosts: split_list(arguments.options.get("hosts"), "hosts")?.unwrap_or_default(),
         hosts_explicit: arguments.options.contains_key("hosts"),
         project_id: arguments.options.get("project-id").cloned(),
@@ -204,6 +214,9 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         &hosts,
         existing.as_ref(),
     )?;
+    if let Some(lessons) = setup_lessons::preview(facts.lessons_from.as_deref(), &root)? {
+        report["lessons"] = lessons;
+    }
     if !facts.apply {
         return Ok(report);
     }
@@ -283,10 +296,12 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         .ok_or("configuration path is not valid UTF-8")?;
     let loaded = config::load(Some(loaded_path))
         .map_err(|error| format!("setup partially applied: {error}"))?;
+    let (loaded, lessons_edited) =
+        setup_lessons::apply(loaded, facts.lessons_from.as_deref(), &mut report)?;
     let projection_changed = projection_before
         .as_ref()
         .is_some_and(projection_needs_write);
-    let config_changed = config_edited || initialized;
+    let config_changed = config_edited || initialized || lessons_edited;
     if !hosts.is_empty() {
         let projection = native_profiles::apply_for_hosts(&loaded, &host_refs(&hosts))
             .map_err(|error| format!("setup partially applied: {error}"))?;
@@ -624,98 +639,6 @@ fn validate_destination(
     ))
 }
 
-fn preflight_new_projections(root: &Path, hosts: &[String]) -> Result<(), String> {
-    for host in hosts {
-        let (directory, names): (&str, Vec<String>) = match host.as_str() {
-            "codex" => (
-                ".codex/agents",
-                vec!["lead.toml", "worker.toml", "reviewer.toml"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-            ),
-            "claude" => (
-                ".claude/agents",
-                vec!["lead.md", "worker.md", "reviewer.md"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-            ),
-            _ => continue,
-        };
-        let directory = root.join(directory);
-        ensure_projection_parent_safe(root, &directory)?;
-        for name in names {
-            let path = directory.join(name);
-            match fs::symlink_metadata(&path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.to_string()),
-                Ok(info) if info.file_type().is_symlink() || !info.is_file() => {
-                    return Err(format!(
-                        "native agent projection conflict at {}; existing path is unsafe",
-                        path.display()
-                    ));
-                }
-                Ok(_) => {
-                    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-                    let managed = if host == "codex" {
-                        bytes.starts_with(b"# exitbind-managed-agent:v1\n")
-                    } else {
-                        bytes
-                            .windows(b"<!-- exitbind-managed-agent:v1 -->".len())
-                            .any(|window| window == b"<!-- exitbind-managed-agent:v1 -->")
-                    };
-                    if !managed {
-                        return Err(format!(
-                            "native agent projection conflict at {}; external file is preserved and setup stopped before init",
-                            path.display()
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn ensure_projection_parent_safe(root: &Path, directory: &Path) -> Result<(), String> {
-    let relative = directory
-        .strip_prefix(root)
-        .map_err(|_| "native projection path escaped project root")?;
-    let mut current = root.to_path_buf();
-    for component in relative.components() {
-        current.push(component);
-        match fs::symlink_metadata(&current) {
-            Ok(info) if info.file_type().is_symlink() || !info.is_dir() => {
-                return Err(format!(
-                    "native agent projection parent is unsafe: {}",
-                    current.display()
-                ));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-    Ok(())
-}
-
-fn has_projection_conflict(value: &Value) -> bool {
-    value["projections"].as_array().is_some_and(|items| {
-        items
-            .iter()
-            .any(|item| matches!(item["state"].as_str(), Some("unsafe" | "external")))
-    })
-}
-
-fn projection_needs_write(value: &Value) -> bool {
-    value["projections"].as_array().is_some_and(|items| {
-        items
-            .iter()
-            .any(|item| !matches!(item["state"].as_str(), Some("current")))
-    })
-}
-
 fn guidance_diagnostics(control: &Path) -> Vec<Value> {
     project_skills::diagnose(control)
         .into_iter()
@@ -799,6 +722,7 @@ fn ordinary_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
 
 fn print_report(report: &Value) {
     println!("Setup {}.", report["status"].as_str().unwrap_or("unknown"));
+    setup_lessons::print(&report["lessons"]);
     setup_verification::print(&report["approvedFacts"]["verificationPreparation"]);
     if let Some(paths) = report["affectedPaths"].as_array() {
         println!("Affected paths:");
@@ -848,6 +772,7 @@ mod tests {
             review_policy: Some("required".into()),
             goal: Some("test setup".into()),
             task_card: None,
+            lessons_from: None,
             goal_id: None,
             hosts: Vec::new(),
             hosts_explicit: false,

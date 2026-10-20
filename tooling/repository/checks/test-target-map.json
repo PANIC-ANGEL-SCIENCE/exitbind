@@ -2228,8 +2228,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "6decf4d549ec78302eca0a6c837deb57a7de95e17baabf630eac2e96a9578746",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "62f7fedef12f37adf446e3fd5861f61d7b64adbf466b59c8f2be37e288f1b306",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over test module; no existing case or assertion changes."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",

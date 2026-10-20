@@ -156,6 +156,19 @@ the named `work begin`. Running them maps every row to the begun Work before
 the first edit. The checker is derived from `--check-command` as `goal
 prepare` does.
 
+To start a new round with the previous round's reviewed lessons, add
+`--lessons-from PREVIOUS_CONFIG`. Setup only reads the previous project. Each
+accepted, unexpired `project-lessons.v1` lesson becomes a new immutable source
+under `.exitbind/lessons/` in this project, bound to this project's identity,
+with the same id, fact, owner, recipients, revisions and expiry, and provenance
+naming the previous project, item and source SHA-256. A guarded file that is
+absent here but unchanged there is copied byte-identical; a guarded file that
+differs here excludes that lesson until the Lead revalidates it. `--apply`
+records each carried lesson through the Lead's propose, review and promote
+lifecycle and adds the `memory` section and lesson rights to the configuration.
+Expired, revoked and changed lessons are listed with their reason. Preview
+shows the same lists and changes nothing.
+
 To opt new checked runs into verification output preparation, add
 `--verification-preparation owned-outputs` to setup. Preview shows the exact
 policy and the private `.exitbind/verification/<run-id>/<operation-id>` path;
