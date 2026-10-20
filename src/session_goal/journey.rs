@@ -249,7 +249,7 @@ fn validate_member(value: &Member) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn state(record: &Value) -> Result<Option<JourneyState>, String> {
+pub(in crate::session_goal) fn state(record: &Value) -> Result<Option<JourneyState>, String> {
     let has_protocol = record.get("journeyMembershipProtocol").is_some();
     let has_members = record.get("journeyMembers").is_some();
     let has_integrations = record.get("journeyIntegrations").is_some();

@@ -156,7 +156,7 @@ fn compact_projection_keeps_product_owned_goal_and_result_readiness() {
             "exitState": "IN_PROGRESS",
             "goalProgress": {
                 "overall": "in_progress",
-                "systemText": "Goal: IN PROGRESS | Tasks: 1/2 complete | Result readiness: BLOCKED",
+                "systemText": "Goal: IN PROGRESS | Tasks: 1/2 complete | Result readiness: BLOCKED | Journey: 0 members, closes by one final --journey-integration Work; not-yet-current members: `goal status --json .journeyCompletion`",
                 "decomposition": {"available": true, "total": 2, "complete": 1, "omitted": 0},
                 "tasks": [
                     {"id": "A", "state": "complete", "performed": true, "current": true},

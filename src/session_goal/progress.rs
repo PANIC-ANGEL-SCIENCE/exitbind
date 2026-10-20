@@ -271,6 +271,13 @@ fn project_with_limit(
         &view["tasks"],
         &view["resultReadiness"],
     ));
+    if let Some(loaded) = loaded {
+        view["systemText"] = json!(super::goal_summary::append(
+            loaded,
+            record,
+            view["systemText"].as_str().unwrap_or_default().to_owned()
+        ));
+    }
     if let Some(journey) = journey {
         view["journeyCompletion"] = journey;
     }
@@ -358,6 +365,11 @@ fn named_progress(
         rows.len(),
         &view["tasks"],
         &view["resultReadiness"]
+    ));
+    view["systemText"] = json!(super::goal_summary::append(
+        loaded,
+        record,
+        view["systemText"].as_str().unwrap_or_default().to_owned()
     ));
     view
 }
