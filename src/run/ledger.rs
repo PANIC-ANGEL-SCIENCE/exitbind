@@ -13,6 +13,7 @@ use std::{
 };
 
 mod claim;
+mod memo;
 use self::claim::validate_claim;
 
 #[derive(Clone)]
@@ -84,24 +85,27 @@ pub(crate) fn load_at_unchecked(
     {
         return Err("ledger changed while reading".into());
     }
-    let mut events = Vec::new();
-    let mut lines: Vec<&str> = source.split('\n').collect();
-    if lines.last() == Some(&"") {
-        lines.pop();
-    }
-    for (index, line) in lines.iter().enumerate() {
-        if line.trim().is_empty() {
-            return Err(format!("invalid run ledger line {}: empty line", index + 1));
+    let events = memo::validated(&ledger.expected, &source, || {
+        let mut events = Vec::new();
+        let mut lines: Vec<&str> = source.split('\n').collect();
+        if lines.last() == Some(&"") {
+            lines.pop();
         }
-        let event: Value = serde_json::from_str(line)
-            .map_err(|error| format!("invalid run ledger line {}: {error}", index + 1))?;
-        run_state::validate_event(&event, events.last(), index + 1)?;
-        if event["action"] == "check_observation_recovered" {
-            super::check_recovery::validate_prefix(&event, &lines[..index].join("\n"), ledger)?;
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim().is_empty() {
+                return Err(format!("invalid run ledger line {}: empty line", index + 1));
+            }
+            let event: Value = serde_json::from_str(line)
+                .map_err(|error| format!("invalid run ledger line {}: {error}", index + 1))?;
+            run_state::validate_event(&event, events.last(), index + 1)?;
+            if event["action"] == "check_observation_recovered" {
+                super::check_recovery::validate_prefix(&event, &lines[..index].join("\n"), ledger)?;
+            }
+            events.push(event);
         }
-        events.push(event);
-    }
-    run_state::reduce(&events)?;
+        run_state::reduce(&events)?;
+        Ok(events)
+    })?;
     Ok((ledger.clone(), events, source))
 }
 

@@ -504,8 +504,17 @@ pub(crate) fn member_for_work_with_lineage(
         .into_iter()
         .chain(journey.integrations.into_iter().map(|entry| entry.member))
         .collect::<Vec<_>>();
+    // The requested Work's lineage is the same for every candidate member, so
+    // walk it once (and only when there is a candidate) instead of per member.
+    let mut requested_ancestors = None;
     for member in candidates {
-        if integration::descends_from_member(loaded, &member, work)? {
+        if requested_ancestors.is_none() {
+            requested_ancestors = Some(integration::ancestors(loaded, work)?);
+        }
+        let ancestors = requested_ancestors
+            .as_ref()
+            .expect("lineage computed above");
+        if integration::descends_from_member(loaded, &member, work, ancestors)? {
             return serde_json::to_value(member)
                 .map(Some)
                 .map_err(|error| error.to_string());

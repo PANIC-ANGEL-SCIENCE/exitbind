@@ -153,13 +153,16 @@ pub(in crate::session_goal::journey) fn accepted_endpoint(
 
 /// Resolve an in-flight or completed Work only through exact saved lineage.
 /// This is navigation evidence and never adds membership or acceptance.
+/// `requested_ancestors` is `ancestors(selected, requested_work)`; it does not
+/// depend on the member, so a caller checking several members computes it once.
 pub(in crate::session_goal::journey) fn descends_from_member(
     selected: &Loaded,
     member: &Member,
     requested_work: &str,
+    requested_ancestors: &BTreeSet<String>,
 ) -> Result<bool, String> {
     const MAX_SUCCESSORS: usize = 64;
-    if !ancestors(selected, requested_work)?.contains(&member.work) {
+    if !requested_ancestors.contains(&member.work) {
         return Ok(false);
     }
     let original = super::project_loaded(selected, member)?;
