@@ -9,6 +9,7 @@ pub(crate) mod check_replacement;
 #[cfg(test)]
 pub(crate) use begin::begin;
 pub(crate) use begin::{begin_with_pre_return, BasisOrigin, BeginOptions};
+pub(crate) mod action_text;
 pub(crate) mod closeout;
 pub(crate) mod compact;
 pub(crate) mod details;
@@ -34,6 +35,8 @@ mod return_result_impl;
 mod stale_check;
 pub(crate) mod start_delivery;
 mod submission_preflight;
+mod text_page;
+use text_page::hex;
 
 use self::packet::attach_continuation;
 use crate::{config::Loaded, evidence::hash, run};
@@ -413,6 +416,7 @@ fn expansion_response(reference: &Value, kind: &str, bytes: &[u8], metadata: Val
         "encoding": "hex",
         "bytes": bytes.len(),
         "contentHex": hex(bytes),
+        "contentText": text_page::text(bytes),
     });
     if let (Some(object), Some(extra)) = (response.as_object_mut(), metadata.as_object()) {
         object.extend(
@@ -464,15 +468,8 @@ fn bounded_log_value(artifact: &crate::run::artifact::VerifiedArtifact) -> Value
         "displayedBytes": displayed,
         "truncated": artifact.bytes > displayed as u64,
         "contentHex": hex(&artifact.preview[..displayed]),
+        "contentText": text_page::text(&artifact.preview[..displayed]),
     })
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut value = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        value.push_str(&format!("{byte:02x}"));
-    }
-    value
 }
 
 fn reference(work: &str) -> Value {

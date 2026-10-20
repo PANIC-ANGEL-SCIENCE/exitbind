@@ -362,7 +362,8 @@ fn verified(
             return Err(format!("{label} exceeds the existing verified artifact bound; complete evidence is unavailable"));
         }
         return Ok(json!({"sha256": read.sha256, "bytes": read.bytes,
-            "encoding": "hex", "contentHex": hex(&read.preview), "complete": true}));
+            "encoding": "hex", "contentHex": hex(&read.preview), "complete": true,
+            "contentText": super::text_page::text(&read.preview)}));
     }
     let mut value = json!({"sha256": read.sha256, "bytes": read.bytes,
         "verified": true, "complete": complete, "exact": complete, "readable": false});
@@ -549,13 +550,14 @@ pub(super) fn expand(
     }
     let end = bytes.len().min(start.saturating_add(page_bytes));
     let more = end < bytes.len();
-    let response = json!({"valid": true, "kind": "work_section", "reference": requested,
+    let mut response = json!({"valid": true, "kind": "work_section", "reference": requested,
         "work": work, "binding": expected_binding, "section": parts[1],
         "encoding": "hex", "sectionSha256": hash::bytes(&bytes), "totalBytes": bytes.len(),
         "offset": start, "bytes": end-start, "contentHex": hex(&bytes[start..end]),
         "complete": !more && page == 0, "pageComplete": true,
         "next": if more { route(loaded, work, &format!("{prefix}{expected_binding}:{}:{}",parts[1],page+1)) } else { Value::Null },
     });
+    super::text_page::prefer_text(&mut response, &bytes[start..end]);
     if serde_json::to_vec(&response)
         .map_err(|error| error.to_string())?
         .len()

@@ -126,6 +126,7 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         routes.remove("grouped");
     }
     let result = json!({"compact":true,"version":1,"kind":"work_action","work":work,"binding":binding,
+        "producer":crate::producer::observation(),
         "actionForms":forms.clone(),"recipient":next["current"]["recipient"],
         "decision": {"goal":next["current"]["goal"], "phase":next["current"]["phase"],
             "result":next["current"]["result"], "readiness":next["current"]["readiness"],

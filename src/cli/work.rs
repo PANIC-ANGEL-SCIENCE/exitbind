@@ -404,10 +404,10 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "next" => {
             args::assert_options("work next", a, &["config", "json", "full", "themed"])?;
             args::assert_positionals("work next", a, 2)?;
-            let result = crate::work::next(
+            let result = crate::producer::observed(crate::work::next(
                 l,
                 positional(a, 1, "work next requires WORK")?,
-            )?;
+            )?);
             let mut result = if a.flags.contains_key("full") {
                 result
             } else {
@@ -663,12 +663,16 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 Some("action") => crate::work::readable::action_view(l, work)?,
                 _ => return Err("work detail --view accepts action; omit it for complete detail".into()),
             };
-            print_work_json(&value)
+            if a.options.contains_key("view") && !a.flags.contains_key("json") {
+                print!("{}", crate::work::action_text::render(&crate::work::effective_action::attach(&value)));
+                return Ok(());
+            }
+            print_work_json(&crate::producer::observed(value))
         }
         "resume" => {
             args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;
-            let result = crate::work::resume(l, a.flags.contains_key("history"))?;
+            let result = crate::producer::observed(crate::work::resume(l, a.flags.contains_key("history"))?);
             let result = if a.flags.contains_key("full") || result["status"] != "resumed" {
                 result
             } else {

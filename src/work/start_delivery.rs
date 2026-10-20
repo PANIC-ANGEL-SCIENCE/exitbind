@@ -9,7 +9,7 @@ pub(crate) fn with_detail(loaded: &Loaded, started: Value) -> Value {
         .as_str()
         .expect("successful Work start carries its handle");
     deliver(loaded, work, started["focus"].clone(), || {
-        super::readable::current(loaded, work)
+        super::readable::current(loaded, work).map(crate::producer::observed)
     })
 }
 

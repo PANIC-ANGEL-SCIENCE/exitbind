@@ -43,7 +43,12 @@ pub(crate) fn project(response: &Value) -> Value {
         && (current["binding"].is_string() || response["binding"].is_string());
     let done = kind == Some("done") && !blocked;
     let binding = response.get("binding").unwrap_or(&current["binding"]);
-    json!({"version":1,"exists":exists,"kind":if exists { json!(kind) } else { Value::Null },
+    let delegation = if exists && kind == Some("spawn") {
+        delegation(response, current, forms)
+    } else {
+        Value::Null
+    };
+    json!({"version":1,"delegation":delegation,"exists":exists,"kind":if exists { json!(kind) } else { Value::Null },
         "state":if exists { "action" } else if done { "done" } else if blocked { "blocked" } else { "unknown" },
         "binding":binding,"readiness":current["readiness"],"effect":effect,
         "command":if exists { forms["mechanicalAction"]["command"].clone() } else { Value::Null },
@@ -56,6 +61,36 @@ pub(crate) fn project(response: &Value) -> Value {
         "warnings":response.get("warnings").or_else(|| response.pointer("/next/warnings")).cloned().unwrap_or(json!([])),
         "blocker":if blocked { response.get("reason").cloned().unwrap_or(json!({"code":"effect_unresolved"})) } else { Value::Null },
         "source":{"version":1,"owner":"work actionForms/current","location":if response["actionForms"].is_object() { "actionForms" } else if response.get("current").is_some() { "current.actionForm" } else { "next.current.actionForm" }}})
+}
+
+/// A sign for the Lead, never a refusal: an open assignment is done by the
+/// named delegated agent, not by the reader of this detail.
+fn delegation(response: &Value, current: &Value, forms: &Value) -> Value {
+    let recipient = [
+        &response["recipient"],
+        &current["recipient"],
+        &response["next"],
+    ]
+    .into_iter()
+    .find(|candidate| candidate["agent"].is_string())
+    .unwrap_or(&Value::Null);
+    let agent = recipient["agent"].as_str().or(forms["actor"].as_str());
+    let Some(agent) = agent else {
+        return Value::Null;
+    };
+    let role = recipient["role"].as_str().unwrap_or(agent);
+    let assignment = recipient["assignment"]
+        .as_str()
+        .or(forms["assignment"].as_str())
+        .or(current["assignment"].as_str());
+    let text = match assignment {
+        Some(assignment) => {
+            format!("next action: delegate to {role} agent '{agent}' (assignment {assignment})")
+        }
+        None => format!("next action: delegate to {role} agent '{agent}'"),
+    };
+    json!({"nextAction":"delegate","agent":agent,"role":role,"assignment":assignment,"text":text,
+        "meaning":"a sign for the Lead, not a refusal: the delegated agent performs this assignment with its beforeEditing and choices forms"})
 }
 
 pub(crate) fn attach(response: &Value) -> Value {
@@ -80,6 +115,17 @@ mod tests {
     fn effects_never_manufacture_advancement_and_done_keeps_warnings() {
         let active = json!({"current":{"binding":"current","action":"spawn","readiness":"IN_PROGRESS","actionForm":{"choices":[]}}});
         assert_eq!(project(&active)["exists"], true);
+        assert_eq!(project(&active)["delegation"], Value::Null);
+        let delegated = json!({"recipient":{"agent":"builder","role":"worker","assignment":"sma_1"},
+            "current":{"binding":"current","action":"spawn","actionForm":{"state":"pending_assignment"}}});
+        assert_eq!(project(&delegated)["delegation"]["nextAction"], "delegate");
+        assert_eq!(
+            project(&delegated)["delegation"]["text"],
+            "next action: delegate to worker agent 'builder' (assignment sma_1)"
+        );
+        let mut check = delegated.clone();
+        check["current"]["action"] = json!("check");
+        assert_eq!(project(&check)["delegation"], Value::Null);
         assert!(project(&active)["currentGrant"].is_null());
         assert!(project(&active)["nextRequest"].is_null());
         for effect in ["held", "unknown", "uncertain", "refused"] {

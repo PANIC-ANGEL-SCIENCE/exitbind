@@ -42,6 +42,33 @@ pub(crate) fn build_identity() -> Value {
     })
 }
 
+/// The producing build of one observation response. Observation JSON
+/// (`work detail`, `work next`, `work resume`, `session recovery show`,
+/// `goal status`, `run status`) carries it so a reader can copy exactly which
+/// build and host class answered. The digest is computed once per process.
+pub(crate) fn observation() -> Value {
+    static EXECUTABLE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let digest = EXECUTABLE.get_or_init(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| crate::evidence::hash::file(&path).ok())
+    });
+    json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "commit": option_env!("EXITBIND_BUILD_COMMIT").or(option_env!("SOULMATE_BUILD_COMMIT")),
+        "executableSha256": digest,
+        "hostClass": format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+    })
+}
+
+/// Attach `producer` to an observation object that does not already carry one.
+pub(crate) fn observed(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.entry("producer").or_insert_with(observation);
+    }
+    value
+}
+
 pub(crate) fn exitbind_surface() -> bool {
     crate::compatibility::is_exitbind()
 }

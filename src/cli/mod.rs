@@ -208,7 +208,7 @@ fn session_recovery_command(a: &Arguments) -> Result<(), String> {
     if a.positional.len() == 2 && a.positional[0] == "recovery" && a.positional[1] == "show" {
         let value = crate::host::session_recovery::show()?;
         if a.flags.contains_key("json") {
-            print_json(&value)
+            print_json(&crate::producer::observed(value))
         } else {
             println!(
                 "Native Goal: {} revision {}",

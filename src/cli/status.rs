@@ -16,15 +16,17 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     let record = crate::session_goal::read(&scope.root)?;
     if scope.is_session() && !scope.owner_matches {
         let value = crate::session_goal::context_summary(record.as_ref(), scope.owner.as_ref());
-        print_json(&value)?;
+        print_json(&crate::producer::observed(value))?;
         return Ok(());
     }
     if a.options.get("view").is_some() {
-        return print_json(&super::goal_completion::read_response(
-            l,
-            record.as_ref(),
-            a.flags.contains_key("project"),
-        )?);
+        return print_json(&crate::producer::observed(
+            super::goal_completion::read_response(
+                l,
+                record.as_ref(),
+                a.flags.contains_key("project"),
+            )?,
+        ));
     }
     let presentation = crate::session_goal::presentation_for_selected(
         l,
@@ -59,7 +61,7 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             }
         }
     }
-    print_json(&value)?;
+    print_json(&crate::producer::observed(value))?;
     if !a.flags.contains_key("json") {
         if let Some(card) = crate::presentation_events::session_goal_direct_card_for_human(
             &l.state_root,
@@ -84,7 +86,7 @@ pub(super) fn run_status(l: &config::Loaded, a: &Arguments) -> Result<(), String
         if let Some(terminal) = run::terminal_display(l, ledger) {
             value["terminal"] = json!(terminal);
         }
-        print_json(&value)?;
+        print_json(&crate::producer::observed(value))?;
         return Ok(());
     }
     let config = a.options.get("config").map(String::as_str).map_or_else(

@@ -135,6 +135,7 @@ pub(crate) fn project(
         copy_if_present(response, &mut result, key);
     }
     copy_if_present(response, &mut result, "work");
+    copy_if_present(response, &mut result, "producer");
     if let Some(current) = response.pointer("/next/current") {
         result.insert("current".into(), current.clone());
     }
@@ -345,7 +346,7 @@ pub(crate) fn project(
             "omitted": ["large response detail; use fullCommand"],
             "truncated": true,
         });
-        for key in ["works", "unreadable"] {
+        for key in ["works", "unreadable", "producer"] {
             copy_if_present(
                 response,
                 emergency.as_object_mut().expect("compact object"),
@@ -395,6 +396,16 @@ pub(crate) fn project(
         super::effective_action::insert(&mut minimal, response);
         retain_small_candidates(response, &mut minimal)?;
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
+            // The build identity is kept only while it still fits the bound.
+            let mut identified = minimal.clone();
+            copy_if_present(
+                response,
+                identified.as_object_mut().expect("compact object"),
+                "producer",
+            );
+            if serialized_len(&identified)? < MAX_RESPONSE_BYTES {
+                return Ok(identified);
+            }
             return Ok(minimal);
         }
         // A pathological path or identifier must never make the bounded
