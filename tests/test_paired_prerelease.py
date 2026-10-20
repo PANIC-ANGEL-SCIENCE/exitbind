@@ -282,6 +282,36 @@ class MetadataSafetyTests(unittest.TestCase):
                 self.assertEqual(before, after)
 
 
+    def test_candidate_inventory_cannot_make_trusted_preparation_rewrite_release_control(self):
+        # Review reproduction: a task branch adds a `sources` rule for the protected
+        # installer's retired Soulmate guard; trusted preparation must refuse it.
+        guard = 'if test "$surface" = soulmate && test "$version" = v0.25.0; then'
+        for kind in ['sources', 'documents']:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix='pair-inventory-') as directory:
+                root = Path(directory)/'source'
+                tracked = subprocess.run(['git', '-C', str(ROOT), 'ls-files', '-z'], capture_output=True, check=True)
+                for name in filter(None, tracked.stdout.decode().split('\0')):
+                    (root/name).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(ROOT/name, root/name)
+                inventory_path = root/'tooling/repository/release/doc-versions.json'
+                inventory = json.loads(inventory_path.read_text())
+                if kind == 'sources':
+                    inventory['sources']['install.sh'].append(
+                        {'current': guard.replace('v0.25.0', 'v{version}'), 'count': 1})
+                else:
+                    (root/'.github/notes.md').write_text('Released as v'+CURRENT+'.\n')
+                    inventory['documents']['.github/notes.md'] = [{'current': 'Released as v{version}.', 'count': 1}]
+                inventory_path.write_text(json.dumps(inventory, indent=2)+'\n')
+                run(root, 'init', '-q')
+                run(root, 'add', '--all')
+                before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file() and '.git' not in p.parts}
+                with self.assertRaises(ValueError):
+                    PREPARE.prepare(root, NEXT)
+                after = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file() and '.git' not in p.parts}
+                self.assertEqual(before, after)
+                self.assertIn(guard, (root/'install.sh').read_text())
+
+
 class RealGitObjectTests(unittest.TestCase):
     def test_privileged_repository_commands_refuse_before_merge_or_api_writes(self):
         class ReachedTrustedPreparation(Exception):

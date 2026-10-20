@@ -51,7 +51,12 @@ def prepare(root, version):
     # The version inventory rewrites the lock file, manifests, schemas, the
     # installer default, fixtures and every current documentation mention. It
     # validates the whole inventory before returning, so nothing is written yet.
-    changes.update(load_sibling('sync_doc_versions', 'sync-doc-versions.py').plan(root, version))
+    # Release-source rules come from this trusted checkout; candidate document
+    # rules may not touch the paths paired integration protects.
+    trusted_root = Path(__file__).resolve().parents[3]
+    protected = load_sibling('paired_prerelease', 'paired-prerelease.py').PROTECTED
+    changes.update(load_sibling('sync_doc_versions', 'sync-doc-versions.py').plan(
+        root, version, trusted_root=trusted_root, protected=protected))
     changelog = safe_file('CHANGELOG.md').read_text()
     if not changelog.startswith('# Changelog\n\n'):
         raise ValueError('Unexpected changelog heading')

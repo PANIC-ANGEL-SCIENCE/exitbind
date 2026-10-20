@@ -59,8 +59,19 @@ def tracked_documents(root):
     return sorted(name for name in listing.decode("utf-8").split("\0") if name)
 
 
-def load_inventory(root):
+def load_inventory(root, trusted_root=None):
+    """Read the inventory; with trusted_root, release-source rules come from there.
+
+    Prerelease preparation runs trusted code on candidate data. A candidate may
+    add document rules, but rules that rewrite non-document files (installer,
+    manifests, checks) must be the reviewed ones from trusted main.
+    """
     inventory = json.loads(safe_file(root, INVENTORY).read_text(encoding="utf-8"))
+    if trusted_root is not None:
+        trusted = json.loads(safe_file(Path(trusted_root), INVENTORY).read_text(encoding="utf-8"))
+        if inventory.get("sources", {}) != trusted.get("sources", {}):
+            raise ValueError("candidate inventory changes release-source rules; "
+                             "deliver that change through reviewed main first")
     archives, documents, sources = (inventory.get(key, {}) for key in ("archives", "documents", "sources"))
     for name, reason in archives.items():
         if not isinstance(reason, str) or not reason.strip():
@@ -128,13 +139,22 @@ def render_file(name, text, rules, version, scan):
     return "".join(lines)
 
 
-def plan(root, version=None):
-    """Validate the whole inventory and return {name: new text} for stale files."""
+def plan(root, version=None, trusted_root=None, protected=()):
+    """Validate the whole inventory and return {name: new text} for stale files.
+
+    trusted_root and protected are for trusted preparation of candidate data:
+    source rules must equal the trusted ones, and document rules may not rewrite
+    a path under a protected prefix.
+    """
     root = Path(root)
     version = version or package_version(root)
     if not re.fullmatch(SEMVER, version):
         raise ValueError(f"invalid package version: {version}")
-    archives, documents, sources = load_inventory(root)
+    archives, documents, sources = load_inventory(root, trusted_root)
+    guarded = sorted(name for name in documents
+                     if any(name == prefix or name.startswith(prefix) for prefix in protected))
+    if guarded:
+        raise ValueError(f"candidate inventory may not rewrite release-control documents: {guarded}")
     changes = {}
     for name, rules in sorted(sources.items()):
         text = safe_file(root, name).read_text(encoding="utf-8")
