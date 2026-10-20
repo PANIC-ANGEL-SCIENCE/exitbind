@@ -102,10 +102,10 @@ Keep private records private. Local records can reveal changes, but someone who 
 
 **INSPECT FIRST. INSTALL ONLY WITH AUTHORITY.**
 
-Before installation, review the command, destination and [release provenance](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/public-history.md). Obtain any required approval. The v0.31.17 release provides Linux x86_64 and macOS Apple Silicon or Intel binaries. The installer checks the archive checksum.
+Before installation, review the command, destination and [release provenance](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/public-history.md). Obtain any required approval. The latest release provides Linux x86_64 and macOS Apple Silicon or Intel binaries. The installer checks the archive checksum.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.17/install.sh | sh
+curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

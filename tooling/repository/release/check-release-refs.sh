@@ -30,13 +30,10 @@ test "$(printf '%s\n' "$plain" | wc -l | tr -d ' ')" = 1 ||
 printf '%s\n' "$plain" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?([+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' ||
   fail 'Cargo.toml package version is missing or invalid'
 current="v$plain"
-published=$(sed -n 's/^Published stable tag: //p' docs/release-version-policy.md)
 candidate=$(sed -n 's/^Source candidate tag: //p' docs/release-version-policy.md)
-printf '%s\n' "$published" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
-  fail 'release policy must declare one valid published stable tag'
-test "$(printf '%s\n' "$published" | wc -l | tr -d ' ')" = 1 ||
-  fail 'release policy has duplicate published stable tags'
 equal_version 'release policy source candidate' "$candidate" "$current"
+! grep -q '^Published stable tag:' docs/release-version-policy.md ||
+  fail 'release policy must not declare a separate, older published stable tag'
 
 lock_version=$(awk '
   /^\[\[package\]\]$/ { exitbind = 0 }
@@ -45,28 +42,37 @@ lock_version=$(awk '
 ' Cargo.lock)
 equal_version Cargo.lock "$lock_version" "$plain"
 
-# A literal command inside an HTML comment is not an installation instruction.
-# Keep the whole-line command requirement while tracking only HTML comments.
-awk -v command="curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/$published/install.sh | sh" '
-  {
-    if (!comment && $0 == command) found = 1
-    line = $0
-    while (length(line)) {
-      if (comment) {
-        end = index(line, "-->")
-        if (!end) break
-        line = substr(line, end + 3)
-        comment = 0
-      } else {
-        start = index(line, "<!--")
-        if (!start) break
-        line = substr(line, start + 4)
-        comment = 1
+# README and REFERENCE install through GitHub's latest stable release, which
+# moves only when a stable release is published, so the command never names an
+# unpublished version. Every visible `curl -fsSL` line must be that command and
+# at least one must be present. A literal command inside an HTML comment is not
+# an installation instruction, so only HTML comments are tracked.
+latest_install='curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh'
+for guide in README.md REFERENCE.md; do
+  awk -v command="$latest_install" '
+    {
+      if (!comment && index($0, "curl -fsSL ") == 1) {
+        if ($0 == command) found = 1
+        else other = 1
+      }
+      line = $0
+      while (length(line)) {
+        if (comment) {
+          end = index(line, "-->")
+          if (!end) break
+          line = substr(line, end + 3)
+          comment = 0
+        } else {
+          start = index(line, "<!--")
+          if (!start) break
+          line = substr(line, start + 4)
+          comment = 1
+        }
       }
     }
-  }
-  END { exit !found }
-' README.md || fail "README.md is missing the visible published $published install command"
+    END { exit !(found && !other) }
+  ' "$guide" || fail "$guide must install only with the visible latest-release command: $latest_install"
+done
 installer_version=$(sed -n 's/^version="${EXITBIND_VERSION:-\([^}]*\)}"$/\1/p' install.sh)
 equal_version install.sh "$installer_version" "$current"
 changelog_version=$(awk '
@@ -136,7 +142,7 @@ refs=$(find -L "$@" \
     fi
   done
 ' sh {} +) || fail 'release-source traversal or reference scan failed'
-printf '%s\n' "$refs" | awk -v current="$current" -v published="$published" '
+printf '%s\n' "$refs" | awk -v current="$current" '
   BEGIN { legacy = "v0.25.0" }
   {
     line = $0
@@ -170,10 +176,9 @@ printf '%s\n' "$refs" | awk -v current="$current" -v published="$published" '
       gsub(/"v0\.32\.10"/, "\"" current "\"", line)
       gsub(/"v0\.031\.10"/, "\"" current "\"", line)
     }
-    published_guide = ($0 ~ /^(README\.md|REFERENCE\.md|SECURITY\.md|docs\/(platform-support|value-proof-methodology|release-version-policy|goal-requirements|windows-wsl|first-checked-run|onboarding|upgrade-and-rollback)\.md):[0-9]+:/)
     while (match(line, /v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?([+][0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?/)) {
       version = substr(line, RSTART, RLENGTH)
-      if (version != current && !(published_guide && version == published)) {
+      if (version != current) {
         print "stale release reference (expected " current "): " $0
         failed = 1
         break

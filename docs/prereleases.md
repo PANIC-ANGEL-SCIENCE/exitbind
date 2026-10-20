@@ -38,12 +38,17 @@ The workflow needs no personal token, external service or persistent daemon.
 
 The release workflow classifies the checked-out package version. Prereleases
 check, package, attest, publish and exercise the installed Linux artifact only.
-Their three assets are the Linux executable, archive and checksum. They are
+Their assets are the Linux executable, archive and checksum, plus the
+candidate's own `install.sh` and its checksum. Candidate preparation rewrites
+every `current` version mention to the candidate version through the
+[version inventory](release-version-policy.md#version-mentions). They are
 marked prerelease and cannot replace the latest stable release. A failed release
 or unknown dispatch stays a distinct result requiring inspection.
 
 When stable promotion is selected, first prepare its final coherent version on
-the integration branch. Run the release workflow manually on that branch with
+the integration branch: change the `Cargo.toml` version, run
+`python3 tooling/repository/release/sync-doc-versions.py --apply` and add the
+CHANGELOG entry. Run the release workflow manually on that branch with
 mode `stable-readiness`. This checks Linux, native Apple Silicon and Intel Macs,
 and actual WSL; it creates no release and changes no main or tag. Its successful
 `stable-readiness-<commit>` artifact and exact workflow run identify the checked

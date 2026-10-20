@@ -85,8 +85,8 @@ source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.
 A mapping records an assignment; it becomes current support only after actual
 checks, the selected review and Lead acceptance. The pre-existing project-local
-named-requirement path is included in the stable v0.31.17 installation; the
-native conversation linkage described above is also included in the stable v0.31.17 installation.
+named-requirement path is included in the stable v0.31.19 installation; the
+native conversation linkage described above is also included in the stable v0.31.19 installation.
 
 ## Inspect and continue
 

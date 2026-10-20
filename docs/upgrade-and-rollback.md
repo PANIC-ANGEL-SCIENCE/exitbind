@@ -3,11 +3,11 @@
 ## Organization repository migration
 
 Existing Exitbind binaries use their original update feed. To switch to the
-organization distribution, run the versioned installer from the new repository
-after its release assets are available:
+organization distribution, run the installer published with the new
+repository's latest release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.17/install.sh | sh
+curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh
 ```
 
 This one-time installation gives subsequent `exitbind update` commands the new

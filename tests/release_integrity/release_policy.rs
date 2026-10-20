@@ -3,19 +3,20 @@ use super::*;
 #[test]
 fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
     const PRODUCER: &str = "0123456789abcdef0123456789abcdef01234567";
-    let stable = published_tag();
+    let stable = format!("v{VERSION}");
+    let stable = stable.as_str();
     let fixture = Fixture::new("installation-pointer");
     let project_root = fixture.0.join("project");
     fs::create_dir_all(project_root.join("docs")).unwrap();
     let set_source_pointer = |tag: &str| {
         fs::write(
             project_root.join("docs/release-version-policy.md"),
-            format!("Published stable tag: {tag}\nSource candidate tag: v99.98.97\n"),
+            format!("Source candidate tag: {tag}\n"),
         )
         .unwrap();
         fs::write(
             project_root.join("README.md"),
-            format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{tag}/install.sh | sh\n"),
+            format!("{LATEST_INSTALL}\n"),
         )
         .unwrap();
     };
@@ -82,6 +83,17 @@ fn installation_pointer_requires_exact_published_stable_and_complete_assets() {
     );
     set_source_pointer(candidate);
     assert!(check(&delivered, candidate, PRODUCER).status.success());
+    set_source_pointer(stable);
+    // A versioned command would lag or lead the release; only the latest form passes.
+    fs::write(
+        project_root.join("README.md"),
+        format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{stable}/install.sh | sh\n"),
+    )
+    .unwrap();
+    expect_failure(
+        check(&metadata, stable, PRODUCER),
+        "versioned README install command",
+    );
     set_source_pointer(stable);
 
     let mut other_tag = metadata.clone();
@@ -174,57 +186,60 @@ fn current_release_and_historical_changelog_pass_with_installer_overrides() {
 }
 
 #[test]
-fn published_stable_is_separate_from_candidate_source_references() {
-    let published = "v0.0.0";
-    let fixture = Fixture::candidate(published);
-    expect_success(gate("check-release-refs.sh", &fixture.0));
-    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
-    fixture.replace(
-        "README.md",
-        &command,
-        &command.replace(published, &format!("v{VERSION}")),
-    );
-    expect_failure(
-        gate("check-release-refs.sh", &fixture.0),
-        "unpublished candidate install replaces the stable command",
-    );
+fn release_policy_declares_no_separate_older_published_tag() {
+    expect_success(gate("check-release-refs.sh", &Fixture::release().0));
+    // The removed lag: a separate published tag beside the source version, even
+    // one that happens to equal it, is refused by the policy rule itself.
+    for published in ["v0.0.0".to_owned(), format!("v{VERSION}")] {
+        let fixture = Fixture::release();
+        fixture.replace(
+            "docs/release-version-policy.md",
+            "Source candidate tag: ",
+            &format!("Published stable tag: {published}\nSource candidate tag: "),
+        );
+        let output = gate("check-release-refs.sh", &fixture.0);
+        expect_failure(output.clone(), "separate published stable tag");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("separate, older published stable tag"),
+            "{output:?}"
+        );
+    }
+}
+
+#[test]
+fn current_guides_and_sources_cannot_name_an_older_release() {
+    let current = format!("v{VERSION}");
+    for guide in ["REFERENCE.md", "SECURITY.md", "docs/goal-requirements.md"] {
+        let fixture = Fixture::release();
+        fixture.replace(guide, &current, "v0.0.0");
+        expect_failure(gate("check-release-refs.sh", &fixture.0), guide);
+    }
     for name in [
         "schema/candidate.json",
         "src/candidate.rs",
         "docs/unlisted.md",
     ] {
-        let fixture = Fixture::candidate(published);
-        expect_success(gate("check-release-refs.sh", &fixture.0));
-        fs::write(fixture.0.join(name), format!("release {published}\n")).unwrap();
+        let fixture = Fixture::release();
+        fs::write(fixture.0.join(name), "release v0.0.0\n").unwrap();
         expect_failure(gate("check-release-refs.sh", &fixture.0), name);
     }
 }
 
 #[test]
-fn equal_published_and_candidate_versions_keep_candidate_declaration() {
-    let candidate = format!("v{VERSION}");
-    let fixture = Fixture::candidate_with_stable(&candidate, "v0.0.0");
-    let policy = fs::read_to_string(fixture.0.join("docs/release-version-policy.md")).unwrap();
-    assert!(policy.contains("Published stable tag: v0.0.0"));
-    assert!(policy.contains(&format!("Source candidate tag: {candidate}")));
-    expect_success(gate("check-release-refs.sh", &fixture.0));
-}
-
-#[test]
 fn release_policy_must_bind_the_candidate_and_one_valid_stable_tag() {
     let candidate = format!("Source candidate tag: v{VERSION}");
-    let published = format!("Published stable tag: {}", published_tag());
     for (marker, replacement) in [
         (
             candidate.as_str(),
             "Source candidate tag: v99.98.97".to_owned(),
         ),
         (
-            published.as_str(),
-            "Published stable tag: v0.31.01".to_owned(),
+            candidate.as_str(),
+            "Source candidate tag: v0.31.01".to_owned(),
         ),
-        (published.as_str(), format!("{published}\n{published}")),
-        (published.as_str(), String::new()),
+        (candidate.as_str(), format!("{candidate}\n{candidate}")),
+        (candidate.as_str(), String::new()),
     ] {
         let fixture = Fixture::release();
         fixture.replace("docs/release-version-policy.md", marker, &replacement);
@@ -321,7 +336,7 @@ fn closed_maintenance_packet_preserves_only_its_historical_release() {
 #[test]
 fn stale_security_release_references_are_rejected() {
     let fixture = Fixture::release();
-    fixture.replace("SECURITY.md", published_tag(), "v0.10.0");
+    fixture.replace("SECURITY.md", &format!("v{VERSION}"), "v0.10.0");
     expect_failure(
         gate("check-release-refs.sh", &fixture.0),
         "stale current security contract",
@@ -330,24 +345,35 @@ fn stale_security_release_references_are_rejected() {
 
 #[test]
 fn stale_and_malformed_readme_install_commands_are_rejected() {
-    let published = published_tag();
-    let current = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
-    for replacement in [
-        current.replace(published, "v0.10.0"),
-        current.replace("install.sh", "install.sh.invalid"),
-        format!("# {current}"),
-        String::new(),
-    ] {
+    let versioned = |tag: &str| {
+        format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{tag}/install.sh | sh")
+    };
+    for guide in ["README.md", "REFERENCE.md"] {
+        for replacement in [
+            versioned(&format!("v{VERSION}")),
+            versioned("v0.10.0"),
+            LATEST_INSTALL.replace("install.sh", "install.sh.invalid"),
+            format!("# {LATEST_INSTALL}"),
+            String::new(),
+        ] {
+            let fixture = Fixture::release();
+            fixture.replace_all(guide, LATEST_INSTALL, &replacement);
+            expect_failure(gate("check-release-refs.sh", &fixture.0), &replacement);
+        }
+        // A second, versioned command beside the latest one is still rejected.
         let fixture = Fixture::release();
-        fixture.replace("README.md", &current, &replacement);
-        expect_failure(gate("check-release-refs.sh", &fixture.0), &replacement);
+        fixture.replace(
+            guide,
+            LATEST_INSTALL,
+            &format!("{LATEST_INSTALL}\n{}", versioned(&format!("v{VERSION}"))),
+        );
+        expect_failure(gate("check-release-refs.sh", &fixture.0), guide);
     }
 }
 
 #[test]
 fn html_comments_cannot_hide_the_readme_install_instruction() {
-    let published = published_tag();
-    let command = format!("curl -fsSL https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/{published}/install.sh | sh");
+    let command = LATEST_INSTALL;
     let block = format!("```sh\n{command}\nexport PATH=\"$HOME/.local/bin:$PATH\"\n```");
     for hidden in [
         format!("<!--\n{block}\n-->"),
@@ -355,7 +381,7 @@ fn html_comments_cannot_hide_the_readme_install_instruction() {
         format!("Installation: <!-- hidden\n{block}\n-->"),
         format!("<!-- closed --> <!-- hidden\n{block}\n-->"),
         format!("<!--\n{block}"),
-        block.replace(&command, &format!("<!-- {command} -->")),
+        block.replace(command, &format!("<!-- {command} -->")),
     ] {
         let fixture = Fixture::release();
         fixture.replace("README.md", &block, &hidden);

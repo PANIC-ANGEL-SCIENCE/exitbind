@@ -32,20 +32,10 @@ const RELEASE_FILES: &[&str] = &[
     "tooling/repository/release/check-installation-pointer.py",
 ];
 const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
-const PUBLISHED_GUIDES: &[&str] = &[
-    "README.md",
-    "REFERENCE.md",
-    "SECURITY.md",
-    "docs/goal-requirements.md",
-    "docs/release-version-policy.md",
-];
-
-fn published_tag() -> &'static str {
-    include_str!("../../docs/release-version-policy.md")
-        .lines()
-        .find_map(|line| line.strip_prefix("Published stable tag: "))
-        .unwrap()
-}
+/// The only install command README and REFERENCE may show: GitHub's latest
+/// stable release, which never names an unpublished version.
+const LATEST_INSTALL: &str =
+    "curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh";
 
 struct Fixture(PathBuf);
 
@@ -65,44 +55,6 @@ impl Fixture {
             fs::create_dir_all(fixture.0.join(name)).unwrap();
         }
         fixture
-    }
-
-    fn candidate(published: &str) -> Self {
-        Self::candidate_with_stable(published_tag(), published)
-    }
-
-    fn candidate_with_stable(stable: &str, published: &str) -> Self {
-        let fixture = Self::release();
-        fixture.replace_published_tag(published_tag(), stable);
-        fixture.replace_published_tag(stable, published);
-        fixture
-    }
-
-    fn replace_published_tag(&self, old: &str, new: &str) {
-        for guide in PUBLISHED_GUIDES {
-            if *guide == "docs/release-version-policy.md" {
-                let path = self.0.join(guide);
-                let text = fs::read_to_string(&path).unwrap();
-                let mut replaced = false;
-                let text = text
-                    .split_inclusive('\n')
-                    .map(|line| {
-                        if line.starts_with("Source candidate tag: ") {
-                            line.to_owned()
-                        } else if line.contains(old) {
-                            replaced = true;
-                            line.replace(old, new)
-                        } else {
-                            line.to_owned()
-                        }
-                    })
-                    .collect::<String>();
-                assert!(replaced, "fixture did not contain {old} in {guide}");
-                fs::write(path, text).unwrap();
-            } else {
-                self.replace_all(guide, old, new);
-            }
-        }
     }
 
     fn replace(&self, file: &str, old: &str, new: &str) {

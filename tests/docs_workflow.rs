@@ -195,22 +195,22 @@ fn checked_result_docs_keep_v3_v4_and_current_stable_boundaries_consistent() {
     let methodology = read("docs/value-proof-methodology.md");
     let glossary = read("docs/glossary.md");
     let policy = read("docs/release-version-policy.md");
-    let published = policy
-        .lines()
-        .find_map(|line| line.strip_prefix("Published stable tag: "))
-        .unwrap();
-    assert!(policy.contains(&format!(
-        "Source candidate tag: v{}",
-        env!("CARGO_PKG_VERSION")
-    )));
+    // Current-version mentions follow the package version (sync-doc-versions.py).
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let published = current.as_str();
+    assert!(policy.contains(&format!("Source candidate tag: {current}")));
+    assert!(!policy.contains("Published stable tag:"));
     let cli = format!(
         "{}{}{}",
         read("src/cli/mod.rs"),
         read("src/cli/run_cli.rs"),
         read("src/cli/help.rs")
     );
-    for document in [&readme, &reference, &security] {
+    // README installs through the latest release and names no version.
+    for document in [&reference, &security] {
         assert!(document.contains(published));
+    }
+    for document in [&readme, &reference, &security] {
         assert!(!document.contains("unreleased v5"));
     }
     let legacy = read("docs/legacy-compatibility.md");

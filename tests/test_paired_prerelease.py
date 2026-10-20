@@ -468,6 +468,11 @@ class RealGitObjectTests(unittest.TestCase):
             manifest = run(bare, 'show', candidate+':Cargo.toml').decode()
             self.assertIn('version = "'+NEXT+'"', manifest)
             self.assertEqual(run(bare, 'show', candidate+':README.md'), (trusted/'README.md').read_bytes())
+            # The trusted version inventory moved every current mention to the candidate.
+            policy = run(bare, 'show', candidate+':docs/release-version-policy.md').decode()
+            self.assertIn('Source candidate tag: v'+NEXT+'\n', policy)
+            self.assertIn('`v'+NEXT+'` includes', run(bare, 'show', candidate+':REFERENCE.md').decode())
+            self.assertIn('version="${EXITBIND_VERSION:-v'+NEXT+'}"', run(bare, 'show', candidate+':install.sh').decode())
 
 
 if __name__ == '__main__':

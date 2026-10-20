@@ -3,14 +3,18 @@
 import argparse
 import importlib.util
 from pathlib import Path
-import re
 
 
-def load_channel():
-    spec = importlib.util.spec_from_file_location('release_channel', Path(__file__).with_name('release-channel.py'))
+def load_sibling(name, file_name):
+    # Siblings come from this (trusted) tooling directory, never from the candidate.
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(file_name))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_channel():
+    return load_sibling('release_channel', 'release-channel.py')
 
 
 def prepare(root, version):
@@ -44,39 +48,16 @@ def prepare(root, version):
         changes[name] = text.replace(before, after)
 
     change('Cargo.toml', 'version = "'+current+'"', 'version = "'+version+'"', 1)
-    text = safe_file('Cargo.lock').read_text()
-    pattern = r'(\[\[package\]\]\nname = "exitbind"\nversion = ")'+re.escape(current)+'"'
-    text, count = re.subn(pattern, lambda m: m[1]+version+'"', text)
-    if count != 1:
-        raise ValueError('Unexpected package lock metadata')
-    changes['Cargo.lock'] = text
-    for name in ['plugin.json', 'plugins/exitbind/plugin.json', 'plugins/exitbind/.codex-plugin/plugin.json',
-                 'plugins/exitbind/.claude-plugin/plugin.json']:
-        change(name, '"version": "'+current+'"', '"version": "'+version+'"', 1)
-    change('examples/agents.toml', 'ref = "v'+current+'"', 'ref = "v'+version+'"', 1)
-    for name in ['schema/exitbind.schema.json', 'schema/exitbind-run-boundary.schema.json',
-                 'schema/exitbind-harness-manifest.schema.json']:
-        change(name, '/v'+current+'/', '/v'+version+'/')
-    change('install.sh', '${EXITBIND_VERSION:-v'+current+'}', '${EXITBIND_VERSION:-v'+version+'}', 1)
-    change('tooling/repository/release/check-plugin-distribution.py', 'VERSION = "'+current+'"', 'VERSION = "'+version+'"', 1)
-    change('tooling/repository/ci/ci-wsl.sh', 'test "$(exitbind version)" = "'+current+'"',
-           'test "$(exitbind version)" = "'+version+'"', 1)
-    # Keep the existing current-version ordering fixture coherent with its scanner.
-    change('src/distribution/update/version_policy_tests.rs', '"v'+current+'"', '"v'+version+'"')
-    policy = safe_file('docs/release-version-policy.md').read_text()
-    declaration = 'Source candidate tag: v'+current
-    if policy.count(declaration) != 1:
-        raise ValueError('Unexpected candidate declaration')
-    policy = policy.replace(declaration, 'Source candidate tag: v'+version, 1)
-    start = policy.index('\n\n', policy.index('Source candidate tag:'))
-    end = policy.index('README install links', start)
-    policy = policy[:start]+'\n\nThe source candidate is '+version+'; published stable installation links remain pinned.\n'+policy[end:]
-    changes['docs/release-version-policy.md'] = policy
+    # The version inventory rewrites the lock file, manifests, schemas, the
+    # installer default, fixtures and every current documentation mention. It
+    # validates the whole inventory before returning, so nothing is written yet.
+    changes.update(load_sibling('sync_doc_versions', 'sync-doc-versions.py').plan(root, version))
     changelog = safe_file('CHANGELOG.md').read_text()
     if not changelog.startswith('# Changelog\n\n'):
         raise ValueError('Unexpected changelog heading')
     changes['CHANGELOG.md'] = '# Changelog\n\n## '+version+'\n\nPaired prerelease candidate; Linux validation and assets only.\n\n'+changelog[len('# Changelog\n\n'):]
-    # All shapes are checked before the first write; published pointers/history stay intact.
+    # All shapes are checked before the first write; the version-free install
+    # command and the release history stay intact.
     for name, text in changes.items():
         (root/name).write_text(text)
     return sorted(changes)

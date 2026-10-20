@@ -1,0 +1,407 @@
+{
+  "about": "Every version mention in tracked Markdown, and every version the release commit used to edit by hand. A current rule is a whole line whose {version} equals the Cargo package version; a pinned line keeps its version for the stated reason. sync-doc-versions.py --apply rewrites current lines; --check fails on stale or unlisted mentions.",
+  "archives": {
+    "CHANGELOG.md": "Release history: each entry names the version it describes; the release commit adds the new entry by hand."
+  },
+  "documents": {
+    "CONTRIBUTING.md": [
+      {
+        "pinned": "pinned actionlint 1.7.12 from a task-local archive cache, with ambient shell/Python",
+        "reason": "Version of another tool or host that was observed or required; unrelated to the Exitbind version."
+      }
+    ],
+    "REFERENCE.md": [
+      {
+        "current": "Install the published `v{version}` release as a single Rust binary. Node.js,",
+        "count": 1
+      },
+      {
+        "current": "`v{version}` includes the `--event-id`/`--text` forms below. Older",
+        "count": 1
+      },
+      {
+        "pinned": "0.12.0 binaries retain the JSON workflow but do not recognize these flags.",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "current": "v{version} targets Linux x86_64 and native macOS on",
+        "count": 1
+      },
+      {
+        "current": "New checked runs in `v{version}` use run-event format 8. The",
+        "count": 1
+      },
+      {
+        "current": "After installing `v{version}`, update project skill copies after upgrading the",
+        "count": 1
+      },
+      {
+        "pinned": "before this feature cannot self-notify, so install `0.20.0` once to enable",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "current": "dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v{version}",
+        "count": 2
+      },
+      {
+        "pinned": "Compatible features and fixes share the `0.31.10` through `0.31.99` series.",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "- `1.0.0` requires external-use evidence that the documented CLI and persisted",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "`0.26.0` adds current readable assignment/evidence/task delivery and optional",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "`0.25.2` corrects saved-result recovery in the existing `work act` path on the",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "`0.9.3` is a patch release because it removes an unsupported experimental",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "current": "  \"$schema\": \"https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{version}/schema/exitbind-harness-manifest.schema.json\",",
+        "count": 1
+      },
+      {
+        "pinned": "  \"harness\": { \"name\": \"my-harness\", \"version\": \"2026.08.30\" },",
+        "reason": "Example value, not the Exitbind version."
+      },
+      {
+        "pinned": "[the design boundary](docs/post-0.3.0-harness-evidence.md). OTel or Langfuse may",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "The commands in this section are included in the published 0.31.14 release.",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "current": "the {version} release series and publication gates.",
+        "count": 1
+      }
+    ],
+    "SECURITY.md": [
+      {
+        "current": "In `v{version}`, `run observe-check` executes only the frozen command",
+        "count": 1
+      },
+      {
+        "current": "run; v3 supports caller-reported `run record-check` only. `v{version}`",
+        "count": 1
+      }
+    ],
+    "docs/check-recovery.md": [
+      {
+        "pinned": "In 0.30.1, the configured Lead can recover a retained storage-failure response",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "pinned": "The distinct v8 recovery event requires a compatible 0.30.1 reader for the",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      }
+    ],
+    "docs/controlled-file-effects.md": [
+      {
+        "pinned": "Codex CLI 0.160.0 and 0.163.0; this verifies those CLI capabilities and the",
+        "reason": "Version of another tool or host that was observed or required; unrelated to the Exitbind version."
+      }
+    ],
+    "docs/evidence/participation-comparison.md": [
+      {
+        "pinned": "same workflow plus Soulmate 0.12.1-rc.2. It used four independent copies of one",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      }
+    ],
+    "docs/first-checked-run.md": [
+      {
+        "current": "In `v{version}`, new checked runs use run-event format 8. Exitbind binds each submission, check,",
+        "count": 1
+      },
+      {
+        "pinned": "`EXITBIND_BIN=target/debug/exitbind`. The older stable 0.12.0 binary lacks the",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "current": "For `v{version}`, `run observe-check` can execute only the frozen",
+        "count": 1
+      }
+    ],
+    "docs/goal-requirements.md": [
+      {
+        "current": "named-requirement path is included in the stable v{version} installation; the",
+        "count": 1
+      },
+      {
+        "current": "native conversation linkage described above is also included in the stable v{version} installation.",
+        "count": 1
+      }
+    ],
+    "docs/legacy-compatibility.md": [
+      {
+        "pinned": "`v0.25.0`; historical releases and records remain available.",
+        "reason": "Retired Soulmate compatibility fact tied to that release."
+      },
+      {
+        "pinned": "resetting to `0.0.1`. The published tag line, the release assets, and the",
+        "reason": "Retired Soulmate compatibility fact tied to that release."
+      },
+      {
+        "pinned": "| `soulmate` executable | `exitbind` | Not built or installed by default at `v0.25.0`; the current release no longer builds or selects the old profile, and refuses copy or symlink invocations before CLI effects |",
+        "reason": "Retired Soulmate compatibility fact tied to that release."
+      },
+      {
+        "pinned": "  retains its original layout; the `v0.25.0` package does not ship it.",
+        "reason": "Retired Soulmate compatibility fact tied to that release."
+      }
+    ],
+    "docs/onboarding.md": [
+      {
+        "current": "`v{version}` includes optional `--event-id` and `--text` conveniences; they are not",
+        "count": 1
+      },
+      {
+        "pinned": "Host releases still matter. A [reported Copilot CLI 1.0.5",
+        "reason": "Version of another tool or host that was observed or required; unrelated to the Exitbind version."
+      },
+      {
+        "pinned": "in its [0.24.0 release",
+        "reason": "Version of another tool or host that was observed or required; unrelated to the Exitbind version."
+      },
+      {
+        "pinned": "needs projections for several hosts. In a disposable project, version 3.0.1",
+        "reason": "Version of another tool or host that was observed or required; unrelated to the Exitbind version."
+      },
+      {
+        "current": "`v{version}` includes the `--event-id` and `--text` options used",
+        "count": 1
+      },
+      {
+        "current": "In `v{version}`, `check` reports the invoking binary version and hashes of",
+        "count": 1
+      },
+      {
+        "pinned": "Already-distributed 0.12.0 binaries cannot show these new diagnostics; inspect",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      }
+    ],
+    "docs/participation-validation.md": [
+      {
+        "pinned": "Soulmate 0.12.0 and native coding agents. They are not an external user study or",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "records the released 0.12.1-rc.2 comparison, including its adverse token result,",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      }
+    ],
+    "docs/platform-support.md": [
+      {
+        "current": "The `v{version}` release targets Linux x86_64 and macOS on",
+        "count": 1
+      }
+    ],
+    "docs/post-0.3.0-harness-evidence.md": [
+      {
+        "pinned": "# Post-0.3.0 harness evidence follow-up",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "Status: introduced as the opt-in receipt v2 path in 0.4.0 and hardened in 0.5.0;",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "not part of 0.3.0.",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "In 0.3.0, a native agent may record those facts in its existing submitted",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      },
+      {
+        "pinned": "## 0.4.0 decision",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      }
+    ],
+    "docs/prereleases.md": [
+      {
+        "pinned": "{\"branches\":[\"R49/example-task\",\"dot03/example-task\"],\"version\":\"0.31.17-rc.1\"}",
+        "reason": "Example value, not the Exitbind version."
+      }
+    ],
+    "docs/project-capabilities.md": [
+      {
+        "pinned": "This path is included in the published 0.31.14 release. See",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      }
+    ],
+    "docs/project-lessons.md": [
+      {
+        "pinned": "The input-preparation command below is included in the 0.31.14 release.",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      }
+    ],
+    "docs/release-version-policy.md": [
+      {
+        "current": "Source candidate tag: v{version}",
+        "count": 1
+      },
+      {
+        "current": "The source version is {version}. Its release commit carries the tag of the same",
+        "count": 1
+      },
+      {
+        "pinned": "Future stable releases in this series use 0.31.10 through 0.31.99, increasing",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "intentionally skipped. Core numbers have no leading zeroes: 0.31.01 is invalid.",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "The updater compares numbers, so 0.31.10 follows both 0.31.0 and 0.31.9. Passing",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "such as 0.32.10.",
+        "reason": "Version-policy example, series range or rationale about a specific release; not a current-version claim."
+      },
+      {
+        "pinned": "`0.31.17-rc.1`; the candidate number is selected once for the pair, not incremented",
+        "reason": "Example value, not the Exitbind version."
+      }
+    ],
+    "docs/upgrade-and-rollback.md": [
+      {
+        "pinned": "The 0.29.0 line writes a marked v8 `carryProtocol` version 1 accounting seed",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "pinned": "The 0.30.1 release also includes named requirements and memory policy-correction",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "pinned": "Explicit known-ended check recovery in 0.30.1 appends a distinct v8",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      },
+      {
+        "pinned": "For a rollback to the 0.28.0 line, set `ROLLBACK_TAG` to that published tag.",
+        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+      }
+    ],
+    "docs/value-baseline.md": [
+      {
+        "pinned": "whose product behavior matches the preceding 0.11.0 release. The intervening",
+        "reason": "Historical report, experiment baseline or original design milestone; the evidence must not be relabeled."
+      }
+    ],
+    "docs/value-proof-methodology.md": [
+      {
+        "current": "producer identity and semantics. `v{version}` writes v8 records",
+        "count": 1
+      }
+    ],
+    "docs/windows-wsl.md": [
+      {
+        "current": "To install the published `v{version}` release, open the Ubuntu terminal.",
+        "count": 1
+      }
+    ]
+  },
+  "sources": {
+    "Cargo.lock": [
+      {
+        "current": "version = \"{version}\"",
+        "after": "name = \"exitbind\"",
+        "count": 1
+      }
+    ],
+    "examples/agents.toml": [
+      {
+        "current": "ref = \"v{version}\"",
+        "count": 1
+      }
+    ],
+    "install.sh": [
+      {
+        "current": "version=\"${EXITBIND_VERSION:-v{version}}\"",
+        "count": 1
+      }
+    ],
+    "plugin.json": [
+      {
+        "current": "  \"version\": \"{version}\",",
+        "count": 1
+      }
+    ],
+    "plugins/exitbind/.claude-plugin/plugin.json": [
+      {
+        "current": "  \"version\": \"{version}\",",
+        "count": 1
+      }
+    ],
+    "plugins/exitbind/.codex-plugin/plugin.json": [
+      {
+        "current": "  \"version\": \"{version}\",",
+        "count": 1
+      }
+    ],
+    "plugins/exitbind/plugin.json": [
+      {
+        "current": "  \"version\": \"{version}\",",
+        "count": 1
+      }
+    ],
+    "schema/exitbind-harness-manifest.schema.json": [
+      {
+        "current": "  \"$id\": \"https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{version}/schema/exitbind-harness-manifest.schema.json\",",
+        "count": 1
+      }
+    ],
+    "schema/exitbind-run-boundary.schema.json": [
+      {
+        "current": "  \"$id\": \"https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{version}/schema/exitbind-run-boundary.schema.json\",",
+        "count": 1
+      }
+    ],
+    "schema/exitbind.schema.json": [
+      {
+        "current": "  \"$id\": \"https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v{version}/schema/exitbind.schema.json\",",
+        "count": 1
+      }
+    ],
+    "src/distribution/update/version_policy_tests.rs": [
+      {
+        "current": "    assert!(v(\"v{version}\").cmp(&v(\"v0.31.0\")).is_gt());",
+        "count": 1
+      },
+      {
+        "current": "    assert!(v(\"v{version}\").cmp(&v(\"v0.31.9\")).is_gt());",
+        "count": 1
+      },
+      {
+        "current": "    assert!(v(\"v0.31.99\").cmp(&v(\"v{version}\")).is_gt());",
+        "count": 1
+      }
+    ],
+    "tooling/repository/ci/ci-wsl.sh": [
+      {
+        "current": "test \"$(exitbind version)\" = \"{version}\"",
+        "count": 1
+      }
+    ],
+    "tooling/repository/release/check-plugin-distribution.py": [
+      {
+        "current": "VERSION = \"{version}\"",
+        "count": 1
+      }
+    ]
+  }
+}

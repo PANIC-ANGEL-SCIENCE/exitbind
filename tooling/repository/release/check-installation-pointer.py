@@ -18,10 +18,10 @@ VERSION = re.compile(
 )
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
-INSTALL_COMMAND = re.compile(
-    r"curl -fsSL https://raw\.githubusercontent\.com/PANIC-ANGEL-SCIENCE/exitbind/"
-    r"(?P<tag>v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
-    r"/install\.sh \| sh\Z"
+# GitHub's latest stable release moves only when a stable release is published,
+# so this command never names an unpublished version.
+LATEST_INSTALL_COMMAND = (
+    "curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh"
 )
 
 
@@ -48,26 +48,21 @@ def verify_source_pointer(root, expected_version):
         return fail(f"cannot read project installation pointers: {error}", unavailable=True)
 
     policy_tags = [
-        line.removeprefix("Published stable tag: ")
+        line.removeprefix("Source candidate tag: ")
         for line in policy.splitlines()
-        if line.startswith("Published stable tag: ")
+        if line.startswith("Source candidate tag: ")
     ]
     if len(policy_tags) != 1 or not VERSION.fullmatch(policy_tags[0]):
-        return fail("release policy must declare one valid published stable tag", unavailable=True)
+        return fail("release policy must declare one valid source candidate tag", unavailable=True)
     if policy_tags[0] != expected_version:
-        return fail("release policy published stable tag does not match the selected version")
+        return fail("release policy source candidate tag does not match the selected version")
 
     visible_readme = re.sub(r"<!--.*?(?:-->|\Z)", "", readme, flags=re.DOTALL)
     commands = [line for line in visible_readme.splitlines() if line.startswith("curl -fsSL ")]
-    tags = [
-        match.group("tag")
-        for line in commands
-        if (match := INSTALL_COMMAND.fullmatch(line)) is not None
-    ]
-    if len(tags) != 1:
+    if len(commands) != 1:
         return fail("README must contain one visible canonical stable install command", unavailable=True)
-    if tags[0] != expected_version:
-        return fail("README visible install command does not match the selected version")
+    if commands[0] != LATEST_INSTALL_COMMAND:
+        return fail("README visible install command is not the latest-release command")
     return 0
 
 

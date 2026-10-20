@@ -1863,8 +1863,8 @@
     },
     "tests/docs_workflow.rs": {
       "baselineSha256": "c0fbe81d249ec052957e92e247eecdeb36e0a3ca480af922f374987a4dffc1c6",
-      "currentSha256": "7e2b63abdc54d291a8e3e05e63973a4f1e0011ac402ac62b3b897a0c7ef51c7d",
-      "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "0a6404b2093541e504671ce4eb00aec3a130c2097ca923160a754a4007a481ff",
+      "reason": "CLI text fixture now includes the existing src/cli/help.rs owner; whitespace normalization is limited to the unchanged producer-conditional syntax assertion. All other assertions remain on raw source, and all five tests, gates and targets remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver (owner choice A): the current version comes from CARGO_PKG_VERSION instead of the removed published-tag line, the policy must not declare that line, and README (which now names no version) is excluded only from the version-presence assertion."
     },
     "tests/early_evidence.rs": {
       "baselineSha256": "198392eb1741e61d0a171fd96080470e51d2ce4b68128e3f0362263db6d8cf70",
@@ -1903,8 +1903,8 @@
     },
     "tests/first_impression.rs": {
       "baselineSha256": "7a3a60b54d701dbf27860988805c84cf21a72a1dcd15b9badbf0d5e43563e538",
-      "currentSha256": "21c7cfec1b58ced56afa53ad0797670dc316e2b4583d5876f15488dc0de76ad0",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "faab9c71c20d9ac4ae20a08e76cbec51f551f2a3f56d97ec58b0907f2225b9ec",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver (owner choice A): README must contain the latest-release installer URL instead of the removed published-tag URL."
     },
     "tests/fixture_host_isolation.rs": {
       "baselineSha256": "74d11342f4ef66840cdd446871b682c62b7fed0b72894ec7054f4c1fe5091628",
@@ -2133,13 +2133,13 @@
     },
     "tests/release_integrity.rs": {
       "baselineSha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b",
-      "currentSha256": "926b0b2e338a5c35a67b108d2b89afd01be51fc74eb0c3e22746fcd679991cce",
-      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged."
+      "currentSha256": "7f3c5d520360be9a18886a7476b16b5331bdf6c01c58d21e9acb67d5f9e9a09a",
+      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module."
     },
     "tests/release_integrity/context.rs": {
       "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
-      "currentSha256": "d828611dc7b99f278c2b66493f43be7dabf7ae6da492bbc89712a6490640e7f2",
-      "reason": "Release fixtures now copy the exact repository-owned verifier and execute the actual Verify transferred release evidence and Publish tag assets workflow steps; original behavioral checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the publisher fixture now carries the tag's install.sh (set_fixture_installer_default) and the expected upload count adds install.sh and install.sh.sha256 to the three files per target; no assertion is removed."
+      "currentSha256": "b42f93850ff15200ce8041d5817d1e20f3bd6f420e470eda495329d90adcc531",
+      "reason": "Release fixtures now copy the exact repository-owned verifier and execute the actual Verify transferred release evidence and Publish tag assets workflow steps; original behavioral checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the publisher fixture now carries the tag's install.sh (set_fixture_installer_default) and the expected upload count adds install.sh and install.sh.sha256 to the three files per target; no assertion is removed. R54 docver (owner choice A): the published-tag fixture helpers (published_tag, PUBLISHED_GUIDES, candidate, candidate_with_stable, replace_published_tag) are removed with the policy's separate published tag; LATEST_INSTALL names the only allowed install command."
     },
     "tests/release_integrity/publication_workflows.rs": {
       "baselineSha256": "e7863d6ed6cc43070357e9ab2cdc2d36af99111339ebd7c991e147355eaf5244",
@@ -2148,8 +2148,8 @@
     },
     "tests/release_integrity/release_policy.rs": {
       "baselineSha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e",
-      "currentSha256": "42613fb866d17c5e9b9cc6a7f628eca637bb543550d83bbbafe4540269d59720",
-      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the installation-pointer readback inventory adds install.sh and install.sh.sha256, with a new missing-installer-asset failure case; no assertion is removed."
+      "currentSha256": "4a93ce24fe24811e87853204945d85b41c761fb9abd6bed90378a9a28e58a1fc",
+      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the installation-pointer readback inventory adds install.sh and install.sh.sha256, with a new missing-installer-asset failure case; no assertion is removed. R54 docver (owner choice A): the separate published stable tag is gone. The pointer readback binds the selected tag through the source candidate line and requires the latest-release README command (a versioned command now fails). The two published-vs-candidate cases become release_policy_declares_no_separate_older_published_tag and current_guides_and_sources_cannot_name_an_older_release; the policy rows test candidate drift, invalid, duplicate and missing lines; README and REFERENCE install-command cases use the latest-release command and reject versioned ones. No other assertion is removed."
     },
     "tests/release_integrity/source_and_history_integrity.rs": {
       "baselineSha256": "f2ee8d69ccbb2eb4d8015fe91170375040d83d1945909ff926ca698789e019f2",

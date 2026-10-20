@@ -1,31 +1,52 @@
 # Release series and compatibility
 
-Published stable tag: v0.31.17
 Source candidate tag: v0.31.19
 
-The published stable tag is v0.31.17. The current source candidate is
-0.31.19 and has not been published; its declaration does not reserve a tag or
-establish release readiness. A source version or passing CI alone does not
-establish an official release.
-README install links name the available stable assets. The published installation
-pointer has been verified against the exact release tag and asset inventory. The
-release-reference check validates published and candidate declarations separately;
-source metadata, schemas and installation defaults must match the current source
-version.
+The source version is 0.31.19. Its release commit carries the tag of the same
+name, and the release workflow publishes that tag's assets; a source version or
+passing CI alone does not establish an official release. Source metadata,
+schemas, installation defaults and current-version mentions in the
+documentation all equal the source version, and the release-reference check
+validates them.
+
+Installation instructions use GitHub's latest stable release:
+`curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh`.
+That address moves only when a stable release is published, so it never names
+an unpublished version, and it needs no rewrite. Each release publishes its own
+`install.sh` with `install.sh.sha256`, beside the binaries; that installer
+defaults to its own release's version and verifies the archive checksum.
+
+## Version mentions
+
+Every version mention in the tracked documentation is listed in
+`tooling/repository/release/doc-versions.json`: `current` mentions equal the
+Cargo package version, and `pinned` mentions keep a historical version with a
+reason (a historical fact, a minimum version or a closed maintenance packet).
+The same inventory lists the lock file, plugin manifests, schemas, the example
+manifest and the installer default. A release commit changes the version in
+`Cargo.toml`, runs
+`python3 tooling/repository/release/sync-doc-versions.py --apply` to rewrite
+every `current` mention, and adds its CHANGELOG entry; no other version edit is
+manual. `--check` (run by the release-integrity tests) fails on a stale
+`current` mention and on any mention the inventory does not list.
+
+## Delivery readback
 
 After an authorized delivery, validate the exact selected tag's offline release
 readback with `python3 scripts/check-installation-pointer.py --metadata FILE
 --root PROJECT --expected-version TAG --expected-producer COMMIT`. Supply the
 release JSON, the peeled tag commit as `producer_commit`, and asset names with
 their GitHub SHA-256 digests. The checker requires the published stable state,
-the matching `Published stable tag` policy line, one visible README install
-command for that tag, and the exact three-platform inventory of binaries,
-archives and checksum files. An available stable tag may differ from a newer
-source candidate when release assets have not yet been published. Verify
-attestations as part of delivery before recording its result. Obtain and
-authenticate that readback through the delivery process; the checker performs
-no network or `latest` lookup and does not authenticate its input file. Missing
-readback files return `verification unavailable`, separately from mismatches.
+a `Source candidate tag` policy line naming the selected tag, one visible README
+install command in the latest-release form, and the exact inventory of
+three-platform binaries, archives and checksum files plus `install.sh` and
+`install.sh.sha256`. Verify attestations as part of delivery before recording
+its result. Obtain and authenticate that readback through the delivery process;
+the checker performs no network or `latest` lookup and does not authenticate its
+input file. Missing readback files return `verification unavailable`,
+separately from mismatches.
+
+## Series and compatibility
 
 Future stable releases in this series use 0.31.10 through 0.31.99, increasing
 only when an immutable release is delivered. Versions 0.31.1 through 0.31.9 are
