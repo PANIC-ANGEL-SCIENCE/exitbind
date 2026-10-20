@@ -14,6 +14,7 @@ use std::{
 mod preparation;
 mod provider;
 use preparation::{prepare, Readiness};
+pub(crate) use provider::clear_git_environment;
 use provider::{
     discover_provider, provider_identity, run_provider, source_identity, status, IndexState,
     ProviderIdentity,

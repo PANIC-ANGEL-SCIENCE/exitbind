@@ -1,5 +1,5 @@
 use super::{
-    current_work,
+    checkout, current_work,
     hint::{canonical_path, read_hint, HOOK_BUDGET},
     references::{
         generated_result_info, known_work_locator, verify_pending, verify_source_refs,
@@ -60,6 +60,12 @@ pub(crate) fn hook_context(
     if derived.works.is_empty() {
         return Some(hinted.text);
     }
+    let roots = derived
+        .works
+        .iter()
+        .map(|item| item.product_root.clone())
+        .collect::<Vec<_>>();
+    let trees = checkout::uncommitted(&roots, checkout::HOOK_TREE_LIMIT, deadline);
     let base = if hinted.no_hint {
         format!(
             "Exitbind recovered native Goal {} revision {} from its journey; no saved recovery hint selects a Work.",
@@ -70,18 +76,25 @@ pub(crate) fn hook_context(
         hinted.text
     };
     let budget = RECOVERY_HOOK_BYTES.saturating_sub(base.len() + 1);
-    Some(format!("{base}\n{}", derived_hook_text(&derived, budget)))
+    Some(format!(
+        "{base}\n{}",
+        derived_hook_text(&derived, &trees, budget)
+    ))
 }
 
 /// One line per derived Work in the `work detail` form the agent can run as
-/// printed.
-fn derived_hook_text(derived: &current_work::Derived, budget: usize) -> String {
+/// printed, then the checkout trees that hold uncommitted changes.
+fn derived_hook_text(
+    derived: &current_work::Derived,
+    trees: &checkout::Trees,
+    budget: usize,
+) -> String {
     let goal = bounded_hook_text(&derived.goal_id, 128);
     let total = derived.works.len() + derived.more;
     let mut out = String::new();
     let mut shown = 0;
     for item in &derived.works {
-        let line = format!(
+        let mut line = format!(
             "{}current Work {} ({} of Goal {goal}); read: exitbind work detail {} --view action --config {}; next action: {}.",
             if total > 1 { format!("{}) ", shown + 1) } else { String::new() },
             item.work,
@@ -90,6 +103,21 @@ fn derived_hook_text(derived: &current_work::Derived, budget: usize) -> String {
             item.config_path,
             bounded_hook_text(item.next_action.as_deref().unwrap_or("read the Work detail"), 192),
         );
+        let assignments = item
+            .assignments
+            .iter()
+            .map(|value| {
+                format!(
+                    "{} ({} '{}', open)",
+                    value.id,
+                    bounded_hook_text(&value.role, 32),
+                    bounded_hook_text(&value.agent, 64)
+                )
+            })
+            .collect::<Vec<_>>();
+        if !assignments.is_empty() {
+            line.push_str(&format!(" Open assignments: {}.", assignments.join(", ")));
+        }
         // Room is kept for the count of Works not shown.
         if shown > 0 && out.len() + 1 + line.len() + 96 > budget {
             break;
@@ -114,6 +142,39 @@ fn derived_hook_text(derived: &current_work::Derived, budget: usize) -> String {
         ));
     }
     out.push_str(&tail);
+    if !trees.dirty.is_empty() {
+        let mut listed = Vec::new();
+        let mut used = out.len() + "\nUncommitted checkout trees: .".len();
+        for tree in &trees.dirty {
+            let at = match (&tree.branch, &tree.head) {
+                (Some(branch), _) => format!("branch {}", bounded_hook_text(branch, 96)),
+                (None, Some(head)) => format!("detached {head}"),
+                (None, None) => "no commit".to_owned(),
+            };
+            let item = format!(
+                "{} ({at}, {} changed)",
+                bounded_hook_text(&tree.path, 256),
+                tree.changed
+            );
+            if used + item.len() + 2 + 16 > budget {
+                break;
+            }
+            used += item.len() + 2;
+            listed.push(item);
+        }
+        let omitted = trees.dirty.len() - listed.len() + trees.more;
+        if !listed.is_empty() || omitted > 0 {
+            out.push_str("\nUncommitted checkout trees: ");
+            out.push_str(&listed.join("; "));
+            if omitted > 0 {
+                out.push_str(&format!(
+                    "{}{omitted} more",
+                    if listed.is_empty() { "" } else { "; " }
+                ));
+            }
+            out.push('.');
+        }
+    }
     out
 }
 
@@ -537,8 +598,14 @@ mod tests {
         let work = |index: usize| super::current_work::CurrentWork {
             work: format!("smw_{}", format!("{index}").repeat(64)),
             config_path: "/tmp/project/exitbind.json".into(),
+            product_root: "/tmp/project".into(),
             source: "journey_member",
             next_action: Some("lead_decision".into()),
+            assignments: vec![super::current_work::Assignment {
+                id: format!("sma_{}", "a".repeat(64)),
+                agent: "worker".into(),
+                role: "worker".into(),
+            }],
         };
         let derived = super::current_work::Derived {
             goal_id: "R54".into(),
@@ -547,13 +614,27 @@ mod tests {
             unverified: 0,
             incomplete: false,
         };
-        let text = derived_hook_text(&derived, RECOVERY_HOOK_BYTES);
+        let trees = super::checkout::Trees {
+            dirty: vec![super::checkout::Tree {
+                path: "/tmp/project".into(),
+                branch: Some("feature/x".into()),
+                head: None,
+                changed: 3,
+            }],
+            more: 0,
+            complete: true,
+        };
+        let text = derived_hook_text(&derived, &trees, RECOVERY_HOOK_BYTES);
         assert!(text.len() <= RECOVERY_HOOK_BYTES, "{text}");
         assert!(
             text.contains(&format!("1) current Work smw_{}", "1".repeat(64))),
             "{text}"
         );
         assert!(text.contains("more open Work(s)"), "{text}");
+        assert!(
+            text.contains("/tmp/project (branch feature/x, 3 changed)"),
+            "{text}"
+        );
         let listed = (1..=4)
             .filter(|index| text.contains(&format!("{index}) current Work")))
             .count();
@@ -564,7 +645,7 @@ mod tests {
             "{text}"
         );
 
-        let small = derived_hook_text(&derived, 300);
+        let small = derived_hook_text(&derived, &trees, 400);
         assert!(
             small.contains("1) current Work"),
             "the first Work is always named"

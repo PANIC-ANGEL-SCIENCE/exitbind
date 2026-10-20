@@ -1,5 +1,6 @@
 //! After a host resume with no saved recovery hint, the SessionStart hook and
-//! `session recovery show` name the open Work from the native Goal's journey.
+//! `session recovery show` name the open Work from the native Goal's journey,
+//! its open assignments, and checkout trees with uncommitted changes.
 
 use crate::fixture::*;
 use serde_json::{json, Value};
@@ -356,5 +357,150 @@ fn a_stale_claude_export_after_clear_yields_to_the_host_session_without_any_noti
             assert!(!lower.contains(word), "{word} shown to the agent: {text}");
         }
     }
+    fs::remove_dir_all(project.root).unwrap();
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = super::support::git_topology::command("git")
+        .current_dir(dir)
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+}
+
+#[test]
+fn resume_hook_names_the_open_worker_assignment_and_the_dirty_checkout_trees() {
+    let project = Project::new("resume-worker-trees");
+    let session = "claude-resume-worker-trees";
+    let root = fs::canonicalize(&project.root).unwrap();
+    git(&root, &["init", "-q", "-b", "main"]);
+    fs::write(root.join(".git/info/exclude"), ".exitbind/\n").unwrap();
+    git(&root, &["add", "-A"]);
+    git(
+        &root,
+        &[
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+    );
+    let extra = root.with_file_name(format!(
+        "{}-worktree",
+        root.file_name().unwrap().to_str().unwrap()
+    ));
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "worker-tree",
+            extra.to_str().unwrap(),
+        ],
+    );
+    let work = incorporate_and_begin(&project, session, "worker-goal");
+
+    // The Lead scopes the Work; the worker assignment is then open.
+    let next = in_session(
+        &project,
+        session,
+        &["work", "next", &work, "--json", "--full"],
+    );
+    let lead = next["next"]["assignment"].as_str().unwrap().to_owned();
+    let config = config(&project);
+    ok_json(exitbind(
+        &project.root,
+        &project.session_store,
+        &claude(session),
+        &[
+            "work",
+            "return",
+            &work,
+            &lead,
+            "--outcome",
+            "scoped",
+            "--config",
+            &config,
+        ],
+        b"Deterministic fixture scope; not semantic review.\n",
+    ));
+    let next = in_session(
+        &project,
+        session,
+        &["work", "next", &work, "--json", "--full"],
+    );
+    assert_eq!(next["next"]["action"], "spawn", "{next}");
+    let worker = next["next"]["assignment"].as_str().unwrap().to_owned();
+    let agent = next["next"]["agent"].as_str().unwrap().to_owned();
+
+    // Uncommitted changes in the checkout and in the extra worktree.
+    fs::write(root.join("worker-edit.txt"), "uncommitted\n").unwrap();
+    fs::write(extra.join("worktree-edit.txt"), "uncommitted\n").unwrap();
+    let context = resume_hook(&project, session, &claude(session));
+    assert!(
+        context.contains(&format!("current Work {work}")),
+        "{context}"
+    );
+    assert!(
+        context.contains(&format!("Open assignments: {worker} (")),
+        "{context}"
+    );
+    assert!(context.contains(&format!("'{agent}', open)")), "{context}");
+    assert!(
+        context.contains("Uncommitted checkout trees: "),
+        "{context}"
+    );
+    assert!(
+        context.contains(&format!("{} (branch main, 1 changed)", root.display())),
+        "{context}"
+    );
+    assert!(
+        context.contains(&format!(
+            "{} (branch worker-tree, 1 changed)",
+            fs::canonicalize(&extra).unwrap().display()
+        )),
+        "{context}"
+    );
+    let show = ok_json(exitbind(
+        &std::env::temp_dir(),
+        &project.session_store,
+        &claude(session),
+        &["session", "recovery", "show", "--json"],
+        b"",
+    ));
+    let derived = &show["currentWorks"];
+    assert_eq!(
+        derived["works"][0]["openAssignments"][0]["assignment"],
+        worker.as_str()
+    );
+    assert_eq!(derived["works"][0]["openAssignments"][0]["state"], "open");
+    assert_eq!(
+        derived["uncommittedTrees"]["trees"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // Clean trees: the assignment is still named, no tree is.
+    fs::remove_file(root.join("worker-edit.txt")).unwrap();
+    fs::remove_file(extra.join("worktree-edit.txt")).unwrap();
+    let clean = resume_hook(&project, session, &claude(session));
+    assert!(
+        clean.contains(&format!("Open assignments: {worker} (")),
+        "{clean}"
+    );
+    assert!(!clean.contains("Uncommitted checkout trees"), "{clean}");
+    let _ = fs::remove_dir_all(&extra);
     fs::remove_dir_all(project.root).unwrap();
 }

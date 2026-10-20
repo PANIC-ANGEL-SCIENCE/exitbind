@@ -8,19 +8,28 @@
 use super::hint::canonical_path;
 use crate::{config, evidence::hash, session_goal};
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, time::Instant};
+use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
 /// Works named in the hook text; `session recovery show` lists more.
 pub(super) const HOOK_WORK_LIMIT: usize = 4;
 pub(super) const SHOW_WORK_LIMIT: usize = 16;
 /// Journey members are bounded at 32; mappings add at most as many again.
 const MAX_CANDIDATES: usize = 64;
+const MAX_ASSIGNMENTS: usize = 8;
+
+pub(super) struct Assignment {
+    pub(super) id: String,
+    pub(super) agent: String,
+    pub(super) role: String,
+}
 
 pub(super) struct CurrentWork {
     pub(super) work: String,
     pub(super) config_path: String,
+    pub(super) product_root: PathBuf,
     pub(super) source: &'static str,
     pub(super) next_action: Option<String>,
+    pub(super) assignments: Vec<Assignment>,
 }
 
 pub(super) struct Derived {
@@ -64,14 +73,14 @@ pub(super) fn derive(
             derived.unverified += 1;
             continue;
         };
-        match open_run(&loaded, &work) {
-            Ok(true) => {}
-            Ok(false) => continue,
+        let assignments = match open_run(&loaded, &work) {
+            Ok(Some(assignments)) => assignments,
+            Ok(None) => continue,
             Err(_) => {
                 derived.unverified += 1;
                 continue;
             }
-        }
+        };
         if derived.works.len() >= limit {
             derived.more += 1;
             continue;
@@ -86,8 +95,10 @@ pub(super) fn derive(
         derived.works.push(CurrentWork {
             work,
             config_path,
+            product_root: loaded.product_root.clone(),
             source,
             next_action,
+            assignments,
         });
     }
     derived
@@ -146,11 +157,25 @@ fn member_project(
     Ok(loaded)
 }
 
-/// Whether the Work's run is still running.
-fn open_run(loaded: &config::Loaded, work: &str) -> Result<bool, String> {
+/// `Ok(None)` for a Work whose run has ended; open assignments otherwise.
+fn open_run(loaded: &config::Loaded, work: &str) -> Result<Option<Vec<Assignment>>, String> {
     let ledger = crate::work::resolve(loaded, work)?;
     let snapshot = crate::run::RunSnapshot::capture(loaded, &ledger)?;
-    Ok(snapshot.status() == "running")
+    if snapshot.status() != "running" {
+        return Ok(None);
+    }
+    let assignments = crate::run::assignment::pending(snapshot.state())
+        .iter()
+        .take(MAX_ASSIGNMENTS)
+        .filter_map(|item| {
+            Some(Assignment {
+                id: crate::run::assignment::handle(work, item).ok()?,
+                agent: item["agent"].as_str()?.to_owned(),
+                role: item["role"].as_str().unwrap_or("agent").to_owned(),
+            })
+        })
+        .collect();
+    Ok(Some(assignments))
 }
 
 /// The action from the same compact action projection `work detail --view
@@ -169,7 +194,7 @@ fn next_action(loaded: &config::Loaded, work: &str) -> Option<String> {
 }
 
 /// The `session recovery show` field: each Work with its exact read argv.
-pub(super) fn show_value(derived: &Derived, executable: &str) -> Value {
+pub(super) fn show_value(derived: &Derived, executable: &str, trees: Value) -> Value {
     json!({
         "source":"native_goal_journey",
         "goalId":derived.goal_id,
@@ -179,10 +204,14 @@ pub(super) fn show_value(derived: &Derived, executable: &str) -> Value {
             "configPath":item.config_path,
             "nextAction":item.next_action,
             "workDetailArgv":[executable,"work","detail",item.work,"--view","action","--config",item.config_path],
+            "openAssignments":item.assignments.iter().map(|assignment| json!({
+                "assignment":assignment.id,"agent":assignment.agent,"role":assignment.role,"state":"open"
+            })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "moreOpenWorks":derived.more,
         "unverifiedMembers":derived.unverified,
         "complete":!derived.incomplete,
+        "uncommittedTrees":trees,
         "authority":"read_only",
     })
 }

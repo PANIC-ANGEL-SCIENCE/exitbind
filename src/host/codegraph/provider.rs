@@ -191,7 +191,8 @@ mod tests {
     }
 }
 
-fn clear_git_environment(command: &mut Command) {
+/// Run Git against the named directory only, not an inherited repository.
+pub(crate) fn clear_git_environment(command: &mut Command) {
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",

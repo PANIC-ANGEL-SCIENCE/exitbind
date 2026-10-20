@@ -3,7 +3,7 @@
 //! from the native Goal's journey.
 
 use super::{
-    current_work,
+    checkout, current_work,
     hint::{
         canonical_path, current_executable_path, current_executable_sha256, read_hint,
         PendingOperation, WorkSelection, HOOK_BUDGET,
@@ -218,7 +218,14 @@ pub(crate) fn show() -> Result<Value, String> {
         current_work::SHOW_WORK_LIMIT,
         deadline,
     );
-    let current_works = current_work::show_value(&derived, &executable);
+    let roots = derived
+        .works
+        .iter()
+        .map(|item| item.product_root.clone())
+        .collect::<Vec<_>>();
+    let trees = checkout::uncommitted(&roots, checkout::SHOW_TREE_LIMIT, deadline);
+    let current_works =
+        current_work::show_value(&derived, &executable, checkout::show_value(&trees));
     Ok(json!({
         "readOnly":true,
         "currentWorks":current_works,

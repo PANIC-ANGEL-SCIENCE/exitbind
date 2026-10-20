@@ -3,6 +3,7 @@
 //! The hint is private navigation metadata. The native Goal journal remains
 //! authoritative, and no saved route is permission to replay an operation.
 
+mod checkout;
 mod current_work;
 mod hint;
 mod milestone;
