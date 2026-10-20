@@ -5,6 +5,7 @@
 
 mod checkout;
 mod current_work;
+mod derived_text;
 mod hint;
 mod milestone;
 mod presentation;

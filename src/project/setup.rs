@@ -336,6 +336,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     report["applyRequired"] = json!(false);
     report["next"] = setup_next::next_actions(&facts.root, &loaded.path, &hosts, facts)?;
     setup_card::register(&loaded, facts, &mut report["next"])?;
+    report["goalText"] = json!(crate::session_goal::goal_summary::setup_text(&loaded)?);
     Ok(report)
 }
 
@@ -723,6 +724,9 @@ fn ordinary_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
 fn print_report(report: &Value) {
     println!("Setup {}.", report["status"].as_str().unwrap_or("unknown"));
     setup_lessons::print(&report["lessons"]);
+    if let Some(text) = report["goalText"].as_str() {
+        println!("Goal: {text}");
+    }
     setup_verification::print(&report["approvedFacts"]["verificationPreparation"]);
     if let Some(paths) = report["affectedPaths"].as_array() {
         println!("Affected paths:");

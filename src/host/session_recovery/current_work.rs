@@ -85,9 +85,8 @@ pub(super) fn derive(
             derived.more += 1;
             continue;
         }
-        let next_action = (Instant::now() < deadline)
-            .then(|| next_action(&loaded, &work))
-            .flatten();
+        let (next_action, in_time) = bounded_next_action(&loaded, &work, deadline);
+        derived.incomplete |= !in_time;
         let Ok(config_path) = canonical_path(&loaded.path, "Work configuration") else {
             derived.unverified += 1;
             continue;
@@ -176,6 +175,39 @@ fn open_run(loaded: &config::Loaded, work: &str) -> Result<Option<Vec<Assignment
         })
         .collect();
     Ok(Some(assignments))
+}
+
+/// The next action, computed on a helper thread so the caller never waits
+/// past `deadline` (W1 review finding 2). A late answer is dropped; the hook
+/// then names the Work with its `work detail` command and no action. The
+/// helper only reads and ends with the process.
+fn bounded_next_action(
+    loaded: &config::Loaded,
+    work: &str,
+    deadline: Instant,
+) -> (Option<String>, bool) {
+    let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+        return (None, false);
+    };
+    let (Some(path), work) = (loaded.path.to_str().map(str::to_owned), work.to_owned()) else {
+        return (None, true);
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("exitbind-next-action".into())
+        .spawn(move || {
+            let action = config::load(Some(&path))
+                .ok()
+                .and_then(|loaded| next_action(&loaded, &work));
+            let _ = sender.send(action);
+        });
+    if spawned.is_err() {
+        return (None, true);
+    }
+    match receiver.recv_timeout(remaining) {
+        Ok(action) => (action, true),
+        Err(_) => (None, false),
+    }
 }
 
 /// The action from the same compact action projection `work detail --view

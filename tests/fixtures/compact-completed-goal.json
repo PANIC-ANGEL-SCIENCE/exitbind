@@ -56,7 +56,7 @@
             "reason": "accepted",
             "state": "READY"
           },
-          "systemText": "Goal: COMPLETE | Import names safely and show a count | Tasks: 3/3 complete | R1=complete, R2=complete, R3=complete | Result readiness: READY | Journey: 1 members, closes by one final --journey-integration Work; not-yet-current members: `goal status --json .journeyCompletion`",
+          "systemText": "Goal: COMPLETE | Import names safely and show a count | Tasks: 3/3 complete | R1=complete, R2=complete, R3=complete | Result readiness: READY",
           "taskOmissions": 0,
           "tasks": [
             {

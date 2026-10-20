@@ -2208,8 +2208,8 @@
     },
     "tests/session_goal_direct/direct_scope.rs": {
       "baselineSha256": "fb6ab57f908e47ccd1700d288dfee8cde070da52acaf3bcd9afa30623109845c",
-      "currentSha256": "ab6c2c64d3e8017ce45c4e64999dd97d10da5400685704dc3235d34d1d945fb8",
-      "reason": "R54: owner-project Works begun from the plain or named route now present their goalAssociation as journey_member with membershipProtocol 2 and the Goal ID, instead of the context-only label; no case or assertion is removed."
+      "currentSha256": "62f3cb6f40d96c2528c2fad3bbb1664f6b384833c35d55162206207e685035e8",
+      "reason": "R54: owner-project Works begun from the plain or named route now present their goalAssociation as journey_member with membershipProtocol 2 and the Goal ID, instead of the context-only label; no case or assertion is removed. R54 Step 8: the Goal status text now ends with the project-lesson state (Lessons: none configured) and states no journey for a project Goal; the added assertions check exactly that."
     },
     "tests/session_goal_direct/fixture.rs": {
       "baselineSha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1",
@@ -2228,8 +2228,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "62f7fedef12f37adf446e3fd5861f61d7b64adbf466b59c8f2be37e288f1b306",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over test module; no existing case or assertion changes."
+      "currentSha256": "f2c7561ec21bc1fd0acd1e8306ba6ea0daf68cfa5f14332bfa8092d3c7594263",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",

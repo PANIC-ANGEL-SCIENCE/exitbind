@@ -1,6 +1,9 @@
 mod support;
 
 #[cfg(unix)]
+#[path = "setup/lead_goal_text.rs"]
+mod lead_goal_text;
+#[cfg(unix)]
 #[path = "setup/lesson_carry.rs"]
 mod lesson_carry;
 

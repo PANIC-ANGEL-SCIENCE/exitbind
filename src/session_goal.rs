@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 pub(crate) mod association;
 mod closure;
 mod continuity;
-mod goal_summary;
+pub(crate) mod goal_summary;
 pub(crate) mod journey;
 pub(crate) mod native;
 pub(crate) mod quarantine;

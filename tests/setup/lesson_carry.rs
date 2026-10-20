@@ -40,14 +40,14 @@ fn ok(root: &Path, args: &[&str]) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-struct Root(PathBuf);
+pub(super) struct Root(pub(super) PathBuf);
 impl Drop for Root {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
 
-fn repository(label: &str) -> Root {
+pub(super) fn repository(label: &str) -> Root {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     Root(root)
@@ -55,7 +55,7 @@ fn repository(label: &str) -> Root {
 
 /// The previous project: opted in to project lessons by its owner, with the
 /// Lead holding the lesson rights and the worker reading them.
-fn previous_project() -> Root {
+pub(super) fn previous_project() -> Root {
     let root = repository("lesson-carry-previous");
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
@@ -87,7 +87,7 @@ fn previous_project() -> Root {
 
 /// Write one guarded lesson in the previous project and take it through the
 /// Lead lifecycle up to `promote`.
-fn accept(root: &Path, id: &str, fact: &str, expires: &str) -> String {
+pub(super) fn accept(root: &Path, id: &str, fact: &str, expires: &str) -> String {
     fs::create_dir_all(root.join("notes")).unwrap();
     let guard = format!("notes/{id}.md");
     fs::write(root.join(&guard), format!("{fact}\n")).unwrap();

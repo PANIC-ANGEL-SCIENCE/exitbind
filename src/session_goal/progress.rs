@@ -104,7 +104,31 @@ pub(super) fn context_only(record: &Value, result: Option<&Value>) -> Value {
     view
 }
 
+/// The Goal view, with the Lead-facing journey and lesson facts appended to
+/// its system text once the view is complete.
 fn project_with_limit(
+    context: GoalProjectionContext<'_>,
+    record: Option<&Value>,
+    rendered: &Value,
+    result: Option<&Value>,
+    task_limit: usize,
+    include_canonical_id: bool,
+) -> Value {
+    let mut view = goal_view(
+        context,
+        record,
+        rendered,
+        result,
+        task_limit,
+        include_canonical_id,
+    );
+    if let (Some(loaded), Some(record)) = (context.loaded, record) {
+        super::goal_summary::append(loaded, record, &mut view);
+    }
+    view
+}
+
+fn goal_view(
     context: GoalProjectionContext<'_>,
     record: Option<&Value>,
     rendered: &Value,
@@ -271,13 +295,6 @@ fn project_with_limit(
         &view["tasks"],
         &view["resultReadiness"],
     ));
-    if let Some(loaded) = loaded {
-        view["systemText"] = json!(super::goal_summary::append(
-            loaded,
-            record,
-            view["systemText"].as_str().unwrap_or_default().to_owned()
-        ));
-    }
     if let Some(journey) = journey {
         view["journeyCompletion"] = journey;
     }
@@ -365,11 +382,6 @@ fn named_progress(
         rows.len(),
         &view["tasks"],
         &view["resultReadiness"]
-    ));
-    view["systemText"] = json!(super::goal_summary::append(
-        loaded,
-        record,
-        view["systemText"].as_str().unwrap_or_default().to_owned()
     ));
     view
 }

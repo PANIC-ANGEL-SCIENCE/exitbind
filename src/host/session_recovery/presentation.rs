@@ -1,5 +1,6 @@
 use super::{
     checkout, current_work,
+    derived_text::{bounded_hook_text, derived_hook_text},
     hint::{canonical_path, read_hint, HOOK_BUDGET},
     references::{
         generated_result_info, known_work_locator, verify_pending, verify_source_refs,
@@ -14,6 +15,8 @@ use std::{path::Path, time::Instant};
 /// host's oversized-context fallback, which keeps only the fixed session core
 /// and this text, still fits its 4096-byte limit.
 const RECOVERY_HOOK_BYTES: usize = 2048;
+/// The journey and lesson facts line inside that bound.
+const GOAL_FACTS_BYTES: usize = 384;
 
 /// Hook-safe context. It reads the native Goal independently of the launch
 /// project's config and reports unresolved ownership honestly when no exact
@@ -45,10 +48,16 @@ pub(crate) fn hook_context(
         Err(error) => return Some(format!("Exitbind session recovery is unresolved: {error}; no Work was selected.")),
     };
     let hinted = hint_text(payload, cwd_config_path, &session, &owner, &record, started);
-    if !hinted.derive {
-        return Some(hinted.text);
-    }
     let deadline = started + HOOK_BUDGET;
+    // The journey and lesson facts the Lead needs, from the Goal record and
+    // the verified owner configuration (skipped once the budget is spent).
+    let facts = (Instant::now() < deadline)
+        .then(|| session_goal::goal_summary::hook_line(&record, hinted.owner_loaded.as_ref()))
+        .flatten()
+        .map(|line| bounded_hook_text(&line, GOAL_FACTS_BYTES));
+    if !hinted.derive {
+        return Some(join(&[Some(&hinted.text), facts.as_deref()]));
+    }
     let derived = current_work::derive(
         &record,
         &session,
@@ -58,7 +67,7 @@ pub(crate) fn hook_context(
         deadline,
     );
     if derived.works.is_empty() {
-        return Some(hinted.text);
+        return Some(join(&[Some(&hinted.text), facts.as_deref()]));
     }
     let roots = derived
         .works
@@ -66,116 +75,40 @@ pub(crate) fn hook_context(
         .map(|item| item.product_root.clone())
         .collect::<Vec<_>>();
     let trees = checkout::uncommitted(&roots, checkout::HOOK_TREE_LIMIT, deadline);
+    let goal_id = &derived.goal_id;
+    let short = format!("Exitbind recovered native Goal {goal_id} from its journey.");
     let base = if hinted.no_hint {
         format!(
-            "Exitbind recovered native Goal {} revision {} from its journey; no saved recovery hint selects a Work.",
-            derived.goal_id,
+            "Exitbind recovered native Goal {goal_id} revision {} from its journey; no saved recovery hint selects a Work.",
             record["revision"].as_u64().unwrap_or(0)
         )
     } else {
         hinted.text
     };
-    let budget = RECOVERY_HOOK_BYTES.saturating_sub(base.len() + 1);
-    Some(format!(
-        "{base}\n{}",
-        derived_hook_text(&derived, &trees, budget)
-    ))
+    // The Work locator and its command outrank the facts, which outrank the
+    // longer opening sentence: shorten in that order to stay in the bound.
+    let compose = |base: &str, facts: Option<&str>| {
+        let used = base.len() + facts.map_or(0, |line| line.len() + 1) + 1;
+        let works = derived_hook_text(&derived, &trees, RECOVERY_HOOK_BYTES.saturating_sub(used));
+        join(&[Some(base), facts, Some(&works)])
+    };
+    [
+        compose(&base, facts.as_deref()),
+        compose(&short, facts.as_deref()),
+        compose(&short, None),
+    ]
+    .into_iter()
+    .find(|text| text.len() <= RECOVERY_HOOK_BYTES)
+    .or_else(|| Some(compose(&short, None)))
 }
 
-/// One line per derived Work in the `work detail` form the agent can run as
-/// printed, then the checkout trees that hold uncommitted changes.
-fn derived_hook_text(
-    derived: &current_work::Derived,
-    trees: &checkout::Trees,
-    budget: usize,
-) -> String {
-    let goal = bounded_hook_text(&derived.goal_id, 128);
-    let total = derived.works.len() + derived.more;
-    let mut out = String::new();
-    let mut shown = 0;
-    for item in &derived.works {
-        let mut line = format!(
-            "{}current Work {} ({} of Goal {goal}); read: exitbind work detail {} --view action --config {}; next action: {}.",
-            if total > 1 { format!("{}) ", shown + 1) } else { String::new() },
-            item.work,
-            if item.source == "journey_member" { "member" } else { "mapped Work" },
-            item.work,
-            item.config_path,
-            bounded_hook_text(item.next_action.as_deref().unwrap_or("read the Work detail"), 192),
-        );
-        let assignments = item
-            .assignments
-            .iter()
-            .map(|value| {
-                format!(
-                    "{} ({} '{}', open)",
-                    value.id,
-                    bounded_hook_text(&value.role, 32),
-                    bounded_hook_text(&value.agent, 64)
-                )
-            })
-            .collect::<Vec<_>>();
-        if !assignments.is_empty() {
-            line.push_str(&format!(" Open assignments: {}.", assignments.join(", ")));
-        }
-        // Room is kept for the count of Works not shown.
-        if shown > 0 && out.len() + 1 + line.len() + 96 > budget {
-            break;
-        }
-        if shown > 0 {
-            out.push(' ');
-        }
-        out.push_str(&line);
-        shown += 1;
-    }
-    let mut tail = String::new();
-    if total > shown {
-        tail.push_str(&format!(
-            " {} more open Work(s): `exitbind session recovery show --json`.",
-            total - shown
-        ));
-    }
-    if derived.unverified > 0 {
-        tail.push_str(&format!(
-            " {} journey member(s) could not be verified now.",
-            derived.unverified
-        ));
-    }
-    out.push_str(&tail);
-    if !trees.dirty.is_empty() {
-        let mut listed = Vec::new();
-        let mut used = out.len() + "\nUncommitted checkout trees: .".len();
-        for tree in &trees.dirty {
-            let at = match (&tree.branch, &tree.head) {
-                (Some(branch), _) => format!("branch {}", bounded_hook_text(branch, 96)),
-                (None, Some(head)) => format!("detached {head}"),
-                (None, None) => "no commit".to_owned(),
-            };
-            let item = format!(
-                "{} ({at}, {} changed)",
-                bounded_hook_text(&tree.path, 256),
-                tree.changed
-            );
-            if used + item.len() + 2 + 16 > budget {
-                break;
-            }
-            used += item.len() + 2;
-            listed.push(item);
-        }
-        let omitted = trees.dirty.len() - listed.len() + trees.more;
-        if !listed.is_empty() || omitted > 0 {
-            out.push_str("\nUncommitted checkout trees: ");
-            out.push_str(&listed.join("; "));
-            if omitted > 0 {
-                out.push_str(&format!(
-                    "{}{omitted} more",
-                    if listed.is_empty() { "" } else { "; " }
-                ));
-            }
-            out.push('.');
-        }
-    }
-    out
+fn join(parts: &[Option<&str>]) -> String {
+    parts
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The saved-hint part of the hook text, and whether the current Work must
@@ -382,28 +315,6 @@ fn hint_text(
     finish(out, !selected, Some(owner_config))
 }
 
-fn bounded_hook_text(value: &str, max_bytes: usize) -> String {
-    let sanitized = value
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect::<String>();
-    let sanitized = sanitized.trim();
-    if sanitized.len() <= max_bytes {
-        return sanitized.to_owned();
-    }
-    let mut end = max_bytes.saturating_sub('…'.len_utf8());
-    while !sanitized.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &sanitized[..end])
-}
-
 fn graph_hook_presentation(
     goal_id: &str,
     revision: u64,
@@ -591,66 +502,6 @@ mod tests {
         assert!(unseal(sealed).is_ok());
         value.current_step.push_str(" changed");
         assert!(unseal(value).is_err());
-    }
-
-    #[test]
-    fn several_derived_works_are_listed_up_to_the_limit_with_a_count_of_the_rest() {
-        let work = |index: usize| super::current_work::CurrentWork {
-            work: format!("smw_{}", format!("{index}").repeat(64)),
-            config_path: "/tmp/project/exitbind.json".into(),
-            product_root: "/tmp/project".into(),
-            source: "journey_member",
-            next_action: Some("lead_decision".into()),
-            assignments: vec![super::current_work::Assignment {
-                id: format!("sma_{}", "a".repeat(64)),
-                agent: "worker".into(),
-                role: "worker".into(),
-            }],
-        };
-        let derived = super::current_work::Derived {
-            goal_id: "R54".into(),
-            works: (1..=4).map(work).collect(),
-            more: 2,
-            unverified: 0,
-            incomplete: false,
-        };
-        let trees = super::checkout::Trees {
-            dirty: vec![super::checkout::Tree {
-                path: "/tmp/project".into(),
-                branch: Some("feature/x".into()),
-                head: None,
-                changed: 3,
-            }],
-            more: 0,
-            complete: true,
-        };
-        let text = derived_hook_text(&derived, &trees, RECOVERY_HOOK_BYTES);
-        assert!(text.len() <= RECOVERY_HOOK_BYTES, "{text}");
-        assert!(
-            text.contains(&format!("1) current Work smw_{}", "1".repeat(64))),
-            "{text}"
-        );
-        assert!(text.contains("more open Work(s)"), "{text}");
-        assert!(
-            text.contains("/tmp/project (branch feature/x, 3 changed)"),
-            "{text}"
-        );
-        let listed = (1..=4)
-            .filter(|index| text.contains(&format!("{index}) current Work")))
-            .count();
-        assert!((1..=4).contains(&listed), "{text}");
-        let shown_more = 6 - listed;
-        assert!(
-            text.contains(&format!(" {shown_more} more open Work(s)")),
-            "{text}"
-        );
-
-        let small = derived_hook_text(&derived, &trees, 400);
-        assert!(
-            small.contains("1) current Work"),
-            "the first Work is always named"
-        );
-        assert!(small.contains(" 5 more open Work(s)"), "{small}");
     }
 
     #[test]

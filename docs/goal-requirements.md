@@ -98,6 +98,15 @@ acceptance and the next available action. States distinguish `unmapped`, `pendin
 are separate. A fresh CLI process can inspect this same saved state; it does not
 renew a grant or change a Work's review choice.
 
+The Goal's short text (`goalProgress.systemText`, also printed by Work
+commands, the `setup --apply` response as `goalText`, and the SessionStart
+hook) ends with two facts. For a native conversation Goal it states the
+journey: its member count, how it closes (each member accepted and current,
+or one final `--journey-integration` Work; a stale accepted member needs the
+integration Work), and the read route for members not yet current. It always
+states the project-lesson state: `Lessons: none configured` or
+`Lessons: N deliverable`.
+
 `goal status` also returns the current disposition for each of the five Goal
 categories, the valid category states, and the valid item dispositions in a
 bounded list with exact Lead-decision routes for unresolved categories and

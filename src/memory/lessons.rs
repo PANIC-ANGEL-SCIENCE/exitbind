@@ -226,6 +226,33 @@ pub(crate) fn validate_transition(
     Ok(())
 }
 
+/// How many distinct accepted, unexpired, guard-current project lessons the
+/// configured agents receive for `task`; `None` when the project has not
+/// opted in to project lessons. The count is not capped by delivery bounds.
+pub(crate) fn deliverable(loaded: &Loaded, task: Option<&str>) -> Option<Result<usize, String>> {
+    if !super::policy::get(&loaded.config)?
+        .protocol_scopes
+        .contains(SCOPE)
+    {
+        return None;
+    }
+    let mut items = BTreeSet::new();
+    for agent in loaded.agents.keys() {
+        let selection = match super::selection::resolve_for_task_optional(loaded, agent, task) {
+            Ok(selection) => selection,
+            Err(error) => return Some(Err(error)),
+        };
+        items.extend(
+            selection
+                .references
+                .iter()
+                .filter(|reference| reference["scope"] == SCOPE)
+                .filter_map(|reference| reference["itemId"].as_str().map(str::to_owned)),
+        );
+    }
+    Some(Ok(items.len()))
+}
+
 /// Complete fact text with current identity, rather than repeating authoring
 /// metadata. Source references and the inspector retain the full record route.
 /// The cap includes all delivered metadata, rather than only the fact's text.

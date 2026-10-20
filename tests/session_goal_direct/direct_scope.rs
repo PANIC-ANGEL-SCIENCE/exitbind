@@ -27,11 +27,13 @@ fn goal_status_automatically_emits_goal_and_task_progress_without_model_formatti
     assert!(text.contains("Goal: IN PROGRESS"), "{text}");
     assert!(text.contains("Tasks: 0/1 complete"), "{text}");
     assert!(text.contains("Result readiness: unavailable"), "{text}");
+    // R54 Step 8: the project-lesson state is always stated; a project Goal
+    // without native journey membership states no journey.
     assert!(
-        text.ends_with("| Journey: 0 members, closes by each member accepted and current; not-yet-current members: `goal status --json .journeyCompletion`"),
+        text.ends_with("| Result readiness: unavailable | Lessons: none configured"),
         "{text}"
     );
-    assert!(!text.contains("Lessons:"), "{text}");
+    assert!(!text.contains("Journey:"), "{text}");
     fs::remove_dir_all(project.root).unwrap();
 }
 
