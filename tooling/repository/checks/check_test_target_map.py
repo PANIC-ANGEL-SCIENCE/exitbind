@@ -76,6 +76,22 @@ def target_declaration_self_test(root: Path, mapping: dict, manifest: dict) -> O
         dropped["targets"][gated[0]]["features"] = []
         if not any(gated[0] in error for error in test_target_sources.declaration_errors(root, dropped, manifest)):
             return f"feature check accepted {gated[0]} without its gated feature"
+    # A file the binary embeds (schema, skill body) must select at least the
+    # targets that cover its embedding module, not only targets naming it.
+    embedded = {
+        path: sources for path, sources in test_target_sources.embedded_files(root).items()
+        if not path.startswith(("src/", "tests/"))
+    }
+    if not embedded:
+        return "no product-embedded file found; the embedded-file selection rule is untested"
+    for path, sources in sorted(embedded.items()):
+        selected, _ = test_target_sources.select(root, mapping, manifest, [path])
+        covering = {
+            name for name, item in mapping["targets"].items()
+            if any(source.startswith(cover) for cover in item["covers"] for source in sources)
+        }
+        if not selected or not covering <= set(selected):
+            return f"a change to embedded file {path} does not select the targets covering {sorted(sources)}"
     module, files = next(iter(sorted(test_target_sources.top_level_modules(root).items())))
     uncovered = copy.deepcopy(mapping)
     for item in uncovered["targets"].values():

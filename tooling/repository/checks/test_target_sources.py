@@ -28,6 +28,7 @@ FEATURE = re.compile(r'feature\s*=\s*"([A-Za-z0-9_-]+)"')
 PATH_MOD = re.compile(r'#\[path\s*=\s*"([^"]+)"\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;')
 PLAIN_MOD = re.compile(r'^(?![^\n]*#\[path)[ \t]*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;', re.MULTILINE)
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
+EMBED = re.compile(r'include_(?:str|bytes)!\s*\(\s*"([^"]+)"\s*,?\s*\)')
 
 
 def manifest_targets(manifest: str) -> Dict[str, Tuple[str, List[str]]]:
@@ -99,6 +100,26 @@ def top_level_modules(root: Path) -> Dict[str, List[str]]:
         name = first[:-3] if first.endswith(".rs") else first
         modules.setdefault(name, []).append(relative)
     return modules
+
+
+def embedded_files(root: Path) -> Dict[str, Set[str]]:
+    """Map each file the product embeds (include_str!/include_bytes!) to the
+    `src` files that embed it, so a change to it selects their covers."""
+    embedded: Dict[str, Set[str]] = {}
+    resolved_root = root.resolve()
+    for path in sorted((root / "src").rglob("*.rs")):
+        try:
+            text = _strip_line_comments(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            continue
+        source = path.relative_to(root).as_posix()
+        for item in EMBED.findall(text):
+            try:
+                target = (path.parent / item).resolve().relative_to(resolved_root).as_posix()
+            except ValueError:
+                continue
+            embedded.setdefault(target, set()).add(source)
+    return embedded
 
 
 def load(root: Path) -> Tuple[dict, Dict[str, Tuple[str, List[str]]]]:
@@ -175,6 +196,7 @@ def select(root: Path, mapping: dict, manifest: Dict[str, Tuple[str, List[str]]]
         texts[name] = "\n".join(
             (root / relative).read_text(encoding="utf-8", errors="replace") for relative in sorted(sources[name])
         )
+    embedded = embedded_files(root)
     selected: Set[str] = set()
     reasons: List[str] = []
     for path in changed:
@@ -195,6 +217,16 @@ def select(root: Path, mapping: dict, manifest: Dict[str, Tuple[str, List[str]]]
         else:
             hits = _mentioning(path, texts)
             why = "referenced by test source"
+        if path in embedded and not path.startswith("src/"):
+            # The binary embeds this file, so the embedding module's covers apply.
+            embedding = embedded[path]
+            by_embedding = {
+                n for n in names
+                if any(source.startswith(c) for c in declared[n]["covers"] for source in embedding)
+            }
+            if by_embedding - hits:
+                hits |= by_embedding
+                why += f"; embedded by {', '.join(sorted(embedding))}"
         selected |= hits
         reasons.append(f"{path}: {why} -> {', '.join(sorted(hits)) if hits else 'no target'}")
     return sorted(selected), reasons
