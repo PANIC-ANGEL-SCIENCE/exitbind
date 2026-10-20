@@ -103,7 +103,12 @@ items. Empty categories offer their own `none-applicable` choice; status never
 marks every category on the Lead's behalf. Before Work freezes a mapping,
 `requirements.preFreezePreparation` and `goal prepare` show the named IDs,
 checker identity and separate begin route. Preparation creates no Work and
-does not change prior coverage. A close route appears only when the same
+does not change prior coverage. Without `--artifact`, `goal prepare` and the named
+`work begin` route use the tested project file the check command names,
+directly or through one outside script it runs (`sh /abs/check.sh` whose
+text runs `./scripts/ci-local.sh`); zero or several candidates is an error
+that asks for `--artifact`. The emitted begin route carries the checker it
+found. A close route appears only when the same
 journey, coverage, integration, evidence and category predicates used by
 `goal close` currently pass; otherwise status keeps repair or integration
 actions visible without claiming readiness.

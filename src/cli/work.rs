@@ -317,7 +317,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                         loaded: l,
                         goal_id: option(a, "goal-id", "named Work requires --goal-id ID")?,
                         ids: option(a, "requirement", "named Work requires --requirement IDs")?,
-                        checker: option(a, "artifact", "named Work requires --artifact PROJECT_CHECKER")?,
+                        checker: &crate::session_goal::requirements::resolve_checker(l, a.options.get("artifact").map(String::as_str), option(a, "check-command", "work begin requires --check-command COMMAND")?)?.path,
                         command: option(a, "check-command", "work begin requires --check-command COMMAND")?,
                         basis: a.options.get("basis").map(String::as_str),
                         integration,

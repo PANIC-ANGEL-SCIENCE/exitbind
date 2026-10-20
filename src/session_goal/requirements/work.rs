@@ -54,8 +54,8 @@ pub(crate) fn checker_input(
     if !crate::run::inputs::covered_file(loaded, checker)? {
         return Err("checker input is outside tested product-file coverage; use a non-ignored project checker".into());
     }
-    if !command.contains(checker) {
-        return Err("check command must name its declared project checker input".into());
+    if !super::checker::command_names(loaded, command, checker) {
+        return Err("check command must name its declared project checker input, directly or through one outside script it runs".into());
     }
     Ok(CheckerInput {
         path: checker.into(),
@@ -540,7 +540,7 @@ pub(crate) fn current_checker_evidence(
     }
     if !check["checkCommand"]
         .as_str()
-        .is_some_and(|command| command.contains(&checker_input.path))
+        .is_some_and(|command| super::checker::command_names(loaded, command, &checker_input.path))
     {
         view["state"] = json!("stale");
         return Ok(view);

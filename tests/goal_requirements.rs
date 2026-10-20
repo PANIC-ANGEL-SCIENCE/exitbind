@@ -552,6 +552,8 @@ fn incorporate_native_generic_goal(project: &Project, goal_id: &str, goal: &str)
     )
 }
 
+#[path = "goal_requirements/checker_derivation.rs"]
+mod checker_derivation;
 #[path = "goal_requirements/closure_flows.rs"]
 mod closure_flows;
 #[path = "goal_requirements/correction_and_journey.rs"]

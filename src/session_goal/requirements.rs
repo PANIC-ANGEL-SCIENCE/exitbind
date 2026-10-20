@@ -3,6 +3,7 @@
 //! Coverage is a Lead decision. Satisfaction is derived from current observed
 //! checks and accepted Works; neither a mapping nor source excerpts prove it.
 
+mod checker;
 mod model;
 mod mutation;
 mod successor;
@@ -14,6 +15,7 @@ use model::*;
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub(crate) use checker::resolve as resolve_checker;
 pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};

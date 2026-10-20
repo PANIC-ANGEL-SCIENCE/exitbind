@@ -88,16 +88,17 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             scope.require_owner()?;
             let goal_id = option(a, "goal-id", "goal prepare requires --goal-id ID")?;
             let ids = option(a, "requirement", "goal prepare requires --requirement IDs")?;
-            let checker = option(
-                a,
-                "artifact",
-                "goal prepare requires --artifact PROJECT_CHECKER",
-            )?;
             let command = option(
                 a,
                 "check-command",
                 "goal prepare requires --check-command COMMAND",
             )?;
+            let derived = crate::session_goal::requirements::resolve_checker(
+                l,
+                a.options.get("artifact").map(String::as_str),
+                command,
+            )?;
+            let checker = derived.path.as_str();
             let integration = match a.options.get("scope").map(String::as_str) {
                 None => false,
                 Some("integration") => true,
@@ -157,7 +158,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             print_json(&json!({"kind":"named_coverage_preparation","readOnly":true,
                 "goalId":prepared.goal_id,"selectedRequirementIds":prepared.requirements.split(',').collect::<Vec<_>>(),
                 "contractScope":scope_label,"projectIdentitySha256":prepared.project_identity,
-                "checker":{"path":checker,"sha256":crate::session_goal::requirements::checker_input(l, checker, command)?.sha256},
+                "checker":{"path":checker,"sha256":crate::session_goal::requirements::checker_input(l, checker, command)?.sha256,
+                    "derived":!a.options.contains_key("artifact"),"via":derived.via},
                 "integration":integration,"beginRoute":route,
                 "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
                 "effect":"no Work is started or frozen until beginRoute is executed"}))
