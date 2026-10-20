@@ -1,8 +1,30 @@
 # Changelog
 
-## 0.31.18
+## 0.31.19
 
 Unreleased source candidate; no stable tag or release assets are published.
+
+- `setup --task-card PATH` registers the card's `Done when` rows as named
+  requirements with `--apply` and prints the whole start path: `goal cover`,
+  `goal prepare` and the named `work begin`, in that order.
+- `goal prepare` and the named `work begin` derive the checker from the
+  declared check command, directly or through one outside script it runs;
+  `--artifact` becomes optional and the emitted begin route carries it.
+- A plain-route Work begun under the owner's native Goal is shown as a
+  journey member. After a host resume with no saved hint, the SessionStart
+  hook and `session recovery show` name the open Works from the journey with
+  their exact `work detail` command, open assignments and checkout trees with
+  uncommitted changes. Claude Code's own session ID wins over a stale export.
+- `setup --lessons-from PREVIOUS_CONFIG` carries the previous project's
+  accepted, unexpired project lessons into a new project through the Lead's
+  lesson lifecycle, and lists expired, revoked and changed ones with reasons.
+- The Goal text in `goal status`, Work responses, `setup --apply` and the
+  SessionStart hook states the journey (member count, closing route, read
+  route for members not yet current) and the project-lesson state.
+
+## 0.31.18
+
+Published stable release; the `v0.31.18` tag and release assets are available.
 
 - Deliver role-scoped guidance to the recipient that acts on it, through work
   detail, native start and prepared child context, within one byte budget.
