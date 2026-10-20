@@ -300,8 +300,15 @@ case "$1 $2" in
     require_equal "$actual" "$expected" 'attestation archive digest mismatch'
     exit 0
     ;;
-  'release view') exit 1 ;;
+  'release view')
+    case "$*" in
+      *'--json assets'*)
+        for file in dist/*; do printf '%s %s\n' "${file#dist/}" "$(wc -c < "$file" | tr -d ' ')"; done
+        exit 0 ;;
+    esac
+    exit 1 ;;
   'release create') exit 0 ;;
+  'release edit') exit 0 ;;
   'release upload')
     count=0
     for argument do

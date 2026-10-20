@@ -14,7 +14,10 @@ Installation instructions use GitHub's latest stable release:
 That address moves only when a stable release is published, so it never names
 an unpublished version, and it needs no rewrite. Each release publishes its own
 `install.sh` with `install.sh.sha256`, beside the binaries; that installer
-defaults to its own release's version and verifies the archive checksum.
+defaults to its own release's version and verifies the archive checksum. The
+release workflow creates a new release as a draft, uploads every asset, reads
+the asset list back and only then publishes it, so the latest-release address
+never points at a release whose installer is missing.
 
 ## Version mentions
 

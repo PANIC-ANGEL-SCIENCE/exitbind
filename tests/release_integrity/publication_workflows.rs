@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 #[cfg(unix)]
-fn stable_publication_requires_a_published_non_draft_release() {
+fn stable_publication_requires_a_matching_release_and_publishes_drafts_last() {
     use std::os::unix::fs::PermissionsExt;
 
     let fixture = Fixture::new("preview-publication");
@@ -16,16 +16,24 @@ fn stable_publication_requires_a_published_non_draft_release() {
         &gh,
         r#"#!/bin/sh
 printf '%s\n' "$*" >> "$CALLS"
+core=${3%%+*}
+case "$core" in *-*) channel=true; other=false ;; *) channel=false; other=true ;; esac
 case "$1 $2" in
   'release view')
+    case "$*" in
+      *'--json assets'*)
+        for file in dist/*; do printf '%s %s\n' "${file#dist/}" "$(wc -c < "$file" | tr -d ' ')"; done
+        exit 0 ;;
+    esac
     case "$SCENARIO" in
       missing|read_error) exit 1 ;;
-      true_failure) printf 'true\n'; exit 1 ;;
-      stable|draft) printf 'false\n' ;;
+      true_failure) printf 'false %s\n' "$channel"; exit 1 ;;
+      stable) printf 'false %s\n' "$other" ;;
+      draft) printf 'true %s\n' "$channel" ;;
       malformed) printf 'unexpected\n' ;;
-      *) printf 'true\n' ;;
+      *) printf 'false %s\n' "$channel" ;;
     esac ;;
-  'release create'|'release upload') exit 0 ;;
+  'release create'|'release upload'|'release edit') exit 0 ;;
   *) exit 99 ;;
 esac
 "#,
@@ -44,7 +52,7 @@ esac
         ("v99.98.97", "ready", true, false),
         ("v99.98.97", "missing", true, true),
         ("v99.98.97", "stable", false, false),
-        ("v99.98.97", "draft", false, false),
+        ("v99.98.97", "draft", true, false),
         ("v99.98.97", "malformed", false, false),
         ("v99.98.97-rc.1", "ready", false, false),
         ("v99.98.97+build-one", "ready", false, false),
@@ -77,10 +85,18 @@ esac
                 "wrong repository: {call}"
             );
         }
+        // Only a draft (new or resumed) is published, after its assets are read back.
+        let drafted = success && (create || scenario == "draft");
+        assert_eq!(calls.contains("release edit "), drafted, "{calls}");
         if create {
             assert!(calls.contains("--verify-tag"), "{calls}");
             assert!(calls.contains("--generate-notes"), "{calls}");
             assert!(calls.contains("--title Exitbind v99.98.97"), "{calls}");
+            assert!(calls.contains("--generate-notes --draft\n"), "{calls}");
+        }
+        if drafted {
+            assert!(calls.contains("--json assets"), "{calls}");
+            assert!(calls.contains("--draft=false --latest\n"), "{calls}");
         }
     }
     fs::write(
@@ -92,7 +108,7 @@ esac
         ("ready", true, false),
         ("missing", true, true),
         ("stable", false, false),
-        ("draft", false, false),
+        ("draft", true, false),
         ("malformed", false, false),
     ] {
         fs::write(&calls, b"").unwrap();
@@ -106,13 +122,19 @@ esac
             .unwrap();
         assert_eq!(output.status.success(), success, "{scenario}: {output:?}");
         let calls = fs::read_to_string(&calls).unwrap();
-        assert!(calls.contains(".isPrerelease == true and .isDraft == false"));
+        assert!(calls.contains("--json isPrerelease,isDraft"));
         assert_eq!(calls.contains("release create "), create, "{calls}");
         assert_eq!(calls.contains("release upload "), success, "{calls}");
         assert!(!calls.contains("--clobber"));
         if create {
-            assert!(calls.contains("--prerelease --latest=false"), "{calls}");
+            assert!(
+                calls.contains("--draft --prerelease --latest=false"),
+                "{calls}"
+            );
             assert!(calls.contains("--verify-tag"), "{calls}");
+        }
+        if success && (create || scenario == "draft") {
+            assert!(calls.contains("--draft=false --latest=false"), "{calls}");
         }
     }
     for (version, prerelease) in [
@@ -135,10 +157,9 @@ esac
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         let calls = fs::read_to_string(&calls).unwrap();
-        assert!(calls.contains(&format!(
-            ".isPrerelease == {prerelease} and .isDraft == false"
-        )));
+        assert!(calls.contains("--json isPrerelease,isDraft"));
         assert_eq!(calls.contains("--prerelease --latest=false"), prerelease);
+        assert_eq!(calls.contains("--draft=false --latest=false"), prerelease);
     }
     for missing in ["GITHUB_REF_NAME", "GITHUB_REPOSITORY"] {
         fs::write(&calls, b"").unwrap();

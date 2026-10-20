@@ -145,3 +145,61 @@ fn published_install_smoke_verifies_the_published_installer_asset_before_running
         }
     }
 }
+
+/// releases/latest/download/install.sh must never point at a release whose
+/// assets are missing: the release stays a draft until every asset is uploaded
+/// and read back, and only then is it published (and becomes latest).
+#[cfg(unix)]
+#[test]
+fn publisher_publishes_the_release_only_after_every_asset_is_uploaded_and_read_back() {
+    let workflow = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
+    )
+    .unwrap();
+    let valid = publisher_fixture("draft-order", None);
+    expect_success(run_publisher_steps(&workflow, &valid));
+    let calls = fs::read_to_string(valid.0.join("gh-calls")).unwrap();
+    let position = |needle: &str| {
+        calls
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle}: {calls}"))
+    };
+    let create = position("release create v99.0.0");
+    let upload = position("release upload v99.0.0");
+    let readback = position("--json assets");
+    let publish = position("release edit v99.0.0");
+    assert!(
+        create < upload && upload < readback && readback < publish,
+        "{calls}"
+    );
+    assert!(calls[create..upload].contains("--draft"), "{calls}");
+    assert!(
+        calls[publish..].contains("--draft=false --latest"),
+        "{calls}"
+    );
+
+    // A failed upload or a read-back that differs from dist leaves only a draft.
+    for (label, from, to) in [
+        (
+            "upload-fails",
+            "    : > \"$SOULMATE_UPLOAD_MARKER\"\n    exit 0\n",
+            "    exit 1\n",
+        ),
+        (
+            "readback-differs",
+            "        exit 0 ;;\n    esac\n    exit 1 ;;",
+            "        printf 'unexpected.tar.gz 1\\n'\n        exit 0 ;;\n    esac\n    exit 1 ;;",
+        ),
+    ] {
+        let fixture = publisher_fixture(&format!("draft-{label}"), None);
+        let gh = fixture.0.join("bin/gh");
+        let text = fs::read_to_string(&gh).unwrap();
+        assert!(text.contains(from), "{label}: fake gh shape changed");
+        fs::write(&gh, text.replace(from, to)).unwrap();
+        let output = run_publisher_steps(&workflow, &fixture);
+        assert!(!output.status.success(), "{label}: {output:?}");
+        let calls = fs::read_to_string(fixture.0.join("gh-calls")).unwrap();
+        assert!(calls.contains("--draft"), "{label}: {calls}");
+        assert!(!calls.contains("release edit "), "{label}: {calls}");
+    }
+}
