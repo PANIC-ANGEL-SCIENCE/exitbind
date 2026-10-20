@@ -63,6 +63,9 @@ pub struct AgentConfig {
     pub cross_context: String,
     #[serde(default)]
     pub runtime: RuntimeConfig,
+    /// Guidance bodies delivered whole when an assignment enters a phase.
+    #[serde(rename = "phaseGuidance", default)]
+    pub phase_guidance: Vec<super::phase_guidance::PhaseGuidance>,
 }
 
 /// Requested host runtime bindings for an agent.

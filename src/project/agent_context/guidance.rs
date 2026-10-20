@@ -1,4 +1,5 @@
 //! One validated, ordered projection of eligible memory and project lessons.
+use super::phase_guidance;
 use crate::{config::Loaded, evidence::hash, memory, project::path};
 use serde_json::{json, Value};
 
@@ -183,6 +184,20 @@ pub(crate) fn retain_current(
         let mut retained = Vec::with_capacity(entries.len());
         for entry in entries {
             let reference = &entry["reference"];
+            if phase_guidance::is_phase_item(entry) {
+                if phase_guidance::still_current(loaded, agent, reference) {
+                    retained.push(entry.clone());
+                } else {
+                    add_notice(
+                        &mut notices,
+                        unavailable_notice(
+                            reference,
+                            "eligibility_or_source_changed_before_delivery",
+                        ),
+                    );
+                }
+                continue;
+            }
             if current
                 .references
                 .iter()
@@ -236,6 +251,23 @@ pub(crate) fn retain_current(
     guidance["unavailableCount"] = json!(notices.len());
     guidance["usedBytes"] = json!(used_bytes);
     guidance["unavailable"] = Value::Array(notices);
+    if guidance["phaseGuidance"].is_object() {
+        let count = |field: &str| {
+            guidance[field].as_array().map_or(0, |entries| {
+                entries
+                    .iter()
+                    .filter(|entry| phase_guidance::is_phase_item(entry))
+                    .count()
+            })
+        };
+        let (selected, overflowed) = (count("items"), count("overflow"));
+        guidance["phaseGuidance"]["selectedCount"] = json!(selected);
+        guidance["phaseGuidance"]["overflowCount"] = json!(overflowed);
+        guidance["phaseGuidance"]["text"] = json!(format!(
+            "{selected} phase guidance bod{} delivered whole, {overflowed} by read route",
+            if selected == 1 { "y" } else { "ies" }
+        ));
+    }
     Ok(())
 }
 
@@ -317,7 +349,7 @@ pub(crate) fn guidance(
     host: &str,
     budget: usize,
 ) -> Result<Value, String> {
-    guidance_with_ceiling(loaded, agent, task, host, budget, None, None)
+    guidance_with_ceiling(loaded, agent, task, host, budget, None, None, &[])
 }
 
 pub(crate) fn guidance_for_assignment(
@@ -346,6 +378,10 @@ pub(crate) fn guidance_for_assignment(
         None
     };
     let cross_context = packet["frozenCrossContext"].as_str();
+    let phases = crate::config::phase_guidance::phases_for(
+        packet["role"].as_str().unwrap_or_default(),
+        packet["attempt"].as_u64().unwrap_or(1),
+    );
     guidance_with_ceiling(
         loaded,
         agent,
@@ -354,9 +390,11 @@ pub(crate) fn guidance_for_assignment(
         budget,
         ceiling.as_deref(),
         cross_context,
+        &phases,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn guidance_with_ceiling(
     loaded: &Loaded,
     agent: &str,
@@ -365,8 +403,9 @@ fn guidance_with_ceiling(
     budget: usize,
     scope_ceiling: Option<&[String]>,
     cross_context_ceiling: Option<&str>,
+    phases: &[&str],
 ) -> Result<Value, String> {
-    let (items, mut overflow, unavailable) = guidance_items(
+    let (memory_items, memory_overflow, memory_unavailable) = guidance_items(
         loaded,
         agent,
         task,
@@ -374,6 +413,15 @@ fn guidance_with_ceiling(
         scope_ceiling,
         cross_context_ceiling,
     )?;
+    // Phase bodies come first: they are the step's own instructions.
+    let declares_phase_guidance = loaded
+        .agent(agent)
+        .is_some_and(|configured| !configured.phase_guidance.is_empty());
+    let (mut items, mut overflow, mut unavailable) =
+        phase_guidance::items(loaded, agent, phases, MAX_ITEM_BYTES)?;
+    items.extend(memory_items);
+    overflow.extend(memory_overflow);
+    unavailable.extend(memory_unavailable);
     let mut selected = Vec::new();
     let mut used = 0usize;
     for item in items {
@@ -383,6 +431,16 @@ fn guidance_with_ceiling(
         if used.saturating_add(bytes) <= budget {
             used += bytes;
             selected.push(item);
+            continue;
+        }
+        if phase_guidance::is_phase_item(&item) {
+            overflow.push(phase_guidance::overflow_entry(
+                loaded,
+                agent,
+                item["reference"].clone(),
+                bytes,
+                "recipient_budget",
+            )?);
             continue;
         }
         overflow.push(overflow_item(
@@ -402,6 +460,9 @@ fn guidance_with_ceiling(
         "overflowCount":overflow_count,"unavailable":unavailable,
         "unavailableCount":unavailable_count,"budgetBytes":budget,"usedBytes":used,
         "meaning":"current eligible complete items; overflow is available through its role/task-scoped read route; no permission, check, review or acceptance authority"});
+    if declares_phase_guidance {
+        result["phaseGuidance"] = json!({"phases": phases});
+    }
     retain_current(
         loaded,
         agent,

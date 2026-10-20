@@ -226,6 +226,28 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 Ok(())
             }
         }
-        _ => Err("project context accepts only memory ITEM_ID".into()),
+        Some("guidance") => {
+            args::assert_positionals("project context guidance", arguments, 3)?;
+            let id = arguments
+                .positional
+                .get(2)
+                .ok_or("project context guidance requires ITEM_ID")?;
+            let option = |name: &str| arguments.options.get(name).map(String::as_str);
+            let (Some(agent), Some(expected)) = (option("agent"), option("expected-sha256")) else {
+                return Err(
+                    "project context guidance requires --agent AGENT and --expected-sha256 SHA"
+                        .into(),
+                );
+            };
+            let value =
+                crate::project::agent_context::phase_guidance_content(loaded, id, agent, expected)?;
+            if arguments.flags.contains_key("json") {
+                print_json(&value)
+            } else {
+                print!("{}", value["content"].as_str().unwrap_or_default());
+                Ok(())
+            }
+        }
+        _ => Err("project context accepts only memory ITEM_ID or guidance ITEM_ID".into()),
     }
 }

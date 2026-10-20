@@ -1,4 +1,5 @@
 pub(crate) mod boundary;
+pub(crate) mod phase_guidance;
 pub(crate) mod profile;
 pub(crate) mod types;
 
@@ -476,9 +477,11 @@ fn validate_agent(name: &str, value: &Value, errors: &mut Vec<String>) {
         "retention",
         "crossContext",
         "runtime",
+        phase_guidance::FIELD,
     ];
     allowed.extend_from_slice(STRING_ARRAY_FIELDS);
     reject_unknown(agent, &allowed, &format!("agents.{name}"), errors);
+    phase_guidance::validate(name, agent.get(phase_guidance::FIELD), errors);
 
     if let Some(display) = agent.get("displayName") {
         let valid = display.as_str().is_some_and(|text| {
