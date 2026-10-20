@@ -293,7 +293,7 @@
       },
       {
         "pinned": "For a rollback to the 0.28.0 line, set `ROLLBACK_TAG` to that published tag.",
-        "reason": "Minimum or introducing version of a feature, format or reader; a later release does not change it."
+        "reason": "Rollback example naming an older published release line; it illustrates ROLLBACK_TAG and is not a current-version claim."
       }
     ],
     "docs/value-baseline.md": [
