@@ -123,5 +123,53 @@ grep -F 'run focused "$CARGO" test --locked --features repository-checks "$@"' \
   "$root/tooling/repository/ci/test-focused.sh" >/dev/null ||
   fail 'focused tests must include repository-only contract targets'
 
+proof_base_functions=$(sed -n \
+  -e '/^proof_base_is_ref() {$/,/^}$/p' \
+  -e '/^prepare_value_proof_base() {$/,/^}$/p' \
+  "$root/tooling/repository/ci/ci-local.sh")
+case $proof_base_functions in
+  *'proof_base_is_ref() {'*'prepare_value_proof_base() {'*) ;;
+  *) fail 'ci-local.sh proof-base preparation functions not found' ;;
+esac
+proof_work=$(mktemp -d "${TMPDIR:-/tmp}/ci-proof-base.XXXXXX")
+trap 'rm -rf "$proof_work"' EXIT HUP INT TERM
+git init -q --bare "$proof_work/remote.git"
+git init -q "$proof_work/source"
+git -C "$proof_work/source" config user.name 'CI proof-base fixture'
+git -C "$proof_work/source" config user.email 'ci-proof-base@example.invalid'
+git -C "$proof_work/source" commit -q --allow-empty -m fork
+fork=$(git -C "$proof_work/source" rev-parse HEAD)
+git -C "$proof_work/source" commit -q --allow-empty -m main-moved
+git -C "$proof_work/source" update-ref refs/remotes/pub/main HEAD
+git -C "$proof_work/source" checkout -q -b candidate "$fork"
+git -C "$proof_work/source" commit -q --allow-empty -m candidate
+git -C "$proof_work/source" remote add origin "$proof_work/remote.git"
+git -C "$proof_work/source" push -q origin candidate
+mkdir "$proof_work/run"
+# A fresh shell keeps set -e in force even when the caller tests the status.
+prepare_proof_base() {
+  (
+    cd "$proof_work/source"
+    VALUE_PROOF_BASE=$1 run_dir=$proof_work/run platform=fixture \
+      PROOF_BASE_FUNCTIONS=$proof_base_functions \
+      sh -eu -c 'eval "$PROOF_BASE_FUNCTIONS"; prepare_value_proof_base'
+  )
+}
+resolved=$(prepare_proof_base pub/main 2>&1) || fail "a ref proof base failed: $resolved"
+case $resolved in
+  *"proof-base=$fork") ;;
+  *) fail "a ref proof base must resolve to its merge-base $fork: $resolved" ;;
+esac
+resolved=$(prepare_proof_base "$fork" 2>&1) || fail "a SHA proof base failed: $resolved"
+case $resolved in
+  *"proof-base=$fork") ;;
+  *) fail "a SHA proof base must be used unchanged: $resolved" ;;
+esac
+if resolved=$(prepare_proof_base no-such-ref 2>&1); then
+  fail "an unknown ref proof base must fail: $resolved"
+fi
+rm -rf "$proof_work"
+trap - EXIT HUP INT TERM
+
 "$root/tooling/repository/ci/test-ci-selected-history.sh"
 printf 'ci-stage contract passed\n'
