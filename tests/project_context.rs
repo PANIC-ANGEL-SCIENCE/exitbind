@@ -183,8 +183,13 @@ fn large_project_keeps_the_whole_session_context_bounded_and_jit_visible() {
     }
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
     let context = session_hook(&root);
-    assert!(context.len() <= 3072, "{} bytes", context.len());
-    assert!(context.contains("exitbind project context --json"));
+    // The 3072-byte budget was sized for bare product names; the three
+    // receiving routes now print the executable and the configuration.
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    let config = root.canonicalize().unwrap().join("exitbind.json");
+    let routes = 3 * (exe.len() - "exitbind".len() + " --config ".len() + config.as_os_str().len());
+    assert!(context.len() <= 3072 + routes, "{} bytes", context.len());
+    assert!(context.contains(&format!("{exe} project context --json --config ")));
     assert!(context.contains("Preserve the existing root host conversation"));
     fs::remove_dir_all(root).unwrap();
 }

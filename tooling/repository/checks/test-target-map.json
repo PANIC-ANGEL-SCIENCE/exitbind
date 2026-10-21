@@ -2113,8 +2113,8 @@
     },
     "tests/project_context.rs": {
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "7ad3e9190b474122c9ae07d039433c6607cae11a38aa81f3fcfe43d2a3491eb7",
-      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "5aebc30b7e3880ab58475df6713338b4f00b269ee2d1d5714044f7c6b3e505e3",
+      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the bounded SessionStart case allows the bytes the three receiving routes add by printing the executable and `--config`, and asserts the project-context route with them; the case is otherwise unchanged."
     },
     "tests/project_memory_projection.rs": {
       "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
