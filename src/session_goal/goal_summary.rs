@@ -17,11 +17,32 @@ fn plural(count: usize, word: &str) -> String {
     format!("{count} {word}{}", if count == 1 { "" } else { "s" })
 }
 
+/// The revision a closed Goal record closed at, or `None` while it is open.
+/// A reopening admission resets `closure.closed`, so this reads open again.
+pub(crate) fn closed_revision(record: &Value) -> Option<u64> {
+    if record["closure"]["closed"] != true {
+        return None;
+    }
+    Some(
+        record["closure"]["revision"]
+            .as_u64()
+            .or_else(|| record["revision"].as_u64())
+            .unwrap_or(0),
+    )
+}
+
 /// The journey fact, or `None` for a Goal without native journey membership.
 /// `completion` is the already computed `journeyCompletion` when available;
-/// without it only the recorded membership is stated.
+/// without it only the recorded membership is stated. A closed Goal states
+/// only its member count: there is no route left to close or read.
 pub(crate) fn journey(record: &Value, completion: Option<&Value>, short: bool) -> Option<String> {
     let state = super::journey::state(record).ok().flatten()?;
+    if let Some(revision) = closed_revision(record) {
+        return Some(format!(
+            "Journey: {}; closed with the Goal (revision {revision})",
+            plural(state.members.len(), "member")
+        ));
+    }
     Some(journey_text(
         state.members.len(),
         state.admissions.len(),
@@ -164,6 +185,41 @@ pub(crate) fn setup_text(loaded: &Loaded) -> Result<String, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn member(n: char) -> Value {
+        let sha = |c: char| c.to_string().repeat(64);
+        json!({"work":format!("smw_{}", sha(n)),"startEventSha256":sha('a'),
+            "parentGoalId":"goal","parentObservedGoalEventSha256":sha('b'),
+            "workGoalSha256":sha('c'),"host":"claude","sessionKey":sha('d'),
+            "ownerIdentitySha256":sha('e'),"ownerProjectId":null,
+            "projectIdentitySha256":sha('f'),"localIdentitySha256":sha('a'),
+            "configPath":"/tmp/p/exitbind.json","configSha256":sha('b'),
+            "productRoot":"/tmp/p","stateRoot":"/tmp/p/.exitbind"})
+    }
+
+    #[test]
+    fn a_closed_goal_states_its_journey_closed_without_any_route() {
+        let mut record = json!({"goal":"g","goalId":"goal","revision":30,
+            "journeyMembershipProtocol":2,"journeyMembers":[member('1'), member('2')],
+            "journeyIntegrations":[],"journeyAdmissions":[],
+            "closure":{"closed":true,"revision":30,"resultRefs":[]}});
+        let open = json!({"state":"blocked","members":{"current":0,"integrationSupported":0},
+            "unresolved":[{"work":"smw_0","state":"unavailable"}],"integrationWork":null});
+        let expected = "Journey: 2 members; closed with the Goal (revision 30)";
+        for (completion, short) in [(None, false), (Some(&open), false), (None, true)] {
+            let text = journey(&record, completion, short).unwrap();
+            assert_eq!(text, expected);
+            assert!(!text.contains("not yet current") && !text.contains("closes"));
+            assert!(!text.contains(READ_ROUTE) && !text.contains("read:"));
+        }
+        let line = hook_line(&record, None).unwrap();
+        assert_eq!(line, format!("Goal goal: {expected}"));
+        // A reopening admission resets closure, and the open text returns.
+        record["closure"] = json!({"closed":false,"revision":null,"resultRefs":[]});
+        assert!(closed_revision(&record).is_none());
+        let text = journey(&record, None, false).unwrap();
+        assert!(text.contains("not yet current"), "{text}");
+    }
 
     #[test]
     fn a_goal_without_journey_membership_states_no_journey() {

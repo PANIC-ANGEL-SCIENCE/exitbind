@@ -103,7 +103,10 @@ commands, the `setup --apply` response as `goalText`, and the SessionStart
 hook) ends with two facts. For a native conversation Goal it states the
 journey: its member count, how it closes (each member accepted and current,
 or one final `--journey-integration` Work; a stale accepted member needs the
-integration Work), and the read route for members not yet current. It always
+integration Work), and the read route for members not yet current. Once the
+Goal is closed it states only the member count and that the journey closed
+with the Goal, and the SessionStart hook prints one line saying the Goal is
+closed with nothing to resume. It always
 states the project-lesson state: `Lessons: none configured` or
 `Lessons: N deliverable`.
 

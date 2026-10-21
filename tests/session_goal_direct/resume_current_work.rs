@@ -504,3 +504,78 @@ fn resume_hook_names_the_open_worker_assignment_and_the_dirty_checkout_trees() {
     let _ = fs::remove_dir_all(&extra);
     fs::remove_dir_all(project.root).unwrap();
 }
+
+#[test]
+fn resume_hook_on_a_closed_goal_states_one_fact_and_no_recovery_route() {
+    let project = Project::new("resume-closed-goal");
+    let session = "claude-resume-closed-goal";
+    in_session(
+        &project,
+        session,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "closed-goal",
+            "--goal",
+            "A conversation that ends before the next session",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+    );
+    let closed = in_session(
+        &project,
+        session,
+        &["goal", "close", "--direct", "--goal-id", "closed-goal"],
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+    let revision = closed["closure"]["revision"].as_u64().unwrap();
+
+    // After the fixed session core, the recovery text is exactly one plain fact.
+    let context = resume_hook(&project, session, &claude(session));
+    let fact = format!(
+        "Exitbind native Goal closed-goal is closed (revision {revision}); nothing to resume."
+    );
+    let (_, recovery) = context.rsplit_once("\nLead profile: ").unwrap();
+    assert_eq!(
+        recovery.split_once('\n').map(|(_, rest)| rest),
+        Some(fact.as_str()),
+        "{context}"
+    );
+    for absent in [
+        "hint",
+        "Journey:",
+        "not yet current",
+        "session recovery show",
+        "Goal closed-goal:",
+    ] {
+        assert!(!context.contains(absent), "{absent}: {context}");
+    }
+
+    // The Goal text states the closed journey without any route.
+    let status = in_session(&project, session, &["goal", "status", "--json"]);
+    let text = status["goalProgress"]["systemText"].as_str().unwrap();
+    assert!(
+        text.contains(&format!(
+            "Journey: 0 members; closed with the Goal (revision {revision})"
+        )),
+        "{text}"
+    );
+    assert!(
+        !text.contains("not yet current") && !text.contains("closes"),
+        "{text}"
+    );
+    // The journey diagnostics stay in the JSON.
+    assert!(status["goalProgress"]["journeyCompletion"].is_object());
+
+    // The read route keeps its diagnostics.
+    let show = ok_json(exitbind(
+        &std::env::temp_dir(),
+        &project.session_store,
+        &claude(session),
+        &["session", "recovery", "show", "--json"],
+        b"",
+    ));
+    assert_eq!(show["goal"]["goalId"], "closed-goal");
+    fs::remove_dir_all(project.root).unwrap();
+}

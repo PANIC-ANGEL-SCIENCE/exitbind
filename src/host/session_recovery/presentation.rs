@@ -47,6 +47,13 @@ pub(crate) fn hook_context(
         Ok(None) => return Some("Exitbind session recovery is unresolved: no canonical native Goal is available; no Work was selected.".into()),
         Err(error) => return Some(format!("Exitbind session recovery is unresolved: {error}; no Work was selected.")),
     };
+    // A closed Goal leaves nothing to resume: state that one fact only.
+    if let Some(revision) = session_goal::goal_summary::closed_revision(&record) {
+        return Some(format!(
+            "Exitbind native Goal {} is closed (revision {revision}); nothing to resume.",
+            record["goalId"].as_str().unwrap_or("unknown")
+        ));
+    }
     let hinted = hint_text(payload, cwd_config_path, &session, &owner, &record, started);
     let deadline = started + HOOK_BUDGET;
     // The journey and lesson facts the Lead needs, from the Goal record and
