@@ -2233,8 +2233,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "0d2e68b82387b317205073817f6d84243a23e9c8eb02f415a99632ee8bca731c",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs module; existing assertions are unchanged."
+      "currentSha256": "96861da0f0e0902d7b7353f696a808053397be7290f1b8fc2348f711cb3a83fe",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",

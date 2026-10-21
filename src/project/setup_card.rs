@@ -125,7 +125,7 @@ pub(super) fn register(
 
 /// Rows of the first markdown table whose header has a `Done when` column:
 /// `S<first cell>` with the exact `Done when` cell text.
-fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
+pub(crate) fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
     let mut lines = text.lines().map(str::trim).peekable();
     while let Some(line) = lines.next() {
         let Some(header) = cells(line) else {

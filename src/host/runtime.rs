@@ -10,12 +10,13 @@ pub(crate) use activation::{assess_activation, classify_activation, Activation, 
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
 const MAX_OUTPUT: usize = super::assignment_evidence::MAX_CONTEXT_OUTPUT;
-const EVENTS: [&str; 5] = [
+const EVENTS: [&str; 6] = [
     "SessionStart",
     "SubagentStart",
     "SubagentStop",
     "PreCompact",
     "PostCompact",
+    "PostToolUse",
 ];
 
 /// Hook execution is deliberately fail-open: malformed, ambiguous, or unsafe
@@ -44,6 +45,11 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
     if !EVENTS.contains(&event) {
+        return Ok(());
+    }
+    if event == "PostToolUse"
+        && !(crate::producer::exitbind_surface() && super::plan_card::is_plan_approval(object))
+    {
         return Ok(());
     }
     if event == "SessionStart" {
@@ -165,6 +171,12 @@ pub fn run() -> Result<(), String> {
             config_path.to_str(),
         )?;
         return Ok(());
+    }
+    if event == "PostToolUse" {
+        return match super::plan_card::on_approval(&loaded, object) {
+            Some(line) => emit(event, &line),
+            None => Ok(()),
+        };
     }
     // Claude Code names an environment file for SessionStart; Codex does not.
     if event == "SessionStart" && std::env::var_os("CLAUDE_ENV_FILE").is_some() {

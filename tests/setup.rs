@@ -9,6 +9,9 @@ mod lesson_carry;
 #[cfg(unix)]
 #[path = "setup/native_display.rs"]
 mod native_display;
+#[cfg(unix)]
+#[path = "setup/plan_card.rs"]
+mod plan_card;
 
 use std::{fs, path::Path, process::Output};
 

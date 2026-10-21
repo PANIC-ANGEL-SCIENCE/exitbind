@@ -829,6 +829,18 @@ revision. A worker's return from another session reaches the Lead's line at
 the Lead's next Goal or Work command or SessionStart. The line is display
 only; the Goal ledger and `goal status` stay authoritative.
 
+### Approved plan to task card (Claude Code)
+
+`hooks apply --hosts claude` also adds a `PostToolUse` record with matcher
+`ExitPlanMode`, which runs only after the human approves a plan. When the
+approved plan has a `Done when` step table, Exitbind saves it unchanged as
+`.exitbind/plan-cards/<plan>/TASK.md` (mode 0600), adds `/.exitbind/plan-cards/`
+to the repository's local `info/exclude` so `git status` does not list it, and
+gives the Lead one line naming `exitbind setup --apply --root ROOT --task-card
+PATH`, to run with the project's usual setup options. Nothing is applied.
+A plan without a table, a rejected plan, or any other tool writes and prints
+nothing.
+
 ## Host bridge
 
 One installation covers the binary and the host guidance. `exitbind host

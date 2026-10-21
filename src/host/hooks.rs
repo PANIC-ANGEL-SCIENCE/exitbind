@@ -21,6 +21,16 @@ const EVENTS: [&str; 5] = [
     "PostCompact",
 ];
 
+/// Claude Code's plan approval: `PostToolUse` limited by a matcher, so the
+/// hook runs only after the human approves a plan.
+const CLAUDE_EVENTS: [&str; 4] = [
+    "SessionStart",
+    "SubagentStart",
+    "SubagentStop",
+    "PostToolUse",
+];
+pub(crate) const PLAN_APPROVAL: (&str, &str) = ("PostToolUse", "ExitPlanMode");
+
 /// Claude Code and Codex deliver SubagentStop, which Exitbind uses to capture
 /// a prepared native child's final message; other hosts keep the first two.
 fn host_events(host: &str) -> &'static [&'static str] {
@@ -31,7 +41,11 @@ fn host_events(host: &str) -> &'static [&'static str] {
             &EVENTS[..3]
         }
     } else if host == "claude" {
-        &EVENTS[..3]
+        if crate::producer::exitbind_surface() {
+            &CLAUDE_EVENTS
+        } else {
+            &EVENTS[..3]
+        }
     } else {
         &EVENTS[..2]
     }
@@ -403,7 +417,7 @@ mod recovery_event_tests {
     use super::host_events;
 
     #[test]
-    fn codex_recovery_events_are_additive_and_claude_event_scope_is_unchanged() {
+    fn codex_recovery_and_claude_plan_approval_events_are_additive() {
         let codex = host_events("codex");
         if crate::producer::exitbind_surface() {
             assert_eq!(
@@ -419,10 +433,17 @@ mod recovery_event_tests {
         } else {
             assert_eq!(codex, &["SessionStart", "SubagentStart", "SubagentStop"]);
         }
-        assert_eq!(
-            host_events("claude"),
+        let claude: &[&str] = if crate::producer::exitbind_surface() {
+            &[
+                "SessionStart",
+                "SubagentStart",
+                "SubagentStop",
+                "PostToolUse",
+            ]
+        } else {
             &["SessionStart", "SubagentStart", "SubagentStop"]
-        );
+        };
+        assert_eq!(host_events("claude"), claude);
         assert_eq!(host_events("other"), &["SessionStart", "SubagentStart"]);
     }
 }

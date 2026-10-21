@@ -19,6 +19,7 @@ use std::{
 
 #[path = "setup_card.rs"]
 mod setup_card;
+pub(crate) use setup_card::step_rows;
 #[path = "setup_lessons.rs"]
 mod setup_lessons;
 #[path = "setup_next.rs"]

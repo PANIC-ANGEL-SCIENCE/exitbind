@@ -114,7 +114,11 @@ pub(crate) fn stage(
                 .or_insert_with(|| json!([]))
                 .as_array_mut()
                 .ok_or_else(|| format!("unexpected hooks shape for {event}"))?;
-            groups.push(json!({"hooks": [expected]}));
+            groups.push(if *event == super::hooks::PLAN_APPROVAL.0 {
+                json!({"matcher": super::hooks::PLAN_APPROVAL.1, "hooks": [expected]})
+            } else {
+                json!({"hooks": [expected]})
+            });
             actions.push(format!(
                 "{} {event} handler",
                 if source_exists { "add" } else { "create" }

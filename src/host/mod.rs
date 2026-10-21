@@ -7,6 +7,7 @@ pub(crate) mod codegraph;
 pub(crate) mod codex_exec;
 pub(crate) mod hooks;
 pub(crate) mod native_session;
+pub(crate) mod plan_card;
 pub(crate) mod project_memory;
 pub(crate) mod project_resources;
 pub(crate) mod runtime;
