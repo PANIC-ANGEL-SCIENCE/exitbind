@@ -2,7 +2,10 @@
 //!
 //! `setup --task-card PATH` turns the card's step table into the Goal's named
 //! requirements (`S<step>` with the exact `Done when` cell) and prints the
-//! start path that follows: `goal cover`, `goal prepare`, `work begin`. The
+//! start path that follows: `goal cover`, `goal prepare`, `work begin`, for the
+//! rows `--first-work` names (default: every row). Where the Goal is recorded
+//! is decided before setup writes anything: a native session Goal another
+//! project owns selects this project's journal, and the report says so. The
 //! Goal store and requirement rules stay with `session_goal`; this module only
 //! parses the card and calls those owners.
 
@@ -17,28 +20,88 @@ pub(super) struct Card {
     pub(super) path: String,
     pub(super) goal_id: String,
     pub(super) rows: Vec<(String, String)>,
+    /// The rows the first Work covers, in card order.
+    pub(super) first: Vec<String>,
 }
 
 impl Card {
+    /// The first Work's requirement list for `goal prepare` and `work begin`.
     pub(super) fn ids(&self) -> String {
-        self.rows
-            .iter()
-            .map(|(id, _)| id.as_str())
-            .collect::<Vec<_>>()
-            .join(",")
+        self.first.join(",")
     }
 
     pub(super) fn view(&self) -> Value {
+        let remaining: Vec<&str> = self
+            .rows
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .filter(|id| !self.first.iter().any(|first| first == id))
+            .collect();
         json!({"path": self.path, "goalId": self.goal_id,
-            "requirements": self.rows.iter().map(|(id, text)| json!({"id": id, "obligation": text})).collect::<Vec<_>>()})
+            "requirements": self.rows.iter().map(|(id, text)| json!({"id": id, "obligation": text})).collect::<Vec<_>>(),
+            "firstWork": self.first, "remaining": remaining})
+    }
+}
+
+/// Where the card's Goal and rows are recorded.
+pub(super) struct CardScope {
+    pub(super) project: bool,
+    /// Why the project journal was selected although a session is present.
+    pub(super) reason: Option<&'static str>,
+}
+
+const FOREIGN_OWNER: &str =
+    "the native session Goal is owned by another configured project; this project's journal records the card";
+const UNOWNED_JOURNAL: &str =
+    "the native session Goal journal has no owner record; this project's journal records the card";
+
+/// Decide, without writing, where the card is recorded: the native session
+/// scope when this project owns it or no one does yet, otherwise the project
+/// journal. `config` is the project configuration, which may not exist yet.
+pub(super) fn card_scope(facts: &SetupFacts, config: &Path) -> Result<CardScope, String> {
+    let project = |reason| {
+        Ok(CardScope {
+            project: true,
+            reason,
+        })
+    };
+    let Some(session) = crate::session_goal::native::current()? else {
+        return project(None);
+    };
+    let Some(owner) = session.owner()? else {
+        if crate::session_goal::read(&session.root)?.is_some() {
+            return project(Some(UNOWNED_JOURNAL));
+        }
+        return Ok(CardScope {
+            project: false,
+            reason: None,
+        });
+    };
+    let local = if config.is_file() {
+        let path = config
+            .to_str()
+            .ok_or("configuration path is not valid UTF-8")?;
+        crate::session_goal::native::owner_for(&crate::config::load(Some(path))?)?
+    } else {
+        let root = Path::new(&facts.root);
+        let state = facts.state_root.as_deref().map_or(root, Path::new);
+        crate::session_goal::native::owner_for_roots(root, state, facts.project_id.clone())?
+    };
+    if owner.identity_sha256 == local.identity_sha256 && owner.project_id == local.project_id {
+        Ok(CardScope {
+            project: false,
+            reason: None,
+        })
+    } else {
+        project(Some(FOREIGN_OWNER))
     }
 }
 
 /// Parse the card named by `--task-card`, or `None` when none was given.
 pub(super) fn plan(facts: &SetupFacts) -> Result<Option<Card>, String> {
     let Some(card) = facts.task_card.as_deref() else {
-        if facts.goal_id.is_some() {
-            return Err("--goal-id requires --task-card PATH".into());
+        if facts.goal_id.is_some() || facts.first_work.is_some() {
+            return Err("--goal-id and --first-work require --task-card PATH".into());
         }
         return Ok(None);
     };
@@ -59,11 +122,41 @@ pub(super) fn plan(facts: &SetupFacts) -> Result<Option<Card>, String> {
             .ok_or("the task card's directory name is not a valid Goal ID; pass --goal-id ID")?
             .to_owned(),
     };
+    let rows = step_rows(&text)?;
+    let first = match facts.first_work.as_deref() {
+        None => rows.iter().map(|(id, _)| id.clone()).collect(),
+        Some(ids) => first_rows(&rows, ids)?,
+    };
     Ok(Some(Card {
-        rows: step_rows(&text)?,
+        rows,
         path,
         goal_id,
+        first,
     }))
+}
+
+/// The `--first-work` IDS in card order; an ID the card has no row for is
+/// refused here, before setup writes anything.
+fn first_rows(rows: &[(String, String)], ids: &str) -> Result<Vec<String>, String> {
+    let named: Vec<&str> = ids.split(',').map(str::trim).collect();
+    if named.iter().any(|id| id.is_empty()) {
+        return Err("--first-work must name card rows as S<step>[,S<step>...]".into());
+    }
+    if let Some(unknown) = named
+        .iter()
+        .find(|id| !rows.iter().any(|(row, _)| row == *id))
+    {
+        let known: Vec<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
+        return Err(format!(
+            "--first-work {unknown} names no task card row; the card has {}",
+            known.join(", ")
+        ));
+    }
+    Ok(rows
+        .iter()
+        .map(|(id, _)| id.clone())
+        .filter(|id| named.contains(&id.as_str()))
+        .collect())
 }
 
 /// Record the card's Goal and requirements in the native session scope when
@@ -79,7 +172,12 @@ pub(super) fn register(
     let failed = |error: String| {
         format!("setup applied the configuration, but the task card was not registered: {error}")
     };
-    let scope = crate::session_goal::native::scope(loaded, true).map_err(failed)?;
+    let selected = card_scope(facts, &loaded.path).map_err(failed)?;
+    let scope = if selected.project {
+        crate::session_goal::native::project_scope(loaded)
+    } else {
+        crate::session_goal::native::scope(loaded, true).map_err(failed)?
+    };
     scope.require_owner().map_err(failed)?;
     let open = crate::session_goal::read(&scope.root)
         .map_err(failed)?
@@ -119,6 +217,7 @@ pub(super) fn register(
     }
     next["taskCard"]["registration"] = json!({"registered": true,
         "scope": if scope.is_session() { "session" } else { "project" },
+        "scopeReason": selected.reason,
         "incorporated": !open, "requirements": card.rows.len()});
     Ok(())
 }

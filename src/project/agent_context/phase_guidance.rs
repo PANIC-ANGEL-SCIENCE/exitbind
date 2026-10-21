@@ -70,12 +70,8 @@ pub(super) fn overflow_entry(
     bytes: usize,
     reason: &str,
 ) -> Result<Value, String> {
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let command = vec![
-        executable
-            .to_str()
-            .ok_or("executable path is not UTF-8")?
-            .to_owned(),
+        crate::emitted::executable()?,
         "project".into(),
         "context".into(),
         "guidance".into(),

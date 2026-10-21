@@ -271,8 +271,7 @@ fn snapshot_after_source(
     let profile_access = if profile.len() <= 4096 {
         Value::Null
     } else {
-        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-        json!({"command":[executable.to_str().ok_or("profile reader is not UTF-8")?,"profile",name,"--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
+        json!({"command":[crate::emitted::executable()?,"profile",name,"--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
             "sameConfigRequired":true,"sameExecutableRequired":true,"readOnly":true})
     };
     let value = json!({"projectIdentity": selected["projectIdentity"],"configurationSha256":hash::text(&loaded.source),

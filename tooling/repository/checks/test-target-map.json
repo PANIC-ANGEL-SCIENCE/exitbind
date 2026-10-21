@@ -1918,8 +1918,8 @@
     },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "a80e700e6facd1b06b811d38a15b33130cccd8f31873db1961733c5436e773fb",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged."
+      "currentSha256": "e893557fae4dbb2088d80b364c15b1277951f0dd08a9211f32beee51a78a4bb0",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged."
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
@@ -1928,8 +1928,8 @@
     },
     "tests/goal_requirements/intake_and_identity.rs": {
       "baselineSha256": "2755128744e55cfdcc4bbdd3d0352cc579add00b180b75af6911b38270ab92eb",
-      "currentSha256": "9075337662c8c6fe67bbe4af66b6cbaa7f6bcac6bcc232e3dc5b1ce60f660f70",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "4c63665bf8876e3fc19c70211b418a589cba0b2c8bc42cff0fc4bb33107e1353",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (F1 pattern P1): emitted begin and assignment routes now print their placeholders as registered <NAME> tokens, so the substitution keys are <PROJECT_CHECKER>, <CHECK_COMMAND>, <REVIEW_DECISION> and <NEW_ACCEPTED_WORK>; the assertions are unchanged."
     },
     "tests/governor_recovery.rs": {
       "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
@@ -2444,7 +2444,8 @@
       "covers": [
         "src/session_goal",
         "src/kernel/basis.rs",
-        "src/work/"
+        "src/work/",
+        "src/emitted.rs"
       ]
     },
     "goal_progress_presentation": {
@@ -2579,7 +2580,8 @@
         "src/run/",
         "src/kernel/",
         "src/session_goal",
-        "src/project/agent_context/"
+        "src/project/agent_context/",
+        "src/emitted.rs"
       ]
     },
     "work_persistence_recovery": {

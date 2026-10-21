@@ -3,6 +3,7 @@ mod compatibility;
 mod config;
 mod context;
 mod distribution;
+mod emitted;
 mod envelope;
 mod evidence;
 mod host;

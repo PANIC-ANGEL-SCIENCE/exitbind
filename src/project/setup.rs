@@ -58,6 +58,7 @@ pub(crate) struct SetupFacts {
     goal: Option<String>,
     task_card: Option<String>,
     goal_id: Option<String>,
+    first_work: Option<String>,
     lessons_from: Option<String>,
     hosts: Vec<String>,
     hosts_explicit: bool,
@@ -107,6 +108,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         "goal",
         "task-card",
         "goal-id",
+        "first-work",
         "lessons-from",
         "hosts",
         "project-id",
@@ -151,6 +153,7 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
         goal: arguments.options.get("goal").cloned(),
         task_card: arguments.options.get("task-card").cloned(),
         goal_id: arguments.options.get("goal-id").cloned(),
+        first_work: arguments.options.get("first-work").cloned(),
         lessons_from: arguments.options.get("lessons-from").cloned(),
         hosts: split_list(arguments.options.get("hosts"), "hosts")?.unwrap_or_default(),
         hosts_explicit: arguments.options.contains_key("hosts"),
@@ -755,6 +758,9 @@ fn print_report(report: &Value) {
             );
         }
     }
+    if let Some(reason) = report["next"]["taskCard"]["scopeReason"].as_str() {
+        println!("Task card: project journal ({reason})");
+    }
     if let Some(next) = report["next"]["commands"].as_array() {
         println!("Next:");
         for command in next {
@@ -787,6 +793,7 @@ mod tests {
             task_card: None,
             lessons_from: None,
             goal_id: None,
+            first_work: None,
             hosts: Vec::new(),
             hosts_explicit: false,
             project_id: None,

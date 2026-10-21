@@ -117,11 +117,7 @@ pub(super) fn current_executable_sha256() -> Result<String, String> {
 }
 
 pub(super) fn current_executable_path() -> Result<String, String> {
-    let path = std::env::current_exe().map_err(|error| error.to_string())?;
-    let path = fs::canonicalize(path).map_err(|error| error.to_string())?;
-    path.to_str()
-        .map(str::to_owned)
-        .ok_or_else(|| "current executable path is not valid UTF-8".into())
+    crate::emitted::canonical_executable()
 }
 
 pub(super) fn source_root<'a>(loaded: &'a config::Loaded, name: &str) -> Result<&'a Path, String> {

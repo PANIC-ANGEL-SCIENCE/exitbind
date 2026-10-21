@@ -85,9 +85,9 @@ pub(crate) fn recover(
         let request_binding =
             protocol::request_binding(work, &state, &snapshot["ledgerSourceSha256"])?;
         let template = json!({"version": 1, "work": work, "agent": agent,
-            "approved": false, "reason": "<REASON>", "currentBinding": request_binding.clone(),
+            "approved": false, "reason": crate::emitted::slot("REASON"), "currentBinding": request_binding.clone(),
             "snapshot": snapshot,
-            "response": "<COMPLETE_SAVED_STORAGE_FAILURE_RESPONSE>", "responseSha256": "<SHA256_OF_RESPONSE_BYTES>"});
+            "response": crate::emitted::slot("COMPLETE_SAVED_STORAGE_FAILURE_RESPONSE"), "responseSha256": crate::emitted::slot("SHA256_OF_RESPONSE_BYTES")});
         if !apply {
             let apply_command = super::action_forms::command(
                 loaded,

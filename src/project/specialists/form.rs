@@ -13,8 +13,7 @@ pub(crate) fn input_form(
     let agent = loaded
         .agent(name)
         .ok_or("specialist scope requires a configured author")?;
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let validation_command = json!({"command":[executable.to_str().ok_or("executable is not UTF-8")?,"memory","form","<SOURCE>","--scope",scope,"--json","--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
+    let validation_command = json!({"command":[crate::emitted::executable()?,"memory","form",crate::emitted::slot("SOURCE"),"--scope",scope,"--json","--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
         "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current author/project/config/profile binding only; no lifecycle, trial or qualification decision"});
     let validation = source
         .map(|source| validate_source(loaded, name, source))
@@ -44,7 +43,7 @@ pub(crate) fn input_form(
                 "meaning":"Optional file-byte prerequisites only. Use [] for none; narrative authority or applicability restrictions belong in preconditions."}},
         "textRules":"All source strings are nonblank and contain no control characters; array bounds use UTF-8 bytes per item.",
         "validationRoute":validation_command,"validation":validation,
-        "lifecycle":{"propose":["memory","propose",name,"<SOURCE>","--scope",scope,"--ledger","<NEW_LEDGER>","--expires-at","<RFC3339_EXPIRY>"],
+        "lifecycle":{"propose":["memory","propose",name,crate::emitted::slot("SOURCE"),"--scope",scope,"--ledger",crate::emitted::slot("NEW_LEDGER"),"--expires-at",crate::emitted::slot("RFC3339_EXPIRY")],
             "next":"Use the returned nextAction; a separate authorized reviewer reviews exact bytes, then the configured Lead promotes.",
             "inactiveStates":["draft","proposed","reviewed"]},
         "evidence":"References and lifecycle labels are reported claims, not verified trials or authenticated actor independence.",
@@ -106,13 +105,9 @@ pub(crate) fn next_action(
             .collect(),
         _ => Vec::new(),
     };
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::emitted::executable()?;
     let command = |actor: Option<&str>| -> Result<Vec<String>, String> {
-        let mut argv = vec![
-            exe.to_str().ok_or("executable is not UTF-8")?.to_owned(),
-            "memory".into(),
-            action.into(),
-        ];
+        let mut argv = vec![exe.clone(), "memory".into(), action.into()];
         if let Some(actor) = actor {
             argv.push(actor.to_owned());
         }

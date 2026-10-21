@@ -92,8 +92,8 @@ pub(crate) fn draft(
         "version": 1,
         "kind": "duplicate_permit_owner_recovery",
         "approved": false,
-        "owner": "<OWNER_IDENTITY>",
-        "reason": "<OWNER_REASON>",
+        "owner": crate::emitted::slot("OWNER_IDENTITY"),
+        "reason": crate::emitted::slot("OWNER_REASON"),
         "currentConfigSha256": crate::evidence::hash::text(&loaded.source),
         "predecessor": predecessor,
         "grantEventSha256": grant["eventSha256"],
@@ -102,8 +102,8 @@ pub(crate) fn draft(
         "blockedGovernorEventSha256": blocked["governorEvent"]["eventSha256"],
         "identity": identity,
         "productSnapshotSha256": product_snapshot,
-        "invocation": {"sameExactInvocation": false, "evidence": "<OWNER_INVOCATION_EVIDENCE>"},
-        "effectsEvidence": {"root":"state", "path":"<EFFECT_EVIDENCE_PATH>", "sha256":"<EFFECT_EVIDENCE_SHA256>", "bytes":0}
+        "invocation": {"sameExactInvocation": false, "evidence": crate::emitted::slot("OWNER_INVOCATION_EVIDENCE")},
+        "effectsEvidence": {"root":"state", "path":crate::emitted::slot("EFFECT_EVIDENCE_PATH"), "sha256":crate::emitted::slot("EFFECT_EVIDENCE_SHA256"), "bytes":0}
     });
     Ok(Some(json!({
         "workflow": state["workflow"],

@@ -304,12 +304,8 @@ fn overflow_item(
         return Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
             "readRoute":null,"readRouteUnavailable":"recipient_task_required"}));
     };
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let mut command = vec![
-        executable
-            .to_str()
-            .ok_or("executable path is not UTF-8")?
-            .to_owned(),
+        crate::emitted::executable()?,
         "project".into(),
         "context".into(),
         "memory".into(),

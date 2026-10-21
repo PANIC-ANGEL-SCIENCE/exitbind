@@ -10,13 +10,8 @@ pub(super) fn next_actions(
     hosts: &[String],
     facts: &SetupFacts,
 ) -> Result<Value, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("invoking executable cannot be resolved: {error}"))?;
-    let executable = fs::canonicalize(executable)
-        .map_err(|error| format!("invoking executable cannot be canonicalized: {error}"))?;
-    let executable = executable
-        .to_str()
-        .ok_or("invoking executable path is not valid UTF-8")?;
+    let executable = crate::emitted::canonical_executable()?;
+    let executable = executable.as_str();
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     let cwd = fs::canonicalize(cwd).map_err(|error| error.to_string())?;
     let cwd = cwd.to_str().ok_or("working directory is not valid UTF-8")?;
@@ -66,7 +61,8 @@ pub(super) fn next_actions(
         ]);
         let mut start = Vec::new();
         if let Some(card) = &card {
-            let (named, card_view) = card_start(card, check, config)?;
+            let scope = super::setup_card::card_scope(facts, Path::new(config))?;
+            let (named, card_view) = card_start(card, check, config, &scope)?;
             work_argv.splice(6..6, named.begin);
             if named.project {
                 work_argv.push("--project-goal".into());
@@ -106,14 +102,15 @@ struct NamedStart {
     project: bool,
 }
 
-/// The card's start path: cover the registered rows, prepare all of them with
-/// the checker the check command names, then begin the prepared named Work.
+/// The card's start path: cover the registered rows, prepare the first Work's
+/// rows with the checker the check command names, then begin that Work.
 fn card_start(
     card: &super::setup_card::Card,
     check: &str,
     config: &str,
+    scope: &super::setup_card::CardScope,
 ) -> Result<(NamedStart, Value), String> {
-    let project = crate::session_goal::native::current()?.is_none();
+    let project = scope.project;
     let checker = if Path::new(config).is_file() {
         crate::config::load(Some(config)).and_then(|loaded| {
             crate::session_goal::requirements::resolve_checker(&loaded, None, check)
@@ -146,6 +143,9 @@ fn card_start(
     }
     let mut view = card.view();
     view["scope"] = json!(if project { "project" } else { "session" });
+    if let Some(reason) = scope.reason {
+        view["scopeReason"] = json!(reason);
+    }
     view["checker"] = match checker {
         Ok(derived) => json!({"path": derived.path, "via": derived.via}),
         Err(error) => json!({"path": null, "reason": error}),

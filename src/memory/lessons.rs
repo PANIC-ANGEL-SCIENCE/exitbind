@@ -321,11 +321,9 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
     if items.is_empty() && omitted == unavailable.len() {
         return Ok(None);
     }
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let executable = crate::emitted::executable()?;
     let command = vec![
-        executable
-            .to_str()
-            .ok_or("lesson inspector executable is not UTF-8")?,
+        executable.as_str(),
         "memory",
         "resolve",
         agent,

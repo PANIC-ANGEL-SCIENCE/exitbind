@@ -326,7 +326,7 @@ struct PathPresentation {
 }
 
 fn invoking_binary() -> PathPresentation {
-    std::env::current_exe()
+    crate::emitted::executable_path()
         .map(|path| path_presentation(&path))
         .unwrap_or_else(|_| PathPresentation {
             display: "<invoking binary path unavailable>".to_owned(),

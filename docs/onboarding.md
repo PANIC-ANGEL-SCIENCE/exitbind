@@ -150,11 +150,17 @@ When the round has a task card with a step table, add `--task-card PATH`
 column: each row becomes requirement `S<step>` with the exact `Done when` cell
 as its text. The Goal ID is the card's directory name, or `--goal-id ID`.
 Preview lists those rows; `--apply` incorporates the Goal and registers the
-rows (in the native session Goal when one is present, otherwise the project
-journal) and prints three commands in order: `goal cover`, `goal prepare` and
-the named `work begin`. Running them maps every row to the begun Work before
-the first edit. The checker is derived from `--check-command` as `goal
-prepare` does.
+rows (in the native session Goal when this project owns it or no project does
+yet, otherwise the project journal) and prints three commands in order: `goal
+cover`, `goal prepare` and the named `work begin`. Running them maps every row
+to the begun Work before the first edit. To start with some rows only, add
+`--first-work S1[,S2...]`: every row stays registered, the printed `goal
+prepare` and `work begin` name only those rows, and `next.taskCard.remaining`
+lists the rest; an ID the card lacks is refused before anything is written.
+When the session Goal belongs to another configured project, setup decides
+before writing to use this project's journal and says so in
+`next.taskCard.scopeReason`. The checker is derived from `--check-command` as
+`goal prepare` does.
 
 To start a new round with the previous round's reviewed lessons, add
 `--lessons-from PREVIOUS_CONFIG`. Setup only reads the previous project. Each

@@ -91,7 +91,32 @@ pub(super) fn project(recipient: &Result<Value, String>, routes: &Value) -> Opti
     if let Some(phases) = guidance["phaseGuidance"]["phases"].as_array() {
         result["phases"] = Value::Array(phases.clone());
     }
+    fit(&mut result);
     Some(result)
+}
+
+/// Keep the delivered block within its recipient budget without refusing the
+/// view: items past the budget move, last first, to `omitted` with the
+/// `recipient_budget` reason and their read route.
+fn fit(result: &mut Value) {
+    let Some(budget) = result["budgetBytes"].as_u64() else {
+        return;
+    };
+    let mut used = result["usedBytes"].as_u64().unwrap_or(0);
+    while used > budget {
+        let Some(item) = result["items"].as_array_mut().and_then(Vec::pop) else {
+            break;
+        };
+        used = used.saturating_sub(item["byteLength"].as_u64().unwrap_or(used));
+        let entry = json!({"itemId":item["itemId"],"id":item["id"],"reason":"recipient_budget",
+            "bytes":item["byteLength"],"readRoute":item["readRoute"]});
+        if let Some(omitted) = result["omitted"].as_array_mut() {
+            omitted.push(entry);
+        }
+    }
+    result["usedBytes"] = json!(used);
+    result["itemCount"] = json!(result["items"].as_array().map_or(0, Vec::len));
+    result["omittedCount"] = json!(result["omitted"].as_array().map_or(0, Vec::len));
 }
 
 fn read_route(route: &Value) -> Value {
@@ -118,7 +143,7 @@ mod tests {
                 "unavailable":[{"itemId":"gone","reason":"source_unavailable_or_changed"}]},
             "projectLessons":{"detail":{"command":["exitbind","memory","resolve","worker"]}}});
         let routes = json!({"recipient":{"command":["exitbind","work","expand","W","ref:r"]}});
-        let view = project(&Ok(recipient), &routes).unwrap();
+        let view = project(&Ok(recipient.clone()), &routes).unwrap();
         assert_eq!(view["itemCount"], 2);
         assert_eq!(view["items"][0]["content"], "body");
         assert_eq!(view["items"][0]["phase"], "test");
@@ -136,7 +161,19 @@ mod tests {
             routes["recipient"]["command"]
         );
         assert_eq!(view["phases"], json!(["test"]));
+        assert_eq!(view["usedBytes"], 10);
         assert!(project(&Ok(json!({"available":false})), &routes).is_none());
+        // W1 review F3: a block over its budget is not a refusal; the overflow
+        // is counted as omitted with its route.
+        let mut over = recipient;
+        over["guidance"]["usedBytes"] = json!(10_245);
+        let view = project(&Ok(over), &routes).unwrap();
+        assert_eq!(view["itemCount"], 1);
+        assert_eq!(view["usedBytes"], 10_236);
+        assert_eq!(view["omittedCount"], 3);
+        assert_eq!(view["omitted"][2]["id"], "lesson-1");
+        assert_eq!(view["omitted"][2]["reason"], "recipient_budget");
+        assert_eq!(view["omitted"][2]["readRoute"]["command"][2], "resolve");
         let failed = project(&Err("profile changed".into()), &routes).unwrap();
         assert_eq!(failed["available"], false);
         assert_eq!(

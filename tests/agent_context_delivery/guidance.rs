@@ -51,7 +51,7 @@ impl Fixture {
         work
     }
 
-    fn act_worker(&self, work: &str, executable: &Path) -> Output {
+    pub(super) fn act_worker(&self, work: &str, executable: &Path) -> Output {
         let output = self.call(
             &[
                 "work",
@@ -66,7 +66,7 @@ impl Fixture {
         output
     }
 
-    fn prepare_named_child(&self, work: &str) -> Value {
+    pub(super) fn prepare_named_child(&self, work: &str) -> Value {
         let init = json!({"action":"init","sourceRef":"owner:request",
             "sourceText":"Preserve the frozen memory boundary.",
             "requirements":[{"id":"guidance","text":"Preserve the frozen memory boundary."}]});

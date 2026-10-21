@@ -86,9 +86,9 @@ fn named_after_acceptance_route_preserves_selected_goal_scope() {
         &project,
         &project_begin,
         &[
-            ("PROJECT_CHECKER", "check.sh"),
-            ("CHECK_COMMAND", "sh check.sh all"),
-            ("REVIEW_DECISION", "required"),
+            ("<PROJECT_CHECKER>", "check.sh"),
+            ("<CHECK_COMMAND>", "sh check.sh all"),
+            ("<REVIEW_DECISION>", "required"),
         ],
     );
     let work = started["work"].as_str().unwrap().to_owned();
@@ -101,7 +101,7 @@ fn named_after_acceptance_route_preserves_selected_goal_scope() {
     execute_emitted_route(
         &project,
         project_assignment,
-        &[("NEW_ACCEPTED_WORK", &work)],
+        &[("<NEW_ACCEPTED_WORK>", &work)],
     );
     let assigned_project = project.value(&["goal", "status", "--project", "--json"], None);
     assert_eq!(assigned_project["requirements"]["coverageCurrent"], false);
@@ -145,9 +145,9 @@ fn named_after_acceptance_route_preserves_selected_goal_scope() {
         &project,
         &native_begin,
         &[
-            ("PROJECT_CHECKER", "check.sh"),
-            ("CHECK_COMMAND", "sh check.sh all"),
-            ("REVIEW_DECISION", "required"),
+            ("<PROJECT_CHECKER>", "check.sh"),
+            ("<CHECK_COMMAND>", "sh check.sh all"),
+            ("<REVIEW_DECISION>", "required"),
         ],
     );
     let native_work = native_started["work"].as_str().unwrap().to_owned();
@@ -155,7 +155,7 @@ fn named_after_acceptance_route_preserves_selected_goal_scope() {
     execute_emitted_route(
         &project,
         native_assignment,
-        &[("NEW_ACCEPTED_WORK", &native_work)],
+        &[("<NEW_ACCEPTED_WORK>", &native_work)],
     );
     let assigned_native = project.value(&["goal", "status", "--json"], None);
     assert_eq!(assigned_native["requirements"]["coverageCurrent"], false);

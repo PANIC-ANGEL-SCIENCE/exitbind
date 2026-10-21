@@ -34,9 +34,7 @@ pub(crate) fn bounded_argv(
     config: Option<&str>,
     argv_budget: usize,
 ) -> RecoveryCommand {
-    let executable = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_owned));
+    let executable = crate::emitted::executable().ok();
     let fits = |argv: &[String]| {
         serde_json::to_vec(argv)
             .expect("recovery argv is serializable")

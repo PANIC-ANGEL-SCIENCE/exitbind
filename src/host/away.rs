@@ -561,17 +561,13 @@ fn prompt_for(loaded: &Loaded, ledger: &str, prepared: &Prepared) -> Result<Stri
         "Soulmate"
     };
     let submit = [
-        std::env::current_exe()
-            .map_err(|error| error.to_string())?
-            .to_str()
-            .ok_or_else(|| format!("{product} executable path is not valid UTF-8"))?
-            .to_owned(),
+        crate::emitted::executable()?,
         "run".into(),
         "submit".into(),
         prepared.assignment["agent"].as_str().unwrap_or("").into(),
         ledger.into(),
         "--outcome".into(),
-        "OUTCOME".into(),
+        crate::emitted::slot("OUTCOME"),
         "--artifact".into(),
         prepared.artifact_relative.clone(),
         "--artifact-root".into(),

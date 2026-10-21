@@ -29,8 +29,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 );
             }
             let mut form = memory::lessons::input_form(l)?;
-            let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-            form["validationRoute"] = json!({"command":[executable.to_str().ok_or("executable is not UTF-8")?,"memory","form","<SOURCE>","--scope",scope,"--json","--config",l.path.to_str().ok_or("configuration path is not UTF-8")?],
+            form["validationRoute"] = json!({"command":[crate::emitted::executable()?,"memory","form",crate::emitted::slot("SOURCE"),"--scope",scope,"--json","--config",l.path.to_str().ok_or("configuration path is not UTF-8")?],
                 "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current owner/project/config/profile binding only; no lifecycle or qualification decision"});
             form["validation"] = a
                 .positional

@@ -3,6 +3,7 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+pub(crate) mod fill;
 mod quarantine;
 mod repair;
 
@@ -143,7 +144,7 @@ fn return_choice(
             "--outcome".into(),
             outcome.into(),
             "--reason".into(),
-            "<REASON>".into(),
+            crate::emitted::slot("REASON"),
         ],
         label,
         &["REASON"],
@@ -171,6 +172,9 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
             }
         }
     }
+    if let Some(object) = result.as_object_mut() {
+        object.remove("fillRoute");
+    }
     if let Some(native) = result
         .get_mut("productManaged")
         .and_then(Value::as_object_mut)
@@ -188,7 +192,15 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
     result
 }
 
+/// The complete current forms: each Lead choice names its actor, and each
+/// form with placeholders names the fill route that runs it filled.
 pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
+    let mut result = forms(loaded, work, next, binding);
+    fill::attach(loaded, work, binding, &mut result);
+    result
+}
+
+fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     if next["packet"]["quarantineVerification"].is_object() {
         return quarantine::project(loaded, work, next, binding);
     }
@@ -214,9 +226,9 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                 "replace-check".into(),
                 work.into(),
                 "--check-command".into(),
-                "<NEW_CHECK_COMMAND>".into(),
+                crate::emitted::slot("NEW_CHECK_COMMAND"),
                 "--reason".into(),
-                "<REASON>".into(),
+                crate::emitted::slot("REASON"),
                 "--classification".into(),
                 "defective-contract".into(),
                 "--current-binding".into(),
@@ -238,8 +250,8 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "label": "replace an explicitly defective frozen pre-return check",
                     "command": command(loaded, vec![
                         "work".into(), "replace-check".into(), work.into(),
-                        "--pre-return-command".into(), "<NEW_PRE_RETURN_COMMAND>".into(),
-                        "--reason".into(), "<REASON>".into(),
+                        "--pre-return-command".into(), crate::emitted::slot("NEW_PRE_RETURN_COMMAND"),
+                        "--reason".into(), crate::emitted::slot("REASON"),
                         "--classification".into(), "defective-contract".into(),
                         "--current-binding".into(), binding.into(),
                     ]),
@@ -268,9 +280,9 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                 "replace-check".into(),
                 work.into(),
                 "--check-command".into(),
-                "<NEW_CHECK_COMMAND>".into(),
+                crate::emitted::slot("NEW_CHECK_COMMAND"),
                 "--reason".into(),
-                "<REASON>".into(),
+                crate::emitted::slot("REASON"),
                 "--classification".into(),
                 "defective-contract".into(),
                 "--current-binding".into(),
@@ -371,11 +383,11 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "--decision".into(),
                     "repair".into(),
                     "--reason".into(),
-                    "<REASON>".into(),
+                    crate::emitted::slot("REASON"),
                     "--repair-boundary".into(),
-                    "<REPAIR_BOUNDARY>".into(),
+                    crate::emitted::slot("REPAIR_BOUNDARY"),
                     "--regression".into(),
-                    "<REGRESSION>".into(),
+                    crate::emitted::slot("REGRESSION"),
                 ],
                 "repair",
                 &["REASON", "REPAIR_BOUNDARY", "REGRESSION"],
@@ -395,7 +407,7 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "--decision".into(),
                     "defer".into(),
                     "--reason".into(),
-                    "<REASON>".into(),
+                    crate::emitted::slot("REASON"),
                 ],
                 "defer",
                 &["REASON"],
@@ -415,7 +427,7 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "--decision".into(),
                     "reject".into(),
                     "--reason".into(),
-                    "<REASON>".into(),
+                    crate::emitted::slot("REASON"),
                 ],
                 "reject",
                 &["REASON"],
@@ -435,13 +447,13 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                     "--decision".into(),
                     "supersede".into(),
                     "--reason".into(),
-                    "<REASON>".into(),
+                    crate::emitted::slot("REASON"),
                     "--repair-boundary".into(),
-                    "<REPAIR_BOUNDARY>".into(),
+                    crate::emitted::slot("REPAIR_BOUNDARY"),
                     "--regression".into(),
-                    "<REGRESSION>".into(),
+                    crate::emitted::slot("REGRESSION"),
                     "--successor-basis".into(),
-                    "<SUCCESSOR_BASIS_JSON>".into(),
+                    crate::emitted::slot("SUCCESSOR_BASIS_JSON"),
                 ],
                 "supersede",
                 &[
@@ -509,9 +521,9 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
                 "replace-check".into(),
                 work.into(),
                 "--check-command".into(),
-                "<NEW_CHECK_COMMAND>".into(),
+                crate::emitted::slot("NEW_CHECK_COMMAND"),
                 "--reason".into(),
-                "<REASON>".into(),
+                crate::emitted::slot("REASON"),
                 "--classification".into(),
                 "defective-contract".into(),
                 "--current-binding".into(),
@@ -572,7 +584,7 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
         if grant.is_none() && governor_phase == Some("ready") && !held {
             result["beforeEditing"] = json!({
                 "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
-                    assignment.into(), "--operation".into(), "<OPERATION>".into(),
+                    assignment.into(), "--operation".into(), crate::emitted::slot("OPERATION"),
                     "--request-id".into(), format!("permit-{binding}")]),
                 "placeholders": ["OPERATION"],
                 "inputConstraints": {

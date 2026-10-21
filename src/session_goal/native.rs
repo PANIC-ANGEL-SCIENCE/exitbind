@@ -50,6 +50,20 @@ impl Scope {
                 .into(),
         )
     }
+
+    /// `require_owner` for a command that also accepts `--project`: a foreign
+    /// owner's refusal names that route, before the command writes anything.
+    pub(crate) fn require_owner_or_project(&self) -> Result<(), String> {
+        self.require_owner().map_err(|error| {
+            if self.owner.is_some() {
+                format!(
+                    "{error}; rerun with --project to record in this project's own Goal journal"
+                )
+            } else {
+                error
+            }
+        })
+    }
 }
 
 /// Resolve only host-reported selectors belonging to the current process.
@@ -293,9 +307,22 @@ pub(crate) fn project_scope(loaded: &Loaded) -> Scope {
 }
 
 pub(crate) fn owner_for(loaded: &Loaded) -> Result<Owner, String> {
-    let product = canonical_text(&loaded.product_root, "project root")?;
-    let state = canonical_text(&loaded.state_root, "project state root")?;
-    let project_id = loaded.project_id.clone();
+    owner_for_roots(
+        &loaded.product_root,
+        &loaded.state_root,
+        loaded.project_id.clone(),
+    )
+}
+
+/// The owner identity a project with these roots has, also before its
+/// configuration is written.
+pub(crate) fn owner_for_roots(
+    product_root: &Path,
+    state_root: &Path,
+    project_id: Option<String>,
+) -> Result<Owner, String> {
+    let product = canonical_text(product_root, "project root")?;
+    let state = canonical_text(state_root, "project state root")?;
     Ok(Owner {
         project_id: project_id.clone(),
         identity_sha256: hash::value(&json!({

@@ -3,6 +3,8 @@
 use super::*;
 
 mod challenge;
+mod detail;
+mod fill;
 
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
     print_json(&crate::work::effective_action::attach(value))
@@ -654,21 +656,8 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 a.options.get("receipt").map(String::as_str),
             )?)
         }
-        "detail" => {
-            args::assert_options("work detail", a, &["config", "json", "view"])?;
-            args::assert_positionals("work detail", a, 2)?;
-            let work = positional(a, 1, "work detail requires WORK")?;
-            let value = match a.options.get("view").map(String::as_str) {
-                None => crate::work::readable::current(l, work)?,
-                Some("action") => crate::work::readable::action_view(l, work)?,
-                _ => return Err("work detail --view accepts action; omit it for complete detail".into()),
-            };
-            if a.options.contains_key("view") && !a.flags.contains_key("json") {
-                print!("{}", crate::work::action_text::render(&crate::work::effective_action::attach(&value)));
-                return Ok(());
-            }
-            print_work_json(&crate::producer::observed(value))
-        }
+        "detail" => detail::command(l, a),
+        "fill" => fill::command(l, a),
         "resume" => {
             args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;

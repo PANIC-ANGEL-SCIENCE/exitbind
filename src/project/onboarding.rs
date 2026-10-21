@@ -256,7 +256,7 @@ pub(crate) fn profile_diagnostic(control: &Path, relative: &str) -> Result<Value
 pub fn doctor(path: Option<&str>) -> Vec<Value> {
     let mut checks = Vec::new();
     let mut project_dotagents_config = false;
-    let binary = std::env::current_exe()
+    let binary = crate::emitted::executable_path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "soulmate".into());
     checks.push(json!({"name":"binary","ok":true,"detail":binary}));

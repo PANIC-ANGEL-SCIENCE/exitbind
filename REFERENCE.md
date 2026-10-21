@@ -1100,7 +1100,15 @@ navigation, not evidence of complete instruction delivery or review. Its exact
 section routes retain mandatory context. After a permit/edit, follow the permit response's
 current action route; do not reuse a pre-permit return binding.
 Without `--json` the action view prints the same action, and the same guidance
-items whole with their read routes, as plain text. For an
+items whole with their read routes, as plain text; every command line names
+the full executable and configuration, also where the JSON form left them out
+to stay within its bound. A form the Lead decides (`leadChoiceRequired`) names
+its actor in `choiceActor` and a `Lead choice:` line. Each form with
+placeholders names, in `fill.options`, the option that fills each one;
+`fillRoute` plus `--choice LABEL`, those options and, when the form reads a
+result artifact, `--artifact-file PATH` runs `work fill`, which re-reads the
+current forms, refuses a changed binding, an unfilled placeholder or an unused
+option before running anything, and then runs the bound argv unedited. For an
 open assignment, `effectiveAction.delegation` reads `next action: delegate`
 and names the agent; it is a sign for the Lead, not a refusal. A section page
 whose bytes are UTF-8 carries them as `contentText` (`encoding: "utf-8"`);

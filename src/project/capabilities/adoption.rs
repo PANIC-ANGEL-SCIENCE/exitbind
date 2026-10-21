@@ -37,10 +37,7 @@ pub(crate) fn select(
         &json!({"configPath":loaded.path,"projectRoot":loaded.product_root,
         "configurationSha256":hash::text(&loaded.source),"selection":proposed,"decision":decision,"reason":reason}),
     );
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let exe = exe
-        .to_str()
-        .ok_or("capability executable path is not UTF-8")?;
+    let exe = crate::emitted::executable()?;
     let config_path = loaded
         .path
         .to_str()

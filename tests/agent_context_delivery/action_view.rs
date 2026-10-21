@@ -343,22 +343,97 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
         .any(|reference| reference["itemId"] == lesson_id.as_str()
             && reference["sourcePath"].is_string()));
 
-    // Every accepted `work detail --view` is covered above.
-    let refused = fixture.call(&["work", "detail", &work, "--view", "uncovered"], b"");
-    assert!(!refused.status.success());
-    let message = text(&refused);
-    let accepted = message
-        .split("--view accepts ")
+    // work child context for a prepared native child: carries (its own
+    // 3 KiB envelope; an omitted item keeps its route).
+    let child_work = preserved_worker(&fixture);
+    let prepared = fixture.prepare_named_child(&child_work);
+    let intent = prepared["intent"].as_str().expect("prepared child intent");
+    let child = fixture.value(&["work", "child", "context", &child_work, intent], b"");
+    let carried = serde_json::to_string(&child["guidance"]).unwrap();
+    assert!(carried.contains(FACT), "{carried}");
+    assert!(
+        carried.contains(escaped) || carried.contains("phase:failing-test-triage"),
+        "{carried}"
+    );
+
+    // The Codex native-action prompt (`work act`): carries.
+    let capture = fixture.root.join("native-action-prompt");
+    let codex = fixture.fake_codex(&capture);
+    fixture.act_worker(&work, &codex);
+    let prompt = fs::read_to_string(&capture).unwrap();
+    assert!(prompt.contains(FACT), "{prompt}");
+    assert!(
+        prompt.contains(TRIAGE)
+            || prompt.contains(escaped)
+            || prompt.contains("phase:failing-test-triage"),
+        "{prompt}"
+    );
+
+    // Every declared `work detail --view` is covered above: the list is the
+    // one the CLI accepts, read from its declaration.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let readable = fs::read_to_string(root.join("src/work/readable.rs")).unwrap();
+    let declared = readable
+        .split("pub(crate) const DETAIL_VIEWS: &[&str] = &[")
         .nth(1)
-        .and_then(|rest| rest.split(';').next())
-        .unwrap_or_else(|| panic!("{message}"));
-    for name in accepted
-        .split([',', ' '])
-        .filter(|name| !name.is_empty() && *name != "or")
-    {
+        .and_then(|rest| rest.split("];").next())
+        .expect("declared work detail views");
+    let views: Vec<&str> = declared
+        .split(',')
+        .map(|name| name.trim().trim_matches('"'))
+        .filter(|name| !name.is_empty())
+        .collect();
+    assert!(!views.is_empty());
+    for name in &views {
         assert!(
-            COVERED_VIEWS.contains(&name),
+            COVERED_VIEWS.contains(name),
             "work detail --view {name} is not in the recipient surface inventory"
         );
     }
+    let cli = fs::read_to_string(root.join("src/cli/work/detail.rs")).unwrap();
+    assert!(
+        cli.contains("DETAIL_VIEWS.contains(&view)"),
+        "the CLI accepts the declared list"
+    );
+    let refused = fixture.call(&["work", "detail", &work, "--view", "uncovered"], b"");
+    assert!(!refused.status.success());
+    assert!(text(&refused).contains(&format!("--view accepts {}", views.join(", "))));
+}
+
+/// A worker assignment on a Work with a preserved requirement, so a named
+/// native child can be prepared for it.
+fn preserved_worker(fixture: &Fixture) -> String {
+    fs::write(
+        fixture.root.join("child-perspective.md"),
+        "named child perspective\n",
+    )
+    .unwrap();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Deliver phase guidance to a prepared child",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--preserve-requirement",
+            "guidance:Preserve the frozen memory boundary.",
+            "--preservation-check-command",
+            "true",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap().to_owned();
+    let lead = started["next"]["assignment"].as_str().unwrap();
+    let returned = fixture.call(
+        &["work", "return", &work, lead, "--outcome", "scoped"],
+        b"scope",
+    );
+    assert!(returned.status.success(), "{}", text(&returned));
+    work
 }

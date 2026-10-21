@@ -562,10 +562,16 @@ mod checker_derivation;
 mod closure_flows;
 #[path = "goal_requirements/correction_and_journey.rs"]
 mod correction_and_journey;
+#[path = "goal_requirements/emitted_routes.rs"]
+mod emitted_routes;
 #[path = "goal_requirements/intake_and_identity.rs"]
 mod intake_and_identity;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
+#[path = "goal_requirements/refuse_before_write.rs"]
+mod refuse_before_write;
+#[path = "goal_requirements/setup_first_work.rs"]
+mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]
 mod setup_start_path;
 #[path = "goal_requirements/successor_timing.rs"]

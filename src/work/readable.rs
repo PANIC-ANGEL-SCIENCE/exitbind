@@ -16,6 +16,8 @@ pub(super) mod recipient_context;
 pub(crate) const PREFIX: &str = "ref:work-detail:v1:";
 pub(crate) const MAX_GROUPED_BYTES: usize = 256 * 1024;
 const ACTION_VIEW_ARGV_BUDGET: usize = 256;
+/// Every `work detail --view` value; the CLI accepts exactly these.
+pub(crate) const DETAIL_VIEWS: &[&str] = &["action"];
 
 pub(crate) fn is_grouped(reference: &str) -> bool {
     reference.starts_with(PREFIX)
@@ -178,11 +180,9 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         }
     }
     // The navigation above keeps its own bound; delivered guidance keeps the
-    // recipient budget it was selected under, so it is never clipped here.
+    // recipient budget it was selected under (overflow is counted as omitted
+    // with its route, never clipped or refused here).
     if let Some(guidance) = guidance {
-        if guidance["usedBytes"].as_u64() > guidance["budgetBytes"].as_u64() {
-            return Err("delivered guidance exceeds its recipient budget".into());
-        }
         result["guidance"] = guidance;
     }
     Ok(result)
@@ -249,10 +249,8 @@ fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), 
                     .as_bool()
                     .ok_or("action command config requirement unavailable")?;
                 let start = if !same_executable {
-                    let expected = std::env::current_exe()
-                        .ok()
-                        .and_then(|path| path.to_str().map(str::to_owned))
-                        .ok_or("action command executable is no longer addressable")?;
+                    let expected = crate::emitted::executable()
+                        .map_err(|_| "action command executable is no longer addressable")?;
                     if argv.first() != Some(&expected) {
                         return Err(
                             "action command executable changed during view construction".into()
@@ -371,7 +369,7 @@ fn grouped_sections(
                 "challenge".into(),
                 work.into(),
                 "--question".into(),
-                "<QUESTION>".into(),
+                crate::emitted::slot("QUESTION"),
                 "--json".into(),
                 "--config".into(),
             ],

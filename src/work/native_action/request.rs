@@ -114,11 +114,7 @@ pub(super) fn build(
             let permit =
                 crate::work::managed_edit::controlled_permit(loaded, work, current_assignment)?;
             controlled_tool = Some(codex_exec::ControlledTool {
-                executable: std::env::current_exe()
-                    .map_err(|e| e.to_string())?
-                    .to_str()
-                    .ok_or("effect adapter path is not UTF-8")?
-                    .into(),
+                executable: crate::emitted::executable()?,
                 session: prepared["session"]
                     .as_str()
                     .ok_or("effect adapter session unavailable")?

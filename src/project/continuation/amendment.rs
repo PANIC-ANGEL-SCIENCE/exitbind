@@ -331,9 +331,8 @@ fn argv(
     request: &str,
     binding: &str,
 ) -> Result<Vec<String>, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     Ok(vec![
-        exe.to_str().ok_or("executable path is not UTF-8")?.into(),
+        crate::emitted::executable()?,
         "project".into(),
         "advance".into(),
         "amend".into(),
@@ -376,7 +375,6 @@ pub(super) fn held_action(
     if effective_association(loaded, &record, &claim, work, &verified).is_ok() {
         return Ok(None);
     }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let config = loaded
         .path
         .to_str()
@@ -385,8 +383,8 @@ pub(super) fn held_action(
         "version":1,"state":"held_time_amendment_required","binding":binding,
         "leadChoiceRequired":true,"choices":[],"mechanicalAction":Value::Null,
         "meaning":"The selected mandate revision differs from this frozen Work association. Selection alone does not rebind it. A configured Lead may inspect a time-only amendment preview; no Work action is currently available.",
-        "diagnostic":{"readOnly":true,"command":[exe.to_str().ok_or("executable path is not UTF-8")?,
-            "project","advance","amend",work,"--reason","<REASON>","--request-id","<REQUEST_ID>",
+        "diagnostic":{"readOnly":true,"command":[crate::emitted::executable()?,
+            "project","advance","amend",work,"--reason",crate::emitted::slot("REASON"),"--request-id",crate::emitted::slot("REQUEST_ID"),
             "--config",config,"--json"],"placeholders":["REASON","REQUEST_ID"]}
     })))
 }

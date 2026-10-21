@@ -422,11 +422,7 @@ pub(crate) fn choose(l: &Loaded, q: Request<'_>) -> Result<Value, String> {
         .to_str()
         .ok_or("choice path is not UTF-8")?;
     let mut argv = vec![
-        std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .to_str()
-            .ok_or("executable is not UTF-8")?
-            .to_owned(),
+        crate::emitted::executable()?,
         "memory".into(),
         "choose".into(),
         agent.into(),

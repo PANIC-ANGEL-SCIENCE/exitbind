@@ -85,7 +85,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal prepare", a, 1)?;
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             let goal_id = option(a, "goal-id", "goal prepare requires --goal-id ID")?;
             let ids = option(a, "requirement", "goal prepare requires --requirement IDs")?;
             let command = option(
@@ -138,7 +138,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "--check-command".into(),
                 command.into(),
                 "--review-policy".into(),
-                "REVIEW_DECISION".into(),
+                crate::emitted::slot("REVIEW_DECISION"),
                 "--detail".into(),
             ];
             if integration {
@@ -180,7 +180,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal require", a, 1)?;
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             print_json(&crate::session_goal::requirements::require(
                 &scope.root,
                 l,
@@ -202,7 +202,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_options("goal cover", a, &["config", "project", "goal-id", "json"])?;
             args::assert_positionals("goal cover", a, 1)?;
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             print_json(&crate::session_goal::requirements::cover(
                 &scope.root,
                 l,
@@ -225,7 +225,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal assign", a, 1)?;
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             let disposition = a
                 .options
                 .get("disposition")
@@ -269,7 +269,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal incorporate", a, 1)?;
             let scope = journal_scope(l, a, true)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
             let goal = option(a, "goal", "goal incorporate requires --goal")?;
             let direct = a.flags.contains_key("direct");
@@ -338,7 +338,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 return Err("goal close --view accepts only event".into());
             }
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             let goal_id = option(a, "goal-id", "goal close requires --goal-id")?;
             let previous = crate::session_goal::read(&scope.root)?;
             let mut value = if a.flags.contains_key("direct") {
@@ -393,7 +393,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal usage", a, 1)?;
             let scope = journal_scope(l, a, false)?;
-            scope.require_owner()?;
+            scope.require_owner_or_project()?;
             let goal_id = option(a, "goal-id", "goal usage requires --goal-id ID")?;
             if goal_id.trim().is_empty() || goal_id.len() > 128 || goal_id.contains('\0') {
                 return Err("goal usage requires a non-empty goal identity of at most 128 bytes without NUL".into());

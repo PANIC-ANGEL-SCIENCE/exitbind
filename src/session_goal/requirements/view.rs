@@ -25,11 +25,11 @@ fn begin_route(
         "--requirement".into(),
         ids.into(),
         "--artifact".into(),
-        "PROJECT_CHECKER".into(),
+        crate::emitted::slot("PROJECT_CHECKER"),
         "--check-command".into(),
-        "CHECK_COMMAND".into(),
+        crate::emitted::slot("CHECK_COMMAND"),
         "--review-policy".into(),
-        "REVIEW_DECISION".into(),
+        crate::emitted::slot("REVIEW_DECISION"),
     ];
     if project_selected {
         args.push("--project-goal".into());
@@ -52,7 +52,7 @@ fn begin_route(
         "--requirement".into(),
         ids.into(),
         "--result-ref".into(),
-        "NEW_ACCEPTED_WORK".into(),
+        crate::emitted::slot("NEW_ACCEPTED_WORK"),
         "--disposition".into(),
         "replace".into(),
     ];
@@ -300,9 +300,9 @@ pub(crate) fn projection_selected(
             "--requirement".into(),
             preparation_ids.clone(),
             "--artifact".into(),
-            "PROJECT_CHECKER".into(),
+            crate::emitted::slot("PROJECT_CHECKER"),
             "--check-command".into(),
-            "CHECK_COMMAND".into(),
+            crate::emitted::slot("CHECK_COMMAND"),
             "--json".into(),
         ];
         if project_selected {

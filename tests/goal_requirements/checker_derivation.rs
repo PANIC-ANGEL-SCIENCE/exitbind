@@ -102,7 +102,7 @@ fn prepare_derives_the_checker_through_an_outside_script_without_a_wrapper() {
     let begin = route
         .iter()
         .map(|item| {
-            if item == "REVIEW_DECISION" {
+            if item == "<REVIEW_DECISION>" {
                 "required".to_owned()
             } else {
                 item.clone()

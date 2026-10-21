@@ -113,11 +113,7 @@ pub(crate) fn run(
     template["approved"] = json!(false);
     if !apply {
         let command = vec![
-            std::env::current_exe()
-                .map_err(|e| e.to_string())?
-                .to_str()
-                .ok_or("executable is not UTF-8")?
-                .to_owned(),
+            crate::emitted::executable()?,
             "memory".into(),
             "correct-policy".into(),
             ledger.into(),
@@ -130,7 +126,7 @@ pub(crate) fn run(
             "--reason".into(),
             reason.into(),
             "--owner-decision".into(),
-            "<OWNER_DECISION>".into(),
+            crate::emitted::slot("OWNER_DECISION"),
             "--apply".into(),
             "--config".into(),
             loaded

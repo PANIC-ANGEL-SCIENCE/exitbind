@@ -46,8 +46,7 @@ pub(crate) fn select(
             "evidence": "caller declaration of existing project review; no human approval inferred"},
         "activeWork": "existing Work retains frozen configuration; an approved change requires its supported supersession",
         "checks": "selection reads no checker input and launches no command"});
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    report["apply"] = json!({"command": [executable.to_str().ok_or("executable path is not UTF-8")?,
+    report["apply"] = json!({"command": [crate::emitted::executable()?,
         "project", "architecture", "select", source, "--decision", decision, "--reason", reason,
         "--current-binding", identity, "--apply", "--json", "--config", configuration],
         "meaning": "select the exact reviewed source in this configuration; rerun preview if inputs change"});
@@ -162,7 +161,7 @@ pub(crate) fn select(
                 .take(512)
                 .collect::<String>());
             report["nextAction"] = json!({"type": "inspect", "safe": true,
-                "command": [executable.to_str().ok_or("executable path is not UTF-8")?,
+                "command": [crate::emitted::executable()?,
                     "project", "architecture", "--json", "--config", loaded.path.to_str().ok_or("configuration path is not UTF-8")?]});
         }
     }

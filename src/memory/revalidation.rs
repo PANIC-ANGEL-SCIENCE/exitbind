@@ -81,9 +81,8 @@ pub(crate) fn run(
         "owner":actor,"priorLedgerHeadSha256":snapshot.last_event_sha256,
         "differences":differences,"reason":reason});
     let argv = |action: &str| -> Result<Value, String> {
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let mut argv = vec![
-            exe.to_str().ok_or("executable is not UTF-8")?.to_owned(),
+            crate::emitted::executable()?,
             "memory".into(),
             action.into(),
         ];
@@ -303,9 +302,8 @@ pub(crate) fn next_action(
         "reviewed" => "promote",
         _ => "inspect",
     };
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     let mut argv = vec![
-        exe.to_str().ok_or("executable is not UTF-8")?.to_owned(),
+        crate::emitted::executable()?,
         "memory".into(),
         action.into(),
     ];

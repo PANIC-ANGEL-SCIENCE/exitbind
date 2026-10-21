@@ -309,12 +309,8 @@ pub(crate) fn stop(loaded: &Loaded, mandate: &str, reason: &str) -> Result<Value
 }
 
 pub(super) fn argv(loaded: &Loaded, tail: &[&str]) -> Result<Vec<String>, String> {
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut args = vec![
-        executable
-            .to_str()
-            .ok_or("executable path is not UTF-8")?
-            .into(),
+        crate::emitted::executable()?,
         "project".into(),
         "advance".into(),
     ];
