@@ -1,48 +1,63 @@
 //! Claude Code plan approval to task card. `PostToolUse` for `ExitPlanMode`
 //! fires only after the human approves a plan, and its `tool_response.plan`
-//! carries the approved text. When that text has a `Done when` step table the
-//! plan is saved as a private card inside the project, hidden from Git through
-//! the local exclude file, and the Lead gets one line naming the setup command
-//! that registers it. Nothing is applied; without a table nothing is written
-//! and nothing is printed.
+//! carries the approved text. When the Lead's own approval (`isAgent` false;
+//! an absent field is not proof and counts as a sub-agent) has a `Done when`
+//! step table, the plan is saved as a new private card inside the project,
+//! hidden from Git through the local exclude file, and the Lead gets one line
+//! naming the setup command that registers it. Nothing is applied; without a
+//! table nothing is written and nothing is printed.
+//!
+//! Cards are written only through real directories under the project root and
+//! never over an existing file: the same plan approved again reuses its card,
+//! and a different plan gets a fresh suffixed card, so a card the Lead edited
+//! or registered is never replaced.
+
+mod git;
 
 use crate::config::Loaded;
 use serde_json::{Map, Value};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 /// Project-relative directory of saved plan cards.
 const CARDS: &str = ".exitbind/plan-cards";
 const PLAN_MAX_BYTES: usize = 64 * 1024;
+/// Fresh card directories tried for one slug before giving up silently.
+const MAX_SUFFIX: usize = 32;
 
 pub(crate) fn is_plan_approval(payload: &Map<String, Value>) -> bool {
     payload.get("tool_name").and_then(Value::as_str) == Some("ExitPlanMode")
 }
 
 /// Save the approved plan as a card and return the Lead's one line, or `None`
-/// when the plan has no step table or the card could not be kept private.
+/// when the approval is not the Lead's, the plan has no step table, or the
+/// card could not be kept private.
 pub(crate) fn on_approval(loaded: &Loaded, payload: &Map<String, Value>) -> Option<String> {
     let response = payload.get("tool_response")?;
+    if response.get("isAgent").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
     let plan = response.get("plan").and_then(Value::as_str)?;
     if plan.len() > PLAN_MAX_BYTES || crate::project::setup::step_rows(plan).is_err() {
         return None;
     }
     let slug = slug(response.get("filePath").and_then(Value::as_str));
-    let relative = format!("{CARDS}/{slug}/TASK.md");
     let root = &loaded.product_root;
     let deadline = Instant::now() + Duration::from_secs(2);
-    let git = Git::open(root, deadline);
+    let git = git::Git::open(root, deadline);
     match &git {
         Some(git) => git.exclude(CARDS)?,
         // A Git marker that Git cannot read: never risk a listed card.
         None if root.ancestors().any(|dir| dir.join(".git").exists()) => return None,
         None => {}
     }
-    let path = root.join(&relative);
-    write_private(&path, plan).ok()?;
+    let (relative, created) = save(root, &slug, plan).ok()?;
     if git.is_some_and(|git| !git.unlisted(CARDS)) {
-        let _ = std::fs::remove_file(&path);
+        if created {
+            let _ = fs::remove_file(root.join(&relative));
+        }
         return None;
     }
     let root = shell_word(root.to_str()?);
@@ -71,24 +86,86 @@ fn slug(file: Option<&str>) -> String {
     }
 }
 
-fn write_private(path: &Path, text: &str) -> Result<(), String> {
+/// The card directory name for attempt `index`: the slug, then `slug-2`,
+/// `slug-3`, ... kept within the 64-character Goal ID bound.
+fn candidate(slug: &str, index: usize) -> String {
+    if index == 1 {
+        return slug.to_owned();
+    }
+    let suffix = format!("-{index}");
+    let keep = slug.len().min(64 - suffix.len());
+    format!("{}{suffix}", &slug[..keep])
+}
+
+/// Write the plan as a new card, or reuse a card that already holds exactly
+/// this plan. Returns the project-relative card path and whether it is new.
+fn save(root: &Path, slug: &str, plan: &str) -> Result<(String, bool), String> {
+    let cards = Path::new(CARDS);
+    real_directories(root, cards)?;
+    for index in 1..=MAX_SUFFIX {
+        let name = candidate(slug, index);
+        let relative = format!("{CARDS}/{name}/TASK.md");
+        real_directories(root, &cards.join(&name))?;
+        let path = root.join(&relative);
+        match create_new_private(&path, plan) {
+            Ok(()) => return Ok((relative, true)),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                if same_regular_file(&path, plan) {
+                    return Ok((relative, false));
+                }
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("no fresh plan card name is available".into())
+}
+
+/// Ensure every component of `relative` under `root` is a real directory,
+/// creating missing ones privately; a symlink or other file is refused.
+fn real_directories(root: &Path, relative: &Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err("unsafe plan card path".into());
+        };
+        current.push(name);
+        match fs::symlink_metadata(&current) {
+            Ok(info) if info.is_dir() && !info.file_type().is_symlink() => {}
+            Ok(_) => return Err("plan card path has a symlink or non-directory".into()),
+            Err(error) if error.kind() == ErrorKind::NotFound => fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&current)
+                .map_err(|error| error.to_string())?,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(())
+}
+
+/// Create the card; never follows a symlink and never opens an existing file.
+fn create_new_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    let parent = path.parent().ok_or("card path has no parent")?;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
-        .map_err(|error| error.to_string())?;
-    let mut file = std::fs::OpenOptions::new()
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
-        .open(path)
-        .map_err(|error| error.to_string())?;
-    file.write_all(text.as_bytes())
-        .map_err(|error| error.to_string())
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    let written = file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.sync_all());
+    if written.is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+    }
+    written
+}
+
+fn same_regular_file(path: &Path, text: &str) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|info| info.is_file() && info.len() == text.len() as u64)
+        && fs::read(path).is_ok_and(|bytes| bytes == text.as_bytes())
 }
 
 fn shell_word(text: &str) -> String {
@@ -102,72 +179,9 @@ fn shell_word(text: &str) -> String {
     }
 }
 
-/// The project's Git worktree, when there is one.
-struct Git {
-    root: PathBuf,
-    /// Worktree-relative prefix of the project root, `""` or ending in `/`.
-    prefix: String,
-    deadline: Instant,
-}
-
-impl Git {
-    fn open(root: &Path, deadline: Instant) -> Option<Self> {
-        let mut git = Self {
-            root: root.to_path_buf(),
-            prefix: String::new(),
-            deadline,
-        };
-        git.prefix = git.text(&["rev-parse", "--show-prefix"])?;
-        Some(git)
-    }
-
-    fn text(&self, args: &[&str]) -> Option<String> {
-        let mut command = Command::new("git");
-        crate::host::codegraph::clear_git_environment(&mut command);
-        command.arg("-C").arg(&self.root).args(args);
-        let output =
-            crate::kernel::bounded_process::run(&mut command, 64 * 1024, 4096, self.deadline)
-                .ok()?;
-        output.status.success().then_some(())?;
-        String::from_utf8(output.stdout)
-            .ok()
-            .map(|text| text.trim_end_matches('\n').to_owned())
-    }
-
-    /// Add `/<prefix><directory>/` to the local exclude file once.
-    fn exclude(&self, directory: &str) -> Option<()> {
-        let file = self.text(&["rev-parse", "--git-path", "info/exclude"])?;
-        let file = self.root.join(file);
-        let pattern = format!("/{}{directory}/", self.prefix);
-        let existing = std::fs::read_to_string(&file).unwrap_or_default();
-        if existing.lines().any(|line| line.trim() == pattern) {
-            return Some(());
-        }
-        std::fs::create_dir_all(file.parent()?).ok()?;
-        let separator = if existing.is_empty() || existing.ends_with('\n') {
-            ""
-        } else {
-            "\n"
-        };
-        std::fs::write(&file, format!("{existing}{separator}{pattern}\n")).ok()
-    }
-
-    /// Whether `git status` lists nothing under `directory`.
-    fn unlisted(&self, directory: &str) -> bool {
-        self.text(&[
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            directory,
-        ])
-        .is_some_and(|text| text.is_empty())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::slug;
+    use super::{candidate, slug};
 
     #[test]
     fn slug_is_a_valid_goal_id_or_plan() {
@@ -177,5 +191,14 @@ mod tests {
         );
         assert_eq!(slug(Some("/p/-x.md")), "plan");
         assert_eq!(slug(None), "plan");
+    }
+
+    #[test]
+    fn suffixed_card_names_stay_within_the_goal_id_bound() {
+        assert_eq!(candidate("r9", 1), "r9");
+        assert_eq!(candidate("r9", 2), "r9-2");
+        let long = "a".repeat(64);
+        assert_eq!(candidate(&long, 12).len(), 64);
+        assert!(candidate(&long, 12).ends_with("-12"));
     }
 }

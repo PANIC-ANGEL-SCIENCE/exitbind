@@ -233,10 +233,14 @@ fn inspect(
                     target.display()
                 )
             })?;
+            // The plan-approval record counts only with its matcher; without
+            // it the hook would run on every tool call.
+            let matched = *event != PLAN_APPROVAL.0
+                || object.get("matcher").and_then(Value::as_str) == Some(PLAN_APPROVAL.1);
             let handlers = object.get("hooks").and_then(Value::as_array).ok_or_else(|| format!("unexpected hooks shape in {}: {event}[{group_index}].hooks must be an array", target.display()))?;
             for (handler_index, handler) in handlers.iter().enumerate() {
                 let handler_object = handler.as_object().ok_or_else(|| format!("unexpected hooks shape in {}: {event}[{group_index}].hooks[{handler_index}] must be an object", target.display()))?;
-                if same_record(handler_object, expected_object) {
+                if matched && same_record(handler_object, expected_object) {
                     exact[event_index] += 1;
                 } else if handler_object
                     .get("command")

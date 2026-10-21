@@ -838,8 +838,17 @@ approved plan has a `Done when` step table, Exitbind saves it unchanged as
 to the repository's local `info/exclude` so `git status` does not list it, and
 gives the Lead one line naming `exitbind setup --apply --root ROOT --task-card
 PATH`, to run with the project's usual setup options. Nothing is applied.
-A plan without a table, a rejected plan, or any other tool writes and prints
-nothing.
+A plan without a table, a rejected plan, a sub-agent's plan approval
+(`isAgent` not `false`), or any other tool writes and prints nothing.
+
+A card is created new and only through real directories: a symlinked
+component is refused, an existing card is never overwritten, the same plan
+approved again reuses its card, and a different plan gets `<plan>-2`, `-3`,
+and so on, so a card the Lead edited or registered stays as it is. The exclude
+file is replaced atomically with its previous bytes and permissions; if it is
+unreadable or not UTF-8, nothing is written. The `PostToolUse` record counts
+as installed only with its matcher. An install from an earlier release reports
+the hook as `partial`; `exitbind host install` (or `hooks apply`) adds it.
 
 ## Host bridge
 

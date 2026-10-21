@@ -305,7 +305,7 @@ fn host_command(a: &Arguments) -> Result<(), String> {
                             .as_str()
                             .map(|version| format!(" (installed {version})"))
                             .unwrap_or_default(),
-                        item["activationHook"].as_str().unwrap_or("unknown"),
+                        crate::host::bridge::activation_hook_text(&item),
                         item["path"].as_str().unwrap_or_default()
                     );
                 }

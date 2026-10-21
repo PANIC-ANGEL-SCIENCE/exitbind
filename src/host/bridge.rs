@@ -166,7 +166,7 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
                 .ok()
                 .and_then(|items| items.into_iter().next())
                 .map_or_else(|| json!("unavailable"), |item| item["state"].clone());
-            Ok(json!({
+            let mut item = json!({
                 "host": host.name,
                 "hostPresent": present(&home, &host),
                 "bootstrapSkill": state.as_str(),
@@ -174,9 +174,27 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
                 "installedVersion": version,
                 "expectedVersion": crate::project::skills::package_version(),
                 "path": utf8(&path)?,
-            }))
+            });
+            // A release that adds a managed hook record leaves earlier
+            // installs partial until the one install command adds it.
+            if item["activationHook"] == "partial" {
+                item["activationHookAction"] = json!(HOOK_ACTION);
+            }
+            Ok(item)
         })
         .collect()
+}
+
+const HOOK_ACTION: &str = "exitbind host install";
+
+/// The status line for an activation hook state, naming the action that
+/// completes a partial hook.
+pub(crate) fn activation_hook_text(item: &Value) -> String {
+    let state = item["activationHook"].as_str().unwrap_or("unknown");
+    match item["activationHookAction"].as_str() {
+        Some(action) => format!("{state}; run '{action}' to add the missing handler"),
+        None => state.to_owned(),
+    }
 }
 
 /// The user-level activation hook: a fresh session in any repository gets the
