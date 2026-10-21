@@ -231,7 +231,12 @@ pub fn run() -> Result<(), String> {
             text.push_str(DIRECT_WORK);
             text.push('\n');
             text.push_str(&receive);
-            let budget = 3072usize.saturating_sub(text.len());
+            // The addendum spends what the fixed text and the update notice
+            // leave of the 3072-byte total.
+            let update_bytes = update_context
+                .as_deref()
+                .map_or(0, |update| update.len() + 1);
+            let budget = 3072usize.saturating_sub(text.len() + update_bytes);
             text.push_str(&crate::project::context::session_addendum(&loaded, budget));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
