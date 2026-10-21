@@ -1,10 +1,9 @@
 # Prose vs Mechanism Audit
 
-Status: post-v0.18 audit note. This document records candidates only; it does
-not add a CLI command, schema field, or runtime guarantee.
-
-Updated: 2026-10-21. Rows re-checked against the current release; the preservation
-candidate is now implemented (see "Completed candidate").
+Status: audit note, re-checked against the current release on 2026-10-21.
+This document records candidates only; it does not add a CLI command, schema
+field, or runtime guarantee. Its one candidate is now implemented (see
+"Completed candidate").
 
 ## Scope
 
@@ -21,7 +20,7 @@ deterministic state.
 | Choose tools, native workers, reviewers, and role boundaries. | HOST_NATIVE_CAPABILITY | Host lead | Exitbind records configured roles, but native execution availability is host-owned. |
 | Use `work begin`, `work next`, `work return`, `work check`, and `work resume` once governed work is selected. | DETERMINISTIC_PROTOCOL | Exitbind | The ledger owns state after activation; selection before activation remains prose. |
 | Keep worker completion, check result, reviewer approval, and lead acceptance separate. | DETERMINISTIC_PROTOCOL | Exitbind | Mostly mechanical today through run state and acceptance gates. |
-| Bind checks, reviews, and lead decisions to the current subject; reject stale evidence. | DETERMINISTIC_PROTOCOL | Exitbind | Mechanical for checked runs (current run-event format 8): checks, reviews, protection, and acceptance bind the Accepted Subject and tested-input identity, and acceptance recomputes it (REFERENCE.md, run-event format section). Saved packets are reused only after `work validate` returns `usable`; residual packets keep stale-subject evidence out of reuse (`residual_packet_keeps_stale_subject_evidence_out_of_reuse`). |
+| Bind checks, reviews, and lead decisions to the current subject; reject stale evidence. | DETERMINISTIC_PROTOCOL | Exitbind | Mechanical for checked runs (current run-event format 8): checks, reviews, protection, and acceptance bind the Accepted Subject and tested-input identity, and acceptance recomputes it (REFERENCE.md, run-event format section). Agents reuse a saved packet only when `work validate` returns `usable`; the validation is mechanical, the choice to reuse is still prose; residual packets keep stale-subject evidence out of reuse (`residual_packet_keeps_stale_subject_evidence_out_of_reuse`). |
 | Do not claim projected skill bytes prove discovery, activation, compliance, or isolation. | DOCUMENTATION_ONLY | Host lead | The boundary is documented, but activation assurance is not yet a first-class state. |
 | Inspect fresh-session discovery, invocation, observed behavior, and outcome when the governed path is selected. | HOST_NATIVE_CAPABILITY | Host lead | Exitbind can record observations only when the host exposes them. |
 | Activate Holytail selectively for preservation-risk work, freeze accepted meaning, and read it back. | SEMANTIC_JUDGMENT | Host lead | Choosing preservation-risk work stays the Lead's judgment. Once chosen, the obligation is run state: `work begin --preserve-requirement ID:TEXT --preservation-check-command COMMAND` records it (since f561c2c), and the route policy ships as `skills/exitbind/references/preservation.md`. |
