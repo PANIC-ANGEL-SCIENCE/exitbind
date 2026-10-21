@@ -30,7 +30,13 @@ pub(crate) fn evidence(
         "state" => ("state", &loaded.state_root),
         _ => return Err("--artifact-root must be product or state".into()),
     };
-    let relative = crate::project::path::inputs::confined(root, "evidence artifact", requested)?;
+    use crate::project::path::inputs::{self, Root};
+    let selected = if root_name == "state" {
+        Root::State
+    } else {
+        Root::Product
+    };
+    let relative = inputs::confined_in(root, Some(selected), "evidence artifact", requested)?;
     let requested = relative.as_str();
     let path = confined(root, requested)?;
     if fs::symlink_metadata(path)

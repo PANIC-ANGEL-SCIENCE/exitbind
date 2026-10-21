@@ -31,11 +31,17 @@ fn carried_lessons_in_a_local_mode_checkout_are_never_listed_by_git() {
     let base = Root(support::temp("lesson-privacy"));
     let product = base.0.join("product");
     let control = base.0.join("control");
-    let state = base.0.join("state");
+    // The local-mode state root sits inside an unrelated repository, which
+    // the stamped configuration copy must never touch.
+    let outer = base.0.join("outer");
+    let state = outer.join("state");
     for dir in [&product, &control, &state] {
         fs::create_dir_all(dir).unwrap();
     }
     support::git_topology::repository(&product);
+    support::git_topology::repository(&outer);
+    let outer_exclude = outer.join(".git/info/exclude");
+    let outer_before = fs::read(&outer_exclude).ok();
     let bin = support::git_topology::git_only_path(&product);
     let from = previous.0.join("exitbind.json");
     let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
@@ -115,6 +121,11 @@ fn carried_lessons_in_a_local_mode_checkout_are_never_listed_by_git() {
     assert!(
         exclude.lines().any(|line| line == "/.exitbind/lessons/"),
         "{exclude}"
+    );
+    assert_eq!(
+        fs::read(&outer_exclude).ok(),
+        outer_before,
+        "the unrelated repository holding the state root is untouched"
     );
     assert!(
         fs::read_to_string(product.join(".gitignore")).is_err(),

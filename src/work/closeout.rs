@@ -186,7 +186,11 @@ pub(crate) fn closeout(
                     "{}/receipts",
                     crate::project::layout_types::state_namespace()
                 );
-                if !std::path::Path::new(&destination).starts_with(&private) {
+                let under = crate::project::path::inputs::within(
+                    std::path::Path::new(&private),
+                    std::path::Path::new(&destination),
+                );
+                if under.is_none() {
                     return Err(format!("new Work receipt must be under {private} when StateRoot is ProductRoot; export must not change checked product inputs"));
                 }
             }

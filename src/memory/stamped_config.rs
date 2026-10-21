@@ -59,17 +59,38 @@ pub(crate) fn is_kept_copy(loaded: &Loaded, path: &str) -> bool {
 pub(crate) fn keep(loaded: &Loaded) -> Result<PathBuf, String> {
     let root = memory_root(loaded).ok_or("stamped configuration copy needs a memory policy")?;
     let sha256 = hash::text(&loaded.source);
+    // Reusing an existing copy runs no Git.
+    if let Some(existing) = find(loaded, &sha256) {
+        return Ok(existing);
+    }
     let name = file_name(&sha256).ok_or("configuration hash is invalid")?;
-    // Under a state root inside a Git worktree (portable mode) the copy is a
-    // product file under the root: the one private writer hides it.
-    crate::project::private_write::write_once(
-        &loaded.state_root,
-        &root,
-        &name,
-        loaded.source.as_bytes(),
-        "stamped configuration copy",
-    )?;
+    let label = "stamped configuration copy";
+    if same_root(&loaded.state_root, &loaded.product_root) {
+        // Portable mode: the copy is a product file under the project root,
+        // so the one private writer hides it from the project's Git.
+        crate::project::private_write::write_once(
+            &loaded.state_root,
+            &root,
+            &name,
+            loaded.source.as_bytes(),
+            label,
+        )?;
+    } else {
+        // Local mode: the state root is no part of the project worktree; a
+        // repository that happens to contain it is never touched.
+        crate::project::private_write::write_once_outside_project(
+            &loaded.state_root,
+            &root,
+            &name,
+            loaded.source.as_bytes(),
+            label,
+        )?;
+    }
     Ok(loaded.state_root.join(format!("{root}/{name}")))
+}
+
+fn same_root(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left == right || matches!((left.canonicalize(), right.canonicalize()), (Ok(a), Ok(b)) if a == b)
 }
 
 /// The typed refusal for lesson events stamped with `bound`: the kept copy

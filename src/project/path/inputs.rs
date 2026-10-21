@@ -113,7 +113,7 @@ pub(crate) const INPUTS: &[Input] = &[
         options: "--receipt, --output, --harness-receipt, RECEIPT",
         commands: "brief, receipt, work closeout, run start, work begin, verify, memory attest-forgotten",
         outcome: Outcome::Confined(Root::State),
-        judge: "src/evidence/receipt_path.rs, src/memory/ledger.rs",
+        judge: "src/evidence/receipt_path.rs, src/memory/ledger.rs, src/work/closeout.rs",
         route: "use a StateRoot-relative path or an absolute path whose parent resolves inside StateRoot",
     },
     Input {
@@ -309,10 +309,16 @@ pub(crate) fn within<'a>(root: &Path, path: &'a Path) -> Option<&'a Path> {
 /// The refusal for an input outside its root: the input, the root and the
 /// route. An unregistered label keeps the generic text.
 pub(crate) fn refusal(label: &str, given: &str) -> String {
+    refusal_in(label, None, given)
+}
+
+/// The refusal naming `root` when the command selected it (for example
+/// `--artifact-root state`), else the registered root.
+pub(crate) fn refusal_in(label: &str, root: Option<Root>, given: &str) -> String {
     match input(label) {
         Some(input) => {
-            let root = match input.outcome {
-                Outcome::Confined(root) => root.name(),
+            let root = match (root, input.outcome) {
+                (Some(root), _) | (None, Outcome::Confined(root)) => root.name(),
                 _ => "project root",
             };
             format!(
@@ -374,9 +380,19 @@ pub(crate) fn place(root: &Path, given: &str) -> Result<Placed, String> {
 
 /// The root-relative form of a confined input, or its registered refusal.
 pub(crate) fn confined(root: &Path, label: &str, given: &str) -> Result<String, String> {
-    match place(root, given)? {
+    confined_in(root, None, label, given)
+}
+
+/// `confined` against the root the command selected, named in the refusal.
+pub(crate) fn confined_in(
+    path: &Path,
+    root: Option<Root>,
+    label: &str,
+    given: &str,
+) -> Result<String, String> {
+    match place(path, given)? {
         Placed::Inside(relative) => Ok(relative),
-        Placed::Outside(_) => Err(refusal(label, given)),
+        Placed::Outside(_) => Err(refusal_in(label, root, given)),
     }
 }
 
@@ -414,6 +430,9 @@ mod tests {
             }
         }
         assert!(confined_inputs >= 8);
+        let state =
+            confined_in(&root, Some(Root::State), "evidence artifact", outside).unwrap_err();
+        assert!(state.starts_with("path escapes the state root"), "{state}");
         assert_eq!(
             confined(&root, "requirement source", "a/./b.md").unwrap(),
             "a/b.md"

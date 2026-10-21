@@ -11,9 +11,10 @@ const REGISTRY: &str = "src/project/path/inputs.rs";
 const WRITER: &str = "src/project/private_write.rs";
 const CARD: &str = "# R55 task\n\n| Step | Do | Done when |\n| --- | --- | --- |\n| 0 | Baseline | The baseline is recorded. |\n| 1 | Parser | The parser rejects empty input. |\n";
 
-/// Root comparisons (`strip_prefix`/`starts_with` against a root, top or
-/// state path) that are not a path input meeting its root: each compares a
-/// path the product made itself, or relates roots to each other. Count per file.
+/// Root comparisons (`strip_prefix`/`starts_with` whose argument names a
+/// root, top, state, product, project, control, base or private path) that
+/// are not a path input meeting its root: each compares a path the product
+/// made itself, or relates roots to each other. Count per file.
 const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
     (
         "src/project/path.rs",
@@ -42,6 +43,11 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         "a host hook payload's cwd routed to a configured project",
     ),
     (
+        "src/host/runtime/context.rs",
+        1,
+        "a configured profile shown relative to the project in hook text",
+    ),
+    (
         "src/host/settings.rs",
         1,
         "host settings files setup writes",
@@ -66,7 +72,11 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         1,
         "legacy layout migration directories",
     ),
-    ("src/project/layout_types.rs", 2, "roots must not nest"),
+    (
+        "src/project/layout_types.rs",
+        6,
+        "control, product and state roots must not nest",
+    ),
     (
         "src/project/managed_files.rs",
         2,
@@ -79,10 +89,14 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/project/onboarding.rs",
-        1,
-        "init targets grouped by root",
+        2,
+        "init targets grouped by control and state root",
     ),
-    ("src/project/portability.rs", 1, "roots must not nest"),
+    (
+        "src/project/portability.rs",
+        4,
+        "source and binding roots must not nest",
+    ),
     (
         "src/project/setup_projection.rs",
         1,
@@ -161,15 +175,16 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
     ),
 ];
 
-/// File creation outside the private writer: each writes under the state
-/// root, the control root, a host store or a destination the operator named,
-/// never a private product file under the project root. Count per file.
-const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
+/// Writes outside the private writer in production code: each writes under
+/// the state root, the control root, a host store or a destination the
+/// operator named, never a private product file under the project root.
+/// Count per file of `WRITE_CALLS`.
+const OTHER_WRITES: &[(&str, usize, &str)] = &[
     (WRITER, 1, "the one private writer"),
     (
         "src/project/private_write/git.rs",
-        1,
-        "the writer's local exclude replacement",
+        2,
+        "the writer's local exclude, replaced atomically",
     ),
     (
         "src/project/path.rs",
@@ -184,12 +199,12 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
     ("src/cli/mod.rs", 1, "receipt --output under the state root"),
     (
         "src/config/profile.rs",
-        1,
+        3,
         "agent profiles under the control root",
     ),
     (
         "src/distribution/update.rs",
-        3,
+        7,
         "the self-update replaces the executable",
     ),
     (
@@ -199,28 +214,33 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/host/away.rs",
-        1,
+        2,
         "away runner state under the state root",
     ),
     (
         "src/host/codegraph.rs",
-        1,
+        3,
         "CodeGraph state under the state root",
     ),
     (
-        "src/host/session_recovery/hint.rs",
+        "src/host/native_session.rs",
         1,
+        "the host's session environment file it names",
+    ),
+    (
+        "src/host/session_recovery/hint.rs",
+        2,
         "the native session store",
     ),
     (
         "src/host/settings.rs",
-        1,
+        2,
         "host settings files setup writes",
     ),
     (
         "src/memory/choices.rs",
-        1,
-        "task memory choices under the state root",
+        2,
+        "task memory choices and their lock under the state root",
     ),
     (
         "src/memory/forgetting.rs",
@@ -233,8 +253,18 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
         "memory ledgers under the state root",
     ),
     (
+        "src/memory/lessons.rs",
+        1,
+        "the lesson mutation lock under the state root",
+    ),
+    (
+        "src/project/layout.rs",
+        1,
+        "legacy layout migration under the state root",
+    ),
+    (
         "src/project/layout_types.rs",
-        2,
+        3,
         "project bindings in the bindings directory",
     ),
     (
@@ -244,12 +274,22 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/project/skills.rs",
-        1,
+        2,
         "managed skills under the control root",
     ),
     (
+        "src/run/capture.rs",
+        1,
+        "captured logs under the state root",
+    ),
+    (
+        "src/run/cleanup_fixture.rs",
+        3,
+        "test-only fixture, compiled only through run/cleanup_tests.rs",
+    ),
+    (
         "src/run/ledger.rs",
-        2,
+        3,
         "run ledgers and locks under the state root",
     ),
     (
@@ -264,12 +304,12 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/session_goal/continuity/capture.rs",
-        1,
+        2,
         "continuity capture under the state root",
     ),
     (
         "src/session_goal/display.rs",
-        1,
+        2,
         "the native session display store",
     ),
     (
@@ -287,7 +327,7 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
         1,
         "Work receipts under the state root",
     ),
-    ("src/work/focus.rs", 1, "focus records under the state root"),
+    ("src/work/focus.rs", 2, "focus records under the state root"),
     ("src/work/held.rs", 1, "held results under the state root"),
     (
         "src/work/managed_edit/state.rs",
@@ -295,8 +335,13 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
         "managed edit state under the state root",
     ),
     (
-        "src/work/native_action/journal.rs",
+        "src/work/native_action.rs",
         1,
+        "the native action journal lock under the state root",
+    ),
+    (
+        "src/work/native_action/journal.rs",
+        2,
         "native action journal under the state root",
     ),
     (
@@ -304,6 +349,20 @@ const OTHER_CREATIONS: &[(&str, usize, &str)] = &[
         1,
         "native action recovery under the state root",
     ),
+];
+
+/// Every way production code creates, replaces or copies a file.
+const WRITE_CALLS: &[&str] = &[
+    "secure_create_new(",
+    "create_new(true)",
+    ".create(true)",
+    "File::create(",
+    "fs::write(",
+    "fs::copy(",
+    "fs::rename(",
+];
+const ROOT_WORDS: &[&str] = &[
+    "root", "top", "state", "product", "project", "control", "base", "private",
 ];
 
 fn manifest() -> &'static Path {
@@ -314,15 +373,18 @@ fn sources() -> Vec<(String, String)> {
     fn visit(dir: &Path, out: &mut Vec<(String, String)>) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
+            // Test-only module files are compiled only under `cfg(test)`.
+            let name = path.file_name().unwrap().to_string_lossy();
+            let test_file = name == "tests.rs" || name.ends_with("_tests.rs");
             if path.is_dir() {
                 visit(&path, out);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
+            } else if path.extension().is_some_and(|ext| ext == "rs") && !test_file {
                 let relative = path
                     .strip_prefix(manifest())
                     .unwrap()
                     .to_string_lossy()
                     .replace('\\', "/");
-                out.push((relative, fs::read_to_string(&path).unwrap()));
+                out.push((relative, production(&fs::read_to_string(&path).unwrap())));
             }
         }
     }
@@ -330,6 +392,42 @@ fn sources() -> Vec<(String, String)> {
     visit(&manifest().join("src"), &mut out);
     out.sort();
     out
+}
+
+/// `text` without its `#[cfg(test)]`/`#[cfg(all(test, ..))]` modules.
+fn production(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    loop {
+        let found = rest.match_indices("#[cfg(").find(|(index, _)| {
+            let line = &rest[*index..];
+            let attribute = &line[..line.find('\n').unwrap_or(line.len())];
+            let next = line[attribute.len()..].trim_start_matches('\n');
+            (attribute == "#[cfg(test)]" || attribute.starts_with("#[cfg(all(test"))
+                && (next.starts_with("mod ") || next.starts_with("pub(crate) mod "))
+                && next[..next.find('\n').unwrap_or(next.len())].ends_with('{')
+        });
+        let Some((index, _)) = found else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..index]);
+        let open = index + rest[index..].find('{').unwrap() + 1;
+        let mut depth = 1;
+        let mut end = rest.len();
+        for (offset, c) in rest[open..].char_indices() {
+            depth += match c {
+                '{' => 1,
+                '}' => -1,
+                _ => 0,
+            };
+            if depth == 0 {
+                end = open + offset + 1;
+                break;
+            }
+        }
+        rest = &rest[end..];
+    }
 }
 
 /// Occurrences per file of a call whose argument names a root.
@@ -346,9 +444,7 @@ fn root_checks(text: &str) -> usize {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_lowercase() || c == '_')
-                && ["root", "top", "state"]
-                    .iter()
-                    .any(|word| name.contains(word))
+                && ROOT_WORDS.iter().any(|word| name.contains(word))
             {
                 count += 1;
             }
@@ -357,8 +453,11 @@ fn root_checks(text: &str) -> usize {
     count
 }
 
-fn creations(text: &str) -> usize {
-    text.matches("secure_create_new(").count() + text.matches("create_new(true)").count()
+fn writes(text: &str) -> usize {
+    WRITE_CALLS
+        .iter()
+        .map(|call| text.matches(call).count())
+        .sum()
 }
 
 fn counted(table: &[(&str, usize, &str)]) -> BTreeMap<String, usize> {
@@ -454,7 +553,7 @@ fn path_inputs_inventory_declares_one_outcome_for_every_path_option() {
 #[test]
 fn root_checks_and_private_writes_live_in_the_helper_and_the_writer() {
     let roots = counted(INTERNAL_ROOT_CHECKS);
-    let creates = counted(OTHER_CREATIONS);
+    let creates = counted(OTHER_WRITES);
     let mut found_roots = BTreeMap::new();
     let mut found_creates = BTreeMap::new();
     for (file, text) in sources() {
@@ -462,7 +561,7 @@ fn root_checks_and_private_writes_live_in_the_helper_and_the_writer() {
         if checks > 0 {
             found_roots.insert(file.clone(), checks);
         }
-        let created = creations(&text);
+        let created = writes(&text);
         if created > 0 {
             found_creates.insert(file, created);
         }
@@ -773,4 +872,11 @@ fn confined_inputs_refuse_an_outside_path_naming_the_input_and_its_route() {
             "{args:?}: {text}"
         );
     }
+    // An absolute ledger inside the state root is placed, not refused.
+    let inside = p.root.join(".exitbind/runs/absent.jsonl");
+    let output = p.call(&["run", "inspect", inside.to_str().unwrap()], None);
+    let text = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    assert!(!text.contains("escapes"), "{text}");
+    assert!(text.contains("ledger does not exist"), "{text}");
 }

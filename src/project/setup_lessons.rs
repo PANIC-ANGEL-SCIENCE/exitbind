@@ -34,8 +34,10 @@ pub(super) fn preview(from: Option<&str>, root: &Path) -> Result<Option<Value>, 
     }
     let plan = lessons::carry::plan(&previous, root)?;
     if !plan.is_empty() {
-        // Carried sources are written by the private writer; refuse now,
-        // before setup writes anything, when it would refuse later.
+        // Carried sources are written under the product root by the private
+        // writer, and so is the stamped copy when the state root is the
+        // product root (a local-mode state root never runs Git): this is the
+        // one Git marker setup will use, so refuse now, before any write.
         crate::project::private_write::writable(root, "carried lesson source")?;
     }
     let mut value = plan.preview();

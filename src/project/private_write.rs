@@ -54,6 +54,27 @@ pub(crate) fn write_once(
     finish(root, &git, directory, &relative, Written::Created, label)
 }
 
+/// `write_once` for a root that is not the project root, such as a
+/// local-mode state root: it belongs to no project worktree, so no Git
+/// exclude is read or written, even when the directory happens to sit
+/// inside an unrelated repository.
+pub(crate) fn write_once_outside_project(
+    root: &Path,
+    directory: &str,
+    name: &str,
+    bytes: &[u8],
+    label: &str,
+) -> Result<Written, String> {
+    let relative = format!("{directory}/{name}");
+    match existing(root, &relative, label)? {
+        Some(current) if current == bytes => Ok(Written::Reused),
+        Some(_) => Err(format!(
+            "{label} already exists with different bytes: {relative}"
+        )),
+        None => create(root, &relative, bytes, label).map(|()| Written::Created),
+    }
+}
+
 /// Write `bytes` at `<directory>/<slug>/<file>`, then `<slug>-2`, `<slug>-3`,
 /// ...: the first directory holding exactly these bytes is reused, the first
 /// free one is created. Returns the root-relative path.

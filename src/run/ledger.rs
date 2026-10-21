@@ -114,12 +114,20 @@ pub(crate) fn ledger_path(
     requested: &str,
     allow_missing: bool,
 ) -> Result<LedgerPath, String> {
-    let portable = requested.replace('\\', "/");
     if requested.trim().is_empty() || requested.contains('\0') {
         return Err("ledger path must be a non-empty string".into());
     }
-    if Path::new(requested).is_absolute()
-        || portable.starts_with('/')
+    // An absolute ledger inside the state root is placed relative to it; one
+    // outside is refused naming the state root.
+    let placed;
+    let requested = if Path::new(requested).is_absolute() {
+        placed = crate::project::path::inputs::confined(root, "ledger", requested)?;
+        placed.as_str()
+    } else {
+        requested
+    };
+    let portable = requested.replace('\\', "/");
+    if portable.starts_with('/')
         || portable.contains(":/")
         || portable == ".."
         || portable.starts_with("../")
