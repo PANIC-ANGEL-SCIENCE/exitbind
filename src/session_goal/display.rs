@@ -162,6 +162,15 @@ pub(crate) fn refresh(
     write(&path, &state)
 }
 
+/// Claude Code SessionStart (startup, resume, clear, compact): rebuild the
+/// display file of the hook payload's session so the status line shows the
+/// Goal before the next ledger command. Display only; every failure is silent.
+pub(crate) fn refresh_claude_session(loaded: &Loaded, identity: &str) {
+    if let Ok(Some(session)) = super::native::claude_session(identity) {
+        let _ = refresh(loaded, &session, None);
+    }
+}
+
 /// Atomically replace the display file: write a private temporary file in the
 /// same directory, flush it, then rename it over the previous state.
 pub(crate) fn write(path: &Path, state: &Value) -> Result<(), String> {

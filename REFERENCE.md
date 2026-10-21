@@ -822,6 +822,13 @@ Code selected, `setup --apply` adds `exitbind statusline` as the project's
 for example `◎ GOAL · S1/3 met · next S2: …`, reads only that file and prints
 nothing without a Goal. Nothing is added to agent hook context.
 
+Known display limits: the line follows the journal the session last projected,
+so after ledger commands under another project's configuration it can show
+that project's Goal, and two concurrent writers can briefly show an older
+revision. A worker's return from another session reaches the Lead's line at
+the Lead's next Goal or Work command or SessionStart. The line is display
+only; the Goal ledger and `goal status` stay authoritative.
+
 ## Host bridge
 
 One installation covers the binary and the host guidance. `exitbind host

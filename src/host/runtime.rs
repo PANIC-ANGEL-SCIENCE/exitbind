@@ -166,8 +166,11 @@ pub fn run() -> Result<(), String> {
         )?;
         return Ok(());
     }
-    if event == "SessionStart" {
-        super::statusline::refresh_from_hook(&loaded, object);
+    // Claude Code names an environment file for SessionStart; Codex does not.
+    if event == "SessionStart" && std::env::var_os("CLAUDE_ENV_FILE").is_some() {
+        if let Some(identity) = object.get("session_id").and_then(Value::as_str) {
+            crate::session_goal::display::refresh_claude_session(&loaded, identity);
+        }
     }
     let recovery_context = if event == "SessionStart" && crate::producer::exitbind_surface() {
         super::session_recovery::hook_context(object, config_path.to_str())
