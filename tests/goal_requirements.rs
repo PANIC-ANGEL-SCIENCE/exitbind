@@ -220,6 +220,10 @@ impl Project {
             for entry in fs::read_dir(path)? {
                 let entry = entry?;
                 let path = entry.path();
+                // The human display projection is not the Goal journal.
+                if path.parent() == Some(root) && entry.file_name() == "display" {
+                    continue;
+                }
                 let relative = path
                     .strip_prefix(root)
                     .unwrap()

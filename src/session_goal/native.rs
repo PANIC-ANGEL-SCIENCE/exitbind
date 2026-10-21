@@ -107,7 +107,7 @@ fn session(host: &'static str, identity: Option<String>) -> Result<Option<Sessio
     let Some(identity) = identity else {
         return Ok(None);
     };
-    let key = hash::value(&json!({"host":host,"identity":identity}));
+    let key = session_key(host, &identity);
     let base = base_directory()?;
     Ok(Some(Session {
         host,
@@ -116,7 +116,13 @@ fn session(host: &'static str, identity: Option<String>) -> Result<Option<Sessio
     }))
 }
 
-fn base_directory() -> Result<PathBuf, String> {
+/// The hashed locator for a host-reported session identity. Display readers
+/// derive the same key from the host's own session id.
+pub(crate) fn session_key(host: &str, identity: &str) -> String {
+    hash::value(&json!({"host":host,"identity":identity}))
+}
+
+pub(crate) fn base_directory() -> Result<PathBuf, String> {
     let raw = match env::var_os("EXITBIND_SESSION_GOALS_DIR") {
         Some(value) => PathBuf::from(value),
         None => match env::var_os("XDG_STATE_HOME") {

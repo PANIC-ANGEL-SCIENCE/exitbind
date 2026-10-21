@@ -17,6 +17,7 @@ mod goal;
 mod goal_completion;
 mod help;
 mod memory_cli;
+mod native_display;
 mod project;
 mod project_graph;
 mod replan_input;
@@ -193,7 +194,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         }
         "goal" => {
             let loaded = config::load(parsed.options.get("config").map(String::as_str))?;
-            goal::command(&loaded, &parsed)
+            native_display::after_goal(&loaded, &parsed, goal::command(&loaded, &parsed))
         }
         "activity" => {
             let loaded = config::load(parsed.options.get("config").map(String::as_str))?;
@@ -388,7 +389,7 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
         "run" => run_cli::run_command(&loaded, a),
         "away" => away_command(&loaded, a),
         "migrate" => migrate_command(&loaded, a),
-        "work" => work::work_command(&loaded, a),
+        "work" => native_display::after_work(&loaded, a, work::work_command(&loaded, a)),
         "project" => project::command(&loaded, a),
         _ => Err(format!("unknown command '{command}'")),
     }
