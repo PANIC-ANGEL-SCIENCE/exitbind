@@ -217,7 +217,11 @@ walked files outside Git, excluding Exitbind state. A shared input or checker
 change invalidates prior support even when its result artifact stays unchanged.
 Ignored/external files, environment, remote services and time are not covered.
 The declared checker must be a regular non-ignored project file named by the
-check command. This relationship and checked evidence are observable; whether
+check command. The freeze covers that project file and the bytes of the one
+outside script the command names; the script's environment and the files it
+sources are not frozen, so a per-Work input such as the comparison base belongs
+there or in a ref resolved at run time, never as a literal in the script.
+This relationship and checked evidence are observable; whether
 that checker adequately tests the requirement remains a review judgment.
 Project identity includes the canonical root path: recovery in the same project
 is supported, while moving this goal to another path requires new validated

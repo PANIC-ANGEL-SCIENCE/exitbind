@@ -124,7 +124,9 @@ lock's `owner` record and actual process state before removing a stale lock;
 the script never removes another run's lock automatically.
 
 Set `VALUE_PROOF_BASE` to the intended comparison commit. CI supplies the PR
-base or pre-push SHA; an empty/all-zero value uses `HEAD^`. The script requires
+base or pre-push SHA; an empty/all-zero value uses `HEAD^`. Any other value
+that is not a full commit SHA, such as `pub/main`, names a ref, which the script
+resolves once to `git merge-base HEAD <ref>`. The script requires
 full published ancestry and fetches an explicitly supplied missing base from
 `origin`. It does not silently substitute another comparison. `CANDIDATE_SHA`
 can additionally select the contributing head for the ancestry check.
