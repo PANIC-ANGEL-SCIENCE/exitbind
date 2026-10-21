@@ -27,6 +27,8 @@ mod setup_next;
 mod setup_projection;
 #[path = "setup_roles.rs"]
 mod setup_roles;
+#[path = "setup_statusline.rs"]
+mod setup_statusline;
 #[path = "setup_verification.rs"]
 mod setup_verification;
 use setup_projection::{
@@ -309,11 +311,14 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     } else {
         report["projection"] = json!({"status": "skipped", "writes": false, "reason": "no supported host was selected or detected"});
     }
-    report["status"] = json!(if config_changed || projection_changed {
-        "applied"
-    } else {
-        "unchanged"
-    });
+    let status_line_installed = setup_statusline::report(&root, &hosts, &mut report);
+    report["status"] = json!(
+        if config_changed || projection_changed || status_line_installed {
+            "applied"
+        } else {
+            "unchanged"
+        }
+    );
     report["configChanged"] = json!(config_changed);
     report["profiles"] = json!(profiles);
     report["guidance"] = json!(if facts.skip_skills {
@@ -494,6 +499,9 @@ fn preview_report(
             "claude" => ".claude/agents",
             _ => "",
         }));
+        if host == "claude" {
+            affected.push(root.join(".claude/settings.json"));
+        }
     }
     let mut conflicts = Vec::new();
     if let Some(existing) = existing {

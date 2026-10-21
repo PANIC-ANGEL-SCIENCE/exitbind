@@ -31,6 +31,11 @@ impl Journal {
     }
 }
 
+/// The display file for a host-reported session identity.
+pub(crate) fn path_for(host: &str, identity: &str) -> Result<PathBuf, String> {
+    path_for_key(&super::native::session_key(host, identity))
+}
+
 /// The display file for an already hashed native session key.
 pub(crate) fn path_for_key(key: &str) -> Result<PathBuf, String> {
     Ok(super::native::base_directory()?

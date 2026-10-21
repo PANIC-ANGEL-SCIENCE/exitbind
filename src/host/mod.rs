@@ -12,3 +12,4 @@ pub(crate) mod project_resources;
 pub(crate) mod runtime;
 pub(crate) mod session_recovery;
 pub(crate) mod settings;
+pub(crate) mod statusline;

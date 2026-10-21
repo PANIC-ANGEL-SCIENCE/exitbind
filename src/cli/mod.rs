@@ -179,6 +179,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
             args::assert_positionals(command, &parsed, 0)?;
             hook_runtime::run()
         }
+        "statusline" => crate::host::statusline::run(),
         "init" => crate::project::commands::init(&parsed),
         "setup" => crate::project::setup::command(&parsed),
         "bind" => crate::project::commands::bind(&parsed),

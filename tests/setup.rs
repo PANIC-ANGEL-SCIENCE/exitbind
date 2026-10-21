@@ -6,6 +6,9 @@ mod lead_goal_text;
 #[cfg(unix)]
 #[path = "setup/lesson_carry.rs"]
 mod lesson_carry;
+#[cfg(unix)]
+#[path = "setup/native_display.rs"]
+mod native_display;
 
 use std::{fs, path::Path, process::Output};
 
