@@ -40,6 +40,16 @@ fi
 
 begin_verification_run
 
+# A value that is neither empty, all zeros nor a full commit SHA names a ref;
+# it is resolved once to the merge-base with HEAD. A SHA is used unchanged.
+proof_base_is_ref() {
+  case $1 in
+    '') return 1 ;;
+    *[!0-9a-fA-F]*) return 0 ;;
+  esac
+  test "${#1}" -ne 40
+}
+
 prepare_value_proof_base() {
   VALUE_PROOF_BASE=${VALUE_PROOF_BASE:-}
   if [ -z "$VALUE_PROOF_BASE" ] || [ "$VALUE_PROOF_BASE" = "0000000000000000000000000000000000000000" ]; then
@@ -48,6 +58,9 @@ prepare_value_proof_base() {
     git fetch --no-tags origin "$VALUE_PROOF_BASE"
   fi
   git cat-file -e "${VALUE_PROOF_BASE}^{commit}"
+  if proof_base_is_ref "$VALUE_PROOF_BASE"; then
+    VALUE_PROOF_BASE=$(git merge-base HEAD "$VALUE_PROOF_BASE")
+  fi
   export VALUE_PROOF_BASE
   printf 'proof-base=%s\n' "$VALUE_PROOF_BASE" >> "$run_dir/context"
   printf 'ci-local: platform=%s head=%s proof-base=%s\n' "$platform" "$(git rev-parse HEAD)" "$VALUE_PROOF_BASE"
@@ -58,6 +71,10 @@ if [ "$ci_mode" = pre-return ]; then
 fi
 
 proof_base_ready=false
+if [ -n "${VALUE_PROOF_BASE:-}" ] && { [ "$ci_mode" = pre-return ] || proof_base_is_ref "$VALUE_PROOF_BASE"; }; then
+  prepare_value_proof_base
+  proof_base_ready=true
+fi
 for stage in $(ci_stage_order); do
   ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
   if [ "$ci_mode" = full ] && [ "$proof_base_ready" = false ] && { [ "$stage" = fmt ] || [ "$stage" = tests ]; }; then
