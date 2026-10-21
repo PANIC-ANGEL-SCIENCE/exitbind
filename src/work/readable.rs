@@ -8,6 +8,8 @@
 use crate::{config::Loaded, run::RunSnapshot};
 use serde_json::{json, Map, Value};
 
+#[path = "action_guidance.rs"]
+mod action_guidance;
 #[path = "recipient_context.rs"]
 pub(super) mod recipient_context;
 
@@ -111,7 +113,8 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     read(loaded, work, &snapshot, &next)
 }
 
-/// A current executable form without repeating previously consumed rules and
+/// A current executable form plus the guidance delivered to the current
+/// recipient for its phase, without repeating the profile, rules and
 /// artifacts. Mandatory context stays available through exact section pages.
 pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> {
     super::details::ensure_current_config(loaded)?;
@@ -121,6 +124,8 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         .ok_or("current action binding unavailable")?;
     let forms = super::action_forms::full(loaded, work, &next, binding);
     let mut routes = next["current"]["details"].clone();
+    let recipient = recipient_context::read(loaded, &next);
+    let guidance = action_guidance::project(&recipient, &routes);
     let grouped_route = routes.get("grouped").cloned();
     if let Some(routes) = routes.as_object_mut() {
         routes.remove("grouped");
@@ -133,11 +138,17 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
             "obligations":next["packet"]["context"]["obligations"],
             "meaning":"current navigation metadata; inspect complete relevant evidence before deciding"},
         "details":routes,
-        "instructions":{"complete":false,"meaning":"action view does not redeliver instructions; consume complete current recipient, assignment and evidence before dependent work"}});
+        "instructions":{"complete":false,"meaning":"action view carries the delivered guidance below but not the profile, rules, assignment or evidence; consume those complete current sections before dependent work"}});
     let fresh = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
     super::details::ensure_current_config(loaded)?;
     if fresh["current"]["binding"] != binding {
         return Err("action changed during read; inspect current work detail before acting".into());
+    }
+    if recipient_context::read(loaded, &fresh) != recipient {
+        return Err(
+            "recipient instructions changed during work detail; refresh the current assignment"
+                .into(),
+        );
     }
     let mut result = result;
     if next["goalProgress"]["workAssociation"].is_object() {
@@ -180,6 +191,11 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
                 "action view exceeds 8192 bytes; use current work next section routes".into(),
             );
         }
+    }
+    // The navigation above keeps its own bound; delivered guidance keeps the
+    // recipient budget it was selected under, so it is never clipped here.
+    if let Some(guidance) = guidance {
+        result["guidance"] = guidance;
     }
     Ok(result)
 }

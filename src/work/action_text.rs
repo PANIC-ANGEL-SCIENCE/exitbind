@@ -3,7 +3,7 @@
 //! The JSON view stays the machine contract (`--json`). This rendering shows
 //! the same current action, bound commands and section routes as readable
 //! lines so a reader needs no JSON or hex tooling to act on it.
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub(crate) fn render(view: &Value) -> String {
     let action = &view["effectiveAction"];
@@ -48,6 +48,7 @@ pub(crate) fn render(view: &Value) -> String {
             push_form(&mut lines, &label, choice);
         }
     }
+    push_guidance(&mut lines, &view["guidance"]);
     if let Some(routes) = view["details"].as_object() {
         lines.push("Complete sections (read-only):".to_owned());
         for (name, route) in routes {
@@ -65,6 +66,88 @@ pub(crate) fn render(view: &Value) -> String {
     lines.push("Machine form: add --json".to_owned());
     let mut rendered = lines.join("\n");
     rendered.push('\n');
+    rendered
+}
+
+/// Every delivered item whole with its read route, then every omitted item
+/// with its reason and route; the same items as `guidance` in the JSON form.
+fn push_guidance(lines: &mut Vec<String>, guidance: &Value) {
+    if !guidance.is_object() {
+        return;
+    }
+    if guidance["available"] == false {
+        lines.push(format!(
+            "Delivered guidance unavailable ({}); read route: {}",
+            text(&guidance["reason"]),
+            route(&guidance["readRoute"])
+        ));
+        return;
+    }
+    let phases = guidance["phases"]
+        .as_array()
+        .map(|phases| phases.iter().map(text).collect::<Vec<_>>().join(", "));
+    lines.push(format!(
+        "Delivered guidance for {}{}: {} item(s) whole, {} omitted; read before dependent work",
+        text(&guidance["agent"]),
+        phases.map_or_else(String::new, |phases| format!(" (phases: {phases})")),
+        text(&guidance["itemCount"]),
+        text(&guidance["omittedCount"])
+    ));
+    for item in guidance["items"].as_array().into_iter().flatten() {
+        let id = item_name(item);
+        match item["kind"].as_str() {
+            Some("project_lesson") => {
+                lines.push(format!("Lesson {id}: {}", text(&item["content"])));
+                lines.push(format!("  read route: {}", route(&item["readRoute"])));
+            }
+            kind => {
+                let phase = item["phase"]
+                    .as_str()
+                    .map_or_else(String::new, |phase| format!(", phase {phase}"));
+                lines.push(format!(
+                    "Guidance {} {id}{phase} ({} bytes, sha256 {}):",
+                    kind.unwrap_or("memory"),
+                    text(&item["byteLength"]),
+                    text(&item["sourceSha256"])
+                ));
+                lines.push(format!("  read route: {}", route(&item["readRoute"])));
+                lines.push(format!("----- begin {id} -----"));
+                let body = text(&item["content"]);
+                lines.push(body.strip_suffix('\n').unwrap_or(&body).to_owned());
+                lines.push(format!("----- end {id} -----"));
+            }
+        }
+    }
+    for item in guidance["omitted"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "Omitted {} ({}): read route: {}",
+            item_name(item),
+            text(&item["reason"]),
+            route(&item["readRoute"])
+        ));
+    }
+}
+
+fn item_name(item: &Value) -> String {
+    text(if item["id"].is_string() {
+        &item["id"]
+    } else {
+        &item["itemId"]
+    })
+}
+
+/// A read route as one command line; a config path the bounded form left out
+/// is marked rather than invented.
+fn route(route: &Value) -> String {
+    let mut rendered = argv(&json!({"argv": route["command"]}));
+    if route["sameConfigRequired"] == true
+        && route["command"]
+            .as_array()
+            .and_then(|argv| argv.last())
+            .is_some_and(|last| last == "--config")
+    {
+        rendered.push_str(" <same config>");
+    }
     rendered
 }
 
@@ -142,7 +225,6 @@ fn compact(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn action_view_renders_delegation_forms_and_routes_as_text() {

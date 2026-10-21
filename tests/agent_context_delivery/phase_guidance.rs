@@ -3,6 +3,9 @@
 //! role's body. The Lead's detail names delegation for an open assignment.
 use super::*;
 
+#[path = "action_view.rs"]
+mod action_view;
+
 const TRIAGE: &str = "# Failing test triage\n\nReproduce only the failed tests, with the target's features.\nUnset host session variables first: \"EXITBIND_NATIVE_SESSION_ID\".\nKlassifiziere eine Ursache — before editing.\n";
 const REVIEW_NOTES: &str = "# Reviewer-only notes\n\nPRIVATE-REVIEWER-BODY\n";
 

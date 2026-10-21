@@ -3,8 +3,10 @@
 A reviewed project fact can follow a new Work without repeating its discovery.
 Opt-in role memory remains the owner: no conversation archive or second store
 is created. With an applicable lesson, ordinary `work detail WORK --json`
-includes `recipientContext.projectLessons`; native assignments also receive
-the current selected source. No separate memory lookup is required to start.
+includes `recipientContext.projectLessons`, and `work detail WORK --view action`
+prints the lessons selected into the recipient guidance (text and `--json`
+`guidance`) with their read route; native assignments also receive the
+current selected source. No separate memory lookup is required to start.
 
 Use a lesson for a durable, non-obvious project coupling or convention. Resolve
 executables and resources live. Keep current assignments and result evidence in

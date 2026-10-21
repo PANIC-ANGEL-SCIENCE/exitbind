@@ -23,8 +23,10 @@ project rules or require a source checkout to use an installed binary.
 
 After acquiring the complete current assignment and required instructions, use
 `work detail WORK --view action --json` for routine state and action inspection.
-Its decision metadata and exact section routes avoid repeating artifacts. It
-explicitly marks instructions incomplete: this is navigation, never review or
+It also carries the guidance bodies and lessons delivered to the current
+recipient for its phase, each with its read route; read them before dependent
+work. It still marks instructions incomplete (profile, rules, assignment and
+evidence stay behind section routes): this is navigation, never review or
 acceptance evidence. On a changed recipient, binding or instruction/evidence
 source, acquire and consume the applicable complete current bytes before the
 next dependent effect. At substantive review or acceptance, inspect complete

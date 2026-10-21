@@ -130,7 +130,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         ["work", "expand"] => "work expand WORK REFERENCE [--json]",
         ["work", "closeout"] => "work closeout WORK [--export | --output PATH | --receipt PATH] [--json] (read-only unless export is explicitly requested)",
         ["work", "challenge"] => "work challenge [prepare] WORK --question QUESTION [--probe-command COMMAND --probe-source PROJECT_FILE] [--json] | work challenge validate WORK < REPORT_JSON (read-only bounded preparation/current-identity validation; no agents or probes launched)",
-        ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands and complete section routes without repeating instructions)",
+        ["work", "detail"] => "work detail WORK [--view action] [--json] (action gives current decision metadata, bound commands, the guidance bodies and lessons delivered to the current recipient with read routes, and complete section routes; profile, rules and evidence stay behind those routes)",
         ["work", "resume"] => "work resume [--json] [--full]",
         ["work", "classify"] => {
             "work classify --material-consequence true|false --promotion-required true|false"

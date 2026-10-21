@@ -1087,12 +1087,18 @@ projection grant no host rights. Current assignment, approval and complete
 bounded context remain required.
 
 `exitbind work detail WORK --view action --json` reads the current executable
-forms and current decision metadata without redelivering consumed instructions.
-The metadata is navigation, not evidence of complete instruction delivery or
-review. Its exact section routes
-retain mandatory context. After a permit/edit, follow the permit response's
+forms and current decision metadata. Its `guidance` carries the phase guidance
+bodies and project lessons delivered to the current recipient, from the same
+selection and budget as `recipientContext.guidance` in the complete detail:
+each item has its content and `readRoute` (the recipient section route, or the
+`memory resolve` route for a lesson); `omitted` counts every item the budget
+or an unavailable source left out, each with its reason and route. The
+profile, rules, assignment and evidence are not redelivered; the metadata is
+navigation, not evidence of complete instruction delivery or review. Its exact
+section routes retain mandatory context. After a permit/edit, follow the permit response's
 current action route; do not reuse a pre-permit return binding.
-Without `--json` the action view prints the same action as plain text. For an
+Without `--json` the action view prints the same action, and the same guidance
+items whole with their read routes, as plain text. For an
 open assignment, `effectiveAction.delegation` reads `next action: delegate`
 and names the agent; it is a sign for the Lead, not a refusal. A section page
 whose bytes are UTF-8 carries them as `contentText` (`encoding: "utf-8"`);
