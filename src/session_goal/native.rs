@@ -243,6 +243,19 @@ pub(crate) fn scope(loaded: &Loaded, establish_owner: bool) -> Result<Scope, Str
     let Some(session) = current()? else {
         return Ok(project_scope(loaded));
     };
+    scope_for(loaded, session, establish_owner)
+}
+
+/// A Claude Code session named by a hook payload rather than the environment.
+pub(crate) fn claude_session(identity: &str) -> Result<Option<Session>, String> {
+    session("claude", Some(identity.to_owned()))
+}
+
+pub(crate) fn scope_for(
+    loaded: &Loaded,
+    session: Session,
+    establish_owner: bool,
+) -> Result<Scope, String> {
     let owner = if establish_owner {
         Some(session.create_owner(loaded)?)
     } else {

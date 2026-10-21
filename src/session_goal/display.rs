@@ -128,6 +128,40 @@ fn closing_route(record: &Value, progress: &Value) -> Value {
     json!("closes when every incorporated item is resolved and the Lead closes the Goal")
 }
 
+/// Rebuild the display file of `session` from the selected journal. Without
+/// an explicit journal the one the file was last projected from is kept, else
+/// the session journal. Writes nothing when the session journal belongs to
+/// another owner.
+pub(crate) fn refresh(
+    loaded: &Loaded,
+    session: &super::native::Session,
+    journal: Option<Journal>,
+) -> Result<(), String> {
+    let path = path_for_key(&session.key)?;
+    let journal = journal.unwrap_or(match read(&path) {
+        Some(previous) if previous["journal"] == "project" => Journal::Project,
+        _ => Journal::Session,
+    });
+    let root = match journal {
+        Journal::Project => loaded.state_root.clone(),
+        Journal::Session => {
+            let scope = super::native::scope_for(loaded, session.clone(), false)?;
+            if !scope.owner_matches {
+                return Ok(());
+            }
+            scope.root
+        }
+    };
+    let state = build(
+        loaded,
+        &root,
+        journal,
+        session.host,
+        &crate::memory::state::now(),
+    )?;
+    write(&path, &state)
+}
+
 /// Atomically replace the display file: write a private temporary file in the
 /// same directory, flush it, then rename it over the previous state.
 pub(crate) fn write(path: &Path, state: &Value) -> Result<(), String> {

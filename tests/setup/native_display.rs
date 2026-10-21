@@ -209,6 +209,30 @@ fn display_file_follows_every_ledger_command_and_feeds_the_status_line() {
     eprintln!("statusline p95 over 100 runs: {p95} us");
     assert!(p95 < 50_000, "status line p95 {p95} us");
 
+    // A SessionStart (resume, /clear) rebuilds a missing display file.
+    fs::remove_dir_all(session.store.join("display")).unwrap();
+    assert_eq!(session.status_line().0, "");
+    let env_file = session.home.join("claude-env");
+    fs::write(&env_file, "").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&env_file, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let mut hook_session = Session {
+        extra: vec![("CLAUDE_ENV_FILE", env_file)],
+        ..session
+    };
+    let payload = json!({"hook_event_name":"SessionStart","source":"resume",
+        "session_id":hook_session.id,"cwd":hook_session.root});
+    let hook = hook_session.call(
+        &[env!("CARGO_BIN_EXE_exitbind"), "hook-run"],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    assert_eq!(hook_session.status_line().0.trim_end(), line.trim_end());
+    hook_session.extra.clear();
+    let session = hook_session;
+
     // Re-running setup keeps the installed line unchanged.
     assert_eq!(setup(&session)["statusLine"]["status"], "unchanged");
 }

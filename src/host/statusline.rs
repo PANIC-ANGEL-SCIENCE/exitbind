@@ -31,6 +31,25 @@ fn line_for_input(bytes: &[u8]) -> Option<String> {
     line(&crate::session_goal::display::read(&path)?)
 }
 
+/// Claude Code SessionStart (startup, resume, clear, compact): rebuild the
+/// display file for the payload's session so the status line shows the Goal
+/// before the next ledger command. Prints nothing; hook output is unchanged.
+pub(crate) fn refresh_from_hook(
+    loaded: &crate::config::Loaded,
+    payload: &serde_json::Map<String, Value>,
+) {
+    // Claude Code names an environment file for SessionStart; Codex does not.
+    if std::env::var_os("CLAUDE_ENV_FILE").is_none() {
+        return;
+    }
+    let Some(identity) = payload.get("session_id").and_then(Value::as_str) else {
+        return;
+    };
+    if let Ok(Some(session)) = crate::session_goal::native::claude_session(identity) {
+        let _ = crate::session_goal::display::refresh(loaded, &session, None);
+    }
+}
+
 /// Terminal-safe text cut to `limit` characters with an ellipsis.
 fn cut(text: &str, limit: usize) -> String {
     let clean = text

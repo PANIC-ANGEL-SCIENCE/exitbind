@@ -166,6 +166,9 @@ pub fn run() -> Result<(), String> {
         )?;
         return Ok(());
     }
+    if event == "SessionStart" {
+        super::statusline::refresh_from_hook(&loaded, object);
+    }
     let recovery_context = if event == "SessionStart" && crate::producer::exitbind_surface() {
         super::session_recovery::hook_context(object, config_path.to_str())
     } else {

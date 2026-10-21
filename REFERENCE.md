@@ -813,6 +813,15 @@ remain readable for normal configured commands. Repeat the original
 `exitbind bind --config CONFIG --root PRODUCT --state-root STATE` command to
 add ControlRoot after all three existing roots match exactly.
 
+### Goal display for the human
+
+After each Goal or Work ledger command, and at a Claude Code SessionStart,
+Exitbind rewrites one private display file per native session. With Claude
+Code selected, `setup --apply` adds `exitbind statusline` as the project's
+`statusLine` unless a status line is already configured; it prints one line,
+for example `◎ GOAL · S1/3 met · next S2: …`, reads only that file and prints
+nothing without a Goal. Nothing is added to agent hook context.
+
 ## Host bridge
 
 One installation covers the binary and the host guidance. `exitbind host
