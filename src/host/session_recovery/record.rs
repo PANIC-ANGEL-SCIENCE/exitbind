@@ -364,7 +364,13 @@ fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> R
             != hint.owner_config_path
             || hash::text(&owner_config.source) != hint.owner_config_sha256
         {
-            return Err("recovery hint owner configuration changed".into());
+            return Err(crate::drift::refusal(
+                crate::drift::Class::RecoveryOwnerConfiguration,
+                &hint.owner_config_sha256,
+                Some(&hash::text(&owner_config.source)),
+                None,
+                crate::drift::Route::RecoveryShow,
+            ));
         }
         let owner_scope = session_goal::native::scope(&owner_config, false)?;
         if !owner_scope.owner_matches

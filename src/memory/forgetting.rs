@@ -62,7 +62,7 @@ pub fn attest(
                 event["configSha256"].as_str().unwrap_or_default(),
             ));
         }
-        assert_event_profile_current(loaded, event)?;
+        assert_event_profile_current(loaded, event, ledger_name)?;
     }
 
     if memory::path_exists_without_symlinks(&loaded.product_root, source_name, "recorded source")? {
@@ -100,7 +100,11 @@ pub fn attest(
     Ok(receipt)
 }
 
-fn assert_event_profile_current(loaded: &Loaded, event: &Value) -> Result<(), String> {
+fn assert_event_profile_current(
+    loaded: &Loaded,
+    event: &Value,
+    ledger: &str,
+) -> Result<(), String> {
     let actor = event["actor"].as_str().ok_or("invalid memory actor")?;
     let configured = loaded.config["agents"]
         .get(actor)
@@ -114,7 +118,16 @@ fn assert_event_profile_current(loaded: &Loaded, event: &Value) -> Result<(), St
     if event["actorProfile"]["path"] != current_path
         || event["actorProfile"]["sha256"] != current_hash
     {
-        return Err(format!("memory actor profile changed: {actor}"));
+        return Err(crate::drift::refusal(
+            crate::drift::Class::MemoryActorProfile,
+            event["actorProfile"]["sha256"].as_str().unwrap_or_default(),
+            Some(&current_hash),
+            None,
+            crate::drift::Route::Inspect {
+                ledger,
+                config: &loaded.path,
+            },
+        ));
     }
     Ok(())
 }

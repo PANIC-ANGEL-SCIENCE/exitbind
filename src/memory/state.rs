@@ -348,7 +348,18 @@ pub(crate) fn validate_history_current(
         if event["actorProfile"]["path"] != current_path
             || event["actorProfile"]["sha256"] != current_hash
         {
-            return Err(format!("memory actor profile changed: {actor}"));
+            let ledger_path = crate::config::rel(&loaded.state_root, &ledger.path)
+                .unwrap_or_else(|_| ledger.path.display().to_string());
+            return Err(crate::drift::refusal(
+                crate::drift::Class::MemoryActorProfile,
+                event["actorProfile"]["sha256"].as_str().unwrap_or_default(),
+                Some(&current_hash),
+                None,
+                crate::drift::Route::Inspect {
+                    ledger: &ledger_path,
+                    config: &loaded.path,
+                },
+            ));
         }
     }
     Ok(())

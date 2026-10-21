@@ -54,7 +54,13 @@ pub(crate) fn show() -> Result<Value, String> {
             if canonical_path(&loaded.path, "native owner configuration")? != hint.owner_config_path
                 || hash::text(&loaded.source) != hint.owner_config_sha256
             {
-                return Err("saved owner configuration changed".into());
+                return Err(crate::drift::refusal(
+                    crate::drift::Class::RecoveryOwnerConfiguration,
+                    &hint.owner_config_sha256,
+                    Some(&hash::text(&loaded.source)),
+                    None,
+                    crate::drift::Route::RecoveryShow,
+                ));
             }
             let scope = session_goal::native::scope(&loaded, false)?;
             if !scope.owner_matches
@@ -129,7 +135,7 @@ pub(crate) fn show() -> Result<Value, String> {
                     "one or more saved source/member references changed or are unavailable".into(),
                 )
             }
-            Err(error) => dynamic_issue = Some(error),
+            Err(error) => dynamic_issue = Some(crate::drift::plain(&error)),
         }
     }
     // A hint never proves that a Work is still at the state observed when its

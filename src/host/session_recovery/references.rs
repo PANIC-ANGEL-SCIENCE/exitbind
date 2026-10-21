@@ -48,7 +48,13 @@ pub(crate) fn task_target(
     if canonical_path(&owner_loaded.path, "native owner configuration")? != hint.owner_config_path
         || hash::text(&owner_loaded.source) != hint.owner_config_sha256
     {
-        return Err("saved native owner configuration changed".into());
+        return Err(crate::drift::refusal(
+            crate::drift::Class::RecoveryOwnerConfiguration,
+            &hint.owner_config_sha256,
+            Some(&hash::text(&owner_loaded.source)),
+            None,
+            crate::drift::Route::RecoveryShow,
+        ));
     }
     let scope = session_goal::native::scope(&owner_loaded, false)?;
     if !scope.owner_matches
@@ -145,7 +151,13 @@ pub(super) fn validated_work_configs(
         if canonical_path(&loaded.path, "Work configuration")? != item.config_path
             || hash::text(&loaded.source) != item.config_sha256
         {
-            return Err("session recovery Work configuration changed".into());
+            return Err(crate::drift::refusal(
+                crate::drift::Class::RecoveryWorkConfiguration,
+                &item.config_sha256,
+                Some(&hash::text(&loaded.source)),
+                None,
+                crate::drift::Route::RecoveryShow,
+            ));
         }
         session_goal::journey::validate_member_for_session(&loaded, &member, session, owner)?;
         loaded_members.push((item.work.clone(), loaded));
@@ -188,7 +200,13 @@ pub(super) fn reference_root(
         if canonical_path(&member_loaded.path, "Work configuration")? != reference.config_path
             || hash::text(&member_loaded.source) != reference.config_sha256
         {
-            return Err("reference Work configuration changed".into());
+            return Err(crate::drift::refusal(
+                crate::drift::Class::RecoveryWorkConfiguration,
+                &reference.config_sha256,
+                Some(&hash::text(&member_loaded.source)),
+                None,
+                crate::drift::Route::RecoveryShow,
+            ));
         }
         session_goal::journey::validate_member_for_session(
             &member_loaded,

@@ -2113,13 +2113,13 @@
     },
     "tests/project_context.rs": {
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "5aebc30b7e3880ab58475df6713338b4f00b269ee2d1d5714044f7c6b3e505e3",
+      "currentSha256": "9227ecc4c3a24b665ba0975a18a5ffb727557884109a159377ba0a102c0bf008",
       "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the bounded SessionStart case allows the bytes the three receiving routes add by printing the executable and `--config`, and asserts the project-context route with them; the case is otherwise unchanged."
     },
     "tests/project_memory_projection.rs": {
       "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
-      "currentSha256": "fc46f8c03c5934cf1a29536977b460820b26e6ba261599cbd79be1966b28f3a4",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the SessionStart read routes print the executable under test and the project configuration (`--config`) instead of a bare product name; the asserted routes, the 3072-byte bound and the omitted-references route are otherwise unchanged."
+      "currentSha256": "dabaa78c1bde78ba330c9242f9510f29fc25940b42b05d505d0d8fe3fe8d6927",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the SessionStart read routes print the executable under test and the project configuration (`--config`) instead of a bare product name; the asserted routes, the 3072-byte bound and the omitted-references route are otherwise unchanged. R55 W3 rework: the 3072-byte bound is restored; an accepted item reaches the Lead when the session context lists it, or names the printed project-facts route as the place of the omitted references and that route lists it (long executable and configuration paths fit fewer item lines)."
     },
     "tests/provider_fallback.rs": {
       "baselineSha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2",

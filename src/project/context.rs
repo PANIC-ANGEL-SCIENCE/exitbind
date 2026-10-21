@@ -270,12 +270,27 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             omitted += 1;
         }
     }
-    let mut read_route_added = false;
-    for reference in facts["memory"]["references"]
+    let references = facts["memory"]["references"]
         .as_array()
-        .into_iter()
-        .flatten()
-    {
+        .cloned()
+        .unwrap_or_default();
+    // The pointer to the omitted references always fits: memory lines spend
+    // only what is left after reserving it. It names the facts route the
+    // first line already prints in full.
+    let omitted_line = |count: usize| {
+        format!("\n{count} more references; run the current project facts route above.")
+    };
+    let reserve = omitted_line(references.len()).len();
+    let add_memory = |text: &mut String, line: &str| {
+        if text.len() + line.len() + reserve <= budget {
+            text.push_str(line);
+            true
+        } else {
+            false
+        }
+    };
+    let mut read_route_added = false;
+    for reference in &references {
         if !read_route_added {
             // One read route for every item line, printed once.
             let route = crate::emitted::command_line(
@@ -287,7 +302,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
                 ],
                 Some(&loaded.path),
             );
-            read_route_added = add(
+            read_route_added = add_memory(
                 &mut text,
                 &format!("\nRead a project memory item: `{route}`."),
             );
@@ -299,7 +314,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             reference["sourcePath"].as_str().unwrap_or("?"),
             reference["sourceSha256"].as_str().unwrap_or("?"),
         );
-        if !add(&mut text, &line) {
+        if !read_route_added || !add_memory(&mut text, &line) {
             omitted += 1;
         }
     }
@@ -310,7 +325,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
         );
     }
     if omitted > 0 {
-        let line = format!("\n{omitted} more references; run `{context_route}`.");
+        let line = omitted_line(omitted);
         if !add(&mut text, &line) {
             // Drop the final optional line to preserve a complete detail route.
             if let Some(last) = text.rfind('\n') {

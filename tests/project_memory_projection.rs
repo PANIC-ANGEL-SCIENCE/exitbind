@@ -130,6 +130,27 @@ fn accepted(root: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// The session context lists `item`, or names the exact project-context
+/// route for its omitted references and that route lists `item`. With long
+/// executable and configuration paths the 3072-byte context fits fewer item
+/// lines; the omitted ones stay one printed command away.
+fn reaches(root: &Path, context: &str, item: &str) -> bool {
+    if context.contains(item) {
+        return true;
+    }
+    let route = format!(
+        "Current project facts: `{} project context --json --config ",
+        env!("CARGO_BIN_EXE_exitbind")
+    );
+    context.contains(&route)
+        && context.contains(" more references; run the current project facts route above.")
+        && ok(root, &["project", "context", "--json"])["memory"]["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reference| reference["itemId"] == item)
+}
+
 fn memory_content(root: &Path, item: &str) -> String {
     ok(root, &["project", "context", "memory", item, "--json"])["content"]
         .as_str()
@@ -192,7 +213,7 @@ fn new_work_receives_role_and_current_memory_and_a_correction_replaces_the_old_r
 
     let before = accepted(&root);
     for item in before.values() {
-        assert!(context.contains(item));
+        assert!(reaches(&root, &context, item), "{context}");
     }
     assert!(memory_content(&root, &before["rules/docs.md"]).contains("document every CLI flag"));
     let work_b = begin(&root, "Work B");
@@ -283,7 +304,7 @@ fn rejected_expired_and_changed_items_never_project() {
         "memory/live.jsonl",
     );
     let item = accepted(&root)["rules/live.md"].clone();
-    assert!(session_context(&root).contains(&item));
+    assert!(reaches(&root, &session_context(&root), &item));
     assert!(memory_content(&root, &item).contains("live text"));
     fs::write(root.join("rules/live.md"), "Rule: edited text.\n").unwrap();
     let context = session_context(&root);
@@ -308,7 +329,7 @@ fn another_project_with_the_same_agent_label_sees_none_of_it() {
         "memory/private.jsonl",
     );
     let item = accepted(&first)["rules/private.md"].clone();
-    assert!(session_context(&first).contains(&item));
+    assert!(reaches(&first, &session_context(&first), &item));
     let context = session_context(&second);
     assert!(!context.contains(&item));
     assert!(
@@ -398,15 +419,11 @@ fn many_accepted_items_never_drop_the_session_context() {
         "Unknown Work uses `{exe} work resume --json --config "
     )));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
-    // The 3072-byte budget was sized for bare product names; the three
-    // receiving routes now print the executable and the configuration.
-    let config = root.canonicalize().unwrap().join("exitbind.json");
-    let routes = 3 * (exe.len() - "exitbind".len() + " --config ".len() + config.as_os_str().len());
-    assert!(context.len() <= 3072 + routes, "{}", context.len());
+    assert!(context.len() <= 3072);
     assert!(
         context.contains(&format!(
-            "more references; run `{exe} project context --json --config "
-        )),
+            "Current project facts: `{exe} project context --json --config "
+        )) && context.contains("more references; run the current project facts route above."),
         "{context}"
     );
     fs::remove_dir_all(&root).unwrap();

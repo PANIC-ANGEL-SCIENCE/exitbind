@@ -221,26 +221,24 @@ pub fn run() -> Result<(), String> {
             &loaded.config,
             &crate::project::agent_display::lead(&loaded),
         );
-        let mut soft = 3072;
         if crate::producer::exitbind_surface() {
             let receive = super::receive_text::receive_work(Some(&loaded.path));
-            soft = 3072 + super::receive_text::route_bytes(&receive);
             let fixed = DIRECT_WORK.len() + receive.len() + 2;
-            if text.len() + fixed + 128 > soft {
+            if text.len() + fixed + 128 > 3072 {
                 text = "Exitbind plan-only project context. Preserve the existing root conversation and current user corrections. No model was selected or launched; declarations are not an OS sandbox.".into();
             }
             text.push('\n');
             text.push_str(DIRECT_WORK);
             text.push('\n');
             text.push_str(&receive);
-            let budget = soft.saturating_sub(text.len());
+            let budget = 3072usize.saturating_sub(text.len());
             text.push_str(&crate::project::context::session_addendum(&loaded, budget));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
             text.push_str(&memory);
         }
         if let Some(update) = update_context {
-            if !crate::producer::exitbind_surface() || text.len() + update.len() < soft {
+            if !crate::producer::exitbind_surface() || text.len() + update.len() < 3072 {
                 text.push('\n');
                 text.push_str(&update);
             }

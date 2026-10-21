@@ -51,6 +51,12 @@ pub(crate) enum Class {
     ArchitectureRevision,
     /// The architecture selection differs from the assignment's configuration.
     ArchitectureSelection,
+    /// A lesson event's actor profile differs from the current profile file.
+    MemoryActorProfile,
+    /// A saved recovery hint's owner configuration differs from the file.
+    RecoveryOwnerConfiguration,
+    /// A recovery reference's Work configuration differs from the file.
+    RecoveryWorkConfiguration,
 }
 
 /// What a class says and which route it offers.
@@ -159,6 +165,24 @@ pub(crate) const MEMBERS: &[Member] = &[
         message: "architecture selection differs from the assignment configuration; use the existing run supersede path",
         meaning: "restore the assignment's configuration, or bind the changed selection in a successor run",
     },
+    Member {
+        class: Class::MemoryActorProfile,
+        classification: "memory_actor_profile_changed",
+        message: "memory actor profile changed",
+        meaning: "restore the actor profile the lesson events were stamped with, or retire this lesson and carry it again under the current profile",
+    },
+    Member {
+        class: Class::RecoveryOwnerConfiguration,
+        classification: "recovery_owner_configuration_changed",
+        message: "saved native owner configuration changed",
+        meaning: "read the current recovery record; record a new hint only with the verified current owner configuration",
+    },
+    Member {
+        class: Class::RecoveryWorkConfiguration,
+        classification: "recovery_work_configuration_changed",
+        message: "session recovery Work configuration changed",
+        meaning: "read the current recovery record and the Work's current detail; a saved reference is navigation, never authority",
+    },
 ];
 
 /// The command a refusal offers next.
@@ -180,6 +204,8 @@ pub(crate) enum Route<'a> {
         agent: &'a str,
         config: &'a std::path::Path,
     },
+    /// `session recovery show`: read the current recovery record.
+    RecoveryShow,
     /// `run supersede`: bind the changed input in a successor run.
     Supersede {
         ledger: Option<&'a str>,
@@ -246,6 +272,16 @@ impl Route<'_> {
                     "--json".into(),
                     "--config".into(),
                     text(config),
+                ],
+                true,
+            ),
+            Route::RecoveryShow => (
+                vec![
+                    executable,
+                    "session".into(),
+                    "recovery".into(),
+                    "show".into(),
+                    "--json".into(),
                 ],
                 true,
             ),
@@ -414,6 +450,7 @@ mod tests {
                     agent: "worker",
                     config,
                 },
+                Route::RecoveryShow,
                 Route::Supersede {
                     ledger: None,
                     config: Some(config),
@@ -446,7 +483,9 @@ mod tests {
                 ] {
                     assert!(text.contains(expected), "{expected}: {text}");
                 }
-                assert!(text.contains("'/project dir/exitbind.json'"), "{text}");
+                if command.iter().any(|word| word == "--config") {
+                    assert!(text.contains("'/project dir/exitbind.json'"), "{text}");
+                }
                 assert!(!text.contains(PREFIX), "{text}");
             }
         }

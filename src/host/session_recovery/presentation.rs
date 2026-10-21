@@ -45,7 +45,7 @@ pub(crate) fn hook_context(
     let record = match session_goal::read_for_recovery(&session.root) {
         Ok(Some(record)) => record,
         Ok(None) => return Some("Exitbind session recovery is unresolved: no canonical native Goal is available; no Work was selected.".into()),
-        Err(error) => return Some(format!("Exitbind session recovery is unresolved: {error}; no Work was selected.")),
+        Err(error) => return Some(format!("Exitbind session recovery is unresolved: {}; no Work was selected.", crate::drift::plain(&error))),
     };
     // A closed Goal leaves nothing to resume: state that one fact only.
     if let Some(revision) = session_goal::goal_summary::closed_revision(&record) {
@@ -149,7 +149,7 @@ fn hint_text(
     };
     let hint = match read_hint(&session.root) {
         Ok(value) => value,
-        Err(error) => return finish(format!("Exitbind session recovery hint is unusable: {error}; reread the native Goal and Work before acting."), true, None),
+        Err(error) => return finish(format!("Exitbind session recovery hint is unusable: {}; reread the native Goal and Work before acting.", crate::drift::plain(&error)), true, None),
     };
     let mut owner_match = false;
     let mut hinted_owner_config_current = false;

@@ -680,7 +680,7 @@ fn finish_result(input: ResultInput<'_>) -> Result<Value, String> {
             Ok(false) => {
                 json!({"attached":false,"reason":"no matching existing Work-bound recovery hint"})
             }
-            Err(error) => json!({"attached":false,"reason":error}),
+            Err(error) => json!({"attached":false,"reason":crate::drift::plain(&error)}),
         }
     } else {
         json!({"attached":false,"reason":"no validated Goal-member storage binding"})
