@@ -1,8 +1,32 @@
 # Changelog
 
-## 0.31.19
+## 0.31.20
 
 Unreleased source candidate; no stable tag or release assets are published.
+
+- After a stable release is published, the release workflow dispatches the
+  README badge refresh, which a release published with `GITHUB_TOKEN` never
+  started on its own.
+- Install through `releases/latest/download/install.sh`: each release
+  publishes its own `install.sh` and `install.sh.sha256` as assets, the
+  documentation-version inventory keeps every version mention current, and a
+  release is published only after every asset is uploaded and read back.
+- The prose-mechanism audit records preservation checks as mechanism and
+  separates the `work validate` result from the choice to reuse a packet.
+- Claude Code shows the Goal in its status line: `exitbind statusline` reads a
+  per-session Goal display state written after each Goal or Work ledger
+  command and at SessionStart, and `setup --apply` installs it unless a status
+  line already exists. An approved Claude Code plan with a `Done when` table
+  is saved as a private task card for `setup --apply --task-card`.
+- `VALUE_PROOF_BASE` accepts a ref, resolved to its merge-base with `HEAD`.
+- A closed Goal reads closed: the SessionStart hook prints one line saying the
+  Goal is closed with nothing to resume, and the Goal text states the journey's
+  member count and that it closed with the Goal, without a closing or read
+  route. The JSON diagnostics are unchanged.
+
+## 0.31.19
+
+Published stable release; the `v0.31.19` tag and release assets are available.
 
 - `setup --task-card PATH` registers the card's `Done when` rows as named
   requirements with `--apply` and prints the whole start path: `goal cover`,
