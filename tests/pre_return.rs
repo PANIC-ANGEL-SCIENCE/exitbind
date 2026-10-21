@@ -154,12 +154,10 @@ impl Fixture {
             .spawn()
             .unwrap();
         use std::io::Write;
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(body.as_bytes())
-            .unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(body.as_bytes()) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
     fn events(&self, ledger: &str) -> Vec<Value> {

@@ -1673,8 +1673,8 @@
   "sourceAdaptations": {
     "tests/action_forms.rs": {
       "baselineSha256": "6b2da7728a549fd8887159e6bda82172a3dd71f62bcf772c10bbe60f711e355e",
-      "currentSha256": "ae3555ff0e691a1bc59392cf2315b68b3b10e9127a94068057e1cfed18e1945e",
-      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project plain-route Work's goalAssociation kind is now journey_member (it is an exact journey member of the Goal); the case and its assertions are otherwise unchanged."
+      "currentSha256": "cebdd7fdd18c604d9ec200cfdc1e96d2aba1a4d3f605c04a8722ea6b45ea2559",
+      "reason": "Preserve all11 original cases and add3 regression cases for current stale-ended check routing, emitted failed-check choices and ordinary review-policy behavior. The shared begin helper preserves the existing true/false review selection while supporting explicit policy cases; no original case or assertion is removed. The existing long-path action-view case now reconstructs exact product executable/configuration argv before comparing all full-detail choices; original choice, placeholder, stdin, current-binding, grouped-detail, ledger and stale-fence checks remain. Fixture execution now restores only declared executable/configuration omissions through the original session-aware executor, including permit and stale-return paths; stale return must fail for its actual stale binding and leave ledger bytes unchanged. No original cases or assertions are removed. Read-only grouped routes use the same validated descriptor expander, restoring an omitted config value without duplicating the existing --config option. The oversized reviewer fixture fixes its canonical root length at 550 bytes and its copied fixture executable path at 400 bytes across ordinary and deep TMPDIR values, distributes padding across filesystem-safe components, and keeps the existing one-grouped-route oracle decisive. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project plain-route Work's goalAssociation kind is now journey_member (it is an exact journey member of the Goal); the case and its assertions are otherwise unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/activation_classify.rs": {
       "baselineSha256": "bcecc0b53b297cd82cb43dea0376fdade8d7ea27e8fdc844e23665250a6a1a59",
@@ -1683,23 +1683,28 @@
     },
     "tests/agent_context_delivery.rs": {
       "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
-      "currentSha256": "ee4aa5a17da51ff5cef363ce818fbcf1da5f1530ed3d1fc7185081aec506404c",
-      "reason": "Preserve original assertions and add marked R52 coverage. R53: registers the phase-guidance delivery tests module and routes spawns through the isolating helper; existing assertions unchanged."
+      "currentSha256": "e548d8ea1f8fa0db470ad4e4fb308a4c1f46f19a8a1c7056758750bbc8d0dbc9",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: registers the phase-guidance delivery tests module and routes spawns through the isolating helper; existing assertions unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/agent_first_control.rs": {
       "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
-      "currentSha256": "f643b7bdad808124370c3837af19396923aa1fd1fa298196cc1e27567105e02b",
-      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "98bbde6f8938f7abafcde70e573d9a439e620f00e47064fbf4e2ed18966666f6",
+      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/agent_protocol.rs": {
       "baselineSha256": "d80c10e4e68dc2a4c0b3f7c451b1cff6e884c399f2a4cf5e9168c6a689ecd486",
-      "currentSha256": "45fd4a1a845502915067d322ea0f4392d4d98ef70c72c6247482bd20455bd485",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "32ed33a696281b3a62ef6ee031333b6b8942f83ffd4cc3c89a00824486273d5f",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+    },
+    "tests/architecture_adoption.rs": {
+      "baselineSha256": "d6abc45d409401fb790d43aedd0bd75ae0e2ba3d167a9485066984fbbd0c2f08",
+      "currentSha256": "59a7cdb3c7b616fe0ae351f7e42ba8e153618e121fc142d83bfdc531ce14b834",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/architecture_contract.rs": {
       "baselineSha256": "86e772e4e2ccf50b60a346400ca4fbb58d7205fb2f77a71949eb7659723ea8a0",
-      "currentSha256": "99aa579ae25765b28ebcc3131115ac54f2a24a3b3787f4b1f32803035e90ca5c",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "5953d0f0de46601dc03553a4d82a05ce6de11a8deb33cc3269d49445fde7d239",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/artifact_bytes.rs": {
       "baselineSha256": "abb6157ec60233fdf27b77899d0346c4055709291bfaf9bffaf3f02ed253e275",
@@ -1713,8 +1718,8 @@
     },
     "tests/basis_lifecycle.rs": {
       "baselineSha256": "a5a707b20759c8941b3188d6c07252878a3e7b1bab1475d6964fbb66350fcffb",
-      "currentSha256": "faea1e9e499f50229d72ace946e85edf5980b5703b16cd4e14962a1a845b0051",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "4b7811ff415411c88680a30f237dc0a47e832e1af6fad874c2567680fabe4025",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/basis_lifecycle/basis_corrections.rs": {
       "baselineSha256": "3a11e356aa405eeaa44f631ff0cfe4ac734556a6745529b7f9a457feeab623bc",
@@ -1743,8 +1748,8 @@
     },
     "tests/check_observation_recovery.rs": {
       "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
-      "currentSha256": "e0b3ccf3dc73b655c2b948611bea8bcf58db716b25e5e620b5a7a5ecfbe8f83d",
-      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "3935a681fbc2db745a52fad85adc1f11a815290c9d9df646ceec95b690005423",
+      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/check_observation_recovery/process_containment.rs": {
       "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
@@ -1763,8 +1768,8 @@
     },
     "tests/child_capture.rs": {
       "baselineSha256": "32e65bdd296132c1e3596d8184727ac8863a1b419bbc323212befa8bef6b0077",
-      "currentSha256": "625e036deddb5beb99ca874640d2830e3e21a68c0aa70f1d6d5e9bbf1ce0ff41",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "117a0e0b5c3baef76327259a2b2ee1034a1bf57d820b66ab26578b172adbe3b1",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/ci_policy.rs": {
       "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
@@ -1773,8 +1778,8 @@
     },
     "tests/ci_test_execution.rs": {
       "baselineSha256": "84a1be79d74aafb1094ea972b295e51532e483ffa26077cc31126e31d475fc98",
-      "currentSha256": "6940c8996e11abc430635d2d2f5d66cd8bbcd6c00926e2436d11cf29d2008942",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "7b9aab809f42a2a6cb649ec4f4b4a0431b1649dab80d4054e567eebc909c5bec",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/compact_preservation.rs": {
       "baselineSha256": "52939c11088b66a7feecd80b9255b1a3f1002b588b97bd30428c2aaa8fcadaa9",
@@ -1803,13 +1808,13 @@
     },
     "tests/context_v022.rs": {
       "baselineSha256": "b4753b736fe3589c50d1ec18722aa636cb37d22088c92f9a4db3cb6f90a13091",
-      "currentSha256": "a3c1a3c3ffd698bf201b14e38e4e033b5e7ecbde1895f7b2f703f487d832142f",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "2774fdf5b1b95ac4223856596d92c5f457b1220e8a4146a75bbf755c559f7159",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/context_v022/context_projection.rs": {
       "baselineSha256": "1d69ae1bc8cc171057a0fcf879e017a84c1a265cc3b9a7dff34778d101507673",
-      "currentSha256": "3de0abb846a5366d5d1182419caa60dc178d4194018d0911a21bbfbfd1d8f60e",
-      "reason": "The forged pre-v0.2.2 start event drops the version-8 guidance-continuity marker fields before rehashing, matching a real historical ledger. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "03dd6d5daab9f7aa3581924b9633f69f7d2fa7c4c5252ece9637cfb96816417d",
+      "reason": "The forged pre-v0.2.2 start event drops the version-8 guidance-continuity marker fields before rehashing, matching a real historical ledger. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/context_v022/governor_policy.rs": {
       "baselineSha256": "b7e923afd458d0202787783cc4998dd0cd0e746c988b00e9a97da8ab7435b16c",
@@ -1823,23 +1828,23 @@
     },
     "tests/contextual_memory/fixture.rs": {
       "baselineSha256": "2913551c8ee4b8a3227c0495a39d8474f95819bf92d8e550f0a3502fe1a1e6fb",
-      "currentSha256": "0a7deb64555819f238514b6c4beb06d1e4bd831904226196ef678bc464af40cb",
-      "reason": "Add begin/worker-unmarked fixture variants that strip the guidance-continuity marker from a freshly begun Work ledger so the original strict assertions keep running against a legacy Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "8f672ba7cf512df537bbde55a4f311a65d16e074ed2f6096f9b698c684978d14",
+      "reason": "Add begin/worker-unmarked fixture variants that strip the guidance-continuity marker from a freshly begun Work ledger so the original strict assertions keep running against a legacy Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/continuation_conditions.rs": {
       "baselineSha256": "3db6c10f51b09ded4efc772b93b3977a78067f2fd4fb9e2f3c2d742ca68659f1",
-      "currentSha256": "3ee9da302f338d28896880078f0e7fe7ab6cc59fd1f9c9388ab83497a4c1344f",
-      "reason": "The marked R52 variant replaced the original negative assertions; the legacy end-to-end twin is deferred (F9). R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "235ef5e1825d20aee33faac6eed948abb886d8ea73f630e9e844878a79fe5799",
+      "reason": "The marked R52 variant replaced the original negative assertions; the legacy end-to-end twin is deferred (F9). R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/controlled_effects.rs": {
       "baselineSha256": "6c132cb0ce2299a65131876887943dc7a8fb9ac9884830ff5929295c1e0ec322",
-      "currentSha256": "9c218af5255a0bc31dbbae839b778626a34c2f87acce4b77f8389ddf1d32af08",
-      "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "f4a1f4d1d3bf7f15c584860230f67a1854cf5b23bf83f3ab679dbf5717be0de8",
+      "reason": "Preserve the original controlled-option refusal selector and every existing scenario; the fake CLI now lacks a required execution capability instead of failing only a version allowlist. Configuration, sandbox override and no-provider-start assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/cross_host_continuity.rs": {
       "baselineSha256": "862948fb607c0fe22565328eb61e16449cd8356f33fa0d3614bc49caef896307",
-      "currentSha256": "c64f7b560d210ac433275d580675a537a3279c13d3b9cc6c1fb1a4d44c4cee4c",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "4567660ea2c47cfee8d1601617979322e86cff362875c85759f24d041f5a3d8e",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/cross_host_continuity/handoff_and_checks.rs": {
       "baselineSha256": "8cf311a7eb36899a4e387a4d5029dcb00e985d13fd824554209d8fd9831a8372",
@@ -1853,8 +1858,8 @@
     },
     "tests/current_details.rs": {
       "baselineSha256": "eed1d601dfc12dc4e7097d4347ada8b3aa146ab61ac8bf3f9b27d7ebb486fa13",
-      "currentSha256": "186fdcc2b0c9fbc94cc533e87dc6a9a49029bedb3975d069ef4fa708472d4f17",
-      "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "8ba980d10fa1db6963b87fd2f86ee4f3965ef3ed9ca5ba24cb237a0210245842",
+      "reason": "The legacy section reader reconstructs exact executable/config route descriptors, validates the work/section/binding/page reference and response offset, and retains its hostile-PATH paging, digest, size and no-ledger-effect checks. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/current_work_focus.rs": {
       "baselineSha256": "abfa617d3aaff3c213f368df0ef4c93cf3cd1031023eaa7ae4be96484f6f3a50",
@@ -1868,8 +1873,8 @@
     },
     "tests/early_evidence.rs": {
       "baselineSha256": "198392eb1741e61d0a171fd96080470e51d2ce4b68128e3f0362263db6d8cf70",
-      "currentSha256": "6fd7ed458001748bdf795d6c4c6aac34dc63a87e4af938c26d65291fce782484",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "b38d820b1051c82db84c6206932a6a7e857ffc74fdc86cc595e03078dda00651",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/event_detail_integrity.rs": {
       "baselineSha256": "f95d34e3535ea22ced1c90a5edc60b3913eaf86988d1e9abbeffeb9e7bb7d38e",
@@ -1878,13 +1883,13 @@
     },
     "tests/evidence_expansion_v022.rs": {
       "baselineSha256": "c5193dc9b78efe6606c26bd8d274f79e88e035524a0652fe5ebf72533fa7b567",
-      "currentSha256": "3bd18d9e6eefe0b464a882ed9015b6d6704b22fa533a44446d9b00ee93610358",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "6e9266611bae6a51a75a2c7eb4f42ec31707a10e2a45da72470b143f5b94be47",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/exit_transition_conformance.rs": {
       "baselineSha256": "a9b986a8bc6b68135760e6b874dbe6ad6d712a0e3b385224f5a3b661992b4ec4",
-      "currentSha256": "17572278441f16952e58a483dc53570f0428f81dd9faf99497ade4d374bb4a52",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "7f764bf996e884518586970327a05aca35eee58b757bd3d0f7cd6e526e45c735",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/exit_transition_conformance/historical_compatibility.rs": {
       "baselineSha256": "5ed85afd8c986efa05ce0eae57eaa69c45cdf2d4a42bbea62febc3952c8385fc",
@@ -1898,8 +1903,8 @@
     },
     "tests/file_effects.rs": {
       "baselineSha256": "b35352cdd79f33f16e28e1727bdbc44bff501151a527a43df85e18d5ac09b20c",
-      "currentSha256": "3674471ecd09a95d3ac07ac82efb53b4d354c6d9d2ad3670d6fb237de5cd4727",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "e43a3a3c5223273d591f4d7ae696fc7b054951873f7dbec4098804827d5476ba",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/first_impression.rs": {
       "baselineSha256": "7a3a60b54d701dbf27860988805c84cf21a72a1dcd15b9badbf0d5e43563e538",
@@ -1918,8 +1923,8 @@
     },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "e893557fae4dbb2088d80b364c15b1277951f0dd08a9211f32beee51a78a4bb0",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged."
+      "currentSha256": "916dcfd657257e7062acaddc1992895d4c7ddfb11d3374141cf9fe46bda35250",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
@@ -1933,8 +1938,8 @@
     },
     "tests/governor_recovery.rs": {
       "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
-      "currentSha256": "72a599f50167d30fe65a538771e1f1911292cfbb30c63f5fb82b6f8b28b50227",
-      "reason": "Add an owned-outputs fixture constructor so one duplicate-permit owner-recovery regression runs on a marked Work whose state-aware digest differs from the full fingerprint; every original fixture body, helper and test remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "0f7d9994c18687b6e36f320e1d96d46fec3eef0e715f4b1f8a579fdaec5694ea",
+      "reason": "Add an owned-outputs fixture constructor so one duplicate-permit owner-recovery regression runs on a marked Work whose state-aware digest differs from the full fingerprint; every original fixture body, helper and test remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/governor_recovery/owner_recovery.rs": {
       "baselineSha256": "413b1185b202395ab1fb1386365ed58f41d4e0f4e258edc839671b4ee711b4ff",
@@ -1953,13 +1958,13 @@
     },
     "tests/held_delivery.rs": {
       "baselineSha256": "6b7d27e3c7ca49934fa7123143b966ade6181a370b06952ea174b64d23fa386a",
-      "currentSha256": "8f01154172bd3d82a91ae9dd4f7b2a9c06978a1aac1bef0f343c3d3fbc582217",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "1ffd0be30073a7828e1138db3b2e8bd5a024f6b7315c54075e546eb603a82b83",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/host_bridge.rs": {
       "baselineSha256": "74c47215d0f81759c9c06c18eaa7f1cf4dcbbc3ce4efa183b94b2ac289e45f1b",
-      "currentSha256": "2e626a6922f0d2a8dc7508cdd9cdb3dedc50688e6b6fe80548ebe41d89bd02de",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "16a57d6047d5c85f4dde550f87bf417cb600210d2d6792ed9e7ab836a8185197",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/host_help.rs": {
       "baselineSha256": "1ea3b9232af3dbcc894a35b679ba5d8d9c1180b9328c9e1e95ee637cc7df981e",
@@ -1978,8 +1983,8 @@
     },
     "tests/installed_consumer.rs": {
       "baselineSha256": "f274665b19826988f57579f398224787607bbb30b4f075f855c359d99ab26f71",
-      "currentSha256": "ff3b295afcd61420d2b864255ca732a95d873cb2f91dab76c2fa75b0c742d419",
-      "reason": "Keep the original changed-profile expansion refusal on an unmarked Work and add the marked variant where the current profile bytes are served at the next expansion boundary. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "31c01abf5730daeda1aaae9c4dbaf2dfdd829e7d3db9ac4c7303c66978f1a970",
+      "reason": "Keep the original changed-profile expansion refusal on an unmarked Work and add the marked variant where the current profile bytes are served at the next expansion boundary. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/installer_platform.rs": {
       "baselineSha256": "c60a898d0a90ececa608fede2342e0a98b3b6d59e352870e8afc4cb9b0904582",
@@ -1990,6 +1995,11 @@
       "baselineSha256": "07ecc199957295379b85cf2947971160a71703b0ee0db865e57cbc41bce790a4",
       "currentSha256": "1e8b2ab6f85e880a851718349b20c4ea57271544f71967cb502c52bb36f441aa",
       "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/lead_disposition.rs": {
+      "baselineSha256": "b09788c6601462e67cfa68a08a94ac2802195b550feb307a3aa9cb1e9c4997b3",
+      "currentSha256": "644691679d8561add14c512da1eee279f36f2720043a60fd8eee7d5f1ce4ac6f",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/legacy_installer_bridge.rs": {
       "baselineSha256": "010bde494eb192df47e3e9d2a53c32746617036b6c55a30c9769f8020ea13738",
@@ -2008,13 +2018,13 @@
     },
     "tests/managed_edits.rs": {
       "baselineSha256": "a1445aeb2d071066bdc9c5c78b7ee3d451ee842e3230688389452f6a0c920e11",
-      "currentSha256": "1b6f6c02a2f39ff7ba6d470340d692732abf3a8b7351259d4b3f6aeb39d6d52a",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "1b801b2f94c5246d0609c8b3fe0111d2fbf831230193238d8b29e503c687cfa8",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/managed_edits/managed_reads_and_writes.rs": {
       "baselineSha256": "0fb4b3661b758f97724bfca6e2bdf77f08b8e2ac60c9f4b39141333165998339",
-      "currentSha256": "6206c47d9ed83caeef41e90cabd34fbfa6c7b919d808e43ee214648208a5435a",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "68c22f233e0bdf3fbacc966e825bc80b2db6d19f186ff0276a81997489e6eaca",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/memory_policy_correction.rs": {
       "baselineSha256": "fdb7ee9b91e9a16eb696efdc03791e5a6b26ef8b603c50c2c62fcf3c0fbf93a6",
@@ -2028,13 +2038,13 @@
     },
     "tests/native_continuity.rs": {
       "baselineSha256": "36a26b31a2257d8615b00f248eac38105ef422423cf0b0dae2d72d498d35f38f",
-      "currentSha256": "11ae643a82eaa88f0c9a0064bdbdf3e28e8911a9da4cfd9aa783f6f60fc31119",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "cdd58eab42a31c7c2b84408e93d3ac39eff4a163a12386212220d2a2f89b4574",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/native_session_export.rs": {
       "baselineSha256": "f1fd9925bae3c53faec7dba3ee9e20b550ccba49a3c13b312726f58b75b173ff",
-      "currentSha256": "26381888f975d03b6127a565ece78cec7d974571de8115b1aa84f36bbdbd69fa",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "1e2b808233dfe608f6538f8e656b0fd48f071b83e36d8df65acc59e5604aa0c3",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/observe_check/timeouts_and_drift.rs": {
       "baselineSha256": "d0b47c97c2b2d41521f19d8cc0d508fe41946b5f4deb71ca868f7057193cef2d",
@@ -2063,13 +2073,18 @@
     },
     "tests/pre_return.rs": {
       "baselineSha256": "96226b800fc4971030ab2e931a7dd67227cfe247c3284d815f3f2a86330cab12",
-      "currentSha256": "5ceb75e8f5d87bef3a67b62ca10f6b5e9a5eccb975ed543d1d8628664cc81f3b",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "f64a8ca4bf94decf0caafb5ffcbbb78224d7b2a269a70b5302df4e17eea7d05b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+    },
+    "tests/pre_return_native.rs": {
+      "baselineSha256": "81c29915289c059f9b381921dc0b7932566c154c453eddcb0f5df11fefcf3666",
+      "currentSha256": "5ab567b7f26cf19b3adc025db01489d62f5a19eba1fdd0e60f4358839916bf9e",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/presentation/context.rs": {
       "baselineSha256": "2ee14fa57ebdf2a89273628e44110cf8862c21404427003bc08052afb16d31e6",
-      "currentSha256": "cec65a8cf4af072367960d4cf89a38584fda13c0766b286efce111544ca7b493",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "d7c574fc421b3e9f2db91c2fe790dede1b4ce5c2e8f3e7535616f3fa7fbab6ed",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/presentation/session_goal_closure.rs": {
       "baselineSha256": "40f6dad7c7d19f8f683d4138caaa989949d555afac6a2b45c14f299a7a31db2d",
@@ -2083,8 +2098,8 @@
     },
     "tests/preservation_independence.rs": {
       "baselineSha256": "8a3b292a6cc369ae71f32895898dbfee7db885294473ecafd8cb59c17e0c817b",
-      "currentSha256": "aad8d7799612752efdb5d353f87323fced3c3d3f270fdad80c5383e1be7c5375",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "b210860c31f80af71ed91fedefc42b2110ae6325f5b9803d0d6e9c7047a6e822",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/privacy_gate.rs": {
       "baselineSha256": "cdea5db79087b1e26be6450f7c19ca19684aa0191367b2a6e8e5f7fe93e0c153",
@@ -2093,23 +2108,23 @@
     },
     "tests/project_capabilities.rs": {
       "baselineSha256": "c38e76a17f276e8604faef0aed71164996b027e5f9992f2cab3cc5df33988d2e",
-      "currentSha256": "6cfd7d8afb8bf48618fe849a9f8ad0ac96cc22810d2091fb062b03deb1fca061",
-      "reason": "Keep the original profile/lens/symlink refusals on an unmarked Work and add the marked variant where a changed owner profile is served without invalidating the Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "fa47fd8793b2fe127c07eca3fa57329eaef55fbf5a112baf33086dade92bcb79",
+      "reason": "Keep the original profile/lens/symlink refusals on an unmarked Work and add the marked variant where a changed owner profile is served without invalidating the Work. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/project_context.rs": {
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "47903f8007d4ee03c39da7a9d98e6fb1e47b86d956f6cfff0a35d517f3e6fb62",
-      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "7ad3e9190b474122c9ae07d039433c6607cae11a38aa81f3fcfe43d2a3491eb7",
+      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/project_memory_projection.rs": {
       "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
-      "currentSha256": "b59223e9d804b932209cfc7ecbb55b65245627d2251848e6b5b2d1c6f91eab9a",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "40ba85b81551dea934d3113fd6b84280b847dbbdd1f5a9836acc1007bd423947",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/provider_fallback.rs": {
       "baselineSha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2",
-      "currentSha256": "57a10195853b71a1d6e723410df5c69d10d36d3680f04efd78e52b27ec85e840",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "eda16ca68b04f1fde0eabbb0a7f689a3b47ee4159c2aaecc5f3e7fadad5d36f5",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/r13_check.rs": {
       "baselineSha256": "db84bb04677cacd771022b54ea338428133833e74fdc3d5f33e101b581f07416",
@@ -2118,8 +2133,8 @@
     },
     "tests/receiving_entry.rs": {
       "baselineSha256": "1489ef98a7d4505be57dec00661c20cd96e1ba6459665efa791a5c354591f749",
-      "currentSha256": "7f29f19becbb1bc0cd8dc647a0894aeff64ef13def8db6ec7f17d07c737cdafe",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "6857dc0303e208ed3d6b0317af41fda0949e96c5d3e7c24328d6f827e12151cd",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/recovery_config.rs": {
       "baselineSha256": "c2f1939154f271e2b76d8c692debc8329b92fdc54912b14c79504e2ab4d83b05",
@@ -2128,8 +2143,8 @@
     },
     "tests/recurrence_repairs.rs": {
       "baselineSha256": "793001bef55ced5eea22bcc401a9a43926c5e3befb1976efeb0e300eca90d0c6",
-      "currentSha256": "d90b999a8ae0247fb1b957aac2c1e1a9a0272ae997d44c0c3e7d72757ad8b26e",
-      "reason": "The native lesson-delivery assertion reads the shared R52 guidance projection used by Work detail and native launch and additionally measures the serialized delivered items against the pinned 32768-byte host budget instead of trusting only the product usedBytes self-report; the lesson-specific 4-item/6144-byte cap was replaced by the shared host budget, and the eligible-registry and boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "d1190d816846aa37a6f9586b37cd9716fdea247f4a96bb1a6c4a6bc516047bda",
+      "reason": "The native lesson-delivery assertion reads the shared R52 guidance projection used by Work detail and native launch and additionally measures the serialized delivered items against the pinned 32768-byte host budget instead of trusting only the product usedBytes self-report; the lesson-specific 4-item/6144-byte cap was replaced by the shared host budget, and the eligible-registry and boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/release_integrity.rs": {
       "baselineSha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b",
@@ -2156,10 +2171,15 @@
       "currentSha256": "33ca323517e8a3f4c7cd1dbba3ab21d1d4fb8a720272a0e12acedb5822fc6f1d",
       "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
     },
+    "tests/repeated_repair.rs": {
+      "baselineSha256": "5cdd0448c360961c7717715306d71ee2f490be8569c18c8436faf226452e98d5",
+      "currentSha256": "1fadac0e18950ddb047628df8889ce5cad524389a75a08605873f7047502133c",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+    },
     "tests/replan_input.rs": {
       "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
-      "currentSha256": "3b206331272da9ba99850c15f44ab8b2c8059c826845a23b55c92b472d976d99",
-      "reason": "The compact work-next consumer after two permits accepts only its original spawn or a strictly validated inspect/fullCommand fallback, then takes the worker assignment from the resolved same-Work/config action; the original spawn requirement remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "ecc97ed48ac12247b64eb216d7bb139559a4d5499603c61f8ac48214ad42575e",
+      "reason": "The compact work-next consumer after two permits accepts only its original spawn or a strictly validated inspect/fullCommand fallback, then takes the worker assignment from the resolved same-Work/config action; the original spawn requirement remains. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/resume_scope.rs": {
       "baselineSha256": "b360a67095dc6ab93756e281d8bec74f1c50a9f7ddf48eab6736cc4672243246",
@@ -2168,13 +2188,13 @@
     },
     "tests/review_policy.rs": {
       "baselineSha256": "161bd970d1578e22bfb82508bf5c89069b20d13bd87fe6022791634889aec349",
-      "currentSha256": "342486b1d47e180a857c2bc7c9be71b4cd9d4e1de98585b3714a66bc6fe999ac",
-      "reason": "Preserve all review-policy transitions and stale-action refusals while resolving compact current Work responses through the validated emitted read-only work next --full command; no approval or other mutation is replayed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "a40ff54b5250684a64db40a7c367ed59563ef78ba32817973ca57f60ed676906",
+      "reason": "Preserve all review-policy transitions and stale-action refusals while resolving compact current Work responses through the validated emitted read-only work next --full command; no approval or other mutation is replayed. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/reviewer_evidence_handoff.rs": {
       "baselineSha256": "e475217565157f2df0502e55a880a31953a4e090392b7837f85fb467f48b9066",
-      "currentSha256": "147159129353e466352fd4e5f8afda90c67eedca2855f66502a1a265a499c27b",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "b8bfa73d99d3ba359d17f964daf538086b18e81b8ddfe2bab514b8c23d98554a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/run_boundary.rs": {
       "baselineSha256": "ecd859ee61fe79cc1e73cc6a9d78b12328a162b4b2552be1774c43ec3adcf4a5",
@@ -2193,18 +2213,23 @@
     },
     "tests/save_return_contract.rs": {
       "baselineSha256": "1a0123eebf30d7f763f6d0f4d3462f1b6c842e9c1446d2c3f38fea52618ba6ae",
-      "currentSha256": "de3be1054815f36db5cfb5dbd780ac617a44d90cd67981db36f62f9c4656c162",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "4dcdd0444d97b3d9554e430660a54e2d25354268579f0a0044456d8625e511fc",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/save_return_preservation.rs": {
       "baselineSha256": "e7177a0d2b35e5e7185b8bcb04a934252b85e81050826f59f0a6bdef742ea5d6",
-      "currentSha256": "3cdb71fd305ab15370d85adceb72c41ff0180ceaf01e7e1b96edb3aee975ad82",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "198561424e6583aa305e5a0fe6cd3cef6e386a37fdfe4301c9aa82b636c1e266",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+    },
+    "tests/save_return_recovery/context.rs": {
+      "baselineSha256": "1b30af500d04fefdd479e9b0a9fc507dfd950a7cf5d79246f5de0e34f38ee05e",
+      "currentSha256": "d1bc19b5dac0ad5d0d6cd93e136316b2b4a5d6185f41cf09679af5290e87324b",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/save_return_recovery/worker_resume.rs": {
       "baselineSha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32",
-      "currentSha256": "3fcc0aa629edbc974bc3100d3195ad58fd9a3232b5069396d16578d201c2c8b4",
-      "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "e28cef35374600c71c889b890c051b7c629db8ca0d3d16f84d2374f81afdf09b",
+      "reason": "The post-resume compact work-next consumer accepts only its original check action or a strictly validated inspect/fullCommand fallback, validates exact emitted executable/work/config argv, and expands through the original Git/session-isolated fixture executor. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/session_goal_direct.rs": {
       "baselineSha256": "618552d2ae54fbab7c0aee6b4de0d96022550775d09acd9501298d601ed70d95",
@@ -2223,13 +2248,13 @@
     },
     "tests/session_goal_direct/native_context.rs": {
       "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
-      "currentSha256": "02f1d5118db3a9fe3ac3bd851cd36a00ac4278b8f5108c5cda0792bed64341f1",
-      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project Work's goalAssociation kind is now journey_member; the project that does not own the session Goal still asserts context_only; no case or assertion is removed."
+      "currentSha256": "7e86b38b2f1984dbc5b919d7b7fb2ebb19023179f5ce6de25adeac1666c83d47",
+      "reason": "Register the bounded native session recovery regressions in the nested child module while preserving the five original fixture bodies and baseline declaration count. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: the owner-project Work's goalAssociation kind is now journey_member; the project that does not own the session Goal still asserts context_only; no case or assertion is removed. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/session_goal_usage.rs": {
       "baselineSha256": "f16d52e3017bf2700cb8182e1d825aa78657096d5c3f1c3fe04dc0e101992bd6",
-      "currentSha256": "7e167f945267ad055513b741bc5f2785a33647ca6d4b05b288cd556dada44a55",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "a692cf3959ee573bb67be819438b0d1c4226e19a51e9ff3d37597f7f71350efa",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
@@ -2258,8 +2283,8 @@
     },
     "tests/specialist_routing.rs": {
       "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
-      "currentSha256": "c675d232805981427c64ef0785454b7be7b618f0e3fc9167d94bc0358203378b",
-      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (Lead decision, option A): the action view now carries the delivered guidance block, so the single 8192-byte stdout assertion is split into the two bounds the product enforces: the navigation part (the response without guidance, compact serialization plus newline) stays <= 8192 bytes, and the guidance block keeps usedBytes <= budgetBytes; the two parts must account for every emitted byte. No bound is raised."
+      "currentSha256": "999bed7c643011ef3e0234b5f719755fce8708ac92cd81662f728e0f800d92b0",
+      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (Lead decision, option A): the action view now carries the delivered guidance block, so the single 8192-byte stdout assertion is split into the two bounds the product enforces: the navigation part (the response without guidance, compact serialization plus newline) stays <= 8192 bytes, and the guidance block keeps usedBytes <= budgetBytes; the two parts must account for every emitted byte. No bound is raised. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/start_context.rs": {
       "baselineSha256": "e25531cc4e3071eaaa3e6e682f4e0ea583b02ae32c07782d10ba56e501063029",
@@ -2273,8 +2298,8 @@
     },
     "tests/subject_progress/context.rs": {
       "baselineSha256": "388d24a71e2cf3d821d41ad51d840b93789fb0546fecd61e29d1e7fca946e412",
-      "currentSha256": "19651f7675df432f1fbeeafb1daf318440227314341aa6462cc65f673961688d",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "67f01f278c4e1ba33fff296904b51dd207ce1eab3e4a3854a6efffa09763ba92",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/subject_progress/opaque_discovery.rs": {
       "baselineSha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b",
@@ -2283,8 +2308,8 @@
     },
     "tests/subject_progress/saved_packet_reuse.rs": {
       "baselineSha256": "5d27f6bc7ff2c2994fc2bbbc65aff8d2e11eb6d2b58118fa30ec71608cdcc4fa",
-      "currentSha256": "a791f006fffe1b7ccd119d3ef0d1a061a6ac0851c17273de3210c27a4e9612ae",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "ece947a51f08ee3337e52db174e174876229396d8427e4bb0b34ae7514f423a1",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/support/mod.rs": {
       "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
@@ -2300,6 +2325,11 @@
       "baselineSha256": "9d39179c2ab783d80b51c44d161f3a599bb08d6ca5df3c038e68a33b79465cf4",
       "currentSha256": "c8b2bc5b71ffb2bc92d8b7f4d7182723cd4cd8fedc495667ba863cb2c0d399be",
       "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/usage_help.rs": {
+      "baselineSha256": "579849586f0ccb236da18a18fc58f18265ad0e33a767d0cf5770cf1f9c5c35b3",
+      "currentSha256": "98b44200a53a6e8a5ad7ba7297203d4a671d04b4a5d62b60573b73ebc9a6bda2",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/value_benchmark.rs": {
       "baselineSha256": "8b3fd2cb2a71aa88efb4d71326da154f962e21cfb9c8d719388d7ed2b13d1ebb",
@@ -2353,13 +2383,18 @@
     },
     "tests/work_action_refresh.rs": {
       "baselineSha256": "d1cf9f8c089aae6ec3b9e48b3e8f4a1d252df2e9d1e0d73d08f8dc947a9e5a72",
-      "currentSha256": "cfb2e18804fe64ed2af4d0ccb1ed442eacd0b271dfb13606073da5b033e7c1e1",
-      "reason": "Permit and return forms reconstruct exact executable/config descriptors before the existing isolated executor; original token substitutions, byte caps, current-binding and stale-binding refusal checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "ff125836cc14c63b0dffafca098047a097bedfdf195f61228d3777109f69bbb3",
+      "reason": "Permit and return forms reconstruct exact executable/config descriptors before the existing isolated executor; original token substitutions, byte caps, current-binding and stale-binding refusal checks remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+    },
+    "tests/work_check_replacement/context.rs": {
+      "baselineSha256": "86efc24696f0af82c838a11df80aab44f0dd8ba0330c926cefd2d778148e69b9",
+      "currentSha256": "2b6cdd7a22fe0f44646be35098e53f27a57d2f726d4d9e2d24e0a774ce0379ac",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/work_check_replacement/refusal_and_native_lineage.rs": {
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
-      "currentSha256": "6c5e8ee8db1d3997323e25d8410e956efc1667d3406b07578d84b6866db2f34f",
-      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "b1616f368074e64a535fba4a2edaf8519396b1be5aaa6622378f010ecaa0f494",
+      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/work_check_replacement/source_and_binding_validation.rs": {
       "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
@@ -2368,8 +2403,8 @@
     },
     "tests/work_closeout.rs": {
       "baselineSha256": "97bf8e1f0ac345bdc634692e74ee678c312c0e259b5f9f361c2496daaff82d3f",
-      "currentSha256": "8f645d85bd4494b89a9338cca1ddf0c8c7e211ee7c0928118ffeabbe9edd0afd",
-      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained. The fixture materializes 20 real 120-byte components for the supported >2.4 KiB receipt cases, then appends valid lexical-only components to the >8 KiB refusal destination. After each refusal it checks the first absent tail component and retains the original held-directory proof-leaf ENOENT probe, exact refusal, empty-stdout, ledger-stability, and receipt assertions. This avoids filesystem-depth setup failures without changing product behavior or reducing response-boundary coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "e759eddf27e19488887d349e9df7bf90f1964ffe96a35298b5b3e0c6037199b8",
+      "reason": "Closeout action and export descriptors are reconstructed and executed through the existing isolated fixture executor; only the two known command descriptor fields are normalized before exact completion-semantic comparison, with receipt and no-advancement assertions retained. The fixture materializes 20 real 120-byte components for the supported >2.4 KiB receipt cases, then appends valid lexical-only components to the >8 KiB refusal destination. After each refusal it checks the first absent tail component and retains the original held-directory proof-leaf ENOENT probe, exact refusal, empty-stdout, ledger-stability, and receipt assertions. This avoids filesystem-depth setup failures without changing product behavior or reducing response-boundary coverage. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/work_goal_absence.rs": {
       "baselineSha256": "b00aa5743d90da24e09366acab2010905bf91912ae4dd4f7d77af324a4bc2ddd",

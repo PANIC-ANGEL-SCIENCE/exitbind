@@ -22,12 +22,10 @@ fn run(root: &Path, args: &[String], input: Option<&str>) -> Output {
     }
     let mut child = command.spawn().unwrap();
     if let Some(input) = input {
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(input.as_bytes()) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
     }
     child.wait_with_output().unwrap()
 }

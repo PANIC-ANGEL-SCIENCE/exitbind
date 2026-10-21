@@ -14,12 +14,10 @@ fn guard(log: &str) -> bool {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(log.as_bytes())
-        .unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(log.as_bytes()) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait().unwrap().success()
 }
 

@@ -105,7 +105,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(input).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
     fn record(&self, value: Value) -> Output {
@@ -121,12 +124,15 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child
             .stdin
             .take()
             .unwrap()
             .write_all(&serde_json::to_vec(&value).unwrap())
-            .unwrap();
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
     fn ok(&self, value: Value) -> Value {
@@ -171,12 +177,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(body.as_bytes())
-            .unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(body.as_bytes()) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let output = child.wait_with_output().unwrap();
         assert!(output.status.success(), "{output:?}");
         serde_json::from_slice(&output.stdout).unwrap()

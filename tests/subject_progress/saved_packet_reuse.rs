@@ -227,12 +227,15 @@ fn pinned_v0_18_reader_refuses_v6_and_current_reader_keeps_v5_guarantees() {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
             let mut child = command.spawn().unwrap();
-            child
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child
                 .stdin
                 .take()
                 .unwrap()
                 .write_all(input.unwrap_or_default())
-                .unwrap();
+            {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
             child.wait_with_output().unwrap()
         };
     let json = |output: Output| -> Value {

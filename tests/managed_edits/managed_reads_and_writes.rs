@@ -116,12 +116,10 @@ fn focus_is_navigation_and_grants_and_config_cannot_be_inherited() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"second work")
-        .unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(b"second work") {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     refused(child.wait_with_output().unwrap(), "mutation permit");
     assert!(!f.root.join("src/b.txt").exists());
     let config = f.root.join("exitbind.json");

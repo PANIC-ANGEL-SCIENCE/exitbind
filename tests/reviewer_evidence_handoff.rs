@@ -40,7 +40,10 @@ fn run_config(
         command.env("EXITBIND_BINDINGS_DIR", bindings);
     }
     let mut child = command.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(input).unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -194,12 +197,15 @@ fn reviewer_context(root: &Path, bindings: Option<&Path>) -> String {
         command.env("EXITBIND_BINDINGS_DIR", bindings);
     }
     let mut child = command.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(payload.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let value: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);

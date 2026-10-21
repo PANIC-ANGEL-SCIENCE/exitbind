@@ -365,7 +365,10 @@ fn call_config(f: &Fixture, config: &std::path::Path, args: &[&str], body: &[u8]
         .stderr(Stdio::piped());
     f.native_environment(&mut command);
     let mut child = command.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(body).unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(body) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 

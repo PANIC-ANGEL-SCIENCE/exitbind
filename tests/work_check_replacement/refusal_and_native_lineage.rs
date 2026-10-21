@@ -1024,7 +1024,10 @@ fn call_in_session_with_input(
         .env("EXITBIND_SESSION_GOALS_DIR", store)
         .env("CODEX_THREAD_ID", session);
     let mut child = command.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(input).unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 

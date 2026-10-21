@@ -26,7 +26,10 @@ fn return_in_session(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(bytes).unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(bytes) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),

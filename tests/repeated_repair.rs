@@ -58,7 +58,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        p.stdin.take().unwrap().write_all(body).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = p.stdin.take().unwrap().write_all(body) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         p.wait_with_output().unwrap()
     }
     fn ok(&self, args: &[&str], body: &[u8]) -> Value {
@@ -102,7 +105,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        p.stdin.take().unwrap().write_all(body).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = p.stdin.take().unwrap().write_all(body) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         p.wait_with_output().unwrap()
     }
     fn chosen(d: &Value, label: &str) -> Value {

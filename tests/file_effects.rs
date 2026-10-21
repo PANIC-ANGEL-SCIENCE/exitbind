@@ -19,7 +19,10 @@ fn call(root: &Path, args: &[&str], body: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(body).unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(body) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 fn ok(root: &Path, args: &[&str], body: &[u8]) -> Value {
@@ -547,7 +550,10 @@ fn real_process_crashes_reconcile_four_cuts_without_duplicate_writes_or_new_gran
                 .spawn()
                 .unwrap(),
         ));
-        child.stdin.take().unwrap().write_all(b"once").unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(b"once") {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let deadline = Instant::now() + Duration::from_secs(15);
         while !marker.exists() && Instant::now() < deadline {
             assert!(

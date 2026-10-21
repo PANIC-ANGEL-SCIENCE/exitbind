@@ -66,7 +66,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(body).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(body) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
     fn emitted(&self, command: &Value, body: &[u8]) -> Output {
@@ -86,7 +89,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(body).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(body) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
     fn ok(&self, args: &[&str], body: &[u8]) -> Value {

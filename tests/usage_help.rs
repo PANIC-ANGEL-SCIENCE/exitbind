@@ -64,12 +64,15 @@ fn usage_help_example_is_admitted_replayed_and_keeps_missing_distinct_from_zero(
                 .stderr(Stdio::piped())
                 .spawn()
                 .unwrap();
-            child
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child
                 .stdin
                 .take()
                 .unwrap()
                 .write_all(input.to_string().as_bytes())
-                .unwrap();
+            {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
             child.wait_with_output().unwrap()
         } else {
             command.output().unwrap()

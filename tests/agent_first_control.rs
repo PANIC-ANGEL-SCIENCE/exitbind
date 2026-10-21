@@ -57,7 +57,10 @@ impl Fixture {
         }
         let mut child = command.spawn().unwrap();
         if let Some(input) = input {
-            child.stdin.take().unwrap().write_all(input).unwrap();
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
         }
         let output = child.wait_with_output().unwrap();
         self.trace.borrow_mut().push(CallTrace {

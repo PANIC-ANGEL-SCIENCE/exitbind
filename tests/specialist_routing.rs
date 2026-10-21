@@ -24,12 +24,10 @@ impl Fixture {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(input.as_bytes()) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success(), "{args:?}: {out:?}");
         serde_json::from_slice(&out.stdout).unwrap()

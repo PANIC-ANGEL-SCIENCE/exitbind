@@ -93,7 +93,10 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
                 .stderr(std::process::Stdio::piped());
             let mut child = process.spawn().unwrap();
             use std::io::Write;
-            child.stdin.take().unwrap().write_all(b"").unwrap();
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child.stdin.take().unwrap().write_all(b"") {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
             let output = child.wait_with_output().unwrap();
             assert!(output.status.success(), "{}", text(&output));
             let expanded: Value = serde_json::from_slice(&output.stdout).unwrap();

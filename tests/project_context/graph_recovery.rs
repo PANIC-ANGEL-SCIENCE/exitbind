@@ -50,12 +50,15 @@ fn native_hook(root: &Path, session: &str, store: &Path, event: &str) -> std::pr
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(&serde_json::to_vec(&payload).unwrap())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -259,12 +262,15 @@ fn existing_native_hint_checkpoint_restores_and_revalidates_graph_without_losing
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = record_command.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(&serde_json::to_vec(&record).unwrap())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let recorded = child.wait_with_output().unwrap();
     assert!(recorded.status.success(), "{recorded:?}");
 
@@ -297,12 +303,15 @@ fn existing_native_hint_checkpoint_restores_and_revalidates_graph_without_losing
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = invalid_command.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(&serde_json::to_vec(&invalid_guidance).unwrap())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let rejected = child.wait_with_output().unwrap();
     assert!(!rejected.status.success());
     assert_eq!(fs::read(&before_hint).unwrap(), original_hint);

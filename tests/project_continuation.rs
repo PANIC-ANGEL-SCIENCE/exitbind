@@ -270,12 +270,10 @@ impl Project {
         }));
         if let Some(input) = input {
             let mut child = command.stdin(Stdio::piped()).spawn().unwrap();
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(input.as_bytes())
-                .unwrap();
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child.stdin.take().unwrap().write_all(input.as_bytes()) {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
             child.wait_with_output().unwrap()
         } else {
             command.output().unwrap()
@@ -290,7 +288,10 @@ impl Project {
             .stdin(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(input).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
 

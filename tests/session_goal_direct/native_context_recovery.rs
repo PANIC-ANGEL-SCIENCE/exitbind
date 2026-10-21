@@ -96,12 +96,15 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         }]
     });
     let mut child = record.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(&serde_json::to_vec(&input).unwrap())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let recorded = child.wait_with_output().unwrap();
     assert!(
         recorded.status.success(),
@@ -202,12 +205,10 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
             let mut child = command.spawn().unwrap();
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(&record_bytes)
-                .unwrap();
+            // A command may refuse and exit before reading stdin; its output is still asserted.
+            if let Err(error) = child.stdin.take().unwrap().write_all(&record_bytes) {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+            }
             child.wait_with_output().unwrap()
         });
         let hook_thread =
@@ -240,12 +241,10 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
                 .stderr(Stdio::piped())
                 .spawn()
                 .unwrap();
-        retry
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(&record_bytes)
-            .unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = retry.stdin.take().unwrap().write_all(&record_bytes) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let retried = retry.wait_with_output().unwrap();
         assert!(
             retried.status.success(),
@@ -623,12 +622,15 @@ fn recovery_hook(
         command.env_remove(name);
     }
     let mut child = command.spawn().unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(&serde_json::to_vec(payload).unwrap())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 

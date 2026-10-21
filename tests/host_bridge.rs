@@ -304,12 +304,15 @@ fn an_unconfigured_session_receives_a_small_bootstrap_and_a_subagent_does_not() 
             .unwrap();
         let payload =
             serde_json::json!({"hook_event_name": event, "cwd": project.to_string_lossy()});
-        child
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child
             .stdin
             .take()
             .unwrap()
             .write_all(payload.to_string().as_bytes())
-            .unwrap();
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success());
         String::from_utf8(out.stdout).unwrap()
@@ -378,12 +381,15 @@ fn malformed_or_unsafe_target_config_never_claims_clean_native_absence() {
             .spawn()
             .unwrap();
         let payload = serde_json::json!({"hook_event_name": "SessionStart", "cwd": project.to_string_lossy()});
-        child
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child
             .stdin
             .take()
             .unwrap()
             .write_all(payload.to_string().as_bytes())
-            .unwrap();
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success());
         String::from_utf8(out.stdout).unwrap()

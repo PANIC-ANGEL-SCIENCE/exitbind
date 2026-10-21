@@ -39,12 +39,15 @@ fn call_input(root: &Path, args: &[&str], input: &Value) -> Value {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(input.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     serde_json::from_slice(&output.stdout).unwrap()
@@ -59,12 +62,15 @@ fn hook(root: &Path, agent: &str) -> Option<String> {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(payload.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     if output.stdout.is_empty() {
@@ -85,12 +91,15 @@ fn child_hook(root: &Path, agent: &str, session: &str, child: &str) -> String {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    process
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = process
         .stdin
         .take()
         .unwrap()
         .write_all(payload.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = process.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -108,12 +117,15 @@ fn session_hook(root: &Path) -> String {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    process
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = process
         .stdin
         .take()
         .unwrap()
         .write_all(payload.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = process.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -320,12 +332,15 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    process
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = process
         .stdin
         .take()
         .unwrap()
         .write_all(conflict.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = process.wait_with_output().unwrap();
     assert!(output.status.success());
     assert!(output.stdout.is_empty());

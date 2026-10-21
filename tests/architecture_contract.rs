@@ -90,12 +90,15 @@ fn invoke(root: &Path, args: &[&str], input: Option<&Value>) -> Output {
         .spawn()
         .unwrap();
     if let Some(input) = input {
-        child
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child
             .stdin
             .take()
             .unwrap()
             .write_all(input.to_string().as_bytes())
-            .unwrap();
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
     } else {
         drop(child.stdin.take());
     }

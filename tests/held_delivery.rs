@@ -104,7 +104,10 @@ impl Fixture {
         permissive_umask(&mut command);
         let mut child = command.spawn().unwrap();
         use std::io::Write;
-        child.stdin.take().unwrap().write_all(body).unwrap();
+        // A command may refuse and exit before reading stdin; its output is still asserted.
+        if let Err(error) = child.stdin.take().unwrap().write_all(body) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
 

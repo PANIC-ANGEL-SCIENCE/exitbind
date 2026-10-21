@@ -517,12 +517,10 @@ fn work_projection_is_thin_exact_and_recoverable_without_replay() {
         .stdin(Stdio::piped());
     let mut child = completion.spawn().unwrap();
     use std::io::Write;
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"worker mutation\n")
-        .unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(b"worker mutation\n") {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let ledger = format!(

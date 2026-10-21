@@ -259,12 +259,15 @@ fn subagent_start(fixture: &Fixture, native: &str) -> String {
         .spawn()
         .unwrap();
     use std::io::Write;
-    child
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(payload.to_string().as_bytes())
-        .unwrap();
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{}", text(&output));
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
