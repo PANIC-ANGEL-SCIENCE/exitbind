@@ -1093,6 +1093,8 @@ selection and budget as `recipientContext.guidance` in the complete detail:
 each item has its content and `readRoute` (the recipient section route, or the
 `memory resolve` route for a lesson); `omitted` counts every item the budget
 or an unavailable source left out, each with its reason and route. The
+response apart from `guidance` stays within 8192 bytes; the guidance block is
+bounded by the recipient budget its items were selected under. The
 profile, rules, assignment and evidence are not redelivered; the metadata is
 navigation, not evidence of complete instruction delivery or review. Its exact
 section routes retain mandatory context. After a permit/edit, follow the permit response's

@@ -412,12 +412,28 @@ fn assert_complete_specialist_recipient(f: Fixture) {
     );
     let action_output = f.call(&["work", "detail", &work, "--view", "action", "--json"]);
     assert!(action_output.status.success(), "{action_output:?}");
-    assert!(
-        action_output.stdout.len() <= 8 * 1024,
-        "compact action response exceeded 8192 bytes: {}",
-        action_output.stdout.len()
-    );
     let action: Value = serde_json::from_slice(&action_output.stdout).unwrap();
+    // Navigation (everything except the delivered guidance block) keeps the
+    // compact bound; the guidance block keeps its recipient budget.
+    let mut navigation = action.clone();
+    let guidance = navigation.as_object_mut().unwrap().remove("guidance");
+    let navigation_bytes = serde_json::to_vec(&navigation).unwrap().len() + 1;
+    assert!(
+        navigation_bytes <= 8 * 1024,
+        "compact action navigation exceeded 8192 bytes: {navigation_bytes}"
+    );
+    if let Some(guidance) = guidance {
+        assert!(
+            guidance["usedBytes"].as_u64().unwrap() <= guidance["budgetBytes"].as_u64().unwrap(),
+            "delivered guidance exceeded its recipient budget: {guidance}"
+        );
+        // The two parts account for every emitted byte (`,"guidance":`).
+        let guidance_bytes = serde_json::to_vec(&guidance).unwrap().len();
+        assert_eq!(
+            navigation_bytes + ",\"guidance\":".len() + guidance_bytes,
+            action_output.stdout.len()
+        );
+    }
     assert_eq!(action["compact"], true);
     // The bounded action may carry a direct section route or a grouped route.
     // Full next retains the exact current section route when grouped fallback

@@ -159,34 +159,19 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     }
     project_action_view(&mut result);
     result.as_object_mut().unwrap().remove("actionForms");
-    if serde_json::to_vec(&result)
-        .map_err(|e| e.to_string())?
-        .len()
-        + 1
-        > super::compact::MAX_RESPONSE_BYTES
-    {
+    if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
         let mut forms = forms;
         bound_action_view_commands(loaded, &mut forms)?;
         result["actionForms"] = forms;
         project_action_view(&mut result);
         result.as_object_mut().unwrap().remove("actionForms");
     }
-    if serde_json::to_vec(&result)
-        .map_err(|e| e.to_string())?
-        .len()
-        + 1
-        > super::compact::MAX_RESPONSE_BYTES
-    {
+    if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
         result.as_object_mut().unwrap().remove("actionForms");
         if let Some(grouped_route) = grouped_route.filter(|route| route.is_object()) {
             result["details"] = json!({"grouped": grouped_route});
         }
-        if serde_json::to_vec(&result)
-            .map_err(|e| e.to_string())?
-            .len()
-            + 1
-            > super::compact::MAX_RESPONSE_BYTES
-        {
+        if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
             return Err(
                 "action view exceeds 8192 bytes; use current work next section routes".into(),
             );
@@ -195,9 +180,28 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     // The navigation above keeps its own bound; delivered guidance keeps the
     // recipient budget it was selected under, so it is never clipped here.
     if let Some(guidance) = guidance {
+        if guidance["usedBytes"].as_u64() > guidance["budgetBytes"].as_u64() {
+            return Err("delivered guidance exceeds its recipient budget".into());
+        }
         result["guidance"] = guidance;
     }
     Ok(result)
+}
+
+/// The action view's size accounting, in one place. The navigation part is
+/// everything except the delivered `guidance` block and is bounded by the
+/// compact response limit (serialized bytes plus the trailing newline). The
+/// guidance block is bounded by the recipient budget its items were selected
+/// under (`usedBytes <= budgetBytes`), as in the complete detail.
+fn navigation_bytes(view: &Value) -> Result<usize, String> {
+    let mut navigation = view.clone();
+    if let Some(object) = navigation.as_object_mut() {
+        object.remove("guidance");
+    }
+    Ok(serde_json::to_vec(&navigation)
+        .map_err(|e| e.to_string())?
+        .len()
+        + 1)
 }
 
 fn project_action_view(result: &mut Value) {

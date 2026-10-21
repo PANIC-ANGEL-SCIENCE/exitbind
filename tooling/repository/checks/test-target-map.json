@@ -2258,8 +2258,8 @@
     },
     "tests/specialist_routing.rs": {
       "baselineSha256": "efe9975d440e82ee4be8e5b7d86651bf889e401412f495dc1cff13e1a97c7c05",
-      "currentSha256": "5e22c70efffdc734a608ca69490e148753ab9c71ec8ba5e21981bd4d60bdedd1",
-      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "c675d232805981427c64ef0785454b7be7b618f0e3fc9167d94bc0358203378b",
+      "reason": "Accept lossless direct-section or grouped recovery for the bounded long-path action view, preserving exact complete profile bytes and specialist memory revision. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (Lead decision, option A): the action view now carries the delivered guidance block, so the single 8192-byte stdout assertion is split into the two bounds the product enforces: the navigation part (the response without guidance, compact serialization plus newline) stays <= 8192 bytes, and the guidance block keeps usedBytes <= budgetBytes; the two parts must account for every emitted byte. No bound is raised."
     },
     "tests/start_context.rs": {
       "baselineSha256": "e25531cc4e3071eaaa3e6e682f4e0ea583b02ae32c07782d10ba56e501063029",
