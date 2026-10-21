@@ -30,6 +30,8 @@ pub(crate) fn evidence(
         "state" => ("state", &loaded.state_root),
         _ => return Err("--artifact-root must be product or state".into()),
     };
+    let relative = crate::project::path::inputs::confined(root, "evidence artifact", requested)?;
+    let requested = relative.as_str();
     let path = confined(root, requested)?;
     if fs::symlink_metadata(path)
         .map_err(|error| error.to_string())?
@@ -249,8 +251,11 @@ fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> 
     let path = root.join(requested);
     let parent = path.parent().ok_or("path escapes project root")?;
     let real_parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
-    if !real_parent.starts_with(root) {
-        return Err(format!("path escapes project root: {requested}"));
+    if crate::project::path::inputs::within(root, &real_parent).is_none() {
+        return Err(crate::project::path::inputs::refusal(
+            "evidence artifact",
+            requested,
+        ));
     }
     match fs::symlink_metadata(&path) {
         Ok(_) => {}

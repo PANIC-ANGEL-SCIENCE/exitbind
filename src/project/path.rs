@@ -5,6 +5,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 mod digest_observation;
+pub(crate) mod inputs;
 pub(crate) use digest_observation::secure_digest_observation;
 
 pub fn file(root: &Path, requested: &str) -> Result<PathBuf, String> {

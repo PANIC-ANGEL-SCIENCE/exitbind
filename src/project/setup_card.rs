@@ -11,13 +11,23 @@
 
 use super::SetupFacts;
 use crate::config::Loaded;
+use crate::project::path::inputs::{self, Placed};
 use serde_json::{json, Value};
-use std::path::{Component, Path};
+use std::path::Path;
+
+/// The private writer's label for a task-card snapshot.
+const SNAPSHOT: &str = "task card snapshot";
 
 /// The step table of one task card, ready to register.
 pub(super) struct Card {
-    /// Project-relative card path, the approved requirement source.
+    /// Project-relative card path, the approved requirement source: the card
+    /// itself, or its snapshot when the card lies outside the project.
     pub(super) path: String,
+    /// The card as given (absolute when snapshotted) and its sha256.
+    source: String,
+    source_sha256: String,
+    /// The card bytes to snapshot under `path` when the card lies outside.
+    snapshot: Option<Vec<u8>>,
     pub(super) goal_id: String,
     pub(super) rows: Vec<(String, String)>,
     /// The rows the first Work covers, in card order.
@@ -37,7 +47,8 @@ impl Card {
             .map(|(id, _)| id.as_str())
             .filter(|id| !self.first.iter().any(|first| first == id))
             .collect();
-        json!({"path": self.path, "goalId": self.goal_id,
+        json!({"path": self.path, "source": self.source, "sourceSha256": self.source_sha256,
+            "snapshotted": self.snapshot.is_some(), "goalId": self.goal_id,
             "requirements": self.rows.iter().map(|(id, text)| json!({"id": id, "obligation": text})).collect::<Vec<_>>(),
             "firstWork": self.first, "remaining": remaining})
     }
@@ -108,13 +119,26 @@ pub(super) fn plan(facts: &SetupFacts) -> Result<Option<Card>, String> {
     if facts.goal.is_none() || facts.check_command.is_none() || facts.review_policy.is_none() {
         return Err("--task-card requires --goal, --check-command and --review-policy".into());
     }
-    let path = relative_card(Path::new(&facts.root), card)?;
-    let text = std::fs::read_to_string(Path::new(&facts.root).join(&path))
-        .map_err(|error| format!("task card {path} cannot be read as UTF-8 text: {error}"))?;
+    let root = Path::new(&facts.root);
+    let placed = inputs::place(root, card).map_err(|error| format!("task card {card}: {error}"))?;
+    // The Goal ID derives from the directory of the card as given, so a
+    // snapshot's suffixed directory never renames the Goal.
+    let (origin, bytes) = match &placed {
+        Placed::Inside(path) => (
+            std::path::PathBuf::from(path),
+            read_card(&root.join(path), card)?,
+        ),
+        Placed::Outside(path) => {
+            crate::project::private_write::writable(root, SNAPSHOT)?;
+            (path.clone(), read_card(path, card)?)
+        }
+    };
+    let text = String::from_utf8(bytes.clone())
+        .map_err(|_| format!("task card {card} is not UTF-8 text"))?;
     let goal_id = match facts.goal_id.as_deref() {
         Some(id) if valid_id(id) => id.to_owned(),
         Some(_) => return Err("--goal-id must be 1-64 letters, digits, '.', '_' or '-'".into()),
-        None => Path::new(&path)
+        None => origin
             .parent()
             .and_then(Path::file_name)
             .and_then(|name| name.to_str())
@@ -127,12 +151,46 @@ pub(super) fn plan(facts: &SetupFacts) -> Result<Option<Card>, String> {
         None => rows.iter().map(|(id, _)| id.clone()).collect(),
         Some(ids) => first_rows(&rows, ids)?,
     };
+    let source_sha256 = crate::evidence::hash::bytes(&bytes);
+    let (path, source, snapshot) = match placed {
+        Placed::Inside(path) => (path.clone(), path, None),
+        Placed::Outside(outside) => {
+            let (path, _) = crate::project::private_write::place_suffixed(
+                root,
+                crate::host::plan_card::CARDS,
+                &goal_id,
+                "TASK.md",
+                &bytes,
+                SNAPSHOT,
+            )?;
+            let source = outside
+                .to_str()
+                .ok_or("task card path is not UTF-8")?
+                .to_owned();
+            (path, source, Some(bytes))
+        }
+    };
     Ok(Some(Card {
         rows,
         path,
+        source,
+        source_sha256,
+        snapshot,
         goal_id,
         first,
     }))
+}
+
+/// The card's bytes: a regular file of at most 64 KiB.
+fn read_card(path: &Path, given: &str) -> Result<Vec<u8>, String> {
+    let info = std::fs::metadata(path)
+        .map_err(|error| format!("task card {given} cannot be read: {error}"))?;
+    if !info.is_file() || info.len() > 64 * 1024 {
+        return Err(format!(
+            "task card {given} must be a regular file of at most 65536 bytes"
+        ));
+    }
+    std::fs::read(path).map_err(|error| format!("task card {given} cannot be read: {error}"))
 }
 
 /// The `--first-work` IDS in card order; an ID the card has no row for is
@@ -179,6 +237,24 @@ pub(super) fn register(
         crate::session_goal::native::scope(loaded, true).map_err(failed)?
     };
     scope.require_owner().map_err(failed)?;
+    let mut card = card;
+    if let Some(bytes) = &card.snapshot {
+        // The outside card is snapshotted through the plan-card route; a
+        // byte-identical earlier snapshot is reused.
+        let (path, _) = crate::project::private_write::write_suffixed(
+            &loaded.product_root,
+            crate::host::plan_card::CARDS,
+            &card.goal_id,
+            "TASK.md",
+            bytes,
+            SNAPSHOT,
+        )
+        .map_err(failed)?;
+        if path != card.path {
+            next["taskCard"]["path"] = json!(path);
+            card.path = path;
+        }
+    }
     let open = crate::session_goal::read(&scope.root)
         .map_err(failed)?
         .is_some_and(|record| {
@@ -290,36 +366,6 @@ fn valid_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
-/// The card path relative to the project root; absolute paths must lie inside.
-fn relative_card(root: &Path, card: &str) -> Result<String, String> {
-    let path = Path::new(card);
-    let relative = if path.is_absolute() {
-        let root = root.canonicalize().map_err(|error| error.to_string())?;
-        let card = path
-            .canonicalize()
-            .map_err(|error| format!("task card {card} cannot be read: {error}"))?;
-        card.strip_prefix(&root)
-            .map_err(|_| "task card must be a file inside the project root".to_owned())?
-            .to_path_buf()
-    } else {
-        path.to_path_buf()
-    };
-    let mut parts = Vec::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(part) => {
-                parts.push(part.to_str().ok_or("task card path is not UTF-8")?)
-            }
-            Component::CurDir => {}
-            _ => return Err("task card path must stay inside the project root".into()),
-        }
-    }
-    if parts.is_empty() {
-        return Err("task card path names no file".into());
-    }
-    Ok(parts.join("/"))
 }
 
 #[cfg(test)]

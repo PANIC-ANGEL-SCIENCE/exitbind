@@ -10,6 +10,9 @@ mod lead_goal_text;
 #[path = "setup/lesson_carry.rs"]
 mod lesson_carry;
 #[cfg(unix)]
+#[path = "setup/lesson_privacy.rs"]
+mod lesson_privacy;
+#[cfg(unix)]
 #[path = "setup/native_display.rs"]
 mod native_display;
 #[cfg(unix)]

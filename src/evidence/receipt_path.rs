@@ -12,8 +12,8 @@ pub(crate) fn state_relative(root: &Path, requested: &str) -> Result<String, Str
     let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
     let path = Path::new(requested);
     let relative = if path.is_absolute() {
-        path.strip_prefix(&root)
-            .map_err(|_| "receipt path must remain beneath StateRoot".to_owned())?
+        crate::project::path::inputs::within(&root, path)
+            .ok_or_else(|| crate::project::path::inputs::refusal("receipt", requested))?
     } else {
         path
     };
@@ -47,8 +47,8 @@ pub(super) fn receipt_path(root: &Path, requested: &str) -> Result<std::path::Pa
         let parent = path.parent().ok_or(OUTPUT_SCOPE)?;
         let real_parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
         let real_state = fs::canonicalize(root).map_err(|error| error.to_string())?;
-        if !real_parent.starts_with(real_state) {
-            return Err(OUTPUT_SCOPE.into());
+        if crate::project::path::inputs::within(&real_state, &real_parent).is_none() {
+            return Err(crate::project::path::inputs::refusal("receipt", requested));
         }
         return Ok(path.to_path_buf());
     }

@@ -16,7 +16,7 @@ pub(crate) fn require(
         return Err("requirement ID cannot contain a comma".into());
     }
     model::validate_text(text, 1024)?;
-    let approved = source(loaded, artifact)?;
+    let approved = source(loaded, "requirement source", artifact)?;
     if !approved.text.contains(text) {
         return Err("requirement must be an exact excerpt of the approved source file".into());
     }

@@ -74,7 +74,10 @@ fn resolve_directory(root: &Path, requested: &str) -> Result<Option<PathBuf>, St
             if matches!(component, Component::CurDir) {
                 continue;
             }
-            return Err("memory.root must stay inside the project".into());
+            return Err(crate::project::path::inputs::refusal(
+                "memory root",
+                requested,
+            ));
         };
         let next = current.join(name);
         match fs::symlink_metadata(&next) {

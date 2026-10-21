@@ -7,7 +7,7 @@
 
 use super::LedgerSnapshot;
 use crate::{config::Loaded, evidence::hash};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const PREFIX: &str = "stamped-config-";
 
@@ -59,34 +59,17 @@ pub(crate) fn is_kept_copy(loaded: &Loaded, path: &str) -> bool {
 pub(crate) fn keep(loaded: &Loaded) -> Result<PathBuf, String> {
     let root = memory_root(loaded).ok_or("stamped configuration copy needs a memory policy")?;
     let sha256 = hash::text(&loaded.source);
-    if let Some(existing) = find(loaded, &sha256) {
-        return Ok(existing);
-    }
     let name = file_name(&sha256).ok_or("configuration hash is invalid")?;
-    let relative = format!("{root}/{name}");
-    let target = loaded.state_root.join(&relative);
-    crate::project::managed_files::ensure_state_directory(
+    // Under a state root inside a Git worktree (portable mode) the copy is a
+    // product file under the root: the one private writer hides it.
+    crate::project::private_write::write_once(
         &loaded.state_root,
-        &loaded.state_root.join(&root),
+        &root,
+        &name,
+        loaded.source.as_bytes(),
+        "stamped configuration copy",
     )?;
-    crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &[target.as_path()])?;
-    write_new(&loaded.state_root, &relative, loaded.source.as_bytes())?;
-    Ok(target)
-}
-
-#[cfg(unix)]
-fn write_new(root: &Path, relative: &str, bytes: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    let label = "stamped configuration copy";
-    let mut file = crate::project::path::secure_create_new(root, relative, label)?;
-    file.write_all(bytes)
-        .map_err(|error| format!("{label}: {error}"))?;
-    file.sync_all().map_err(|error| format!("{label}: {error}"))
-}
-
-#[cfg(not(unix))]
-fn write_new(_: &Path, _: &str, _: &[u8]) -> Result<(), String> {
-    Err("stamped configuration copy requires a POSIX host".into())
+    Ok(loaded.state_root.join(format!("{root}/{name}")))
 }
 
 /// The typed refusal for lesson events stamped with `bound`: the kept copy

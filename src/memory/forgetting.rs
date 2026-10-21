@@ -141,8 +141,11 @@ fn profile_file(loaded: &Loaded, requested: &str) -> Result<PathBuf, String> {
         )
     })?;
     let real = fs::canonicalize(candidate).map_err(|error| error.to_string())?;
-    if !real.starts_with(root) {
-        return Err("path escapes project root".into());
+    if crate::project::path::inputs::within(&root, &real).is_none() {
+        return Err(crate::project::path::inputs::refusal(
+            "actor profile",
+            requested,
+        ));
     }
     let metadata = fs::symlink_metadata(&real).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
@@ -219,9 +222,8 @@ fn o_nofollow() -> i32 {
 }
 
 fn relative_project_path(root: &Path, path: &Path) -> Result<String, String> {
-    let value = path
-        .strip_prefix(root)
-        .map_err(|_| "path escapes project root".to_owned())?
+    let value = crate::project::path::inputs::within(root, path)
+        .ok_or("path escapes project root")?
         .to_str()
         .ok_or("project-relative path is not valid UTF-8")?
         .replace('\\', "/");

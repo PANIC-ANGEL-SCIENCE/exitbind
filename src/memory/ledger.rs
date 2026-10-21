@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::config::Loaded;
+use crate::project::path::inputs;
 
 use super::state::{apply_event, validate_event};
 
@@ -90,12 +91,8 @@ pub(crate) fn confined_target(
     } else {
         root.join(requested)
     };
-    if !contained(&root, &candidate) {
-        return Err(format!("path escapes project root: {label}"));
-    }
-    let relative = candidate
-        .strip_prefix(&root)
-        .map_err(|_| format!("path escapes project root: {label}"))?;
+    let relative =
+        inputs::within(&root, &candidate).ok_or_else(|| inputs::refusal(label, requested))?;
     let mut normalized = root.clone();
     for component in relative.components() {
         match component {
@@ -103,11 +100,11 @@ pub(crate) fn confined_target(
             std::path::Component::Normal(value) => normalized.push(value),
             std::path::Component::ParentDir => {
                 if normalized == root {
-                    return Err(format!("path escapes project root: {label}"));
+                    return Err(inputs::refusal(label, requested));
                 }
                 normalized.pop();
             }
-            _ => return Err(format!("path escapes project root: {label}")),
+            _ => return Err(inputs::refusal(label, requested)),
         }
     }
     Ok(normalized)
@@ -122,9 +119,8 @@ pub(crate) fn path_exists_without_symlinks(
     let lexical_root = absolute(root)?;
     let real_root = fs::canonicalize(root)
         .map_err(|_| format!("project root does not exist: {}", root.display()))?;
-    let relative = candidate
-        .strip_prefix(&lexical_root)
-        .map_err(|_| format!("path escapes project root: {label}"))?;
+    let relative = inputs::within(&lexical_root, &candidate)
+        .ok_or_else(|| inputs::refusal(label, requested))?;
     if relative.as_os_str().is_empty() {
         return Err(format!("{label} path must name a project file"));
     }
@@ -328,13 +324,7 @@ fn resolve_ledger_path(
     if requested.trim().is_empty() || requested.contains('\0') {
         return Err("ledger path must be a non-empty string".into());
     }
-    let candidate = confined_target(root, requested, "ledger").map_err(|error| {
-        if error.starts_with("path escapes project root") {
-            format!("path escapes project root: {requested}")
-        } else {
-            error
-        }
-    })?;
+    let candidate = confined_target(root, requested, "ledger")?;
     let real_root = fs::canonicalize(root)
         .map_err(|_| format!("project root does not exist: {}", root.display()))?;
     let parent = candidate
@@ -348,7 +338,7 @@ fn resolve_ledger_path(
         }
     })?;
     if !contained(&real_root, &real_parent) {
-        return Err(format!("path escapes project root: {requested}"));
+        return Err(inputs::refusal("ledger", requested));
     }
     let file_name = candidate
         .file_name()
@@ -397,7 +387,7 @@ pub(crate) fn project_file(root: &Path, requested: &str, label: &str) -> Result<
         }
     })?;
     if !contained(&real_root, &real) {
-        return Err(format!("path escapes project root: {requested}"));
+        return Err(inputs::refusal(label, requested));
     }
     let metadata = fs::symlink_metadata(&real).map_err(|e| e.to_string())?;
     if !metadata.is_file() {
@@ -407,9 +397,9 @@ pub(crate) fn project_file(root: &Path, requested: &str, label: &str) -> Result<
 }
 
 pub(crate) fn relative_project_path(root: &Path, path: &Path) -> Result<String, String> {
-    let value = path
-        .strip_prefix(absolute(root)?)
-        .map_err(|_| "path escapes project root".to_owned())?
+    let root = absolute(root)?;
+    let value = inputs::within(&root, path)
+        .ok_or("path escapes project root")?
         .to_str()
         .ok_or("project-relative path is not valid UTF-8")?
         .replace('\\', "/");
@@ -425,7 +415,7 @@ pub(crate) fn relative_project_path(root: &Path, path: &Path) -> Result<String, 
 }
 
 fn contained(root: &Path, candidate: &Path) -> bool {
-    candidate.strip_prefix(root).is_ok()
+    inputs::within(root, candidate).is_some()
 }
 
 fn absolute(path: &Path) -> Result<PathBuf, String> {

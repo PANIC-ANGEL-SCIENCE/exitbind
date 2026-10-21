@@ -52,7 +52,7 @@ pub(crate) fn validate(value: &Value, errors: &mut Vec<String>) {
             errors.push("memory.root must be a non-empty relative path".into())
         }
         Some(root) if !valid_relative_path(root) => {
-            errors.push("memory.root must stay inside the project".into())
+            errors.push(crate::project::path::inputs::refusal("memory root", root))
         }
         _ => {}
     }

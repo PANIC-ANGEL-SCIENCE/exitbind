@@ -231,8 +231,9 @@ fn carried_source(loaded: &Loaded, plan: &Plan, item: &Candidate) -> Result<Vec<
     Err("carried lesson exceeds the source bound".into())
 }
 
-/// Write `bytes` once at a confined project path; an identical existing file is kept.
-fn write_once(root: &Path, relative: &str, bytes: &[u8], label: &str) -> Result<(), String> {
+/// Copy a guard once at its confined product path (a product file the lesson
+/// names, not a private one); an identical existing file is kept.
+fn write_guard_once(root: &Path, relative: &str, bytes: &[u8], label: &str) -> Result<(), String> {
     match path::secure_bytes_observation(root, relative, label) {
         SecureBytesResult::Bytes(existing) if existing == bytes => return Ok(()),
         SecureBytesResult::Absent(_) => {}
@@ -340,20 +341,19 @@ pub(crate) fn apply(loaded: &Loaded, plan: Plan) -> Result<Value, String> {
                     guard.path
                 ));
             }
-            write_once(
+            write_guard_once(
                 &loaded.product_root,
                 &guard.path,
                 &bytes,
                 "carried lesson guard",
             )?;
         }
-        crate::project::git_preflight::refuse_tracked_targets(
+        // The carried source is a product file under the root: the one
+        // private writer hides it from Git before writing it.
+        crate::project::private_write::write_once(
             &loaded.product_root,
-            &[loaded.product_root.join(&source).as_path()],
-        )?;
-        write_once(
-            &loaded.product_root,
-            &source,
+            &format!("{namespace}/{CARRY_DIRECTORY}"),
+            &format!("{stem}.json"),
             &bytes,
             "carried lesson source",
         )?;

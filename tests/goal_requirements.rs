@@ -572,6 +572,8 @@ mod intake_and_identity;
 mod native_recovery;
 #[path = "goal_requirements/refuse_before_write.rs"]
 mod refuse_before_write;
+#[path = "goal_requirements/root_inputs.rs"]
+mod root_inputs;
 #[path = "goal_requirements/setup_first_work.rs"]
 mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]

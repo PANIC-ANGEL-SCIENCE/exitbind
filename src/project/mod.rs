@@ -14,6 +14,7 @@ pub(crate) mod native_profiles;
 pub(crate) mod onboarding;
 pub(crate) mod path;
 pub(crate) mod portability;
+pub(crate) mod private_write;
 pub(crate) mod setup;
 pub(crate) mod skills;
 pub(crate) mod specialists;

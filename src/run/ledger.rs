@@ -115,15 +115,16 @@ pub(crate) fn ledger_path(
     allow_missing: bool,
 ) -> Result<LedgerPath, String> {
     let portable = requested.replace('\\', "/");
-    if requested.trim().is_empty()
-        || requested.contains('\0')
-        || Path::new(requested).is_absolute()
+    if requested.trim().is_empty() || requested.contains('\0') {
+        return Err("ledger path must be a non-empty string".into());
+    }
+    if Path::new(requested).is_absolute()
         || portable.starts_with('/')
         || portable.contains(":/")
         || portable == ".."
         || portable.starts_with("../")
     {
-        return Err("ledger path must be a non-empty string".into());
+        return Err(crate::project::path::inputs::refusal("ledger", requested));
     }
 
     let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
@@ -136,8 +137,8 @@ pub(crate) fn ledger_path(
             error.to_string()
         }
     })?;
-    if !real_parent.starts_with(&root) {
-        return Err(format!("path escapes project root: {requested}"));
+    if crate::project::path::inputs::within(&root, &real_parent).is_none() {
+        return Err(crate::project::path::inputs::refusal("ledger", requested));
     }
     let expected = real_parent.join(path.file_name().ok_or("invalid ledger path")?);
     match fs::symlink_metadata(&path) {
@@ -156,9 +157,8 @@ pub(crate) fn ledger_path(
         Err(error) => return Err(error.to_string()),
     }
 
-    let relative = expected
-        .strip_prefix(&root)
-        .map_err(|_| format!("path escapes project root: {requested}"))?
+    let relative = crate::project::path::inputs::within(&root, &expected)
+        .ok_or_else(|| crate::project::path::inputs::refusal("ledger", requested))?
         .to_str()
         .ok_or("ledger path is not valid UTF-8")?
         .replace('\\', "/");
@@ -278,7 +278,9 @@ fn verify_opened(ledger: &LedgerPath, opened: &fs::Metadata) -> Result<(), Strin
         return Err("ledger must be a regular file".into());
     }
     let canonical = fs::canonicalize(&ledger.path).map_err(|error| error.to_string())?;
-    if !canonical.starts_with(&ledger.root) || canonical != ledger.expected {
+    if crate::project::path::inputs::within(&ledger.root, &canonical).is_none()
+        || canonical != ledger.expected
+    {
         return Err("ledger path changed while opening".into());
     }
     let current = fs::symlink_metadata(&ledger.path).map_err(|error| error.to_string())?;

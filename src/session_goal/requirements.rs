@@ -64,21 +64,21 @@ pub(crate) fn identity(loaded: &Loaded) -> Result<String, String> {
     Ok(hash::value(&json!({"root":root,"id":loaded.project_id})))
 }
 
-fn source(loaded: &Loaded, path: &str) -> Result<Source, String> {
+/// Read a requirement source or project checker (`label`) the Lead names; an
+/// outside path is refused by the one root helper with its route.
+fn source(loaded: &Loaded, label: &str, path: &str) -> Result<Source, String> {
     use crate::project::path::SecureBytesResult;
-    let bytes = match crate::project::path::secure_bytes_observation(
-        &loaded.product_root,
-        path,
-        "requirement source",
-    ) {
-        SecureBytesResult::Bytes(bytes) => bytes,
-        _ => {
-            return Err(
-                "requirement source must be a readable regular project file without symlinks"
-                    .into(),
-            )
-        }
-    };
+    let path = crate::project::path::inputs::confined(&loaded.product_root, label, path)?;
+    let path = path.as_str();
+    let bytes =
+        match crate::project::path::secure_bytes_observation(&loaded.product_root, path, label) {
+            SecureBytesResult::Bytes(bytes) => bytes,
+            _ => {
+                return Err(format!(
+                    "{label} must be a readable regular project file without symlinks: {path}"
+                ))
+            }
+        };
     if bytes.is_empty() || bytes.len() > MAX_SOURCE {
         return Err("requirement source must contain 1–32768 bytes".into());
     }

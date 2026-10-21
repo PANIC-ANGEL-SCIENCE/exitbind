@@ -32,7 +32,13 @@ pub(super) fn preview(from: Option<&str>, root: &Path) -> Result<Option<Value>, 
             "--lessons-from names this project; give the previous project's configuration".into(),
         );
     }
-    let mut value = lessons::carry::plan(&previous, root)?.preview();
+    let plan = lessons::carry::plan(&previous, root)?;
+    if !plan.is_empty() {
+        // Carried sources are written by the private writer; refuse now,
+        // before setup writes anything, when it would refuse later.
+        crate::project::private_write::writable(root, "carried lesson source")?;
+    }
+    let mut value = plan.preview();
     value["from"] = json!(previous.path);
     value["applied"] = json!(false);
     Ok(Some(value))

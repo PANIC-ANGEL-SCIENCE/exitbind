@@ -145,10 +145,15 @@ approved values into the emitted `work begin` action. Setup and Work begin only
 record the policy; the diagnostic runs later at the Worker return boundary.
 Either limit requires `--pre-return-command`.
 
-When the round has a task card with a step table, add `--task-card PATH`
-(project-relative). Setup reads the first markdown table with a `Done when`
+When the round has a task card with a step table, add `--task-card PATH`.
+A card outside the project is snapshotted to
+`.exitbind/plan-cards/<goal id>/TASK.md`, hidden from Git through the local
+exclude like a plan card; a re-run with the same bytes reuses it, a changed
+card gets a suffixed directory, and `next.taskCard` reports `path`, `source`
+and `sourceSha256`. Setup reads the first markdown table with a `Done when`
 column: each row becomes requirement `S<step>` with the exact `Done when` cell
-as its text. The Goal ID is the card's directory name, or `--goal-id ID`.
+as its text. The Goal ID is the card's directory name (the source card's
+directory for a snapshot), or `--goal-id ID`.
 Preview lists those rows; `--apply` incorporates the Goal and registers the
 rows (in the native session Goal when this project owns it or no project does
 yet, otherwise the project journal) and prints three commands in order: `goal

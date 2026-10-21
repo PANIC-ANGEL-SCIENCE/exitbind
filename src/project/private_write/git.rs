@@ -1,5 +1,5 @@
-//! The project's Git worktree for plan cards: the local exclude line that
-//! hides the cards and the `git status` check that proves it.
+//! The project's Git worktree for the private writer: the local exclude
+//! line that hides a product directory and the `git status` check that proves it.
 
 use std::fs;
 use std::io::ErrorKind;

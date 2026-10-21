@@ -50,7 +50,10 @@ pub(crate) fn checker_input(
     checker: &str,
     command: &str,
 ) -> Result<CheckerInput, String> {
-    let checker_source = source(loaded, checker)?;
+    let checker =
+        crate::project::path::inputs::confined(&loaded.product_root, "project checker", checker)?;
+    let checker = checker.as_str();
+    let checker_source = source(loaded, "project checker", checker)?;
     if !crate::run::inputs::covered_file(loaded, checker)? {
         return Err("checker input is outside tested product-file coverage; use a non-ignored project checker".into());
     }
@@ -524,7 +527,7 @@ pub(crate) fn current_checker_evidence(
     if current.inputs_current.is_none() {
         return Ok(view);
     }
-    if source(loaded, &checker_input.path)?.sha256 != checker_input.sha256
+    if source(loaded, "project checker", &checker_input.path)?.sha256 != checker_input.sha256
         || !crate::run::inputs::covered_file(loaded, &checker_input.path)?
     {
         view["state"] = json!("stale");

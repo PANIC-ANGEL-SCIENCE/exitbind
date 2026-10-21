@@ -77,6 +77,7 @@ enum Evidence {
 }
 
 pub(crate) fn load(loaded: &Loaded, requested: &str) -> Result<Value, String> {
+    project_path::inputs::confined(&loaded.control_root, "harness manifest", requested)?;
     if !supported_path(loaded, requested) {
         let canonical = canonical_path(loaded);
         return Err(format!(

@@ -7,7 +7,7 @@
 //! frozen checker hash and coverage rules stay in `work::checker_input`.
 
 use crate::config::Loaded;
-use std::path::{Component, Path};
+use std::path::Path;
 
 /// Largest outside script whose text is read for a checker name.
 const MAX_SCRIPT_BYTES: u64 = 64 * 1024;
@@ -138,29 +138,10 @@ fn tokens(text: &str) -> impl Iterator<Item = &str> {
         .filter(|token| !token.is_empty())
 }
 
-/// The project-relative form of a token naming a path inside the project.
+/// The project-relative form of a token naming a path inside the project,
+/// placed by the one root helper.
 fn project_relative(loaded: &Loaded, token: &str) -> Option<String> {
-    let path = Path::new(token);
-    let relative = if path.is_absolute() {
-        let root = loaded.product_root.canonicalize().ok()?;
-        let parent = path.parent()?.canonicalize().ok()?;
-        parent
-            .join(path.file_name()?)
-            .strip_prefix(&root)
-            .ok()?
-            .to_path_buf()
-    } else {
-        path.to_path_buf()
-    };
-    let mut parts = Vec::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(part) => parts.push(part.to_str()?),
-            Component::CurDir => {}
-            _ => return None,
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("/"))
+    crate::project::path::inputs::relative(&loaded.product_root, token)
 }
 
 #[cfg(test)]
