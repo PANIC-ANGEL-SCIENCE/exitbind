@@ -60,9 +60,19 @@ pub(crate) fn on_approval(loaded: &Loaded, payload: &Map<String, Value>) -> Opti
         }
         return None;
     }
-    let root = shell_word(root.to_str()?);
+    let setup = crate::emitted::command_line(
+        &[
+            "setup",
+            "--apply",
+            "--root",
+            root.to_str()?,
+            "--task-card",
+            &relative,
+        ],
+        None,
+    );
     Some(format!(
-        "The approved plan has a Done when table and is saved as a private task card. To make it this Goal's start path, run `exitbind setup --apply --root {root} --task-card {relative}` with this project's usual setup options (--goal, --check-command, --review-policy)."
+        "The approved plan has a Done when table and is saved as a private task card. To make it this Goal's start path, run `{setup}` with this project's usual setup options (--goal, --check-command, --review-policy)."
     ))
 }
 
@@ -166,17 +176,6 @@ fn create_new_private(path: &Path, text: &str) -> std::io::Result<()> {
 fn same_regular_file(path: &Path, text: &str) -> bool {
     fs::symlink_metadata(path).is_ok_and(|info| info.is_file() && info.len() == text.len() as u64)
         && fs::read(path).is_ok_and(|bytes| bytes == text.as_bytes())
-}
-
-fn shell_word(text: &str) -> String {
-    if text
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-'))
-    {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
 }
 
 #[cfg(test)]

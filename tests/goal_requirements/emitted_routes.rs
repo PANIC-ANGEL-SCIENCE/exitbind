@@ -130,29 +130,6 @@ const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
         1,
         "unit test of a refused hint",
     ),
-    // Open P1 members (PATH-named read routes), counted so no new one is
-    // added; each is a later Work's repair.
-    (
-        "src/host/runtime.rs",
-        3,
-        "open: PATH-named Work read guidance in host context",
-    ),
-    (
-        "src/project/context.rs",
-        5,
-        "open: PATH-named read routes in project context",
-    ),
-    (
-        "src/session_goal/goal_summary.rs",
-        2,
-        "open: PATH-named read routes in Goal text",
-    ),
-    (
-        "src/host/project_memory.rs",
-        1,
-        "open: PATH-named lesson read route",
-    ),
-    ("src/host/plan_card.rs", 1, "open: PATH-named setup line"),
 ];
 
 /// Every printed `<product> <command>` occurrence outside comments.

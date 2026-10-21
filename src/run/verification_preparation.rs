@@ -152,7 +152,25 @@ pub(crate) fn current_checker_sources(
     let current = crate::run_value::checker_sources(loaded, command)
         .map_err(|error| format!("verification checker source is unavailable: {error}"))?;
     if current.iter().any(|source| !frozen.contains(source)) {
-        return Err("verification checker source path or contents changed since Work start; no check was launched".into());
+        let digest = |sources: &[crate::run_value::CheckerSource]| {
+            hash::text(
+                &sources
+                    .iter()
+                    .map(|source| format!("{}\0{}", source.path, source.sha256))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        };
+        return Err(crate::drift::refusal(
+            crate::drift::Class::VerificationCheckerCommand,
+            &digest(&frozen),
+            Some(&digest(&current)),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     Ok(frozen)
 }

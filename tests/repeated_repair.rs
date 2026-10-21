@@ -15,6 +15,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::new_with(&[])
+    }
+    fn new_with(extra: &[&str]) -> Self {
         let root = support::temp("repeated-repair");
         support::git_topology::repository(&root);
         let p = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
@@ -27,20 +30,19 @@ impl Fixture {
             root,
             work: String::new(),
         };
-        let v = f.ok(
-            &[
-                "work",
-                "begin",
-                "change",
-                "--goal",
-                "Correct counter.txt only",
-                "--check-command",
-                "test \"$(cat counter.txt)\" = correct",
-                "--review-policy",
-                "required",
-            ],
-            b"",
-        );
+        let mut begin = vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Correct counter.txt only",
+            "--check-command",
+            "test \"$(cat counter.txt)\" = correct",
+            "--review-policy",
+            "required",
+        ];
+        begin.extend_from_slice(extra);
+        let v = f.ok(&begin, b"");
         f.work = v["work"].as_str().unwrap().into();
         f.choose(
             "scoped",
@@ -382,3 +384,6 @@ fn emitted_evidence_form_binds_exact_new_evidence_without_another_grant() {
     );
     assert!(fs::read(f.ledger()).unwrap().starts_with(&bytes));
 }
+
+#[path = "repeated_repair/lead_repair_return.rs"]
+mod lead_repair_return;

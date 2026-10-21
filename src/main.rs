@@ -3,6 +3,7 @@ mod compatibility;
 mod config;
 mod context;
 mod distribution;
+mod drift;
 mod emitted;
 mod envelope;
 mod evidence;
@@ -57,6 +58,17 @@ fn main() {
         {
             println!("{machine}");
             emit_work_progress(&raw_for_error, machine);
+        } else if let Some((context, value)) = crate::drift::split(&error) {
+            // Changed after binding: the same facts and route in both forms.
+            if json_output {
+                println!("{}", crate::drift::machine_with_context(context, value));
+            } else {
+                eprintln!(
+                    "{}: {context}{}",
+                    program_name(),
+                    crate::drift::human(&value)
+                );
+            }
         } else if let Some(machine) = error.strip_prefix(crate::work::DIAGNOSTIC_PREFIX) {
             if json_output {
                 println!("{machine}");
@@ -151,4 +163,18 @@ fn emit_work_progress(raw: &[std::ffi::OsString], machine: &str) {
         line.push_str(&crate::run_presentation::inert(action));
     }
     eprintln!("{line}");
+}
+
+/// The invoked program's file name, for one-line refusals.
+fn program_name() -> String {
+    std::env::args_os()
+        .next()
+        .and_then(|x| x.into_string().ok())
+        .and_then(|x| {
+            std::path::Path::new(&x)
+                .file_name()
+                .and_then(|x| x.to_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "exitbind".into())
 }

@@ -8,7 +8,21 @@ pub(crate) const MAX_TIMEOUT_MS: u64 = 86_400_000;
 
 /// New marked observations execute only the run's frozen configuration and
 /// its still-current selected contract. Historical runs retain drift warnings.
-const FROZEN_CONFIG_REQUIRED: &str = "check observation requires the frozen current configuration; inspect the Work and use authorized supersession for a changed configuration";
+fn frozen_config_required(loaded: &Loaded, state: &Value) -> String {
+    let current = std::fs::read_to_string(&loaded.path)
+        .map(|source| crate::evidence::hash::text(&source))
+        .ok();
+    crate::drift::refusal(
+        crate::drift::Class::CheckObservationConfiguration,
+        state["configSha256"].as_str().unwrap_or_default(),
+        current.as_deref(),
+        None,
+        crate::drift::Route::Supersede {
+            ledger: None,
+            config: Some(&loaded.path),
+        },
+    )
+}
 
 pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), String> {
     if state["checkObservationProtocol"] != PROTOCOL {
@@ -26,10 +40,10 @@ pub(crate) fn assert_current(loaded: &Loaded, state: &Value) -> Result<(), Strin
         || current.mode != loaded.mode
         || current.project_id != loaded.project_id
     {
-        return Err(FROZEN_CONFIG_REQUIRED.into());
+        return Err(frozen_config_required(loaded, state));
     }
     crate::run::guidance_continuity::assert_config_current(&current, state)
-        .map_err(|_| FROZEN_CONFIG_REQUIRED.to_owned())?;
+        .map_err(|_| frozen_config_required(loaded, state))?;
     crate::project::architecture::assert_current(&current)?;
     crate::run::verification_preparation::assert_checker_sources_current(state)
 }
@@ -146,7 +160,7 @@ pub(super) fn record_failure(
         format!("EXITBIND_JSON:{}", json!({
             "effect": "unknown", "checkRecorded": false, "durableFailureRecorded": false,
             "work": work, "reason": {"code": "observation_failure_storage_unavailable"},
-            "observation": facts, "diagnostic": error.chars().filter(|c| !c.is_control()).take(512).collect::<String>(),
+            "observation": facts, "diagnostic": crate::drift::plain(&error).chars().filter(|c| !c.is_control()).take(512).collect::<String>(),
             "nextAction": {"type": "inspect", "safe": true, "command": route.argv,
                 "sameConfigRequired": route.same_config, "sameExecutableRequired": route.same_executable},
             "recovery": "the admitted execution remains unresolved; inspect or stop, never retry"

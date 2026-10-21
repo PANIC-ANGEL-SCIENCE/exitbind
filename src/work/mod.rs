@@ -503,6 +503,10 @@ fn diagnostic_error(
 }
 
 fn discovery_error(error: String, work: &str) -> String {
+    // A typed changed-after-binding refusal already names its route.
+    if crate::drift::split(&error).is_some() {
+        return error;
+    }
     if error.starts_with("artifact drift detected:") {
         return diagnostic_error(
             "artifact drift detected after run start. Inspect the recorded result and restore the original artifact before continuing.",

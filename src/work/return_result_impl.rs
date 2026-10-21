@@ -187,6 +187,10 @@ pub(crate) fn return_result_with(
         .or_else(|| held.as_ref().map(|value| value.reference.clone()));
     let created_artifact = std::cell::RefCell::new(None);
     let mut recorded_protection = None;
+    // The completed return may first record the Lead's repair as the
+    // governor's new information; that one event of this same call does not
+    // make the caller's binding stale.
+    let bound_events = run::ledger::load(loaded, &ledger)?.1.len();
     let submitted = run::submit_for_assignment(
         loaded,
         &ledger,
@@ -203,7 +207,13 @@ pub(crate) fn return_result_with(
             Ok(path)
         },
         |events, source| {
-            details::ensure_action_binding(loaded, work, current_binding)?;
+            let own_repair = events.len() > bound_events + 1
+                && events[bound_events..events.len() - 1]
+                    .iter()
+                    .all(|event| event["operation"] == "authorized_repair_recovery_v1");
+            if !own_repair {
+                details::ensure_action_binding(loaded, work, current_binding)?;
+            }
             submission_preflight::preflight(loaded, work, events, source, &bytes)
         },
         &mut recorded_protection,

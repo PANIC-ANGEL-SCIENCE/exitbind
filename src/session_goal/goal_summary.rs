@@ -9,7 +9,14 @@ use serde_json::Value;
 
 /// The compact Work projection keeps a system text up to this many characters.
 const SYSTEM_TEXT_MAX_CHARS: usize = 512;
-const READ_ROUTE: &str = "exitbind goal status --json (goalProgress.journeyCompletion.unresolved)";
+/// The read route for the journey's unresolved members, printed with the
+/// executable this process runs as.
+fn read_route() -> String {
+    format!(
+        "{} (goalProgress.journeyCompletion.unresolved)",
+        crate::emitted::command_line(&["goal", "status", "--json"], None)
+    )
+}
 const CLOSE_ROUTES: &str =
     "closes when each member is accepted and current, or by one final --journey-integration Work";
 
@@ -31,11 +38,47 @@ pub(crate) fn closed_revision(record: &Value) -> Option<u64> {
     )
 }
 
+/// A closed Goal whose only open journey items are members accepted at
+/// binding stays complete: a later change to a member's bound inputs is
+/// reported on the member, not by reopening the Goal.
+pub(crate) fn closed_at_binding(record: &Value, journey: Option<&Value>) -> bool {
+    closed_revision(record).is_some()
+        && journey.is_some_and(|value| {
+            value["unresolved"].as_array().is_some_and(|items| {
+                !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|item| item["state"] == "accepted_at_binding")
+            })
+        })
+}
+
+/// A complete, closed Goal's system text head reads closed with its revision.
+pub(crate) fn closed_head(record: &Value, view: &mut Value) {
+    let Some(revision) = closed_revision(record) else {
+        return;
+    };
+    if view["overall"] != "complete" {
+        return;
+    }
+    if let Some(text) = view["systemText"].as_str() {
+        let head = format!("Goal: CLOSED (revision {revision})");
+        view["systemText"] = Value::String(text.replacen("Goal: COMPLETE", &head, 1));
+    }
+}
+
 /// The journey fact, or `None` for a Goal without native journey membership.
 /// `completion` is the already computed `journeyCompletion` when available;
 /// without it only the recorded membership is stated. A closed Goal states
 /// only its member count: there is no route left to close or read.
-pub(crate) fn journey(record: &Value, completion: Option<&Value>, short: bool) -> Option<String> {
+/// `tasks` is the registered decomposition (`complete`, `total`) when known:
+/// the closing route is never stated as met while a registered task is not.
+pub(crate) fn journey(
+    record: &Value,
+    completion: Option<&Value>,
+    short: bool,
+    tasks: Option<(u64, u64)>,
+) -> Option<String> {
     let state = super::journey::state(record).ok().flatten()?;
     if let Some(revision) = closed_revision(record) {
         return Some(format!(
@@ -48,7 +91,19 @@ pub(crate) fn journey(record: &Value, completion: Option<&Value>, short: bool) -
         state.admissions.len(),
         completion,
         short,
+        tasks,
     ))
+}
+
+/// The registered decomposition of a Goal view, as (`complete`, `total`).
+pub(crate) fn task_counts(view: &Value) -> Option<(u64, u64)> {
+    let decomposition = &view["decomposition"];
+    (decomposition["available"] == true).then(|| {
+        (
+            decomposition["complete"].as_u64().unwrap_or(0),
+            decomposition["total"].as_u64().unwrap_or(0),
+        )
+    })
 }
 
 fn journey_text(
@@ -56,13 +111,15 @@ fn journey_text(
     admissions: usize,
     completion: Option<&Value>,
     short: bool,
+    tasks: Option<(u64, u64)>,
 ) -> String {
+    let read_route = read_route();
     let mut text = format!("Journey: {}", plural(members, "member"));
     if admissions > 0 {
         text.push_str(&format!(", {}", plural(admissions, "pending admission")));
     }
     if short {
-        text.push_str(&format!("; read: {READ_ROUTE}"));
+        text.push_str(&format!("; read: {read_route}"));
         return text;
     }
     if members == 0 && admissions == 0 {
@@ -72,7 +129,7 @@ fn journey_text(
         return text;
     }
     let Some(completion) = completion else {
-        text.push_str(&format!("; {CLOSE_ROUTES}; not yet current: {READ_ROUTE}"));
+        text.push_str(&format!("; {CLOSE_ROUTES}; not yet current: {read_route}"));
         return text;
     };
     let current = completion["members"]["current"].as_u64().unwrap_or(0)
@@ -85,18 +142,26 @@ fn journey_text(
         .into_iter()
         .flatten()
         .any(|item| item["state"] == "stale");
-    if completion["state"] == "current" {
+    let unmet = tasks.filter(|(complete, total)| complete < total);
+    if let (Some((complete, total)), "current") =
+        (unmet, completion["state"].as_str().unwrap_or(""))
+    {
+        text.push_str(&format!(
+            "; every member is current; closing route not met: {} of {total} registered tasks are not complete",
+            total - complete
+        ));
+    } else if completion["state"] == "current" {
         text.push_str("; closing route met: every member is current");
     } else if let Some(work) = completion["integrationWork"].as_str() {
         text.push_str(&format!(
-            "; closes by integration Work {work} once every member is covered; not yet current: {READ_ROUTE}"
+            "; closes by integration Work {work} once every member is covered; not yet current: {read_route}"
         ));
     } else if stale {
         text.push_str(&format!(
-            "; a member's accepted result is stale, so it closes by one final --journey-integration Work; not yet current: {READ_ROUTE}"
+            "; a member's accepted result is stale, so it closes by one final --journey-integration Work; not yet current: {read_route}"
         ));
     } else {
-        text.push_str(&format!("; {CLOSE_ROUTES}; not yet current: {READ_ROUTE}"));
+        text.push_str(&format!("; {CLOSE_ROUTES}; not yet current: {read_route}"));
     }
     text
 }
@@ -107,8 +172,16 @@ pub(crate) fn lessons(loaded: &Loaded, task: Option<&str>) -> String {
         None => "Lessons: none configured".into(),
         Some(Ok(count)) => format!("Lessons: {count} deliverable"),
         Some(Err(_)) => format!(
-            "Lessons: configured; read: exitbind memory resolve {} --json",
-            loaded.lead().unwrap_or("lead")
+            "Lessons: configured; read: {}",
+            crate::emitted::command_line(
+                &[
+                    "memory",
+                    "resolve",
+                    loaded.lead().unwrap_or("lead"),
+                    "--json"
+                ],
+                Some(&loaded.path)
+            )
         ),
     }
 }
@@ -135,10 +208,11 @@ pub(super) fn append(loaded: &Loaded, record: &Value, view: &mut Value) {
     }
     let lessons = lessons(loaded, task);
     let completion = view.get("journeyCompletion").cloned();
-    let full = journey(record, completion.as_ref(), false);
+    let tasks = task_counts(view);
+    let full = journey(record, completion.as_ref(), false, tasks);
     let mut out = joined(&[Some(&text), full.as_deref(), Some(&lessons)]);
     if out.chars().count() > SYSTEM_TEXT_MAX_CHARS {
-        let short = journey(record, None, true);
+        let short = journey(record, None, true, tasks);
         out = joined(&[Some(&text), short.as_deref(), Some(&lessons)]);
     }
     if out.chars().count() > SYSTEM_TEXT_MAX_CHARS {
@@ -150,7 +224,7 @@ pub(super) fn append(loaded: &Loaded, record: &Value, view: &mut Value) {
 /// The SessionStart line for the native Goal: journey from its record, and
 /// lessons from the verified owner configuration when one is available.
 pub(crate) fn hook_line(record: &Value, owner: Option<&Loaded>) -> Option<String> {
-    let journey = journey(record, None, false);
+    let journey = journey(record, None, false, None);
     let lessons = owner.map(|loaded| lessons(loaded, record["goal"].as_str()));
     if journey.is_none() && lessons.is_none() {
         return None;
@@ -207,23 +281,23 @@ mod tests {
             "unresolved":[{"work":"smw_0","state":"unavailable"}],"integrationWork":null});
         let expected = "Journey: 2 members; closed with the Goal (revision 30)";
         for (completion, short) in [(None, false), (Some(&open), false), (None, true)] {
-            let text = journey(&record, completion, short).unwrap();
+            let text = journey(&record, completion, short, None).unwrap();
             assert_eq!(text, expected);
             assert!(!text.contains("not yet current") && !text.contains("closes"));
-            assert!(!text.contains(READ_ROUTE) && !text.contains("read:"));
+            assert!(!text.contains(&read_route()) && !text.contains("read:"));
         }
         let line = hook_line(&record, None).unwrap();
         assert_eq!(line, format!("Goal goal: {expected}"));
         // A reopening admission resets closure, and the open text returns.
         record["closure"] = json!({"closed":false,"revision":null,"resultRefs":[]});
         assert!(closed_revision(&record).is_none());
-        let text = journey(&record, None, false).unwrap();
+        let text = journey(&record, None, false, None).unwrap();
         assert!(text.contains("not yet current"), "{text}");
     }
 
     #[test]
     fn a_goal_without_journey_membership_states_no_journey() {
-        assert!(journey(&json!({"goal":"g"}), None, false).is_none());
+        assert!(journey(&json!({"goal":"g"}), None, false, None).is_none());
     }
 
     #[test]
@@ -236,36 +310,53 @@ mod tests {
             "unresolved":[{"work":"smw_0","state":"unresolved"}],"integrationWork":null});
         let integrated = json!({"state":"blocked","members":{"current":0,"integrationSupported":1},
             "unresolved":[{"work":"smw_0","state":"unresolved"}],"integrationWork":"smw_i"});
-        let text = journey_text(2, 0, Some(&stale), false);
+        let text = journey_text(2, 0, Some(&stale), false, None);
         assert!(text.starts_with("Journey: 2 members, 1 current;"), "{text}");
         assert!(
             text.contains("closes by one final --journey-integration Work"),
             "{text}"
         );
-        let text = journey_text(2, 0, Some(&current), false);
+        let text = journey_text(2, 0, Some(&current), false, None);
         assert!(text.contains("every member is current"), "{text}");
-        assert!(!text.contains(READ_ROUTE), "{text}");
-        let text = journey_text(1, 1, Some(&open), false);
+        assert!(!text.contains(&read_route()), "{text}");
+        let text = journey_text(1, 1, Some(&open), false, None);
         assert!(
             text.starts_with("Journey: 1 member, 1 pending admission, 0 current;"),
             "{text}"
         );
         assert!(
-            text.contains(CLOSE_ROUTES) && text.contains(READ_ROUTE),
+            text.contains(CLOSE_ROUTES) && text.contains(&read_route()),
             "{text}"
         );
-        let text = journey_text(1, 0, Some(&integrated), false);
+        let text = journey_text(1, 0, Some(&integrated), false, None);
         assert!(text.contains("closes by integration Work smw_i"), "{text}");
-        let text = journey_text(0, 0, None, false);
+        let text = journey_text(0, 0, None, false, None);
         assert!(
             text.contains("each Work begun in this conversation joins it"),
             "{text}"
         );
-        let text = journey_text(3, 0, None, false);
+        let text = journey_text(3, 0, None, false, None);
         assert!(
-            text.contains(CLOSE_ROUTES) && text.contains(READ_ROUTE),
+            text.contains(CLOSE_ROUTES) && text.contains(&read_route()),
             "{text}"
         );
-        assert!(journey_text(32, 0, Some(&open), false).chars().count() < 260);
+        // The bound assumed an eight-byte product name; the route now names
+        // the executable this process runs as.
+        let executable = crate::emitted::executable().unwrap().len();
+        assert!(
+            journey_text(32, 0, Some(&open), false, None)
+                .chars()
+                .count()
+                < 252 + executable
+        );
+        // Every member current never reads as met while a registered task is open.
+        let text = journey_text(1, 0, Some(&current), false, Some((0, 11)));
+        assert!(
+            text.contains("closing route not met: 11 of 11 registered tasks are not complete")
+                && !text.contains("closing route met"),
+            "{text}"
+        );
+        let text = journey_text(1, 0, Some(&current), false, Some((11, 11)));
+        assert!(text.contains("closing route met"), "{text}");
     }
 }

@@ -81,19 +81,35 @@ fn assert_current_configuration(loaded: &Loaded, state: &Value) -> Result<(), St
     if state["preReturnPolicy"].is_null() {
         return Ok(());
     }
+    let current = fs::read_to_string(&loaded.path).map_err(|e| e.to_string())?;
     if state["configSha256"] != crate::evidence::hash::text(&loaded.source)
-        || fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source
+        || current != loaded.source
     {
-        return Err("pre-return check requires the frozen current configuration; inspect and use authorized supersession for a changed configuration".into());
+        return Err(crate::drift::refusal(
+            crate::drift::Class::PreReturnConfiguration,
+            state["configSha256"].as_str().unwrap_or_default(),
+            Some(&crate::evidence::hash::text(&current)),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     crate::project::architecture::assert_current(loaded)
         .map_err(|e| format!("pre-return architecture binding is stale: {e}"))?;
     let policy = crate::run_value::pre_return_policy_from_value(&state["preReturnPolicy"], 1)?;
     crate::run_value::validate_checker_sources(&policy.checker_sources, "pre-return")?;
     if let Some(warning) = super::input_drift_warning_for(loaded, state, None)? {
-        return Err(format!(
-            "pre-return check requires current product inputs; use authorized supersession after input drift: {}",
-            warning["currentInputsSha256"].as_str().unwrap_or("unavailable")
+        return Err(crate::drift::refusal(
+            crate::drift::Class::PreReturnInputs,
+            warning["expectedInputsSha256"].as_str().unwrap_or_default(),
+            warning["currentInputsSha256"].as_str(),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
         ));
     }
     Ok(())

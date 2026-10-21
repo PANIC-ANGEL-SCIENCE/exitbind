@@ -120,6 +120,24 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
         return Err(format!("configuration is not a regular file: {requested}"));
     }
     let source = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    from_source(path, source, requested)
+}
+
+/// A configuration's bytes read from `source_path` as they apply at the
+/// configuration path `at`: roots resolve from `at`, so a byte copy kept
+/// elsewhere (the stamped copy beside a lesson ledger) reads as the project
+/// it was written for.
+/// `path` stays the file the bytes were read from.
+pub fn load_bytes_at(source_path: &str, at: &Path) -> Result<Loaded, String> {
+    let file = fs::canonicalize(absolute(Path::new(source_path))?)
+        .map_err(|error| format!("{source_path}: {error}"))?;
+    let source = fs::read_to_string(&file).map_err(|error| format!("{source_path}: {error}"))?;
+    let mut loaded = from_source(at.to_path_buf(), source, source_path)?;
+    loaded.path = file;
+    Ok(loaded)
+}
+
+fn from_source(path: PathBuf, source: String, requested: &str) -> Result<Loaded, String> {
     let config: Value = serde_json::from_str(&source)
         .map_err(|error| format!("invalid JSON in {requested}: {error}"))?;
     let errors = validate(&config);

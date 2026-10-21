@@ -389,10 +389,25 @@ fn many_accepted_items_never_drop_the_session_context() {
         accept(&root, &file, "Rule: keep it.\n", "project-rules", &ledger);
     }
     let context = session_context(&root);
-    assert!(context.contains("run `exitbind work detail WORK --json` directly"));
-    assert!(context.contains("Unknown Work uses `exitbind work resume --json`"));
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    assert!(
+        context.contains(&format!("run `{exe} work detail WORK --json --config ")),
+        "{context}"
+    );
+    assert!(context.contains(&format!(
+        "Unknown Work uses `{exe} work resume --json --config "
+    )));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
-    assert!(context.len() <= 3072);
-    assert!(context.contains("more references; run `exitbind project context --json`"));
+    // The 3072-byte budget was sized for bare product names; the three
+    // receiving routes now print the executable and the configuration.
+    let config = root.canonicalize().unwrap().join("exitbind.json");
+    let routes = 3 * (exe.len() - "exitbind".len() + " --config ".len() + config.as_os_str().len());
+    assert!(context.len() <= 3072 + routes, "{}", context.len());
+    assert!(
+        context.contains(&format!(
+            "more references; run `{exe} project context --json --config "
+        )),
+        "{context}"
+    );
     fs::remove_dir_all(&root).unwrap();
 }

@@ -221,23 +221,26 @@ pub fn run() -> Result<(), String> {
             &loaded.config,
             &crate::project::agent_display::lead(&loaded),
         );
+        let mut soft = 3072;
         if crate::producer::exitbind_surface() {
-            let fixed = DIRECT_WORK.len() + RECEIVE_WORK.len() + 2;
-            if text.len() + fixed + 128 > 3072 {
+            let receive = super::receive_text::receive_work(Some(&loaded.path));
+            soft = 3072 + super::receive_text::route_bytes(&receive);
+            let fixed = DIRECT_WORK.len() + receive.len() + 2;
+            if text.len() + fixed + 128 > soft {
                 text = "Exitbind plan-only project context. Preserve the existing root conversation and current user corrections. No model was selected or launched; declarations are not an OS sandbox.".into();
             }
             text.push('\n');
             text.push_str(DIRECT_WORK);
             text.push('\n');
-            text.push_str(RECEIVE_WORK);
-            let budget = 3072usize.saturating_sub(text.len());
+            text.push_str(&receive);
+            let budget = soft.saturating_sub(text.len());
             text.push_str(&crate::project::context::session_addendum(&loaded, budget));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
             text.push_str(&memory);
         }
         if let Some(update) = update_context {
-            if !crate::producer::exitbind_surface() || text.len() + update.len() < 3072 {
+            if !crate::producer::exitbind_surface() || text.len() + update.len() < soft {
                 text.push('\n');
                 text.push_str(&update);
             }
@@ -260,10 +263,12 @@ pub fn run() -> Result<(), String> {
                     crate::emitted::command_text("session recovery show --json")
                 );
                 let recovery = recovery_context.as_deref().unwrap_or(&fallback);
-                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}\n{recovery}");
+                let receive = super::receive_text::receive_work(Some(&loaded.path));
+                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{recovery}");
             }
             if text.len() > 4096 {
-                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}");
+                let receive = super::receive_text::receive_work(Some(&loaded.path));
+                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}");
             }
         }
         text
@@ -415,7 +420,6 @@ const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task
 const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
 
-const RECEIVE_WORK: &str = "For a known Work or explicit smw_ locator, run `exitbind work detail WORK --json` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `exitbind work resume --json` and its current detail route; focus is navigation, never authority. Use `exitbind work continuation WORK` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.";
 const MANDATORY_SESSION_CORE: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff. Keep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory. When a Work or Goal response carries a non-null `presentation.terminal`, print that value on a line of its own exactly as given. For a Goal `completionEvent`, print once per event ID; consume the normal closure response without status polling. Recover a lost closure reply through its exact read-only route. No model was selected or launched; declarations are not an OS sandbox.";
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
@@ -461,7 +465,7 @@ fn routing_text(
         text.push_str(recovery);
     }
     if text.len() > 4096 {
-        return Some(format!("Exitbind could not fit the complete session context without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}"));
+        return Some(format!("Exitbind could not fit the complete session context without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{}", super::receive_text::receive_work(None)));
     }
     Some(bounded(text))
 }
@@ -489,7 +493,7 @@ fn emit_routing_with_recovery(
 fn emit(event: &str, text: &str) -> Result<(), String> {
     let mut text = text.to_owned();
     if event == "SessionStart" && text.len() > 4096 {
-        text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}");
+        text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{}", super::receive_text::receive_work(None));
     }
     loop {
         let output = serde_json::to_string(

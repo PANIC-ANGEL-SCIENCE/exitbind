@@ -21,7 +21,14 @@ pub(crate) fn run(
         );
     }
     let _lock = super::lessons::mutation_lock(loaded)?;
-    let previous = config::load(Some(from))?;
+    // This project's kept stamped copy sits beside the ledgers; its bytes
+    // are read as they apply at this configuration's location. Any other
+    // file is loaded where it is, so a foreign project's roots still refuse.
+    let previous = if super::stamped_config::is_kept_copy(loaded, from) {
+        config::load_bytes_at(from, &loaded.path)?
+    } else {
+        config::load(Some(from))?
+    };
     let snapshot = read_ledger(loaded, ledger, false)?;
     super::validate_history_current(&previous, &snapshot)?;
     super::validate_source_current(&previous, &snapshot)?;
@@ -45,8 +52,18 @@ pub(crate) fn run(
             .ok_or("lesson source missing")?,
         "lesson source",
     )?;
-    if hash::bytes(&source) != item["source"]["sha256"] {
-        return Err("lesson source changed since proposal".into());
+    let current_source = hash::bytes(&source);
+    if current_source != item["source"]["sha256"] {
+        return Err(crate::drift::refusal(
+            crate::drift::Class::LessonSource,
+            item["source"]["sha256"].as_str().unwrap_or_default(),
+            Some(&current_source),
+            None,
+            crate::drift::Route::Inspect {
+                ledger,
+                config: &loaded.path,
+            },
+        ));
     }
     let lesson_id = if item["scope"] == super::lessons::SCOPE {
         super::lessons::parse(loaded, &source)?.id
@@ -69,7 +86,7 @@ pub(crate) fn run(
             item["scope"].as_str().ok_or("invalid scope")?,
         )?
     } else {
-        compatible(&previous, loaded, actor)?
+        compatible(&previous, loaded, actor, ledger)?
     };
     let old_hash = hash::text(&previous.source);
     let new_hash = hash::text(&loaded.source);
@@ -154,7 +171,24 @@ pub(crate) fn run(
     Ok(response)
 }
 
-fn compatible(previous: &Loaded, current: &Loaded, actor: &str) -> Result<Vec<Value>, String> {
+fn compatible(
+    previous: &Loaded,
+    current: &Loaded,
+    actor: &str,
+    ledger: &str,
+) -> Result<Vec<Value>, String> {
+    let refuse = |class| {
+        crate::drift::refusal(
+            class,
+            &hash::text(&previous.source),
+            Some(&hash::text(&current.source)),
+            None,
+            crate::drift::Route::Inspect {
+                ledger,
+                config: &current.path,
+            },
+        )
+    };
     if previous.product_root != current.product_root
         || previous.control_root != current.control_root
         || previous.state_root != current.state_root
@@ -162,10 +196,11 @@ fn compatible(previous: &Loaded, current: &Loaded, actor: &str) -> Result<Vec<Va
         || previous.lead() != Some(actor)
         || previous.lead() != current.lead()
     {
-        return Err("lesson revalidation project or ownership changed".into());
+        return Err(refuse(crate::drift::Class::LessonOwnership));
     }
-    // Deliberately narrow compatibility: only additive recipient read rights and
-    // schema URL metadata. Write/runtime/ownership/retention semantics stay exact.
+    // Deliberately narrow compatibility: additive recipient read rights,
+    // read-only phase guidance (it grants nothing) and schema URL metadata.
+    // Write/runtime/ownership/retention semantics stay exact.
     let strip_reads = |source: &str| -> Result<Value, String> {
         let mut value: Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
         value
@@ -178,15 +213,14 @@ fn compatible(previous: &Loaded, current: &Loaded, actor: &str) -> Result<Vec<Va
             .ok_or("agents missing")?
             .values_mut()
         {
-            agent
-                .as_object_mut()
-                .ok_or("agent is not an object")?
-                .remove("memoryRead");
+            let agent = agent.as_object_mut().ok_or("agent is not an object")?;
+            agent.remove("memoryRead");
+            agent.remove("phaseGuidance");
         }
         Ok(value)
     };
     if strip_reads(&previous.source)? != strip_reads(&current.source)? {
-        return Err("incompatible lesson authority/configuration change; only additive recipient read rights are supported".into());
+        return Err(refuse(crate::drift::Class::LessonAuthority));
     }
     let lead = current.agent(actor).ok_or("Lead missing")?;
     for right in [
@@ -211,6 +245,11 @@ fn compatible(previous: &Loaded, current: &Loaded, actor: &str) -> Result<Vec<Va
         }
         if old.memory_read != new.memory_read {
             differences.push(json!({"agent":name,"right":"memoryRead","before":old.memory_read,"after":new.memory_read}));
+        }
+        let guidance = |loaded: &Loaded| loaded.config["agents"][name]["phaseGuidance"].clone();
+        if guidance(previous) != guidance(current) {
+            differences.push(json!({"agent":name,"field":"phaseGuidance",
+                "before":guidance(previous),"after":guidance(current)}));
         }
     }
     Ok(differences)

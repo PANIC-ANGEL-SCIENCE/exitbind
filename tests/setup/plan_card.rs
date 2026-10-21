@@ -145,7 +145,8 @@ fn an_approved_plan_with_a_table_becomes_a_private_card_and_one_line() {
     assert!(!line.contains('\n'), "{line}");
     assert!(
         line.contains(&format!(
-            "exitbind setup --apply --root {} --task-card {CARD}",
+            "{} setup --apply --root {} --task-card {CARD}",
+            env!("CARGO_BIN_EXE_exitbind"),
             root.display()
         )),
         "{line}"

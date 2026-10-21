@@ -358,6 +358,14 @@ pub(super) fn map_run_error(error: String, json_output: bool) -> String {
                 value["agent"], value["expectedMemorySetSha256"], value["currentMemorySetSha256"]
             );
         }
+        let route = crate::drift::human(
+            &json!({"error": "next", "classification": value["classification"],
+            "boundSha256": value["boundSha256"], "currentSha256": value["currentSha256"],
+            "nextAction": value["nextAction"]}),
+        );
+        if let Some((_, next)) = route.split_once(". Next: ") {
+            eprintln!("Next: {next}");
+        }
     }
     if machine.contains("\"classification\":\"boundary_drift\"") {
         "run boundary drift".to_string()

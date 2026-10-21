@@ -64,7 +64,15 @@ fn member_currentness(
     };
     let evidence = crate::run::result_ref_evidence(endpoint_loaded, &endpoint.work)?
         .ok_or("journey member result evidence is unavailable")?;
-    if !evidence.accepted || !evidence.artifact_current || evidence.drift.is_some() {
+    if evidence.accepted && evidence.artifact_current {
+        if let Some(drift) = &evidence.drift {
+            // Accepted at binding: the acceptance stays the recorded fact and
+            // what changed since is reported beside it (the second slot carries
+            // the drift for the listing).
+            return Ok(("accepted_at_binding", Some(drift.to_string())));
+        }
+    }
+    if !evidence.accepted || !evidence.artifact_current {
         return Ok(("unresolved", None));
     }
     match evidence.inputs_current {
@@ -195,10 +203,12 @@ fn readiness_for_state_inner(
                 integration_work.get_or_insert(work);
             }
             Ok(("historical", _)) => historical += 1,
+            Ok(("accepted_at_binding", drift)) => unresolved.push(json!({"work":member.work,
+                "state":"accepted_at_binding",
+                "drift":drift.and_then(|drift| serde_json::from_str::<Value>(&drift).ok())})),
             Ok((status, _)) => unresolved.push(json!({"work":member.work,"state":status})),
-            Err(error) => {
-                unresolved.push(json!({"work":member.work,"state":"unavailable","reason":error}))
-            }
+            Err(error) => unresolved.push(json!({"work":member.work,"state":"unavailable",
+                "reason":crate::drift::plain(&error)})),
         }
     }
     let state_name = if unresolved.is_empty() {

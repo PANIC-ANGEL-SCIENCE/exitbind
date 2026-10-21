@@ -238,8 +238,14 @@ fn governed_session_start_routes_known_work_to_detail_and_unknown_work_to_resume
     let context = value["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
-    assert!(context.contains("run `exitbind work detail WORK --json` directly"));
-    assert!(context.contains("Unknown Work uses `exitbind work resume --json`"));
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    assert!(
+        context.contains(&format!("run `{exe} work detail WORK --json --config ")),
+        "{context}"
+    );
+    assert!(context.contains(&format!(
+        "Unknown Work uses `{exe} work resume --json --config "
+    )));
     assert!(!context.contains("first run `exitbind work next WORK --json`"));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.contains("stale or incomplete detail needs its supported refresh/expansion"));

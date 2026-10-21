@@ -117,9 +117,12 @@ pub(crate) fn build(
 }
 
 fn closing_route(record: &Value, progress: &Value) -> Value {
-    if let Some(text) =
-        super::goal_summary::journey(record, progress.get("journeyCompletion"), false)
-    {
+    if let Some(text) = super::goal_summary::journey(
+        record,
+        progress.get("journeyCompletion"),
+        false,
+        super::goal_summary::task_counts(progress),
+    ) {
         return json!(text);
     }
     if super::requirements::named(record) {

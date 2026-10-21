@@ -84,7 +84,7 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
     });
     if !loaded.capabilities.is_empty() {
         snapshot["capabilities"] = json!({"state":"registered", "count":loaded.capabilities.len(),
-            "route":"exitbind project capabilities --task TASK --host HOST --json",
+            "route":crate::emitted::command_line(&["project", "capabilities", "--task", "TASK", "--host", "HOST", "--json"], Some(&loaded.path)),
             "meaning":"read current applicability; no launch, acknowledgement or live refresh inferred"});
     }
     match super::architecture::reference(loaded) {
@@ -206,9 +206,11 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             false
         }
     };
+    let context_route =
+        crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
     if !add(
         &mut text,
-        "\nCurrent project facts: `exitbind project context --json`.",
+        &format!("\nCurrent project facts: `{context_route}`."),
     ) {
         return text;
     }
@@ -219,7 +221,10 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             focus["work"].as_str().unwrap_or("?")
         ),
         Some("none") => "\nCurrent work: none.".to_owned(),
-        _ => "\nCurrent work: unavailable; use `exitbind work resume` to diagnose.".to_owned(),
+        _ => format!(
+            "\nCurrent work: unavailable; use `{}` to diagnose.",
+            crate::emitted::command_line(&["work", "resume"], Some(&loaded.path))
+        ),
     };
     add(&mut text, &focus_line);
     let resources = &facts["resources"];
@@ -265,16 +270,35 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             omitted += 1;
         }
     }
+    let mut read_route_added = false;
     for reference in facts["memory"]["references"]
         .as_array()
         .into_iter()
         .flatten()
     {
-        let line = format!("\nProject memory: {} [{}] {} (sha256 {}; read via `exitbind project context memory ITEM_ID`).",
+        if !read_route_added {
+            // One read route for every item line, printed once.
+            let route = crate::emitted::command_line(
+                &[
+                    "project",
+                    "context",
+                    "memory",
+                    &crate::emitted::slot("ITEM_ID"),
+                ],
+                Some(&loaded.path),
+            );
+            read_route_added = add(
+                &mut text,
+                &format!("\nRead a project memory item: `{route}`."),
+            );
+        }
+        let line = format!(
+            "\nProject memory: {} [{}] {} (sha256 {}).",
             reference["itemId"].as_str().unwrap_or("?"),
             reference["scope"].as_str().unwrap_or("?"),
             reference["sourcePath"].as_str().unwrap_or("?"),
-            reference["sourceSha256"].as_str().unwrap_or("?"));
+            reference["sourceSha256"].as_str().unwrap_or("?"),
+        );
         if !add(&mut text, &line) {
             omitted += 1;
         }
@@ -286,7 +310,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
         );
     }
     if omitted > 0 {
-        let line = format!("\n{omitted} more references; run `exitbind project context --json`.");
+        let line = format!("\n{omitted} more references; run `{context_route}`.");
         if !add(&mut text, &line) {
             // Drop the final optional line to preserve a complete detail route.
             if let Some(last) = text.rfind('\n') {

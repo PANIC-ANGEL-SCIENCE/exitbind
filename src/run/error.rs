@@ -68,7 +68,27 @@ impl DriftError {
         }
     }
 
+    /// The legacy machine fields plus the shared changed-after-binding
+    /// fields: both hashes and the route that binds a successor run.
     pub fn machine(&self) -> Value {
+        let mut value = self.legacy_machine();
+        value["boundSha256"] = json!(self.expected);
+        value["currentSha256"] = if self.current.is_empty() {
+            Value::Null
+        } else {
+            json!(self.current)
+        };
+        value["nextAction"] = crate::drift::next_action(
+            &crate::drift::Route::Supersede {
+                ledger: None,
+                config: None,
+            },
+            "continue with the recorded plan; bind a successor run only to use the changed inputs",
+        );
+        value
+    }
+
+    fn legacy_machine(&self) -> Value {
         if self.kind == "config" {
             json!({
                 "error": "configuration drift detected after run start",

@@ -419,7 +419,7 @@ pub fn observe_check_for_requirement(
         if admission.is_some() {
             let facts = json!({"process": result, "processStarted": true, "groupEnded": capture.group_ended, "captureReadersEnded": true, "captureAvailability": "complete", "durationMs": capture.duration_ms, "capture": "complete", "storage": "not_committed", "storageStage": "commit", "deadlineExceeded": false, "partialCaptures": partial_captures,
                 "termination": if capture.group_ended && cleanup.is_ok() { "ended" } else { "unknown" },
-                "diagnostic": error.chars().filter(|c| !c.is_control()).take(1024).collect::<String>(),
+                "diagnostic": crate::drift::plain(error).chars().filter(|c| !c.is_control()).take(1024).collect::<String>(),
                 "cleanupErrorCount": if cleanup.is_ok() { 0 } else { 1 }, "remainingOwnedPathCount": 0});
             return record_failure_then_observe(
                 loaded,

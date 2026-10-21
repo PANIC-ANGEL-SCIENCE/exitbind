@@ -87,6 +87,9 @@ pub(crate) fn project(
     let loop_state = governor_projection(view);
     let mut next_action = next_surface(next);
     match loop_state["state"].as_str() {
+        // The Lead's recorded repair already supplies the information; the
+        // worker's completed return records it.
+        Some("replan_required") if loop_state["completionInformation"].is_object() => {}
         Some("replan_required") => next_action["requiredAction"] = json!("work replan"),
         Some("evidence_required") => next_action["requiredAction"] = json!("work evidence"),
         Some("blocked") => next_action["requiredAction"] = json!("terminal refusal"),

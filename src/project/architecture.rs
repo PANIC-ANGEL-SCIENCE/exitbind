@@ -126,14 +126,33 @@ fn current(loaded: &Loaded) -> Result<Option<Current>, String> {
     };
     ensure_config()?;
     let bytes = read(loaded, &selected.source_path, MAX_SOURCE_BYTES)?;
-    if hash::bytes(&bytes) != selected.source_sha256 {
-        return Err("architecture contract source changed; restore the selected bytes or use the existing owner approval/configuration and run supersede paths".into());
+    let current_sha256 = hash::bytes(&bytes);
+    if current_sha256 != selected.source_sha256 {
+        return Err(crate::drift::refusal(
+            crate::drift::Class::ArchitectureSource,
+            &selected.source_sha256,
+            Some(&current_sha256),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     let contract: Contract = serde_json::from_slice(&bytes)
         .map_err(|error| format!("invalid architecture contract: {error}"))?;
     validation::contract(&contract)?;
     if contract.revision != selected.revision {
-        return Err("architecture contract revision differs from project configuration".into());
+        return Err(crate::drift::refusal(
+            crate::drift::Class::ArchitectureRevision,
+            &hash::value(&json!(selected.revision)),
+            Some(&hash::value(&json!(contract.revision))),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     ensure_config()?;
     Ok(Some(Current {
@@ -210,7 +229,19 @@ pub(crate) fn delivery(loaded: &Loaded, packet: &Value) -> Result<Option<Value>,
                 .as_str()
                 .is_some_and(|expected| expected != hash::text(&loaded.source)))
     {
-        return Err("architecture selection differs from the assignment configuration; use the existing run supersede path".into());
+        let current = selected.as_ref().map(hash::value);
+        return Err(crate::drift::refusal(
+            crate::drift::Class::ArchitectureSelection,
+            frozen
+                .or(packet["context"]["scope"]["configSha256"].as_str())
+                .unwrap_or_default(),
+            current.as_deref().or(Some(&hash::text(&loaded.source))),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     let Some(current) = current(loaded)? else {
         return Ok(None);

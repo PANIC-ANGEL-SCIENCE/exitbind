@@ -714,6 +714,10 @@ fn machine_json(machine: &str) -> String {
 }
 
 fn machine_error(error: String) -> String {
+    // A typed changed-after-binding refusal keeps its own machine form.
+    if crate::drift::split(&error).is_some() {
+        return error;
+    }
     let prefix = if crate::producer::exitbind_surface() {
         "EXITBIND_JSON:"
     } else {

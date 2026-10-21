@@ -568,7 +568,9 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                 "use": "the exact current grant may support the present mutation; it grants no host permissions",
             });
         }
+        let informed = next["packet"]["context"]["loop"]["completionInformation"].is_object();
         if let Some(next_request) = match governor_phase {
+            Some("replan_required") if informed => None,
             Some("replan_required") => Some(json!({
                 "requiredAction": "work replan",
                 "meaning": "complete a material re-plan before another mutation request"

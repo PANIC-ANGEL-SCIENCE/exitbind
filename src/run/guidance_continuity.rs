@@ -168,13 +168,28 @@ pub(crate) fn assert_config_current(
     loaded: &crate::config::Loaded,
     state: &Value,
 ) -> Result<(), String> {
-    let matches = if enabled(state) {
-        state[CONFIG_FIELD].as_str() == Some(advisory_config_sha256(&loaded.config).as_str())
+    let (bound, current) = if enabled(state) {
+        (
+            state[CONFIG_FIELD].as_str(),
+            advisory_config_sha256(&loaded.config),
+        )
     } else {
-        state["configSha256"].as_str() == Some(crate::evidence::hash::text(&loaded.source).as_str())
+        (
+            state["configSha256"].as_str(),
+            crate::evidence::hash::text(&loaded.source),
+        )
     };
-    if !matches {
-        return Err("project configuration changed outside the marked advisory fields".into());
+    if bound != Some(current.as_str()) {
+        return Err(crate::drift::refusal(
+            crate::drift::Class::GuidanceConfiguration,
+            bound.unwrap_or_default(),
+            Some(&current),
+            None,
+            crate::drift::Route::Supersede {
+                ledger: None,
+                config: Some(&loaded.path),
+            },
+        ));
     }
     Ok(())
 }

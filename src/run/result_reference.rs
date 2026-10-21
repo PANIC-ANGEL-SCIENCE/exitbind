@@ -72,7 +72,9 @@ pub(crate) fn result_ref_evidence(
         };
         let drift = match assert_no_drift(loaded, &state) {
             Ok(()) => None,
-            Err(error) => drift_value(&error).map(Some).ok_or(error)?,
+            Err(error) => super::reducer::read_drift_value(&state, &error)
+                .map(Some)
+                .ok_or(error)?,
         };
         let artifact_current = artifact_current(loaded, &state)?;
         return Ok(Some(ResultRefEvidence {

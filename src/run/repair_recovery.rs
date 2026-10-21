@@ -18,12 +18,27 @@ pub(super) fn before_worker_completion(
         }
         let (_, events, source) = load_at(loaded, path)?;
         let state = reduce_live(loaded, &events)?;
-        if state["checkObservationProtocol"] == crate::run::check_observation::PROTOCOL
-            && crate::run::guidance_continuity::assert_config_current(loaded, &state).is_err()
-        {
-            return Err(
-                "forward repair refuses changed configuration; use authorized supersession".into(),
-            );
+        if state["checkObservationProtocol"] == crate::run::check_observation::PROTOCOL {
+            if let Err(error) =
+                crate::run::guidance_continuity::assert_config_current(loaded, &state)
+            {
+                let (bound, current) = crate::drift::split(&error)
+                    .map(|(_, value)| {
+                        (value["boundSha256"].clone(), value["currentSha256"].clone())
+                    })
+                    .unwrap_or_default();
+                let ledger = path.path.display().to_string();
+                return Err(crate::drift::refusal(
+                    crate::drift::Class::RepairConfiguration,
+                    bound.as_str().unwrap_or_default(),
+                    current.as_str(),
+                    None,
+                    crate::drift::Route::Supersede {
+                        ledger: Some(&ledger),
+                        config: Some(&loaded.path),
+                    },
+                ));
+            }
         }
         if state["governor"]["state"] != "replan_required" {
             return Ok(());

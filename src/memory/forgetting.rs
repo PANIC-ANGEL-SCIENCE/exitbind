@@ -56,7 +56,11 @@ pub fn attest(
     let config_hash = hash::text(&loaded.source);
     for event in &snapshot.events {
         if event["configSha256"] != config_hash {
-            return Err("configuration changed since memory event".into());
+            return Err(memory::stamped_config::changed(
+                loaded,
+                &snapshot,
+                event["configSha256"].as_str().unwrap_or_default(),
+            ));
         }
         assert_event_profile_current(loaded, event)?;
     }

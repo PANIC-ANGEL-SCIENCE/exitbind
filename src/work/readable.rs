@@ -450,6 +450,9 @@ fn response(
     if next["action"] == "done" {
         value["completion"] = super::closeout::projection(loaded, work, snapshot, next);
     }
+    if let Some(accepted) = snapshot.accepted_at_binding() {
+        value["acceptedAtBinding"] = accepted;
+    }
     let canonical = json!({
         "current":{"action":next["action"], "binding":binding, "readiness":next["progress"]["state"]},
         "actionForms":value["actionForms"], "warnings":next["warnings"],

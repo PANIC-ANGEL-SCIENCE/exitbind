@@ -94,9 +94,15 @@ lists are previewed and nothing changes. The previous project is not modified.
 
 ## Review compatible configuration evolution
 
-Save the original authorized configuration before changing recipient rights.
-An old lesson remains pinned to its recorded configuration until the current
-Lead explicitly reviews and applies compatible lineage:
+`setup --lessons-from` keeps a byte copy of the configuration it stamped the
+carried events with, `MEMORY_ROOT/stamped-config-<first 16 hex of its sha256>.json`
+beside the lesson ledgers. When the configuration changes afterwards, the
+refusal `configuration changed since memory event` names that copy and the
+exact `memory revalidate … --from-config COPY --reason REASON --apply`
+command, with the bound and current sha256, the same in text and `--json`.
+Otherwise save the original authorized configuration before changing
+recipient rights. An old lesson remains pinned to its recorded configuration
+until the current Lead explicitly reviews and applies compatible lineage:
 
 ```sh
 exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
@@ -107,8 +113,8 @@ exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
 
 The first call previews exact configuration hashes and recipient-right changes
 without appending an event. Compatibility permits additive `memoryRead` rights,
-schema URL metadata, and the narrowly reviewed contextual opt-in described
-below. Ownership, write/runtime/retention semantics,
+an agent's read-only `phaseGuidance` (recorded as a difference), schema URL
+metadata, and the narrowly reviewed contextual opt-in described below. Ownership, write/runtime/retention semantics,
 project roots and existing rights must remain unchanged. The current Lead must
 hold the lesson write, review, promote and revoke rights. The prior configuration,
 owner profile and immutable source provenance must still be provable; incompatible

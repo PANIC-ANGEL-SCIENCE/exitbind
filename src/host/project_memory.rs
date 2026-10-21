@@ -66,8 +66,12 @@ pub(crate) fn session_context(loaded: &Loaded) -> Option<String> {
             _ if used + short.len() <= MAX_BLOCK => short,
             _ => {
                 text.push_str(&format!(
-                    "\n- {} more accepted items; list them with `exitbind memory resolve {lead} --json`.",
-                    references.len() - position
+                    "\n- {} more accepted items; list them with `{}`.",
+                    references.len() - position,
+                    crate::emitted::command_line(
+                        &["memory", "resolve", lead, "--json"],
+                        Some(&loaded.path)
+                    )
                 ));
                 break;
             }

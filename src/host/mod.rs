@@ -10,6 +10,7 @@ pub(crate) mod native_session;
 pub(crate) mod plan_card;
 pub(crate) mod project_memory;
 pub(crate) mod project_resources;
+mod receive_text;
 pub(crate) mod runtime;
 pub(crate) mod session_recovery;
 pub(crate) mod settings;

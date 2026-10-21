@@ -112,6 +112,31 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "a new request identity",
     },
     Placeholder {
+        name: "PREVIOUS_CONFIG",
+        fills: &[Fill::Flag("--from-config")],
+        meaning: "the configuration the lesson events were stamped with",
+    },
+    Placeholder {
+        name: "ITEM_ID",
+        fills: &[Fill::Positional],
+        meaning: "the project memory item ID from the listed line",
+    },
+    Placeholder {
+        name: "OLD_LEDGER",
+        fills: &[Fill::Positional],
+        meaning: "the run ledger to supersede",
+    },
+    Placeholder {
+        name: "WORKFLOW",
+        fills: &[Fill::Flag("--workflow")],
+        meaning: "the successor run's workflow",
+    },
+    Placeholder {
+        name: "GOAL",
+        fills: &[Fill::Flag("--goal")],
+        meaning: "the successor run's goal",
+    },
+    Placeholder {
         name: "OWNER_DECISION",
         fills: &[Fill::Flag("--owner-decision")],
         meaning: "the owner's approved decision file",
@@ -233,12 +258,39 @@ pub(crate) fn executable_path() -> Result<std::path::PathBuf, String> {
 }
 
 /// One printed command line in prose: the executable this process runs as,
-/// then `rest`. A path that cannot be resolved is named as unavailable
-/// rather than replaced by a command name another executable may answer.
+/// quoted as one shell word, then `rest`. A path that cannot be resolved is
+/// named as unavailable rather than replaced by a command name another
+/// executable may answer.
 pub(crate) fn command_text(rest: &str) -> String {
     match executable_path() {
-        Ok(path) => format!("{} {rest}", path.display()),
+        Ok(path) => format!("{} {rest}", word(&path.display().to_string())),
         Err(_) => format!("(executable unavailable) {rest}"),
+    }
+}
+
+/// One printed command line in prose built from words: the executable, each
+/// word, then `--config CONFIG` when the route reads a configuration. Every
+/// word is quoted with [`word`], so a path with spaces survives copy-paste.
+pub(crate) fn command_line(words: &[&str], config: Option<&std::path::Path>) -> String {
+    let mut rest = words.iter().map(|item| word(item)).collect::<Vec<_>>();
+    if let Some(config) = config {
+        rest.push("--config".into());
+        rest.push(word(&config.display().to_string()));
+    }
+    command_text(&rest.join(" "))
+}
+
+/// One shell word as every printed command line renders it: plain when it
+/// has only safe characters, otherwise single-quoted.
+pub(crate) fn word(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:=<>@%+,".contains(&byte));
+    if plain {
+        text.to_owned()
+    } else {
+        format!("'{}'", text.replace('\'', "'\\''"))
     }
 }
 

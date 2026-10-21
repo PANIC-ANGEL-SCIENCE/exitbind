@@ -87,6 +87,11 @@ pub(super) fn apply(
     };
     let mut value = lessons::carry::apply(&loaded, plan)
         .map_err(|error| format!("setup partially applied: lesson carry-over: {error}"))?;
+    // The carried events are stamped with these exact bytes; keep them so a
+    // later configuration change has a real file to review against.
+    let copy = crate::memory::stamped_config::keep(&loaded)
+        .map_err(|error| format!("setup partially applied: stamped configuration copy: {error}"))?;
+    value["stampedConfig"] = json!(copy);
     value["from"] = json!(previous.path);
     value["applied"] = json!(true);
     report["lessons"] = value;

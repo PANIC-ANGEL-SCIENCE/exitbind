@@ -554,6 +554,10 @@ fn incorporate_native_generic_goal(project: &Project, goal_id: &str, goal: &str)
     )
 }
 
+#[path = "goal_requirements/changed_after_acceptance.rs"]
+mod changed_after_acceptance;
+#[path = "goal_requirements/changed_after_binding_inventory.rs"]
+mod changed_after_binding_inventory;
 #[path = "goal_requirements/checker_derivation.rs"]
 mod checker_derivation;
 #[path = "goal_requirements/closure_flows.rs"]

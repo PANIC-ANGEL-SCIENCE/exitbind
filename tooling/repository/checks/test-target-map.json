@@ -1923,8 +1923,8 @@
     },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "916dcfd657257e7062acaddc1992895d4c7ddfb11d3374141cf9fe46bda35250",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "22c06d94370510c77aff32ed0118ee44afdc3f1de451e4279cb36fd7c13f5845",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: registers the changed-after-binding (F2) acceptance and inventory modules; existing modules unchanged."
     },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
@@ -2118,8 +2118,8 @@
     },
     "tests/project_memory_projection.rs": {
       "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
-      "currentSha256": "40ba85b81551dea934d3113fd6b84280b847dbbdd1f5a9836acc1007bd423947",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "fc46f8c03c5934cf1a29536977b460820b26e6ba261599cbd79be1966b28f3a4",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the SessionStart read routes print the executable under test and the project configuration (`--config`) instead of a bare product name; the asserted routes, the 3072-byte bound and the omitted-references route are otherwise unchanged."
     },
     "tests/provider_fallback.rs": {
       "baselineSha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2",
@@ -2133,8 +2133,8 @@
     },
     "tests/receiving_entry.rs": {
       "baselineSha256": "1489ef98a7d4505be57dec00661c20cd96e1ba6459665efa791a5c354591f749",
-      "currentSha256": "6857dc0303e208ed3d6b0317af41fda0949e96c5d3e7c24328d6f827e12151cd",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "757f03cb94e61d168389a7801ed4fb6ee645d2465d1dd81f96e839e1078831a0",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the receiving-entry routes print the executable under test and `--config`; the asserted routes are otherwise unchanged."
     },
     "tests/recovery_config.rs": {
       "baselineSha256": "c2f1939154f271e2b76d8c692debc8329b92fdc54912b14c79504e2ab4d83b05",
@@ -2173,8 +2173,8 @@
     },
     "tests/repeated_repair.rs": {
       "baselineSha256": "5cdd0448c360961c7717715306d71ee2f490be8569c18c8436faf226452e98d5",
-      "currentSha256": "1fadac0e18950ddb047628df8889ce5cad524389a75a08605873f7047502133c",
-      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "bf7dba56cc002c97c8b89e90b2b33f7a4c41887af3fcd358f24acdb3db0ed4bb",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the fixture builder accepts extra work begin options (basis, pre-return command) for the new S3 lead-repair return module, which it registers; existing cases and assertions are unchanged."
     },
     "tests/replan_input.rs": {
       "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
@@ -2258,8 +2258,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "96861da0f0e0902d7b7353f696a808053397be7290f1b8fc2348f711cb3a83fe",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged."
+      "currentSha256": "0934c7160f66fb8aae613d72cd3cbc90e5bedb47fda307fc22fbae121c9509bb",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged. R55 W3: registers the changed-after-binding (F2) setup module; existing cases unchanged."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",
@@ -2444,7 +2444,8 @@
         "src/run/",
         "src/evidence/",
         "src/kernel/",
-        "src/config/"
+        "src/config/",
+        "src/drift.rs"
       ]
     },
     "context_continuity": {
@@ -2480,7 +2481,8 @@
         "src/session_goal",
         "src/kernel/basis.rs",
         "src/work/",
-        "src/emitted.rs"
+        "src/emitted.rs",
+        "src/drift.rs"
       ]
     },
     "goal_progress_presentation": {
@@ -2553,7 +2555,8 @@
         "src/cli/",
         "src/config/",
         "src/project/",
-        "src/presentation/"
+        "src/presentation/",
+        "src/drift.rs"
       ]
     },
     "release_integrity": {
@@ -2616,7 +2619,8 @@
         "src/kernel/",
         "src/session_goal",
         "src/project/agent_context/",
-        "src/emitted.rs"
+        "src/emitted.rs",
+        "src/drift.rs"
       ]
     },
     "work_persistence_recovery": {

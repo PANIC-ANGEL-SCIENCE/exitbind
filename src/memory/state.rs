@@ -326,7 +326,11 @@ pub(crate) fn validate_history_current(
         .any(|item| crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")));
     for (index, event) in ledger.events.iter().enumerate() {
         if index >= first && event["configSha256"] != config_hash {
-            return Err("configuration changed since memory event".into());
+            return Err(super::stamped_config::changed(
+                loaded,
+                ledger,
+                event["configSha256"].as_str().unwrap_or_default(),
+            ));
         }
         // Contextual opt-in migrates configuration only. Specialist author and
         // independent reviewer profiles remain required qualification evidence.
@@ -368,7 +372,18 @@ pub(crate) fn validate_source_current(
     let source = project_file(&loaded.product_root, source_path, "source")?;
     let current_hash = hash_bytes(&stable_bytes(&source, "source")?);
     if current_hash != recorded_hash {
-        return Err("memory source changed since proposal".into());
+        let ledger_path = crate::config::rel(&loaded.state_root, &ledger.path)
+            .unwrap_or_else(|_| ledger.path.display().to_string());
+        return Err(crate::drift::refusal(
+            crate::drift::Class::MemorySource,
+            recorded_hash,
+            Some(&current_hash),
+            None,
+            crate::drift::Route::Inspect {
+                ledger: &ledger_path,
+                config: &loaded.path,
+            },
+        ));
     }
     Ok(())
 }

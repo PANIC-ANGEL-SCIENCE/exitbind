@@ -13,7 +13,13 @@ use std::{
 };
 
 const CARD: &str = "# R9 task\n\n| Step | Do | Done when |\n| --- | --- | --- |\n| 1 | Add the parser | The parser rejects empty input. |\n| 2 | Add the report | The report shows the count. |\n";
-const READ_ROUTE: &str = "exitbind goal status --json (goalProgress.journeyCompletion.unresolved)";
+/// The journey read route, printed with the executable under test.
+fn read_route() -> String {
+    format!(
+        "{} goal status --json (goalProgress.journeyCompletion.unresolved)",
+        env!("CARGO_BIN_EXE_exitbind")
+    )
+}
 const CLOSES: &str =
     "closes when each member is accepted and current, or by one final --journey-integration Work";
 
@@ -136,7 +142,10 @@ fn lead_reads_both_facts(label: &str, previous: Option<&Path>, lessons: &str) {
     let text = status["goalProgress"]["systemText"].as_str().unwrap();
     assert!(text.starts_with("Goal: IN PROGRESS"), "{text}");
     assert_facts(text, "Journey: 1 member, 0 current; ", lessons);
-    assert!(text.contains(CLOSES) && text.contains(READ_ROUTE), "{text}");
+    assert!(
+        text.contains(CLOSES) && text.contains(&read_route()),
+        "{text}"
+    );
     assert!(text.chars().count() <= 512, "{text}");
 
     let payload = json!({"hook_event_name":"SessionStart","source":"resume",
@@ -152,7 +161,10 @@ fn lead_reads_both_facts(label: &str, previous: Option<&Path>, lessons: &str) {
         .unwrap();
     assert_facts(
         context,
-        &format!("Goal r9: Journey: 1 member; {CLOSES}; not yet current: {READ_ROUTE}"),
+        &format!(
+            "Goal r9: Journey: 1 member; {CLOSES}; not yet current: {}",
+            read_route()
+        ),
         lessons,
     );
     assert!(context.contains("current Work smw_"), "{context}");

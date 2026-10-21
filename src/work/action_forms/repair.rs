@@ -49,6 +49,14 @@ pub(super) fn attach(
         .chain(next["heldResults"].as_array().into_iter().flatten())
         .collect();
     let state = next["packet"]["context"]["loop"]["state"].as_str();
+    if state == Some("replan_required")
+        && held.is_empty()
+        && next["packet"]["context"]["loop"]["completionInformation"].is_object()
+    {
+        // New information is already recorded (the Lead's repair): the
+        // worker's ordinary return choices stand and no re-plan is offered.
+        return;
+    }
     let form = match state {
         Some("replan_required") => Some(choice(
             loaded,

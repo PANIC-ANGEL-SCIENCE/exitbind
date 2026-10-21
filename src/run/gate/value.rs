@@ -351,10 +351,23 @@ pub(crate) fn validate_checker_sources(
         let argument_path = source.argument_path.as_deref().unwrap_or(&source.path);
         let canonical = fs::canonicalize(argument_path)
             .map_err(|error| format!("{label} checker source is unavailable: {error}"))?;
-        if canonical.to_str() != Some(source.path.as_str())
-            || crate::evidence::hash::file(&canonical)? != source.sha256
-        {
-            return Err(format!("{label} checker source changed; use authorized supersession to bind the changed checker"));
+        let current = crate::evidence::hash::file(&canonical)?;
+        if canonical.to_str() != Some(source.path.as_str()) || current != source.sha256 {
+            let class = if label == "pre-return" {
+                crate::drift::Class::PreReturnChecker
+            } else {
+                crate::drift::Class::VerificationChecker
+            };
+            return Err(crate::drift::refusal(
+                class,
+                &source.sha256,
+                Some(&current),
+                None,
+                crate::drift::Route::Supersede {
+                    ledger: None,
+                    config: None,
+                },
+            ));
         }
     }
     Ok(())

@@ -125,6 +125,9 @@ fn project_with_limit(
     if let (Some(loaded), Some(record)) = (context.loaded, record) {
         super::goal_summary::append(loaded, record, &mut view);
     }
+    if let Some(record) = record {
+        super::goal_summary::closed_head(record, &mut view);
+    }
     view
 }
 
@@ -168,7 +171,9 @@ fn goal_view(
         );
     };
     let mut overall_state = overall_state(record, rendered);
-    if overall_state == "complete"
+    if super::goal_summary::closed_at_binding(record, journey.as_ref()) {
+        overall_state = "complete";
+    } else if overall_state == "complete"
         && journey
             .as_ref()
             .is_some_and(|value| value["state"] != "current")

@@ -450,8 +450,18 @@ fn current_source(
     expected_hash: &str,
 ) -> Result<Vec<u8>, String> {
     let bytes = project_path::secure_bytes(&loaded.product_root, requested, "memory source")?;
-    if hash::bytes(&bytes) != expected_hash {
-        return Err(format!("memory source changed since proposal: {requested}"));
+    let current = hash::bytes(&bytes);
+    if current != expected_hash {
+        return Err(crate::drift::refusal(
+            crate::drift::Class::MemorySource,
+            expected_hash,
+            Some(&current),
+            None,
+            crate::drift::Route::Resolve {
+                agent: loaded.lead().unwrap_or("lead"),
+                config: &loaded.path,
+            },
+        ));
     }
     if std::str::from_utf8(&bytes).is_err() {
         return Err(format!("memory source is not UTF-8: {requested}"));

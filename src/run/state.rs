@@ -16,7 +16,7 @@ use apply::apply_event;
 #[cfg(test)]
 use apply::{apply_govern, apply_submission, apply_unavailable};
 use governor_validation::validate_grant_acknowledgement;
-pub(crate) use recovery::forward_repair_candidate;
+pub(crate) use recovery::{completion_information, forward_repair_candidate};
 use unknown_fields::reject_unknown;
 #[cfg(test)]
 use validation::validate_submission;

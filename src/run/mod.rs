@@ -61,8 +61,8 @@ use self::reducer::{
     has_worker_stage, live_inputs, nondecreasing, selected_plan,
 };
 pub(crate) use self::reducer::{
-    assert_current_for_receipt, assert_no_drift, drift_value, drift_warning,
-    input_drift_warning_for, reduce_live, result, subject, warn_drift, InputContext, RunSnapshot,
+    assert_current_for_receipt, assert_no_drift, drift_warning, input_drift_warning_for,
+    reduce_live, result, subject, warn_drift, InputContext, RunSnapshot,
 };
 pub use self::submission::submit;
 pub(crate) use self::submission::submit_for_assignment;

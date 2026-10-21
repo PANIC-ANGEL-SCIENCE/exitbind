@@ -1,6 +1,9 @@
 mod support;
 
 #[cfg(unix)]
+#[path = "setup/changed_after_binding.rs"]
+mod changed_after_binding;
+#[cfg(unix)]
 #[path = "setup/lead_goal_text.rs"]
 mod lead_goal_text;
 #[cfg(unix)]

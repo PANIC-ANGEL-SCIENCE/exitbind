@@ -118,7 +118,7 @@ impl RunSnapshot {
         predecessor(loaded, &events[0])?;
         let drift = view_drift(loaded, &state);
         if let Err(error) = &drift {
-            if drift_value(error).is_none() {
+            if read_drift_value(&state, error).is_none() {
                 return Err(error.clone());
             }
         }
@@ -142,6 +142,18 @@ impl RunSnapshot {
 
     pub(crate) fn state(&self) -> &Value {
         &self.state
+    }
+
+    /// An accepted Work read at its binding: the recorded acceptance with
+    /// what changed since as a field, or `None` when nothing changed.
+    pub(crate) fn accepted_at_binding(&self) -> Option<Value> {
+        if self.state["status"] != "accepted" {
+            return None;
+        }
+        let error = self.drift.as_ref().err()?;
+        let drift = read_drift_value(&self.state, error)?;
+        Some(json!({"state": "accepted_at_binding", "drift": drift,
+            "meaning": "the recorded acceptance stands as bound; the drift reports what is different now and grants no new action"}))
     }
 
     pub(crate) fn inputs(&self) -> &InputContext {
@@ -172,7 +184,7 @@ impl RunSnapshot {
             .drift
             .as_ref()
             .err()
-            .and_then(|error| drift_value(error))
+            .and_then(|error| read_drift_value(&self.state, error))
             .map_or_else(
                 || {
                     self.artifact_drift
@@ -199,6 +211,11 @@ impl RunSnapshot {
         }
         if state.get("governor").is_some() {
             result["governor"] = state["governor"].clone();
+            if state["governor"]["state"] == "replan_required" {
+                if let Some(information) = run_state::completion_information(state, &self.events) {
+                    result["governor"]["completionInformation"] = information;
+                }
+            }
         }
         result
     }
@@ -215,7 +232,7 @@ impl RunSnapshot {
             .drift
             .as_ref()
             .err()
-            .and_then(|error| drift_value(error))
+            .and_then(|error| read_drift_value(&self.state, error))
             .map_or_else(
                 || {
                     self.artifact_drift
@@ -301,7 +318,7 @@ impl RunSnapshot {
                 .drift
                 .as_ref()
                 .err()
-                .and_then(|error| drift_value(error))
+                .and_then(|error| read_drift_value(&self.state, error))
                 .map_or_else(
                     || self.artifact_drift.clone().map_or_else(|| json!([]), |warning| json!([warning])),
                     |warning| json!([warning]),
@@ -580,6 +597,17 @@ pub(crate) fn drift_value(error: &str) -> Option<Value> {
         .strip_prefix(run_error::DRIFT_PREFIX)
         .or_else(|| error.strip_prefix(run_error::LEGACY_DRIFT_PREFIX))
         .and_then(|value| serde_json::from_str(value).ok())
+}
+
+/// The drift a read-only view reports as a field: a run drift warning, or,
+/// for an accepted Work only, a typed changed-after-binding refusal. The
+/// accepted Work reads accepted at binding; every mutation still refuses.
+pub(crate) fn read_drift_value(state: &Value, error: &str) -> Option<Value> {
+    drift_value(error).or_else(|| {
+        (state["status"] == "accepted")
+            .then(|| crate::drift::split(error).map(|(_, value)| value))
+            .flatten()
+    })
 }
 
 pub(crate) fn drift_warning(loaded: &Loaded, state: &Value) -> Result<Option<Value>, String> {

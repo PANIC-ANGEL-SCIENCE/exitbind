@@ -61,7 +61,7 @@ pub(super) fn projection(
     let canonical = current_receipt(loaded, work);
     let available = canonical.is_ok();
     let reason = canonical.err().map(|error| {
-        error
+        crate::drift::plain(&error)
             .chars()
             .scan(0, |used, ch| {
                 *used += ch.len_utf8();

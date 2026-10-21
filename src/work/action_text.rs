@@ -266,15 +266,7 @@ fn argv(context: &Context, command: &Value) -> String {
 }
 
 fn quote(word: &str) -> String {
-    let plain = !word.is_empty()
-        && word
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:=<>@%+,".contains(&byte));
-    if plain {
-        word.to_owned()
-    } else {
-        format!("'{}'", word.replace('\'', "'\\''"))
-    }
+    crate::emitted::word(word)
 }
 
 fn text(value: &Value) -> String {

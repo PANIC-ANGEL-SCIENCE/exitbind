@@ -31,6 +31,26 @@ pub(super) fn append_governor(state: &mut Value, governor_event: Value) -> Resul
     Ok(())
 }
 
+/// The governor's one definition of the new information that admits a
+/// worker's completed return after the no-information streak is exhausted:
+/// the Lead's current recorded repair. The completed return records it once
+/// (`repair_recovery::before_worker_completion`) and its frozen check then
+/// runs on the new result; no worker re-plan is required. Every read surface
+/// (the governor view, the action forms) and the completion gates use this
+/// function, so a new kind of information is added here once.
+pub(crate) fn completion_information(state: &Value, events: &[Value]) -> Option<Value> {
+    let assignment = crate::run::assignment::pending(state)
+        .into_iter()
+        .find(|item| item["role"] == "worker")?;
+    let repair = forward_repair_candidate(state, events, &assignment)?;
+    Some(json!({
+        "kind": "lead_repair",
+        "dispositionSha256": repair["dispositionSha256"],
+        "agent": assignment["agent"],
+        "meaning": "the Lead's recorded repair is the new information; the worker's completed return records it once and its frozen check runs on the new result",
+    }))
+}
+
 /// A Lead repair recorded before the permit that exhausted the streak can
 /// supply one forward re-plan. The original disposition is never replayed as
 /// a new decision: only the still-current assignment may consume it once.

@@ -70,6 +70,20 @@ where
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let agent = expected.agent.clone();
     let assignment_sha256 = crate::evidence::hash::text(assignment_handle);
+    if expected.role == "worker" && outcome == "completed" {
+        // A current Lead repair can precede the mutation permit that exhausts
+        // the no-information streak. Record that decision's one forward
+        // governor transition before the frozen pre-return check is admitted
+        // and before the worker's retained result; both revalidate under the
+        // ledger lock, and an interrupted call leaves a replayable repair
+        // event, never a fabricated submission.
+        super::repair_recovery::before_worker_completion(
+            loaded,
+            &path,
+            assignment_handle,
+            &expected,
+        )?;
+    }
     let selected_pre_return = outcome == "completed"
         && expected.role == "worker"
         && super::pre_return::enabled(loaded, ledger)?;
@@ -87,19 +101,6 @@ where
         } else {
             (Box::new(artifact), None)
         };
-    if expected.role == "worker" && outcome == "completed" {
-        // A current Lead repair can precede the mutation permit that exhausts
-        // the no-information streak. Record that decision's one forward
-        // governor transition before admitting the worker's retained result.
-        // Both steps revalidate under the ledger lock; an interrupted call
-        // leaves a replayable repair event, never a fabricated submission.
-        super::repair_recovery::before_worker_completion(
-            loaded,
-            &path,
-            assignment_handle,
-            &expected,
-        )?;
-    }
     submit_locked(
         loaded,
         &path,
