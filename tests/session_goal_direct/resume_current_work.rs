@@ -192,7 +192,8 @@ fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
     let context = resume_hook(&project, session, &claude(session));
     assert!(
         context.contains(&format!(
-            "current Work {work} (member of Goal resume-goal); read: exitbind work detail {work} --view action --config {config}; next action: "
+            "current Work {work} (member of Goal resume-goal); read: {} work detail {work} --view action --config {config}; next action: ",
+            env!("CARGO_BIN_EXE_exitbind")
         )),
         "{context}"
     );

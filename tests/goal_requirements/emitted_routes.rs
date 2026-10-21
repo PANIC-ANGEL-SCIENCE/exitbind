@@ -71,6 +71,118 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
     ("src/work/compact_tests.rs", 4, "unit tests"),
 ];
 
+/// The product's top-level commands; a literal `exitbind <command>`,
+/// `soulmate <command>` or `{product} <command>` in printed text names the
+/// command instead of the executable the route must run with.
+const COMMANDS: &[&str] = &[
+    "work",
+    "goal",
+    "memory",
+    "project",
+    "setup",
+    "session",
+    "host",
+    "hook-run",
+    "hooks",
+    "statusline",
+    "check",
+    "init",
+    "update",
+    "run",
+    "brief",
+    "profile",
+    "away",
+    "receipt",
+    "doctor",
+    "version",
+];
+
+/// Printed text that names a command by its literal product name, per file
+/// with its count and class. A new occurrence anywhere fails until it is
+/// built through `crate::emitted` or listed here with its class.
+const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
+    // Installed into host settings on purpose: resolves the installed
+    // executable through PATH after upgrades.
+    ("src/host/hooks.rs", 4, "installed host hook command"),
+    (
+        "src/project/setup_statusline.rs",
+        1,
+        "installed status line command",
+    ),
+    // Usage text with uppercase arguments, not a route to run as printed.
+    ("src/cli/project.rs", 1, "usage text"),
+    ("src/cli/project_graph.rs", 1, "usage text"),
+    (
+        "src/distribution/update.rs",
+        2,
+        "human repair hint after an update",
+    ),
+    ("src/host/bridge.rs", 1, "human status-line action"),
+    ("src/run/disposition.rs", 2, "usage text"),
+    ("src/work/return_result_impl.rs", 1, "usage text"),
+    (
+        "src/value_benchmark.rs",
+        2,
+        "benchmark command identity, not printed",
+    ),
+    (
+        "src/host/session_recovery/presentation.rs",
+        1,
+        "unit test of a refused hint",
+    ),
+    // Open P1 members (PATH-named read routes), counted so no new one is
+    // added; each is a later Work's repair.
+    (
+        "src/host/runtime.rs",
+        3,
+        "open: PATH-named Work read guidance in host context",
+    ),
+    (
+        "src/project/context.rs",
+        5,
+        "open: PATH-named read routes in project context",
+    ),
+    (
+        "src/session_goal/goal_summary.rs",
+        2,
+        "open: PATH-named read routes in Goal text",
+    ),
+    (
+        "src/host/project_memory.rs",
+        1,
+        "open: PATH-named lesson read route",
+    ),
+    ("src/host/plan_card.rs", 1, "open: PATH-named setup line"),
+];
+
+/// Every printed `<product> <command>` occurrence outside comments.
+fn named_commands(text: &str) -> usize {
+    let mut found = 0;
+    for line in text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+    {
+        for needle in ["exitbind ", "soulmate ", "{product} "] {
+            for (at, _) in line.match_indices(needle) {
+                let before = line[..at].chars().next_back().unwrap_or(' ');
+                let rest = &line[at + needle.len()..];
+                let word: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                    .collect();
+                let after = rest[word.len()..].chars().next().unwrap_or(' ');
+                if "\"`( :'".contains(before)
+                    && COMMANDS.contains(&word.as_str())
+                    && " `\"'".contains(after)
+                {
+                    found += 1;
+                }
+            }
+        }
+    }
+    found
+}
+
 fn sources() -> Vec<(String, String)> {
     fn visit(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
         for entry in fs::read_dir(dir).unwrap() {
@@ -156,6 +268,18 @@ fn every_placeholder_and_executable_lookup_goes_through_the_emitted_route_regist
             }
             used.insert(name);
         }
+        if path != "src/cli/help.rs" {
+            let named = named_commands(text);
+            let listed = NAMED_COMMANDS
+                .iter()
+                .find(|(file, _, _)| file == path)
+                .map_or(0, |(_, count, _)| *count);
+            if named != listed {
+                failures.push(format!(
+                    "{path}: {named} printed command(s) name the product literally, {listed} listed; print crate::emitted::executable() or crate::emitted::command_text"
+                ));
+            }
+        }
         let lookups = text.matches("current_exe()").count();
         let allowed = NOT_EMITTERS
             .iter()
@@ -192,6 +316,19 @@ fn emitted_route_scanner_detects_each_member_of_the_class() {
     assert_eq!(
         registered("Placeholder {\n name: \"REASON\",\n"),
         ["REASON"]
+    );
+    // A literal product-name command, in a format string or plain literal;
+    // prose, paths, comments and non-commands are not commands.
+    assert_eq!(
+        named_commands(
+            "format!(\"read: exitbind work detail {w}\"); \"`exitbind session recovery show`\""
+        ),
+        2
+    );
+    assert_eq!(named_commands("format!(\"{product} work act {w}\")"), 1);
+    assert_eq!(
+        named_commands("\"/bin/exitbind work\" \"{product} update: x\" \"Exitbind recovered\"\n// exitbind work"),
+        0
     );
 }
 

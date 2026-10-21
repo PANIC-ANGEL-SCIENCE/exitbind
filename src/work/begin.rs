@@ -139,16 +139,19 @@ pub(crate) fn begin_with_pre_return(
         pre_return_capture_bytes,
     ) {
         if goal_candidate.is_some() {
+            let link = crate::emitted::command_text(&format!("work link-session {work} --json"));
             return Err(format!(
-                "native journey admission remains unresolved for Work {work}; Work start may or may not exist: {error}. Inspect the native Goal status; if an exact Work start exists, recover only with `exitbind work link-session {work} --json`. Do not repeat work begin"
+                "native journey admission remains unresolved for Work {work}; Work start may or may not exist: {error}. Inspect the native Goal status; if an exact Work start exists, recover only with `{link}`. Do not repeat work begin"
             ));
         }
         return Err(error);
     }
     if goal_candidate.is_some() {
         if let Err(error) = crate::session_goal::association::link_session(loaded, &work) {
+            let detail = crate::emitted::command_text(&format!("work detail {work} --json"));
+            let link = crate::emitted::command_text(&format!("work link-session {work} --json"));
             return Err(format!(
-                "Work {work} was started, but its native journey admission remains unresolved: {error}; inspect with `exitbind work detail {work} --json` and recover only with `exitbind work link-session {work} --json`; do not repeat work begin"
+                "Work {work} was started, but its native journey admission remains unresolved: {error}; inspect with `{detail}` and recover only with `{link}`; do not repeat work begin"
             ));
         }
     }

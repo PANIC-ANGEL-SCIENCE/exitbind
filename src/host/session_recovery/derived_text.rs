@@ -38,9 +38,10 @@ fn work_line_forms(
     item: &current_work::CurrentWork,
     goal: &str,
     index: Option<usize>,
+    executable: &str,
 ) -> [String; 3] {
     let core = format!(
-        "{}current Work {} ({} of Goal {goal}); read: exitbind work detail {} --view action --config {}",
+        "{}current Work {} ({} of Goal {goal}); read: {executable} work detail {} --view action --config {}",
         index.map(|value| format!("{value}) ")).unwrap_or_default(),
         item.work,
         if item.source == "journey_member" { "member" } else { "mapped Work" },
@@ -82,20 +83,22 @@ fn work_line_forms(
 }
 
 /// One line per derived Work in the `work detail` form the agent can run as
-/// printed, then the checkout trees that hold uncommitted changes. Only the
-/// first Work's minimal form may exceed `budget`; the caller shortens its own
-/// text around it.
+/// printed, then the checkout trees that hold uncommitted changes. Every
+/// command names `executable`, the one the hook runs as. Only the first
+/// Work's minimal form may exceed `budget`; the caller shortens its own text
+/// around it.
 pub(super) fn derived_hook_text(
     derived: &current_work::Derived,
     trees: &checkout::Trees,
     budget: usize,
+    executable: &str,
 ) -> String {
     let goal = bounded_hook_text(&derived.goal_id, 128);
     let total = derived.works.len() + derived.more;
     let mut out = String::new();
     let mut shown = 0;
     for item in &derived.works {
-        let forms = work_line_forms(item, &goal, (total > 1).then_some(shown + 1));
+        let forms = work_line_forms(item, &goal, (total > 1).then_some(shown + 1), executable);
         let separator = usize::from(shown > 0);
         let reserve = if total > shown + 1 { MORE_RESERVE } else { 0 };
         let room = budget.saturating_sub(out.len() + separator + reserve);
@@ -112,7 +115,7 @@ pub(super) fn derived_hook_text(
     }
     if total > shown {
         out.push_str(&format!(
-            " {} more open Work(s): `exitbind session recovery show --json`.",
+            " {} more open Work(s): `{executable} session recovery show --json`.",
             total - shown
         ));
     }
@@ -156,6 +159,8 @@ pub(super) fn derived_hook_text(
 mod tests {
     use super::*;
 
+    const EXE: &str = "/opt/r55/bin/exitbind-candidate";
+
     fn work(index: usize, config_path: &str, assignments: usize) -> current_work::CurrentWork {
         current_work::CurrentWork {
             work: format!("smw_{}", format!("{index}").repeat(64)),
@@ -197,7 +202,7 @@ mod tests {
             unverified: 0,
             incomplete: false,
         };
-        let text = derived_hook_text(&derived, &trees(), 2048);
+        let text = derived_hook_text(&derived, &trees(), 2048, EXE);
         assert!(text.len() <= 2048, "{text}");
         assert!(
             text.contains(&format!("1) current Work smw_{}", "1".repeat(64))),
@@ -218,7 +223,7 @@ mod tests {
             "{text}"
         );
 
-        let small = derived_hook_text(&derived, &trees(), 400);
+        let small = derived_hook_text(&derived, &trees(), 400, EXE);
         assert!(
             small.contains("1) current Work"),
             "the first Work is always named"
@@ -239,11 +244,11 @@ mod tests {
             incomplete: false,
         };
         let command = format!(
-            "exitbind work detail smw_{} --view action --config {config}",
+            "{EXE} work detail smw_{} --view action --config {config}",
             "7".repeat(64)
         );
         for budget in [2048, 1400, 1000] {
-            let text = derived_hook_text(&derived, &trees(), budget);
+            let text = derived_hook_text(&derived, &trees(), budget, EXE);
             assert!(text.contains(&command), "{budget}: {text}");
             assert!(
                 text.len() <= budget.max(command.len() + 128),
@@ -251,9 +256,9 @@ mod tests {
             );
             assert!(!text.contains("could not be verified"), "{text}");
         }
-        let full = derived_hook_text(&derived, &trees(), 8192);
+        let full = derived_hook_text(&derived, &trees(), 8192, EXE);
         assert!(full.contains("Open assignments: sma_"), "{full}");
-        let counted = derived_hook_text(&derived, &trees(), 1400);
+        let counted = derived_hook_text(&derived, &trees(), 1400, EXE);
         assert!(
             counted.contains("8 open assignments.") || counted.ends_with(&format!("{config}.")),
             "{counted}"

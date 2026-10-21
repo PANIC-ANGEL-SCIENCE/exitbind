@@ -429,10 +429,10 @@ fn find_candidate(
         let commands = candidates
             .iter()
             .map(|candidate| {
-                format!(
-                    "exitbind work act {work} --resume --operation {}",
+                crate::emitted::command_text(&format!(
+                    "work act {work} --resume --operation {}",
                     candidate.1
-                )
+                ))
             })
             .collect::<Vec<_>>()
             .join("; ");

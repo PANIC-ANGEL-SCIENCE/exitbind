@@ -73,9 +73,10 @@ pub(crate) fn hook_context(
         current_work::HOOK_WORK_LIMIT,
         deadline,
     );
-    if derived.works.is_empty() {
+    let executable = crate::emitted::executable();
+    let (false, Ok(executable)) = (derived.works.is_empty(), executable) else {
         return Some(join(&[Some(&hinted.text), facts.as_deref()]));
-    }
+    };
     let roots = derived
         .works
         .iter()
@@ -96,7 +97,12 @@ pub(crate) fn hook_context(
     // longer opening sentence: shorten in that order to stay in the bound.
     let compose = |base: &str, facts: Option<&str>| {
         let used = base.len() + facts.map_or(0, |line| line.len() + 1) + 1;
-        let works = derived_hook_text(&derived, &trees, RECOVERY_HOOK_BYTES.saturating_sub(used));
+        let works = derived_hook_text(
+            &derived,
+            &trees,
+            RECOVERY_HOOK_BYTES.saturating_sub(used),
+            &executable,
+        );
         join(&[Some(base), facts, Some(&works)])
     };
     [
@@ -203,9 +209,10 @@ fn hint_text(
     let goal_id = record["goalId"].as_str().unwrap_or("unknown");
     let revision = record["revision"].as_u64().unwrap_or(0);
     let current_event = record["eventSha256"].as_str().unwrap_or("unknown");
+    let show = crate::emitted::command_text("session recovery show --json");
     let Some(hint) = hint else {
         let mut text = finish(format!(
-            "Exitbind recovered native Goal {goal_id} revision {revision} (event {current_event}); its owner is {}. No current Work is selected by this hook. Use `exitbind session recovery show --json`; record an exact hint only with the verified owner configuration, then reread Goal and known Work details before acting.",
+            "Exitbind recovered native Goal {goal_id} revision {revision} (event {current_event}); its owner is {}. No current Work is selected by this hook. Use `{show}`; record an exact hint only with the verified owner configuration, then reread Goal and known Work details before acting.",
             if owner_match { "verified for the available configuration" } else { "known but its exact configuration is unresolved" },
         ), true, owner_loaded);
         text.no_hint = true;
@@ -223,7 +230,7 @@ fn hint_text(
         ), true, owner_loaded);
     }
     let Some(owner_config) = owner_loaded else {
-        return finish(format!("Exitbind native Goal {goal_id} is known, but its fixed owner configuration is unresolved. Use the exact read route `exitbind session recovery show --json`; do not infer a Work from the saved hint."), true, None);
+        return finish(format!("Exitbind native Goal {goal_id} is known, but its fixed owner configuration is unresolved. Use the exact read route `{show}`; do not infer a Work from the saved hint."), true, None);
     };
     let owner_loaded = &owner_config;
     if verify_work_refs(record, session, owner, &hint.work_refs).is_err()
@@ -331,15 +338,17 @@ fn graph_hook_presentation(
     locator: &str,
     observation: &Value,
 ) -> String {
+    let show = crate::emitted::command_text("session recovery show --json");
+    let fallback = format!("Exitbind recovery: a prior CodeGraph observation exists; saved details remain historical with no current Work/action binding. Source identity is not revalidated and provider/index currentness is not asserted. Use `{show}` for the exact Goal, member locator, full query, and project route. No saved action is replayed; requery before relying on the finding.");
     let prefix = format!(
-        "Exitbind recovery: native Goal {goal_id} rev {revision}; owner={} Goal current={fresh_goal} declared guidance current={fresh_sources}. {locator}. Saved step/corrections/pending remain historical; no current Work/action binding. Exact Goal/member/project query routes: `exitbind session recovery show --json`; no saved action is replayed. Prior CodeGraph observation: ",
+        "Exitbind recovery: native Goal {goal_id} rev {revision}; owner={} Goal current={fresh_goal} declared guidance current={fresh_sources}. {locator}. Saved step/corrections/pending remain historical; no current Work/action binding. Exact Goal/member/project query routes: `{show}`; no saved action is replayed. Prior CodeGraph observation: ",
         if owner_match { "verified" } else { "unresolved" }
     );
     let between = ". Source identity is not revalidated on hook; provider/index currentness is not asserted. Original query `";
     let suffix = "` (display may be abbreviated); full query and exact project route are in the read route above. Requery before relying on the finding.";
     let available = 900usize.saturating_sub(prefix.len() + between.len() + suffix.len());
     if available < 8 {
-        return "Exitbind recovery: a prior CodeGraph observation exists; saved details remain historical with no current Work/action binding. Source identity is not revalidated and provider/index currentness is not asserted. Use `exitbind session recovery show --json` for the exact Goal, member locator, full query, and project route. No saved action is replayed; requery before relying on the finding.".into();
+        return fallback;
     }
     let mut summary_budget = 120.min(available / 2);
     let mut query_budget = 112.min(available - summary_budget);
@@ -360,7 +369,7 @@ fn graph_hook_presentation(
         return out;
     }
 
-    "Exitbind recovery: a prior CodeGraph observation exists; saved details remain historical with no current Work/action binding. Source identity is not revalidated and provider/index currentness is not asserted. Use `exitbind session recovery show --json` for the exact Goal, member locator, full query, and project route. No saved action is replayed; requery before relying on the finding.".into()
+    fallback
 }
 
 #[cfg(test)]

@@ -406,7 +406,7 @@ pub(crate) fn start(
             json!({"work": verified.work(), "started": started, "sessionLink": link, "effect": "started"}),
         ),
         Err(error) => Ok(json!({"work": verified.work(), "started": started,
-            "sessionLink": {"error": error, "recovery": format!("exitbind work link-session {} --json", verified.work())},
+            "sessionLink": {"error": error, "recovery": crate::emitted::command_text(&format!("work link-session {} --json", verified.work()))},
             "effect": "started-link-pending"})),
     }
 }

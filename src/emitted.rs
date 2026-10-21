@@ -232,6 +232,16 @@ pub(crate) fn executable_path() -> Result<std::path::PathBuf, String> {
         .map_err(|error| format!("invoking executable cannot be resolved: {error}"))
 }
 
+/// One printed command line in prose: the executable this process runs as,
+/// then `rest`. A path that cannot be resolved is named as unavailable
+/// rather than replaced by a command name another executable may answer.
+pub(crate) fn command_text(rest: &str) -> String {
+    match executable_path() {
+        Ok(path) => format!("{} {rest}", path.display()),
+        Err(_) => format!("(executable unavailable) {rest}"),
+    }
+}
+
 /// The executable a printed route names: the one this process runs as.
 pub(crate) fn executable() -> Result<String, String> {
     executable_path()?

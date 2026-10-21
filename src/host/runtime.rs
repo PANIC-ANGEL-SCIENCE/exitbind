@@ -255,7 +255,11 @@ pub fn run() -> Result<(), String> {
                 text = text.replace("\nCurrent work:", "\nProject-scoped Work focus:");
             }
             if text.len() > 4096 {
-                let recovery = recovery_context.as_deref().unwrap_or("Use `exitbind session recovery show --json` for the exact bounded recovery record.");
+                let fallback = format!(
+                    "Use `{}` for the exact bounded recovery record.",
+                    crate::emitted::command_text("session recovery show --json")
+                );
+                let recovery = recovery_context.as_deref().unwrap_or(&fallback);
                 text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{RECEIVE_WORK}\n{recovery}");
             }
             if text.len() > 4096 {
