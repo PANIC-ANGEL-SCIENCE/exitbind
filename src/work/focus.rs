@@ -42,23 +42,34 @@ pub(crate) fn read(loaded: &Loaded) -> Result<Focus, String> {
             SecureBytesResult::Bytes(bytes) => bytes,
             SecureBytesResult::Absent(_) => return Ok(Focus::Absent),
             SecureBytesResult::Unsafe(error) | SecureBytesResult::Unreadable(error) => {
-                return Ok(Focus::Unusable(invalid(&error)))
+                return Ok(Focus::Unusable(invalid(loaded, &error)))
             }
             #[cfg(not(unix))]
-            SecureBytesResult::Unsupported(error) => return Ok(Focus::Unusable(invalid(&error))),
+            SecureBytesResult::Unsupported(error) => {
+                return Ok(Focus::Unusable(invalid(loaded, &error)))
+            }
         };
     let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return Ok(Focus::Unusable(invalid("focus is not JSON")));
+        return Ok(Focus::Unusable(invalid(loaded, "focus is not JSON")));
     };
     match (value["version"].as_u64(), value["work"].as_str()) {
         (Some(1), Some(work)) if super::valid_work_handle(work) => Ok(Focus::Work(work.to_owned())),
-        _ => Ok(Focus::Unusable(invalid("focus has no valid work handle"))),
+        _ => Ok(Focus::Unusable(invalid(
+            loaded,
+            "focus has no valid work handle",
+        ))),
     }
 }
 
-fn invalid(detail: &str) -> String {
+fn invalid(loaded: &Loaded, detail: &str) -> String {
+    let history =
+        crate::emitted::command_line(&["work", "resume", "--history"], Some(&loaded.path));
+    let focus = crate::emitted::command_line(
+        &["work", "focus", &crate::emitted::slot("WORK")],
+        Some(&loaded.path),
+    );
     format!(
-        "current-work focus is unusable ({detail}); list running work with 'work resume --history', then run 'work focus WORK' with an explicit work locator"
+        "current-work focus is unusable ({detail}); list running work with '{history}', then run '{focus}' with an explicit work locator"
     )
 }
 
@@ -67,8 +78,9 @@ fn invalid(detail: &str) -> String {
 pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
     let target = path(loaded);
     if fs::symlink_metadata(&target).is_ok_and(|metadata| !metadata.is_file()) {
+        let focus = crate::emitted::command_line(&["work", "focus", work], Some(&loaded.path));
         return Err(format!(
-            "{} is not a regular file; remove it by hand, then run 'work focus WORK'",
+            "{} is not a regular file; remove it by hand, then run '{focus}'",
             relative()
         ));
     }

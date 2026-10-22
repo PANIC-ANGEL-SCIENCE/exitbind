@@ -310,37 +310,48 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     Ok(())
 }
 
+/// The supersede route a drift refusal carries, or the bare command with the
+/// executable when the refusal names none.
+fn supersede_route(value: &serde_json::Value) -> String {
+    value["nextAction"]["command"]
+        .as_array()
+        .map(|argv| {
+            argv.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(crate::emitted::word)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_else(|| crate::emitted::command_text("run supersede"))
+}
+
 pub(super) fn map_run_error(error: String, json_output: bool) -> String {
     let Some(machine) = error.strip_prefix(crate::run::error::DRIFT_PREFIX) else {
         return error;
     };
-    let command = if crate::producer::exitbind_surface() {
-        "exitbind"
-    } else {
-        "soulmate"
-    };
     if json_output {
         return machine_json(machine);
     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(machine) {
+        let supersede = supersede_route(&value);
         if value["classification"] == "config_drift" {
             eprintln!(
-                "configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                "configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",
                 value["expectedConfigSha256"], value["currentConfigSha256"]
             );
         } else if value["classification"] == "profile_drift" {
             eprintln!(
-                "profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                "profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",
                 value["agent"], value["expectedProfileSha256"], value["currentProfileSha256"]
             );
         } else if value["classification"] == "boundary_drift" {
             if value["currentBoundaryState"] == "absent" {
                 eprintln!(
-                    "run boundary manifest is absent after run start (expected hash {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                    "run boundary manifest is absent after run start (expected hash {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",
                     value["expectedBoundarySha256"]
                 );
             } else {
                 eprintln!(
-                    "run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                    "run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",
                     value["expectedBoundarySha256"], value["currentBoundarySha256"]
                 );
             }
@@ -351,7 +362,7 @@ pub(super) fn map_run_error(error: String, json_output: bool) -> String {
             );
         } else {
             eprintln!(
-                "memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.",
+                "memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",
                 value["agent"], value["expectedMemorySetSha256"], value["currentMemorySetSha256"]
             );
         }

@@ -18,14 +18,21 @@ pub(crate) const PENDING_LEAD_OUTCOMES: &[&str] = &["disposition", "blocked", "r
 /// executable and every value it needs as a registered placeholder; `work`
 /// fills the Work when known. The action view's disposition choices carry
 /// the same route bound and filled.
-pub(crate) fn lead_route(work: Option<&str>) -> String {
+pub(crate) fn lead_route(work: Option<&str>, config: &std::path::Path) -> String {
     let work = work.map_or_else(|| crate::emitted::slot("WORK"), str::to_owned);
-    crate::emitted::command_text(&format!(
-        "work disposition {work} {} --decision {} --reason {}",
-        crate::emitted::slot("ASSIGNMENT"),
-        crate::emitted::slot("DISPOSITION_DECISION"),
-        crate::emitted::slot("REASON")
-    ))
+    crate::emitted::command_line(
+        &[
+            "work",
+            "disposition",
+            &work,
+            &crate::emitted::slot("ASSIGNMENT"),
+            "--decision",
+            &crate::emitted::slot("DISPOSITION_DECISION"),
+            "--reason",
+            &crate::emitted::slot("REASON"),
+        ],
+        Some(config),
+    )
 }
 
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
@@ -67,8 +74,9 @@ pub(crate) fn submission(
     outcome: &str,
     raw: Option<&str>,
     explicit: bool,
+    config: &std::path::Path,
 ) -> Result<Option<Disposition>, String> {
-    lead_outcome_allowed(state, role, outcome)?;
+    lead_outcome_allowed(state, role, outcome, config)?;
     if outcome == "disposition" && role != "lead" {
         return Err("disposition requires the pending Lead assignment".into());
     }
@@ -85,14 +93,19 @@ pub(crate) fn submission(
     // A reviewer finding is decided with a named decision, so a repair always
     // carries the Lead's boundary to the next attempt.
     if parsed.decision.is_none() && state["pendingDisposition"]["kind"] == "review_rework" {
-        let route = lead_route(None);
+        let route = lead_route(None, config);
         return Err(format!("a reviewer finding needs a Lead decision: {route}"));
     }
     validate(state, &parsed)?;
     Ok(Some(parsed))
 }
 
-fn lead_outcome_allowed(state: &Value, role: &Value, outcome: &str) -> Result<(), String> {
+fn lead_outcome_allowed(
+    state: &Value,
+    role: &Value,
+    outcome: &str,
+    config: &std::path::Path,
+) -> Result<(), String> {
     if role == "lead"
         && crate::run::state::check_observation::unresolved(state)
         && !matches!(outcome, "blocked" | "rejected")
@@ -103,7 +116,7 @@ fn lead_outcome_allowed(state: &Value, role: &Value, outcome: &str) -> Result<()
         && state["pendingDisposition"].is_object()
         && !PENDING_LEAD_OUTCOMES.contains(&outcome)
     {
-        let route = lead_route(None);
+        let route = lead_route(None, config);
         return Err(format!(
             "a pending finding requires a Lead disposition first: {route}"
         ));

@@ -252,6 +252,7 @@ where
             outcome,
             disposition.or(reason),
             disposition.is_some(),
+            &loaded.path,
         )?;
         let mut grant_hashes = Vec::new();
         if state["governor"]["enabled"] == true

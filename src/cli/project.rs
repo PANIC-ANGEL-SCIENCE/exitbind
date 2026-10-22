@@ -6,8 +6,29 @@ mod continuation;
 use super::{args, print_json, Arguments};
 use crate::{config::Loaded, project::context};
 
+/// Every `project` action; `graph` is routed before configuration loads.
+pub(crate) const PROJECT_ACTIONS: &[&str] = &[
+    "context",
+    "route",
+    "agents",
+    "capabilities",
+    "architecture",
+    "advance",
+    "graph",
+];
+
 pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), String> {
     let action = arguments.positional.first().map(String::as_str);
+    if !action.is_some_and(|action| action != "graph" && PROJECT_ACTIONS.contains(&action)) {
+        let form = crate::emitted::command_line(
+            &["project", "advance", "form", "--json"],
+            Some(&loaded.path),
+        );
+        return Err(format!(
+            "project requires {}; use {form} for bounded continuation",
+            PROJECT_ACTIONS[..PROJECT_ACTIONS.len() - 1].join(", ")
+        ));
+    }
     if action == Some("advance") {
         return continuation::command(loaded, arguments);
     }
@@ -158,9 +179,6 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
         arguments,
         &["config", "json", "task", "agent", "host", "expected-sha256"],
     )?;
-    if action != Some("context") {
-        return Err("project requires context, route, agents, capabilities, architecture or advance; use project advance form --json for bounded continuation".into());
-    }
     match arguments.positional.get(1).map(String::as_str) {
         None => {
             args::assert_positionals("project context", arguments, 1)?;
@@ -168,7 +186,16 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 .iter()
                 .any(|name| arguments.options.contains_key(*name))
             {
-                return Err("recipient options require project context memory ITEM_ID".into());
+                let route = crate::emitted::command_line(
+                    &[
+                        "project",
+                        "context",
+                        "memory",
+                        &crate::emitted::slot("ITEM_ID"),
+                    ],
+                    Some(&loaded.path),
+                );
+                return Err(format!("recipient options require {route}"));
             }
             let value = context::snapshot_for_task(
                 loaded,

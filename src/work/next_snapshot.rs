@@ -52,7 +52,7 @@ fn next_and_residual_from_snapshot_inner(
     if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
         super::attach_held(loaded, work, &assignment, &mut next)?;
     }
-    let residual = crate::work::packet::project(work, snapshot, &next)?;
+    let residual = crate::work::packet::project(work, snapshot, &next, &loaded.path)?;
     next["resolvedActor"] = residual["humanHelp"]["nextAction"]["actor"].clone();
     let facts = crate::work::packet::facts(snapshot, &next, || {
         if let Some(current) = snapshot.current_input_sha256() {

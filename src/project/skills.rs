@@ -68,15 +68,13 @@ pub(crate) fn activate(control: &Path, coffee: bool) -> Result<(), String> {
         .iter()
         .find(|destination| destination.state == SkillRefreshState::Refreshed)
     {
-        let command = if crate::producer::exitbind_surface() {
-            "exitbind"
-        } else {
-            "soulmate"
-        };
+        let refresh = crate::emitted::command_text(&format!(
+            "init --refresh-skills --root {}",
+            crate::emitted::word(&control.display().to_string())
+        ));
         return Err(format!(
-            "project skill differs from embedded bytes: {}; inspect it and explicitly run {command} init --refresh-skills --root {}",
-            destination.path.display(),
-            control.display()
+            "project skill differs from embedded bytes: {}; inspect it and explicitly run {refresh}",
+            destination.path.display()
         ));
     }
     for destination in destinations {

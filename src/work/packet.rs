@@ -38,14 +38,26 @@ const BEHAVIOR_FIELDS: [&str; 15] = [
     "reviewPolicy",
 ];
 
-pub(crate) fn project(work: &str, snapshot: &RunSnapshot, next: &Value) -> Result<Value, String> {
+pub(crate) fn project(
+    work: &str,
+    snapshot: &RunSnapshot,
+    next: &Value,
+    config: &std::path::Path,
+) -> Result<Value, String> {
     let view = snapshot.inspect_view();
     let status = if view["status"] == "running" {
         snapshot.status_view()?
     } else {
         Value::Null
     };
-    Ok(project_from(work, &view, &status, next, snapshot.inputs()))
+    Ok(project_from(
+        work,
+        &view,
+        &status,
+        next,
+        snapshot.inputs(),
+        config,
+    ))
 }
 
 /// Resolve the human-help decision once so every packet projection carries the
@@ -54,8 +66,9 @@ pub(crate) fn resolved_actor(
     work: &str,
     snapshot: &RunSnapshot,
     next: &Value,
+    config: &std::path::Path,
 ) -> Result<Value, String> {
-    Ok(project(work, snapshot, next)?["humanHelp"]["nextAction"]["actor"].clone())
+    Ok(project(work, snapshot, next, config)?["humanHelp"]["nextAction"]["actor"].clone())
 }
 
 /// The canonical state facts the conversational layer classifies from.
@@ -231,6 +244,7 @@ fn project_from(
     status: &Value,
     next: &Value,
     inputs: &InputContext,
+    config: &std::path::Path,
 ) -> Value {
     let mut established = Vec::new();
     let mut still_valid = Vec::new();
@@ -322,7 +336,9 @@ fn project_from(
         .find_map(|target| target["checkCommandSha256"].as_str())
         .map_or(Value::Null, |value| json!(value));
     let config_sha256 = view["subject"]["configSha256"].clone();
-    let human_help = help(work, view, &targets, next, review, &remaining, inputs);
+    let human_help = help(
+        work, view, &targets, next, review, &remaining, inputs, config,
+    );
     let mut resolved_next = next.clone();
     resolved_next["resolvedActor"] = human_help["nextAction"]["actor"].clone();
     let mut packet = json!({
@@ -446,6 +462,7 @@ fn blocked_owner_decision(view: &Value) -> bool {
 
 /// Human help derived from canonical state. `ownerDecision` distinguishes an
 /// internal lead action from a decision only the human owner can make.
+#[allow(clippy::too_many_arguments)]
 fn help(
     work: &str,
     view: &Value,
@@ -454,6 +471,7 @@ fn help(
     review: ReviewState,
     remaining: &[Value],
     inputs: &InputContext,
+    config: &std::path::Path,
 ) -> Value {
     let next_command = command(&["work", "next", work]);
     let (what, actor, summary, cmd, owner) = if view["status"] != "running" {
@@ -550,7 +568,7 @@ fn help(
             next_command,
             "not_required",
         )
-    } else if let Some((what, summary)) = super::disposition::lead_help(next, work) {
+    } else if let Some((what, summary)) = super::disposition::lead_help(next, work, config) {
         (
             what.to_owned(),
             "lead",
@@ -651,8 +669,9 @@ pub(crate) fn validate(
     snapshot: &RunSnapshot,
     next: &Value,
     packet: &Value,
+    config: &std::path::Path,
 ) -> Result<Value, String> {
-    let fresh = project(work, snapshot, next)?;
+    let fresh = project(work, snapshot, next, config)?;
     let (result, reason, mismatched) = judge(work, packet, &fresh);
     let usable = result == "usable";
     Ok(json!({

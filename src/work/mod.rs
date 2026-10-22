@@ -308,7 +308,7 @@ pub(crate) fn validate(loaded: &Loaded, work: &str, packet_path: &str) -> Result
     };
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
-    crate::work::packet::validate(work, &snapshot, &next, &packet)
+    crate::work::packet::validate(work, &snapshot, &next, &packet, &loaded.path)
 }
 
 /// Expand one opaque reference emitted by the current context projection.
@@ -324,7 +324,7 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
     if details::is_section(reference) {
         return details::expand(loaded, work, &snapshot, &next, reference);
     }
-    let packet = crate::work::packet::project(work, &snapshot, &next)?;
+    let packet = crate::work::packet::project(work, &snapshot, &next, &loaded.path)?;
     let context = packet
         .get("context")
         .ok_or("current packet has no context projection")?;
@@ -651,7 +651,8 @@ fn next_from_base(
             "progress": progress,
             "warnings": warnings,
         });
-        result["resolvedActor"] = crate::work::packet::resolved_actor(work, snapshot, &result)?;
+        result["resolvedActor"] =
+            crate::work::packet::resolved_actor(work, snapshot, &result, &loaded.path)?;
         let view = snapshot.inspect_view();
         let status = snapshot.status_view()?;
         if let Ok(context) = crate::context::project(work, &view, &status, &result) {
@@ -699,7 +700,8 @@ fn next_from_base(
             "staleReason": "tested_inputs_changed",
         });
     }
-    let resolved_actor = crate::work::packet::resolved_actor(work, snapshot, &result)?;
+    let resolved_actor =
+        crate::work::packet::resolved_actor(work, snapshot, &result, &loaded.path)?;
     result["resolvedActor"] = resolved_actor;
     let view = snapshot.inspect_view();
     let status = if view["status"] == "running" {

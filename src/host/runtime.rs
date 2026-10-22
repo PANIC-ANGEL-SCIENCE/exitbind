@@ -219,6 +219,7 @@ pub fn run() -> Result<(), String> {
     let text = if event == "SessionStart" {
         let mut text = session_summary(
             &loaded.config,
+            &loaded.path,
             &crate::project::agent_display::lead(&loaded),
         );
         if crate::producer::exitbind_surface() {
@@ -552,9 +553,10 @@ fn exact_agent(
     selected
 }
 
-fn session_summary(config: &Value, lead_display: &str) -> String {
+fn session_summary(config: &Value, path: &std::path::Path, lead_display: &str) -> String {
     let compact = crate::producer::exitbind_surface();
-    let names = |key: &str| {
+    let mut truncated = false;
+    let mut names = |key: &str| {
         let Some(map) = config[key].as_object() else {
             return if compact { "none" } else { "" }.to_owned();
         };
@@ -563,10 +565,8 @@ fn session_summary(config: &Value, lead_display: &str) -> String {
         if compact && names.len() > 4 {
             let omitted = names.len() - 4;
             names.truncate(4);
-            format!(
-                "{}, +{omitted} more (see project agents --json)",
-                names.join(", ")
-            )
+            truncated = true;
+            format!("{}, +{omitted} more", names.join(", "))
         } else if names.is_empty() {
             if compact { "none" } else { "" }.to_owned()
         } else {
@@ -575,12 +575,21 @@ fn session_summary(config: &Value, lead_display: &str) -> String {
     };
     let agents = names("agents");
     let workflows = names("workflows");
+    // One complete-list route for every truncated list.
+    let complete = if truncated {
+        format!(
+            "Complete lists: {}\n",
+            crate::emitted::command_line(&["project", "agents", "--json"], Some(path))
+        )
+    } else {
+        String::new()
+    };
     let product = if crate::producer::exitbind_surface() {
         "Exitbind"
     } else {
         "Soulmate"
     };
-    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\n{MANDATORY_SESSION_CORE}", safe_inline(lead_display), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
+    bounded(format!("{product} plan-only project context.\nLead: {}\nNamed agents: {}\nWorkflows: {}\n{complete}{MANDATORY_SESSION_CORE}", safe_inline(lead_display), safe_inline(if agents.is_empty() { "none" } else { &agents }), safe_inline(if workflows.is_empty() { "none" } else { &workflows })))
 }
 
 fn bounded(value: String) -> String {

@@ -320,10 +320,14 @@ fn hint_text(
         )
     };
     if graph_observation.is_none() {
-        out.push_str(" Use the executable-bound read routes in `session recovery show --json`; no saved action is replayed.");
+        let show = crate::emitted::command_text("session recovery show --json");
+        out.push_str(&format!(
+            " Use the executable-bound read routes in `{show}`; no saved action is replayed."
+        ));
     }
     if graph_observation.is_none() && out.len() > 900 {
-        out = format!("Exitbind native Goal {goal_id} revision {revision} is known. Saved step/corrections/pending details remain historical until exact Work detail is reread; use `session recovery show --json`. No saved action is replayed.");
+        let show = crate::emitted::command_text("session recovery show --json");
+        out = format!("Exitbind native Goal {goal_id} revision {revision} is known. Saved step/corrections/pending details remain historical until exact Work detail is reread; use `{show}`. No saved action is replayed.");
     }
     let selected = known_locator.is_some();
     finish(out, !selected, Some(owner_config))

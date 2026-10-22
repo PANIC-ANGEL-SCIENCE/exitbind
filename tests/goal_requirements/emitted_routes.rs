@@ -424,18 +424,26 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
                         .chars()
                         .take_while(|c| c.is_ascii_lowercase() || *c == '-')
                         .collect();
-                    let lead = lower[..at].trim_end_matches('`').trim_end();
+                    let quotes: &[char] = &['`', '\'', '"', ' '];
+                    let lead = lower[..at].trim_end_matches(quotes);
+                    // `{command}` is the product's name, not its executable.
+                    let lead = lead
+                        .strip_suffix("{command}")
+                        .map_or(lead, |rest| rest.trim_end_matches(quotes));
+                    let instructed = INSTRUCTIONS.iter().any(|instruction| {
+                        lead.strip_suffix(instruction).is_some_and(|before| {
+                            before
+                                .chars()
+                                .next_back()
+                                .map_or(true, |c| !c.is_ascii_alphanumeric())
+                        })
+                    });
+                    if names.is_empty() {
+                        // A command without subcommands: its options follow.
+                        return instructed && rest.starts_with("--");
+                    }
                     let original = &literal[at + needle.len() + word.len()..];
-                    names.contains(&word)
-                        && (template_arguments(original)
-                            || INSTRUCTIONS.iter().any(|instruction| {
-                                lead.strip_suffix(instruction).is_some_and(|before| {
-                                    before
-                                        .chars()
-                                        .next_back()
-                                        .map_or(true, |c| !c.is_ascii_alphanumeric())
-                                })
-                            }))
+                    names.contains(&word) && (template_arguments(original) || instructed)
                 })
             });
             if bare {
@@ -446,16 +454,76 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
     found
 }
 
+/// Commands whose dispatcher declares its actions as a named list it checks.
+const DECLARED: &[(&str, &str, &str)] = &[
+    ("project", "src/cli/project.rs", "PROJECT_ACTIONS"),
+    ("host", "src/cli/mod.rs", "HOST_ACTIONS"),
+    ("session", "src/cli/mod.rs", "SESSION_ACTIONS"),
+];
+
+/// Top-level commands without subcommands; options follow the command.
+const OPTION_ONLY: &[&str] = &[
+    "init",
+    "setup",
+    "bind",
+    "doctor",
+    "statusline",
+    "check",
+    "brief",
+    "plan",
+    "verify",
+    "receipt",
+    "away",
+    "migrate",
+    "activity",
+];
+
+/// The names a `const NAME: &[&str] = &[...]` declaration lists.
+fn declared(text: &str, name: &str) -> Vec<String> {
+    text.split(&format!("const {name}: &[&str] = &["))
+        .nth(1)
+        .and_then(|rest| rest.split("];").next())
+        .map(|list| {
+            list.split(',')
+                .map(|item| item.trim().trim_matches('"').to_owned())
+                .filter(|item| !item.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every command family with the subcommands its dispatcher accepts; an
+/// option-only command has none.
 fn dispatched() -> Vec<(&'static str, Vec<String>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    DISPATCHERS
+    let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();
+    let mut families: Vec<(&'static str, Vec<String>)> = DISPATCHERS
         .iter()
         .map(|(command, file)| {
-            let names = arms(&fs::read_to_string(root.join(file)).unwrap());
+            let names = arms(&read(file));
             assert!(!names.is_empty(), "{file} dispatches no subcommand");
             (*command, names)
         })
-        .collect()
+        .collect();
+    for (command, file, list) in DECLARED {
+        let text = read(file);
+        let names = declared(&text, list);
+        assert!(!names.is_empty(), "{file} declares no {list}");
+        assert!(
+            text.contains(&format!("{list}.contains(")),
+            "the {command} dispatcher checks {list}"
+        );
+        families.push((*command, names));
+    }
+    let top = read("src/cli/mod.rs");
+    for command in OPTION_ONLY {
+        assert!(
+            top.contains(&format!("\"{command}\" =>")),
+            "{command} is a dispatched top-level command"
+        );
+        families.push((*command, Vec::new()));
+    }
+    families
 }
 
 /// A refusal or hint that names a follow-up command prints the full route:
@@ -486,7 +554,16 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
     let commands = vec![
         ("work", vec!["next".to_owned(), "detail".to_owned()]),
         ("goal", vec!["status".to_owned()]),
+        ("project", vec!["agents".to_owned(), "advance".to_owned()]),
+        ("init", Vec::new()),
     ];
+    assert_eq!(
+        declared(
+            "const X_ACTIONS: &[&str] = &[\n    \"a\",\n    \"b-c\",\n];",
+            "X_ACTIONS"
+        ),
+        ["a", "b-c"]
+    );
     assert_eq!(
         arms("        \"next\" => {\n        \"a-b\" | \"c\" => x,\n    \"Not\" => y,\n"),
         ["next", "a-b", "c"]
@@ -498,10 +575,12 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
             "format!(\"x; use work detail {w} --json\")\n",
             "\"record: Work Detail WORK ASSIGNMENT --reason TEXT\"\n",
             "\"recover\": \"work next child WORK INTENT\"\n",
+            "\"x (See Project Agents --json)\"\n",
+            "\"explicitly RUN '{command} Init --refresh-skills --root {}'\"\n",
         ),
         &commands,
     );
-    assert_eq!(found.len(), 5, "{found:?}");
+    assert_eq!(found.len(), 7, "{found:?}");
     let passed = bare_follow_ups(
         concat!(
             "\"configuration changed during work detail consumption\"\n",
@@ -509,6 +588,8 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
             "\"work detail <WORK> --reason <REASON>\"\n",
             "\"do not repeat work begin; read exitbind work next\"\n",
             "\"use the network\"\n",
+            "\"run init for the project\"\n",
+            "\"use the project advance form\"\n",
             "// refresh with work next\n",
             "let r = crate::emitted::command_line(&[\"work\", \"next\"], c); \"refresh with work next\"\n",
         ),

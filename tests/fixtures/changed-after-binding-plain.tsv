@@ -4,10 +4,10 @@
 # Reasons are defined in tests/goal_requirements/changed_after_binding_inventory.rs.
 Integrity	src/cli/mod.rs	work context token is invalid
 Validation	src/cli/mod.rs	work {field} is required
-TypedRunDrift	src/cli/run_cli.rs	configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.
-TypedRunDrift	src/cli/run_cli.rs	memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.
-TypedRunDrift	src/cli/run_cli.rs	profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.
-TypedRunDrift	src/cli/run_cli.rs	run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{command} run supersede' only to bind a new run to changed inputs.
+TypedRunDrift	src/cli/run_cli.rs	configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.
+TypedRunDrift	src/cli/run_cli.rs	memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.
+TypedRunDrift	src/cli/run_cli.rs	profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.
+TypedRunDrift	src/cli/run_cli.rs	run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.
 TypedRunDrift	src/cli/run_cli.rs	semantic harness drift detected after run start (expected {}, current {}); continue with the recorded plan. Exact receipt integrity failures are refused separately.
 Transient	src/config/profile.rs	configuration drift detected
 Transient	src/config/profile.rs	source changed during import
@@ -130,7 +130,7 @@ Validation	src/project/continuation/sources.rs	project source does not contain i
 LeadPreparation	src/project/continuation/sources.rs	project source is empty, contains NUL or differs from its exact SHA256
 Transient	src/project/layout.rs	configuration changed during layout migration
 Transient	src/project/layout.rs	legacy profile changed after planning: {}
-RoutedInText	src/project/skills.rs	project skill differs from embedded bytes: {}; inspect it and explicitly run {command} init --refresh-skills --root {}
+RoutedInText	src/project/skills.rs	project skill differs from embedded bytes: {}; inspect it and explicitly run {refresh}
 Identity	src/project/specialists/delivery.rs	contextual specialist role differs from the actual recipient
 Transient	src/project/specialists/delivery.rs	specialist experience changed; no snapshot delivered
 TypedRunDrift	src/run/artifact.rs	artifact drift detected after run start

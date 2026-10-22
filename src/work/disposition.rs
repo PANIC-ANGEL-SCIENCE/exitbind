@@ -95,13 +95,17 @@ pub(super) fn review_fact(next: &Value) -> Option<&'static str> {
 }
 
 /// What happened and what the Lead does next, for the same two states.
-pub(super) fn lead_help(next: &Value, work: &str) -> Option<(&'static str, String)> {
+pub(super) fn lead_help(
+    next: &Value,
+    work: &str,
+    config: &std::path::Path,
+) -> Option<(&'static str, String)> {
     match review_fact(next)? {
         "finding_pending" => Some((
             "An adverse finding needs Lead disposition. For a clear defect inside the accepted task, record repair and continue without asking the owner again; ask the owner only when scope, authority, review choice, or an irreversible decision changes.",
             format!(
                 "record the Lead decision: {}",
-                crate::run::disposition::lead_route(Some(work))
+                crate::run::disposition::lead_route(Some(work), config)
             ),
         )),
         _ if next["action"] == "lead_decision" => Some((

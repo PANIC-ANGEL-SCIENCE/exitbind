@@ -205,8 +205,18 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// Every `session` action this dispatcher accepts (`recovery show|record`).
+pub(crate) const SESSION_ACTIONS: &[&str] = &["recovery"];
+
 fn session_recovery_command(a: &Arguments) -> Result<(), String> {
     args::assert_options("session recovery", a, &["config", "json"])?;
+    if !a
+        .positional
+        .first()
+        .is_some_and(|action| SESSION_ACTIONS.contains(&action.as_str()))
+    {
+        return Err("session requires recovery show or recovery record".into());
+    }
     if a.positional.len() == 2 && a.positional[0] == "recovery" && a.positional[1] == "show" {
         let value = crate::host::session_recovery::show()?;
         if a.flags.contains_key("json") {
@@ -280,10 +290,19 @@ fn hooks_command(a: &Arguments) -> Result<(), String> {
     Ok(())
 }
 
+/// Every `host` action this dispatcher accepts.
+pub(crate) const HOST_ACTIONS: &[&str] = &["status", "install"];
+
 fn host_command(a: &Arguments) -> Result<(), String> {
     args::assert_options("host", a, &["hosts", "all", "json"])?;
     args::assert_positionals("host", a, 1)?;
     let action = positional(a, 0, "host requires one action: status or install")?;
+    if !HOST_ACTIONS.contains(&action) {
+        return Err(format!(
+            "host requires one action: {}",
+            HOST_ACTIONS.join(" or ")
+        ));
+    }
     let hosts = a.options.get("hosts").map(String::as_str);
     match action {
         "status" => {

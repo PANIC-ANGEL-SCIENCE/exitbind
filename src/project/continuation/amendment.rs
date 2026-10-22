@@ -413,9 +413,22 @@ pub(super) fn effective_association(
     if latest.event_sha256 != record.event_sha256 || !historical_selection {
         return Err("selected mandate changed while checking its amendment".into());
     }
-    let receipt = read_receipt(loaded, claim)?.ok_or(
-        "project continuation held: selected mandate changed; inspect project advance amend",
-    )?;
+    let receipt = read_receipt(loaded, claim)?.ok_or_else(|| {
+        let amend = crate::emitted::command_line(
+            &[
+                "project",
+                "advance",
+                "amend",
+                work,
+                "--reason",
+                &crate::emitted::slot("REASON"),
+                "--request-id",
+                &crate::emitted::slot("REQUEST_ID"),
+            ],
+            Some(&loaded.path),
+        );
+        format!("project continuation held: selected mandate changed; inspect {amend}")
+    })?;
     let path = crate::work::resolve(loaded, work)?;
     let (_, events, _) = ledger::load(loaded, &path)?;
     let start = events.first().ok_or("associated Work start is missing")?;

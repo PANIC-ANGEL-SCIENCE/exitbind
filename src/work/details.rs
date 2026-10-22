@@ -146,7 +146,7 @@ pub(super) fn attach(
     for section in SECTIONS {
         routes[section] = route(loaded, work, &token(&binding, section, 0));
     }
-    let residual = super::packet::project(work, snapshot, next)?;
+    let residual = super::packet::project(work, snapshot, next, &loaded.path)?;
     let events = view["events"].as_array().cloned().unwrap_or_default();
     let repair = events
         .iter()
@@ -345,7 +345,7 @@ pub(crate) fn section_value(
     match name {
         "assignment" => Ok(json!({"available": next["packet"].is_object(),
             "assignment": next["packet"], "outcomes": next["outcomes"],
-            "residual": super::packet::project(work, snapshot, next)?})),
+            "residual": super::packet::project(work, snapshot, next, &loaded.path)?})),
         "tasks" => crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"]),
         "evidence" => evidence(loaded, snapshot, next, false),
         "recipient" => super::readable::recipient_context::section(loaded, next),
