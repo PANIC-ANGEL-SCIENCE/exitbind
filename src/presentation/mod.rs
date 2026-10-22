@@ -39,22 +39,27 @@ fn exact_assignment(name: &str, value: &str) -> String {
     format!("{name}=$(printf '%bX' '{encoded}'); {name}=${{{name}%X}}")
 }
 
+/// The read route for a run ledger, naming the executable this process runs as.
 pub(crate) fn read_command(action: &str, config: &str, ledger: &str) -> String {
-    let command = if crate::producer::exitbind_surface() {
-        "exitbind"
-    } else {
-        "soulmate"
-    };
+    read_command_with(
+        crate::emitted::command_text("").trim_end(),
+        action,
+        config,
+        ledger,
+    )
+}
+
+fn read_command_with(executable: &str, action: &str, config: &str, ledger: &str) -> String {
     let format = if action == "next" { " --text" } else { "" };
     if has_control(config) || has_control(ledger) {
         return format!(
-            "{}; {}; {command} run {action}{format} --config=\"$__sm_config\" -- \"$__sm_ledger\"",
+            "{}; {}; {executable} run {action}{format} --config=\"$__sm_config\" -- \"$__sm_ledger\"",
             exact_assignment("__sm_config", config),
             exact_assignment("__sm_ledger", ledger),
         );
     }
     format!(
-        "{command} run {action}{format} --config={} -- {}",
+        "{executable} run {action}{format} --config={} -- {}",
         shell_quote(config),
         shell_quote(ledger)
     )
@@ -158,15 +163,17 @@ mod tests {
 
     #[test]
     fn shell_quote_renders_control_characters_as_data() {
-        let command = crate::compatibility::profile().caller;
+        let executable = crate::compatibility::profile().caller;
         let quoted = super::shell_quote("line\n\u{1b}[31m");
         assert!(!quoted.bytes().any(|byte| byte < 0x20 || byte == 0x7f));
         assert!(quoted.contains("\\n"));
         assert!(quoted.contains("\\u{1b}"));
         assert_eq!(
-            super::read_command("inspect", "config.json", "ledger.json"),
-            format!("{command} run inspect --config='config.json' -- 'ledger.json'")
+            super::read_command_with(executable, "inspect", "config.json", "ledger.json"),
+            format!("{executable} run inspect --config='config.json' -- 'ledger.json'")
         );
+        assert!(super::read_command("inspect", "c", "l")
+            .starts_with(&crate::emitted::command_text("run")[..]));
     }
 
     #[cfg(unix)]
@@ -196,7 +203,12 @@ mod tests {
         let output = root.join("argv.hex");
         let config = "config\nname\t\u{1b}'\\$(touch SHOULD_NOT_EXIST)\n";
         let ledger = "ledger\n";
-        let command = super::read_command("inspect", config, ledger);
+        let command = super::read_command_with(
+            crate::compatibility::profile().caller,
+            "inspect",
+            config,
+            ledger,
+        );
         assert!(!command.bytes().any(|byte| byte < 0x20 || byte == 0x7f));
         let existing_path = env::var_os("PATH").unwrap_or_default();
         let path =

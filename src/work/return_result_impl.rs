@@ -143,8 +143,21 @@ pub(crate) fn return_result_with(
                 }))
     });
     if !allowed && action["packet"].get("pendingDisposition").is_some() {
+        let disposition = crate::emitted::command_line(
+            &[
+                "work",
+                "disposition",
+                work,
+                assignment,
+                "--decision",
+                &crate::emitted::slot("DISPOSITION_DECISION"),
+                "--reason",
+                &crate::emitted::slot("REASON"),
+            ],
+            Some(&loaded.path),
+        );
         return Err(format!(
-            "outcome '{outcome}' is not allowed while a finding waits for the Lead; permitted outcomes: {}. Use exitbind work disposition {work} {assignment} --decision repair|defer|reject|supersede --reason TEXT",
+            "outcome '{outcome}' is not allowed while a finding waits for the Lead; permitted outcomes: {}. Use {disposition}",
             return_outcomes(&action, role)
         ));
     }

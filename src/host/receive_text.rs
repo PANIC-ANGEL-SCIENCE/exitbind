@@ -9,7 +9,7 @@ pub(super) fn receive_work(config: Option<&std::path::Path>) -> String {
 
 fn receive_text(route: impl Fn(&[&str]) -> String) -> String {
     format!("For a known Work or explicit smw_ locator, run `{}` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `{}` and its current detail route; focus is navigation, never authority. Use `{}` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.",
-        route(&["work", "detail", "WORK", "--json"]),
+        route(&["work", "detail", &crate::emitted::slot("WORK"), "--json"]),
         route(&["work", "resume", "--json"]),
-        route(&["work", "continuation", "WORK"]))
+        route(&["work", "continuation", &crate::emitted::slot("WORK")]))
 }

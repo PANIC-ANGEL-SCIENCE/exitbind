@@ -209,7 +209,11 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 println!("Lead: {}", crate::project::agent_display::lead(loaded));
                 println!("Rules: {}", value["rules"].as_array().map_or(0, Vec::len));
                 println!("Memory: {}", value["memory"]["state"]);
-                println!("Details: exitbind project context --json --config CONFIG");
+                let details = crate::emitted::command_line(
+                    &["project", "context", "--json"],
+                    Some(&loaded.path),
+                );
+                println!("Details: {details}");
                 Ok(())
             }
         }

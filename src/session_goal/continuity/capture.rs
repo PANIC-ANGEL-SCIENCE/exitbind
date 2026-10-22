@@ -728,7 +728,7 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
                     "retainedResultBytes": pending,
                     "recover": pending.map(|_| crate::emitted::command_line(
                         &["work", "child", "recover", work, intent["id"].as_str().unwrap_or_default(),
-                            "--context", &crate::emitted::slot("CONTEXT_TOKEN")],
+                            "--context", &crate::emitted::slot("FRESH_TOKEN")],
                         Some(&loaded.path),
                     )),
                 })

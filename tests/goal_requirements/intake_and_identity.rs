@@ -375,7 +375,7 @@ fn status_exposes_named_pre_freeze_selection_and_exact_category_routes() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|arg| arg == "ACCEPTED_WORK")));
+            .any(|arg| arg == "<ACCEPTED_WORK>")));
     assert!(dispositions["nextActions"].as_array().unwrap().is_empty());
     assert_eq!(dispositions["ownerDecisionRequired"], true);
 }

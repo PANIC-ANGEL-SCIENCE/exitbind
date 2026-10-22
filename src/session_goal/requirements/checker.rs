@@ -73,7 +73,7 @@ fn derive(loaded: &Loaded, command: &str) -> Result<Derived, String> {
                 via: Some(script),
             })
         }
-        0 => Err("check command names no tested project file, directly or through one outside script it runs; pass --artifact PROJECT_CHECKER naming the project file the check runs".into()),
+        0 => Err(format!("check command names no tested project file, directly or through one outside script it runs; pass --artifact {} naming the project file the check runs", crate::emitted::slot("PROJECT_CHECKER"))),
         _ => Err(ambiguous(
             "check command's script",
             &found.into_iter().map(|(path, _)| path).collect::<Vec<_>>(),
@@ -83,8 +83,9 @@ fn derive(loaded: &Loaded, command: &str) -> Result<Derived, String> {
 
 fn ambiguous(what: &str, found: &[String]) -> String {
     format!(
-        "{what} names several tested project files ({}); pass --artifact PROJECT_CHECKER to choose the checker",
-        found.join(", ")
+        "{what} names several tested project files ({}); pass --artifact {} to choose the checker",
+        found.join(", "),
+        crate::emitted::slot("PROJECT_CHECKER")
     )
 }
 

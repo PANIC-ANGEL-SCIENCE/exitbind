@@ -833,7 +833,7 @@ fn confined_inputs_refuse_an_outside_path_naming_the_input_and_its_route() {
                 &file,
             ],
             "requirement source (--artifact for goal require)",
-            "setup --apply --task-card PATH",
+            "as its --task-card value",
         ),
         (
             vec![

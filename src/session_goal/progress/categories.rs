@@ -178,7 +178,7 @@ fn item_revalidation_route(
         "--disposition".into(),
         disposition.into(),
         "--result-ref".into(),
-        "CURRENT_ACCEPTED_WORK".into(),
+        crate::emitted::slot("CURRENT_ACCEPTED_WORK"),
     ];
     if category == "externalActions" {
         args.extend([
@@ -305,7 +305,7 @@ fn item_routes(
                     "--disposition".into(),
                     choice.into(),
                     "--result-ref".into(),
-                    "ACCEPTED_WORK".into(),
+                    crate::emitted::slot("ACCEPTED_WORK"),
                 ]);
                 if category == "externalActions" {
                     args.extend([

@@ -599,8 +599,9 @@ fn bridge_health() -> Vec<String> {
             }
             other => {
                 if host["hostPresent"] == Value::Bool(true) {
+                    let install = crate::emitted::command_text("host install");
                     lines.push(format!(
-                        "Host bridge {name}: bootstrap {other}; run 'exitbind host install' to restore it"
+                        "Host bridge {name}: bootstrap {other}; run '{install}' to restore it"
                     ));
                 }
             }
@@ -622,9 +623,13 @@ fn delegate_bridge_sync(installed: &Path) -> Vec<String> {
         ];
     };
     if !output.status.success() {
-        return vec![
-            "Host bridge not synchronized; run 'exitbind host status' to inspect it".to_owned(),
-        ];
+        let status = format!(
+            "{} host status",
+            crate::emitted::word(&installed.display().to_string())
+        );
+        return vec![format!(
+            "Host bridge not synchronized; run '{status}' to inspect it"
+        )];
     }
     let Ok(value) = serde_json::from_slice::<Value>(&output.stdout) else {
         return vec!["Host bridge synchronization returned unreadable output".to_owned()];

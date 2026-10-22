@@ -647,7 +647,7 @@ fn named_current_integration_routes_stale_additional_result_without_new_work() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|arg| { arg == "CURRENT_ACCEPTED_WORK" }));
+        .any(|arg| { arg == "<CURRENT_ACCEPTED_WORK>" }));
     assert!(!route["command"]
         .as_array()
         .unwrap()

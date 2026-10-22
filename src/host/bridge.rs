@@ -178,14 +178,12 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
             // A release that adds a managed hook record leaves earlier
             // installs partial until the one install command adds it.
             if item["activationHook"] == "partial" {
-                item["activationHookAction"] = json!(HOOK_ACTION);
+                item["activationHookAction"] = json!(crate::emitted::command_text("host install"));
             }
             Ok(item)
         })
         .collect()
 }
-
-const HOOK_ACTION: &str = "exitbind host install";
 
 /// The status line for an activation hook state, naming the action that
 /// completes a partial hook.

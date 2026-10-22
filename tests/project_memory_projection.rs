@@ -412,7 +412,7 @@ fn many_accepted_items_never_drop_the_session_context() {
     let context = session_context(&root);
     let exe = env!("CARGO_BIN_EXE_exitbind");
     assert!(
-        context.contains(&format!("run `{exe} work detail WORK --json --config ")),
+        context.contains(&format!("run `{exe} work detail <WORK> --json --config ")),
         "{context}"
     );
     assert!(context.contains(&format!(

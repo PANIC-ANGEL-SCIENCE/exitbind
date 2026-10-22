@@ -74,7 +74,7 @@ pub(crate) const INPUTS: &[Input] = &[
         commands: "goal require",
         outcome: Outcome::Confined(Root::Product),
         judge: "src/session_goal/requirements.rs",
-        route: "register an outside task card with `setup --apply --task-card PATH`, which snapshots it inside the project, or copy the source into the project",
+        route: "pass the outside card to setup --apply as its --task-card value, which snapshots it inside the project, or copy the source into the project",
     },
     Input {
         label: "project checker",

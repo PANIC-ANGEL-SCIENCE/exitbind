@@ -167,6 +167,16 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the owner's required or omitted review choice",
     },
     Placeholder {
+        name: "ACCEPTED_WORK",
+        fills: &[Fill::Flag("--result-ref")],
+        meaning: "an accepted Work the Lead decides supports the category item",
+    },
+    Placeholder {
+        name: "CURRENT_ACCEPTED_WORK",
+        fills: &[Fill::Flag("--result-ref")],
+        meaning: "an accepted current Work the Lead decides supports the category item",
+    },
+    Placeholder {
         name: "NEW_ACCEPTED_WORK",
         fills: &[Fill::Flag("--result-ref")],
         meaning: "the newly accepted Work",
@@ -182,6 +192,16 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the Work the refused command read",
     },
     Placeholder {
+        name: "TASK",
+        fills: &[Fill::Flag("--task")],
+        meaning: "the task the capability applicability is read for",
+    },
+    Placeholder {
+        name: "HOST",
+        fills: &[Fill::Flag("--host")],
+        meaning: "the host (codex or claude) the applicability is read for",
+    },
+    Placeholder {
         name: "ASSIGNMENT",
         fills: &[Fill::Positional],
         meaning: "the assignment whose finding the Lead decides",
@@ -192,9 +212,29 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "repair, defer, reject or supersede",
     },
     Placeholder {
-        name: "CONTEXT_TOKEN",
+        name: "FRESH_TOKEN",
         fills: &[Fill::Flag("--context")],
         meaning: "the fresh context token work continuation returns",
+    },
+    Placeholder {
+        name: "NATIVE_SESSION",
+        fills: &[Fill::Flag("--session")],
+        meaning: "the host's native session identity",
+    },
+    Placeholder {
+        name: "HOST_VERSION",
+        fills: &[Fill::Flag("--host-version")],
+        meaning: "the host's reported version",
+    },
+    Placeholder {
+        name: "SHORT_ASSIGNMENT",
+        fills: &[Fill::Positional],
+        meaning: "a short description of the native child's task",
+    },
+    Placeholder {
+        name: "CHILD_ID",
+        fills: &[Fill::Flag("--native-child")],
+        meaning: "the host-reported native child ID",
     },
     Placeholder {
         name: "SOURCE",

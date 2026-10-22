@@ -109,16 +109,6 @@ const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
         1,
         "installed status line command",
     ),
-    // Usage text with uppercase arguments, not a route to run as printed.
-    ("src/cli/project.rs", 1, "usage text"),
-    ("src/cli/project_graph.rs", 1, "usage text"),
-    (
-        "src/distribution/update.rs",
-        2,
-        "human repair hint after an update",
-    ),
-    ("src/host/bridge.rs", 1, "human status-line action"),
-    ("src/work/return_result_impl.rs", 1, "usage text"),
     (
         "src/value_benchmark.rs",
         2,
@@ -308,23 +298,78 @@ fn emitted_route_scanner_detects_each_member_of_the_class() {
     );
 }
 
-/// Words that ask the reader to run what follows them.
-const INSTRUCTIONS: &[&str] = &[
-    "refresh with",
-    "recompute with",
-    "read",
-    "use",
-    "run",
-    "rerun",
-    "inspect",
-    "via",
-    "try",
-    "follow",
-    "call",
-    "invoke",
-    "see",
-    "then",
+/// Stems of words that ask the reader to run what follows them; inflected
+/// forms (`running`, `uses`, `inspecting`, `reran`...) count too.
+const INSTRUCTION_STEMS: &[&str] = &[
+    "read", "use", "run", "rerun", "ran", "reran", "inspect", "via", "try", "follow", "call",
+    "invoke", "see", "then", "execute",
 ];
+
+/// Variables that print the product's name, not the executable that runs.
+const PRODUCT_NAMES: &[&str] = &["{command}", "{skill_name}", "{product}", "{caller}"];
+
+/// Whether `word` is an instruction stem or one of its inflections.
+fn instruction_word(word: &str) -> bool {
+    INSTRUCTION_STEMS.iter().any(|stem| {
+        word == *stem
+            || word
+                .strip_prefix(stem)
+                .is_some_and(|suffix| ["s", "es", "ing", "ed", "ning", "ding"].contains(&suffix))
+            || stem
+                .strip_suffix('e')
+                .is_some_and(|base| word == format!("{base}ing") || word == format!("{base}ed"))
+    })
+}
+
+/// Whether the text before a command ends with an instruction: an
+/// instruction word, or `refresh/recompute/inspect ... with`.
+fn instructed(lead: &str) -> bool {
+    if !lead.ends_with(|c: char| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    let words: Vec<&str> = lead
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .filter(|word| !word.is_empty())
+        .collect();
+    match words.as_slice() {
+        [.., before, "with"] => ["refresh", "recompute", "inspect"]
+            .iter()
+            .any(|stem| before.starts_with(stem)),
+        [.., last] => instruction_word(last),
+        [] => false,
+    }
+}
+
+/// Whether `rest` (after the command words) continues like a route: an
+/// option, placeholder, quoted or upper-case argument, directly or after one
+/// positional word.
+fn route_like(rest: &str) -> bool {
+    let starts = |token: &str| {
+        token.starts_with("--")
+            || token.starts_with(['<', '{', '"', '\''])
+            || token.len() >= 3 && token.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+    };
+    let mut tokens = rest.split_whitespace();
+    match tokens.next() {
+        Some(first) if starts(first) => true,
+        Some(first) if first.chars().all(|c| c.is_ascii_lowercase() || c == '-') => {
+            tokens.next().is_some_and(starts)
+        }
+        _ => false,
+    }
+}
+
+/// Whether the options after an option-only command carry an upper-case
+/// template value such as `--root ROOT`.
+fn template_options(rest: &str) -> bool {
+    rest.starts_with("--")
+        && rest
+            .split_whitespace()
+            .find(|token| !token.starts_with("--"))
+            .is_some_and(|token| {
+                token.len() >= 3 && token.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+            })
+}
 
 /// Commands with subcommands, each read from the CLI file that dispatches it.
 const DISPATCHERS: &[(&str, &str)] = &[
@@ -419,31 +464,36 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
             let bare = commands.iter().any(|(command, names)| {
                 let needle = format!("{command} ");
                 lower.match_indices(&needle).any(|(at, _)| {
+                    let before = lower[..at].chars().next_back().unwrap_or(' ');
+                    if !" `('\"\n".contains(before) && !lower[..at].ends_with('}') {
+                        return false;
+                    }
+                    let quotes: &[char] = &['`', '\'', '"', ' ', '\n'];
+                    let lead = lower[..at].trim_end_matches(quotes);
+                    // A product-name variable prints the name, not the executable.
+                    let named = PRODUCT_NAMES.iter().find(|name| lead.ends_with(**name));
+                    let lead = named.map_or(lead, |name| {
+                        lead[..lead.len() - name.len()].trim_end_matches(quotes)
+                    });
+                    let asked = instructed(lead);
+                    let original = &literal[at + needle.len()..];
+                    if names.is_empty() {
+                        // A command without subcommands: its options follow.
+                        return template_options(original)
+                            || ((asked || named.is_some()) && route_like(original));
+                    }
                     let rest = &lower[at + needle.len()..];
                     let word: String = rest
                         .chars()
                         .take_while(|c| c.is_ascii_lowercase() || *c == '-')
                         .collect();
-                    let quotes: &[char] = &['`', '\'', '"', ' '];
-                    let lead = lower[..at].trim_end_matches(quotes);
-                    // `{command}` is the product's name, not its executable.
-                    let lead = lead
-                        .strip_suffix("{command}")
-                        .map_or(lead, |rest| rest.trim_end_matches(quotes));
-                    let instructed = INSTRUCTIONS.iter().any(|instruction| {
-                        lead.strip_suffix(instruction).is_some_and(|before| {
-                            before
-                                .chars()
-                                .next_back()
-                                .map_or(true, |c| !c.is_ascii_alphanumeric())
-                        })
-                    });
-                    if names.is_empty() {
-                        // A command without subcommands: its options follow.
-                        return instructed && rest.starts_with("--");
-                    }
-                    let original = &literal[at + needle.len() + word.len()..];
-                    names.contains(&word) && (template_arguments(original) || instructed)
+                    let after = &original[word.len()..];
+                    // A product name before a variable subcommand is a route too.
+                    (named.is_some() && word.is_empty() && after.starts_with('{'))
+                        || names.contains(&word)
+                            && (template_arguments(after)
+                                || asked
+                                || (named.is_some() && route_like(after)))
                 })
             });
             if bare {
@@ -492,6 +542,103 @@ fn declared(text: &str, name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn upper_word(text: &str) -> bool {
+    text.len() >= 3
+        && text.starts_with(|c: char| c.is_ascii_uppercase())
+        && text.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+}
+
+/// String literals with the byte offset of their opening quote.
+fn located_literals(line: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    let mut rest = line;
+    while let Some(start) = rest.find('"') {
+        let after = &rest[start + 1..];
+        let mut escaped = false;
+        let Some((end, _)) = after.char_indices().find(|(_, ch)| {
+            let close = *ch == '"' && !escaped;
+            escaped = *ch == '\\' && !escaped;
+            close
+        }) else {
+            break;
+        };
+        out.push((offset + start, after[..end].to_owned()));
+        offset += start + end + 2;
+        rest = &after[end + 1..];
+    }
+    out
+}
+
+/// Every bare upper-case word an argv array prints as an argument, such as
+/// `"work", "detail", "WORK"` or a `"CURRENT_WORK".into()` element, instead
+/// of a registered `crate::emitted::slot`. The statement around it must
+/// carry a command word and an option, so environment-variable lists,
+/// placeholder-name lists and JSON values do not count.
+fn argv_templates(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") || line.contains("placeholders") {
+            continue;
+        }
+        let literals = located_literals(line);
+        // A list of several placeholder names is not an argv.
+        if literals.len() > 1 && literals.iter().all(|(_, literal)| upper_word(literal)) {
+            continue;
+        }
+        for (at, literal) in &literals {
+            let before = line[..*at].trim_end();
+            let after = line[at + literal.len() + 2..].trim_start();
+            // Slot arguments, JSON keys and values, one-name lists.
+            if !upper_word(literal)
+                || before.ends_with("slot(")
+                || ["env(", "var(", "var_os(", "env_remove("]
+                    .iter()
+                    .any(|call| before.ends_with(call))
+                || before.ends_with(':')
+                || after.starts_with(':')
+                || (before.ends_with('[') && after.starts_with(']'))
+            {
+                continue;
+            }
+            let mut start = index;
+            while start > 0
+                && index - start < 12
+                && !lines[start - 1].trim_end().ends_with([';', '{', '}'])
+            {
+                start -= 1;
+            }
+            let mut end = index;
+            while end + 1 < lines.len()
+                && end - index < 4
+                && !lines[end].trim_end().ends_with([';', '{', '}'])
+            {
+                end += 1;
+            }
+            let end = end + 1;
+            let window = lines[start..end].join(" ");
+            let commanded = commands
+                .iter()
+                .any(|(command, _)| window.contains(&format!("\"{command}\"")));
+            // The value of the option just before it, as in an argv extension.
+            let previous = literals[..literals.iter().position(|(start, _)| start == at).unwrap()]
+                .last()
+                .map(|(_, literal)| literal.clone())
+                .or_else(|| {
+                    let above = located_literals(lines[index.checked_sub(1)?]);
+                    above.last().map(|(_, literal)| literal.clone())
+                });
+            let option_value = literal.contains('_')
+                && previous.is_some_and(|previous| previous.starts_with("--"));
+            if (commanded && window.contains("\"--")) || option_value {
+                found.push(literal.clone());
+            }
+        }
+    }
+    found
+}
+
 /// Every command family with the subcommands its dispatcher accepts; an
 /// option-only command has none.
 fn dispatched() -> Vec<(&'static str, Vec<String>)> {
@@ -538,6 +685,11 @@ fn every_follow_up_a_refusal_or_hint_names_is_a_full_route() {
         if path == "src/cli/help.rs" {
             continue;
         }
+        for literal in argv_templates(&text, &commands) {
+            failures.push(format!(
+                "{path}: argv argument \"{literal}\" is a bare upper-case template; print it with crate::emitted::slot"
+            ));
+        }
         for literal in bare_follow_ups(&text, &commands) {
             failures.push(format!(
                 "{path}: \"{literal}\" names a follow-up command by its bare words; build it with crate::emitted::command_line (executable and --config)"
@@ -577,10 +729,14 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
             "\"recover\": \"work next child WORK INTENT\"\n",
             "\"x (See Project Agents --json)\"\n",
             "\"explicitly RUN '{command} Init --refresh-skills --root {}'\"\n",
+            "\"resolve ownership before Running init --x --root ROOT to refresh\"\n",
+            "\"CLI reference:\\n  {skill_name} Work Next change --goal \\\"x\\\"\"\n",
+            "\"then inspecting `goal status`\"\n",
+            "format!(\"{command} work {action} --config={}\", c)\n",
         ),
         &commands,
     );
-    assert_eq!(found.len(), 7, "{found:?}");
+    assert_eq!(found.len(), 11, "{found:?}");
     let passed = bare_follow_ups(
         concat!(
             "\"configuration changed during work detail consumption\"\n",
@@ -589,6 +745,8 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
             "\"do not repeat work begin; read exitbind work next\"\n",
             "\"use the network\"\n",
             "\"run init for the project\"\n",
+            "\"only a successful {skill_name} work next result counts\"\n",
+            "\"'{skill_name} init' validates configuration\"\n",
             "\"use the project advance form\"\n",
             "// refresh with work next\n",
             "let r = crate::emitted::command_line(&[\"work\", \"next\"], c); \"refresh with work next\"\n",
@@ -596,6 +754,26 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
         &commands,
     );
     assert!(passed.is_empty(), "{passed:?}");
+    let argv = argv_templates(
+        concat!(
+            "let args = vec![\n",
+            "    \"goal\".into(),\n",
+            "    \"--result-ref\".into(),\n",
+            "    \"Current_Work\".into(),\n",
+            "    \"CURRENT_WORK\".into(),\n",
+            "];\n",
+            "route(&[\"work\", \"detail\", \"WORK\", \"--json\"]);\n",
+            "let env = [\n    \"GIT_DIR\",\n    \"HOME\",\n];\n",
+            "json!({\"work\": w, \"readiness\": \"IN_PROGRESS\", \"x\": \"--a\"});\n",
+            "route(&[\"work\", \"next\", &crate::emitted::slot(\"WORK\"), \"--json\"]);\n",
+            "choice(\n    &[\"work\", \"--reason\"],\n    &[\"REASON\", \"NEW_LEDGER\"],\n);\n",
+            "args.extend([\n    \"--result-ref\".into(),\n    \"ACCEPTED_WORK\".into(),\n]);\n",
+            "git(&[\"rev-parse\", \"--verify\", \"HEAD\"]);\n",
+            "cmd.args([\"--exact\", \"run\"]).env(\"EXITBIND_TEST_MODE\", m);\n",
+        ),
+        &commands,
+    );
+    assert_eq!(argv, ["CURRENT_WORK", "WORK", "ACCEPTED_WORK"], "{argv:?}");
 }
 
 fn prepared_integration(project: &Project) -> Value {

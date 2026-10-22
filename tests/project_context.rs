@@ -110,8 +110,12 @@ fn child_hook(root: &Path, agent: &str, session: &str, child: &str) -> String {
 }
 
 fn session_hook(root: &Path) -> String {
+    session_hook_with(Path::new(env!("CARGO_BIN_EXE_exitbind")), root)
+}
+
+fn session_hook_with(executable: &Path, root: &Path) -> String {
     let payload = json!({"hook_event_name":"SessionStart", "cwd":root});
-    let mut process = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+    let mut process = support::git_topology::command(executable)
         .arg("hook-run")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -731,3 +735,6 @@ fn selected_perspective_expires_on_source_change_and_rebind() {
 
 #[path = "project_context/graph.rs"]
 mod graph;
+
+#[path = "project_context/deep_paths.rs"]
+mod deep_paths;

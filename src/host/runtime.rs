@@ -217,14 +217,18 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
     let text = if event == "SessionStart" {
-        let mut text = session_summary(
-            &loaded.config,
-            &loaded.path,
-            &crate::project::agent_display::lead(&loaded),
-        );
+        let lead = crate::project::agent_display::lead(&loaded);
+        let mut text = session_summary(&loaded.config, Some(&loaded.path), &lead);
         if crate::producer::exitbind_surface() {
             let receive = super::receive_text::receive_work(Some(&loaded.path));
-            let fixed = DIRECT_WORK.len() + receive.len() + 2;
+            // The project-facts route the addendum prints first is reserved too.
+            let facts =
+                crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
+            let fixed = DIRECT_WORK.len() + receive.len() + facts.len() + 28;
+            // Deep paths: the complete-lists route goes before the core does.
+            if text.len() + fixed + 128 > 3072 {
+                text = session_summary(&loaded.config, None, &lead);
+            }
             if text.len() + fixed + 128 > 3072 {
                 text = "Exitbind plan-only project context. Preserve the existing root conversation and current user corrections. No model was selected or launched; declarations are not an OS sandbox.".into();
             }
@@ -553,7 +557,9 @@ fn exact_agent(
     selected
 }
 
-fn session_summary(config: &Value, path: &std::path::Path, lead_display: &str) -> String {
+/// The plan-only session summary; `path` adds the route to the complete agent
+/// and workflow lists when a list was truncated.
+fn session_summary(config: &Value, path: Option<&std::path::Path>, lead_display: &str) -> String {
     let compact = crate::producer::exitbind_surface();
     let mut truncated = false;
     let mut names = |key: &str| {
@@ -576,13 +582,12 @@ fn session_summary(config: &Value, path: &std::path::Path, lead_display: &str) -
     let agents = names("agents");
     let workflows = names("workflows");
     // One complete-list route for every truncated list.
-    let complete = if truncated {
-        format!(
+    let complete = match path.filter(|_| truncated) {
+        Some(path) => format!(
             "Complete lists: {}\n",
             crate::emitted::command_line(&["project", "agents", "--json"], Some(path))
-        )
-    } else {
-        String::new()
+        ),
+        None => String::new(),
     };
     let product = if crate::producer::exitbind_surface() {
         "Exitbind"

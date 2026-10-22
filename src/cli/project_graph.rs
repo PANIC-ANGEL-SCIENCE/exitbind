@@ -26,13 +26,26 @@ pub(super) fn command(arguments: &Arguments) -> Result<(), String> {
                 let nodes = context["nodes"].as_array().map(Vec::len).unwrap_or(0);
                 let edges = context["edges"].as_array().map(Vec::len).unwrap_or(0);
                 let blocks = context["codeBlocks"].as_array().map(Vec::len).unwrap_or(0);
-                println!("CodeGraph: {} ({nodes} nodes, {edges} edges, {blocks} code blocks).", value["summary"].as_str().unwrap_or("query result available"));
+                println!(
+                    "CodeGraph: {} ({nodes} nodes, {edges} edges, {blocks} code blocks).",
+                    value["summary"]
+                        .as_str()
+                        .unwrap_or("query result available")
+                );
                 println!("Evidence is retained with source, provider, and index provenance.");
             }
             "empty" => println!("CodeGraph returned a genuine empty result for this query."),
-            "disabled" => println!("CodeGraph is disabled for this validated project. Enable it with `exitbind project graph enable` when indexing is authorized."),
+            "disabled" => {
+                let enable = crate::emitted::command_line(
+                    &["project", "graph", "enable"],
+                    arguments.options.get("config").map(std::path::Path::new),
+                );
+                println!("CodeGraph is disabled for this validated project. Enable it with `{enable}` when indexing is authorized.");
+            }
             _ => {
-                let reason = value["reason"].as_str().unwrap_or("target or provider state is unresolved");
+                let reason = value["reason"]
+                    .as_str()
+                    .unwrap_or("target or provider state is unresolved");
                 println!("CodeGraph unavailable: {reason}. Continue ordinary source investigation in the validated project.");
             }
         }

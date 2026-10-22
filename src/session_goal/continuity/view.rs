@@ -203,48 +203,41 @@ fn bounded(value: &Value) -> Result<bool, String> {
 /// The supported receiving sequence, so a receiving host binds and records a
 /// native child from this read-only view without studying help or state.
 fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
-    let bound_context = token.as_str().unwrap_or("TOKEN");
-    let mut bind = vec![
+    let bound_context = token
+        .as_str()
+        .map_or_else(|| crate::emitted::slot("FRESH_TOKEN"), str::to_owned);
+    let bind: Vec<String> = vec![
         "work".into(),
         "bind".into(),
         work_id.into(),
         "--context".into(),
+        bound_context,
+        "--host".into(),
+        crate::emitted::slot("HOST"),
+        "--session".into(),
+        crate::emitted::slot("NATIVE_SESSION"),
+        "--host-version".into(),
+        crate::emitted::slot("HOST_VERSION"),
     ];
-    bind.extend(
-        [
-            bound_context,
-            "--host",
-            "HOST",
-            "--session",
-            "NATIVE_SESSION",
-            "--host-version",
-            "HOST_VERSION",
-        ]
-        .map(String::from),
-    );
-    let child = [
-        "work",
-        "child",
-        work_id,
-        "SHORT_ASSIGNMENT",
-        "--context",
-        "FRESH_TOKEN",
-        "--native-child",
-        "CHILD_ID",
-    ]
-    .map(String::from)
-    .to_vec();
-    let prepare = [
-        "work",
-        "child",
-        "prepare",
-        work_id,
-        "SHORT_ASSIGNMENT",
-        "--context",
-        "FRESH_TOKEN",
-    ]
-    .map(String::from)
-    .to_vec();
+    let child: Vec<String> = vec![
+        "work".into(),
+        "child".into(),
+        work_id.into(),
+        crate::emitted::slot("SHORT_ASSIGNMENT"),
+        "--context".into(),
+        crate::emitted::slot("FRESH_TOKEN"),
+        "--native-child".into(),
+        crate::emitted::slot("CHILD_ID"),
+    ];
+    let prepare: Vec<String> = vec![
+        "work".into(),
+        "child".into(),
+        "prepare".into(),
+        work_id.into(),
+        crate::emitted::slot("SHORT_ASSIGNMENT"),
+        "--context".into(),
+        crate::emitted::slot("FRESH_TOKEN"),
+    ];
     let bind = crate::work::compact::continuation_route(&loaded.path, bind);
     let prepare = crate::work::compact::continuation_route(&loaded.path, prepare);
     let child = crate::work::compact::continuation_route(&loaded.path, child);

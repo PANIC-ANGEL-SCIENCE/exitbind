@@ -1926,6 +1926,11 @@
       "currentSha256": "04b26da5e16a5536c6a779436004649a1cbd250dc1bb025960bd3c2e1ad1a4a5",
       "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: registers the changed-after-binding (F2) acceptance and inventory modules; existing modules unchanged. R55 F3: registers the root-inputs (P3) module; existing modules unchanged."
     },
+    "tests/goal_requirements/closure_flows.rs": {
+      "baselineSha256": "9dd3bc9703eec97f56a97bb1843bb796f0cd0bb167d95ef864185cceadec6b2a",
+      "currentSha256": "568d2321e2cbf3e150366b71f5d2f3e501bef2897f859223c9f88693f86853f5",
+      "reason": "R55 integration (P1): the stale category route prints the registered <CURRENT_ACCEPTED_WORK> placeholder, so the expected argument uses that token; the assertion is unchanged."
+    },
     "tests/goal_requirements/correction_and_journey.rs": {
       "baselineSha256": "498dc3610f769a631843c2606f773dc82b18ef6c4c9a96ffff1ea84285356004",
       "currentSha256": "f35abe09d4d9f0ea39159ccb9cb453dbc9ba862be8e03c05b257c672d6e3f022",
@@ -1933,8 +1938,8 @@
     },
     "tests/goal_requirements/intake_and_identity.rs": {
       "baselineSha256": "2755128744e55cfdcc4bbdd3d0352cc579add00b180b75af6911b38270ab92eb",
-      "currentSha256": "4c63665bf8876e3fc19c70211b418a589cba0b2c8bc42cff0fc4bb33107e1353",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (F1 pattern P1): emitted begin and assignment routes now print their placeholders as registered <NAME> tokens, so the substitution keys are <PROJECT_CHECKER>, <CHECK_COMMAND>, <REVIEW_DECISION> and <NEW_ACCEPTED_WORK>; the assertions are unchanged."
+      "currentSha256": "91fd3a0454aaf2c7c6a6e2e92ca120fab563ba1951ad991e6b892aded9e4714d",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 (F1 pattern P1): emitted begin and assignment routes now print their placeholders as registered <NAME> tokens, so the substitution keys are <PROJECT_CHECKER>, <CHECK_COMMAND>, <REVIEW_DECISION> and <NEW_ACCEPTED_WORK>; the assertions are unchanged. R55 integration (P1): the per-category route prints the registered <ACCEPTED_WORK> placeholder, so the expected argument uses that token; the assertion is unchanged."
     },
     "tests/governor_recovery.rs": {
       "baselineSha256": "c64665812dd56921f87f7b5fc7b052db6a2ccd5f2bfff6599ba38ec7ee6e98d2",
@@ -2113,13 +2118,13 @@
     },
     "tests/project_context.rs": {
       "baselineSha256": "860084bdc4a0fc9f2611ff6012840e60fef7d45cb07636b7608be875c79e9a4d",
-      "currentSha256": "9227ecc4c3a24b665ba0975a18a5ffb727557884109a159377ba0a102c0bf008",
-      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the bounded SessionStart case allows the bytes the three receiving routes add by printing the executable and `--config`, and asserts the project-context route with them; the case is otherwise unchanged."
+      "currentSha256": "eb256ee71a23dbe5081026b79d81d6aaa9542892774d95935f7786667f44986f",
+      "reason": "Keep the original stale-profile hook refusal on an unmarked Work and add the marked variant where the next launch boundary presents the current profile. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the bounded SessionStart case allows the bytes the three receiving routes add by printing the executable and `--config`, and asserts the project-context route with them; the case is otherwise unchanged. R55 integration (re-review 9dd1dca): the SessionStart hook helper takes the executable so a deep-path case runs a copied binary, and registers the deep-path budget module; existing assertions unchanged."
     },
     "tests/project_memory_projection.rs": {
       "baselineSha256": "12d77fc607a92d7046674cfa73db2b545a478c12166c7e3f2345b60749a78569",
-      "currentSha256": "dabaa78c1bde78ba330c9242f9510f29fc25940b42b05d505d0d8fe3fe8d6927",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the SessionStart read routes print the executable under test and the project configuration (`--config`) instead of a bare product name; the asserted routes, the 3072-byte bound and the omitted-references route are otherwise unchanged. R55 W3 rework: the 3072-byte bound is restored; an accepted item reaches the Lead when the session context lists it, or names the printed project-facts route as the place of the omitted references and that route lists it (long executable and configuration paths fit fewer item lines)."
+      "currentSha256": "fe2ac92a6548eeef5332591fc2ff0aa023fbebb5ae8e821e897a122197e5c3fb",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the SessionStart read routes print the executable under test and the project configuration (`--config`) instead of a bare product name; the asserted routes, the 3072-byte bound and the omitted-references route are otherwise unchanged. R55 W3 rework: the 3072-byte bound is restored; an accepted item reaches the Lead when the session context lists it, or names the printed project-facts route as the place of the omitted references and that route lists it (long executable and configuration paths fit fewer item lines). R55 integration (P1): the session work detail route prints the registered <WORK> placeholder, so the expected route text uses it; the assertion is unchanged."
     },
     "tests/provider_fallback.rs": {
       "baselineSha256": "daa03ad9655221b83350316d3b649d655fac948d264ae06192e19a1d48ed49c2",
@@ -2133,8 +2138,8 @@
     },
     "tests/receiving_entry.rs": {
       "baselineSha256": "1489ef98a7d4505be57dec00661c20cd96e1ba6459665efa791a5c354591f749",
-      "currentSha256": "757f03cb94e61d168389a7801ed4fb6ee645d2465d1dd81f96e839e1078831a0",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the receiving-entry routes print the executable under test and `--config`; the asserted routes are otherwise unchanged."
+      "currentSha256": "a04d45a98a544f4544ac2863292c8891a78e504b2a4ad81cce95589ef954228b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the receiving-entry routes print the executable under test and `--config`; the asserted routes are otherwise unchanged. R55 integration (P1): the receive bind, child and prepare routes print registered <HOST>, <NATIVE_SESSION>, <HOST_VERSION>, <SHORT_ASSIGNMENT>, <FRESH_TOKEN> and <CHILD_ID> placeholders and the work detail route prints <WORK>, so the substitution keys and the expected route text use those tokens; the assertions are unchanged."
     },
     "tests/recovery_config.rs": {
       "baselineSha256": "c2f1939154f271e2b76d8c692debc8329b92fdc54912b14c79504e2ab4d83b05",

@@ -432,13 +432,12 @@ fn a_partial_claude_activation_hook_names_host_install() {
     let report: Value =
         serde_json::from_str(&status(&["host", "status", "--hosts", "claude", "--json"])).unwrap();
     assert_eq!(report["hosts"][0]["activationHook"], "partial", "{report}");
-    assert_eq!(
-        report["hosts"][0]["activationHookAction"],
-        "exitbind host install"
-    );
+    // The action names the executable that answers, not a PATH lookup.
+    let install = format!("{} host install", env!("CARGO_BIN_EXE_exitbind"));
+    assert_eq!(report["hosts"][0]["activationHookAction"], install.as_str());
     let text = status(&["host", "status", "--hosts", "claude"]);
     assert!(
-        text.contains("activation hook: partial; run 'exitbind host install'"),
+        text.contains(&format!("activation hook: partial; run '{install}'")),
         "{text}"
     );
     status(&["host", "install", "--hosts", "claude", "--json"]);

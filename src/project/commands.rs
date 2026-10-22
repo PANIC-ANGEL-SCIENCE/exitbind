@@ -103,9 +103,38 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
     } else {
         "soulmate"
     };
+    // The CLI reference and refresh hint are full routes: this executable,
+    // the created configuration, and registered placeholders.
+    let brief = crate::emitted::command_line(
+        &[
+            "brief",
+            "worker",
+            "--task",
+            "Describe the change you want to make",
+        ],
+        Some(&path),
+    );
+    let begin = crate::emitted::command_line(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Describe the bounded change",
+            "--check-command",
+            &crate::emitted::slot("CHECK_COMMAND"),
+        ],
+        Some(&path),
+    );
+    let check = crate::emitted::command_line(&["check"], Some(&path));
+    let placeholder = crate::emitted::slot("CHECK_COMMAND");
+    let refresh = crate::emitted::command_text(&format!(
+        "init --refresh-skills --root {}",
+        crate::emitted::word(&created.product_root.display().to_string())
+    ));
     if skip_skills {
         println!(
-            "Created {}\nProject skill projection skipped by explicit --skip-skills.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not inspect, install, or change project skill destinations, host software, or host permissions; resolve skill ownership before running init --refresh-skills --root ROOT to request project skill projection.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace YOUR_TEST_COMMAND with a real project check command):\n  {skill_name} brief worker --task \"Describe the change you want to make\" --config={quoted_config}\n  {skill_name} work begin change --goal \"Describe the bounded change\" --check-command \"YOUR_TEST_COMMAND\" --config={quoted_config}\n  {skill_name} check --config={quoted_config}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
+            "Created {}\nProject skill projection skipped by explicit --skip-skills.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not inspect, install, or change project skill destinations, host software, or host permissions; resolve skill ownership before running {refresh} to request project skill projection.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace {placeholder} with a real project check command):\n  {brief}\n  {begin}\n  {check}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
             path.display()
         );
         println!(
@@ -120,7 +149,7 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
             skill.to_str().ok_or("skill path is not valid UTF-8")?,
         );
         println!(
-            "Created {}\nPrepared project skills for Codex and Claude: {skill_name}{coffee}.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  {skill_name} skill: {quoted_skill}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not install host software or change host permissions; ask before any future installation or permission change.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration and skill above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace YOUR_TEST_COMMAND with a real project check command):\n  {skill_name} brief worker --task \"Describe the change you want to make\" --config={quoted_config}\n  {skill_name} work begin change --goal \"Describe the bounded change\" --check-command \"YOUR_TEST_COMMAND\" --config={quoted_config}\n  {skill_name} check --config={quoted_config}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
+            "Created {}\nPrepared project skills for Codex and Claude: {skill_name}{coffee}.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  {skill_name} skill: {quoted_skill}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not install host software or change host permissions; ask before any future installation or permission change.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration and skill above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace {placeholder} with a real project check command):\n  {brief}\n  {begin}\n  {check}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
             path.display()
         );
         println!(

@@ -109,8 +109,9 @@ pub fn load(path: Option<&str>) -> Result<Loaded, String> {
             // repository that is not configured yet. Name the one owner-owned
             // write and its exact command instead of a bare instruction.
             let caller = crate::compatibility::profile().caller;
+            let init = crate::emitted::command_text("init --mode portable --root .");
             format!(
-                "configuration not found: {requested}. This project is not configured for {caller} yet. It needs one owner-approved project write: `{caller} init --mode portable --root .` creates {requested}, private ignored state, reviewable role profiles, and project-local guidance. It installs no hook, starts no agent, and grants no host permission. Ask the owner for that write, then run the command again."
+                "configuration not found: {requested}. This project is not configured for {caller} yet. It needs one owner-approved project write: `{init}` creates {requested}, private ignored state, reviewable role profiles, and project-local guidance. It installs no hook, starts no agent, and grants no host permission. Ask the owner for that write, then run the command again."
             )
         } else {
             error.to_string()

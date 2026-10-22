@@ -84,7 +84,7 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
     });
     if !loaded.capabilities.is_empty() {
         snapshot["capabilities"] = json!({"state":"registered", "count":loaded.capabilities.len(),
-            "route":crate::emitted::command_line(&["project", "capabilities", "--task", "TASK", "--host", "HOST", "--json"], Some(&loaded.path)),
+            "route":crate::emitted::command_line(&["project", "capabilities", "--task", &crate::emitted::slot("TASK"), "--host", &crate::emitted::slot("HOST"), "--json"], Some(&loaded.path)),
             "meaning":"read current applicability; no launch, acknowledgement or live refresh inferred"});
     }
     match super::architecture::reference(loaded) {

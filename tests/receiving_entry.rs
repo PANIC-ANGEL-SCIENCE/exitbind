@@ -107,9 +107,9 @@ fn receiver_binds_and_records_a_child_from_the_continuation_view_alone() {
     let bind = fill(
         &view["receive"]["bind"],
         &[
-            ("HOST", "claude"),
-            ("NATIVE_SESSION", "session-a"),
-            ("HOST_VERSION", "2.1.283"),
+            ("<HOST>", "claude"),
+            ("<NATIVE_SESSION>", "session-a"),
+            ("<HOST_VERSION>", "2.1.283"),
         ],
     );
     let bound = run(&root, &bind, b"");
@@ -133,9 +133,9 @@ fn receiver_binds_and_records_a_child_from_the_continuation_view_alone() {
     let child = fill(
         &fresh["receive"]["child"],
         &[
-            ("SHORT_ASSIGNMENT", "check docs"),
-            ("FRESH_TOKEN", fresh_token),
-            ("CHILD_ID", "agent-1"),
+            ("<SHORT_ASSIGNMENT>", "check docs"),
+            ("<FRESH_TOKEN>", fresh_token),
+            ("<CHILD_ID>", "agent-1"),
         ],
     );
     let recorded = run(&root, &child, "README lacks the flag.\n".as_bytes());
@@ -240,7 +240,7 @@ fn governed_session_start_routes_known_work_to_detail_and_unknown_work_to_resume
         .unwrap();
     let exe = env!("CARGO_BIN_EXE_exitbind");
     assert!(
-        context.contains(&format!("run `{exe} work detail WORK --json --config ")),
+        context.contains(&format!("run `{exe} work detail <WORK> --json --config ")),
         "{context}"
     );
     assert!(context.contains(&format!(
