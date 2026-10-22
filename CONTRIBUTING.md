@@ -289,6 +289,13 @@ small verification needed to prove behavior.
 - For a historical failed GitHub Actions run, use `scripts/ci-failure.sh RUN_ID`
   to see failed steps and bounded error lines. Keep full remote logs out of
   agent context; record the run ID, head SHA, failing step, and diagnosis.
+  Record a real gate failure, remote or local, with `scripts/ci-failure.sh
+  --record --gate GATE --class CLASS --summary TEXT --resolution TEXT
+  (--run RUN_ID | --source TEXT)`; it appends to
+  `tooling/repository/ci/failure-ledger.jsonl`. Every `ci-local.sh` gate is
+  listed in `tooling/repository/ci/gate-inventory.json` with its cost, the
+  failure it prevents, and a ledger reference, provisional date or deterrent
+  reason; `check_gate_inventory.py` enforces this inside `product-surface`.
 - For noisy verification in an agent session, use
   `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: ordinary success remains
   one labeled line, while recognized successful `cargo test` output is reduced
