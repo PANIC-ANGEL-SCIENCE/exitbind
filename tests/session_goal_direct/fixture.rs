@@ -272,6 +272,7 @@ pub(crate) fn start_intent_sha256(start: &Value) -> String {
         "preservation",
         "basisProtocol",
         "recoveryProtocol",
+        "observationNoveltyProtocol",
         "checkObservationProtocol",
         "basis",
         "reviewPolicy",

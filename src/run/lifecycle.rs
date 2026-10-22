@@ -352,6 +352,7 @@ fn start_with_association(
             value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
             if check_policy.is_some() && quarantine.is_none() {
                 value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+                crate::run::state::observation_novelty::add_start_marker(&mut value);
             }
             if check_policy.is_some() {
                 value["checkObservationProtocol"] = json!(crate::run::check_observation::PROTOCOL);
@@ -595,6 +596,7 @@ fn start_intent_with_association(
         value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
         if check_policy.is_some() {
             value["recoveryProtocol"] = json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+            crate::run::state::observation_novelty::add_start_marker(&mut value);
             value["checkObservationProtocol"] = json!(crate::run::check_observation::PROTOCOL);
         }
         if let Some(basis) = &extension.basis {
@@ -635,6 +637,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "preservation",
         "basisProtocol",
         "recoveryProtocol",
+        "observationNoveltyProtocol",
         "checkObservationProtocol",
         "basis",
         "reviewPolicy",

@@ -586,6 +586,7 @@ pub(super) fn supersede_with_policy_and_recovery(
             if check_policy.is_some() {
                 event_value["recoveryProtocol"] =
                     json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+                crate::run::state::observation_novelty::add_start_marker(&mut event_value);
                 event_value["checkObservationProtocol"] =
                     json!(crate::run::check_observation::PROTOCOL);
             }
@@ -638,6 +639,9 @@ pub(super) fn supersede_with_policy_and_recovery(
             }
             if let Some(protocol) = old_state.get("recoveryProtocol") {
                 event_value["recoveryProtocol"] = protocol.clone();
+            }
+            if let Some(protocol) = old_state.get("observationNoveltyProtocol") {
+                event_value["observationNoveltyProtocol"] = protocol.clone();
             }
             if let Some(protocol) = old_state.get("checkObservationProtocol") {
                 event_value["checkObservationProtocol"] = protocol.clone();

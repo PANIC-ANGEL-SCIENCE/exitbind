@@ -181,12 +181,7 @@ fn observed_check(state: &mut Value, event: &Value) -> Result<(), String> {
         }
         _ => return Ok(()),
     };
-    // Target names, artifacts, log contents, durations, timestamps and wrapper
-    // text are deliberately absent. The same failure stays the same finding.
-    let key = crate::evidence::hash::value(&json!({
-        "commandSha256": event["checkCommandSha256"],
-        "status": status,
-    }));
+    let key = super::observation_novelty::key(state, event, &status);
     if state["governor"]["observations"]
         .as_array()
         .is_some_and(|items| items.iter().any(|item| item["key"] == key))

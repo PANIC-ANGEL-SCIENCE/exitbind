@@ -6,6 +6,7 @@ pub(crate) mod check_observation;
 mod check_stage;
 mod governor_validation;
 mod historical_review;
+pub(crate) mod observation_novelty;
 mod recovery;
 mod reviewer_transition;
 mod start_protocol;

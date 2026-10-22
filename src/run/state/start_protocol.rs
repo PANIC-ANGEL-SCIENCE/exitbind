@@ -4,6 +4,7 @@ use serde_json::Value;
 
 const START_PROTOCOL_FIELDS: &[&str] = &[
     "recoveryProtocol",
+    "observationNoveltyProtocol",
     "checkObservationProtocol",
     "verificationPreparationProtocol",
     "verificationCheckerSources",

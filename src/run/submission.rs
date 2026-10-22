@@ -48,8 +48,11 @@ pub fn submit(
 
 /// Submit a work result after revalidating the façade's exact assignment
 /// under the ledger lock. The artifact is produced only after that check.
+/// `binding` checks the caller's view; it runs under every lock that appends
+/// for this call, except that this call's own repair event does not make the
+/// view stale.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn submit_for_assignment<F, P>(
+pub(crate) fn submit_for_assignment<F, B, P>(
     loaded: &Loaded,
     ledger: &str,
     assignment_handle: &str,
@@ -58,11 +61,13 @@ pub(crate) fn submit_for_assignment<F, P>(
     reason: Option<&str>,
     disposition: Option<&str>,
     artifact: F,
+    binding: B,
     preflight: P,
     recorded_protection: &mut Option<RecordedProtection>,
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
+    B: Fn() -> Result<(), String>,
     P: FnOnce(&[Value], &str) -> Result<(), String>,
 {
     let path = ledger_path(&loaded.state_root, ledger, false)?;
@@ -70,6 +75,7 @@ where
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     let agent = expected.agent.clone();
     let assignment_sha256 = crate::evidence::hash::text(assignment_handle);
+    let mut own_repair = None;
     if expected.role == "worker" && outcome == "completed" {
         // A current Lead repair can precede the mutation permit that exhausts
         // the no-information streak. Record that decision's one forward
@@ -77,11 +83,12 @@ where
         // and before the worker's retained result; both revalidate under the
         // ledger lock, and an interrupted call leaves a replayable repair
         // event, never a fabricated submission.
-        super::repair_recovery::before_worker_completion(
+        own_repair = super::repair_recovery::before_worker_completion(
             loaded,
             &path,
             assignment_handle,
             &expected,
+            &binding,
         )?;
     }
     let selected_pre_return = outcome == "completed"
@@ -114,7 +121,12 @@ where
             root: Some("state"),
             artifact: subject_artifact,
         },
-        preflight,
+        |events, source| {
+            if !super::repair_recovery::only_own_repair(events, own_repair.as_deref()) {
+                binding()?;
+            }
+            preflight(events, source)
+        },
         Some(recorded_protection),
         pre_return_attempt.as_deref(),
     )

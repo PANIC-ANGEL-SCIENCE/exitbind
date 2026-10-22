@@ -305,7 +305,7 @@ fn observed_status_novelty_is_bounded_and_failed_check_cannot_qualify_acceptance
 fn current_lead_repair_supplies_the_required_replan_once() {
     let fixture = Fixture::new("save-return-lead-replan");
     let work = fixture.begin();
-    for attempt in 1..=3 {
+    for attempt in 1..=2 {
         fixture.give(
             &work,
             "worker",
@@ -319,32 +319,45 @@ fn current_lead_repair_supplies_the_required_replan_once() {
             "rework",
             &format!("review finding {attempt}"),
         );
-        let before = fixture.next(&work);
-        if attempt == 3 {
-            assert_eq!(
-                before["packet"]["context"]["loop"]["state"],
-                "replan_required"
-            );
-        }
+        // R55 F7: a pass on a new result is new information.
+        assert_eq!(
+            fixture.next(&work)["packet"]["context"]["loop"]["state"],
+            "ready"
+        );
         fixture.repair(&work);
     }
-    let worker = fixture.next(&work);
-    assert_eq!(worker["role"], "worker");
-    assert_eq!(worker["packet"]["context"]["loop"]["state"], "ready");
-    let allowed = fixture.ok(
-        &[
-            "work",
-            "permit",
-            &work,
-            worker["assignment"].as_str().unwrap(),
-            "--operation",
-            "fourth_parser_edit",
-        ],
-        b"",
-        "pass",
+    // Two permits without new information exhaust the streak; the current
+    // Lead repair then supplies the required re-plan once, at the return.
+    for operation in ["third_parser_edit", "third_parser_retry"] {
+        let worker = fixture.next(&work);
+        fixture.ok(
+            &[
+                "work",
+                "permit",
+                &work,
+                worker["assignment"].as_str().unwrap(),
+                "--operation",
+                operation,
+            ],
+            b"",
+            "pass",
+        );
+    }
+    let before = fixture.next(&work);
+    assert_eq!(
+        before["packet"]["context"]["loop"]["state"],
+        "replan_required"
     );
-    assert_eq!(allowed["allowed"], true);
+    let returned = fixture.give(&work, "worker", "completed", "parser attempt 3");
+    assert_eq!(returned["effect"], "recorded", "{returned}");
+    let replans = fixture
+        .events(&work)
+        .iter()
+        .filter(|event| event["governorEvent"]["action"] == "replan")
+        .count();
+    assert_eq!(replans, 1);
     let loop_state = &fixture.next(&work)["packet"]["context"]["loop"];
+    assert_eq!(loop_state["state"], "ready");
     assert_eq!(loop_state["spent"], 4);
     assert_eq!(loop_state["replanCount"], 1);
 }

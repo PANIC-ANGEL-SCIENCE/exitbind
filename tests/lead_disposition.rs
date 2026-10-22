@@ -88,6 +88,10 @@ impl Fixture {
         start
             .as_object_mut()
             .unwrap()
+            .remove("observationNoveltyProtocol");
+        start
+            .as_object_mut()
+            .unwrap()
             .remove("checkObservationProtocol");
         start.as_object_mut().unwrap().remove("eventSha256");
         start["eventSha256"] = json!(format!(

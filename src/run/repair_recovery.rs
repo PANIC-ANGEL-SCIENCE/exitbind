@@ -3,12 +3,17 @@
 
 use super::*;
 
+/// Returns the identity of the repair event this call appended, if any. The
+/// caller's view (`binding`) is checked under the same lock, before the
+/// append, so an event appended after that view is never mistaken for this
+/// call's own repair.
 pub(super) fn before_worker_completion(
     loaded: &Loaded,
     path: &run_ledger::LedgerPath,
     assignment_handle: &str,
     expected: &AssignmentIdentity,
-) -> Result<(), String> {
+    binding: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<String>, String> {
     let targets = [path.path.as_path(), path.lock.as_path()];
     crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
     with_lock(path, || {
@@ -41,7 +46,7 @@ pub(super) fn before_worker_completion(
             }
         }
         if state["governor"]["state"] != "replan_required" {
-            return Ok(());
+            return Ok(None);
         }
         warn_drift(action_drift_warning(loaded, &state)?.as_ref());
         crate::run::artifact::assert_current(loaded, &state)?;
@@ -58,8 +63,9 @@ pub(super) fn before_worker_completion(
         let Some(repair) = run_state::forward_repair_candidate(&state, &events, &assignment) else {
             // A hard stop or an already consumed decision is left for the
             // ordinary completion boundary to refuse and hold truthfully.
-            return Ok(());
+            return Ok(None);
         };
+        binding()?;
         let inputs = live_inputs(&state)?;
         let last = events.last().ok_or("run ledger has no event head")?;
         let previous = json!({"eventSha256": state["governor"]["headSha256"]});
@@ -115,6 +121,49 @@ pub(super) fn before_worker_completion(
         )?;
         append(path, &event, false, &source)?;
         super::continuation_effect::complete(loaded, &ticket, true, true)?;
-        Ok(())
+        Ok(event["eventSha256"].as_str().map(str::to_owned))
     })
+}
+
+/// Whether the only event after the caller's checked view is this call's own
+/// repair: `events` ends with the submission being preflighted, directly
+/// preceded by the repair event appended under the earlier lock.
+pub(super) fn only_own_repair(events: &[Value], own_repair: Option<&str>) -> bool {
+    own_repair.is_some_and(|sha| {
+        events.len() >= 2 && events[events.len() - 2]["eventSha256"].as_str() == Some(sha)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::only_own_repair;
+    use serde_json::{json, Value};
+
+    fn events(shas: &[&str]) -> Vec<Value> {
+        shas.iter().map(|sha| json!({"eventSha256": sha})).collect()
+    }
+
+    /// W3 D3: only the repair this call appended, directly before its own
+    /// submission, skips the binding check; a repair another call appended
+    /// (the pre-F7 count-based reading accepted it) or any later event does not.
+    #[test]
+    fn only_this_calls_repair_directly_before_the_submission_is_its_own() {
+        assert!(only_own_repair(
+            &events(&["view", "own", "submission"]),
+            Some("own")
+        ));
+        assert!(!only_own_repair(
+            &events(&["view", "other", "submission"]),
+            None
+        ));
+        assert!(!only_own_repair(
+            &events(&["view", "other", "submission"]),
+            Some("own")
+        ));
+        assert!(!only_own_repair(
+            &events(&["view", "own", "foreign", "submission"]),
+            Some("own")
+        ));
+        assert!(!only_own_repair(&events(&["submission"]), Some("own")));
+    }
 }

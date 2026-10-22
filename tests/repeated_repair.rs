@@ -387,3 +387,6 @@ fn emitted_evidence_form_binds_exact_new_evidence_without_another_grant() {
 
 #[path = "repeated_repair/lead_repair_return.rs"]
 mod lead_repair_return;
+
+#[path = "repeated_repair/changed_subject.rs"]
+mod changed_subject;

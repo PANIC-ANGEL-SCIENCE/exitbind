@@ -172,6 +172,7 @@ fn verify_actual(
         "basis",
         "reviewPolicy",
         "recoveryProtocol",
+        "observationNoveltyProtocol",
         "checkObservationProtocol",
         "verificationPreparationProtocol",
         "verificationCheckerSources",

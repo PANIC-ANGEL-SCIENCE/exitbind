@@ -47,6 +47,7 @@ pub(super) fn reject_unknown(
             allowed.push("basis");
             allowed.push("reviewPolicy");
             allowed.push("recoveryProtocol");
+            allowed.push(super::observation_novelty::FIELD);
             allowed.push("checkObservationProtocol");
             allowed.push("carryProtocol");
             allowed.push("governorCarry");

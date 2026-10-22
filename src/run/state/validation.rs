@@ -253,6 +253,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
             ));
         }
     }
+    super::observation_novelty::validate_start(event, line)?;
     if let Some(marker) = event.get("checkObservationProtocol") {
         if version != 8
             || marker != crate::run::check_observation::PROTOCOL

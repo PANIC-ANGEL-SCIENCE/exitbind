@@ -275,7 +275,9 @@ fn same_goal_carry_accepts_current_subject_check_without_duplicate_governor_evid
 
     // Change the checked subject while preserving the exact frozen command
     // and its output. The successor must reject the old target by identity,
-    // then accept its current target without treating the repeated result as new evidence.
+    // then accept its current target. Since R55 F7 the successor start carries
+    // observationNoveltyProtocol: the same pass on the new subject is new
+    // information, recorded as one observation, never as duplicate evidence.
     fs::write(fixture.root.join("material-input.txt"), b"changed input").unwrap();
     let successor_work = format!("smw_{}", "c".repeat(64));
     let successor_ledger = fixture.ledger(&successor_work);
@@ -422,9 +424,14 @@ fn same_goal_carry_accepts_current_subject_check_without_duplicate_governor_evid
         1,
         "the current check execution still records its bounded admission evidence"
     );
+    assert_eq!(successor_events[0]["observationNoveltyProtocol"], 1);
     let after_repeated = fixture.value(&["run", "inspect", &successor_ledger], None);
     assert_eq!(after_repeated["governor"]["state"], "ready");
-    assert_eq!(after_repeated["governor"]["noInformationStreak"], 1);
+    assert_eq!(after_repeated["governor"]["noInformationStreak"], 0);
+    assert_eq!(
+        after_repeated["governor"]["evidence"],
+        successor_state_before_check["governor"]["evidence"]
+    );
     assert_eq!(after_repeated["governor"]["afterReplan"], false);
     assert_eq!(after_repeated["governor"]["postReplanSpent"], 0);
     assert_eq!(after_repeated["governor"]["spent"], 2);

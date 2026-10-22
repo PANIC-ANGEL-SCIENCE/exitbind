@@ -2008,8 +2008,8 @@
     },
     "tests/lead_disposition.rs": {
       "baselineSha256": "b09788c6601462e67cfa68a08a94ac2802195b550feb307a3aa9cb1e9c4997b3",
-      "currentSha256": "644691679d8561add14c512da1eee279f36f2720043a60fd8eee7d5f1ce4ac6f",
-      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "7a717250091c6ae32ffb097a3b6bdc7f72e71dd10eb3d2a9498aacb38d77c79f",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F7: the historical-start fixture removes the new observationNoveltyProtocol marker together with recoveryProtocol, which it requires; assertions are unchanged."
     },
     "tests/legacy_installer_bridge.rs": {
       "baselineSha256": "010bde494eb192df47e3e9d2a53c32746617036b6c55a30c9769f8020ea13738",
@@ -2183,8 +2183,8 @@
     },
     "tests/repeated_repair.rs": {
       "baselineSha256": "5cdd0448c360961c7717715306d71ee2f490be8569c18c8436faf226452e98d5",
-      "currentSha256": "bf7dba56cc002c97c8b89e90b2b33f7a4c41887af3fcd358f24acdb3db0ed4bb",
-      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the fixture builder accepts extra work begin options (basis, pre-return command) for the new S3 lead-repair return module, which it registers; existing cases and assertions are unchanged."
+      "currentSha256": "03d1de7b9f02d25c95d5b53e2325a0784b82e99ae3fe70e0fcef3fd8ca302acf",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: the fixture builder accepts extra work begin options (basis, pre-return command) for the new S3 lead-repair return module, which it registers; existing cases and assertions are unchanged. R55 F7: registers the changed-subject fixture module (passing checks on new results after a Lead rework); existing cases and assertions are unchanged."
     },
     "tests/replan_input.rs": {
       "baselineSha256": "355e4a6745edfb26f248d2afdba6b5f4d97902ce055f023ce88d0ba8c802f7a0",
@@ -2228,8 +2228,8 @@
     },
     "tests/save_return_preservation.rs": {
       "baselineSha256": "e7177a0d2b35e5e7185b8bcb04a934252b85e81050826f59f0a6bdef742ea5d6",
-      "currentSha256": "198561424e6583aa305e5a0fe6cd3cef6e386a37fdfe4301c9aa82b636c1e266",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "8306d7d2c16b4f2e525506c2763a4a3fcd712ebce55be7e7a321e0c0a9e127bf",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F7 (Lead decision: a pass on a new result is new information): in current_lead_repair_supplies_the_required_replan_once the passing attempts 1-2 now stay ready, and the third attempt exhausts the streak with two permits before the current Lead repair supplies the one re-plan at the return; the asserted property (one supplied re-plan, no extra grant) is unchanged."
     },
     "tests/save_return_recovery/context.rs": {
       "baselineSha256": "1b30af500d04fefdd479e9b0a9fc507dfd950a7cf5d79246f5de0e34f38ee05e",
@@ -2253,8 +2253,8 @@
     },
     "tests/session_goal_direct/fixture.rs": {
       "baselineSha256": "3276061a7f4b2eab755a9e56cfbdb2f2cc5018705e30369ce48b4dcd14d6f6a1",
-      "currentSha256": "20770e15099e73a1de815ffcd73b2c47cc8a138bc6df46797697ce256394bd34",
-      "reason": "Mirror the product start-intent projection including the guidance-continuity marker fields plus preReturnPolicy, projectContinuation, quarantineVerification and verification-preparation fields. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "615578867676256e88c3ccd783732961d524947f3c47c3e90135cea0a8235d78",
+      "reason": "Mirror the product start-intent projection including the guidance-continuity marker fields plus preReturnPolicy, projectContinuation, quarantineVerification and verification-preparation fields. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F7: the start-intent projection names the new observationNoveltyProtocol start field, as the product does; assertions are unchanged."
     },
     "tests/session_goal_direct/native_context.rs": {
       "baselineSha256": "efb9405eb4ee1a75f1000de8737124fde6714712bbb4c874029fcb1902f3c21a",
@@ -2315,6 +2315,11 @@
       "baselineSha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b",
       "currentSha256": "12805f8dc2f9bec6a496b926433a90b847d92f73b9b58835184479d93e6efda1",
       "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+    },
+    "tests/subject_progress/same_goal_carry.rs": {
+      "baselineSha256": "5dd695058bff8e67b4dc792c5237466069b8758af7429adaa70c5695f156da66",
+      "currentSha256": "9fc1900528fe62d5b2376e9ec3fafb8837134fbd152893eaab56cf881042ffc7",
+      "reason": "R55 F7 (Lead decision): the same pass on the successor's new subject is new information on a marked successor start (noInformationStreak 0, no duplicate governor evidence, start carries observationNoveltyProtocol); the old-target refusal and single-check assertions are unchanged."
     },
     "tests/subject_progress/saved_packet_reuse.rs": {
       "baselineSha256": "5d27f6bc7ff2c2994fc2bbbc65aff8d2e11eb6d2b58118fa30ec71608cdcc4fa",
@@ -2398,8 +2403,8 @@
     },
     "tests/work_check_replacement/context.rs": {
       "baselineSha256": "86efc24696f0af82c838a11df80aab44f0dd8ba0330c926cefd2d778148e69b9",
-      "currentSha256": "2b6cdd7a22fe0f44646be35098e53f27a57d2f726d4d9e2d24e0a774ce0379ac",
-      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "c6e55bab9e345e3bf4119e237c379f67e0c997d9bea8c0846bb0e105c84850cc",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F7: the start-intent projection names the new observationNoveltyProtocol start field, as the product does; assertions are unchanged."
     },
     "tests/work_check_replacement/refusal_and_native_lineage.rs": {
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",

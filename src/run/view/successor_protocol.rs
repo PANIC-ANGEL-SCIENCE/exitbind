@@ -34,6 +34,7 @@ pub(super) fn assert_same_request(existing: &[Value], event: &Value) -> Result<(
         "basis",
         "reviewPolicy",
         "recoveryProtocol",
+        "observationNoveltyProtocol",
         "governor",
         "supersedes",
         "carryProtocol",
