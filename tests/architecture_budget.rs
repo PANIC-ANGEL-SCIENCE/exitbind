@@ -148,6 +148,7 @@ fn a_seeded_33_kib_test_file_fails_the_budget() {
 #[test]
 fn git_tracked_files_agree_with_the_covered_walk_and_ceiling_list() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // raw-spawn: a read-only `git ls-files` listing; no exitbind process or session state.
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(root)

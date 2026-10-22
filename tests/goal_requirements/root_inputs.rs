@@ -129,7 +129,7 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         "a ledger the ledger judge confined, made relative",
     ),
     (
-        "src/run/guidance_continuity.rs",
+        "src/run/guidance_continuity/advisory_paths.rs",
         1,
         "Git-listed product paths made relative",
     ),

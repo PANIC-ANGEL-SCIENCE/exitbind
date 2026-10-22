@@ -1703,7 +1703,7 @@
     },
     "tests/architecture_budget.rs": {
       "baselineSha256": "4ea2442881657c2f7bb78a53f7bbc8c415d57457db3672a7710c6bcbe40cf0c4",
-      "currentSha256": "c2f3fe319c2fa2c2088fa2113d99b23ff0282d2c09b6b95327d5d1f1e28d79f1",
+      "currentSha256": "1d6e6df051541fcd9037d76de71d781e0f48594fdb6d25ef20414501dfc071fb",
       "reason": "R55 F10: the budget covers every file under src, tests and tests/fixtures (test modules, integration tests and fixtures included) with a ceiling list that only falls; the original production-source case is kept as every_covered_file_stays_within_its_ceiling with the same growth, over-limit, missing and under-limit failures, plus a ceiling above the current size now fails. Two cases are added: a seeded 33 KiB test file under each test root fails the budget, and Git-tracked files agree with the covered walk and the ceiling list."
     },
     "tests/architecture_contract.rs": {
