@@ -20,7 +20,6 @@ config="$root/project/exitbind.json"
 namespace=.exitbind
 skill_name=exitbind
 binding_env=EXITBIND_BINDINGS_DIR
-core_words="$skill_name brief"
 
 activation="$root/activation.json"
 
@@ -51,11 +50,32 @@ invoke() {
     PATH="$invoke_path" "$bin" "$@"
 }
 
+# init prints its core path as full routes: the invoking executable and the
+# created configuration, each quoted as one shell word when it is not plain.
+shell_word() {
+  case "$1" in
+    ''|*[!A-Za-z0-9_./:=@%+,\<\>-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+bin_real="$(CDPATH= cd "$(dirname "$bin")" && pwd -P)/$(basename "$bin")"
+config_real="$(CDPATH= cd "$root/project" && pwd -P)/exitbind.json"
+printed_route() {
+  for exe in "$bin" "$bin_real"; do
+    for cfg in "$config" "$config_real"; do
+      line="  $(shell_word "$exe") $1 --config $(shell_word "$cfg")"
+      printf '%s\n' "$next" | grep -qxF -- "$line" && return 0
+    done
+  done
+  printf '%s\n' "onboarding smoke: init did not print the core path: $1" >&2
+  printf '%s\n' "$next" >&2
+  exit 1
+}
+
 next=$(invoke init --mode portable --root "$root/project")
-case "$next" in
-  *"$core_words"*"$skill_name work begin"*"$skill_name check"*) ;;
-  *) echo "onboarding smoke: init did not print the core path" >&2; exit 1 ;;
-esac
+printed_route "brief worker --task 'Describe the change you want to make'"
+printed_route "work begin change --goal 'Describe the bounded change' --check-command <CHECK_COMMAND>"
+printed_route check
 
 test -f "$root/project/.agents/skills/$skill_name/SKILL.md"
 test -f "$root/project/.claude/skills/$skill_name/SKILL.md"
