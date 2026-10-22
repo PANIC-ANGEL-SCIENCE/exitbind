@@ -550,11 +550,11 @@ fn help(
             next_command,
             "not_required",
         )
-    } else if let Some((what, summary)) = super::disposition::lead_help(next) {
+    } else if let Some((what, summary)) = super::disposition::lead_help(next, work) {
         (
             what.to_owned(),
             "lead",
-            summary.to_owned(),
+            summary,
             next_command,
             "not_required",
         )

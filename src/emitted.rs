@@ -182,6 +182,21 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the Work the refused command read",
     },
     Placeholder {
+        name: "ASSIGNMENT",
+        fills: &[Fill::Positional],
+        meaning: "the assignment whose finding the Lead decides",
+    },
+    Placeholder {
+        name: "DISPOSITION_DECISION",
+        fills: &[Fill::Flag("--decision")],
+        meaning: "repair, defer, reject or supersede",
+    },
+    Placeholder {
+        name: "CONTEXT_TOKEN",
+        fills: &[Fill::Flag("--context")],
+        meaning: "the fresh context token work continuation returns",
+    },
+    Placeholder {
         name: "SOURCE",
         fills: &[Fill::Positional],
         meaning: "the lesson source file",

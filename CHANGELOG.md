@@ -7,9 +7,13 @@ Unreleased source candidate; no stable tag or release assets are published.
 - `work detail WORK --view action` carries the phase guidance and project
   lessons delivered to the current recipient, each with its read route, and
   counts omitted items with their reason.
-- Printed routes come from one builder that names the executable and
-  `--config`; `work fill WORK --current-binding B --choice LABEL` runs a
-  printed route with its placeholders filled, unedited.
+- Printed routes, including the follow-up commands refusals and hints name,
+  come from one builder that names the executable and `--config`, with
+  registered `<NAME>` placeholders; `work fill WORK --current-binding B
+  --choice LABEL` runs a printed route with its placeholders filled, unedited.
+- `goal prepare --scope integration` over a conversation journey whose
+  members are all accepted prints `--journey-integration` in its begin route;
+  otherwise `journeyIntegrationOmitted` states why the flag is absent.
 - `setup --task-card --first-work IDS` prints `goal prepare` and `work begin`
   for those rows only and keeps every row registered.
 - Under a session Goal owned by another project, `goal` mutations refuse

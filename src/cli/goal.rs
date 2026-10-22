@@ -123,6 +123,18 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             let record = crate::session_goal::read(&scope.root)?
                 .ok_or("goal prepare requires the current canonical Goal")?;
+            // An integration over the conversation journey freezes its
+            // accepted members when that freeze would succeed now; otherwise
+            // the route omits the flag and the response says why.
+            let journey_omitted = if !integration {
+                None
+            } else if a.flags.contains_key("project") {
+                Some("the project Goal is selected; journey integration freezes the conversation Goal's members".to_owned())
+            } else {
+                crate::session_goal::journey::prepare(l, Some(&prepared.basis), checker, command)
+                    .err()
+                    .map(|error| crate::drift::plain(&error))
+            };
             let mut begin = vec![
                 "work".into(),
                 "begin".into(),
@@ -143,6 +155,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             ];
             if integration {
                 begin.extend(["--scope".into(), "integration".into()]);
+                if journey_omitted.is_none() {
+                    begin.push("--journey-integration".into());
+                }
             }
             if let Some(basis) = a.options.get("basis") {
                 begin.extend(["--basis".into(), basis.clone()]);
@@ -160,7 +175,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "contractScope":scope_label,"projectIdentitySha256":prepared.project_identity,
                 "checker":{"path":checker,"sha256":crate::session_goal::requirements::checker_input(l, checker, command)?.sha256,
                     "derived":!a.options.contains_key("artifact"),"via":derived.via},
-                "integration":integration,"beginRoute":route,
+                "integration":integration,"beginRoute":route,"journeyIntegrationOmitted":journey_omitted,
                 "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
                 "effect":"no Work is started or frozen until beginRoute is executed"}))
         }

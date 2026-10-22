@@ -118,7 +118,6 @@ const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
         "human repair hint after an update",
     ),
     ("src/host/bridge.rs", 1, "human status-line action"),
-    ("src/run/disposition.rs", 2, "usage text"),
     ("src/work/return_result_impl.rs", 1, "usage text"),
     (
         "src/value_benchmark.rs",
@@ -377,9 +376,34 @@ fn string_literals(line: &str) -> Vec<String> {
     out
 }
 
+/// Words between a subcommand and its arguments that make a usage error, not
+/// a command template: `work next requires WORK`.
+const USAGE_WORDS: &[&str] = &["requires", "accepts", "supports"];
+
+/// Whether `rest` (the text after `<command> <subcommand> `) continues as a
+/// template: an upper-case argument such as `WORK` or `ASSIGNMENT`, directly
+/// or after one more subcommand word, instead of a registered `<NAME>` token.
+fn template_arguments(rest: &str) -> bool {
+    let upper =
+        |word: &str| word.len() >= 3 && word.chars().all(|c| c.is_ascii_uppercase() || c == '_');
+    let mut words = rest.split_whitespace();
+    match words.next() {
+        Some(word) if upper(word) => true,
+        Some(word)
+            if word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                && !USAGE_WORDS.contains(&word) =>
+        {
+            words.next().is_some_and(upper)
+        }
+        _ => false,
+    }
+}
+
 /// Every literal that tells its reader to run `<command> <subcommand>` by
 /// its bare words, so whatever PATH names would answer and the configuration
-/// is left out. Lines that build the route through `crate::emitted` pass.
+/// is left out, or that prints a command template with upper-case arguments
+/// instead of registered placeholders. Lines that build the route through
+/// `crate::emitted` pass.
 fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
     let mut found = Vec::new();
     for line in text.lines() {
@@ -401,15 +425,17 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
                         .take_while(|c| c.is_ascii_lowercase() || *c == '-')
                         .collect();
                     let lead = lower[..at].trim_end_matches('`').trim_end();
+                    let original = &literal[at + needle.len() + word.len()..];
                     names.contains(&word)
-                        && INSTRUCTIONS.iter().any(|instruction| {
-                            lead.strip_suffix(instruction).is_some_and(|before| {
-                                before
-                                    .chars()
-                                    .next_back()
-                                    .map_or(true, |c| !c.is_ascii_alphanumeric())
-                            })
-                        })
+                        && (template_arguments(original)
+                            || INSTRUCTIONS.iter().any(|instruction| {
+                                lead.strip_suffix(instruction).is_some_and(|before| {
+                                    before
+                                        .chars()
+                                        .next_back()
+                                        .map_or(true, |c| !c.is_ascii_alphanumeric())
+                                })
+                            }))
                 })
             });
             if bare {
@@ -470,14 +496,17 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
             "Err(\"stale; Refresh With `Work Next` now\".into())\n",
             "json!({\"s\": \"then READ goal status\"})\n",
             "format!(\"x; use work detail {w} --json\")\n",
+            "\"record: Work Detail WORK ASSIGNMENT --reason TEXT\"\n",
+            "\"recover\": \"work next child WORK INTENT\"\n",
         ),
         &commands,
     );
-    assert_eq!(found.len(), 3, "{found:?}");
+    assert_eq!(found.len(), 5, "{found:?}");
     let passed = bare_follow_ups(
         concat!(
             "\"configuration changed during work detail consumption\"\n",
             "\"work next requires WORK\"\n",
+            "\"work detail <WORK> --reason <REASON>\"\n",
             "\"do not repeat work begin; read exitbind work next\"\n",
             "\"use the network\"\n",
             "// refresh with work next\n",
@@ -486,6 +515,126 @@ fn follow_up_scanner_detects_each_member_of_the_class() {
         &commands,
     );
     assert!(passed.is_empty(), "{passed:?}");
+}
+
+fn prepared_integration(project: &Project) -> Value {
+    project.value(
+        &[
+            "goal",
+            "prepare",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh all",
+            "--scope",
+            "integration",
+            "--json",
+        ],
+        None,
+    )
+}
+
+/// The printed begin route with the owner's review choice filled.
+fn begin_argv(prepared: &Value) -> Vec<String> {
+    prepared["beginRoute"]["command"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no begin route: {prepared}"))
+        .iter()
+        .map(|item| match item.as_str().unwrap() {
+            "<REVIEW_DECISION>" => "required".to_owned(),
+            other => other.to_owned(),
+        })
+        .collect()
+}
+
+/// Project and native-store bytes, without the session display projection.
+fn stored(project: &Project) -> Vec<(String, Vec<u8>)> {
+    let (_, store) = project.native_session.clone().unwrap();
+    let mut bytes = super::setup_first_work::tree(&project.root);
+    bytes.extend(
+        super::setup_first_work::tree(&store)
+            .into_iter()
+            .filter(|(path, _)| !path.starts_with("display")),
+    );
+    bytes
+}
+
+/// An integration prepared over a conversation journey whose members are all
+/// accepted prints a begin route that freezes them; run as printed, it starts
+/// the journey-integration Work. Preparing writes nothing.
+#[test]
+fn an_integration_begin_route_over_an_accepted_journey_freezes_it_as_printed() {
+    let p = Project::new("p1-journey-route").with_native_session("p1-journey-route-session");
+    p.setup();
+    let first = p.begin("R1", "sh check.sh R1");
+    p.drive(&first, true);
+
+    let before = stored(&p);
+    let prepared = prepared_integration(&p);
+    assert!(
+        stored(&p) == before,
+        "goal prepare wrote project or Goal state"
+    );
+    assert!(
+        prepared["journeyIntegrationOmitted"].is_null(),
+        "{prepared}"
+    );
+    let argv = begin_argv(&prepared);
+    assert!(
+        argv.iter().any(|word| word == "--journey-integration"),
+        "{argv:?}"
+    );
+
+    let started = p.call_exact_argv(&argv);
+    assert!(started.status.success(), "{started:?}");
+    let work = serde_json::from_slice::<Value>(&started.stdout).unwrap()["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ledger = p
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.trim_start_matches("smw_")));
+    assert!(
+        fs::read_to_string(ledger)
+            .unwrap()
+            .contains("exitbind.session-journey-integration.v1.header:"),
+        "the printed route did not start a journey-integration Work"
+    );
+}
+
+/// With a member that has no accepted result, the route omits the flag and
+/// the response states why in one plain field.
+#[test]
+fn an_integration_begin_route_omits_the_journey_freeze_and_says_why() {
+    let p =
+        Project::new("p1-journey-unaccepted").with_native_session("p1-journey-unaccepted-session");
+    p.setup();
+    let _open = p.begin("R1", "sh check.sh R1");
+
+    let before = stored(&p);
+    let prepared = prepared_integration(&p);
+    assert!(
+        stored(&p) == before,
+        "goal prepare wrote project or Goal state"
+    );
+    let reason = prepared["journeyIntegrationOmitted"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no omission reason: {prepared}"));
+    assert!(
+        reason.contains("has no terminal accepted result"),
+        "{reason}"
+    );
+    let argv = begin_argv(&prepared);
+    assert!(
+        !argv.iter().any(|word| word == "--journey-integration"),
+        "{argv:?}"
+    );
+    assert!(argv.iter().any(|word| word == "integration"), "{argv:?}");
 }
 
 fn fill_argv(

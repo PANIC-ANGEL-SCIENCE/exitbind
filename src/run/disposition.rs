@@ -14,6 +14,20 @@ use serde_json::{json, Value};
 /// Lead outcomes that remain available while a finding cycle is pending.
 pub(crate) const PENDING_LEAD_OUTCOMES: &[&str] = &["disposition", "blocked", "rejected"];
 
+/// The Lead's disposition route for a pending finding, printed with the
+/// executable and every value it needs as a registered placeholder; `work`
+/// fills the Work when known. The action view's disposition choices carry
+/// the same route bound and filled.
+pub(crate) fn lead_route(work: Option<&str>) -> String {
+    let work = work.map_or_else(|| crate::emitted::slot("WORK"), str::to_owned);
+    crate::emitted::command_text(&format!(
+        "work disposition {work} {} --decision {} --reason {}",
+        crate::emitted::slot("ASSIGNMENT"),
+        crate::emitted::slot("DISPOSITION_DECISION"),
+        crate::emitted::slot("REASON")
+    ))
+}
+
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
     let pending = state
         .get("pendingDisposition")
@@ -71,7 +85,8 @@ pub(crate) fn submission(
     // A reviewer finding is decided with a named decision, so a repair always
     // carries the Lead's boundary to the next attempt.
     if parsed.decision.is_none() && state["pendingDisposition"]["kind"] == "review_rework" {
-        return Err("a reviewer finding needs a Lead decision: exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT".into());
+        let route = lead_route(None);
+        return Err(format!("a reviewer finding needs a Lead decision: {route}"));
     }
     validate(state, &parsed)?;
     Ok(Some(parsed))
@@ -88,10 +103,10 @@ fn lead_outcome_allowed(state: &Value, role: &Value, outcome: &str) -> Result<()
         && state["pendingDisposition"].is_object()
         && !PENDING_LEAD_OUTCOMES.contains(&outcome)
     {
-        return Err(
-            "a pending finding requires a Lead disposition first: exitbind work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT"
-                .into(),
-        );
+        let route = lead_route(None);
+        return Err(format!(
+            "a pending finding requires a Lead disposition first: {route}"
+        ));
     }
     Ok(())
 }
