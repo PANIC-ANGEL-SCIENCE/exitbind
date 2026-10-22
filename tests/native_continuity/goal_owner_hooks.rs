@@ -295,13 +295,25 @@ impl Fixture {
     }
 
     /// One hook event; its context, or `None` when it printed nothing.
-    fn hook(&self, cwd: &Path, session: Option<&str>, mut payload: Value) -> Option<String> {
+    fn hook(&self, cwd: &Path, session: Option<&str>, payload: Value) -> Option<String> {
+        self.hook_as(cwd, session, session.unwrap_or(UNOWNED), payload)
+    }
+
+    /// `selector`: the session in the hook process environment, if any;
+    /// `reported`: the payload `session_id`.
+    fn hook_as(
+        &self,
+        cwd: &Path,
+        selector: Option<&str>,
+        reported: &str,
+        mut payload: Value,
+    ) -> Option<String> {
         payload["cwd"] = json!(cwd);
-        payload["session_id"] = json!(session.unwrap_or(UNOWNED));
+        payload["session_id"] = json!(reported);
         let output = exitbind(
             cwd,
             &self.store,
-            session,
+            selector,
             &["hook-run"],
             payload.to_string().as_bytes(),
         );
@@ -481,4 +493,122 @@ fn without_a_native_goal_every_hook_event_uses_and_names_the_cwd_project() {
             other => panic!("hook event {other} has no row in the F5a table"),
         }
     }
+}
+
+impl Fixture {
+    /// A sealed, valid recovery hint for the Lead session whose owner fields
+    /// are the true Goal owner's but whose location names the decoy (cwd)
+    /// configuration: a candidate offered by path alone.
+    fn forge_foreign_hint(&self) {
+        let key = sha(
+            serde_json::to_string(&json!({"host":"claude","identity":SESSION}))
+                .unwrap()
+                .as_bytes(),
+        );
+        let root = self.store.join(format!("session-{key}"));
+        let owner: Value =
+            serde_json::from_slice(&fs::read(root.join("owner.json")).unwrap()).unwrap();
+        let decoy = self.decoy_config();
+        let mut hint = json!({
+            "kind":"exitbind_session_recovery_hint","protocol":2,"host":"claude",
+            "sessionKey":key,"ownerConfigPath":decoy,
+            "ownerConfigSha256":sha(&fs::read(&decoy).unwrap()),
+            "ownerProjectId":owner["ownerProjectId"],
+            "ownerIdentitySha256":owner["ownerIdentitySha256"],
+            "goalId":"f5a-goal","goalRevision":1,"goalEventSha256":sha(b"any event"),
+            "currentStep":"Inspect the Goal","currentWork":{"state":"not_selected","work":null},
+            "latestCorrections":[],"evidenceRefs":[],"workRefs":[],"pendingOperation":null,
+            "guidanceRefs":[],"lastCheckpoint":null,"sha256":"",
+        });
+        // serde_json objects are key-sorted: this is the product's canonical form.
+        hint["sha256"] = json!(sha(serde_json::to_string(&hint).unwrap().as_bytes()));
+        let path = root.join("recovery-hint.json");
+        fs::write(&path, serde_json::to_vec(&hint).unwrap()).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        // The hint is readable: `session recovery show` returns it.
+        let shown = exitbind(
+            &self.product,
+            &self.store,
+            Some(SESSION),
+            &["session", "recovery", "show", "--json"],
+            b"",
+        );
+        let shown: Value = serde_json::from_slice(&shown.stdout).unwrap_or_default();
+        assert_eq!(
+            shown["savedHint"]["ownerConfigPath"],
+            json!(decoy),
+            "the forged hint must be a valid candidate: {shown}"
+        );
+    }
+}
+
+/// A hint naming another project's configuration under the owner's identity
+/// fields is a path, not an identity: the decoy is never adopted, the owner
+/// project (from its journey member) is used, and the child is finalized
+/// there. Dropping the identity check makes the decoy the first candidate.
+#[test]
+fn a_configuration_offered_by_path_alone_is_never_adopted() {
+    let fixture = Fixture::new();
+    fixture.forge_foreign_hint();
+    let decoy_before = files_under(&fixture.decoy);
+    let decoy = fixture.decoy_config();
+    let session = fixture
+        .hook(&fixture.decoy, Some(SESSION), payload("SessionStart"))
+        .unwrap();
+    fixture.session_names(&session, &fixture.config, OWNER_FROM);
+    assert!(!session.contains(&format!("--config {decoy}")), "{session}");
+    let child = fixture
+        .hook(&fixture.decoy, Some(SESSION), payload("SubagentStart"))
+        .unwrap();
+    assert!(child.contains(&fixture.fact(OWNER_FROM)), "{child}");
+    assert!(!child.contains(&decoy), "{child}");
+    assert_eq!(
+        fixture.hook(&fixture.decoy, Some(SESSION), payload("SubagentStop")),
+        None
+    );
+    assert_eq!(fixture.children()[0]["nativeChild"], CHILD);
+    assert_eq!(
+        files_under(&fixture.decoy),
+        decoy_before,
+        "nothing reaches the decoy"
+    );
+}
+
+/// The likely live hook process: no session selector in the environment,
+/// the Claude payload `session_id` owns the Goal.
+#[test]
+fn a_payload_only_claude_session_resolves_its_goal_owner() {
+    let fixture = Fixture::new();
+    let decoy_before = files_under(&fixture.decoy);
+    let session = fixture
+        .hook_as(&fixture.decoy, None, SESSION, payload("SessionStart"))
+        .unwrap();
+    fixture.session_names(&session, &fixture.config, OWNER_FROM);
+    let child = fixture
+        .hook_as(&fixture.decoy, None, SESSION, payload("SubagentStart"))
+        .unwrap();
+    assert!(
+        child.contains(&format!(
+            "Profile SHA-256: {}",
+            sha(PROFILE_BODY.as_bytes())
+        )),
+        "{child}"
+    );
+    assert!(
+        child.contains(&format!(
+            "Perspective agent-surface-text (source SHA-256 {}",
+            sha(LENS_BODY.as_bytes())
+        )),
+        "{child}"
+    );
+    assert!(child.contains(&fixture.fact(OWNER_FROM)), "{child}");
+    assert_eq!(
+        fixture.hook_as(&fixture.decoy, None, SESSION, payload("SubagentStop")),
+        None
+    );
+    let children = fixture.children();
+    assert_eq!(children.len(), 1, "{children:?}");
+    assert_eq!(children[0]["nativeChild"], CHILD);
+    assert_eq!(files_under(&fixture.decoy), decoy_before);
 }
