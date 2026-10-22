@@ -24,6 +24,7 @@ mod evidence_identity;
 pub(crate) mod gate;
 mod governor;
 pub(crate) mod governor_recovery;
+mod governor_sensor;
 pub(crate) mod guidance_continuity;
 pub(crate) mod human;
 pub(crate) mod inputs;
@@ -45,9 +46,11 @@ mod view;
 use self::governor::{canonical_work_for_ledger, GOVERNOR_COMPLETION_REFUSAL};
 pub(crate) use self::governor::{
     evidence_for_assignment, governor_request_digest, permit_for_assignment, replan_for_assignment,
-    sensor_request_for_assignment, sensor_result_for_assignment, submission_refusal,
-    AssignmentIdentity, RecordedProtection, SubmissionRefusal, OPERATION_MAX_BYTES,
-    REQUEST_ID_MAX_BYTES,
+    submission_refusal, AssignmentIdentity, RecordedProtection, SubmissionRefusal,
+    OPERATION_MAX_BYTES, REQUEST_ID_MAX_BYTES,
+};
+pub(crate) use self::governor_sensor::{
+    sensor_request_for_assignment, sensor_result_for_assignment,
 };
 #[cfg(test)]
 pub use self::lifecycle::start_with_policy;

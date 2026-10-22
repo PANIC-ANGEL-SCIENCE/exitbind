@@ -1,3 +1,4 @@
+use super::record::validate_state;
 use super::*;
 
 fn hash(byte: char) -> String {

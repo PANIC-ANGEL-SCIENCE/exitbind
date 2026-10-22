@@ -439,7 +439,7 @@ fn response(
         value["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
     }
     let view = snapshot.inspect_view();
-    if let Some(relation) = super::details::replacement_relation(
+    if let Some(relation) = super::replacement_relation::relation(
         loaded,
         work,
         view["events"]

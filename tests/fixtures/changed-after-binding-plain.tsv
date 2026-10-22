@@ -169,8 +169,8 @@ Integrity	src/run/evidence_identity.rs	evidence is bound to a stale run identity
 NotCurrentState	src/run/gate/value/validation.rs	invalid run ledger line {line}: protection actor is not currently pending
 NotCurrentState	src/run/governor.rs	agent '{}' is not currently pending
 NotCurrentState	src/run/governor.rs	assignment is not currently pending
-NotCurrentState	src/run/governor.rs	assignment is not currently pending
-NotCurrentState	src/run/governor.rs	assignment is not currently pending
+NotCurrentState	src/run/governor_sensor.rs	assignment is not currently pending
+NotCurrentState	src/run/governor_sensor.rs	assignment is not currently pending
 NotCurrentState	src/run/governor.rs	material re-plan is not currently required
 LeadPreparation	src/run/governor_recovery.rs	carried owner recovery configuration binding differs from successor
 LeadPreparation	src/run/governor_recovery.rs	carried owner recovery evidence differs from its verified artifacts
@@ -216,7 +216,7 @@ Integrity	src/run/state/apply.rs	submission is bound to a stale subject
 Integrity	src/run/state/check_stage.rs	check is bound to a stale subject
 Integrity	src/run/state/recovery.rs	forward repair is stale or not bound to its Lead decision
 NotCurrentState	src/run/submission.rs	agent '{agent}' is not currently pending
-Transient	src/run/view.rs	blocked report diagnostic attempt changed after preview
+Transient	src/run/view/check_replacement.rs	blocked report diagnostic attempt changed after preview
 Transient	src/run/view.rs	configuration changed while superseding; reload configuration
 Transient	src/run/view.rs	configuration changed while superseding; reload configuration
 RoutedInText	src/run/view.rs	predecessor changed after replacement preview; refresh current Work detail
@@ -307,11 +307,11 @@ Integrity	src/work/managed_edit.rs	submitted edit conflicts with its durable req
 Integrity	src/work/managed_edit/state.rs	managed edit executable, configuration or assignment binding changed; no edit admitted
 TypedRunDrift	src/work/mod.rs	artifact drift detected after run start. Inspect the recorded result and restore the original artifact before continuing.
 TypedRunDrift	src/work/mod.rs	artifact drift detected:
-Integrity	src/work/mod.rs	check-log artifact reference is stale or tampered
+Integrity	src/work/expansion.rs	check-log artifact reference is stale or tampered
 TypedRunDrift	src/work/mod.rs	configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
 TypedRunDrift	src/work/mod.rs	memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
 TypedRunDrift	src/work/mod.rs	profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
-Integrity	src/work/mod.rs	reference is stale or ledger bytes changed
+Integrity	src/work/expansion.rs	reference is stale or ledger bytes changed
 TypedRunDrift	src/work/mod.rs	run boundary manifest drift detected after run start (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
 TypedRunDrift	src/work/mod.rs	semantic harness drift detected after run start (expected {}, current {}); continue with the recorded plan. Exact receipt integrity failures are refused separately.
 Validation	src/work/mod.rs	work handle is stale or unknown. Inspect the handle before continuing.
