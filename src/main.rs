@@ -52,10 +52,7 @@ fn main() {
         .collect::<Result<Vec<_>, _>>();
     let result = arguments.and_then(cli::run);
     if let Err(error) = result {
-        if let Some(machine) = error
-            .strip_prefix("EXITBIND_JSON:")
-            .or_else(|| error.strip_prefix("SOULMATE_JSON:"))
-        {
+        if let Some(machine) = error.strip_prefix(cli::MACHINE_PREFIX) {
             println!("{machine}");
             emit_work_progress(&raw_for_error, machine);
         } else if let Some((context, value)) = crate::drift::split(&error) {

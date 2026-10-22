@@ -595,7 +595,6 @@ pub(crate) fn assert_no_drift(loaded: &Loaded, state: &Value) -> Result<(), Stri
 pub(crate) fn drift_value(error: &str) -> Option<Value> {
     error
         .strip_prefix(run_error::DRIFT_PREFIX)
-        .or_else(|| error.strip_prefix(run_error::LEGACY_DRIFT_PREFIX))
         .and_then(|value| serde_json::from_str(value).ok())
 }
 

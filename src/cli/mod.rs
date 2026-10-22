@@ -703,14 +703,12 @@ fn exit_path_failure(decision: crate::run_exit::ExitDecision, detail: Option<Str
     )
 }
 
-/// The prefix `main` strips before printing a machine payload.
+/// The prefix `main` strips before printing a machine payload. It is an
+/// in-process channel, never persisted, so no historical spelling is read.
+pub(crate) const MACHINE_PREFIX: &str = "EXITBIND_JSON:";
+
 fn machine_json(machine: &str) -> String {
-    let prefix = if crate::producer::exitbind_surface() {
-        "EXITBIND_JSON:"
-    } else {
-        "SOULMATE_JSON:"
-    };
-    format!("{prefix}{machine}")
+    format!("{MACHINE_PREFIX}{machine}")
 }
 
 fn machine_error(error: String) -> String {
@@ -718,12 +716,7 @@ fn machine_error(error: String) -> String {
     if crate::drift::split(&error).is_some() {
         return error;
     }
-    let prefix = if crate::producer::exitbind_surface() {
-        "EXITBIND_JSON:"
-    } else {
-        "SOULMATE_JSON:"
-    };
-    format!("{prefix}{}", serde_json::json!({"error": error}))
+    format!("{MACHINE_PREFIX}{}", serde_json::json!({"error": error}))
 }
 
 fn profile_command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
@@ -803,7 +796,17 @@ fn serialize_json(value: &serde_json::Value) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::serialize_json;
+    use super::{machine_error, machine_json, serialize_json, MACHINE_PREFIX};
+
+    #[test]
+    fn machine_payloads_use_only_the_current_prefix() {
+        assert_eq!(MACHINE_PREFIX, "EXITBIND_JSON:");
+        assert_eq!(machine_json("{}"), "EXITBIND_JSON:{}");
+        assert_eq!(
+            machine_error("refused".into()),
+            r#"EXITBIND_JSON:{"error":"refused"}"#
+        );
+    }
 
     #[test]
     fn compact_responses_omit_only_serialization_whitespace() {

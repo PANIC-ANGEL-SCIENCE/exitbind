@@ -167,14 +167,29 @@ impl std::fmt::Display for DriftError {
     }
 }
 
-/// Internal channel between the run layer and the CLI presenter. The legacy
-/// spelling stays readable so an in-flight error text from either side is
-/// understood, but the current surface never emits it.
+/// Internal channel between the run layer and the CLI presenter, inside one
+/// process. It is never persisted, so no historical spelling is read.
 pub(crate) const DRIFT_PREFIX: &str = "EXITBIND_DRIFT:";
-pub(crate) const LEGACY_DRIFT_PREFIX: &str = "SOULMATE_DRIFT:";
 
 pub(crate) fn machine_drift(error: DriftError) -> String {
     let machine = serde_json::to_string(&error.machine())
         .unwrap_or_else(|_| "{\"error\":\"drift diagnostic serialization failed\"}".to_owned());
     format!("{DRIFT_PREFIX}{machine}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DRIFT_PREFIX;
+    use crate::run::reducer::drift_value;
+
+    #[test]
+    fn drift_channel_reads_only_the_current_prefix() {
+        let machine = r#"{"classification":"config_drift"}"#;
+        assert_eq!(
+            drift_value(&format!("{DRIFT_PREFIX}{machine}")).unwrap()["classification"],
+            "config_drift"
+        );
+        // The historical spelling was never persisted and is no longer read.
+        assert!(drift_value(&format!("SOULMATE_DRIFT:{machine}")).is_none());
+    }
 }

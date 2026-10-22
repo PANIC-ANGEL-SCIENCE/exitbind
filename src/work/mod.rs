@@ -516,10 +516,7 @@ fn discovery_error(error: String, work: &str) -> String {
             safe_action("inspect"),
         );
     }
-    if let Some(machine) = error
-        .strip_prefix(crate::run::error::DRIFT_PREFIX)
-        .or_else(|| error.strip_prefix(crate::run::error::LEGACY_DRIFT_PREFIX))
-    {
+    if let Some(machine) = error.strip_prefix(crate::run::error::DRIFT_PREFIX) {
         if let Ok(value) = serde_json::from_str::<Value>(machine) {
             let classification = match value["classification"].as_str() {
                 Some("profile_drift") => "profile_drift",

@@ -117,3 +117,44 @@ the current reader for that Work. Rollback restores retained executable and
 managed guidance bytes for their supported history; it does not downgrade the
 ledger or transfer acceptance to changed inputs. Preserve custom profiles and
 settings.
+
+## Reader inventory
+
+Every source file that reads a historical form appears below exactly as
+`tooling/repository/checks/check_legacy_inventory.py` finds it: each file whose
+code names the old product, and each file whose code compares a recorded format
+version with a number from 1 to 7. The check fails when a found file is missing
+from this table, when a listed file no longer exists, or when a form marked
+`retired` is read again anywhere in the source.
+
+"Live" means a file of that form exists on the owner-provided Linux runner, found
+by a full scan of its home and data volume; "fixture" means a frozen file under
+`tests/fixtures/`. A reader is retired only when its form has neither and no
+current code writes it.
+
+New starts write run-event version 8 only. The current binary still appends to
+an open historical ledger in that ledger's own version, because a ledger never
+mixes versions; that is the "append" write below.
+
+| Reader | Old form | Last write | Live file or fixture | Pinning test | Decision |
+| --- | --- | --- | --- | --- | --- |
+| `src/run/state/validation.rs`, `src/run/reducer.rs`, `src/run/state/unknown_fields.rs` | run-event v1 (no producer, or `soulmate` producer) | new start: superseded by v2 and v3; append: current binary | live (7 ledgers); three v1 run fixtures | `tests/rust_parity.rs`, `tests/value_replay.rs` | keep: live and fixture |
+| `src/run/reducer.rs`, `src/run/state/unknown_fields.rs`, `src/run/state/validation.rs` | run-event v2 (receipt-referenced run) | new start: superseded by v3; append: current binary | one v2 run fixture | `tests/rust_parity.rs`, `tests/fresh_user_surface.rs` | keep: fixture |
+| `src/run/mod.rs`, `src/run/gate/value/validation.rs`, `src/run/state/validation.rs`, `src/run/state/unknown_fields.rs` | run-event v3 (checked run, caller-reported check) | new start: superseded by v4; append: current binary writes the v3 check shape | live (10 ledgers); fixture `run-v3.jsonl` | `tests/value_replay.rs`, `tests/compatibility_matrix/projection_compatibility.rs`, `tests/exit_transition_conformance/historical_compatibility.rs` | keep: live and fixture |
+| `src/run/human.rs`, `src/run/gate/value/human.rs`, `src/run/gate/value/validation.rs`, `src/run/observed_check.rs`, `src/run/mod.rs` | run-event v4 (observed or reported check; last `soulmate` producer) | new start: superseded by v5; append: current binary | live (11 ledgers) | `tests/value_reconstruction/bundle_helpers.rs`, `tests/value_reconstruction/context.rs` | keep: live |
+| `src/producer.rs`, `src/run/gate/exit.rs`, `src/run/lifecycle.rs`, `src/run/submission.rs`, `src/run/view.rs`, `src/run/state/apply.rs`, `src/run/observed_check.rs` | run-event v5 (Accepted Subject bindings; first `exitbind` producer) | new start: superseded by v6; append: current binary | live (58 ledgers) | `tests/value_reconstruction/context.rs`, `tests/context_v022/context_projection.rs` | keep: live |
+| `src/run/disposition.rs`, `src/run/result_reference.rs`, `src/run/state/governor_validation.rs`, `src/run/gate/exit.rs`, `src/run/gate/value/validation.rs`, `src/run/lifecycle.rs`, `src/run/submission.rs`, `src/run/view.rs` | run-event v6 (tested-input bindings) | new start: superseded by v7; append: current binary | live (33 ledgers) | `tests/compatibility_matrix.rs` (`producer-current-v6-write`) | keep: live |
+| `src/run/state/validation.rs`, `src/run/reducer.rs`, `src/run/state/unknown_fields.rs` | run-event v7 (fallback-provenance submit shape) | new start: superseded by v8; append: current binary | live (1 ledger); no fixture | `tests/docs_workflow.rs` (reader range text) | keep: live |
+| `src/producer.rs`, `src/run/state/validation.rs` | producer `soulmate` on v1–v4 events | append to an open v1–v4 ledger | live (v1, v3, v4 ledgers); fixtures above | `tests/compatibility_matrix.rs`, `tests/rust_parity.rs` | keep: live and fixture |
+| `src/project/layout_types.rs`, `src/evidence/harness.rs` | `soulmate.json`, `soulmate/` control tree, `.soulmate/` state tree | never by a current install | live (298 paths) | `tests/layout_migration.rs`, `tests/project_capabilities.rs`, `tests/path_compatibility.rs` | keep: live |
+| `src/memory/contextual.rs` | `.soulmate/artifacts/memory-choices` contextual source | never by a current install | live `.soulmate/` trees | `tests/task_local_memory.rs` | keep: live |
+| `src/run/inputs.rs`, `src/run/verification_preparation.rs`, `src/project/continuation/model.rs`, `src/work/file_effect.rs` | `.soulmate/` as a protected, never-hashed directory | never by a current install | live `.soulmate/` trees | `tests/harness_receipt.rs`, `tests/project_capabilities.rs` | keep: live (protection, not a reader) |
+| `src/host/hooks.rs`, `src/host/settings.rs`, `src/compatibility/mod.rs` | hook token `soulmate-hook-v1`; `soulmate hook-run` host record | token: emitted today; record: never by a current install | emitted | `tests/rust_parity.rs`, `tests/host_bridge.rs` | keep: still written; criterion in [the hook protocol token](#the-hook-protocol-token) |
+| `src/main.rs`, `src/compatibility/mod.rs` | invocation as `soulmate` | never | not a file | `tests/build_identity.rs` | keep: refusal guard, not a reader |
+| `src/project/binding_location.rs`, `src/host/assignment_evidence.rs`, `src/distribution/update.rs`, `src/host/away.rs` | `SOULMATE_*` environment inputs and the `soulmate` bindings directory | never by a current install | environment, not a file | `tests/portability.rs`, `tests/host_bridge.rs`, `tests/legacy_installer_bridge.rs` | keep: outside the on-disk slice |
+| `src/project/onboarding.rs` | `schema/soulmate.schema.json` | historical schema bytes | schema file | `tests/setup.rs`, `tests/release_integrity/release_policy.rs` | keep: published schema |
+| `src/cli/help.rs`, `src/cli/mod.rs`, `src/cli/run_cli.rs`, `src/envelope.rs`, `src/host/runtime.rs`, `src/host/runtime/context.rs`, `src/presentation/mod.rs`, `src/presentation/run.rs`, `src/project/commands.rs`, `src/project/skills.rs`, `src/value_benchmark.rs`, `src/value_benchmark/invocation.rs`, `src/value_benchmark/result.rs` | branches for the retired Soulmate surface, selected only when the profile is not Exitbind | never: the profile has one surface | some read live forms (`soulmate.json` in hook routing) | `src/compatibility/mod.rs` unit tests | keep in this slice: unreachable; retire as one class with every `exitbind_surface()` branch |
+| `src/run/error.rs` | `SOULMATE_DRIFT:` in-process drift channel | never: no code writes it | none: never persisted | `src/run/error.rs` unit test | retired |
+| `src/main.rs`, `src/cli/mod.rs` | `SOULMATE_JSON:` in-process machine channel | Soulmate surface branch only | none: never persisted | `src/cli/mod.rs` unit test | retired |
+| `src/evidence/receipt.rs`, `src/memory/choices.rs`, `src/memory/contextual.rs`, `src/memory/revalidation.rs` | receipt, memory choice and contextual policy versions 1 and 2 | both versions written today | written | `tests/task_local_memory.rs`, `tests/harness_receipt.rs` | keep: current forms, not historical |
+| `src/config/boundary.rs`, `src/config/mod.rs`, `src/evidence/harness.rs`, `src/memory/lessons/input.rs`, `src/memory/policy_correction.rs`, `src/project/architecture/validation.rs`, `src/project/capabilities.rs`, `src/project/continuation/amendment.rs`, `src/project/continuation/journal.rs`, `src/project/continuation/model.rs`, `src/project/specialists.rs`, `src/run/check_recovery.rs`, `src/run/governor_recovery.rs`, `src/run/guidance_continuity.rs`, `src/run/ledger/claim.rs`, `src/run/pre_return/execution.rs`, `src/run/state.rs`, `src/run/verification_preparation.rs`, `src/session_goal/display.rs`, `src/session_goal/requirements/model.rs`, `src/session_goal/usage/ingest.rs`, `src/work/file_effect_recovery.rs`, `src/work/managed_edit.rs`, `src/work/managed_edit/state.rs`, `src/work/native_action/continuation.rs`, `src/work/native_action/continuation/failure.rs`, `src/work/native_action/journal.rs`, `src/work/native_action/recovery.rs` | single-version formats checked for an exact version | current | written | each format's own tests | keep: exact match, no older form read |

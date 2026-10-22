@@ -311,10 +311,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
 }
 
 pub(super) fn map_run_error(error: String, json_output: bool) -> String {
-    let Some(machine) = error
-        .strip_prefix(crate::run::error::DRIFT_PREFIX)
-        .or_else(|| error.strip_prefix(crate::run::error::LEGACY_DRIFT_PREFIX))
-    else {
+    let Some(machine) = error.strip_prefix(crate::run::error::DRIFT_PREFIX) else {
         return error;
     };
     let command = if crate::producer::exitbind_surface() {
