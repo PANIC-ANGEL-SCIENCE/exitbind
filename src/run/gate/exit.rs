@@ -536,6 +536,19 @@ pub(crate) fn assess(state: &Value) -> Result<CheckAssessment, String> {
         })
         .cloned()
         .collect::<Vec<_>>();
+    // A check the Lead attested environmental is kept as evidence but is no
+    // longer its target's latest result.
+    let attested = crate::run::environmental_check::attested(state);
+    let checks = checks
+        .iter()
+        .filter(|check| {
+            check["eventSha256"]
+                .as_str()
+                .map_or(true, |sha| !attested.contains(sha))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let checks = checks.as_slice();
     let mut targets = Vec::new();
     for submission in &workers {
         targets.push(target_for(

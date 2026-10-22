@@ -3,6 +3,7 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+mod environmental;
 pub(crate) mod fill;
 mod quarantine;
 mod repair;
@@ -514,6 +515,9 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             .collect()
     };
     if state == "failed_check" {
+        choices.extend(environmental::choice(
+            loaded, work, assignment, binding, next,
+        ));
         choices.push(choice(
             loaded,
             vec![

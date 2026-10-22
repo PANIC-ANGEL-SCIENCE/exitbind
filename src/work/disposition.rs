@@ -1,4 +1,5 @@
-//! `work disposition`: the Lead's decision on a pending finding cycle.
+//! `work disposition`: the Lead's decision on a pending finding cycle, or
+//! the Lead's environmental attestation of the current failed observed checks.
 //!
 //! The Lead supplies a decision and its own words; Exitbind binds them to the
 //! pending finding cycle and current basis and records the disposition
@@ -26,32 +27,23 @@ pub(crate) fn dispose(
 ) -> Result<Value, String> {
     details::ensure_action_binding(loaded, work, options.current_binding)?;
     let decision = Decision::parse(options.decision)
-        .ok_or("--decision must be repair, defer, reject, or supersede")?;
+        .ok_or("--decision must be repair, defer, reject, supersede, or environmental")?;
     let ledger = resolve(loaded, work)?;
     let action = next_for(loaded, work, &ledger)?;
     if action["action"] != "lead_decision" || action["assignment"] != assignment {
         return Err("assignment is not the current pending Lead decision".into());
     }
-    let pending = action["packet"]
-        .get("pendingDisposition")
-        .filter(|value| value.is_object())
-        .ok_or("no finding is pending a Lead disposition")?;
-    if !pending["decisions"]
-        .as_array()
-        .is_some_and(|items| items.iter().any(|item| item == decision.as_str()))
-    {
-        return Err(format!(
-            "--decision {} is not available for this finding cycle",
-            decision.as_str()
-        ));
-    }
-    let findings = pending["findingSha256s"]
-        .as_array()
-        .ok_or("pending finding cycle is invalid")?
-        .iter()
-        .map(|item| item.as_str().map(str::to_owned))
-        .collect::<Option<Vec<_>>>()
-        .ok_or("pending finding cycle is invalid")?;
+    let findings = if decision == Decision::Environmental {
+        // The product names the failed checks; the Lead supplies the reason.
+        let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+        let findings = crate::run::environmental_check::current_findings(snapshot.state())?;
+        if findings.is_empty() {
+            return Err("no failed observed check is current; an environmental attestation needs a new failed observation".into());
+        }
+        findings
+    } else {
+        pending_findings(&action, decision)?
+    };
     let record = decide(
         &Terms {
             decision,
@@ -77,6 +69,29 @@ pub(crate) fn dispose(
         Some(render(&value).into_bytes()),
         options.current_binding,
     )
+}
+
+fn pending_findings(action: &Value, decision: Decision) -> Result<Vec<String>, String> {
+    let pending = action["packet"]
+        .get("pendingDisposition")
+        .filter(|value| value.is_object())
+        .ok_or("no finding is pending a Lead disposition")?;
+    if !pending["decisions"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item == decision.as_str()))
+    {
+        return Err(format!(
+            "--decision {} is not available for this finding cycle",
+            decision.as_str()
+        ));
+    }
+    pending["findingSha256s"]
+        .as_array()
+        .ok_or("pending finding cycle is invalid")?
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| "pending finding cycle is invalid".into())
 }
 
 pub(super) fn pending(next: &Value) -> bool {

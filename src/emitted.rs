@@ -209,7 +209,7 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
     Placeholder {
         name: "DISPOSITION_DECISION",
         fills: &[Fill::Flag("--decision")],
-        meaning: "repair, defer, reject or supersede",
+        meaning: "repair, defer, reject, supersede or environmental",
     },
     Placeholder {
         name: "FRESH_TOKEN",

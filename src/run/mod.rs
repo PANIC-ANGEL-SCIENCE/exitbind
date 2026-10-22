@@ -17,6 +17,7 @@ mod continuation_effect;
 pub(crate) use continuation_effect::{recover_continuation_event, saved_continuation_events};
 mod continuation_protocol;
 pub(crate) mod disposition;
+pub(crate) mod environmental_check;
 pub(crate) mod error;
 mod event_detail;
 mod event_evidence;

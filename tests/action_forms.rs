@@ -1,6 +1,5 @@
 //! Action forms expose only the current Lead outcomes and executable, bound
-//! commands.  These tests execute the descriptors instead of duplicating the
-//! CLI spelling in the assertions.
+//! commands. These tests execute the descriptors, not the CLI spelling.
 #![cfg(unix)]
 
 mod support;
@@ -378,8 +377,8 @@ impl Fixture {
             assert!(check[field].is_string(), "missing check {field}: {check}");
             assert_eq!(binding[field], check[field], "binding field {field}");
         }
-        // Ordinary checks have no requirementId in either the binding or the
-        // check event; preserve that absence/null equivalence from JSON access.
+        // Ordinary checks have no requirementId in the binding or the check
+        // event; keep that absence/null equivalence from JSON access.
         assert!(binding["requirementId"].is_null());
         assert!(check["requirementId"].is_null());
         assert_eq!(binding["requirementId"], check["requirementId"]);
@@ -1029,10 +1028,11 @@ fn failed_check_form_offers_rework_without_reviewer_disposition() {
         [
             "rework",
             "blocked",
+            "environmental",
             "preview replacement of an explicitly defective frozen check"
         ]
     );
-    let preview = &form["choices"][2]["command"]["argv"];
+    let preview = &form["choices"][3]["command"]["argv"];
     let preview = preview.as_array().unwrap();
     assert!(preview.iter().any(|arg| arg == "replace-check"));
     assert!(preview

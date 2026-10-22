@@ -417,15 +417,13 @@ fn review_state(view: &Value, status: &Value) -> ReviewState {
 }
 
 fn stale_check(view: &Value, target: &Value) -> bool {
-    view["events"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .any(|event| {
-            event["action"] == "check"
-                && event["targetEventSha256"] == target["targetEventSha256"]
-                && event["requirementId"] == target["requirementId"]
-        })
+    let events = view["events"].as_array().map_or(&[][..], Vec::as_slice);
+    crate::run::environmental_check::target_has_check(events, target, false)
+}
+
+fn attested_check(view: &Value, target: &Value) -> bool {
+    let events = view["events"].as_array().map_or(&[][..], Vec::as_slice);
+    crate::run::environmental_check::target_has_check(events, target, true)
 }
 
 fn command(args: &[&str]) -> Value {
@@ -537,7 +535,12 @@ fn help(
             "only_if_requirement_changes",
         )
     } else if let Some(missing) = targets.iter().find(|target| target["status"] == "missing") {
-        let what = if stale_check(view, missing) {
+        let what = if attested_check(view, missing) {
+            format!(
+                "The Lead attested the earlier {} failure environmental; it runs again on the same result.",
+                label(missing)
+            )
+        } else if stale_check(view, missing) {
             format!(
                 "Earlier {} evidence no longer applies: the result or tested files changed after it ran. This is not a failure.",
                 label(missing)

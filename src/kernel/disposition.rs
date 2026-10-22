@@ -4,7 +4,9 @@
 //! attempt; its shape and hash are unchanged so historical ledgers replay
 //! exactly.  A decision record names what the Lead authorized: `repair` and
 //! `supersede` start a bounded attempt, while `defer` and `reject` keep the
-//! finding as evidence and start nothing.
+//! finding as evidence and start nothing. `environmental` names a failed
+//! observed check as an environmental failure: it starts nothing, keeps the
+//! failed check as evidence and makes the same target's check pending again.
 
 use super::basis::{optional_sha, parse_basis, reject_unknown, sha_array, strings, text, Basis};
 use crate::evidence::hash;
@@ -16,6 +18,7 @@ pub(crate) enum Decision {
     Defer,
     Reject,
     Supersede,
+    Environmental,
 }
 
 impl Decision {
@@ -25,6 +28,7 @@ impl Decision {
             "defer" => Some(Self::Defer),
             "reject" => Some(Self::Reject),
             "supersede" => Some(Self::Supersede),
+            "environmental" => Some(Self::Environmental),
             _ => None,
         }
     }
@@ -35,7 +39,13 @@ impl Decision {
             Self::Defer => "defer",
             Self::Reject => "reject",
             Self::Supersede => "supersede",
+            Self::Environmental => "environmental",
         }
+    }
+
+    /// Only `repair` and `supersede` carry repair terms and start an attempt.
+    pub(crate) fn records_repair(self) -> bool {
+        matches!(self, Self::Repair | Self::Supersede)
     }
 
     /// `defer` and `reject` close the review cycle without another attempt.
@@ -62,7 +72,7 @@ pub(crate) struct Disposition {
     pub(crate) reason: Option<String>,
     pub(crate) finding_sha256s: Vec<String>,
     pub(crate) basis_sha256: Option<String>,
-    /// Absent exactly for `defer` and `reject`.
+    /// Absent exactly for `defer`, `reject` and `environmental`.
     pub(crate) repair: Option<Repair>,
     pub(crate) successor_basis: Option<Basis>,
     pub(crate) sha256: String,
@@ -116,11 +126,11 @@ pub(crate) fn decide(
     finding_sha256s: &[String],
     basis_sha256: Option<&str>,
 ) -> Result<Disposition, String> {
-    let resolving = terms.decision.resolves_review();
+    let without_repair = !terms.decision.records_repair();
     let supplied_repair_terms = terms.repair_boundary.is_some()
         || terms.decisive_regression.is_some()
         || terms.category.is_some();
-    if resolving && (supplied_repair_terms || terms.successor_basis.is_some()) {
+    if without_repair && (supplied_repair_terms || terms.successor_basis.is_some()) {
         return Err(format!(
             "--decision {} records no repair terms or successor basis",
             terms.decision.as_str()
@@ -135,7 +145,7 @@ pub(crate) fn decide(
         "findingSha256s": finding_sha256s,
         "basisSha256": basis_sha256,
     });
-    if !resolving {
+    if !without_repair {
         let missing = [
             terms
                 .repair_boundary
@@ -196,12 +206,12 @@ pub(crate) fn parse_disposition(value: &Value, label: &str) -> Result<Dispositio
                 .ok_or_else(|| format!("{label} decision is invalid"))?,
         ),
     };
-    let resolving = decision.is_some_and(Decision::resolves_review);
+    let without_repair = decision.is_some_and(|decision| !decision.records_repair());
     let mut allowed = vec!["findingSha256s", "basisSha256", "sha256"];
     if decision.is_some() {
         allowed.extend(["decision", "reason"]);
     }
-    if !resolving {
+    if !without_repair {
         allowed.extend([
             "category",
             "causalAssumption",
@@ -218,7 +228,7 @@ pub(crate) fn parse_disposition(value: &Value, label: &str) -> Result<Dispositio
         .transpose()?;
     let finding_sha256s = sha_array(object.get("findingSha256s"), "findingSha256s", label, true)?;
     let basis_sha256 = optional_sha(object.get("basisSha256"), "basisSha256", label)?;
-    let (repair, successor_basis) = if resolving {
+    let (repair, successor_basis) = if without_repair {
         (None, None)
     } else {
         let (repair, successor) = parse_repair(object, label, decision.is_some())?;
@@ -369,6 +379,20 @@ mod tests {
             with_boundary.repair_boundary = Some("x");
             assert!(decide(&with_boundary, &[FINDING.into()], None).is_err());
         }
+    }
+
+    #[test]
+    fn environmental_carries_no_repair_terms_and_resolves_no_review() {
+        let record = decide(&terms(Decision::Environmental), &[FINDING.into()], None).unwrap();
+        assert!(!record.resolves_review());
+        assert!(record.repair.is_none());
+        let value = record.value();
+        assert_eq!(value["decision"], "environmental");
+        assert!(value.get("repairBoundary").is_none());
+        assert_eq!(parse_disposition(&value, "d").unwrap(), record);
+        let mut with_boundary = terms(Decision::Environmental);
+        with_boundary.repair_boundary = Some("x");
+        assert!(decide(&with_boundary, &[FINDING.into()], None).is_err());
     }
 
     #[test]

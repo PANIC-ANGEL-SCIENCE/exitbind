@@ -4,11 +4,12 @@
 //! pends here until the Lead decides.  `repair` and `supersede` start one
 //! bounded attempt carrying the Lead's repair terms; `defer` and `reject`
 //! keep the finding as evidence, start nothing, and resolve the review cycle
-//! without turning it into an approval.
+//! without turning it into an approval. `environmental` decides no finding
+//! cycle: it names a failed observed check (see `environmental_check`).
 
 use super::state::{lead_stage, subject_for_basis_revision, worker_stage};
 use crate::kernel::basis::{parse_basis, validate_successor};
-use crate::kernel::disposition::{parse_disposition, Disposition};
+use crate::kernel::disposition::{parse_disposition, Decision, Disposition};
 use serde_json::{json, Value};
 
 /// Lead outcomes that remain available while a finding cycle is pending.
@@ -36,6 +37,9 @@ pub(crate) fn lead_route(work: Option<&str>, config: &std::path::Path) -> String
 }
 
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
+    if disposition.decision == Some(Decision::Environmental) {
+        return super::environmental_check::validate(state, disposition);
+    }
     let pending = state
         .get("pendingDisposition")
         .filter(|value| value.is_object())
@@ -160,6 +164,11 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         .push(disposition.value());
     state["pendingDisposition"] = Value::Null;
     state["checkObservation"] = Value::Null;
+    if disposition.decision == Some(Decision::Environmental) {
+        // The same stage and attempt continue: the attested target's check is
+        // pending again and nothing else changes.
+        return Ok(());
+    }
     if disposition.resolves_review() {
         state["reviewResolution"] = json!({
             "state": "resolved_by_lead_disposition",
@@ -270,9 +279,12 @@ pub(crate) fn lead_view(state: &Value) -> Option<Value> {
     });
     // Another finding after authorized repair work is the loop worth
     // questioning; a deferred or rejected finding started no work.
-    let repaired = prior
-        .iter()
-        .any(|item| !matches!(item["decision"].as_str(), Some("defer" | "reject")));
+    let repaired = prior.iter().any(|item| {
+        !matches!(
+            item["decision"].as_str(),
+            Some("defer" | "reject" | super::environmental_check::DECISION)
+        )
+    });
     if repaired {
         view["advice"] = json!(
             "a finding followed Lead-authorized work in this run; before another repair, reconsider the basis, acceptance criteria, evidence, or reviewer scope"

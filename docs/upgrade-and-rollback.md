@@ -79,6 +79,11 @@ The recovery records reported failure, preserves accounting and earlier observer
 identity, and transfers no check, grant or acceptance. Other Work pins stay as
 selected. See [check recovery](check-recovery.md).
 
+A Lead `environmental` disposition (a failed observed check attested
+environmental) is a disposition decision older readers do not know; they refuse
+the affected ledger. Keep a compatible reader for that Work's remaining
+lifecycle. Ledgers without that decision replay unchanged.
+
 ## Native Goal recovery
 
 Native Goal recovery records a versioned decision on the existing Goal. It

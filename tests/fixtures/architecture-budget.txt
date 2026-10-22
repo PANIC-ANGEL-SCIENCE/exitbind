@@ -4,7 +4,7 @@
 # remove a line when the file drops under 32 KiB, and never add one.
 33459 src/host/away.rs
 34998 src/project/continuation/control_tests.rs
-55977 tests/action_forms.rs
+55954 tests/action_forms.rs
 38307 tests/contextual_memory.rs
 36572 tests/goal_requirements/native_recovery.rs
 35772 tests/pre_return.rs

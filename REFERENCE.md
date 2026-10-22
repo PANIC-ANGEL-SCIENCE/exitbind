@@ -243,6 +243,20 @@ whose worker and reviewer see the Lead's repair boundary, and `supersede`
 additionally requires `--successor-basis JSON`. Both need a fresh check and
 review. Unmarked runs keep their historical rework routing.
 
+When a frozen check failed for a cause outside the result (a lock held by
+another process, a build artifact removed mid-run), the Lead's action view
+offers `environmental` on the failed check:
+
+```sh
+exitbind work disposition WORK ASSIGNMENT --decision environmental --reason TEXT
+```
+
+It names the current failed observed checks, keeps them in the ledger and in
+the repeated-failure count, starts no attempt, and makes the same target's
+check pending again, so `work check` re-runs it on the same result. Naming the
+same failure twice is refused; a second attestation needs a new failed
+observation.
+
 The owner can revise the policy only on a marked running run. Record the actual
 choice with the lead agent and ledger path:
 

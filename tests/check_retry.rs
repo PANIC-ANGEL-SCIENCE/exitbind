@@ -296,3 +296,6 @@ fn failed_functional_check_waits_for_missing_preservation_before_retry() {
     );
     assert_eq!(retried["next"]["action"], "spawn");
 }
+
+#[path = "check_retry/environmental.rs"]
+mod environmental;

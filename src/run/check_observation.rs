@@ -204,9 +204,13 @@ pub(super) fn replay_for_operation(
     if state["checkObservationProtocol"] != PROTOCOL || state["status"] != "running" {
         return Ok(None);
     }
+    let attested = super::environmental_check::attested(&state);
     let Some(check) = events.iter().rev().find(|e| {
         e["action"] == "check"
             && e.get("observationEventSha256").is_some()
+            && e["eventSha256"]
+                .as_str()
+                .map_or(true, |sha| !attested.contains(sha))
             && operation.map_or(true, |(target, requirement)| {
                 e["targetEventSha256"] == target && e["requirementId"].as_str() == requirement
             })

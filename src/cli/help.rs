@@ -116,7 +116,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work return WORK ASSIGNMENT --outcome OUTCOME [--reason TEXT] [--result-ref HELD_REFERENCE] [--current-binding BINDING] [--json]"
         }
         ["work", "disposition"] => {
-            "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms)"
+            "work disposition WORK ASSIGNMENT --decision repair|defer|reject|supersede|environmental --reason TEXT [--repair-boundary TEXT --regression TEXT] [--successor-basis JSON] [--current-binding BINDING] (repair and supersede require both repair terms; environmental names the current failed observed checks and makes the same target's check pending again)"
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (read-only preview or blocked unknown-termination diagnostic; configured Lead attests exact known-ended storage failure only; never reruns a check)",

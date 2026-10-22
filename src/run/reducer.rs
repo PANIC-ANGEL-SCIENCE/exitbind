@@ -261,9 +261,13 @@ impl RunSnapshot {
         let checks = self.state["checks"]
             .as_array()
             .ok_or("run state checks are invalid")?;
+        let attested = super::environmental_check::attested(&self.state);
         let Some(check) = checks.iter().rev().find(|check| {
             check["targetEventSha256"] == target
                 && check["requirementId"].as_str() == requirement_id
+                && check["eventSha256"]
+                    .as_str()
+                    .map_or(true, |sha| !attested.contains(sha))
         }) else {
             return Ok(None);
         };
