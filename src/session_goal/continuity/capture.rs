@@ -118,6 +118,26 @@ fn binding_of(loaded: &Loaded, work: &str, intent: &Value) -> Result<(Value, Val
     current_binding(loaded, work)
 }
 
+/// `binding_of` for a hook claim or stop: a same-host binding that no longer
+/// verifies is a changed binding (null session, with why), so it takes the
+/// same abandoned/failed branch as a changed cross-host binding.
+fn observed_binding(loaded: &Loaded, work: &str, intent: &Value) -> Result<(Value, Value), String> {
+    match binding_of(loaded, work, intent) {
+        Err(error) if intent["receiving"] == same_host::RECEIVING => {
+            Ok((Value::Null, json!({"session": null, "unverified": error})))
+        }
+        other => other,
+    }
+}
+
+/// The failure reason for a changed binding, with why a same-host one failed.
+fn changed(reason: &str, binding: &Value) -> String {
+    match binding["unverified"].as_str() {
+        Some(why) => format!("{reason}: {why}"),
+        None => reason.to_owned(),
+    }
+}
+
 fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
     if selected.is_null() {
         return true;
@@ -380,13 +400,16 @@ pub(crate) fn claim(
             .to_owned();
         intents[index]["nativeChild"] = json!(child);
         intents[index]["observedAgentType"] = json!(agent_type);
-        let (_, binding) = binding_of(loaded, &work, &intents[index])?;
+        let (_, binding) = observed_binding(loaded, &work, &intents[index])?;
         if binding["session"] != session || binding["revision"] != intents[index]["bindingRevision"]
         {
             intents[index]["state"] = json!("abandoned");
-            let reason = "the receiving binding changed before a child started";
-            intents[index]["failure"] = json!(reason);
-            return Ok(Some(reason.to_owned()));
+            let reason = changed(
+                "the receiving binding changed before a child started",
+                &binding,
+            );
+            intents[index]["failure"] = json!(&reason);
+            return Ok(Some(reason));
         }
         if !selected_is_current(loaded, &work, &intents[index]["selected"]) {
             intents[index]["state"] = json!("abandoned");
@@ -497,10 +520,14 @@ pub(crate) fn finalize(
             return Ok(());
         }
         let work = intent["work"].as_str().unwrap_or_default().to_owned();
-        let (goal, binding) = binding_of(loaded, &work, intent)?;
+        let (goal, binding) = observed_binding(loaded, &work, intent)?;
         if binding["session"] != session || binding["revision"] != intent["bindingRevision"] {
             intent["state"] = json!("failed");
-            intent["failure"] = json!("the receiving binding changed before the child finished");
+            let reason = changed(
+                "the receiving binding changed before the child finished",
+                &binding,
+            );
+            intent["failure"] = json!(reason);
             intent["pendingResult"] = json!(message);
             return Ok(());
         }

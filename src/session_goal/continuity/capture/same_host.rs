@@ -19,6 +19,8 @@ pub(super) const REVISION: u64 = 0;
 /// Approved lens files (docs/user-owned-agents.md), under the ControlRoot.
 const LENSES: &str = "your.soulmate/lenses";
 const MAX_LENSES: usize = 3;
+/// The perspective source limit `perspective::freeze` applies.
+const MAX_SOURCE: usize = 4 * 1024;
 
 fn binding_value(host: &str, identity: &str) -> Value {
     json!({"session": identity, "host": host, "revision": REVISION})
@@ -51,8 +53,27 @@ pub(super) fn of_intent(loaded: &Loaded, work: &str, intent: &Value) -> Result<V
 }
 
 /// Lens files offered by default: regular `.md` files whose stem is a valid
-/// perspective id, in name order.
-fn lenses(loaded: &Loaded) -> Vec<(String, String)> {
+/// perspective id, in name order, split into those `--perspectives` accepts
+/// and the omitted ones with why (the same read and limits as `freeze`).
+fn lenses(loaded: &Loaded) -> (Vec<(String, String)>, Vec<String>) {
+    let mut usable = Vec::new();
+    let mut omitted = Vec::new();
+    for (id, path) in lens_files(loaded) {
+        match crate::project::path::secure_bytes(&loaded.control_root, &path, "perspective source")
+        {
+            Ok(bytes) if bytes.len() <= MAX_SOURCE && std::str::from_utf8(&bytes).is_ok() => {
+                usable.push((id, path));
+            }
+            Ok(_) => omitted.push(format!(
+                "{path}: not UTF-8 or larger than {MAX_SOURCE} bytes"
+            )),
+            Err(error) => omitted.push(format!("{path}: {error}")),
+        }
+    }
+    (usable, omitted)
+}
+
+fn lens_files(loaded: &Loaded) -> Vec<(String, String)> {
     let directory = loaded.control_root.join(LENSES);
     if !fs::symlink_metadata(&directory).is_ok_and(|meta| meta.is_dir()) {
         return Vec::new();
@@ -97,7 +118,7 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
         "--agent-type".into(),
         native.into(),
     ];
-    let lenses = lenses(loaded);
+    let (lenses, mut omitted) = lenses(loaded);
     let ids = lenses.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
     let selected = (1..=MAX_LENSES).contains(&lenses.len());
     if selected {
@@ -117,10 +138,13 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
         "meaning": format!("run before spawning `{native}` from this session: its first turn then receives its profile and these lenses (files under {LENSES}); remove a lens from --perspectives to narrow the choice"),
     });
     if !selected && !lenses.is_empty() {
-        result["perspectivesOmitted"] = json!(format!(
+        omitted.push(format!(
             "{} lens files under {LENSES}; a child takes at most {MAX_LENSES}: add --perspectives with the chosen ones",
             lenses.len()
         ));
+    }
+    if !omitted.is_empty() {
+        result["perspectivesOmitted"] = json!(omitted);
     }
     Some(result)
 }

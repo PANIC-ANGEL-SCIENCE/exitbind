@@ -349,3 +349,224 @@ fn a_session_that_does_not_hold_the_work_gets_no_route_and_prepares_nothing() {
     assert!(!context.contains("Perspective "), "{context}");
     assert_eq!(fixture.intents().unwrap()[0]["state"], "prepared");
 }
+
+impl Fixture {
+    /// Prepare `sonic` through the printed route in the Lead session.
+    fn prepare_sonic(&self) {
+        let argv = argv(&self.next(Some(SESSION))["prepareChild"]);
+        let prepared = run(&argv, &self.product, &self.store, Some(SESSION), b"");
+        assert!(prepared.status.success(), "{}", text(&prepared));
+    }
+
+    /// The Work's native Goal context companion.
+    fn companion(&self) -> PathBuf {
+        let token = self.work.strip_prefix("smw_").unwrap();
+        self.product
+            .join(format!(".exitbind/runs/work-{token}.session-goal.json"))
+    }
+}
+
+/// Review D1: a same-host binding that stops verifying between prepare and
+/// stop is a changed binding: the child is recorded `failed` with its reason
+/// and its final message kept, never silently left `claimed`; at start it is
+/// `abandoned` with the reason. `work link-session` from another session
+/// cannot rebind the Work (it refuses and changes nothing), so the binding is
+/// broken by removing the Work's companion, which every same-host
+/// verification reads.
+#[test]
+fn a_same_host_binding_that_stops_verifying_fails_the_child_and_keeps_its_message() {
+    let fixture = Fixture::new("f5b-binding-changed-stop");
+    fixture.prepare_sonic();
+    let started = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(
+        started.contains("Perspective agent-surface-text"),
+        "{started}"
+    );
+    let linked = fixture.call(
+        Some(OTHER),
+        &["work", "link-session", &fixture.work],
+        b"",
+        true,
+    );
+    assert!(!linked.status.success(), "{}", text(&linked));
+    assert_eq!(fixture.intents().unwrap()[0]["state"], "claimed");
+
+    fs::remove_file(fixture.companion()).unwrap();
+    let stopped = fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":RESULT}),
+    );
+    assert_eq!(stopped, None);
+    let intent = &fixture.intents().unwrap()[0];
+    assert_eq!(intent["state"], "failed", "{intent}");
+    let failure = intent["failure"].as_str().unwrap();
+    assert!(
+        failure.starts_with("the receiving binding changed before the child finished: "),
+        "{failure}"
+    );
+    assert_eq!(intent["pendingResult"], RESULT, "{intent}");
+    assert_eq!(intent["resultSha256"], sha(RESULT.as_bytes()));
+
+    let fixture = Fixture::new("f5b-binding-changed-start");
+    fixture.prepare_sonic();
+    fs::remove_file(fixture.companion()).unwrap();
+    let started = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(
+        started.contains("the receiving binding changed before a child started: "),
+        "{started}"
+    );
+    assert!(!started.contains("Perspective "), "{started}");
+    let intent = &fixture.intents().unwrap()[0];
+    assert_eq!(intent["state"], "abandoned", "{intent}");
+    assert!(intent["failure"]
+        .as_str()
+        .unwrap()
+        .starts_with("the receiving binding changed before a child started: "));
+}
+
+/// Review D2: a Work begun in the Lead session by a project that does not own
+/// the session's native Goal gets no route, and preparing refuses naming the
+/// owner, though the session holds the Work's context.
+#[test]
+fn a_work_whose_native_goal_another_project_owns_gets_no_route_and_prepares_nothing() {
+    let fixture = Fixture::new("f5b-foreign-owner");
+    let other = fixture.base.join("other");
+    fs::create_dir(&other).unwrap();
+    super::support::git_topology::repository(&other);
+    let exe = env!("CARGO_BIN_EXE_exitbind").to_owned();
+    let call = |session: Option<&str>, args: &[&str]| {
+        let mut argv = vec![exe.clone()];
+        argv.extend(args.iter().map(|arg| (*arg).to_owned()));
+        run(&argv, &other, &fixture.store, session, b"")
+    };
+    let root = other.to_str().unwrap();
+    let init = call(None, &["init", "--mode", "portable", "--root", root]);
+    assert!(init.status.success(), "{}", text(&init));
+    let config = other.join("exitbind.json");
+    let mut value: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    value["agents"]["worker"]["profile"] = json!(PROFILE);
+    value["agents"]["worker"]["nativeName"] = json!("sonic");
+    fs::write(&config, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+    for (path, body) in [
+        (PROFILE.to_owned(), PROFILE_BODY),
+        (
+            format!("your.soulmate/lenses/{}.md", LENSES[0].0),
+            LENSES[0].1,
+        ),
+    ] {
+        fs::create_dir_all(other.join(&path).parent().unwrap()).unwrap();
+        fs::write(other.join(path), body).unwrap();
+    }
+    let config = fs::canonicalize(config).unwrap();
+    let config = config.to_str().unwrap();
+    let begun = call(
+        Some(SESSION),
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "A Work of a project that does not own the session Goal",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+            "--config",
+            config,
+        ],
+    );
+    assert!(begun.status.success(), "{}", text(&begun));
+    let begun: Value = serde_json::from_slice(&begun.stdout).unwrap();
+    let work = begun["work"].as_str().unwrap();
+    let lead = begun["next"]["assignment"].as_str().unwrap();
+    let scoped = call(
+        None,
+        &[
+            "work",
+            "return",
+            work,
+            lead,
+            "--outcome",
+            "scoped",
+            "--config",
+            config,
+        ],
+    );
+    assert!(scoped.status.success(), "{}", text(&scoped));
+    let token = work.strip_prefix("smw_").unwrap();
+    assert!(
+        other
+            .join(format!(".exitbind/runs/work-{token}.session-goal.json"))
+            .is_file(),
+        "the Lead session holds this Work's native Goal context"
+    );
+
+    let next = call(Some(SESSION), &["work", "next", work, "--config", config]);
+    assert!(next.status.success(), "{}", text(&next));
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(next["current"]["action"], "spawn", "{next}");
+    assert!(next["next"].get("prepareChild").is_none(), "{next}");
+    let assignment = next["next"]["assignment"].as_str().unwrap();
+    let prepared = call(
+        Some(SESSION),
+        &[
+            "work",
+            "child",
+            "prepare",
+            work,
+            assignment,
+            "--agent-type",
+            "sonic",
+            "--config",
+            config,
+        ],
+    );
+    assert!(!prepared.status.success(), "{}", text(&prepared));
+    assert!(
+        text(&prepared).contains("owned by another configured project"),
+        "{}",
+        text(&prepared)
+    );
+    assert!(!other.join(".exitbind/child-intents.json").exists());
+}
+
+/// Review D3: a lens the perspective limits refuse is left out of the printed
+/// route with why, so the route still runs unedited.
+#[test]
+fn an_oversized_lens_is_omitted_with_its_reason_and_the_route_still_runs() {
+    let fixture = Fixture::new("f5b-oversized-lens");
+    let big = "your.soulmate/lenses/oversized.md";
+    fs::write(fixture.product.join(big), "x".repeat(4097)).unwrap();
+    let route = fixture.next(Some(SESSION))["prepareChild"].clone();
+    assert_eq!(
+        route["perspectives"],
+        json!(["agent-surface-text", "release-trust-boundary"]),
+        "{route}"
+    );
+    let omitted = route["perspectivesOmitted"].as_array().unwrap();
+    assert_eq!(omitted.len(), 1, "{route}");
+    assert!(
+        omitted[0].as_str().unwrap().starts_with(big)
+            && omitted[0].as_str().unwrap().contains("4096 bytes"),
+        "{route}"
+    );
+    let argv = argv(&route);
+    assert!(
+        !argv.iter().any(|word| word.contains("oversized.md")),
+        "{argv:?}"
+    );
+    let prepared = run(&argv, &fixture.product, &fixture.store, Some(SESSION), b"");
+    assert!(prepared.status.success(), "{}", text(&prepared));
+}
