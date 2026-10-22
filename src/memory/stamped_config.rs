@@ -94,12 +94,29 @@ fn same_root(left: &std::path::Path, right: &std::path::Path) -> bool {
 }
 
 /// The typed refusal for lesson events stamped with `bound`: the kept copy
-/// when it exists, and the exact `memory revalidate` route for this ledger.
+/// when it exists, and one `memory revalidate` route that covers this ledger
+/// and every other project-lesson ledger stamped with the same copy that the
+/// route would revalidate. A specialist ledger, or one refused for another
+/// reason, keeps its own route.
 pub(crate) fn changed(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> String {
+    let others = same_copy_ledgers(loaded, ledger, bound);
+    let mut group = vec![ledger];
+    group.extend(others.iter());
+    changed_ledgers(loaded, &group, bound)
+}
+
+/// The typed refusal naming exactly `ledgers` in its route.
+pub(crate) fn changed_ledgers(loaded: &Loaded, ledgers: &[&LedgerSnapshot], bound: &str) -> String {
     let current = hash::text(&loaded.source);
     let copy = find(loaded, bound).map(|path| path.display().to_string());
-    let ledger_path = crate::config::rel(&loaded.state_root, &ledger.path)
-        .unwrap_or_else(|_| ledger.path.display().to_string());
+    let mut paths = ledgers
+        .iter()
+        .map(|ledger| {
+            crate::config::rel(&loaded.state_root, &ledger.path)
+                .unwrap_or_else(|_| ledger.path.display().to_string())
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
     crate::drift::refusal(
         crate::drift::Class::MemoryConfiguration,
         bound,
@@ -107,9 +124,48 @@ pub(crate) fn changed(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> 
         copy.as_deref(),
         crate::drift::Route::Revalidate {
             lead: loaded.lead().unwrap_or("lead"),
-            ledger: &ledger_path,
+            ledgers: &paths,
             kept_copy: copy.as_deref(),
             config: &loaded.path,
         },
     )
+}
+
+fn is_project_lesson(ledger: &LedgerSnapshot) -> bool {
+    ledger
+        .items
+        .values()
+        .next()
+        .is_some_and(|item| item["scope"] == super::lessons::SCOPE)
+}
+
+/// Other project-lesson ledgers whose history was stamped with `bound` and
+/// that pass every revalidation check against its kept copy.
+fn same_copy_ledgers(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> Vec<LedgerSnapshot> {
+    let (Some(lead), Some(copy)) = (loaded.lead(), find(loaded, bound)) else {
+        return Vec::new();
+    };
+    if !is_project_lesson(ledger) {
+        return Vec::new();
+    }
+    let Some(previous) = copy
+        .to_str()
+        .and_then(|copy| crate::config::load_bytes_at(copy, &loaded.path).ok())
+    else {
+        return Vec::new();
+    };
+    let Ok(Some(discovered)) = super::discovery::discover(loaded) else {
+        return Vec::new();
+    };
+    discovered
+        .into_iter()
+        .filter(|other| {
+            other.snapshot.path != ledger.path
+                && is_project_lesson(&other.snapshot)
+                && matches!(super::state::history_drift(loaded, &other.snapshot),
+                    Err(super::state::HistoryDrift::Configuration(other_bound)) if other_bound == bound)
+                && super::revalidation::check(loaded, &previous, lead, &other.path) == Ok(true)
+        })
+        .map(|other| other.snapshot)
+        .collect()
 }

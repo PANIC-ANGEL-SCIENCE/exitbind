@@ -5,7 +5,9 @@
 //! the differences, and `work next` then shows the named agent and its
 //! `profileSha256`. A seeded `memoryWrite`, `runtime` or `retention` change
 //! in the same project still refuses `lesson_authority_changed`.
-use super::changed_after_binding::{carried, exitbind, run_route, set_config, sha, text, BEGIN};
+use super::changed_after_binding::{
+    carried_lessons, exitbind, run_route, set_config, sha, text, BEGIN,
+};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
 
@@ -30,7 +32,14 @@ fn argv(value: &Value) -> Vec<String> {
 
 #[test]
 fn named_agent_profiles_after_lesson_carry_revalidate_and_reach_work_next() {
-    let (_previous, fresh, copy) = carried("named-agents-after-binding");
+    // Two carried lessons, each in its own ledger: one route covers both.
+    let (_previous, fresh, copy) = carried_lessons(
+        "named-agents-after-binding",
+        &[
+            ("carry-me", "Trace every delivery consumer."),
+            ("carry-two", "Run the affected feature tests."),
+        ],
+    );
     let root = fresh.0.as_path();
     let stamped_sha = sha(&fs::read(copy).unwrap());
     let reviewer = {
@@ -65,25 +74,41 @@ fn named_agent_profiles_after_lesson_carry_revalidate_and_reach_work_next() {
     assert_eq!(refused["currentSha256"], current_sha.as_str());
     let route = argv(&refused);
     assert_eq!(&route[1..3], ["memory", "revalidate"]);
-    let ledger = route[4].clone();
+    let end = route
+        .iter()
+        .position(|word| word == "--from-config")
+        .unwrap();
+    let ledgers = route[4..end].to_vec();
+    assert_eq!(ledgers.len(), 2, "{route:?}");
+    let ledger = ledgers[0].clone();
 
-    // The route → revalidated, each identity difference recorded.
+    // The one route → each ledger revalidated, each identity difference recorded.
     let revalidated = run_route(root, &route, "Owner's named agents; rights unchanged");
     assert!(revalidated.status.success(), "{}", text(&revalidated));
-    let event: Value = serde_json::from_slice(&revalidated.stdout).unwrap();
-    assert_eq!(event["status"], "revalidated", "{event}");
+    let batch: Value = serde_json::from_slice(&revalidated.stdout).unwrap();
+    assert_eq!(batch["status"], "revalidated", "{batch}");
+    let events = batch["ledgers"].as_array().unwrap();
+    assert_eq!(events.len(), 2, "{batch}");
     let was = |agent: &str, field: &str| before["agents"][agent][field].clone();
-    assert_eq!(
-        event["revalidation"]["differences"],
-        json!([
-            {"agent":"reviewer","field":"profile","before":was("reviewer","profile"),"after":MEOW},
-            {"agent":"reviewer","field":"nativeName","before":was("reviewer","nativeName"),"after":"meow"},
-            {"agent":"worker","field":"profile","before":was("worker","profile"),"after":SONIC},
-            {"agent":"worker","field":"nativeName","before":was("worker","nativeName"),"after":"sonic"},
-        ])
-    );
+    for event in events {
+        assert_eq!(event["status"], "revalidated", "{event}");
+        assert_eq!(
+            event["event"]["revalidation"]["priorLedgerHeadSha256"],
+            event["event"]["previousEventSha256"]
+        );
+        assert_eq!(
+            event["revalidation"]["differences"],
+            json!([
+                {"agent":"reviewer","field":"profile","before":was("reviewer","profile"),"after":MEOW},
+                {"agent":"reviewer","field":"nativeName","before":was("reviewer","nativeName"),"after":"meow"},
+                {"agent":"worker","field":"profile","before":was("worker","profile"),"after":SONIC},
+                {"agent":"worker","field":"nativeName","before":was("worker","nativeName"),"after":"sonic"},
+            ])
+        );
+    }
 
-    // `work next` → the named agent and its profileSha256.
+    // `work begin` passes after that one route; `work next` → the named
+    // agent and its profileSha256.
     let (ok, begun) = json_of(root, &BEGIN);
     assert!(ok, "{begun}");
     let work = begun["work"].as_str().unwrap().to_owned();

@@ -100,6 +100,10 @@ beside the lesson ledgers. When the configuration changes afterwards, the
 refusal `configuration changed since memory event` names that copy and the
 exact `memory revalidate … --from-config COPY --reason REASON --apply`
 command, with the bound and current sha256, the same in text and `--json`.
+That one command lists every project-lesson ledger stamped with the same copy
+that it would revalidate, so carried lessons need one review, not one per
+ledger. A specialist ledger, or a ledger refused for another reason (changed
+source or actor profile, a different stamped copy), keeps its own route.
 Otherwise save the original authorized configuration before changing
 recipient rights. An old lesson remains pinned to its recorded configuration
 until the current Lead explicitly reviews and applies compatible lineage:
@@ -111,15 +115,25 @@ exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
   --from-config ORIGINAL_CONFIG.json --reason "Reviewed additive recipient access" --apply
 ```
 
-The first call previews exact configuration hashes and recipient-right changes
-without appending an event. Compatibility permits additive `memoryRead` rights,
+`memory revalidate` accepts several `LEDGER` arguments. It checks every
+listed ledger with the same rule under one lock before appending to any; if
+one refuses, nothing is appended and the refusal names that ledger and why.
+Otherwise each ledger receives its own ordinary revalidation event with its
+own predecessor head. A ledger already current for this configuration is
+skipped (`already_current`), so a run interrupted between ledgers completes by
+running the same command again.
+
+The first call previews exact configuration hashes and recipient-right changes,
+per ledger, without appending an event. Compatibility permits additive `memoryRead` rights,
 schema URL metadata, the narrowly reviewed contextual opt-in described below,
 and a change in the agent fields that grant no memory right and carry no lesson
 authority: `profile`, `nativeName`, `displayName` and the read-only
 `phaseGuidance`. Each such change is recorded as a difference (agent, field,
 before, after), so a recipient can be pointed at a named agent profile after
 lessons were carried. The owner policy correction and the contextual opt-in
-read the same list. Ownership, rights, write/runtime/retention semantics,
+read the same list. In a specialist ledger, the `profile` of every agent with
+an event on that ledger is qualification evidence and stays exact; the
+contextual opt-in refuses such a change before appending. Ownership, rights, write/runtime/retention semantics,
 project roots and an existing Work's frozen configuration must remain unchanged. The current Lead must
 hold the lesson write, review, promote and revoke rights. The prior configuration,
 owner profile and immutable source provenance must still be provable; incompatible

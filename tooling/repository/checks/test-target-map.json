@@ -2268,8 +2268,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "c854c87a68ca6d10a067ba41c9b5953de54934908c937e33a69944384f6a04a5",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged. R55 W3: registers the changed-after-binding (F2) setup module; existing cases unchanged. R55 F3: registers the carried-lesson privacy module; existing modules unchanged. R55 F4a: registers the named-agents-after-binding setup module; existing modules unchanged."
+      "currentSha256": "63b84bb126d5f2bef716be5ef2fac899fd29d1532409b4eeaedb84c6b5cccacf",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged. R55 W3: registers the changed-after-binding (F2) setup module; existing cases unchanged. R55 F3: registers the carried-lesson privacy module; existing modules unchanged. R55 F4a: registers the named-agents-after-binding and multi-ledger revalidation setup modules; existing modules unchanged."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",

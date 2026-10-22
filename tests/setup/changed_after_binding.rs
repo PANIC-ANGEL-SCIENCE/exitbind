@@ -56,13 +56,15 @@ pub(super) fn set_config(root: &Path, edit: impl FnOnce(&mut Value)) {
 /// A fresh project set up with `--lessons-from` a previous project holding
 /// one accepted lesson; returns both roots and the kept stamped copy.
 pub(super) fn carried(label: &str) -> (Root, Root, String) {
+    carried_lessons(label, &[("carry-me", "Trace every delivery consumer.")])
+}
+
+/// As [`carried`], with one accepted lesson (own ledger) per `(id, fact)`.
+pub(super) fn carried_lessons(label: &str, lessons: &[(&str, &str)]) -> (Root, Root, String) {
     let previous = previous_project();
-    accept(
-        &previous.0,
-        "carry-me",
-        "Trace every delivery consumer.",
-        "2100-01-01T00:00:00Z",
-    );
+    for (id, fact) in lessons {
+        accept(&previous.0, id, fact, "2100-01-01T00:00:00Z");
+    }
     let fresh = repository(label);
     let root = fresh.0.as_path();
     let from = previous.0.join("exitbind.json");

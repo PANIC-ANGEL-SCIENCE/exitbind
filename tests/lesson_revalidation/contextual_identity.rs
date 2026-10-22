@@ -31,7 +31,7 @@ fn revalidate(f: &Fixture, ledger: &str, apply: bool) -> std::process::Output {
 }
 
 /// Opt in and rename one recipient; with `profile`, also repoint its profile
-/// (only for an agent whose profile is not lesson qualification evidence).
+/// (refused for an actor on a specialist ledger: qualification evidence).
 fn opt_in_with_named(f: &Fixture, agent: &str, profile: bool) -> Value {
     fs::copy(f.root.join("exitbind.json"), f.root.join("prior.json")).unwrap();
     fs::write(f.root.join("sonic.md"), "Sonic implements.\n").unwrap();
@@ -113,4 +113,40 @@ fn specialist_contextual_evidence_accepts_recorded_identity_differences() {
         "revalidate",
         "{inspected}"
     );
+}
+
+#[test]
+fn a_specialist_actor_profile_change_with_the_opt_in_refuses_before_any_append() {
+    let f = Fixture::specialist_mode(false);
+    let ledger = ".exitbind/memory/specialist.jsonl";
+    let before = fs::read(f.root.join(ledger)).unwrap();
+    for actor in ["reviewer", "record-specialist"] {
+        opt_in_with_named(&f, actor, true);
+        let refused = revalidate(&f, ledger, true);
+        assert!(!refused.status.success(), "{actor}: {refused:?}");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&refused.stdout),
+            String::from_utf8_lossy(&refused.stderr)
+        );
+        assert!(
+            text.contains(&format!("specialist ledger actor '{actor}'")),
+            "{actor}: {text}"
+        );
+        assert_eq!(fs::read(f.root.join(ledger)).unwrap(), before, "{actor}");
+        // Restore the prior configuration for the next actor.
+        fs::copy(f.root.join("prior.json"), f.root.join("exitbind.json")).unwrap();
+    }
+    // The ledger still delivers to the specialist.
+    let ok = f.ok(&[
+        "memory",
+        "candidates",
+        "record-specialist",
+        "--task",
+        fixture::SPECIALIST_TASK,
+        "--host",
+        "codex",
+        "--json",
+    ]);
+    assert!(ok.is_object(), "{ok}");
 }

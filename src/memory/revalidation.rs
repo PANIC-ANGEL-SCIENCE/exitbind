@@ -6,10 +6,18 @@ use crate::{
 };
 use serde_json::{json, Value};
 
+/// At most this many ledgers are reviewed by one command.
+const MAX_LEDGERS: usize = 64;
+
+/// Review one configuration change for every listed lesson ledger. Every
+/// ledger is checked with the same rule under one lock before any is
+/// appended to; a refusal appends nothing. Each ledger then receives its own
+/// ordinary revalidation event. A ledger already current is skipped, so an
+/// interrupted run completes by running the same command again.
 pub(crate) fn run(
     loaded: &Loaded,
     actor: &str,
-    ledger: &str,
+    ledgers: &[&str],
     from: &str,
     reason: &str,
     apply: bool,
@@ -20,25 +28,137 @@ pub(crate) fn run(
             "lesson revalidation requires the current configured Lead and reviewed reason".into(),
         );
     }
+    if ledgers.is_empty() || ledgers.len() > MAX_LEDGERS {
+        return Err(format!(
+            "memory revalidate requires 1 to {MAX_LEDGERS} LEDGER arguments"
+        ));
+    }
+    if (1..ledgers.len()).any(|index| ledgers[..index].contains(&ledgers[index])) {
+        return Err("memory revalidate lists a LEDGER more than once".into());
+    }
     let _lock = super::lessons::mutation_lock(loaded)?;
-    // This project's kept stamped copy sits beside the ledgers; its bytes
-    // are read as they apply at this configuration's location. Any other
-    // file is loaded where it is, so a foreign project's roots still refuse.
-    let previous = if super::stamped_config::is_kept_copy(loaded, from) {
-        config::load_bytes_at(from, &loaded.path)?
+    let previous = load_previous(loaded, from)?;
+    if hash::text(&previous.source) == hash::text(&loaded.source) {
+        return Err("lesson configuration is unchanged; no revalidation is needed".into());
+    }
+    let mut prepared = Vec::new();
+    let mut refused = Vec::new();
+    for ledger in ledgers {
+        match prepare(loaded, &previous, actor, ledger, reason) {
+            Ok(ready) => prepared.push(ready),
+            Err(error) => refused.push((*ledger, error)),
+        }
+    }
+    if let Some((first, error)) = refused.first() {
+        if ledgers.len() == 1 {
+            return Err(error.clone());
+        }
+        let others = refused[1..]
+            .iter()
+            .fold(String::new(), |mut text, (ledger, error)| {
+                text.push_str(&format!("{ledger}: {}; ", crate::drift::plain(error)));
+                text
+            });
+        return Err(format!(
+            "memory revalidate appended nothing to any of {} ledgers; {} refused. {others}{first}: {error}",
+            ledgers.len(),
+            refused.len()
+        ));
+    }
+    let mut responses = Vec::new();
+    for ready in prepared {
+        responses.push(match ready {
+            Prepared::Current(response) => response,
+            Prepared::Ready(ready) if apply => ready.apply(loaded, &previous, actor)?,
+            Prepared::Ready(ready) => ready.response,
+        });
+    }
+    if responses.len() == 1 {
+        return Ok(responses.remove(0));
+    }
+    let recorded = responses.iter().any(|r| r["effect"] == "recorded");
+    Ok(json!({"effect":if recorded {"recorded"} else {"no-change"},
+        "status":if apply {"revalidated"} else {"preview"},
+        "configSha256":hash::text(&loaded.source),"ledgers":responses,
+        "meaning":"each ledger carries its own reviewed revalidation event; no Work, task grant, check, review approval or acceptance is transferred"}))
+}
+
+/// This project's kept stamped copy sits beside the ledgers; its bytes are
+/// read as they apply at this configuration's location. Any other file is
+/// loaded where it is, so a foreign project's roots still refuse.
+fn load_previous(loaded: &Loaded, from: &str) -> Result<Loaded, String> {
+    if super::stamped_config::is_kept_copy(loaded, from) {
+        config::load_bytes_at(from, &loaded.path)
     } else {
-        config::load(Some(from))?
-    };
+        config::load(Some(from))
+    }
+}
+
+/// The ledger's history against the prior configuration, refused for this
+/// one ledger only.
+fn history_against(previous: &Loaded, snapshot: &LedgerSnapshot) -> Result<(), String> {
+    super::state::history_drift(previous, snapshot).map_err(|drift| match drift {
+        super::state::HistoryDrift::Configuration(bound) => {
+            super::stamped_config::changed_ledgers(previous, &[snapshot], &bound)
+        }
+        super::state::HistoryDrift::Other(error) => error,
+    })
+}
+
+enum Prepared {
+    Current(Value),
+    Ready(Box<Ready>),
+}
+
+struct Ready {
+    snapshot: LedgerSnapshot,
+    item: Value,
+    proof: Value,
+    new_hash: String,
+    ledger: String,
+    response: Value,
+}
+
+/// Every check one ledger's revalidation needs, appending nothing. Also
+/// used to decide which ledgers one refusal route can cover.
+pub(crate) fn check(
+    loaded: &Loaded,
+    previous: &Loaded,
+    actor: &str,
+    ledger: &str,
+) -> Result<bool, String> {
+    Ok(matches!(
+        prepare(loaded, previous, actor, ledger, "grouping check")?,
+        Prepared::Ready(_)
+    ))
+}
+
+fn prepare(
+    loaded: &Loaded,
+    previous: &Loaded,
+    actor: &str,
+    ledger: &str,
+    reason: &str,
+) -> Result<Prepared, String> {
     let snapshot = read_ledger(loaded, ledger, false)?;
-    super::validate_history_current(&previous, &snapshot)?;
-    super::validate_source_current(&previous, &snapshot)?;
+    // A rerun of an interrupted route skips a ledger that is already current.
+    if super::state::history_drift(loaded, &snapshot).is_ok()
+        && super::validate_source_current(loaded, &snapshot).is_ok()
+    {
+        return Ok(Prepared::Current(
+            json!({"effect":"no-change","status":"already_current","ledger":ledger,
+                "configSha256":hash::text(&loaded.source)}),
+        ));
+    }
+    history_against(previous, &snapshot)?;
+    super::validate_source_current(previous, &snapshot)?;
     let item = snapshot
         .items
         .values()
         .next()
         .ok_or("lesson ledger is empty")?;
     let contextual_migration =
-        !super::contextual::enabled(&previous) && super::contextual::enabled(loaded);
+        !super::contextual::enabled(previous) && super::contextual::enabled(loaded);
     if item["scope"] != super::lessons::SCOPE
         && !(contextual_migration
             && crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")))
@@ -79,96 +199,120 @@ pub(crate) fn run(
             .to_owned()
     };
     let differences = if contextual_migration {
+        let actors = snapshot
+            .events
+            .iter()
+            .filter_map(|event| event["actor"].as_str())
+            .collect::<Vec<_>>();
         compatible_contextual(
-            &previous,
+            previous,
             loaded,
             actor,
             item["scope"].as_str().ok_or("invalid scope")?,
+            &actors,
         )?
     } else {
-        compatible(&previous, loaded, actor, ledger)?
+        compatible(previous, loaded, actor, ledger)?
     };
     let old_hash = hash::text(&previous.source);
     let new_hash = hash::text(&loaded.source);
-    if old_hash == new_hash {
-        return Err("lesson configuration is unchanged; no revalidation is needed".into());
-    }
     let proof = json!({"version":1, "previousConfigSha256":old_hash,
         "projectIdentity":crate::host::assignment_context::project_identity(loaded)?,
         "owner":actor,"priorLedgerHeadSha256":snapshot.last_event_sha256,
         "differences":differences,"reason":reason});
-    let argv = |action: &str| -> Result<Value, String> {
-        let mut argv = vec![
-            crate::emitted::executable()?,
-            "memory".into(),
-            action.into(),
-        ];
-        if action != "inspect" {
-            argv.push(actor.into());
-        }
-        argv.extend([
-            ledger.into(),
-            "--config".into(),
-            loaded
-                .path
-                .to_str()
-                .ok_or("configuration path is not UTF-8")?
-                .into(),
-        ]);
-        Ok(json!(argv))
-    };
-    let mut response = json!({"effect":"no-change","status":"preview","itemId":item["itemId"],
-        "lessonId":lesson_id,"configSha256":new_hash,"revalidation":proof,
-        "nextAction":{"command":argv("inspect")?,"readOnly":true},
+    let response = json!({"effect":"no-change","status":"preview","ledger":ledger,
+        "itemId":item["itemId"],"lessonId":lesson_id,"configSha256":new_hash,"revalidation":proof,
+        "nextAction":{"command":lesson_argv(loaded, actor, ledger, "inspect")?,"readOnly":true},
         "meaning":"explicit reviewed project-fact lineage; no Work, task grant, check, review approval or acceptance is transferred"});
-    if !apply {
-        return Ok(response);
+    let item = item.clone();
+    Ok(Prepared::Ready(Box::new(Ready {
+        snapshot,
+        item,
+        proof,
+        new_hash,
+        ledger: ledger.to_owned(),
+        response,
+    })))
+}
+
+fn lesson_argv(loaded: &Loaded, actor: &str, ledger: &str, action: &str) -> Result<Value, String> {
+    let mut argv = vec![
+        crate::emitted::executable()?,
+        "memory".into(),
+        action.into(),
+    ];
+    if action != "inspect" {
+        argv.push(actor.into());
     }
-    let last = snapshot
-        .events
-        .last()
-        .ok_or("lesson ledger has no events")?;
-    let agent = loaded.agent(actor).ok_or("configured Lead missing")?;
-    let profile = project_file(&loaded.control_root, &agent.profile, "actor profile")?;
-    let mut event = json!({"version":2,"kind":"memory","producer":crate::producer::evidence(),
-        "action":"revalidate","itemId":item["itemId"],"scope":item["scope"],"actor":actor,
-        "source":item["source"],"configSha256":new_hash,"actorProfile":{
-            "path":relative_project_path(&loaded.control_root,&profile)?,
-            "sha256":hash::text(&stable_text(&profile,"actor profile")?)},
-        "previousEventSha256":snapshot.last_event_sha256,"timestamp":super::now(),"revalidation":proof});
-    if let Some(expiry) = last.get("expiresAt") {
-        event["expiresAt"] = expiry.clone();
+    argv.extend([
+        ledger.into(),
+        "--config".into(),
+        loaded
+            .path
+            .to_str()
+            .ok_or("configuration path is not UTF-8")?
+            .into(),
+    ]);
+    Ok(json!(argv))
+}
+
+impl Ready {
+    fn apply(self, loaded: &Loaded, previous: &Loaded, actor: &str) -> Result<Value, String> {
+        let Ready {
+            snapshot,
+            item,
+            proof,
+            new_hash,
+            ledger,
+            mut response,
+        } = self;
+        let last = snapshot
+            .events
+            .last()
+            .ok_or("lesson ledger has no events")?;
+        let agent = loaded.agent(actor).ok_or("configured Lead missing")?;
+        let profile = project_file(&loaded.control_root, &agent.profile, "actor profile")?;
+        let mut event = json!({"version":2,"kind":"memory","producer":crate::producer::evidence(),
+            "action":"revalidate","itemId":item["itemId"],"scope":item["scope"],"actor":actor,
+            "source":item["source"],"configSha256":new_hash,"actorProfile":{
+                "path":relative_project_path(&loaded.control_root,&profile)?,
+                "sha256":hash::text(&stable_text(&profile,"actor profile")?)},
+            "previousEventSha256":snapshot.last_event_sha256,"timestamp":super::now(),"revalidation":proof});
+        if let Some(expiry) = last.get("expiresAt") {
+            event["expiresAt"] = expiry.clone();
+        }
+        event["eventSha256"] = json!(hash::value(&event));
+        super::state::validate_event(
+            &event,
+            &loaded.product_root,
+            &loaded.control_root,
+            snapshot.events.len() + 1,
+            snapshot.last_event_sha256.as_deref(),
+            snapshot.last_timestamp.as_deref(),
+            &snapshot.items,
+        )?;
+        super::ensure_config_current(previous)?;
+        super::ensure_config_current(loaded)?;
+        history_against(previous, &snapshot)?;
+        super::validate_source_current(loaded, &snapshot)?;
+        crate::project::git_preflight::refuse_tracked_targets(
+            &loaded.state_root,
+            &[snapshot.path.as_path()],
+        )?;
+        let next = if item["state"] == "accepted" {
+            "revoke"
+        } else {
+            "inspect"
+        };
+        response["nextAction"] = json!({"command":lesson_argv(loaded, actor, &ledger, next)?,
+            "readOnly":next == "inspect",
+            "meaning":"retire this immutable lesson before correcting it; current guards still determine delivery"});
+        append_event(&snapshot, &event)?;
+        response["effect"] = json!("recorded");
+        response["status"] = json!("revalidated");
+        response["event"] = event;
+        Ok(response)
     }
-    event["eventSha256"] = json!(hash::value(&event));
-    super::state::validate_event(
-        &event,
-        &loaded.product_root,
-        &loaded.control_root,
-        snapshot.events.len() + 1,
-        snapshot.last_event_sha256.as_deref(),
-        snapshot.last_timestamp.as_deref(),
-        &snapshot.items,
-    )?;
-    super::ensure_config_current(&previous)?;
-    super::ensure_config_current(loaded)?;
-    super::validate_history_current(&previous, &snapshot)?;
-    super::validate_source_current(loaded, &snapshot)?;
-    crate::project::git_preflight::refuse_tracked_targets(
-        &loaded.state_root,
-        &[snapshot.path.as_path()],
-    )?;
-    let next = if item["state"] == "accepted" {
-        "revoke"
-    } else {
-        "inspect"
-    };
-    response["nextAction"] = json!({"command":argv(next)?,"readOnly":next == "inspect",
-        "meaning":"retire this immutable lesson before correcting it; current guards still determine delivery"});
-    append_event(&snapshot, &event)?;
-    response["effect"] = json!("recorded");
-    response["status"] = json!("revalidated");
-    response["event"] = event;
-    Ok(response)
 }
 
 fn compatible(
@@ -245,6 +389,7 @@ fn compatible_contextual(
     current: &Loaded,
     actor: &str,
     scope: &str,
+    ledger_actors: &[&str],
 ) -> Result<Vec<Value>, String> {
     if previous.product_root != current.product_root
         || previous.control_root != current.control_root
@@ -264,6 +409,18 @@ fn compatible_contextual(
         .ok_or("contextual opt-in missing")?;
     if before != after || !super::contextual::valid_policy(&choice) {
         return Err("contextual migration permits only the explicit opt-in; rights and other configuration must remain unchanged".into());
+    }
+    // A specialist ledger's author and reviewer profiles are qualification
+    // evidence on its whole history; they stay exact, refused before any append.
+    if crate::project::specialists::is_scope(scope) {
+        for name in ledger_actors {
+            let profile = |loaded: &Loaded| loaded.config["agents"][*name]["profile"].clone();
+            if profile(previous) != profile(current) {
+                return Err(format!(
+                    "contextual migration keeps the profile of specialist ledger actor '{name}' exact; it is qualification evidence for this ledger"
+                ));
+            }
+        }
     }
     let lead = current.agent(actor).ok_or("Lead unavailable")?;
     if !lead.memory_promote.iter().any(|s| s == scope)

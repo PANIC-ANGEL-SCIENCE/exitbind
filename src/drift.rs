@@ -190,7 +190,7 @@ pub(crate) enum Route<'a> {
     /// `memory revalidate`: review a configuration change for a lesson ledger.
     Revalidate {
         lead: &'a str,
-        ledger: &'a str,
+        ledgers: &'a [String],
         kept_copy: Option<&'a str>,
         config: &'a std::path::Path,
     },
@@ -231,16 +231,19 @@ impl Route<'_> {
         match self {
             Route::Revalidate {
                 lead,
-                ledger,
+                ledgers,
                 kept_copy,
                 config,
             } => (
-                vec![
+                [
                     executable,
                     "memory".into(),
                     "revalidate".into(),
                     (*lead).into(),
-                    (*ledger).into(),
+                ]
+                .into_iter()
+                .chain(ledgers.iter().cloned())
+                .chain([
                     "--from-config".into(),
                     kept_copy
                         .map_or_else(|| crate::emitted::slot("PREVIOUS_CONFIG"), str::to_owned),
@@ -249,7 +252,8 @@ impl Route<'_> {
                     "--apply".into(),
                     "--config".into(),
                     text(config),
-                ],
+                ])
+                .collect(),
                 false,
             ),
             Route::Inspect { ledger, config } => (
@@ -428,6 +432,7 @@ mod tests {
     #[test]
     fn every_member_renders_classification_hashes_and_route_in_text_and_json() {
         let config = std::path::Path::new("/project dir/exitbind.json");
+        let ledgers = [".exitbind/memory/l.jsonl".to_owned()];
         let mut names = std::collections::BTreeSet::new();
         for member in MEMBERS {
             assert!(
@@ -438,7 +443,7 @@ mod tests {
             for route in [
                 Route::Revalidate {
                     lead: "lead",
-                    ledger: ".exitbind/memory/l.jsonl",
+                    ledgers: &ledgers,
                     kept_copy: Some("/kept/copy.json"),
                     config,
                 },
@@ -502,7 +507,7 @@ mod tests {
             None,
             Route::Revalidate {
                 lead: "lead",
-                ledger: "l.jsonl",
+                ledgers: &["l.jsonl".to_owned()],
                 kept_copy: None,
                 config,
             },

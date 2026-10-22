@@ -310,10 +310,38 @@ pub(crate) fn ensure_config_current(loaded: &Loaded) -> Result<(), String> {
     Ok(())
 }
 
+/// Why a ledger's history is not current for a configuration: the
+/// configuration hash its events were stamped with, or another refusal.
+pub(crate) enum HistoryDrift {
+    Configuration(String),
+    Other(String),
+}
+
+impl From<String> for HistoryDrift {
+    fn from(error: String) -> Self {
+        HistoryDrift::Other(error)
+    }
+}
+
+impl From<&str> for HistoryDrift {
+    fn from(error: &str) -> Self {
+        HistoryDrift::Other(error.to_owned())
+    }
+}
+
 pub(crate) fn validate_history_current(
     loaded: &Loaded,
     ledger: &LedgerSnapshot,
 ) -> Result<(), String> {
+    history_drift(loaded, ledger).map_err(|drift| match drift {
+        HistoryDrift::Configuration(bound) => {
+            super::stamped_config::changed(loaded, ledger, &bound)
+        }
+        HistoryDrift::Other(error) => error,
+    })
+}
+
+pub(crate) fn history_drift(loaded: &Loaded, ledger: &LedgerSnapshot) -> Result<(), HistoryDrift> {
     let config_hash = hash::text(&loaded.source);
     let first = ledger
         .events
@@ -326,10 +354,11 @@ pub(crate) fn validate_history_current(
         .any(|item| crate::project::specialists::is_scope(item["scope"].as_str().unwrap_or("")));
     for (index, event) in ledger.events.iter().enumerate() {
         if index >= first && event["configSha256"] != config_hash {
-            return Err(super::stamped_config::changed(
-                loaded,
-                ledger,
-                event["configSha256"].as_str().unwrap_or_default(),
+            return Err(HistoryDrift::Configuration(
+                event["configSha256"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
             ));
         }
         // Contextual opt-in migrates configuration only. Specialist author and
@@ -350,7 +379,7 @@ pub(crate) fn validate_history_current(
         {
             let ledger_path = crate::config::rel(&loaded.state_root, &ledger.path)
                 .unwrap_or_else(|_| ledger.path.display().to_string());
-            return Err(crate::drift::refusal(
+            return Err(HistoryDrift::Other(crate::drift::refusal(
                 crate::drift::Class::MemoryActorProfile,
                 event["actorProfile"]["sha256"].as_str().unwrap_or_default(),
                 Some(&current_hash),
@@ -359,7 +388,7 @@ pub(crate) fn validate_history_current(
                     ledger: &ledger_path,
                     config: &loaded.path,
                 },
-            ));
+            )));
         }
     }
     Ok(())
