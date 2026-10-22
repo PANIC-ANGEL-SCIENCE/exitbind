@@ -566,6 +566,8 @@ mod closure_flows;
 mod correction_and_journey;
 #[path = "goal_requirements/emitted_routes.rs"]
 mod emitted_routes;
+#[path = "goal_requirements/follow_up_routes.rs"]
+mod follow_up_routes;
 #[path = "goal_requirements/intake_and_identity.rs"]
 mod intake_and_identity;
 #[path = "goal_requirements/native_recovery.rs"]
