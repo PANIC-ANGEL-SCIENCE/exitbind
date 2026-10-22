@@ -11,22 +11,7 @@ pub(crate) fn context_for_work_with_root(
     loaded: &crate::config::Loaded,
     work: &str,
 ) -> super::WorkContextResolution {
-    let value = match read_private_companion(
-        loaded,
-        work,
-        ".session-goal.json",
-        "Work Goal context companion",
-        COMPANION_KIND,
-        PROTOCOL,
-        &[
-            "host",
-            "sessionKey",
-            "parentGoalId",
-            "parentObservedGoalEventSha256",
-            "ownerProjectId",
-            "ownerIdentitySha256",
-        ],
-    ) {
+    let value = match companion(loaded, work) {
         Ok(Some(value)) => value,
         Ok(None) => {
             return match super::super::native::current() {
@@ -62,7 +47,10 @@ pub(crate) fn context_for_work_with_root(
         }
         Err(_) => return resolution(WorkContext::Invalid, None),
     };
-    match resolve_companion(loaded, work, &value) {
+    let resolved = super::super::native::current()
+        .and_then(|session| session.ok_or_else(|| "native session identity is unavailable".into()))
+        .and_then(|session| resolve_companion(loaded, work, &value, session));
+    match resolved {
         Ok((record, owner_matches, root)) if owner_matches => {
             resolution(WorkContext::Owner(record), Some(root))
         }
@@ -178,17 +166,55 @@ fn legacy_goal_is_bound(
     Ok(true)
 }
 
+fn companion(loaded: &crate::config::Loaded, work: &str) -> Result<Option<Value>, String> {
+    read_private_companion(
+        loaded,
+        work,
+        ".session-goal.json",
+        "Work Goal context companion",
+        COMPANION_KIND,
+        PROTOCOL,
+        &[
+            "host",
+            "sessionKey",
+            "parentGoalId",
+            "parentObservedGoalEventSha256",
+            "ownerProjectId",
+            "ownerIdentitySha256",
+        ],
+    )
+}
+
+/// `Ok` only when `work`'s native Goal context companion names `session` and
+/// this project is that Goal's owner, verified by owner identity hash and
+/// project ID through the same reader as the Work's Goal context. The session
+/// may come from the environment or from a hook payload.
+pub(crate) fn verify_owner_session(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    session: super::super::native::Session,
+) -> Result<(), String> {
+    let value = companion(loaded, work)?
+        .ok_or("this Work has no native session Goal context; it was not begun or linked in a native session")?;
+    let (_, owner_matches, _) = resolve_companion(loaded, work, &value, session)?;
+    if !owner_matches {
+        return Err(
+            "this Work's native session Goal is owned by another configured project".into(),
+        );
+    }
+    Ok(())
+}
+
 fn resolve_companion(
     loaded: &crate::config::Loaded,
     work: &str,
     value: &Value,
+    session: super::super::native::Session,
 ) -> Result<(Value, bool, std::path::PathBuf), String> {
     validate_companion(value)?;
     if value["work"].as_str() != Some(work) {
         return Err("Work Goal context companion names another Work".into());
     }
-    let session =
-        super::super::native::current()?.ok_or("native session identity is unavailable")?;
     if value["host"] != session.host || value["sessionKey"] != session.key {
         return Err("Work Goal context belongs to another native session".into());
     }

@@ -15,6 +15,12 @@ use super::perspective::{self, Frozen};
 
 #[path = "capture/adviser.rs"]
 mod adviser;
+#[path = "capture/context.rs"]
+mod context;
+#[path = "capture/same_host.rs"]
+mod same_host;
+pub(crate) use context::context;
+pub(crate) use same_host::route as same_host_route;
 
 const FILE: &str = "child-intents.json";
 const MAX_ASSIGNMENT: usize = 128;
@@ -103,6 +109,15 @@ fn current_binding(loaded: &Loaded, work: &str) -> Result<(Value, Value), String
     Ok((view["goalRevision"].clone(), view["binding"].clone()))
 }
 
+/// The receiving binding `intent` was prepared under, read now: the
+/// continuation binding, or the native session that holds the Work.
+fn binding_of(loaded: &Loaded, work: &str, intent: &Value) -> Result<(Value, Value), String> {
+    if intent["receiving"] == same_host::RECEIVING {
+        return Ok((Value::Null, same_host::of_intent(loaded, work, intent)?));
+    }
+    current_binding(loaded, work)
+}
+
 fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
     if selected.is_null() {
         return true;
@@ -127,14 +142,14 @@ fn continuation(loaded: &Loaded, work: &str) -> String {
     crate::emitted::command_line(&["work", "continuation", work], Some(&loaded.path))
 }
 
-/// Record one expected native child for the current receiving binding.
+/// Record one expected native child for the current receiving binding: the
+/// `--context` fence `(goal revision, binding revision)` of a continuation
+/// binding, or `None` for the native session that holds the Work.
 // This is the CLI boundary: keep the work fence, native identity, and overlay explicit.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare(
     loaded: &Loaded,
     work: &str,
-    expected_revision: u64,
-    binding_revision: u64,
+    fence: Option<(u64, u64)>,
     assignment: &str,
     agent_type: Option<&str>,
     perspectives: Option<&str>,
@@ -146,15 +161,21 @@ pub(crate) fn prepare(
         .transpose()?;
     let perspectives = perspective::freeze(loaded, perspectives)?;
     with_intents(loaded, |intents| {
-        let (goal, binding) = current_binding(loaded, work)?;
-        if goal.as_u64() != Some(expected_revision)
-            || binding["revision"].as_u64() != Some(binding_revision)
-        {
-            let route = continuation(loaded, work);
-            return Err(format!(
-                "work context is stale; read {route} for a fresh token"
-            ));
-        }
+        let (binding, binding_revision) = match fence {
+            Some((expected_revision, binding_revision)) => {
+                let (goal, binding) = current_binding(loaded, work)?;
+                if goal.as_u64() != Some(expected_revision)
+                    || binding["revision"].as_u64() != Some(binding_revision)
+                {
+                    let route = continuation(loaded, work);
+                    return Err(format!(
+                        "work context is stale; read {route} for a fresh token"
+                    ));
+                }
+                (binding, binding_revision)
+            }
+            None => (same_host::current(loaded, work)?, same_host::REVISION),
+        };
         let Some(session) = binding["session"].as_str().map(str::to_owned) else {
             return Err("bind the receiving session before preparing a child".into());
         };
@@ -233,6 +254,9 @@ pub(crate) fn prepare(
         if !specialist_binding.is_null() {
             intent["specialistBinding"] = specialist_binding;
         }
+        if fence.is_none() {
+            intent["receiving"] = json!(same_host::RECEIVING);
+        }
         let id = hash::value(&intent);
         let mut effect = "prepared";
         let mut superseded = Vec::new();
@@ -271,145 +295,6 @@ pub(crate) fn prepare(
             "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{}`.", continuation(loaded, work)),
         }))
     })
-}
-
-/// Current, complete, bounded bytes for one prepared named child. A saved
-/// selector is never enough: binding, assignment and source hashes are rechecked.
-pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
-    let intent = load(loaded)?
-        .into_iter()
-        .find(|item| item["id"] == intent_id && item["work"] == work)
-        .ok_or("prepared child intent is unknown")?;
-    if !matches!(intent["state"].as_str(), Some("prepared" | "claimed")) {
-        return Err("child context expired with its prepared assignment".into());
-    }
-    let (_, binding) = current_binding(loaded, work)?;
-    if binding["session"] != intent["session"] || binding["revision"] != intent["bindingRevision"] {
-        return Err("child context expired after binding change".into());
-    }
-    let selected = &intent["selected"];
-    if selected.is_null() {
-        return Err("no named assignment was frozen for this child".into());
-    }
-    if !selected_is_current(loaded, work, selected) {
-        return Err("child context expired after assignment or profile change".into());
-    }
-    let agent_id = selected["agent"].as_str().ok_or("invalid selected agent")?;
-    let agent = loaded
-        .agent(agent_id)
-        .ok_or("selected agent is unavailable")?;
-    let bytes =
-        crate::project::path::secure_bytes(&loaded.control_root, &agent.profile, "agent profile")?;
-    if hash::bytes(&bytes) != selected["profileSha256"] {
-        return Err("selected profile source changed".into());
-    }
-    let source = String::from_utf8(bytes).map_err(|_| "agent profile is not UTF-8")?;
-    let presented = crate::host::runtime::redact(&source);
-    let sources: Vec<Frozen> = serde_json::from_value(intent["perspectives"].clone())
-        .map_err(|_| "prepared perspectives are malformed")?;
-    let perspectives = perspective::current(loaded, &sources)?;
-    let current = crate::work::next(loaded, work)?;
-    crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
-    adviser::validate_requested_binding(
-        loaded,
-        &current["next"]["packet"],
-        binding["host"].as_str().unwrap_or(""),
-    )?;
-    let packet = &current["next"]["packet"];
-    let host = binding["host"].as_str().unwrap_or("");
-    let guidance = if crate::run::guidance_continuity::enabled(packet) {
-        crate::project::agent_context::guidance_for_assignment(
-            loaded,
-            agent_id,
-            packet["goal"].as_str(),
-            host,
-            3 * 1024,
-            packet,
-        )?
-    } else {
-        crate::project::agent_context::guidance(
-            loaded,
-            agent_id,
-            packet["goal"].as_str(),
-            host,
-            3 * 1024,
-        )?
-    };
-    let architecture = crate::project::architecture::delivery(loaded, &current["next"]["packet"])?;
-    let capabilities = crate::project::capabilities::delivery(
-        loaded,
-        &current["next"]["packet"],
-        binding["host"].as_str().unwrap_or(""),
-    )?;
-    let specialist = crate::project::specialists::delivery(
-        loaded,
-        agent_id,
-        current["next"]["role"].as_str().unwrap_or(""),
-        current["next"]["packet"]["goal"].as_str().unwrap_or(""),
-        binding["host"].as_str().unwrap_or(""),
-    )?;
-    if (specialist.is_some() || !intent["specialistBinding"].is_null())
-        && intent["specialistBinding"] != hash::value(&json!(specialist))
-    {
-        return Err(
-            "specialist experience changed or expired; prepare the current approved next launch"
-                .into(),
-        );
-    }
-    if !intent["capabilityBinding"].is_null()
-        && intent["capabilityBinding"] != hash::value(&json!(capabilities))
-    {
-        return Err("approved child capabilities changed or expired; prepare the current approved next launch".into());
-    }
-    let mut result = json!({
-        "work":work,"intent":intent_id,"assignment":selected["assignment"],
-        "configuredAgent":agent_id,"nativeTaskName":selected["nativeTaskName"],
-        "bindingRevision":intent["bindingRevision"],
-        "profile":{"path":agent.profile,"sourceSha256":selected["profileSha256"],
-            "presentedSha256":hash::text(&presented),"content":presented,
-            "transformation":"path-redaction","coverage":"complete"},
-        "perspectives":perspectives,
-        "evidence":"product-presented-for-current-assignment; native launch and behavior separate",
-    });
-    if let Some(architecture) = &architecture {
-        result["architectureContract"] = architecture.clone();
-    }
-    if let Some(capabilities) = &capabilities {
-        result["capabilities"] = capabilities.clone();
-    }
-    if let Some(specialist) = &specialist {
-        result["specialistExperience"] = specialist.clone();
-    }
-    result["guidance"] = guidance;
-    let fresh = crate::work::next(loaded, work)?;
-    crate::memory::contextual::assert_assignment(loaded, &fresh["next"]["packet"])?;
-    let (_, fresh_binding) = current_binding(loaded, work)?;
-    if fresh["next"]["assignment"] != selected["assignment"]
-        || fresh_binding != binding
-        || crate::project::architecture::delivery(loaded, &fresh["next"]["packet"])? != architecture
-        || crate::project::capabilities::delivery(
-            loaded,
-            &fresh["next"]["packet"],
-            fresh_binding["host"].as_str().unwrap_or(""),
-        )? != capabilities
-        || crate::project::specialists::delivery(
-            loaded,
-            agent_id,
-            fresh["next"]["role"].as_str().unwrap_or(""),
-            fresh["next"]["packet"]["goal"].as_str().unwrap_or(""),
-            fresh_binding["host"].as_str().unwrap_or(""),
-        )? != specialist
-    {
-        return Err("child context changed during delivery; refresh the current assignment".into());
-    }
-    if serde_json::to_vec(&result)
-        .map_err(|_| "child context serialization failed")?
-        .len()
-        > 16 * 1024
-    {
-        return Err("child context exceeds the complete 16 KiB envelope".into());
-    }
-    Ok(result)
 }
 
 fn text<'a>(payload: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
@@ -495,7 +380,7 @@ pub(crate) fn claim(
             .to_owned();
         intents[index]["nativeChild"] = json!(child);
         intents[index]["observedAgentType"] = json!(agent_type);
-        let (_, binding) = current_binding(loaded, &work)?;
+        let (_, binding) = binding_of(loaded, &work, &intents[index])?;
         if binding["session"] != session || binding["revision"] != intents[index]["bindingRevision"]
         {
             intents[index]["state"] = json!("abandoned");
@@ -612,11 +497,17 @@ pub(crate) fn finalize(
             return Ok(());
         }
         let work = intent["work"].as_str().unwrap_or_default().to_owned();
-        let (goal, binding) = current_binding(loaded, &work)?;
+        let (goal, binding) = binding_of(loaded, &work, intent)?;
         if binding["session"] != session || binding["revision"] != intent["bindingRevision"] {
             intent["state"] = json!("failed");
             intent["failure"] = json!("the receiving binding changed before the child finished");
             intent["pendingResult"] = json!(message);
+            return Ok(());
+        }
+        if intent["receiving"] == same_host::RECEIVING {
+            // No continuation record exists: the hash identifies the final
+            // message, and the Work's own return carries the result.
+            intent["state"] = json!("recorded");
             return Ok(());
         }
         match record(loaded, &work, &goal, intent, message) {

@@ -10,10 +10,10 @@ NotARefusal	src/session_goal/closure.rs	warning: tested_inputs_drift detected fo
 NotARefusal	src/session_goal/closure.rs	{category} result reference is stale or unavailable: {error}
 Integrity	src/session_goal/continuity.rs	stale canonical goal revision
 Integrity	src/session_goal/continuity.rs	stale canonical goal revision
-Transient	src/session_goal/continuity/capture.rs	approved child capabilities changed or expired; prepare the current approved next launch
+Transient	src/session_goal/continuity/capture/context.rs	approved child capabilities changed or expired; prepare the current approved next launch
 NotCurrentState	src/session_goal/continuity/capture.rs	contextual memory assignment is not current; prepare no child until its recorded Work is resolved
-Transient	src/session_goal/continuity/capture.rs	selected profile source changed
-Transient	src/session_goal/continuity/capture.rs	specialist experience changed or expired; prepare the current approved next launch
+Transient	src/session_goal/continuity/capture/context.rs	selected profile source changed
+Transient	src/session_goal/continuity/capture/context.rs	specialist experience changed or expired; prepare the current approved next launch
 RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
 RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
 Identity	src/session_goal/continuity/capture/adviser.rs	native adviser requested host differs from the bound receiving host

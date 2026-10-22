@@ -49,7 +49,7 @@ pub(super) use companion::validate_companion;
 pub(crate) use companion::{
     read_private_companion, write_private_companion, PrivateCompanionWrite,
 };
-pub(crate) use context::{context_for_work, context_for_work_with_root};
+pub(crate) use context::{context_for_work, context_for_work_with_root, verify_owner_session};
 pub(super) use record::{
     entries, for_work, preserve_same_goal, public_record, valid_sha, valid_work, validate_record,
 };

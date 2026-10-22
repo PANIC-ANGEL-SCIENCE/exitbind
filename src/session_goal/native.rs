@@ -69,6 +69,15 @@ impl Scope {
 /// Resolve only host-reported selectors belonging to the current process.
 /// A missing selector is distinct from malformed, mixed, or conflicting IDs.
 pub(crate) fn current() -> Result<Option<Session>, String> {
+    match current_identity()? {
+        Some((host, identity)) => session(host, Some(identity)),
+        None => Ok(None),
+    }
+}
+
+/// The host and the host-reported session identity `current` resolves, for a
+/// record that a hook later matches against its payload `session_id`.
+pub(crate) fn current_identity() -> Result<Option<(&'static str, String)>, String> {
     let codex_thread = selector("CODEX_THREAD_ID")?;
     let codex_session = selector("CODEX_SESSION_ID")?;
     let claude_session = selector("CLAUDE_CODE_SESSION_ID")?;
@@ -82,10 +91,10 @@ pub(crate) fn current() -> Result<Option<Session>, String> {
         if codex_thread.is_some() && codex_session.is_some() && codex_thread != codex_session {
             return Err("Codex session selectors disagree; native Goal lookup was declined".into());
         }
-        return session("codex", codex_thread.or(codex_session));
+        return Ok(codex_thread.or(codex_session).map(|id| ("codex", id)));
     }
     if claude_present {
-        return session("claude", claude_identity(claude_session, claude_export));
+        return Ok(claude_identity(claude_session, claude_export).map(|id| ("claude", id)));
     }
     Ok(None)
 }
@@ -263,6 +272,15 @@ pub(crate) fn scope(loaded: &Loaded, establish_owner: bool) -> Result<Scope, Str
 /// A Claude Code session named by a hook payload rather than the environment.
 pub(crate) fn claude_session(identity: &str) -> Result<Option<Session>, String> {
     session("claude", Some(identity.to_owned()))
+}
+
+/// A session a stored record names by host and host-reported identity.
+pub(crate) fn host_session(host: &str, identity: &str) -> Result<Option<Session>, String> {
+    match host {
+        "claude" => session("claude", Some(identity.to_owned())),
+        "codex" => session("codex", Some(identity.to_owned())),
+        _ => Err("native session host is unsupported".into()),
+    }
 }
 
 pub(crate) fn scope_for(

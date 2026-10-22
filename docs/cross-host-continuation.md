@@ -126,6 +126,20 @@ the native child's task at launch. The file projection, a prepared intent, and
 the host's presentation are separate observations; none proves that the model
 used the instructions.
 
+A child started by the native session that holds the Work needs none of the
+receiving protocol above. When a Work was begun or linked in the current
+native session and this project owns that session's Goal, `work next` prints
+`next.prepareChild`: the exact `work child prepare WORK ASSIGNMENT
+--agent-type NAME --perspectives JSON` route, without `--context`, selecting
+the lens files under the ControlRoot's `your.soulmate/lenses/` (at most
+three). Run it unedited, or remove a lens to narrow the choice, then spawn the
+named agent. The binding is derived from the Work's native Goal context and
+re-verified by owner identity at prepare, SubagentStart and SubagentStop; a
+session that does not hold the Work is refused, and a Work received from
+another host keeps the `--context` route. SubagentStop records the final
+message's SHA-256 on the prepared intent; the Work's own return carries the
+result.
+
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind
 reply's read-only `nextAction.command` to obtain a fresh token. The CLI

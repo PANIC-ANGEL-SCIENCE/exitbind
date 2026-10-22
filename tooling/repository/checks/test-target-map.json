@@ -2048,8 +2048,8 @@
     },
     "tests/native_continuity.rs": {
       "baselineSha256": "36a26b31a2257d8615b00f248eac38105ef422423cf0b0dae2d72d498d35f38f",
-      "currentSha256": "ed09f177b386ffe547ad92c1f4f9901597482948b9d4eb831785530eb983e002",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "e20071cffb1b2b0f00407592ffe23dd4f0edd9e4872ffc61f1c6fdbb6e281f2a",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F5b: registers the same-host lens module (native_continuity/same_host_lens.rs); existing cases and assertions are unchanged."
     },
     "tests/native_session_export.rs": {
       "baselineSha256": "f1fd9925bae3c53faec7dba3ee9e20b550ccba49a3c13b312726f58b75b173ff",

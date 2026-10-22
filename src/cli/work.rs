@@ -3,6 +3,7 @@
 use super::*;
 
 mod challenge;
+mod child;
 mod detail;
 mod fill;
 
@@ -127,80 +128,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 host_version,
             )?)
         }
-        "child" if a.positional.get(1).map(String::as_str) == Some("prepare") => {
-            args::assert_options(
-                "work child prepare",
-                a,
-                &["config", "context", "agent-type", "perspectives", "replace"],
-            )?;
-            args::assert_positionals("work child prepare", a, 4)?;
-            let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
-            let assignment = positional(a, 3, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
-            let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_work_json(&crate::session_goal::prepare_child(
-                l,
-                work,
-                expected_revision,
-                binding_revision,
-                assignment,
-                a.options.get("agent-type").map(String::as_str),
-                a.options.get("perspectives").map(String::as_str),
-                a.flags.contains_key("replace"),
-            )?)
-        }
-        "child" if a.positional.get(1).map(String::as_str) == Some("context") => {
-            args::assert_options("work child context", a, &["config"])?;
-            args::assert_positionals("work child context", a, 4)?;
-            let work = positional(a, 2, "work child context requires WORK INTENT")?;
-            let intent = positional(a, 3, "work child context requires WORK INTENT")?;
-            print_work_json(&crate::session_goal::child_context(l, work, intent)?)
-        }
-        "child" if a.positional.get(1).map(String::as_str) == Some("recover") => {
-            args::assert_options("work child recover", a, &["config", "context"])?;
-            args::assert_positionals("work child recover", a, 4)?;
-            let work = positional(a, 2, "work child recover requires WORK INTENT")?;
-            let intent = positional(a, 3, "work child recover requires WORK INTENT")?;
-            let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_work_json(&crate::session_goal::recover_child(
-                l,
-                work,
-                intent,
-                expected_revision,
-                binding_revision,
-            )?)
-        }
-        "child" => {
-            args::assert_options(
-                "work child",
-                a,
-                &[
-                    "config",
-                    "context",
-                    "native-child",
-                    "result",
-                ],
-            )?;
-            args::assert_positionals("work child", a, 3)?;
-            let work = positional(a, 1, "work child requires WORK ASSIGNMENT")?;
-            let assignment = positional(a, 2, "work child requires WORK ASSIGNMENT")?;
-            let assignment = bounded_cli(assignment, "assignment", 128)?;
-            let native_child = bounded_cli(
-                option(a, "native-child", "work child requires --native-child ID")?,
-                "native child",
-                256,
-            )?;
-            let result = child_result(a)?;
-            let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_work_json(&crate::session_goal::continuation_child(
-                l,
-                work,
-                expected_revision,
-                binding_revision,
-                assignment,
-                native_child,
-                &result,
-            )?)
-        }
+        "child" => child::command(l, a),
         "continuation" => {
             args::assert_options(
                 "work continuation",
@@ -406,15 +334,17 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "next" => {
             args::assert_options("work next", a, &["config", "json", "full", "themed"])?;
             args::assert_positionals("work next", a, 2)?;
-            let result = crate::producer::observed(crate::work::next(
-                l,
-                positional(a, 1, "work next requires WORK")?,
-            )?);
+            let work = positional(a, 1, "work next requires WORK")?;
+            let result = crate::producer::observed(crate::work::next(l, work)?);
+            let route = crate::session_goal::same_host_child_route(l, work, &result);
             let mut result = if a.flags.contains_key("full") {
                 result
             } else {
                 crate::work::compact::project(&result, &l.path, "next")?
             };
+            if let (Some(route), Some(next)) = (route, result["next"].as_object_mut()) {
+                next.insert("prepareChild".into(), route);
+            }
             if a.flags.contains_key("themed") {
                 let world = crate::presentation_events::world::project(l,
                     positional(a, 1, "work next requires WORK")?, &result);

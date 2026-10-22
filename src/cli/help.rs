@@ -83,7 +83,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work child WORK ASSIGNMENT --context TOKEN --native-child ID [--result TEXT] < RESULT"
         }
         ["work", "child", "prepare"] => {
-            "work child prepare WORK SHORT_ASSIGNMENT --context TOKEN [--agent-type NAME] [--perspectives JSON]"
+            "work child prepare WORK SHORT_ASSIGNMENT [--context TOKEN] [--agent-type NAME] [--perspectives JSON] (without --context: the native session that holds the Work; work next prints this route as next.prepareChild)"
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
         ["project", "graph"] => "project graph enable|disable [--config exactconfig] [--json] | query --query TEXT [--config exactconfig] [--json] (validated project target; indexing requires explicit enable)",

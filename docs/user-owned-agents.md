@@ -35,6 +35,10 @@ existing [capability preview/select path](project-capabilities.md) with that
 content path, the current project identity, configured owner, relevant roles,
 task terms and expiry. A named native launch receives the selected profile and
 relevant approved lens. Inspection is not acknowledgement or observed use.
+For a named child of the native session that holds the Work, `work next`
+prints `next.prepareChild`, a `work child prepare` route that selects the lens
+files under the ControlRoot's `your.soulmate/lenses/` as perspectives; see
+[cross-host continuation](cross-host-continuation.md).
 An already-running agent receives no invisible refresh. Changed content,
 revocation, wrong project or recipient and unsafe paths retain their refusals.
 
