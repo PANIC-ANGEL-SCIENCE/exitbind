@@ -122,6 +122,11 @@ fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
         && next["packet"]["profileSha256"] == selected["profileSha256"]
 }
 
+/// The read route that returns a fresh context token for `work`.
+fn continuation(loaded: &Loaded, work: &str) -> String {
+    crate::emitted::command_line(&["work", "continuation", work], Some(&loaded.path))
+}
+
 /// Record one expected native child for the current receiving binding.
 // This is the CLI boundary: keep the work fence, native identity, and overlay explicit.
 #[allow(clippy::too_many_arguments)]
@@ -145,7 +150,10 @@ pub(crate) fn prepare(
         if goal.as_u64() != Some(expected_revision)
             || binding["revision"].as_u64() != Some(binding_revision)
         {
-            return Err("work context is stale; read work continuation for a fresh token".into());
+            let route = continuation(loaded, work);
+            return Err(format!(
+                "work context is stale; read {route} for a fresh token"
+            ));
         }
         let Some(session) = binding["session"].as_str().map(str::to_owned) else {
             return Err("bind the receiving session before preparing a child".into());
@@ -260,7 +268,7 @@ pub(crate) fn prepare(
             "superseded": superseded,
             "selected": selected,
             "perspectives": perspectives,
-            "next": "Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `work continuation WORK`.",
+            "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{}`.", continuation(loaded, work)),
         }))
     })
 }
@@ -680,7 +688,10 @@ pub(crate) fn recover(
         if goal.as_u64() != Some(expected_revision)
             || binding["revision"].as_u64() != Some(binding_revision)
         {
-            return Err("work context is stale; read work continuation for a fresh token".into());
+            let route = continuation(loaded, work);
+            return Err(format!(
+                "work context is stale; read {route} for a fresh token"
+            ));
         }
         if binding["session"] != intent["session"] {
             return Err("the child ran under another receiving session; its result cannot be attributed to the current binding".into());

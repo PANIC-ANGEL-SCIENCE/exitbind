@@ -237,8 +237,8 @@ Transient	src/session_goal/continuity/capture.rs	approved child capabilities cha
 NotCurrentState	src/session_goal/continuity/capture.rs	contextual memory assignment is not current; prepare no child until its recorded Work is resolved
 Transient	src/session_goal/continuity/capture.rs	selected profile source changed
 Transient	src/session_goal/continuity/capture.rs	specialist experience changed or expired; prepare the current approved next launch
-RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read work continuation for a fresh token
-RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read work continuation for a fresh token
+RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
+RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
 Identity	src/session_goal/continuity/capture/adviser.rs	native adviser requested host differs from the bound receiving host
 NotARefusal	src/session_goal/continuity/capture/tests.rs	differs from the bound receiving host
 Transient	src/session_goal/continuity/perspective.rs	perspective '{}' source changed
@@ -284,19 +284,19 @@ Integrity	src/session_goal/requirements/model.rs	requirement source hash mismatc
 Integrity	src/session_goal/requirements/successor.rs	predecessor's current named Goal contract differs from its frozen Work
 NotARefusal	src/session_goal/requirements/view.rs	additional direct completion is stale or unknown
 Integrity	src/value_benchmark/result.rs	benchmark observed result differs from its stable expected result
-RoutedInText	src/work/action_forms/fill.rs	the action changed since binding {binding}; read work detail {work} --view action again
+RoutedInText	src/work/action_forms/fill.rs	the action changed since binding {binding}; read {route} again
 Integrity	src/work/action_forms/repair.rs	The frozen continuation no longer matches its selected mandate, and its amendment state could not be verified. No Work action is offered.
 Integrity	src/work/check_recovery.rs	recovery decision or original observed inputs are stale
 Integrity	src/work/check_recovery.rs	recovery replay differs from the current committed decision
 Integrity	src/work/check_recovery.rs	recovery requires the original observed inputs; no execution was launched
 Identity	src/work/check_recovery/diagnostic.rs	historical diagnostic requires its exact frozen configuration identity
-RoutedInText	src/work/check_replacement.rs	current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped
+RoutedInText	src/work/check_replacement.rs	current action form binding is stale; {route} and follow current.details.grouped
 LeadPreparation	src/work/check_replacement.rs	predecessor configuration is stale; check replacement requires the current project configuration
 StrictExport	src/work/closeout.rs	accepted Work configuration/profile/artifact evidence is stale
 StrictExport	src/work/closeout.rs	accepted Work tested inputs are stale or have no current binding; historical evidence remains available through the receipt owner
-RoutedInText	src/work/details.rs	configuration changed during work detail consumption; refresh with work next
-RoutedInText	src/work/details.rs	current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped
-RoutedInText	src/work/details.rs	work section reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next
+RoutedInText	src/work/details.rs	configuration changed during work detail consumption; {route}
+RoutedInText	src/work/details.rs	current action form binding is stale; {route} and follow current.details.grouped
+RoutedInText	src/work/details.rs	work section reference is stale, revoked or belongs to another project/Work/recipient; {route}
 Integrity	src/work/early_evidence.rs	earlyEvidence.probe.commandSha256 does not match probe.command
 Integrity	src/work/file_effect.rs	file state differs from expected; no effect admitted
 Identity	src/work/file_effect_recovery.rs	file operation identity conflicts with its recorded request
@@ -318,7 +318,7 @@ Validation	src/work/mod.rs	work handle is stale or unknown. Inspect the handle b
 Validation	src/work/mod.rs	work handle is stale or unknown; focus unchanged
 NotARefusal	src/work/packet.rs	Earlier {} evidence no longer applies: the result or tested files changed after it ran. This is not a failure.
 Identity	src/work/quarantine.rs	an unresolved native Goal admission conflicts with the exact quarantine start; inspect before recovery
-RoutedInText	src/work/quarantine.rs	current action form binding is stale; refresh with work next {old_work} --json
+RoutedInText	src/work/quarantine.rs	current action form binding is stale; {route}
 Identity	src/work/quarantine.rs	current native Goal differs from the original Goal associated with old Work
 Transient	src/work/quarantine.rs	feature configuration changed during quarantine admission
 Identity	src/work/quarantine.rs	fixed native Goal journal disappeared before quarantine admission
@@ -328,7 +328,7 @@ Transient	src/work/quarantine.rs	native Goal owner configuration changed during 
 NotCurrentState	src/work/quarantine.rs	old Work is not the current unresolved unknown observation eligible for quarantine
 LeadPreparation	src/work/quarantine.rs	requested quarantine Work changed or has stale configuration
 Transient	src/work/quarantine.rs	verification artifact changed while reading
-RoutedInText	src/work/readable.rs	work detail reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next
+RoutedInText	src/work/readable.rs	work detail reference is stale, revoked or belongs to another project/Work/recipient; {route}
 Transient	src/work/recipient_context.rs	recipient profile changed or exceeds the complete section bound
 NotARefusal	src/work/start_delivery.rs	configuration changed
 Transient	src/work/start_delivery.rs	configuration changed during delivery

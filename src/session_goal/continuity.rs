@@ -188,7 +188,7 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
     }
     let (_, events, _) = run::ledger::load(loaded, &ledger)?;
     let start = events.first().ok_or("work ledger has no start event")?;
-    let compatibility = requirements::assess(start, &normalized);
+    let compatibility = requirements::assess(&loaded.path, start, &normalized);
     if compatibility["compatible"] != true {
         return Err(requirements::init_error(&compatibility));
     }

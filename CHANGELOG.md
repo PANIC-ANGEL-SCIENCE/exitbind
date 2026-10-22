@@ -12,12 +12,18 @@ Unreleased source candidate; no stable tag or release assets are published.
   printed route with its placeholders filled, unedited.
 - `setup --task-card --first-work IDS` prints `goal prepare` and `work begin`
   for those rows only and keeps every row registered.
-- Applying commands refuse before their first write, including setup under
-  a session Goal owned by another project.
+- Under a session Goal owned by another project, `goal` mutations refuse
+  before their first write (naming `--project` where they accept it), and
+  `setup` selects the project journal and says so in `scopeReason`.
 - A bound input that changed reads as one typed refusal with the bound and
   current sha256 and the exact next command; an accepted Work whose input
   changed reads accepted at binding.
-- A closed Goal's head reads `CLOSED (revision N)`.
+- `memory revalidate` accepts a configuration that differs only in an
+  agent's read-only `phaseGuidance` and records the difference, and
+  `setup --lessons-from` keeps the stamped configuration copy
+  `stamped-config-<sha16>.json` beside the lesson ledgers for that route.
+- A closed Goal's head reads `CLOSED (revision N)`, and the Goal text never
+  reports the closing route met while registered requirements are unmet.
 - After the repair streak is exhausted, the Lead's recorded repair admits a
   worker return instead of a re-plan.
 - `setup --task-card` snapshots a card outside the root into

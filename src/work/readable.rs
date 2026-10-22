@@ -95,7 +95,8 @@ fn read_after_reads(
         .ok_or("current action unavailable")?
         .remove("current");
     if super::details::binding(loaded, work, &fresh_snapshot, &fresh_canonical)? != binding {
-        return Err("work detail changed during expansion; refresh with work next".into());
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!("work detail changed during expansion; {route}"));
     }
     if recipient_context::read(loaded, &fresh_canonical)? != recipient {
         return Err(
@@ -314,7 +315,10 @@ pub(crate) fn expand(
     let binding = requested
         .strip_prefix(PREFIX)
         .filter(|value| !value.is_empty() && !value.contains(':'))
-        .ok_or("malformed grouped work detail reference; refresh with work next")?;
+        .ok_or_else(|| {
+            let route = crate::emitted::refresh(work, &loaded.path);
+            format!("malformed grouped work detail reference; {route}")
+        })?;
     let mut canonical = next.clone();
     canonical
         .as_object_mut()
@@ -322,7 +326,8 @@ pub(crate) fn expand(
         .remove("current");
     let expected = super::details::binding(loaded, work, snapshot, &canonical)?;
     if binding != expected {
-        return Err("work detail reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!("work detail reference is stale, revoked or belongs to another project/Work/recipient; {route}"));
     }
     read(loaded, work, snapshot, next)
 }

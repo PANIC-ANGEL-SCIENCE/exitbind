@@ -47,7 +47,10 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     let _frozen_plan = crate::run::check_replacement::frozen_plan(loaded, start)?;
     let next = next_for(loaded, work, &ledger)?;
     if next["current"]["binding"] != binding {
-        return Err(format!("current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped"));
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!(
+            "current action form binding is stale; {route} and follow current.details.grouped"
+        ));
     }
     let (lead_agent, lead_native) = if next["role"] == "lead" && next["assignment"].is_string() {
         (

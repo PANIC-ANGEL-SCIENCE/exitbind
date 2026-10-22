@@ -177,6 +177,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the result outcome",
     },
     Placeholder {
+        name: "WORK",
+        fills: &[Fill::Positional],
+        meaning: "the Work the refused command read",
+    },
+    Placeholder {
         name: "SOURCE",
         fills: &[Fill::Positional],
         meaning: "the lesson source file",
@@ -278,6 +283,24 @@ pub(crate) fn command_line(words: &[&str], config: Option<&std::path::Path>) -> 
         rest.push(word(&config.display().to_string()));
     }
     command_text(&rest.join(" "))
+}
+
+/// The follow-up a refusal names when its reader must read the current Work
+/// again: `refresh with` the full `work next WORK --json` route.
+pub(crate) fn refresh(work: &str, config: &std::path::Path) -> String {
+    format!(
+        "refresh with {}",
+        command_line(&["work", "next", work, "--json"], Some(config))
+    )
+}
+
+/// The status a Goal recovery or quarantine response points at: the full
+/// `goal status` route with the owner's configuration.
+pub(crate) fn goal_status(config: &std::path::Path) -> String {
+    format!(
+        "recompute with {}",
+        command_line(&["goal", "status"], Some(config))
+    )
 }
 
 /// One shell word as every printed command line renders it: plain when it

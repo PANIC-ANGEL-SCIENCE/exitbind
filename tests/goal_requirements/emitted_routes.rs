@@ -309,6 +309,185 @@ fn emitted_route_scanner_detects_each_member_of_the_class() {
     );
 }
 
+/// Words that ask the reader to run what follows them.
+const INSTRUCTIONS: &[&str] = &[
+    "refresh with",
+    "recompute with",
+    "read",
+    "use",
+    "run",
+    "rerun",
+    "inspect",
+    "via",
+    "try",
+    "follow",
+    "call",
+    "invoke",
+    "see",
+    "then",
+];
+
+/// Commands with subcommands, each read from the CLI file that dispatches it.
+const DISPATCHERS: &[(&str, &str)] = &[
+    ("work", "src/cli/work.rs"),
+    ("goal", "src/cli/goal.rs"),
+    ("memory", "src/cli/memory_cli.rs"),
+    ("run", "src/cli/run_cli.rs"),
+];
+
+/// The names of a dispatcher's match arms: `"name" =>` or `"a" | "b" =>`.
+fn arms(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let Some((head, _)) = line.trim_start().split_once(" =>") else {
+            continue;
+        };
+        let parts: Vec<&str> = head.split(" | ").collect();
+        let quoted = |part: &&str| {
+            part.len() > 2
+                && part.starts_with('"')
+                && part.ends_with('"')
+                && part[1..part.len() - 1]
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '-')
+        };
+        if parts.iter().all(quoted) {
+            names.extend(parts.iter().map(|part| part[1..part.len() - 1].to_owned()));
+        }
+    }
+    names
+}
+
+fn string_literals(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('"') {
+        let after = &rest[start + 1..];
+        let mut escaped = false;
+        let Some((end, _)) = after.char_indices().find(|(_, ch)| {
+            let close = *ch == '"' && !escaped;
+            escaped = *ch == '\\' && !escaped;
+            close
+        }) else {
+            break;
+        };
+        out.push(after[..end].to_owned());
+        rest = &after[end + 1..];
+    }
+    out
+}
+
+/// Every literal that tells its reader to run `<command> <subcommand>` by
+/// its bare words, so whatever PATH names would answer and the configuration
+/// is left out. Lines that build the route through `crate::emitted` pass.
+fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//")
+            || line.contains("command_line(")
+            || line.contains("command_text(")
+        {
+            continue;
+        }
+        for literal in string_literals(line) {
+            let lower = literal.to_ascii_lowercase();
+            let bare = commands.iter().any(|(command, names)| {
+                let needle = format!("{command} ");
+                lower.match_indices(&needle).any(|(at, _)| {
+                    let rest = &lower[at + needle.len()..];
+                    let word: String = rest
+                        .chars()
+                        .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                        .collect();
+                    let lead = lower[..at].trim_end_matches('`').trim_end();
+                    names.contains(&word)
+                        && INSTRUCTIONS.iter().any(|instruction| {
+                            lead.strip_suffix(instruction).is_some_and(|before| {
+                                before
+                                    .chars()
+                                    .next_back()
+                                    .map_or(true, |c| !c.is_ascii_alphanumeric())
+                            })
+                        })
+                })
+            });
+            if bare {
+                found.push(literal);
+            }
+        }
+    }
+    found
+}
+
+fn dispatched() -> Vec<(&'static str, Vec<String>)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    DISPATCHERS
+        .iter()
+        .map(|(command, file)| {
+            let names = arms(&fs::read_to_string(root.join(file)).unwrap());
+            assert!(!names.is_empty(), "{file} dispatches no subcommand");
+            (*command, names)
+        })
+        .collect()
+}
+
+/// A refusal or hint that names a follow-up command prints the full route:
+/// the executable this process runs as and `--config`, through
+/// `crate::emitted`. Static help text describes commands and is exempt.
+#[test]
+fn every_follow_up_a_refusal_or_hint_names_is_a_full_route() {
+    let commands = dispatched();
+    assert!(commands[0].1.iter().any(|name| name == "next"));
+    let mut failures = Vec::new();
+    for (path, text) in sources() {
+        if path == "src/cli/help.rs" {
+            continue;
+        }
+        for literal in bare_follow_ups(&text, &commands) {
+            failures.push(format!(
+                "{path}: \"{literal}\" names a follow-up command by its bare words; build it with crate::emitted::command_line (executable and --config)"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The follow-up scanner sees the class in any case and quoting, and passes
+/// prose, usage errors, product-named lines and routes built by the builder.
+#[test]
+fn follow_up_scanner_detects_each_member_of_the_class() {
+    let commands = vec![
+        ("work", vec!["next".to_owned(), "detail".to_owned()]),
+        ("goal", vec!["status".to_owned()]),
+    ];
+    assert_eq!(
+        arms("        \"next\" => {\n        \"a-b\" | \"c\" => x,\n    \"Not\" => y,\n"),
+        ["next", "a-b", "c"]
+    );
+    let found = bare_follow_ups(
+        concat!(
+            "Err(\"stale; Refresh With `Work Next` now\".into())\n",
+            "json!({\"s\": \"then READ goal status\"})\n",
+            "format!(\"x; use work detail {w} --json\")\n",
+        ),
+        &commands,
+    );
+    assert_eq!(found.len(), 3, "{found:?}");
+    let passed = bare_follow_ups(
+        concat!(
+            "\"configuration changed during work detail consumption\"\n",
+            "\"work next requires WORK\"\n",
+            "\"do not repeat work begin; read exitbind work next\"\n",
+            "\"use the network\"\n",
+            "// refresh with work next\n",
+            "let r = crate::emitted::command_line(&[\"work\", \"next\"], c); \"refresh with work next\"\n",
+        ),
+        &commands,
+    );
+    assert!(passed.is_empty(), "{passed:?}");
+}
+
 fn fill_argv(
     project: &Project,
     view: &Value,
@@ -439,7 +618,28 @@ fn lead_and_worker_forms_run_through_the_fill_route_and_refusals_write_nothing()
         .unwrap();
     stale[at + 1] = "0".repeat(64);
     let output = project.call_exact_argv(&stale);
-    assert!(String::from_utf8_lossy(&output.stderr).contains("the action changed since binding"));
+    let refused = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        refused.contains("the action changed since binding"),
+        "{refused}"
+    );
+    // The refusal's follow-up is a full route that runs as printed.
+    let follow_up: Vec<String> = refused
+        .split("; read ")
+        .nth(1)
+        .and_then(|rest| rest.split(" again").next())
+        .unwrap_or_else(|| panic!("no follow-up route: {refused}"))
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(follow_up[0], env!("CARGO_BIN_EXE_exitbind"), "{refused}");
+    assert!(follow_up.iter().any(|word| word == "--config"), "{refused}");
+    let reread = project.call_exact_argv(&follow_up);
+    assert!(
+        reread.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reread.stderr)
+    );
     assert_eq!(fs::read(&ledger).unwrap(), before);
 
     // The scoped decision through the fill route, with no inline filler.

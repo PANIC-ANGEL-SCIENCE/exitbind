@@ -509,7 +509,7 @@ pub(crate) fn record(owner: &Loaded, request: Request<'_>) -> Result<Value, Stri
             }
             return Ok(
                 json!({"kind":"native_goal_quarantine_replayed","readOnly":true,
-                "event":record,"currentStatus":"recompute with goal status"}),
+                "event":record,"currentStatus":crate::emitted::goal_status(&owner.path)}),
             );
         }
     }

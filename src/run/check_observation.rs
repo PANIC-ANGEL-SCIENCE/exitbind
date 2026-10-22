@@ -92,7 +92,12 @@ pub(super) fn admit(
         if current["binding"] != details["binding"] || current["timeoutMs"] != timeout_ms {
             return Err("check observation binding or execution limit changed; inspect the current Work decision".into());
         }
-        return Err("check observation is already admitted or failed; inspect Work detail and follow the Lead decision; no check was launched".into());
+        let work = crate::emitted::slot("WORK");
+        let detail = crate::emitted::command_line(
+            &["work", "detail", &work, "--view", "action"],
+            Some(&loaded.path),
+        );
+        return Err(format!("check observation is already admitted or failed; inspect {detail} and follow the Lead decision; no check was launched"));
     }
     // Re-read and revalidate under the ledger lock immediately before the
     // durable admission. Marked advisory-only config edits are allowed; the

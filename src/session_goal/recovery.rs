@@ -673,7 +673,7 @@ pub(crate) fn recover(
         })? {
             return Ok(
                 json!({"kind":"native_goal_recovery_replayed","readOnly":true,
-                "event":record,"currentStatus":"recompute with goal status"}),
+                "event":record,"currentStatus":crate::emitted::goal_status(&owner_loaded.path)}),
             );
         }
     }
@@ -811,7 +811,7 @@ pub(crate) fn recover(
     })?;
     Ok(
         json!({"kind":"native_goal_recovery_applied","readOnly":false,
-        "event":record,"currentStatus": "recompute with goal status"}),
+        "event":record,"currentStatus":crate::emitted::goal_status(&owner_loaded.path)}),
     )
 }
 

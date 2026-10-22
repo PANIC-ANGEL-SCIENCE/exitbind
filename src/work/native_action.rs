@@ -120,8 +120,12 @@ pub(crate) fn execute(
                 return Err("native assignment already used its bounded provider retry; further execution is refused".into());
             }
             Some("started" | "running") if !options.resume => {
+                let route = crate::emitted::command_line(
+                    &["work", "act", work, "--resume"],
+                    Some(&loaded.path),
+                );
                 return Err(format!(
-                    "native assignment is already started; use work act {work} --resume after inspecting its private journal"
+                    "native assignment is already started; use {route} after inspecting its private journal"
                 ));
             }
             Some("started") if role == "reviewer" => {
@@ -189,7 +193,10 @@ pub(crate) fn execute(
                     })
                 })
             {
-                return Err("required reviewer result is missing from readable delivery; refresh with work next".into());
+                let route = crate::emitted::refresh(work, &loaded.path);
+                return Err(format!(
+                    "required reviewer result is missing from readable delivery; {route}"
+                ));
             }
         }
     }

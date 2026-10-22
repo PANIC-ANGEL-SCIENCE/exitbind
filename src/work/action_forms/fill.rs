@@ -85,8 +85,12 @@ pub(crate) fn bound(
         .as_str()
         .ok_or("current action binding unavailable")?;
     if current != binding {
+        let route = crate::emitted::command_line(
+            &["work", "detail", work, "--view", "action"],
+            Some(&loaded.path),
+        );
         return Err(format!(
-            "the action changed since binding {binding}; read work detail {work} --view action again"
+            "the action changed since binding {binding}; read {route} again"
         ));
     }
     let forms = full(loaded, work, &next, current);

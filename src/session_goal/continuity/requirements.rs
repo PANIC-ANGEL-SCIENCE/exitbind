@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-pub(crate) fn assess(start: &Value, requirements: &[Value]) -> Value {
+pub(crate) fn assess(config: &std::path::Path, start: &Value, requirements: &[Value]) -> Value {
     let check_configured = start["checkPolicy"].is_object();
     let preservation = start["preservation"]["requirements"].as_array();
     let preservation_configured = preservation.is_some_and(|items| !items.is_empty());
@@ -40,7 +40,8 @@ pub(crate) fn assess(start: &Value, requirements: &[Value]) -> Value {
     } else if requirements.len() > 1 {
         json!("The current CLI accepts one --preserve-requirement per Work and has no supported route for binding several requirement checks to one continuation. Keep this continuation uninitialized and request a focused design decision before retrying.")
     } else {
-        json!("Start a new checked Work with the exact --preserve-requirement ID:TEXT and --preservation-check-command; use goal incorporate to attach it before initializing an existing goal.")
+        let incorporate = crate::emitted::command_line(&["goal", "incorporate"], Some(config));
+        json!(format!("Start a new checked Work with the exact --preserve-requirement ID:TEXT and --preservation-check-command; attach it with {incorporate} and its --goal-id and --goal before initializing an existing goal."))
     };
     json!({
         "compatible": compatible,
@@ -104,7 +105,7 @@ mod tests {
             "id":"api",
             "text":"Keep the API stable.",
         })];
-        let assessment = assess(&start, &requirements);
+        let assessment = assess(std::path::Path::new("exitbind.json"), &start, &requirements);
         assert_eq!(assessment["compatible"], false);
         assert_eq!(assessment["missingRequirements"][0]["id"], "api");
         assert!(assessment["nextAction"]

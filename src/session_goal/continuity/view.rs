@@ -74,7 +74,7 @@ pub(crate) fn support_current(loaded: &Loaded, record: &Value) -> Result<bool, S
     let requirements = c["requirements"]
         .as_array()
         .ok_or("requirements malformed")?;
-    if super::requirements::assess(start, requirements)["compatible"] != true {
+    if super::requirements::assess(&loaded.path, start, requirements)["compatible"] != true {
         return Ok(false);
     }
     let (inputs, conditions) = current_conditions(loaded, c["work"].as_str().unwrap_or_default())?;
@@ -125,7 +125,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
     let goal_requirements = c["requirements"]
         .as_array()
         .ok_or("requirements malformed")?;
-    let work_support = super::requirements::assess(start, goal_requirements);
+    let work_support = super::requirements::assess(&loaded.path, start, goal_requirements);
     let (current_inputs, current_conditions) = current_conditions(loaded, work_id)?;
     let binding_revision = c["binding"]["revision"].as_u64().unwrap_or(0);
     let mut requirements = Vec::new();

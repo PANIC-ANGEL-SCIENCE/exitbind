@@ -51,9 +51,10 @@ pub(crate) fn ensure_current_config(loaded: &Loaded) -> Result<(), String> {
         || fresh.control_root != loaded.control_root
         || fresh.project_id != loaded.project_id
     {
-        return Err(
-            "configuration changed during work detail consumption; refresh with work next".into(),
-        );
+        let route = crate::emitted::refresh(&crate::emitted::slot("WORK"), &loaded.path);
+        return Err(format!(
+            "configuration changed during work detail consumption; {route}"
+        ));
     }
     Ok(())
 }
@@ -69,7 +70,10 @@ pub(crate) fn ensure_action_binding(
     ensure_current_config(loaded)?;
     let next = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
     if next["current"]["binding"] != expected {
-        return Err(format!("current action form binding is stale; refresh with work next {work} --json and follow current.details.grouped"));
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!(
+            "current action form binding is stale; {route} and follow current.details.grouped"
+        ));
     }
     Ok(())
 }
@@ -510,7 +514,8 @@ pub(super) fn expand(
         .ok_or("not a work section reference")?;
     let parts = suffix.split(':').collect::<Vec<_>>();
     if parts.len() != 3 || !SECTIONS.contains(&parts[1]) || (!small && parts[1] == "recipient") {
-        return Err("malformed work section reference; refresh with work next".into());
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!("malformed work section reference; {route}"));
     }
     let page: usize = parts[2].parse().map_err(|_| "invalid work section page")?;
     let mut canonical = next.clone();
@@ -522,7 +527,8 @@ pub(super) fn expand(
     if parts[0] != expected_binding
         || requested != format!("{prefix}{expected_binding}:{}:{page}", parts[1])
     {
-        return Err("work section reference is stale, revoked or belongs to another project/Work/recipient; refresh with work next".into());
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!("work section reference is stale, revoked or belongs to another project/Work/recipient; {route}"));
     }
     let value = section_value(loaded, work, snapshot, &canonical, parts[1])?;
     let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
@@ -532,14 +538,16 @@ pub(super) fn expand(
         .ok_or("current action unavailable")?
         .remove("current");
     if binding(loaded, work, &fresh_snapshot, &fresh)? != expected_binding {
-        return Err("work section changed during expansion; refresh with work next".into());
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!("work section changed during expansion; {route}"));
     }
     if parts[1] == "recipient"
         && section_value(loaded, work, &fresh_snapshot, &fresh, "recipient")? != value
     {
-        return Err(
-            "recipient instructions changed during expansion; refresh with work next".into(),
-        );
+        let route = crate::emitted::refresh(work, &loaded.path);
+        return Err(format!(
+            "recipient instructions changed during expansion; {route}"
+        ));
     }
     let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
     let start = page
@@ -607,7 +615,9 @@ pub(crate) fn required_assignment(
                 })
             })
             .unwrap_or_else(|| "required evidence".into());
-        return Err(format!("native required evidence {item} is not completely readable; use work detail {work} --json with the same executable/config before provider launch"));
+        let route =
+            crate::emitted::command_line(&["work", "detail", work, "--json"], Some(&loaded.path));
+        return Err(format!("native required evidence {item} is not completely readable; use {route} before provider launch"));
     }
     let mut sections = detail["sections"].clone();
     if let Some(tasks) = sections["tasks"].as_object_mut() {

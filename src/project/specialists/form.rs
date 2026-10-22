@@ -53,7 +53,7 @@ pub(crate) fn input_form(
 fn validate_source(loaded: &Loaded, name: &str, source: &str) -> Result<Value, String> {
     let bytes = read(&loaded.product_root, source)?;
     let project = crate::host::assignment_context::project_identity(loaded)?;
-    let item = parse(&bytes, name, &project)?;
+    let item = parse(loaded, &bytes, name, &project)?;
     let agent = loaded.agent(name).ok_or("specialist is not configured")?;
     let profile = profile_bytes(loaded, &agent.profile)?;
     memory::ensure_config_current(loaded)?;

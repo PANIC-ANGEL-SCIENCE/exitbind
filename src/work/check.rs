@@ -23,7 +23,10 @@ pub(crate) fn check_with_timeout(
             timeout_ms,
         )?
     } else {
-        crate::run::check_observation::committed_replay(loaded, &ledger, timeout_ms)?.ok_or("no current worker check is pending; inspect Work detail for a pending observation decision")?
+        crate::run::check_observation::committed_replay(loaded, &ledger, timeout_ms)?.ok_or_else(|| {
+            let detail = crate::emitted::command_line(&["work", "detail", work, "--view", "action"], Some(&loaded.path));
+            format!("no current worker check is pending; inspect {detail} for a pending observation decision")
+        })?
     };
     let mut response = json!({"work": work});
     for field in ["event", "observationFailure", "checkRecorded", "recovered"] {

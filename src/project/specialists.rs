@@ -335,12 +335,17 @@ fn validate(item: &Experience, name: &str, project: &str) -> Result<(), String> 
     Ok(())
 }
 
-fn parse(bytes: &[u8], name: &str, project: &str) -> Result<Experience, String> {
+fn parse(loaded: &Loaded, bytes: &[u8], name: &str, project: &str) -> Result<Experience, String> {
     if bytes.len() > SOURCE_LIMIT as usize {
         return Err("specialist source exceeds 4096 UTF-8 bytes".into());
     }
     let item: Experience = serde_json::from_slice(bytes).map_err(|_| {
-        "invalid specialist source; use memory form: guards are file path/sha256 objects; prose restrictions belong in preconditions"
+        let scope = format!("specialist.{name}.v1");
+        let form = crate::emitted::command_line(
+            &["memory", "form", "--scope", &scope],
+            Some(&loaded.path),
+        );
+        format!("invalid specialist source; use {form}: guards are file path/sha256 objects; prose restrictions belong in preconditions")
     })?;
     validate(&item, name, project)?;
     Ok(item)

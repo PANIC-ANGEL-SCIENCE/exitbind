@@ -52,7 +52,8 @@ fn deliver(
                 "nextAction": {"type": "inspect", "safe": true, "readOnly": true,
                     "command": route.argv, "sameConfigRequired": route.same_config,
                     "sameExecutableRequired": route.same_executable},
-                "recovery": "Inspect this existing Work; do not repeat work begin. If its reply was lost, use work resume --json with the same configuration."})
+                "recovery": format!("Inspect this existing Work; do not repeat work begin. If its reply was lost, use {}.",
+                    crate::emitted::command_line(&["work", "resume", "--json"], Some(&loaded.path)))})
         }
     }
 }

@@ -111,9 +111,8 @@ pub(crate) fn start(
         .ok_or("work quarantine requires --current-binding from current Work detail")?;
     let next = super::next_for(loaded, old_work, &requested_ledger)?;
     if next["current"]["binding"] != binding {
-        return Err(format!(
-            "current action form binding is stale; refresh with work next {old_work} --json"
-        ));
+        let route = crate::emitted::refresh(old_work, &loaded.path);
+        return Err(format!("current action form binding is stale; {route}"));
     }
     let lead = configured_lead(&old_start["plan"])?;
     if options.reason.trim().is_empty()

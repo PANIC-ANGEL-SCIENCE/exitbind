@@ -133,7 +133,7 @@ pub(super) fn select_resources(
         if reference["sourceSha256"] != hash::bytes(&bytes) {
             return Err("specialist experience changed; no snapshot delivered".into());
         }
-        let item = parse(&bytes, name, &project)?;
+        let item = parse(loaded, &bytes, name, &project)?;
         after_source()?;
         let ledger = memory::snapshot(
             loaded,
