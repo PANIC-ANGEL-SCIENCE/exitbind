@@ -198,28 +198,12 @@ fn compatible(
     {
         return Err(refuse(crate::drift::Class::LessonOwnership));
     }
-    // Deliberately narrow compatibility: additive recipient read rights,
-    // read-only phase guidance (it grants nothing) and schema URL metadata.
-    // Write/runtime/ownership/retention semantics stay exact.
-    let strip_reads = |source: &str| -> Result<Value, String> {
-        let mut value: Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
-        value
-            .as_object_mut()
-            .ok_or("configuration is not an object")?
-            .remove("$schema");
-        for agent in value
-            .get_mut("agents")
-            .and_then(Value::as_object_mut)
-            .ok_or("agents missing")?
-            .values_mut()
-        {
-            let agent = agent.as_object_mut().ok_or("agent is not an object")?;
-            agent.remove("memoryRead");
-            agent.remove("phaseGuidance");
-        }
-        Ok(value)
-    };
-    if strip_reads(&previous.source)? != strip_reads(&current.source)? {
+    // Deliberately narrow compatibility: additive recipient read rights, the
+    // agent fields that are not lesson authority (`lesson_authority`) and
+    // schema URL metadata. Write/runtime/ownership/retention stay exact.
+    if super::lesson_authority::projection(&previous.source, true)?
+        != super::lesson_authority::projection(&current.source, true)?
+    {
         return Err(refuse(crate::drift::Class::LessonAuthority));
     }
     let lead = current.agent(actor).ok_or("Lead missing")?;
@@ -246,16 +230,16 @@ fn compatible(
         if old.memory_read != new.memory_read {
             differences.push(json!({"agent":name,"right":"memoryRead","before":old.memory_read,"after":new.memory_read}));
         }
-        let guidance = |loaded: &Loaded| loaded.config["agents"][name]["phaseGuidance"].clone();
-        if guidance(previous) != guidance(current) {
-            differences.push(json!({"agent":name,"field":"phaseGuidance",
-                "before":guidance(previous),"after":guidance(current)}));
-        }
     }
+    differences.extend(super::lesson_authority::differences(
+        &previous.config,
+        &current.config,
+    ));
     Ok(differences)
 }
 
-// Only the explicit contextual opt-in changes. Rights, roots, profiles and all other policy remain exact.
+// Only the explicit contextual opt-in and the agent fields that are not lesson
+// authority change. Rights, roots and all other policy remain exact.
 fn compatible_contextual(
     previous: &Loaded,
     current: &Loaded,
@@ -271,16 +255,8 @@ fn compatible_contextual(
     {
         return Err("contextual migration cannot change project roots or ownership".into());
     }
-    let mut before: Value = serde_json::from_str(&previous.source).map_err(|e| e.to_string())?;
-    let mut after: Value = serde_json::from_str(&current.source).map_err(|e| e.to_string())?;
-    before
-        .as_object_mut()
-        .ok_or("invalid prior config")?
-        .remove("$schema");
-    after
-        .as_object_mut()
-        .ok_or("invalid current config")?
-        .remove("$schema");
+    let before = super::lesson_authority::projection(&previous.source, false)?;
+    let mut after = super::lesson_authority::projection(&current.source, false)?;
     let choice = after["memory"]
         .as_object_mut()
         .ok_or("memory policy missing")?
@@ -295,9 +271,12 @@ fn compatible_contextual(
     {
         return Err("contextual migration requires the same configured Lead's existing promotion and revocation rights".into());
     }
-    Ok(vec![
-        json!({"field":"memory.contextual","before":null,"after":choice}),
-    ])
+    let mut differences = vec![json!({"field":"memory.contextual","before":null,"after":choice})];
+    differences.extend(super::lesson_authority::differences(
+        &previous.config,
+        &current.config,
+    ));
+    Ok(differences)
 }
 
 pub(crate) fn validate_evidence(event: &Value, current: &Value) -> Result<(), String> {
@@ -306,10 +285,13 @@ pub(crate) fn validate_evidence(event: &Value, current: &Value) -> Result<(), St
         && (event["scope"] == super::lessons::SCOPE
             || (crate::project::specialists::is_scope(event["scope"].as_str().unwrap_or(""))
                 && proof["differences"].as_array().is_some_and(|d| {
-                    d.len() == 1
+                    !d.is_empty()
                         && d[0]["field"] == "memory.contextual"
                         && d[0]["before"].is_null()
                         && super::contextual::valid_policy(&d[0]["after"])
+                        && d[1..]
+                            .iter()
+                            .all(super::lesson_authority::is_recorded_difference)
                 })))
         && proof.as_object().is_some_and(|object| object.len() == 7)
         && proof["version"] == 1

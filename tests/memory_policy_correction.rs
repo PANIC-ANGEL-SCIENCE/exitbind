@@ -1,6 +1,8 @@
 //! The installed CLI can repair an explicitly selected recall policy without
 //! source access, hidden roots, historical edits or transferred Work authority.
 #![cfg(unix)]
+#[path = "memory_policy_correction/identity_fields.rs"]
+mod identity_fields;
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

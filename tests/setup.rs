@@ -13,6 +13,9 @@ mod lesson_carry;
 #[path = "setup/lesson_privacy.rs"]
 mod lesson_privacy;
 #[cfg(unix)]
+#[path = "setup/named_agents_after_binding.rs"]
+mod named_agents_after_binding;
+#[cfg(unix)]
 #[path = "setup/native_display.rs"]
 mod native_display;
 #[cfg(unix)]

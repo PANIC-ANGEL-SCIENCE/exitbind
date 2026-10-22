@@ -3,13 +3,13 @@
 //! stamped copy and the exact `memory revalidate` route; run unedited with a
 //! reason it records the change, and the worker then receives the body. A
 //! lesson-authority change (`memoryWrite`) still refuses.
-use super::lesson_carry::{accept, previous_project, repository};
+use super::lesson_carry::{accept, previous_project, repository, Root};
 use super::support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path, process::Output};
 
-fn exitbind(root: &Path, args: &[&str]) -> Output {
+pub(super) fn exitbind(root: &Path, args: &[&str]) -> Output {
     support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)
@@ -20,7 +20,7 @@ fn exitbind(root: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-fn text(output: &Output) -> String {
+pub(super) fn text(output: &Output) -> String {
     format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -28,11 +28,11 @@ fn text(output: &Output) -> String {
     )
 }
 
-fn sha(bytes: &[u8]) -> String {
+pub(super) fn sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-const BEGIN: [&str; 11] = [
+pub(super) const BEGIN: [&str; 11] = [
     "work",
     "begin",
     "change",
@@ -46,15 +46,16 @@ const BEGIN: [&str; 11] = [
     "exitbind.json",
 ];
 
-fn set_config(root: &Path, edit: impl FnOnce(&mut Value)) {
+pub(super) fn set_config(root: &Path, edit: impl FnOnce(&mut Value)) {
     let path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     edit(&mut config);
     fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
 }
 
-#[test]
-fn a_phase_guidance_change_after_lesson_carry_names_its_revalidate_route_and_delivers() {
+/// A fresh project set up with `--lessons-from` a previous project holding
+/// one accepted lesson; returns both roots and the kept stamped copy.
+pub(super) fn carried(label: &str) -> (Root, Root, String) {
     let previous = previous_project();
     accept(
         &previous.0,
@@ -62,7 +63,7 @@ fn a_phase_guidance_change_after_lesson_carry_names_its_revalidate_route_and_del
         "Trace every delivery consumer.",
         "2100-01-01T00:00:00Z",
     );
-    let fresh = repository("changed-after-binding");
+    let fresh = repository(label);
     let root = fresh.0.as_path();
     let from = previous.0.join("exitbind.json");
     let applied = exitbind(
@@ -103,9 +104,37 @@ fn a_phase_guidance_change_after_lesson_carry_names_its_revalidate_route_and_del
         .as_str()
         .unwrap()
         .to_owned();
-    let stamped = fs::read(&copy).unwrap();
-    assert_eq!(stamped, fs::read(root.join("exitbind.json")).unwrap());
-    let stamped_sha = sha(&stamped);
+    assert_eq!(
+        fs::read(&copy).unwrap(),
+        fs::read(root.join("exitbind.json")).unwrap()
+    );
+    (previous, fresh, copy)
+}
+
+/// Run an emitted `memory revalidate` argv unedited with only REASON filled.
+pub(super) fn run_route(root: &Path, argv: &[String], reason: &str) -> Output {
+    let filled = argv
+        .iter()
+        .map(|item| {
+            if item == "<REASON>" {
+                reason.to_owned()
+            } else {
+                item.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    support::git_topology::command(&filled[0])
+        .current_dir(root)
+        .args(&filled[1..])
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_phase_guidance_change_after_lesson_carry_names_its_revalidate_route_and_delivers() {
+    let (_previous, fresh, copy) = carried("changed-after-binding");
+    let root = fresh.0.as_path();
+    let stamped_sha = sha(&fs::read(&copy).unwrap());
 
     // The Lead adds worker phase guidance in place, as R54 and R55 did.
     fs::create_dir_all(root.join("guidance")).unwrap();
@@ -157,22 +186,7 @@ fn a_phase_guidance_change_after_lesson_carry_names_its_revalidate_route_and_del
     assert_eq!(&argv[1..3], ["memory", "revalidate"]);
 
     // Run unedited with only the reason filled.
-    let filled = argv
-        .iter()
-        .map(|item| {
-            if item == "<REASON>" {
-                "Reviewed read-only phase guidance".to_owned()
-            } else {
-                item.clone()
-            }
-        })
-        .collect::<Vec<_>>();
-    let refs = filled.iter().map(String::as_str).collect::<Vec<_>>();
-    let revalidated = support::git_topology::command(refs[0])
-        .current_dir(root)
-        .args(&refs[1..])
-        .output()
-        .unwrap();
+    let revalidated = run_route(root, &argv, "Reviewed read-only phase guidance");
     assert!(revalidated.status.success(), "{}", text(&revalidated));
     let event: Value = serde_json::from_slice(&revalidated.stdout).unwrap();
     assert_eq!(event["status"], "revalidated", "{event}");

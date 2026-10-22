@@ -90,7 +90,7 @@ pub(crate) const MEMBERS: &[Member] = &[
     Member {
         class: Class::LessonAuthority,
         classification: "lesson_authority_changed",
-        message: "incompatible lesson authority/configuration change; only additive recipient read rights and phase guidance are supported",
+        message: "incompatible lesson authority/configuration change; only additive recipient read rights and fields that carry no lesson authority (profile, nativeName, displayName, phaseGuidance) are supported",
         meaning: "restore the bound lesson authority, or retire this lesson and carry it again under the current configuration",
     },
     Member {

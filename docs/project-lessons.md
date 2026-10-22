@@ -113,9 +113,14 @@ exitbind memory revalidate lead MEMORY_ROOT/lesson.jsonl \
 
 The first call previews exact configuration hashes and recipient-right changes
 without appending an event. Compatibility permits additive `memoryRead` rights,
-an agent's read-only `phaseGuidance` (recorded as a difference), schema URL
-metadata, and the narrowly reviewed contextual opt-in described below. Ownership, write/runtime/retention semantics,
-project roots and existing rights must remain unchanged. The current Lead must
+schema URL metadata, the narrowly reviewed contextual opt-in described below,
+and a change in the agent fields that grant no memory right and carry no lesson
+authority: `profile`, `nativeName`, `displayName` and the read-only
+`phaseGuidance`. Each such change is recorded as a difference (agent, field,
+before, after), so a recipient can be pointed at a named agent profile after
+lessons were carried. The owner policy correction and the contextual opt-in
+read the same list. Ownership, rights, write/runtime/retention semantics,
+project roots and an existing Work's frozen configuration must remain unchanged. The current Lead must
 hold the lesson write, review, promote and revoke rights. The prior configuration,
 owner profile and immutable source provenance must still be provable; incompatible
 changes refuse without an append.

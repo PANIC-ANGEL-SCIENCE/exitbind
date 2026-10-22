@@ -7,6 +7,7 @@ pub(crate) mod contextual;
 pub(crate) mod discovery;
 pub(crate) mod forgetting;
 pub(crate) mod ledger;
+pub(crate) mod lesson_authority;
 pub(crate) mod lessons;
 pub(crate) mod policy;
 pub(crate) mod policy_correction;

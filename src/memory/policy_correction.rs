@@ -242,6 +242,12 @@ fn differences(previous: &Loaded, current: &Loaded) -> Result<Vec<Value>, String
             changes.push(json!({"agent":name,"field":field,"before":before,"after":after}));
         }
     }
+    // Fields that are not lesson authority are recorded, never refused.
+    super::lesson_authority::adopt(&mut expected, &actual)?;
+    changes.extend(super::lesson_authority::differences(
+        &previous.config,
+        &current.config,
+    ));
     if expected != actual || changes.is_empty() {
         return Err("policy correction contains an unrelated or unchanged configuration; preserve all other configuration bytes and meanings".into());
     }

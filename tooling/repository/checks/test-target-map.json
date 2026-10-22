@@ -2023,8 +2023,8 @@
     },
     "tests/lesson_revalidation.rs": {
       "baselineSha256": "7fd425ba51ce832061177e78783871c9981a349513d67ad7caac8ae23260862c",
-      "currentSha256": "dadcb4fa061fa914b2a512352c21800f735332e0ca3e3bedebf63d9fad1efd18",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "47a4ad6dfca11f0be32159cf6f2c693dc5369f11533aeffb61306d7ee6219a07",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F4a: registers the contextual opt-in identity-field module; existing cases unchanged."
     },
     "tests/managed_edits.rs": {
       "baselineSha256": "a1445aeb2d071066bdc9c5c78b7ee3d451ee842e3230688389452f6a0c920e11",
@@ -2038,8 +2038,8 @@
     },
     "tests/memory_policy_correction.rs": {
       "baselineSha256": "fdb7ee9b91e9a16eb696efdc03791e5a6b26ef8b603c50c2c62fcf3c0fbf93a6",
-      "currentSha256": "6d5e38171a11254696bdbb489219a7202be721d009fa9bd74be7d40e75f25791",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "81b7b29813b07183f37f936ea7e1dc30d6643c5d6b5014c3ffeafb22ff559370",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F4a: registers the identity-field policy-correction module (profile and nativeName changes recorded as differences, a runtime change still refuses); existing cases unchanged."
     },
     "tests/memory_recall.rs": {
       "baselineSha256": "867064bacec3ffc52b70c0df81f0fb6962f2f5e82b6380498135725da77def0b",
@@ -2268,8 +2268,8 @@
     },
     "tests/setup.rs": {
       "baselineSha256": "8913f62557021c5473546b73543787163a38f9fd674547493496a35c5e21e7c4",
-      "currentSha256": "8b922fdcd649852586ed0817bc5cf863ea8fb374e5e0e5f93b5c76cab9fad90e",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged. R55 W3: registers the changed-after-binding (F2) setup module; existing cases unchanged. R55 F3: registers the carried-lesson privacy module; existing modules unchanged."
+      "currentSha256": "c854c87a68ca6d10a067ba41c9b5953de54934908c937e33a69944384f6a04a5",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: registers the setup --lessons-from carry-over and Lead Goal text test modules; no existing case or assertion changes. R54 native UX: registers the setup/native_display.rs and setup/plan_card.rs modules; existing assertions are unchanged. R55 W3: registers the changed-after-binding (F2) setup module; existing cases unchanged. R55 F3: registers the carried-lesson privacy module; existing modules unchanged. R55 F4a: registers the named-agents-after-binding setup module; existing modules unchanged."
     },
     "tests/setup_pre_return.rs": {
       "baselineSha256": "c0ca701b1d15d74381878dd8744cceca1c0bd1dd21b486048525a7562a6d9742",

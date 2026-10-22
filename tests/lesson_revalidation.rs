@@ -1,5 +1,7 @@
 //! Compatible recipient evolution is explicit; old authority remains historical.
 #![cfg(unix)]
+#[path = "lesson_revalidation/contextual_identity.rs"]
+mod contextual_identity;
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
