@@ -1,0 +1,2 @@
+# Plain changed-after-binding literals under src/presentation: REASON<TAB>path<TAB>literal.
+NotARefusal	src/presentation/mod.rs	warning: run drift detected after start; continuing with recorded assignments. Inspect the run before changing or replacing recorded evidence.

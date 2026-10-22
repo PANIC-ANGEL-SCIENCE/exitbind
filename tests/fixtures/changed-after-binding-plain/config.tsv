@@ -1,0 +1,4 @@
+# Plain changed-after-binding literals under src/config: REASON<TAB>path<TAB>literal.
+Transient	src/config/profile.rs	configuration drift detected
+Transient	src/config/profile.rs	source changed during import
+Transient	src/config/profile.rs	source changed during import

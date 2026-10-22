@@ -1,0 +1,2 @@
+# Plain changed-after-binding literals under src/value_benchmark: REASON<TAB>path<TAB>literal.
+Integrity	src/value_benchmark/result.rs	benchmark observed result differs from its stable expected result

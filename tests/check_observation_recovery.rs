@@ -332,3 +332,5 @@ mod process_containment;
 mod quarantine;
 #[path = "check_observation_recovery/replay_and_claims.rs"]
 mod replay_and_claims;
+#[path = "check_observation_recovery/stale_reviewer.rs"]
+mod stale_reviewer;

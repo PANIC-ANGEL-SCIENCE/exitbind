@@ -1,0 +1,6 @@
+# Plain changed-after-binding literals under src/evidence: REASON<TAB>path<TAB>literal.
+TypedRunDrift	src/evidence/receipt.rs	configuration changed
+TypedRunDrift	src/evidence/receipt.rs	harness receipt drift detected after run start
+TypedRunDrift	src/evidence/receipt.rs	harness receipt is not current
+Validation	src/evidence/receipt.rs	harness receipt must be a version-2 receipt
+Integrity	src/evidence/receipt.rs	harness receipt reference is not exact

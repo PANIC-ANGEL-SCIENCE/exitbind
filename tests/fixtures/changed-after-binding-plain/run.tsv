@@ -1,0 +1,90 @@
+# Plain changed-after-binding literals under src/run: REASON<TAB>path<TAB>literal.
+TypedRunDrift	src/run/artifact.rs	artifact drift detected after run start
+TypedRunDrift	src/run/artifact.rs	artifact drift detected: {}
+Transient	src/run/artifact.rs	{label} artifact changed while reading
+Integrity	src/run/carry.rs	check replacement marker is missing or differs from its persisted claim
+Integrity	src/run/carry.rs	check replacement successor plan differs from the frozen predecessor plan
+Integrity	src/run/carry.rs	check replacement target is invalid
+Integrity	src/run/carry.rs	governor carry accounting differs from predecessor replay
+Integrity	src/run/carry.rs	governor carry marker is missing or differs from its persisted claim
+Integrity	src/run/carry.rs	governor carry marker is missing or differs from its persisted claim
+Integrity	src/run/carry.rs	governor carry predecessor provenance mismatch
+Integrity	src/run/carry.rs	governor carry requires the same goal
+Integrity	src/run/carry.rs	governor carry successor claim provenance mismatch
+Integrity	src/run/carry.rs	pre-return policy is missing or differs from its persisted predecessor claim
+Integrity	src/run/carry.rs	pre-return replacement does not preserve the final check or bind both frozen policies
+Integrity	src/run/carry.rs	superseded predecessor provenance mismatch
+Integrity	src/run/carry.rs	verification input contract differs from its persisted predecessor claim
+Integrity	src/run/carry.rs	verification preparation differs from its persisted predecessor claim
+Integrity	src/run/check_recovery.rs	recovered failure differs from its retained response or admission
+Integrity	src/run/check_recovery.rs	recovery does not bind the exact retained ledger prefix and Work
+Integrity	src/run/check_recovery.rs	retained recovery response bytes changed or exceed the bound
+Integrity	src/run/check_replacement.rs	check replacement architecture provenance differs from the frozen predecessor
+NotCurrentState	src/run/disposition.rs	Lead disposition is not currently pending
+TypedRunDrift	src/run/error.rs	configuration drift detected after run start
+TypedRunDrift	src/run/error.rs	configuration drift detected after run start: expected config hash {}; current config hash {}
+TypedRunDrift	src/run/error.rs	harness receipt drift detected after run start
+TypedRunDrift	src/run/error.rs	harness receipt drift detected after run start
+TypedRunDrift	src/run/error.rs	memory drift detected after run start
+TypedRunDrift	src/run/error.rs	memory drift detected after run start for {}
+TypedRunDrift	src/run/error.rs	profile drift detected after run start
+TypedRunDrift	src/run/error.rs	profile drift detected: {agent}
+TypedRunDrift	src/run/error.rs	run boundary manifest drift detected after run start
+TypedRunDrift	src/run/error.rs	run boundary manifest drift detected after run start
+Integrity	src/run/evidence_identity.rs	evidence is bound to a stale run identity or input
+NotCurrentState	src/run/gate/value/validation.rs	invalid run ledger line {line}: protection actor is not currently pending
+NotCurrentState	src/run/governor.rs	agent '{}' is not currently pending
+NotCurrentState	src/run/governor.rs	assignment is not currently pending
+NotCurrentState	src/run/governor_sensor.rs	assignment is not currently pending
+NotCurrentState	src/run/governor_sensor.rs	assignment is not currently pending
+NotCurrentState	src/run/governor.rs	material re-plan is not currently required
+LeadPreparation	src/run/governor_recovery.rs	carried owner recovery configuration binding differs from successor
+LeadPreparation	src/run/governor_recovery.rs	carried owner recovery evidence differs from its verified artifacts
+LeadPreparation	src/run/governor_recovery.rs	owner recovery assignment hash does not match the canonical pending worker
+LeadPreparation	src/run/governor_recovery.rs	owner recovery current configuration identity does not match
+Integrity	src/run/ledger.rs	superseded predecessor provenance mismatch
+Transient	src/run/lifecycle.rs	configuration changed while starting; reload configuration
+Transient	src/run/lifecycle.rs	quarantine verification inputs or configuration changed before start
+Integrity	src/run/mod.rs	check command does not match the configured run policy
+Transient	src/run/observed_check.rs	verification preparation changed after observation admission; no check was launched
+NotCurrentState	src/run/pre_return.rs	agent '{agent}' is not currently pending
+Integrity	src/run/pre_return.rs	pre-return architecture binding is stale: {e}
+Identity	src/run/pre_return.rs	pre-return result identity mismatch
+Integrity	src/run/pre_return.rs	pre-return result metadata does not match the current binding or producer
+Integrity	src/run/pre_return/binding_diagnostic.rs	pre-return attempt no longer matches the current result binding; changed components: {}; inspect the saved attempt with {}; no return was recorded
+Transient	src/run/pre_return/execution.rs	pre-return preparation recipe changed after attempt admission; no check was launched
+Integrity	src/run/pre_return/execution.rs	saved pre-return result producer or outcome differs from its exact binding
+Integrity	src/run/pre_return/journal.rs	pre-return record digest does not match its contents
+Identity	src/run/quarantine/admission.rs	configured Lead owner differs from the reviewed quarantine owner
+Transient	src/run/quarantine/admission.rs	first failed verification changed after follow-up admission
+LeadPreparation	src/run/quarantine/admission.rs	follow-up custody evidence differs from the separately accepted verification plan
+NotCurrentState	src/run/quarantine/admission.rs	isolation review Work is not currently accepted on the reviewed configuration
+LeadPreparation	src/run/quarantine/admission.rs	predecessor accounting changed since quarantine review
+NotCurrentState	src/run/quarantine/admission.rs	predecessor already has a supersession claim
+Transient	src/run/quarantine/admission.rs	predecessor changed after quarantine admission
+NotCurrentState	src/run/quarantine/admission.rs	predecessor is no longer the exact unresolved check observation
+Transient	src/run/quarantine/admission.rs	quarantine admission changed after its typed preparation
+LeadPreparation	src/run/quarantine/admission.rs	quarantine start intent is stale against current configuration or inputs
+LeadPreparation	src/run/quarantine/admission.rs	quarantine verification artifact, command, or current inputs changed
+Integrity	src/run/quarantine/admission.rs	quarantine verification plan differs from its accepted isolation review
+Integrity	src/run/quarantine/admission/followup.rs	follow-up check event differs from the exact bound failed observation
+Integrity	src/run/quarantine/verification.rs	verification admission differs from its frozen inputs or command
+TypedRunDrift	src/run/reducer.rs	artifact drift detected:
+TypedRunDrift	src/run/reducer.rs	tested inputs drift detected after run start
+NotCurrentState	src/run/state/apply.rs	agent '{}' is not currently pending
+Integrity	src/run/state/apply.rs	carried re-plan is missing its assignment packet binding
+Integrity	src/run/state/apply.rs	protection is bound to a stale subject
+NotCurrentState	src/run/state/apply.rs	re-plan actor is not currently assigned
+Integrity	src/run/state/apply.rs	re-plan assignment packet is stale or mismatched
+Integrity	src/run/state/apply.rs	review policy transition is stale
+Integrity	src/run/state/apply.rs	submission is bound to a stale basis
+Integrity	src/run/state/apply.rs	submission is bound to a stale subject
+Integrity	src/run/state/check_stage.rs	check is bound to a stale subject
+Integrity	src/run/state/recovery.rs	forward repair is stale or not bound to its Lead decision
+NotCurrentState	src/run/submission.rs	agent '{agent}' is not currently pending
+Transient	src/run/view/check_replacement.rs	blocked report diagnostic attempt changed after preview
+Transient	src/run/view.rs	configuration changed while superseding; reload configuration
+Transient	src/run/view.rs	configuration changed while superseding; reload configuration
+RoutedInText	src/run/view.rs	predecessor changed after replacement preview; refresh current Work detail
+LeadPreparation	src/run/view.rs	successor check policy differs from predecessor; choose an explicit new checked run
+LeadPreparation	src/run/view.rs	successor preservation policy differs from predecessor; choose an explicit new checked run

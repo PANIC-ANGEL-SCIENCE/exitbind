@@ -1,0 +1,2 @@
+# Plain changed-after-binding literals under src/kernel: REASON<TAB>path<TAB>literal.
+NotCurrentState	src/kernel/governor.rs	material re-plan is not currently required

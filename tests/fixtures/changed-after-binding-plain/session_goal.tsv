@@ -1,0 +1,62 @@
+# Plain changed-after-binding literals under src/session_goal: REASON<TAB>path<TAB>literal.
+Identity	src/session_goal/association/admission.rs	actual Work goal differs from the admitted request; pending admission remains unresolved
+Identity	src/session_goal/association/admission.rs	current Work configuration, roots or native session do not match the exact admission
+Integrity	src/session_goal/association/companion.rs	{label} digest mismatch
+Integrity	src/session_goal/association/companion.rs	{label} does not match the exact Work start
+NotARefusal	src/session_goal/closure.rs	continuation support is stale or incomplete
+NotARefusal	src/session_goal/closure.rs	continuation support is stale or incomplete
+NotARefusal	src/session_goal/closure.rs	warning: tested_inputs_drift detected for accepted result {reference}; retaining recorded tested-input identity
+NotARefusal	src/session_goal/closure.rs	warning: tested_inputs_drift detected for {category}; retaining its recorded completion
+NotARefusal	src/session_goal/closure.rs	{category} result reference is stale or unavailable: {error}
+Integrity	src/session_goal/continuity.rs	stale canonical goal revision
+Integrity	src/session_goal/continuity.rs	stale canonical goal revision
+Transient	src/session_goal/continuity/capture.rs	approved child capabilities changed or expired; prepare the current approved next launch
+NotCurrentState	src/session_goal/continuity/capture.rs	contextual memory assignment is not current; prepare no child until its recorded Work is resolved
+Transient	src/session_goal/continuity/capture.rs	selected profile source changed
+Transient	src/session_goal/continuity/capture.rs	specialist experience changed or expired; prepare the current approved next launch
+RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
+RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
+Identity	src/session_goal/continuity/capture/adviser.rs	native adviser requested host differs from the bound receiving host
+NotARefusal	src/session_goal/continuity/capture/tests.rs	differs from the bound receiving host
+Transient	src/session_goal/continuity/perspective.rs	perspective '{}' source changed
+Integrity	src/session_goal/continuity/record.rs	native child result digest mismatch
+Integrity	src/session_goal/continuity/record.rs	source coverage assertion is stale
+Integrity	src/session_goal/continuity/record.rs	stale canonical goal revision
+Integrity	src/session_goal/continuity/record.rs	stale lead binding revision
+Integrity	src/session_goal/continuity/record.rs	stale or conflicting lead binding
+Integrity	src/session_goal/continuity/record.rs	stale or empty requirement refinement
+Integrity	src/session_goal/continuity/record.rs	support targets stale requirement revision
+NotARefusal	src/session_goal/goal_summary.rs	; a member's accepted result is stale, so it closes by one final --journey-integration Work; not yet current: {read_route}
+Identity	src/session_goal/journey/integration.rs	journey member belongs to another or changed project/session configuration
+Identity	src/session_goal/journey/integration/lineage.rs	journey Work start, configuration or frozen task Goal identity changed
+Identity	src/session_goal/journey/integration/lineage.rs	journey Work start, configuration or frozen task Goal identity changed
+Integrity	src/session_goal/journey/integration/lineage.rs	journey successor claim does not bind the exact predecessor or same task Goal
+Integrity	src/session_goal/journey/integration/lineage.rs	journey successor start does not match its validated same-goal claim
+Identity	src/session_goal/native.rs	native session Goal owner digest mismatch
+NotARefusal	src/session_goal/progress/close_route.rs	 direct completion is stale or unknown
+NotARefusal	src/session_goal/progress/close_route.rs	 result reference is stale or unavailable:
+NotARefusal	src/session_goal/progress/close_route.rs	additional direct completion is stale or unknown
+RoutedInText	src/session_goal/quarantine.rs	Source configuration changed or became unavailable; preview quarantine again: {error}
+RoutedInText	src/session_goal/quarantine.rs	native Goal quarantine preview is stale; request a fresh preview
+RoutedInText	src/session_goal/quarantine.rs	owner configuration changed or became unavailable; preview quarantine again: {error}
+LeadPreparation	src/session_goal/quarantine.rs	quarantined Source configuration changed; residual is stale
+Integrity	src/session_goal/quarantine.rs	request id or reason differs from the immutable quarantine marker
+Integrity	src/session_goal/quarantine.rs	saved quarantine replay no longer matches its exact current evidence
+Integrity	src/session_goal/quarantine.rs	saved quarantine replay no longer matches its exact current evidence
+LeadPreparation	src/session_goal/quarantine/evidence.rs	predecessor accounting changed since quarantine verification
+NotCurrentState	src/session_goal/quarantine/evidence.rs	verification Work is not currently accepted on current artifact, inputs and configuration
+Integrity	src/session_goal/quarantine/evidence.rs	verification marker does not bind the exact unresolved predecessor
+Integrity	src/session_goal/quarantine/evidence.rs	verification result differs from its immutable quarantine artifact, inputs or command
+RoutedInText	src/session_goal/recovery.rs	Source Goal membership changed since recovery; preview recovery again
+RoutedInText	src/session_goal/recovery.rs	Source configuration changed or became unavailable; preview recovery again: {error}
+RoutedInText	src/session_goal/recovery.rs	native Goal recovery preview is stale; request a new preview
+Transient	src/session_goal/recovery.rs	owner configuration changed or became unavailable; reload and preview recovery: {error}
+RoutedInText	src/session_goal/recovery.rs	saved Source configuration changed; preview recovery again
+NotARefusal	src/session_goal/requirements.rs	additional direct completion is stale or unknown
+NotARefusal	src/session_goal/requirements.rs	additional direct completion is stale or unknown
+NotARefusal	src/session_goal/requirements.rs	additional goal result in {category} is stale or unknown
+NotARefusal	src/session_goal/requirements.rs	additional goal result in {category} is stale or unknown
+NotARefusal	src/session_goal/requirements.rs	required goal coverage is missing, failed, stale or unknown
+Integrity	src/session_goal/requirements/model.rs	requirement source hash mismatch
+Integrity	src/session_goal/requirements/successor.rs	predecessor's current named Goal contract differs from its frozen Work
+NotARefusal	src/session_goal/requirements/view.rs	additional direct completion is stale or unknown

@@ -1,0 +1,17 @@
+# Plain changed-after-binding literals under src/memory: REASON<TAB>path<TAB>literal.
+Integrity	src/memory/choices.rs	choice effect readback differs; inspect without retrying
+Integrity	src/memory/choices.rs	choice replay intent differs from recorded request
+Identity	src/memory/choices.rs	task memory choice host differs from configured recipient
+Integrity	src/memory/choices.rs	task memory choice request does not bind its recorded bytes
+Transient	src/memory/contextual.rs	candidate changed before read; refresh candidates
+Transient	src/memory/contextual.rs	candidate changed during read
+NotCurrentState	src/memory/contextual.rs	candidate is not currently eligible for this recipient
+Identity	src/memory/contextual.rs	contextual memory recipient role, purpose or profile changed; review the current task choice
+Identity	src/memory/forgetting.rs	memory actor configuration changed: {actor}
+Identity	src/memory/forgetting.rs	memory actor configuration changed: {actor}
+LeadPreparation	src/memory/lessons.rs	project lesson guards are stale; revalidate before promotion
+Integrity	src/memory/lessons.rs	retired lesson source changed
+Transient	src/memory/lessons/input.rs	project lesson source changed during preparation
+Identity	src/memory/policy_correction.rs	owner decision is unapproved, stale or does not match the exact project, item, configurations and predecessor head; no change was made
+Transient	src/memory/state.rs	configuration changed since load
+Identity	src/memory/state.rs	memory actor configuration changed: {actor}

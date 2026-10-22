@@ -1,0 +1,6 @@
+# Plain changed-after-binding literals under src/context: REASON<TAB>path<TAB>literal.
+Integrity	src/context.rs	context projection is stale or tampered
+Integrity	src/context/governor.rs	evidence is stale or mismatched for {field}
+NotCurrentState	src/context/governor.rs	re-plan is not currently required
+Integrity	src/context/governor.rs	sensor is stale or mismatched for {field}
+Integrity	src/context/governor.rs	sensor result is stale or mismatched for {field}

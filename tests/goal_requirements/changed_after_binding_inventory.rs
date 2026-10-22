@@ -3,14 +3,15 @@
 //! `src/drift.rs` (`MEMBERS`, each with classification, message and route).
 //! The scan finds the class two ways: refusal wording, and a refusal that
 //! follows a stored value compared (`!=`) with a recomputed hash. Every hit
-//! outside `src/drift.rs` must be listed literal by literal in
-//! `tests/fixtures/changed-after-binding-plain.tsv` with why it stays plain;
-//! a new hit, a stale entry or an unknown reason fails, and so does a
-//! registered member that no source constructs.
+//! outside `src/drift.rs` must be listed literal by literal under
+//! `tests/fixtures/changed-after-binding-plain/` with why it stays plain, in
+//! the file named for its source domain (`src/run/...` in `run.tsv`); a new
+//! hit, a stale entry, an unknown reason or an entry filed under another
+//! domain fails, and so does a registered member that no source constructs.
 use super::*;
 
 const REGISTRY: &str = "src/drift.rs";
-const PLAIN: &str = "tests/fixtures/changed-after-binding-plain.tsv";
+const PLAIN: &str = "tests/fixtures/changed-after-binding-plain";
 
 /// The refusal wording of the class.
 const SIGNATURE: &[&str] = &[
@@ -146,6 +147,36 @@ fn classes(registry: &str) -> Vec<String> {
         .collect()
 }
 
+/// Every listed line with the domain its file is named for, from each
+/// `*.tsv` file of the plain-literal directory.
+fn plain_lines() -> Vec<(String, String)> {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join(PLAIN);
+    let mut lines = Vec::new();
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        let domain = path.file_stem().unwrap().to_str().unwrap().to_owned();
+        assert_eq!(
+            path.extension().and_then(|extension| extension.to_str()),
+            Some("tsv"),
+            "{PLAIN} holds only per-domain .tsv files: {}",
+            path.display()
+        );
+        for line in fs::read_to_string(&path).unwrap().lines() {
+            if !line.starts_with('#') && !line.is_empty() {
+                lines.push((domain.clone(), line.to_owned()));
+            }
+        }
+    }
+    lines
+}
+
+/// The source domain of `src/<domain>/...` or `src/<domain>.rs`.
+fn source_domain(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("src/")?;
+    let first = rest.split('/').next()?;
+    Some(first.strip_suffix(".rs").unwrap_or(first))
+}
+
 #[test]
 fn every_changed_after_binding_refusal_is_typed_or_listed_with_its_reason() {
     let sources = sources();
@@ -156,18 +187,19 @@ fn every_changed_after_binding_refusal_is_typed_or_listed_with_its_reason() {
         .1;
     let classes = classes(registry);
     assert!(classes.len() >= 19, "{classes:?}");
-    let plain = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(PLAIN)).unwrap();
     let mut listed = std::collections::BTreeMap::<(String, String), usize>::new();
     let mut failures = Vec::new();
-    for line in plain
-        .lines()
-        .filter(|line| !line.starts_with('#') && !line.is_empty())
-    {
+    for (domain, line) in plain_lines() {
         let fields: Vec<&str> = line.splitn(3, '\t').collect();
         let [reason, path, literal] = fields[..] else {
-            failures.push(format!("{PLAIN}: malformed line {line:?}"));
+            failures.push(format!("{PLAIN}/{domain}.tsv: malformed line {line:?}"));
             continue;
         };
+        if source_domain(path) != Some(domain.as_str()) {
+            failures.push(format!(
+                "{PLAIN}/{domain}.tsv: {path} belongs in the file named for its source domain"
+            ));
+        }
         if !REASONS.iter().any(|(name, _)| *name == reason) {
             failures.push(format!(
                 "{PLAIN}: unknown reason {reason} for {path}: {literal}"
@@ -190,8 +222,10 @@ fn every_changed_after_binding_refusal_is_typed_or_listed_with_its_reason() {
         let known = listed.get(key).copied().unwrap_or(0);
         if known != *count {
             failures.push(format!(
-                "{}: {count} \"{}\" literal(s), {known} listed; build an agent-reachable refusal with crate::drift::refusal (classification, both hashes, nextAction) or list it in {PLAIN} with why it stays plain",
-                key.0, key.1
+                "{}: {count} \"{}\" literal(s), {known} listed; build an agent-reachable refusal with crate::drift::refusal (classification, both hashes, nextAction) or list it in {PLAIN}/{}.tsv with why it stays plain",
+                key.0,
+                key.1,
+                source_domain(&key.0).unwrap_or("its-domain")
             ));
         }
     }
@@ -226,6 +260,13 @@ fn every_changed_after_binding_refusal_is_typed_or_listed_with_its_reason() {
 /// wording.
 #[test]
 fn the_changed_after_binding_scanner_detects_each_member_of_the_class() {
+    // An entry files under the domain of its source path.
+    assert_eq!(source_domain("src/context.rs"), Some("context"));
+    assert_eq!(
+        source_domain("src/run/view/check_replacement.rs"),
+        Some("run")
+    );
+    assert_eq!(source_domain("tests/run/view.rs"), None);
     assert_eq!(
         class_literals(
             "Err(\"configuration changed since memory event\".into()); \"checker source changed\""

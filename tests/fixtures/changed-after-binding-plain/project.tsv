@@ -1,0 +1,60 @@
+# Plain changed-after-binding literals under src/project: REASON<TAB>path<TAB>literal.
+NotARefusal	src/project/agent_context.rs	architecture contract source changed
+NotCurrentState	src/project/agent_context.rs	native assignment is no longer the current Work action
+Identity	src/project/agent_context.rs	native assignment role or agent no longer matches the configured project
+Transient	src/project/agent_context.rs	native current context changed before launch; refresh the current Work assignment
+Transient	src/project/agent_context.rs	project rules changed before native launch; refresh the assignment instead of using stale instructions
+Transient	src/project/agent_context/phase_guidance.rs	phase guidance source changed; refresh the current assignment detail
+Transient	src/project/architecture.rs	architecture configuration changed during delivery; reload the current configuration
+RoutedInText	src/project/architecture/adoption.rs	architecture selection preview is stale or belongs to another source, project, configuration or decision; run preview again; no configuration was written
+Transient	src/project/architecture/adoption.rs	configuration changed after selection was applied
+Transient	src/project/architecture/adoption.rs	configuration changed during selection preview; no configuration was written
+Transient	src/project/architecture/adoption.rs	configuration changed while reloading applied selection
+Transient	src/project/architecture/adoption.rs	source or configuration changed while refreshing applied selection
+Transient	src/project/architecture/checks.rs	architecture check inputs changed during observation; rerun the check
+Transient	src/project/capabilities.rs	capability configuration changed during delivery
+LeadPreparation	src/project/capabilities.rs	capability content changed; review and register it again before delivery
+LeadPreparation	src/project/capabilities.rs	capability descriptor changed; register the reviewed revision before a new Work
+Identity	src/project/capabilities.rs	capability identity differs from its approved registration
+Transient	src/project/capabilities/adoption.rs	capability configuration changed; inspect before retrying
+RoutedInText	src/project/capabilities/adoption.rs	capability registration binding is stale or approval is missing; rerun the read-only preview; no configuration was written
+Transient	src/project/capabilities/adoption.rs	capability source changed before registration; no configuration was written
+NotARefusal	src/project/commands.rs	warning: {} managed skill {} differs from this binary's embedded skill ({product} package {}; invoking binary {}; embedded SHA256 {}; observed SHA256 {}). Inspect the invoking binary version/path; {} Install the intended release if needed.
+Validation	src/project/context.rs	memory item exceeds the bounded detail route
+Validation	src/project/context.rs	memory item exceeds the bounded detail route; read its named source file
+NotCurrentState	src/project/context.rs	memory item is not currently eligible
+NotCurrentState	src/project/context.rs	memory item is not currently eligible for this recipient and task
+Transient	src/project/context.rs	memory source changed; refresh project context
+Transient	src/project/context.rs	memory source changed; refresh recipient context
+LeadPreparation	src/project/continuation/admission.rs	plan admission preview is stale; no Work was started
+LeadPreparation	src/project/continuation/admission.rs	source or mandate differs from its selected revision; inspect/replan before admission
+Integrity	src/project/continuation/amendment.rs	The selected mandate revision differs from this frozen Work association. Selection alone does not rebind it. A configured Lead may inspect a time-only amendment preview; no Work action is currently available.
+Integrity	src/project/continuation/amendment.rs	current selected mandate is stale, stopped, or differs from its source
+Integrity	src/project/continuation/amendment.rs	project continuation time amendment is stale or does not match this frozen claim
+LeadPreparation	src/project/continuation/amendment.rs	time amendment preview is stale; no receipt was written
+Integrity	src/project/continuation/amendment.rs	time amendment receipt failed strict validation
+LeadPreparation	src/project/continuation/amendment.rs	time amendment source changed after explicit owner selection
+Integrity	src/project/continuation/association.rs	claimed Work start intent differs from its reservation
+Integrity	src/project/continuation/association.rs	continuation predecessor retirement provenance differs
+Integrity	src/project/continuation/mod.rs	continuation selection preview is stale; no selection was recorded
+Integrity	src/project/continuation/recovery.rs	committed Work start differs from its exact selected claim; no recovery
+Integrity	src/project/continuation/recovery.rs	committed start conflicts with its retained admission debit
+Integrity	src/project/continuation/recovery.rs	saved-start recovery preview is stale; inspect its exact current claim
+Integrity	src/project/continuation/runtime.rs	saved effect conflicts with its aggregate reservation
+Integrity	src/project/continuation/runtime/facts.rs	retirement is not bound to this exact Work
+Integrity	src/project/continuation/runtime/goal_linkage.rs	current named Goal/checker differs from the exact frozen successor contract; no mapping was changed
+Integrity	src/project/continuation/runtime/successor.rs	successor differs from the actual retirement claim
+Transient	src/project/continuation/sources.rs	Git checkout changed during source observation
+Validation	src/project/continuation/sources.rs	Git document size is outside its bound or differs from local source
+LeadPreparation	src/project/continuation/sources.rs	Git project source bytes differ from the specified commit
+LeadPreparation	src/project/continuation/sources.rs	Git project source revision differs from the current checkout HEAD
+LeadPreparation	src/project/continuation/sources.rs	Git source repository differs from the authorized checkout identity
+NotARefusal	src/project/continuation/sources.rs	configuration changed
+Transient	src/project/continuation/sources.rs	project source changed during observation; prepare again
+Validation	src/project/continuation/sources.rs	project source does not contain its declared literal section locator
+LeadPreparation	src/project/continuation/sources.rs	project source is empty, contains NUL or differs from its exact SHA256
+Transient	src/project/layout.rs	configuration changed during layout migration
+Transient	src/project/layout.rs	legacy profile changed after planning: {}
+RoutedInText	src/project/skills.rs	project skill differs from embedded bytes: {}; inspect it and explicitly run {refresh}
+Identity	src/project/specialists/delivery.rs	contextual specialist role differs from the actual recipient
+Transient	src/project/specialists/delivery.rs	specialist experience changed; no snapshot delivered

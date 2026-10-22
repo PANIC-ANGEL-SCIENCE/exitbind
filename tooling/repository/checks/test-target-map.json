@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 916,
+  "declarations": 918,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1701,6 +1701,11 @@
       "currentSha256": "59a7cdb3c7b616fe0ae351f7e42ba8e153618e121fc142d83bfdc531ce14b834",
       "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
+    "tests/architecture_budget.rs": {
+      "baselineSha256": "4ea2442881657c2f7bb78a53f7bbc8c415d57457db3672a7710c6bcbe40cf0c4",
+      "currentSha256": "c2f3fe319c2fa2c2088fa2113d99b23ff0282d2c09b6b95327d5d1f1e28d79f1",
+      "reason": "R55 F10: the budget covers every file under src, tests and tests/fixtures (test modules, integration tests and fixtures included) with a ceiling list that only falls; the original production-source case is kept as every_covered_file_stays_within_its_ceiling with the same growth, over-limit, missing and under-limit failures, plus a ceiling above the current size now fails. Two cases are added: a seeded 33 KiB test file under each test root fails the budget, and Git-tracked files agree with the covered walk and the ceiling list."
+    },
     "tests/architecture_contract.rs": {
       "baselineSha256": "86e772e4e2ccf50b60a346400ca4fbb58d7205fb2f77a71949eb7659723ea8a0",
       "currentSha256": "5953d0f0de46601dc03553a4d82a05ce6de11a8deb33cc3269d49445fde7d239",
@@ -1748,8 +1753,8 @@
     },
     "tests/check_observation_recovery.rs": {
       "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
-      "currentSha256": "3935a681fbc2db745a52fad85adc1f11a815290c9d9df646ceec95b690005423",
-      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "currentSha256": "bee95ed55b1928a47976691e752224e3a7905453a20665b7e5b05ba3c079c609",
+      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F10: the stale observed-reviewer recovery cases move unchanged from quarantine.rs into their own module, check_observation_recovery/stale_reviewer.rs, declared here; no case or assertion changes."
     },
     "tests/check_observation_recovery/process_containment.rs": {
       "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",

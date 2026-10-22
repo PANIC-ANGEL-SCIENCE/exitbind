@@ -92,6 +92,31 @@ def target_declaration_self_test(root: Path, mapping: dict, manifest: dict) -> O
         }
         if not selected or not covering <= set(selected):
             return f"a change to embedded file {path} does not select the targets covering {sorted(sources)}"
+    # A fixture directory a test reads whole, named as a string literal, must
+    # select that test for every file inside it. Found here by listing the
+    # fixture directories and reading the literal, not through the selector.
+    texts = {
+        name: "\n".join(
+            (root / source).read_text(encoding="utf-8", errors="replace")
+            for source in sorted(test_target_sources.target_sources(root, path))
+        )
+        for name, (path, _) in manifest.items()
+    }
+    named_directories = 0
+    for directory in sorted(p for p in (root / "tests/fixtures").iterdir() if p.is_dir()):
+        relative = directory.relative_to(root).as_posix()
+        naming = {name for name, text in texts.items() if f'"{relative}"' in text}
+        if not naming:
+            continue
+        named_directories += 1
+        for item in sorted(directory.rglob("*")):
+            if item.is_file():
+                path = item.relative_to(root).as_posix()
+                selected, _ = test_target_sources.select(root, mapping, manifest, [path])
+                if not naming <= set(selected) or set(selected) == set(manifest):
+                    return f"a change to {path} does not select {sorted(naming)}, which read its directory"
+    if not named_directories:
+        return "no test reads a fixture directory; the directory selection rule is untested"
     module, files = next(iter(sorted(test_target_sources.top_level_modules(root).items())))
     uncovered = copy.deepcopy(mapping)
     for item in uncovered["targets"].values():

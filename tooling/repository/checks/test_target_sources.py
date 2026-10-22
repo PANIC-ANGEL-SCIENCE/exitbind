@@ -236,6 +236,10 @@ def _mentioning(path: str, texts: Dict[str, str]) -> Set[str]:
     needles = {path}
     if path.startswith("tests/"):
         needles.add(path[len("tests/"):])
+        # A fixture directory a test reads as a whole is named by its path.
+        parent = path.rsplit("/", 1)[0]
+        if parent not in ("tests", "tests/fixtures"):
+            needles.add(parent + "\"")
     return {name for name, text in texts.items() if any(needle in text for needle in needles)}
 
 

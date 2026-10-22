@@ -1,0 +1,34 @@
+# Plain changed-after-binding literals under src/host: REASON<TAB>path<TAB>literal.
+Integrity	src/host/assignment_context.rs	assignment context mismatch: packet work {packet_work} differs from focused work {current}
+Integrity	src/host/assignment_context.rs	assignment context mismatch: {field} differs from the current packet
+NotARefusal	src/host/assignment_context.rs	packet work smw_current differs from focused work smw_other
+NotARefusal	src/host/assignment_context.rs	packet work smw_old differs from focused work smw_current
+NotARefusal	src/host/assignment_context.rs	stale pointer
+Integrity	src/host/codegraph.rs	artifact_collision: existing result bytes do not match their digest
+Transient	src/host/codegraph.rs	index_changed: CodeGraph index changed or became stale during query
+Integrity	src/host/codegraph.rs	query_cache_invalid: artifact digest changed
+Integrity	src/host/codegraph.rs	saved graph result digest changed
+Transient	src/host/codegraph.rs	source_changed: source changed after preparation; no reconciliation remains
+Transient	src/host/codegraph.rs	source_changed: source changed again after one bounded reconciliation
+Transient	src/host/codegraph.rs	source_changed: source changed during bounded re-preparation
+Transient	src/host/codegraph.rs	source_changed: source changed during preparation reconciliation
+Transient	src/host/codegraph.rs	source_changed: source changed during query; results are unavailable
+Transient	src/host/codegraph.rs	source_changed: source changed while revalidating the cached index
+Transient	src/host/codegraph.rs	source_changed: source changed while validating final provider status
+Transient	src/host/codegraph.rs	source_changed: source changed while validating the cached result
+Transient	src/host/codegraph/preparation.rs	index_stale: provider still reports pending source changes after synchronization
+Transient	src/host/codegraph/preparation.rs	index_stale: {reason}; bounded full indexing did not produce a complete index
+Transient	src/host/codegraph/preparation.rs	source_changed: source changed during preparation after one bounded reconciliation
+Transient	src/host/codegraph/preparation.rs	source_changed: source changed while checking the saved preparation
+Transient	src/host/codegraph/provider.rs	partial or extraction-stale index (state {state}, pending references {pending_refs}, reindex recommended {reindex})
+NotARefusal	src/host/receive_text.rs	For a known Work or explicit smw_ locator, run `{}` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `{}` and its current detail route; focus is navigation, never authority. Use `{}` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.
+Integrity	src/host/session_recovery/hint.rs	session recovery hint integrity check failed
+NotARefusal	src/host/session_recovery/presentation.rs	Exitbind found a stale or foreign recovery hint for native Goal {goal_id} revision {revision}; do not use its saved action. Reread the exact Goal and Work detail before acting.
+NotARefusal	src/host/session_recovery/presentation.rs	Exitbind recovery hint Work references are stale or no longer match native Goal {goal_id}; reread the exact Goal and Work detail before acting.
+Identity	src/host/session_recovery/record.rs	host event session ID disagrees with selectors
+Identity	src/host/session_recovery/record.rs	native Goal is unavailable
+Validation	src/host/session_recovery/record.rs	native recovery checkpoint exceeded its four-second hook budget
+Identity	src/host/session_recovery/record.rs	recovery hint owner configuration no longer matches the fixed Goal owner
+Identity	src/host/session_recovery/references.rs	saved configuration no longer matches the fixed native Goal owner
+ReadAsFact	src/host/session_recovery/references.rs	session recovery source changed or is unavailable: {}/{}
+Identity	src/host/session_recovery/show.rs	saved owner configuration no longer matches the fixed Goal owner

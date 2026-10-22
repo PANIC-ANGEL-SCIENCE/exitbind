@@ -41,7 +41,7 @@ const OTHER_COMMANDS: &[(&str, &str, &str)] = &[
     ),
     (
         "work quarantine --apply",
-        "tests/check_observation_recovery/quarantine.rs",
+        "tests/check_observation_recovery/quarantine/foreign_session_goal.rs",
         "fn quarantine_apply_under_a_foreign_session_goal_writes_nothing",
     ),
 ];
