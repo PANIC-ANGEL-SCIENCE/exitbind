@@ -1,8 +1,38 @@
 # Changelog
 
-## 0.31.20
+## 0.31.21
 
 Unreleased source candidate; no stable tag or release assets are published.
+
+- `work detail WORK --view action` carries the phase guidance and project
+  lessons delivered to the current recipient, each with its read route, and
+  counts omitted items with their reason.
+- Printed routes come from one builder that names the executable and
+  `--config`; `work fill WORK --current-binding B --choice LABEL` runs a
+  printed route with its placeholders filled, unedited.
+- `setup --task-card --first-work IDS` prints `goal prepare` and `work begin`
+  for those rows only and keeps every row registered.
+- Applying commands refuse before their first write, including setup under
+  a session Goal owned by another project.
+- A bound input that changed reads as one typed refusal with the bound and
+  current sha256 and the exact next command; an accepted Work whose input
+  changed reads accepted at binding.
+- A closed Goal's head reads `CLOSED (revision N)`.
+- After the repair streak is exhausted, the Lead's recorded repair admits a
+  worker return instead of a re-plan.
+- `setup --task-card` snapshots a card outside the root into
+  `.exitbind/plan-cards/`, every path input meets its root in one place, and
+  one writer owns product files under a root.
+- The legacy compatibility reader inventory lists every historical reader,
+  and the never-persisted `SOULMATE_DRIFT:` and `SOULMATE_JSON:` in-process
+  prefixes are retired.
+- A gate inventory lists every native CI gate with its basis, and
+  `ci-failure.sh --record` appends to a failure ledger; both are checked in
+  the existing product-surface stage.
+
+## 0.31.20
+
+Published stable release; the `v0.31.20` tag and release assets are available.
 
 - After a stable release is published, the release workflow dispatches the
   README badge refresh, which a release published with `GITHUB_TOKEN` never
