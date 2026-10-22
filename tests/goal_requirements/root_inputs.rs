@@ -38,14 +38,14 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         "CodeGraph's generated state directory",
     ),
     (
-        "src/host/runtime.rs",
-        3,
-        "a host hook payload's cwd routed to a configured project",
-    ),
-    (
         "src/host/runtime/context.rs",
         1,
         "a configured profile shown relative to the project in hook text",
+    ),
+    (
+        "src/host/runtime/project.rs",
+        3,
+        "a host hook payload's cwd routed to a configured project",
     ),
     (
         "src/host/settings.rs",

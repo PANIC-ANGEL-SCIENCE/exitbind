@@ -8,11 +8,13 @@ mod current_work;
 mod derived_text;
 mod hint;
 mod milestone;
+mod owner_config;
 mod presentation;
 mod record;
 mod references;
 mod show;
 
+pub(crate) use owner_config::{goal_owner, is_owner, GoalOwner};
 pub(crate) use presentation::hook_context;
 pub(crate) use record::{attach_graph_result, checkpoint, record};
 pub(crate) use references::task_target;

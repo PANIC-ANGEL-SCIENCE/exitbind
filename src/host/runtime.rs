@@ -1,10 +1,10 @@
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
 
 mod activation;
 mod context;
+mod project;
 pub(crate) use activation::{assess_activation, classify_activation, Activation, ActivationFacts};
 
 const MAX_INPUT: usize = 64 * 1024;
@@ -64,117 +64,37 @@ pub fn run() -> Result<(), String> {
     } else {
         None
     };
-    let cwd = object
-        .get("cwd")
-        .or_else(|| object.get("current_directory"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let project = match absolute_directory(cwd) {
-        Ok(project) => project,
-        Err(()) => {
+    let (loaded, config_path, source) = match project::resolve(object) {
+        project::Resolution::Project {
+            loaded,
+            config_path,
+            source,
+        } => (*loaded, config_path, source),
+        project::Resolution::CleanAbsence => {
             emit_routing_with_recovery(
                 event,
                 update_context.as_deref(),
-                Routing::Unresolved,
+                Routing::CleanAbsence,
                 object,
                 None,
             )?;
             return Ok(());
         }
-    };
-    let portable = if crate::producer::exitbind_surface() {
-        project.join("exitbind.json")
-    } else {
-        project.join("soulmate.json")
-    };
-    let portable_present = match fs::symlink_metadata(&portable) {
-        Ok(_) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(_) => {
+        project::Resolution::Unresolved(config_path) => {
             emit_routing_with_recovery(
                 event,
                 update_context.as_deref(),
                 Routing::Unresolved,
                 object,
-                None,
+                config_path.as_deref(),
             )?;
             return Ok(());
         }
     };
-    let config_path = if portable_present {
-        let safe = fs::symlink_metadata(&portable)
-            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-            && contained(&project, &portable)
-            && contained_existing(&project, &portable);
-        if !safe {
-            emit_routing_with_recovery(
-                event,
-                update_context.as_deref(),
-                Routing::Unresolved,
-                object,
-                None,
-            )?;
-            return Ok(());
-        }
-        portable
-    } else {
-        match crate::project::portability::discover_from(&project) {
-            Ok(Some(path)) => path,
-            Ok(None) => {
-                emit_routing_with_recovery(
-                    event,
-                    update_context.as_deref(),
-                    Routing::CleanAbsence,
-                    object,
-                    None,
-                )?;
-                return Ok(());
-            }
-            Err(_) => {
-                emit_routing_with_recovery(
-                    event,
-                    update_context.as_deref(),
-                    Routing::Unresolved,
-                    object,
-                    None,
-                )?;
-                return Ok(());
-            }
-        }
-    };
-    let loaded = match config_path
-        .to_str()
-        .ok_or(())
-        .and_then(|path| crate::config::load(Some(path)).map_err(|_| ()))
-    {
-        Ok(value) => value,
-        Err(_) => {
-            emit_routing_with_recovery(
-                event,
-                update_context.as_deref(),
-                Routing::Unresolved,
-                object,
-                config_path.to_str(),
-            )?;
-            return Ok(());
-        }
-    };
-    if !project.starts_with(&loaded.product_root)
-        || (loaded.mode == crate::project::layout_types::Mode::Portable
-            && !contained_existing(&loaded.product_root, &loaded.control_root))
-    {
-        emit_routing_with_recovery(
-            event,
-            update_context.as_deref(),
-            Routing::Unresolved,
-            object,
-            config_path.to_str(),
-        )?;
-        return Ok(());
-    }
+    let configuration = project::fact_line(&config_path, source);
     if event == "PostToolUse" {
         return match super::plan_card::on_approval(&loaded, object) {
-            Some(line) => emit(event, &line),
+            Some(line) => emit(event, &format!("{line} {configuration}")),
             None => Ok(()),
         };
     }
@@ -224,7 +144,10 @@ pub fn run() -> Result<(), String> {
             // The project-facts route the addendum prints first is reserved too.
             let facts =
                 crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
-            let fixed = DIRECT_WORK.len() + receive.len() + facts.len() + 28;
+            // Every route above prints the exact `--config` path; the fact
+            // line says which configuration that is.
+            let line = project::routed_fact_line(source);
+            let fixed = DIRECT_WORK.len() + receive.len() + facts.len() + line.len() + 29;
             // Deep paths: the complete-lists route goes before the core does.
             if text.len() + fixed + 128 > 3072 {
                 text = session_summary(&loaded.config, None, &lead);
@@ -236,6 +159,8 @@ pub fn run() -> Result<(), String> {
             text.push_str(DIRECT_WORK);
             text.push('\n');
             text.push_str(&receive);
+            text.push('\n');
+            text.push_str(&line);
             // The addendum spends what the fixed text and the update notice
             // leave of the 3072-byte total.
             let update_bytes = update_context
@@ -272,11 +197,11 @@ pub fn run() -> Result<(), String> {
                 );
                 let recovery = recovery_context.as_deref().unwrap_or(&fallback);
                 let receive = super::receive_text::receive_work(Some(&loaded.path));
-                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{recovery}");
+                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{}\n{recovery}", project::routed_fact_line(source));
             }
             if text.len() > 4096 {
                 let receive = super::receive_text::receive_work(Some(&loaded.path));
-                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}");
+                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{}", project::routed_fact_line(source));
             }
         }
         text
@@ -302,7 +227,7 @@ pub fn run() -> Result<(), String> {
             Ok(value) => value,
             Err(_) => return Ok(()),
         };
-        if !contained_existing(&loaded.control_root, &profile) {
+        if !project::contained_existing(&loaded.control_root, &profile) {
             return Ok(());
         }
         let selected = super::assignment_context::selection(
@@ -339,6 +264,10 @@ pub fn run() -> Result<(), String> {
         ) else {
             return Ok(());
         };
+        if crate::producer::exitbind_surface() {
+            context.push('\n');
+            context.push_str(&configuration);
+        }
         if event == "SubagentStart" {
             match crate::session_goal::claimed_child_context(&loaded, object) {
                 Ok(Some(child)) => {
@@ -653,34 +582,6 @@ fn safe_multiline(value: &str) -> String {
         })
         .collect()
 }
-fn absolute_directory(value: &str) -> Result<PathBuf, ()> {
-    if value.is_empty() || value.contains('\0') || !Path::new(value).is_absolute() {
-        return Err(());
-    }
-    let path = PathBuf::from(value);
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component);
-        let metadata = fs::symlink_metadata(&current).map_err(|_| ())?;
-        if metadata.file_type().is_symlink() {
-            return Err(());
-        }
-    }
-    let metadata = fs::symlink_metadata(&path).map_err(|_| ())?;
-    if !metadata.is_dir() {
-        return Err(());
-    }
-    fs::canonicalize(path).map_err(|_| ())
-}
-fn contained(root: &Path, target: &Path) -> bool {
-    target.starts_with(root)
-}
-fn contained_existing(root: &Path, target: &Path) -> bool {
-    fs::canonicalize(target)
-        .ok()
-        .is_some_and(|path| path.starts_with(root))
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;

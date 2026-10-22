@@ -1689,7 +1689,7 @@
     "tests/agent_first_control.rs": {
       "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
       "currentSha256": "98bbde6f8938f7abafcde70e573d9a439e620f00e47064fbf4e2ed18966666f6",
-      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
+      "reason": "Preserve compact response bound, raw protocol hiding, exact full semantic action and same-work/current-binding recovery under long invocation paths; retain focus, ambiguity and core event oracles. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F5a: registers the goal-owner hook table module (native_continuity/goal_owner_hooks.rs); existing cases and assertions are unchanged."
     },
     "tests/agent_protocol.rs": {
       "baselineSha256": "d80c10e4e68dc2a4c0b3f7c451b1cff6e884c399f2a4cf5e9168c6a689ecd486",
@@ -2048,7 +2048,7 @@
     },
     "tests/native_continuity.rs": {
       "baselineSha256": "36a26b31a2257d8615b00f248eac38105ef422423cf0b0dae2d72d498d35f38f",
-      "currentSha256": "cdd58eab42a31c7c2b84408e93d3ac39eff4a163a12386212220d2a2f89b4574",
+      "currentSha256": "ed09f177b386ffe547ad92c1f4f9901597482948b9d4eb831785530eb983e002",
       "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged."
     },
     "tests/native_session_export.rs": {

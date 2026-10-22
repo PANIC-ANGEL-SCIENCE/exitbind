@@ -1,6 +1,9 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 mod support;
 
+#[path = "native_continuity/goal_owner_hooks.rs"]
+mod goal_owner_hooks;
+
 use serde_json::{json, Value};
 use std::{
     fs,
