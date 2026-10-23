@@ -2,8 +2,10 @@
 
 use super::*;
 
-fn route(loaded: &Loaded, suffix: Vec<String>) -> Value {
-    crate::work::compact::continuation_route(&loaded.path, suffix)
+use crate::emitted::Route;
+
+fn route(loaded: &Loaded, route: Route) -> Value {
+    crate::work::compact::continuation_route(&loaded.path, route)
 }
 
 fn begin_route(
@@ -14,50 +16,47 @@ fn begin_route(
     integration: bool,
     project_selected: bool,
 ) -> Value {
-    let mut args = vec![
-        "work".into(),
-        "begin".into(),
-        "change".into(),
-        "--goal".into(),
-        goal.into(),
-        "--goal-id".into(),
-        record["goalId"].as_str().unwrap_or_default().into(),
-        "--requirement".into(),
-        ids.into(),
-        "--artifact".into(),
-        crate::emitted::slot("PROJECT_CHECKER"),
-        "--check-command".into(),
-        crate::emitted::slot("CHECK_COMMAND"),
-        "--review-policy".into(),
-        crate::emitted::slot("REVIEW_DECISION"),
-    ];
+    let mut args = Route::new([
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        goal,
+        "--goal-id",
+        record["goalId"].as_str().unwrap_or_default(),
+        "--requirement",
+        ids,
+        "--artifact",
+        crate::emitted::slot("PROJECT_CHECKER").as_str(),
+        "--check-command",
+        crate::emitted::slot("CHECK_COMMAND").as_str(),
+        "--review-policy",
+        crate::emitted::slot("REVIEW_DECISION").as_str(),
+    ]);
     if project_selected {
-        args.push("--project-goal".into());
+        args = args.words(["--project-goal"]);
+    }
+    if integration {
+        args = args.words(["--scope", "integration"]);
     }
     let mut result = route(loaded, args);
     result["placeholders"] = json!({"PROJECT_CHECKER":"a non-ignored project checker file included in tested inputs",
         "CHECK_COMMAND":"the actual check command naming that checker","REVIEW_DECISION":"the owner's required/omitted choice within this scope"});
     result["effect"] = json!("records a new legitimate Work when executed; no old grant is copied");
-    if integration {
-        result["command"]
-            .as_array_mut()
-            .expect("route command")
-            .extend([json!("--scope"), json!("integration")]);
-    }
-    let mut assignment = vec![
-        "goal".into(),
-        "assign".into(),
-        "--goal-id".into(),
-        record["goalId"].as_str().unwrap_or_default().into(),
-        "--requirement".into(),
-        ids.into(),
-        "--result-ref".into(),
-        crate::emitted::slot("NEW_ACCEPTED_WORK"),
-        "--disposition".into(),
-        "replace".into(),
-    ];
+    let mut assignment = Route::new([
+        "goal",
+        "assign",
+        "--goal-id",
+        record["goalId"].as_str().unwrap_or_default(),
+        "--requirement",
+        ids,
+        "--result-ref",
+        crate::emitted::slot("NEW_ACCEPTED_WORK").as_str(),
+        "--disposition",
+        "replace",
+    ]);
     if project_selected {
-        assignment.push("--project".into());
+        assignment = assignment.words(["--project"]);
     }
     result["afterCurrentAcceptance"] = route(loaded, assignment);
     result
@@ -146,12 +145,7 @@ pub(crate) fn projection_selected(
                 .map(|mapping| {
                     route(
                         loaded,
-                        vec![
-                            "work".into(),
-                            "detail".into(),
-                            mapping.work.clone(),
-                            "--json".into(),
-                        ],
+                        Route::new(["work", "detail", mapping.work.as_str(), "--json"]),
                     )
                 })
                 .unwrap_or(Value::Null)
@@ -175,14 +169,14 @@ pub(crate) fn projection_selected(
     let complete =
         goal.source.coverage_confirmed && rows.iter().all(|row| row["satisfied"] == true);
     let next = if !goal.source.coverage_confirmed {
-        let mut args = vec![
-            "goal".into(),
-            "cover".into(),
-            "--goal-id".into(),
-            record["goalId"].as_str().unwrap_or_default().into(),
-        ];
+        let mut args = Route::new([
+            "goal",
+            "cover",
+            "--goal-id",
+            record["goalId"].as_str().unwrap_or_default(),
+        ]);
         if project_selected {
-            args.push("--project".into());
+            args = args.words(["--project"]);
         }
         route(loaded, args)
     } else if let Some(row) = rows.iter().find(|row| row["satisfied"] != true) {
@@ -224,19 +218,19 @@ pub(crate) fn projection_selected(
                 )
                 .unwrap_or(Value::Null)
             } else if validation.is_ok() {
-                let mut args = vec![
-                    "goal".into(),
-                    "close".into(),
-                    "--goal-id".into(),
-                    record["goalId"].as_str().unwrap_or_default().into(),
-                    "--result-ref".into(),
-                    work,
-                    "--view".into(),
-                    "event".into(),
-                    "--json".into(),
-                ];
+                let mut args = Route::new([
+                    "goal",
+                    "close",
+                    "--goal-id",
+                    record["goalId"].as_str().unwrap_or_default(),
+                    "--result-ref",
+                    work.as_str(),
+                    "--view",
+                    "event",
+                    "--json",
+                ]);
                 if project_selected {
-                    args.push("--project".into());
+                    args = args.words(["--project"]);
                 }
                 route(loaded, args)
             } else {
@@ -292,29 +286,29 @@ pub(crate) fn projection_selected(
             .join(",")
     };
     let preparation = if goal.source.coverage_confirmed {
-        let mut current = vec![
-            "goal".into(),
-            "prepare".into(),
-            "--goal-id".into(),
-            record["goalId"].as_str().unwrap_or_default().into(),
-            "--requirement".into(),
-            preparation_ids.clone(),
-            "--artifact".into(),
-            crate::emitted::slot("PROJECT_CHECKER"),
-            "--check-command".into(),
-            crate::emitted::slot("CHECK_COMMAND"),
-            "--json".into(),
-        ];
+        let mut current = Route::new([
+            "goal",
+            "prepare",
+            "--goal-id",
+            record["goalId"].as_str().unwrap_or_default(),
+            "--requirement",
+            preparation_ids.as_str(),
+            "--artifact",
+            crate::emitted::slot("PROJECT_CHECKER").as_str(),
+            "--check-command",
+            crate::emitted::slot("CHECK_COMMAND").as_str(),
+            "--json",
+        ]);
         if project_selected {
-            current.push("--project".into());
+            current = current.words(["--project"]);
         }
         let mut project = current.clone();
         if !project_selected {
-            project.push("--project".into());
+            project = project.words(["--project"]);
         }
         if complete {
-            current.extend(["--scope".into(), "integration".into()]);
-            project.extend(["--scope".into(), "integration".into()]);
+            current = current.words(["--scope", "integration"]);
+            project = project.words(["--scope", "integration"]);
         }
         let current_route = route(loaded, current);
         let project_route = route(loaded, project);

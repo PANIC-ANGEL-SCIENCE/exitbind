@@ -381,16 +381,9 @@ fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
         .path
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
-    let route = super::response_recovery::bounded_argv(
-        vec![
-            "work".into(),
-            "resume".into(),
-            "--history".into(),
-            "--config".into(),
-        ],
-        Some(config),
-        2048,
-    );
+    let route = crate::emitted::Route::new(["work", "resume", "--history"])
+        .config_text(config)
+        .bounded(2048);
     Ok(json!({
         "running": running,
         "command": route.argv,

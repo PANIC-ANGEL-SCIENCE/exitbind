@@ -223,7 +223,7 @@ pub(crate) fn amend(
                 .into(),
         );
     }
-    let apply_argv = argv(loaded, work, reason, request_id, &binding)?;
+    let apply_argv = amend_route(loaded, work, reason, request_id, &binding).argv()?;
     let mut response = json!({"version":1,"state":"preview","effect":"no-change","readOnly":true,
         "work":work,"originalRevision":claim.association.mandate_revision,
         "selectedRevision":record.specification.mandate.revision,"currentBinding":binding,
@@ -324,34 +324,27 @@ pub(crate) fn amend(
     })
 }
 
-fn argv(
+fn amend_route(
     loaded: &Loaded,
     work: &str,
     reason: &str,
     request: &str,
     binding: &str,
-) -> Result<Vec<String>, String> {
-    Ok(vec![
-        crate::emitted::executable()?,
-        "project".into(),
-        "advance".into(),
-        "amend".into(),
-        work.into(),
-        "--reason".into(),
-        reason.into(),
-        "--request-id".into(),
-        request.into(),
-        "--current-binding".into(),
-        binding.into(),
-        "--apply".into(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .into(),
-        "--json".into(),
-    ])
+) -> crate::emitted::Route {
+    super::argv(
+        loaded,
+        &[
+            "amend",
+            work,
+            "--reason",
+            reason,
+            "--request-id",
+            request,
+            "--current-binding",
+            binding,
+            "--apply",
+        ],
+    )
 }
 
 pub(super) fn held_action(
@@ -375,17 +368,11 @@ pub(super) fn held_action(
     if effective_association(loaded, &record, &claim, work, &verified).is_ok() {
         return Ok(None);
     }
-    let config = loaded
-        .path
-        .to_str()
-        .ok_or("configuration path is not UTF-8")?;
     Ok(Some(json!({
         "version":1,"state":"held_time_amendment_required","binding":binding,
         "leadChoiceRequired":true,"choices":[],"mechanicalAction":Value::Null,
         "meaning":"The selected mandate revision differs from this frozen Work association. Selection alone does not rebind it. A configured Lead may inspect a time-only amendment preview; no Work action is currently available.",
-        "diagnostic":{"readOnly":true,"command":[crate::emitted::executable()?,
-            "project","advance","amend",work,"--reason",crate::emitted::slot("REASON"),"--request-id",crate::emitted::slot("REQUEST_ID"),
-            "--config",config,"--json"],"placeholders":["REASON","REQUEST_ID"]}
+        "diagnostic":{"readOnly":true,"command":super::argv(loaded, &["amend",work,"--reason",&crate::emitted::slot("REASON"),"--request-id",&crate::emitted::slot("REQUEST_ID")]).argv()?,"placeholders":["REASON","REQUEST_ID"]}
     })))
 }
 

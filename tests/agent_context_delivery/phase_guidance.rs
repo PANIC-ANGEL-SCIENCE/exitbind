@@ -93,9 +93,8 @@ fn worker_detail_delivers_its_phase_body_whole_with_a_count_and_the_lead_sees_de
         "another role's body leaked"
     );
 
-    // The Lead reading the same detail is told to delegate, by name.
-    let expected =
-        format!("next action: delegate to worker agent 'worker' (assignment {assignment})");
+    // The same detail names who performs the assignment, by native name.
+    let expected = format!("next action: worker agent 'worker' performs assignment {assignment}");
     assert_eq!(
         detail["effectiveAction"]["delegation"]["text"],
         expected.as_str()

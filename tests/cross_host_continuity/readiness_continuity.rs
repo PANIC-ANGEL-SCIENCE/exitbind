@@ -336,7 +336,7 @@ fn long_requirement_history_has_bounded_exact_read_and_refinement_limit() {
         .unwrap()
         .iter()
         .map(|part| {
-            if part == "N" {
+            if part == "<HISTORY_INDEX>" {
                 "0"
             } else {
                 part.as_str().unwrap()

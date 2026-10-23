@@ -193,7 +193,7 @@ pub fn run() -> Result<(), String> {
             if text.len() > 4096 {
                 let fallback = format!(
                     "Use `{}` for the exact bounded recovery record.",
-                    crate::emitted::command_text("session recovery show --json")
+                    crate::emitted::Route::new(["session", "recovery", "show", "--json"]).text()
                 );
                 let recovery = recovery_context.as_deref().unwrap_or(&fallback);
                 let receive = super::receive_text::receive_work(Some(&loaded.path));

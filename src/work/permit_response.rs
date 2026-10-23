@@ -66,7 +66,7 @@ fn projection_failure(
     response["recovery"] = json!({
         "kind":"read_only",
         "route":super::compact::continuation_route(config_path,
-            vec!["work".into(),"detail".into(),work.into(),"--view".into(),"action".into(),"--json".into()]),
+            crate::emitted::Route::new(["work","detail",work,"--view","action","--json"])),
         "meaning":"The permit response retains its recorded event. Read current Work state; do not repeat the mutation or request a new permit to recover this display.",
     });
     agent_response(response)
@@ -105,12 +105,12 @@ pub(super) fn compact(
         },
         "nextAction": {
             "type": "read_work", "safe": true,
-            "commandSuffix": ["work", "detail", work, "--view", "action", "--json"],
+            "commandSuffix": crate::emitted::Route::new(["work", "detail", work, "--view", "action", "--json"]).suffix(),
             "sameExecutableRequired": true, "sameConfigRequired": true,
             "when": "after the permitted edit, or now to inspect an uncertain effect; never reuse the pre-permit return binding",
         },
         "audit": {
-            "commandSuffix": ["run", "inspect", ledger, "--event", event_sha, "--json"],
+            "commandSuffix": event_sha.as_str().map(|sha| crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"]).suffix()),
             "sameExecutableRequired": true, "sameConfigRequired": true,
         },
     });

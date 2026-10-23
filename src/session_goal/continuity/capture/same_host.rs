@@ -109,15 +109,15 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
     if next["action"] != "spawn" || current(loaded, work).is_err() {
         return None;
     }
-    let mut suffix: Vec<String> = vec![
-        "work".into(),
-        "child".into(),
-        "prepare".into(),
-        work.into(),
-        assignment.into(),
-        "--agent-type".into(),
-        native.into(),
-    ];
+    let mut suffix = crate::emitted::Route::new([
+        "work",
+        "child",
+        "prepare",
+        work,
+        assignment,
+        "--agent-type",
+        native,
+    ]);
     let (lenses, mut omitted) = lenses(loaded);
     let ids = lenses.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
     let selected = (1..=MAX_LENSES).contains(&lenses.len());
@@ -126,8 +126,10 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
             .iter()
             .map(|(id, path)| json!({"id": id, "path": path}))
             .collect::<Vec<_>>();
-        suffix.push("--perspectives".into());
-        suffix.push(Value::Array(sources).to_string());
+        suffix = suffix.words([
+            "--perspectives".to_owned(),
+            Value::Array(sources).to_string(),
+        ]);
     }
     let route = crate::work::compact::continuation_route(&loaded.path, suffix);
     let mut result = json!({

@@ -12,43 +12,31 @@ use crate::{config, session_goal};
 use serde_json::{json, Value};
 use std::path::Path;
 
+/// One record route: `session recovery record`, the option and its
+/// registered placeholder, then the configuration.
+fn record_route(option: &str, slot: &str, config: &Path) -> crate::emitted::Route {
+    crate::emitted::Route::new(["session", "recovery", "record", option, slot]).config(config)
+}
+
 /// The two record routes for the Goal owner configuration `config`.
 pub(crate) fn routes(config: &Path) -> Result<Value, String> {
-    let executable = crate::emitted::executable()?;
-    let config_text = config
-        .to_str()
-        .ok_or("configuration path is not valid UTF-8")?;
-    let route = |option: &str, slot: String, meaning: &str| {
-        let argv = vec![
-            executable.clone(),
-            "session".into(),
-            "recovery".into(),
-            "record".into(),
-            option.into(),
-            slot,
-            "--config".into(),
-            config_text.into(),
-        ];
-        json!({"command": argv, "fill": crate::emitted::fill_flags(&argv), "meaning": meaning})
+    let route = |option: &str, slot: String, meaning: &str| -> Result<Value, String> {
+        let argv = record_route(option, &slot, config).argv()?;
+        Ok(json!({"command": argv, "fill": crate::emitted::fill_flags(&argv), "meaning": meaning}))
     };
     Ok(json!({
         "actor": "lead",
         "saveStep": route("--step", crate::emitted::slot("SAVED_STEP"),
-            "replace the saved step; saved Lead decisions are kept"),
+            "replace the saved step; saved Lead decisions are kept")?,
         "saveDecision": route("--decision", crate::emitted::slot("LEAD_DECISION"),
-            "add one Lead decision to the saved step (at most eight; the oldest is dropped)"),
+            "add one Lead decision to the saved step (at most eight; the oldest is dropped)")?,
         "text": lines(config),
     }))
 }
 
 /// The same two routes as printed lines.
 pub(crate) fn lines(config: &Path) -> Vec<String> {
-    let line = |option: &str, slot: String| {
-        crate::emitted::command_line(
-            &["session", "recovery", "record", option, &slot],
-            Some(config),
-        )
-    };
+    let line = |option: &str, slot: String| record_route(option, &slot, config).text();
     vec![
         format!(
             "Lead pause, save the step: {}",

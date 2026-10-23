@@ -29,13 +29,7 @@ pub(super) fn attach(loaded: &Loaded, work: &str, binding: &str, result: &mut Va
     if fillable {
         result["fillRoute"] = command(
             loaded,
-            vec![
-                "work".into(),
-                "fill".into(),
-                work.into(),
-                "--current-binding".into(),
-                binding.into(),
-            ],
+            crate::emitted::Route::new(["work", "fill", work, "--current-binding", binding]),
         );
     }
 }
@@ -65,7 +59,7 @@ fn describe(form: &mut Value, label: &str) -> bool {
 
 /// A current form filled from `values`, ready to run unchanged.
 pub(crate) struct Bound {
-    pub(crate) argv: Vec<String>,
+    pub(crate) route: crate::emitted::Route,
     pub(crate) reads_artifact: bool,
 }
 
@@ -136,7 +130,7 @@ pub(crate) fn bound(
         _ => {}
     }
     Ok(Bound {
-        argv: crate::emitted::fill(&printed(form), values)?,
+        route: crate::emitted::fill(&crate::emitted::Route::printed(&printed(form))?, values)?,
         reads_artifact,
     })
 }

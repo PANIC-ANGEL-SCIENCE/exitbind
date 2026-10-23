@@ -176,9 +176,9 @@ pub(super) fn record_failure(
 ) -> Result<Value, String> {
     fail(loaded, path, admission, facts.clone()).map_err(|error| {
         let work = canonical_work_for_ledger(path).ok();
-        let suffix = if let Some(work) = &work { vec!["work".into(), "detail".into(), work.clone(), "--json".into(), "--config".into()] }
-            else { vec!["run".into(), "status".into(), ledger.into(), "--json".into(), "--config".into()] };
-        let route = crate::work::response_recovery::bounded_argv(suffix, loaded.path.to_str(), 2048);
+        let route = if let Some(work) = &work { crate::emitted::Route::new(["work", "detail", work.as_str(), "--json"]) }
+            else { crate::emitted::Route::new(["run", "status", ledger, "--json"]) };
+        let route = route.config(&loaded.path).bounded(2048);
         format!("EXITBIND_JSON:{}", json!({
             "effect": "unknown", "checkRecorded": false, "durableFailureRecorded": false,
             "work": work, "reason": {"code": "observation_failure_storage_unavailable"},

@@ -128,10 +128,9 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
     );
     let check = crate::emitted::command_line(&["check"], Some(&path));
     let placeholder = crate::emitted::slot("CHECK_COMMAND");
-    let refresh = crate::emitted::command_text(&format!(
-        "init --refresh-skills --root {}",
-        crate::emitted::word(&created.product_root.display().to_string())
-    ));
+    let root = created.product_root.display().to_string();
+    let refresh =
+        crate::emitted::Route::new(["init", "--refresh-skills", "--root", root.as_str()]).text();
     if skip_skills {
         println!(
             "Created {}\nProject skill projection skipped by explicit --skip-skills.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not inspect, install, or change project skill destinations, host software, or host permissions; resolve skill ownership before running {refresh} to request project skill projection.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace {placeholder} with a real project check command):\n  {brief}\n  {begin}\n  {check}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",

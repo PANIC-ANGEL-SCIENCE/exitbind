@@ -46,9 +46,22 @@ pub(crate) fn select(
             "evidence": "caller declaration of existing project review; no human approval inferred"},
         "activeWork": "existing Work retains frozen configuration; an approved change requires its supported supersession",
         "checks": "selection reads no checker input and launches no command"});
-    report["apply"] = json!({"command": [crate::emitted::executable()?,
-        "project", "architecture", "select", source, "--decision", decision, "--reason", reason,
-        "--current-binding", identity, "--apply", "--json", "--config", configuration],
+    let apply_route = crate::emitted::Route::new([
+        "project",
+        "architecture",
+        "select",
+        source,
+        "--decision",
+        decision,
+        "--reason",
+        reason,
+        "--current-binding",
+        identity.as_str(),
+        "--apply",
+        "--json",
+    ])
+    .config_text(configuration);
+    report["apply"] = json!({"command": apply_route.argv()?,
         "meaning": "select the exact reviewed source in this configuration; rerun preview if inputs change"});
     if fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source {
         return Err(
@@ -161,8 +174,8 @@ pub(crate) fn select(
                 .take(512)
                 .collect::<String>());
             report["nextAction"] = json!({"type": "inspect", "safe": true,
-                "command": [crate::emitted::executable()?,
-                    "project", "architecture", "--json", "--config", loaded.path.to_str().ok_or("configuration path is not UTF-8")?]});
+                "command": crate::emitted::Route::new(["project", "architecture", "--json"])
+                    .config(&loaded.path).argv()?});
         }
     }
     Ok(report)

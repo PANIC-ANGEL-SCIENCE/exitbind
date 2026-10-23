@@ -8,7 +8,8 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::response_recovery::{bounded_argv, recovery_command};
+use super::response_recovery::recovery_command;
+use crate::emitted::Route;
 mod candidates;
 mod next;
 use candidates::retain_small_candidates;
@@ -66,25 +67,22 @@ fn rebudget_route(route: &mut Value, argv_key: &str, config_path: &Path) {
     if route["sameExecutableRequired"] != true && !suffix.is_empty() {
         suffix.remove(0);
     }
-    if suffix.first().map(String::as_str) != Some("work")
-        || suffix.last().map(String::as_str) != Some("--config")
-    {
+    if suffix.first().map(String::as_str) != Some("work") {
         return;
     }
-    let command = bounded_argv(suffix, config_path.to_str(), 256);
+    let Ok(printed) = Route::reprinted(suffix, config_path) else {
+        return;
+    };
+    let command = printed.bounded(256);
     route[argv_key] = command.argv;
     route["sameConfigRequired"] = json!(command.same_config);
     route["sameExecutableRequired"] = json!(command.same_executable);
 }
 
-pub(crate) fn continuation_route(config_path: &Path, mut suffix: Vec<String>) -> Value {
-    suffix.push("--config".into());
-    let recovery = bounded_argv(suffix, config_path.to_str(), 1024);
-    json!({
-        "command": recovery.argv,
-        "sameConfigRequired": recovery.same_config,
-        "sameExecutableRequired": recovery.same_executable,
-    })
+/// A read route with its configuration, bounded for a compact response:
+/// `{"command", "sameConfigRequired", "sameExecutableRequired"}`.
+pub(crate) fn continuation_route(config_path: &Path, route: Route) -> Value {
+    route.config(config_path).bounded(1024).command_json()
 }
 
 pub(crate) fn continuation_mutation(
@@ -94,10 +92,7 @@ pub(crate) fn continuation_mutation(
     appended: bool,
     config_path: &Path,
 ) -> Result<Value, String> {
-    let route = continuation_route(
-        config_path,
-        vec!["work".into(), "continuation".into(), work.into()],
-    );
+    let route = continuation_route(config_path, Route::new(["work", "continuation", work]));
     let result = json!({
         "compact": true,
         "work": work,
@@ -153,11 +148,11 @@ pub(crate) fn project(
         } else {
             let route = continuation_route(
                 config_path,
-                vec![
-                    "work".into(),
-                    "continuation".into(),
-                    response["work"].as_str().unwrap_or("").into(),
-                ],
+                Route::new([
+                    "work",
+                    "continuation",
+                    response["work"].as_str().unwrap_or(""),
+                ]),
             );
             result.insert(
                 "continuation".into(),
@@ -220,11 +215,11 @@ pub(crate) fn project(
         if let Some(continuation) = response.get("continuation") {
             let route = continuation_route(
                 config_path,
-                vec![
-                    "work".into(),
-                    "continuation".into(),
-                    response["work"].as_str().unwrap_or("").into(),
-                ],
+                Route::new([
+                    "work",
+                    "continuation",
+                    response["work"].as_str().unwrap_or(""),
+                ]),
             );
             result["continuation"] = json!({
                 "work": continuation["work"],

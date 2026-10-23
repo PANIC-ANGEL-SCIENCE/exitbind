@@ -39,8 +39,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         ),
         _ => std::process::Stdio::null(),
     };
-    let status = std::process::Command::new(&bound.argv[0])
-        .args(&bound.argv[1..])
+    let status = bound
+        .route
+        .process()?
         .stdin(stdin)
         .status()
         .map_err(|error| format!("the filled route could not start: {error}"))?;

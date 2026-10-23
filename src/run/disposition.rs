@@ -17,16 +17,21 @@ pub(crate) const PENDING_LEAD_OUTCOMES: &[&str] = &["disposition", "blocked", "r
 
 /// The Lead's disposition route for a pending finding, printed with the
 /// executable and every value it needs as a registered placeholder; `work`
-/// fills the Work when known. The action view's disposition choices carry
-/// the same route bound and filled.
-pub(crate) fn lead_route(work: Option<&str>, config: &std::path::Path) -> String {
+/// and `assignment` fill the Work and the assignment when known. The action
+/// view's disposition choices carry the same route bound and filled.
+pub(crate) fn lead_route(
+    work: Option<&str>,
+    assignment: Option<&str>,
+    config: &std::path::Path,
+) -> String {
     let work = work.map_or_else(|| crate::emitted::slot("WORK"), str::to_owned);
+    let assignment = assignment.map_or_else(|| crate::emitted::slot("ASSIGNMENT"), str::to_owned);
     crate::emitted::command_line(
         &[
             "work",
             "disposition",
             &work,
-            &crate::emitted::slot("ASSIGNMENT"),
+            &assignment,
             "--decision",
             &crate::emitted::slot("DISPOSITION_DECISION"),
             "--reason",
@@ -97,7 +102,7 @@ pub(crate) fn submission(
     // A reviewer finding is decided with a named decision, so a repair always
     // carries the Lead's boundary to the next attempt.
     if parsed.decision.is_none() && state["pendingDisposition"]["kind"] == "review_rework" {
-        let route = lead_route(None, config);
+        let route = lead_route(None, None, config);
         return Err(format!("a reviewer finding needs a Lead decision: {route}"));
     }
     validate(state, &parsed)?;
@@ -120,7 +125,7 @@ fn lead_outcome_allowed(
         && state["pendingDisposition"].is_object()
         && !PENDING_LEAD_OUTCOMES.contains(&outcome)
     {
-        let route = lead_route(None, config);
+        let route = lead_route(None, None, config);
         return Err(format!(
             "a pending finding requires a Lead disposition first: {route}"
         ));

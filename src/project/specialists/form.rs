@@ -13,7 +13,16 @@ pub(crate) fn input_form(
     let agent = loaded
         .agent(name)
         .ok_or("specialist scope requires a configured author")?;
-    let validation_command = json!({"command":[crate::emitted::executable()?,"memory","form",crate::emitted::slot("SOURCE"),"--scope",scope,"--json","--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
+    let validation_route = crate::emitted::Route::new([
+        "memory",
+        "form",
+        crate::emitted::slot("SOURCE").as_str(),
+        "--scope",
+        scope,
+        "--json",
+    ])
+    .config(&loaded.path);
+    let validation_command = json!({"command":validation_route.argv()?,
         "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current author/project/config/profile binding only; no lifecycle, trial or qualification decision"});
     let validation = source
         .map(|source| validate_source(loaded, name, source))
@@ -43,7 +52,7 @@ pub(crate) fn input_form(
                 "meaning":"Optional file-byte prerequisites only. Use [] for none; narrative authority or applicability restrictions belong in preconditions."}},
         "textRules":"All source strings are nonblank and contain no control characters; array bounds use UTF-8 bytes per item.",
         "validationRoute":validation_command,"validation":validation,
-        "lifecycle":{"propose":["memory","propose",name,crate::emitted::slot("SOURCE"),"--scope",scope,"--ledger",crate::emitted::slot("NEW_LEDGER"),"--expires-at",crate::emitted::slot("RFC3339_EXPIRY")],
+        "lifecycle":{"propose":crate::emitted::Route::new(["memory","propose",name,crate::emitted::slot("SOURCE").as_str(),"--scope",scope,"--ledger",crate::emitted::slot("NEW_LEDGER").as_str(),"--expires-at",crate::emitted::slot("RFC3339_EXPIRY").as_str()]).suffix(),
             "next":"Use the returned nextAction; a separate authorized reviewer reviews exact bytes, then the configured Lead promotes.",
             "inactiveStates":["draft","proposed","reviewed"]},
         "evidence":"References and lifecycle labels are reported claims, not verified trials or authenticated actor independence.",
@@ -105,22 +114,12 @@ pub(crate) fn next_action(
             .collect(),
         _ => Vec::new(),
     };
-    let exe = crate::emitted::executable()?;
     let command = |actor: Option<&str>| -> Result<Vec<String>, String> {
-        let mut argv = vec![exe.clone(), "memory".into(), action.into()];
-        if let Some(actor) = actor {
-            argv.push(actor.to_owned());
-        }
-        argv.extend([
-            ledger.into(),
-            "--config".into(),
-            loaded
-                .path
-                .to_str()
-                .ok_or("configuration is not UTF-8")?
-                .into(),
-        ]);
-        Ok(argv)
+        crate::emitted::Route::new(["memory", action])
+            .words(actor)
+            .words([ledger])
+            .config(&loaded.path)
+            .argv()
     };
     let choices = actors
         .iter()

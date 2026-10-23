@@ -34,30 +34,13 @@ pub(super) fn bounded(
     let held = response["effect"] == "held";
     let refused = event["action"] == "protect";
     let effect = if held { "held" } else { "recorded" };
-    let detail_suffix = if let Some(sha) = event_sha {
-        vec![
-            "run".to_owned(),
-            "inspect".to_owned(),
-            ledger.to_owned(),
-            "--event".to_owned(),
-            sha.to_owned(),
-            "--json".to_owned(),
-            "--config".to_owned(),
-        ]
+    let detail_route = if let Some(sha) = event_sha {
+        crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"])
     } else {
-        vec![
-            "work".to_owned(),
-            "next".to_owned(),
-            work.to_owned(),
-            "--full".to_owned(),
-            "--config".to_owned(),
-        ]
-    };
-    let detail = super::response_recovery::bounded_argv(
-        detail_suffix.clone(),
-        Some(config_path),
-        crate::work::compact::MAX_RESPONSE_BYTES - 512,
-    );
+        crate::emitted::Route::new(["work", "next", work, "--full"])
+    }
+    .config_text(config_path);
+    let detail = detail_route.bounded(crate::work::compact::MAX_RESPONSE_BYTES - 512);
     let mut value = json!({
         "compact": true,
         "current": response["next"]["current"],
@@ -88,7 +71,7 @@ pub(super) fn bounded(
             "progress": {"state": response["next"]["progress"]["state"], "reason": {"code": response["next"]["progress"]["reason"]["code"]}},
             "requiresExpansion": true,
         },
-        "continuation": {"readOnly": true, "commandSuffix": ["work", "next", work], "sameConfig": true},
+        "continuation": {"readOnly": true, "commandSuffix": crate::emitted::Route::new(["work", "next", work]).suffix(), "sameConfig": true},
     });
     if detail.same_config {
         value["nextAction"]["sameConfigRequired"] = json!(true);
@@ -194,7 +177,7 @@ pub(super) fn bounded(
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         // The exact executable and config were supplied by this invocation.
         // Require both explicitly rather than guessing either at the limit.
-        value["nextAction"]["command"] = json!(detail_suffix);
+        value["nextAction"]["command"] = json!(detail_route.suffix());
         value["nextAction"]["sameConfigRequired"] = json!(true);
         value["nextAction"]["sameExecutableRequired"] = json!(true);
         value["nextAction"]["commandKind"] = json!("argv_suffix_requires_executable_and_config");
@@ -342,11 +325,7 @@ mod tests {
         if same_executable {
             reconstructed.insert(
                 0,
-                std::env::current_exe()
-                    .expect("current executable is available")
-                    .to_str()
-                    .expect("current executable path is UTF-8")
-                    .to_owned(),
+                crate::emitted::executable().expect("current executable is available"),
             );
         }
         assert_eq!(reconstructed, expected);
@@ -386,7 +365,7 @@ mod tests {
         assert_eq!(
             response["nextAction"]["command"],
             json!([
-                std::env::current_exe().unwrap().to_str().unwrap(),
+                crate::emitted::executable().unwrap().as_str(),
                 "run",
                 "inspect",
                 ".exitbind/runs/work-work.jsonl",
@@ -423,11 +402,7 @@ mod tests {
         assert_exact_recovery_route(
             &compact["nextAction"],
             &[
-                std::env::current_exe()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_owned(),
+                crate::emitted::executable().unwrap().as_str().to_owned(),
                 "run".into(),
                 "inspect".into(),
                 ledger,

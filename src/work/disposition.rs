@@ -120,7 +120,11 @@ pub(super) fn lead_help(
             "An adverse finding needs Lead disposition. For a clear defect inside the accepted task, record repair and continue without asking the owner again; ask the owner only when scope, authority, review choice, or an irreversible decision changes.",
             format!(
                 "record the Lead decision: {}",
-                crate::run::disposition::lead_route(Some(work), config)
+                crate::run::disposition::lead_route(
+                    Some(work),
+                    next["assignment"].as_str(),
+                    config
+                )
             ),
         )),
         _ if next["action"] == "lead_decision" => Some((
@@ -147,4 +151,34 @@ fn render(value: &Value) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn the_pending_finding_help_names_the_known_assignment() {
+        let next = json!({"action": "lead_decision", "assignment": "sma_1",
+            "packet": {"pendingDisposition": {"kind": "review_finding"}}});
+        let config = std::path::Path::new("/p/exitbind.json");
+        let (_, summary) = super::lead_help(&next, "smw_1", config).unwrap();
+        let decision = crate::emitted::slot("DISPOSITION_DECISION");
+        let assignment = crate::emitted::slot("ASSIGNMENT");
+        assert!(
+            summary.contains(&format!(
+                " work disposition smw_1 sma_1 --decision {decision}"
+            )),
+            "{summary}"
+        );
+        assert!(!summary.contains(&assignment), "{summary}");
+        assert!(summary.ends_with("--config /p/exitbind.json"), "{summary}");
+        let unknown = json!({"action": "lead_decision",
+            "packet": {"pendingDisposition": {"kind": "review_finding"}}});
+        let (_, summary) = super::lead_help(&unknown, "smw_1", config).unwrap();
+        assert!(
+            summary.contains(&format!("smw_1 {assignment} --decision")),
+            "{summary}"
+        );
+    }
 }

@@ -178,7 +178,8 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
             // A release that adds a managed hook record leaves earlier
             // installs partial until the one install command adds it.
             if item["activationHook"] == "partial" {
-                item["activationHookAction"] = json!(crate::emitted::command_text("host install"));
+                item["activationHookAction"] =
+                    json!(crate::emitted::Route::new(["host", "install"]).text());
             }
             Ok(item)
         })

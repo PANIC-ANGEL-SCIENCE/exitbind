@@ -47,7 +47,7 @@ pub(crate) fn unavailable(
         if let Some(text) = view["systemText"].as_str() {
             view["systemText"] = json!(format!("{text} | {}", route.line));
         }
-        view["adoptRoute"] = route.value;
+        view["adoptRoute"] = adopt_route(loaded, &route);
     }
     view
 }
@@ -68,7 +68,18 @@ pub(crate) fn hook_text(cwd_config_path: Option<&str>) -> String {
 
 pub(crate) struct Route {
     pub(crate) line: String,
-    pub(crate) value: Value,
+    route: crate::emitted::Route,
+    goal_id: String,
+    revision: u64,
+}
+
+/// The `adoptRoute` value: the bounded `goal adopt` route and the Goal it
+/// adopts.
+fn adopt_route(loaded: &Loaded, adoption: &Route) -> Value {
+    let mut value = crate::work::compact::continuation_route(&loaded.path, adoption.route.clone());
+    value["goalId"] = json!(adoption.goal_id);
+    value["revision"] = json!(adoption.revision);
+    value
 }
 
 /// The full `goal adopt` route for the current session, or `None` when the
@@ -83,18 +94,15 @@ pub(crate) fn route(loaded: &Loaded, bounded: bool) -> Option<Route> {
     let [journal] = reach.open.as_slice() else {
         return None;
     };
-    let words = ["goal", "adopt", "--session-key", journal.key.as_str()];
-    let command = crate::emitted::command_line(&words, Some(&loaded.path));
+    let route =
+        crate::emitted::Route::new(["goal", "adopt", "--session-key", journal.key.as_str()]);
+    let command = route.clone().config(&loaded.path).text();
     let goal = crate::run_presentation::inert(&journal.goal_id);
-    let mut value = crate::work::compact::continuation_route(
-        &loaded.path,
-        words.iter().map(|word| (*word).to_owned()).collect(),
-    );
-    value["goalId"] = json!(journal.goal_id);
-    value["revision"] = json!(journal.revision);
     Some(Route {
         line: format!("Adopt Goal {goal}, open in an earlier session of this project: {command}"),
-        value,
+        route,
+        goal_id: journal.goal_id.clone(),
+        revision: journal.revision,
     })
 }
 

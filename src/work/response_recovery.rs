@@ -1,90 +1,27 @@
 //! Exact executable/config recovery argv for bounded work responses.
 
-use serde_json::{json, Value};
+use crate::emitted::{Bounded, Route};
+use serde_json::Value;
 use std::path::Path;
-
-pub(crate) struct RecoveryCommand {
-    pub(crate) argv: Value,
-    pub(crate) same_config: bool,
-    pub(crate) same_executable: bool,
-}
 
 pub(super) fn recovery_command(
     response: &Value,
     config_path: &Path,
     invoked: &str,
     argv_budget: usize,
-) -> RecoveryCommand {
-    let mut suffix = vec!["work".to_owned(), invoked.to_owned()];
+) -> Bounded {
+    let mut route = Route::new(["work", invoked]);
     if invoked == "next" {
         let Some(work) = response.get("work").and_then(Value::as_str) else {
-            return unavailable();
+            return crate::emitted::unavailable();
         };
         if work.len() > 128 {
-            return unavailable();
+            return crate::emitted::unavailable();
         }
-        suffix.push(work.to_owned());
+        route = route.words([work]);
     }
-    suffix.extend(["--full".to_owned(), "--config".to_owned()]);
-    bounded_argv(suffix, config_path.to_str(), argv_budget)
-}
-
-pub(crate) fn bounded_argv(
-    suffix: Vec<String>,
-    config: Option<&str>,
-    argv_budget: usize,
-) -> RecoveryCommand {
-    let executable = crate::emitted::executable().ok();
-    let fits = |argv: &[String]| {
-        serde_json::to_vec(argv)
-            .expect("recovery argv is serializable")
-            .len()
-            <= argv_budget
-    };
-    if let Some(executable) = executable.as_ref() {
-        let mut argv = vec![executable.clone()];
-        argv.extend(suffix.iter().cloned());
-        if let Some(config) = config {
-            let mut complete = argv.clone();
-            complete.push(config.to_owned());
-            if fits(&complete) {
-                return RecoveryCommand {
-                    argv: json!(complete),
-                    same_config: false,
-                    same_executable: false,
-                };
-            }
-        }
-        if fits(&argv) {
-            return RecoveryCommand {
-                argv: json!(argv),
-                same_config: true,
-                same_executable: false,
-            };
-        }
-    }
-    if let Some(config) = config {
-        let mut with_config = suffix.clone();
-        with_config.push(config.to_owned());
-        if fits(&with_config) {
-            return RecoveryCommand {
-                argv: json!(with_config),
-                same_config: false,
-                same_executable: true,
-            };
-        }
-    }
-    RecoveryCommand {
-        argv: json!(suffix),
-        same_config: true,
-        same_executable: true,
-    }
-}
-
-fn unavailable() -> RecoveryCommand {
-    RecoveryCommand {
-        argv: Value::Null,
-        same_config: true,
-        same_executable: true,
-    }
+    route
+        .words(["--full"])
+        .config(config_path)
+        .bounded(argv_budget)
 }

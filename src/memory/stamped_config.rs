@@ -131,24 +131,33 @@ pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<
     Ok(())
 }
 
-/// The refusal when the copy cannot be kept: nothing was written, the file
-/// in the way is named, and the same command runs again once it is moved.
+/// The refusal when the copy cannot be kept: nothing was written and the
+/// keep error leads; only when a file already sits where the copy belongs is
+/// it named with the move-aside step. The same command runs again after.
 fn keep_refused(previous: &Loaded, sha256: &str, error: &str) -> String {
-    let blocking = memory_root(previous)
+    let in_the_way = memory_root(previous)
         .zip(file_name(sha256))
-        .map(|(root, name)| previous.state_root.join(root).join(name));
-    let blocking = blocking.map_or_else(
-        || "the stamped configuration copy".to_owned(),
-        |path| path.display().to_string(),
-    );
+        .map(|(root, name)| previous.state_root.join(root).join(name))
+        .filter(|path| path.symlink_metadata().is_ok());
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     let words = arguments.iter().map(String::as_str).collect::<Vec<_>>();
     let again = crate::emitted::command_line(&words, None);
-    format!(
-        "no configuration was written: the stamped bytes cannot be kept at {blocking} ({error}); \
-         that file is not their copy (changed by hand, a link, or not hidden from Git). \
-         Move it aside, then run the same command again: {again}"
-    )
+    keep_refusal_text(in_the_way.as_deref(), error, &again)
+}
+
+fn keep_refusal_text(in_the_way: Option<&std::path::Path>, error: &str, again: &str) -> String {
+    match in_the_way {
+        Some(path) => format!(
+            "no configuration was written: the stamped bytes cannot be kept ({error}); \
+             the file at {} is not their copy (changed by hand, a link, or not hidden from Git). \
+             Move it aside, then run the same command again: {again}",
+            path.display()
+        ),
+        None => format!(
+            "no configuration was written: the stamped bytes cannot be kept ({error}). \
+             Run the same command again once that is resolved: {again}"
+        ),
+    }
 }
 
 /// The typed refusal for lesson events stamped with `bound`: the kept copy
@@ -235,4 +244,27 @@ fn same_copy_ledgers(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> V
         })
         .map(|other| other.snapshot)
         .collect()
+}
+
+#[cfg(test)]
+mod keep_refusal_tests {
+    use super::keep_refusal_text;
+
+    #[test]
+    fn the_move_aside_step_appears_only_when_a_file_is_in_the_way() {
+        let blocked = keep_refusal_text(Some(std::path::Path::new("/s/m/c.json")), "exists", "x y");
+        assert!(blocked.contains("(exists)"), "{blocked}");
+        assert!(
+            blocked.contains("the file at /s/m/c.json is not their copy"),
+            "{blocked}"
+        );
+        assert!(blocked.ends_with("Move it aside, then run the same command again: x y"));
+        let denied = keep_refusal_text(None, "permission denied", "x y");
+        assert!(denied.contains("(permission denied)"), "{denied}");
+        assert!(
+            !denied.contains("Move it aside") && !denied.contains("not their copy"),
+            "{denied}"
+        );
+        assert!(denied.ends_with("Run the same command again once that is resolved: x y"));
+    }
 }

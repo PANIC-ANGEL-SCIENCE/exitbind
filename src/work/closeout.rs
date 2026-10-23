@@ -13,12 +13,12 @@ use std::io::Write;
 const MAX_RECEIPT_BYTES: u64 = 256 * 1024;
 
 fn command(loaded: &Loaded, work: &str, options: &[&str]) -> Value {
-    let mut suffix = vec!["work".into(), "closeout".into(), work.into()];
-    suffix.extend(options.iter().map(|option| (*option).into()));
-    suffix.extend(["--json".into(), "--config".into()]);
-    let route = super::response_recovery::bounded_argv(suffix, loaded.path.to_str(), 768);
-    json!({"argv": route.argv, "sameConfigRequired": route.same_config,
-        "sameExecutableRequired": route.same_executable})
+    crate::emitted::Route::new(["work", "closeout", work])
+        .words(options.iter().copied())
+        .words(["--json"])
+        .config(&loaded.path)
+        .bounded(768)
+        .json()
 }
 
 fn current_receipt(loaded: &Loaded, work: &str) -> Result<Value, String> {

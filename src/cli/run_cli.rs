@@ -322,7 +322,7 @@ fn supersede_route(value: &serde_json::Value) -> String {
                 .collect::<Vec<_>>()
                 .join(" ")
         })
-        .unwrap_or_else(|| crate::emitted::command_text("run supersede"))
+        .unwrap_or_else(|| crate::emitted::Route::new(["run", "supersede"]).text())
 }
 
 pub(super) fn map_run_error(error: String, json_output: bool) -> String {

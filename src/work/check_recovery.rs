@@ -91,15 +91,15 @@ pub(crate) fn recover(
         if !apply {
             let apply_command = super::action_forms::command(
                 loaded,
-                vec![
-                    "work".into(),
-                    "recover-check".into(),
-                    work.into(),
-                    "--apply".into(),
-                    "--current-binding".into(),
-                    request_binding,
-                    "--json".into(),
-                ],
+                crate::emitted::Route::new([
+                    "work",
+                    "recover-check",
+                    work,
+                    "--apply",
+                    "--current-binding",
+                    request_binding.as_str(),
+                    "--json",
+                ]),
             );
             return Ok((
                 None,

@@ -160,15 +160,16 @@ pub(super) fn configure(command: &mut Command, tool: &Tool) {
         "hooks",
     ]);
     let quote = |value: &str| serde_json::to_string(value).expect("string serialization");
+    let serve = crate::emitted::Route::new(["work", "file-serve", tool.session.as_str()])
+        .config_text(&tool.config)
+        .run_by(&tool.executable)
+        .display_argv();
     for setting in [
         "approval_policy=\"never\"".into(),
-        format!(
-            "mcp_servers.exitbind-file.command={}",
-            quote(&tool.executable)
-        ),
+        format!("mcp_servers.exitbind-file.command={}", quote(&serve[0])),
         format!(
             "mcp_servers.exitbind-file.args={}",
-            serde_json::json!(["work", "file-serve", tool.session, "--config", tool.config])
+            serde_json::json!(serve[1..])
         ),
         "mcp_servers.exitbind-file.tools.file.approval_mode=\"approve\"".into(),
     ] {

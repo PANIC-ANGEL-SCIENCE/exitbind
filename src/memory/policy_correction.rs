@@ -112,29 +112,24 @@ pub(crate) fn run(
     let mut template = serde_json::to_value(&expected).map_err(|e| e.to_string())?;
     template["approved"] = json!(false);
     if !apply {
-        let command = vec![
-            crate::emitted::executable()?,
-            "memory".into(),
-            "correct-policy".into(),
-            ledger.into(),
-            "--from-config".into(),
-            previous
-                .path
-                .to_str()
-                .ok_or("prior configuration is not UTF-8")?
-                .into(),
-            "--reason".into(),
-            reason.into(),
-            "--owner-decision".into(),
-            crate::emitted::slot("OWNER_DECISION"),
-            "--apply".into(),
-            "--config".into(),
-            loaded
-                .path
-                .to_str()
-                .ok_or("configuration is not UTF-8")?
-                .into(),
-        ];
+        let from = previous
+            .path
+            .to_str()
+            .ok_or("prior configuration is not UTF-8")?;
+        let command = crate::emitted::Route::new([
+            "memory",
+            "correct-policy",
+            ledger,
+            "--from-config",
+            from,
+            "--reason",
+            reason,
+            "--owner-decision",
+            crate::emitted::slot("OWNER_DECISION").as_str(),
+            "--apply",
+        ])
+        .config(&loaded.path)
+        .argv()?;
         return Ok(
             json!({"effect":"no-change","status":"preview","ownerDecision":template,
             "meaning":"The project owner must explicitly approve these exact policy differences. This is not compatible revalidation or a grant from the old agent.",

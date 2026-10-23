@@ -405,7 +405,7 @@ pub(crate) fn start(
             json!({"work": verified.work(), "started": started, "sessionLink": link, "effect": "started"}),
         ),
         Err(error) => Ok(json!({"work": verified.work(), "started": started,
-            "sessionLink": {"error": error, "recovery": crate::emitted::command_text(&format!("work link-session {} --json", verified.work()))},
+            "sessionLink": {"error": error, "recovery": crate::emitted::command_line(&["work", "link-session", verified.work(), "--json"], Some(&loaded.path))},
             "effect": "started-link-pending"})),
     }
 }
@@ -583,42 +583,41 @@ fn apply_argv(
     owner_config: &str,
     owner_config_sha256: &str,
     followup: bool,
-) -> crate::work::response_recovery::RecoveryCommand {
-    let mut args = vec![
-        "work".into(),
-        if followup {
-            "quarantine-followup"
-        } else {
-            "quarantine"
-        }
-        .into(),
-        old_work.into(),
-        "--feature-config".into(),
-        options.feature_config.into(),
-        "--feature-work".into(),
-        options.feature_work.into(),
-        "--artifact-root".into(),
-        options.artifact_root.unwrap_or("product").into(),
-        "--artifact".into(),
-        options.artifact.into(),
-        "--reason".into(),
-        options.reason.into(),
-        "--request-id".into(),
-        options.request_id.into(),
-    ];
-    if let Some(binding) = options.current_binding {
-        args.extend(["--current-binding".into(), binding.into()]);
-    }
-    args.extend([
-        "--owner-config".into(),
-        owner_config.into(),
-        "--owner-config-sha256".into(),
-        owner_config_sha256.into(),
+) -> crate::emitted::Bounded {
+    let action = if followup {
+        "quarantine-followup"
+    } else {
+        "quarantine"
+    };
+    let mut route = crate::emitted::Route::new([
+        "work",
+        action,
+        old_work,
+        "--feature-config",
+        options.feature_config,
+        "--feature-work",
+        options.feature_work,
+        "--artifact-root",
+        options.artifact_root.unwrap_or("product"),
+        "--artifact",
+        options.artifact,
+        "--reason",
+        options.reason,
+        "--request-id",
+        options.request_id,
     ]);
-    args.extend(["--apply".into(), "--json".into(), "--config".into()]);
-    crate::work::response_recovery::bounded_argv(
-        args,
-        loaded.path.to_str(),
-        crate::work::compact::MAX_RESPONSE_BYTES - 1024,
-    )
+    if let Some(binding) = options.current_binding {
+        route = route.words(["--current-binding", binding]);
+    }
+    route
+        .words([
+            "--owner-config",
+            owner_config,
+            "--owner-config-sha256",
+            owner_config_sha256,
+            "--apply",
+            "--json",
+        ])
+        .config(&loaded.path)
+        .bounded(crate::work::compact::MAX_RESPONSE_BYTES - 1024)
 }

@@ -222,7 +222,7 @@ fn prepare(
         "differences":differences,"reason":reason});
     let response = json!({"effect":"no-change","status":"preview","ledger":ledger,
         "itemId":item["itemId"],"lessonId":lesson_id,"configSha256":new_hash,"revalidation":proof,
-        "nextAction":{"command":lesson_argv(loaded, actor, ledger, "inspect")?,"readOnly":true},
+        "nextAction":{"command":lesson_route(loaded, actor, ledger, "inspect").argv()?,"readOnly":true},
         "meaning":"explicit reviewed project-fact lineage; no Work, task grant, check, review approval or acceptance is transferred"});
     let item = item.clone();
     Ok(Prepared::Ready(Box::new(Ready {
@@ -235,25 +235,13 @@ fn prepare(
     })))
 }
 
-fn lesson_argv(loaded: &Loaded, actor: &str, ledger: &str, action: &str) -> Result<Value, String> {
-    let mut argv = vec![
-        crate::emitted::executable()?,
-        "memory".into(),
-        action.into(),
-    ];
-    if action != "inspect" {
-        argv.push(actor.into());
-    }
-    argv.extend([
-        ledger.into(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .into(),
-    ]);
-    Ok(json!(argv))
+/// The lesson lifecycle route `memory ACTION [ACTOR] LEDGER --config CONFIG`;
+/// `inspect` names no actor.
+fn lesson_route(loaded: &Loaded, actor: &str, ledger: &str, action: &str) -> crate::emitted::Route {
+    crate::emitted::Route::new(["memory", action])
+        .words((action != "inspect").then_some(actor))
+        .words([ledger])
+        .config(&loaded.path)
 }
 
 impl Ready {
@@ -304,7 +292,7 @@ impl Ready {
         } else {
             "inspect"
         };
-        response["nextAction"] = json!({"command":lesson_argv(loaded, actor, &ledger, next)?,
+        response["nextAction"] = json!({"command":lesson_route(loaded, actor, &ledger, next).argv()?,
             "readOnly":next == "inspect",
             "meaning":"retire this immutable lesson before correcting it; current guards still determine delivery"});
         append_event(&snapshot, &event)?;
@@ -480,25 +468,8 @@ pub(crate) fn next_action(
         "reviewed" => "promote",
         _ => "inspect",
     };
-    let mut argv = vec![
-        crate::emitted::executable()?,
-        "memory".into(),
-        action.into(),
-    ];
-    if action != "inspect" {
-        argv.push(actor.to_owned());
-    }
-    argv.extend([
-        ledger.to_owned(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .to_owned(),
-    ]);
     Ok(
-        json!({"command":argv,"readOnly":action == "inspect", "state":state,
+        json!({"command":lesson_route(loaded, actor, ledger, action).argv()?,"readOnly":action == "inspect", "state":state,
         "meaning":"current lesson lifecycle only; correction requires a new immutable source and ledger"}),
     )
 }

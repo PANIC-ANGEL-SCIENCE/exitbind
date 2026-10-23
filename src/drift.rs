@@ -220,92 +220,61 @@ fn member(class: Class) -> &'static Member {
         .expect("every class is registered")
 }
 
-fn text(path: &std::path::Path) -> String {
-    path.display().to_string()
-}
-
 impl Route<'_> {
-    fn argv(&self) -> (Vec<String>, bool) {
-        let executable =
-            crate::emitted::executable().unwrap_or_else(|_| "(executable unavailable)".to_owned());
+    /// The emitted route this follow-up names, and whether it only reads.
+    fn route(&self) -> (crate::emitted::Route, bool) {
+        use crate::emitted::Route as Emitted;
         match self {
             Route::Revalidate {
                 lead,
                 ledgers,
                 kept_copy,
                 config,
-            } => (
-                [
-                    executable,
-                    "memory".into(),
-                    "revalidate".into(),
-                    (*lead).into(),
-                ]
-                .into_iter()
-                .chain(ledgers.iter().cloned())
-                .chain([
-                    "--from-config".into(),
-                    kept_copy
-                        .map_or_else(|| crate::emitted::slot("PREVIOUS_CONFIG"), str::to_owned),
-                    "--reason".into(),
-                    crate::emitted::slot("REASON"),
-                    "--apply".into(),
-                    "--config".into(),
-                    text(config),
-                ])
-                .collect(),
-                false,
-            ),
+            } => {
+                let from = kept_copy
+                    .map_or_else(|| crate::emitted::slot("PREVIOUS_CONFIG"), str::to_owned);
+                let route = Emitted::new(["memory", "revalidate", *lead])
+                    .words(ledgers.iter().cloned())
+                    .words([
+                        "--from-config",
+                        from.as_str(),
+                        "--reason",
+                        crate::emitted::slot("REASON").as_str(),
+                        "--apply",
+                    ])
+                    .config(config);
+                (route, false)
+            }
             Route::Inspect { ledger, config } => (
-                vec![
-                    executable,
-                    "memory".into(),
-                    "inspect".into(),
-                    (*ledger).into(),
-                    "--config".into(),
-                    text(config),
-                ],
+                Emitted::new(["memory", "inspect", *ledger]).config(config),
                 true,
             ),
             Route::Resolve { agent, config } => (
-                vec![
-                    executable,
-                    "memory".into(),
-                    "resolve".into(),
-                    (*agent).into(),
-                    "--json".into(),
-                    "--config".into(),
-                    text(config),
-                ],
+                Emitted::new(["memory", "resolve", *agent, "--json"]).config(config),
                 true,
             ),
             Route::RecoveryShow => (
-                vec![
-                    executable,
-                    "session".into(),
-                    "recovery".into(),
-                    "show".into(),
-                    "--json".into(),
-                ],
+                Emitted::new(["session", "recovery", "show", "--json"]),
                 true,
             ),
             Route::Supersede { ledger, config } => {
-                let mut argv = vec![
-                    executable,
-                    "run".into(),
-                    "supersede".into(),
-                    ledger.map_or_else(|| crate::emitted::slot("OLD_LEDGER"), str::to_owned),
-                    "--workflow".into(),
-                    crate::emitted::slot("WORKFLOW"),
-                    "--goal".into(),
-                    crate::emitted::slot("GOAL"),
-                    "--ledger".into(),
-                    crate::emitted::slot("SUCCESSOR_LEDGER"),
-                ];
-                if let Some(config) = config {
-                    argv.extend(["--config".into(), text(config)]);
-                }
-                (argv, false)
+                let old = ledger.map_or_else(|| crate::emitted::slot("OLD_LEDGER"), str::to_owned);
+                let route = Emitted::new([
+                    "run",
+                    "supersede",
+                    old.as_str(),
+                    "--workflow",
+                    crate::emitted::slot("WORKFLOW").as_str(),
+                    "--goal",
+                    crate::emitted::slot("GOAL").as_str(),
+                    "--ledger",
+                    crate::emitted::slot("SUCCESSOR_LEDGER").as_str(),
+                ]);
+                let route = match config {
+                    Some(config) => route.config(config),
+                    None => route,
+                };
+                (route, false)
             }
         }
     }
@@ -329,7 +298,8 @@ pub(crate) fn refusal(
 
 /// The `nextAction` object for `route`, with the meaning the caller gives.
 pub(crate) fn next_action(route: &Route<'_>, meaning: &str) -> Value {
-    let (command, read_only) = route.argv();
+    let (route, read_only) = route.route();
+    let command = route.display_argv();
     json!({
         "command": command,
         "fill": crate::emitted::fill_flags(&command),

@@ -166,17 +166,23 @@ pub(super) fn valid_sha(value: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
+/// One line of at most `max` bytes with no surrounding space; a refusal
+/// states the limit and what the value broke.
 pub(super) fn bounded_text(value: &str, field: &str, max: usize) -> Result<(), String> {
-    if value.trim().is_empty()
-        || value.len() > max
-        || value.trim() != value
-        || value.chars().any(char::is_control)
-    {
-        return Err(format!(
-            "session recovery {field} must be non-empty bounded text"
-        ));
-    }
-    Ok(())
+    let broken = if value.trim().is_empty() {
+        "it is empty".to_owned()
+    } else if value.len() > max {
+        format!("it has {} bytes", value.len())
+    } else if value.chars().any(char::is_control) {
+        "it has a line break or control character".to_owned()
+    } else if value.trim() != value {
+        "it starts or ends with a space".to_owned()
+    } else {
+        return Ok(());
+    };
+    Err(format!(
+        "session recovery {field} must be one line of 1 to {max} bytes with no leading or trailing space; {broken}"
+    ))
 }
 
 pub(super) fn safe_relative_path(value: &str) -> bool {
@@ -466,7 +472,22 @@ pub(super) fn write_hint_locked(
 
 #[cfg(test)]
 mod tests {
-    use super::safe_relative_path;
+    use super::{bounded_text, safe_relative_path};
+
+    #[test]
+    fn a_text_refusal_states_the_limit_and_what_was_broken() {
+        assert!(bounded_text("step", "current step", 8).is_ok());
+        for (value, broken) in [
+            ("", "it is empty"),
+            ("123456789", "it has 9 bytes"),
+            ("a\nb", "line break"),
+            (" padded", "starts or ends with a space"),
+        ] {
+            let error = bounded_text(value, "current step", 8).unwrap_err();
+            assert!(error.contains("one line of 1 to 8 bytes"), "{error}");
+            assert!(error.contains(broken), "{error}");
+        }
+    }
 
     #[test]
     fn safe_relative_path_preserves_unicode_and_rejects_noncanonical_components() {

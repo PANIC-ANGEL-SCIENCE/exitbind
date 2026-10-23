@@ -51,7 +51,7 @@ pub(crate) fn packet(loaded: &Loaded, work: &str, question: &str) -> Result<Valu
             "permissions":"Existing host rights and bounded task authority only.",
             "return":"Claim, exact evidence reference, counterexample or discriminator, and what would change the conclusion."},
         "delivery":"Put the completed evidenceTemplate in the earlyEvidence field of the ordinary JSON result artifact. Work detail derives applicability and links the actual Lead decision and final check.",
-        "validation":{"route":crate::work::compact::continuation_route(&loaded.path,vec!["work".into(),"challenge".into(),"validate".into(),work.into(),"--json".into()]),
+        "validation":{"route":crate::work::compact::continuation_route(&loaded.path,crate::emitted::Route::new(["work","challenge","validate",work,"--json"])),
             "stdin":"one earlyEvidence report or ordinary result JSON containing earlyEvidence; maximum 65536 bytes",
             "checks":["required fields and bounded values","two distinct contribution sessions","command hash","current Work, requirement and candidate identity","safe current probe source"],
             "limits":"A valid response confirms shape and identity only; it does not authenticate claims or prove probe execution."},

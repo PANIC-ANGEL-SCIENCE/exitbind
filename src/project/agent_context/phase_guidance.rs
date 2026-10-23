@@ -70,27 +70,19 @@ pub(super) fn overflow_entry(
     bytes: usize,
     reason: &str,
 ) -> Result<Value, String> {
-    let command = vec![
-        crate::emitted::executable()?,
-        "project".into(),
-        "context".into(),
-        "guidance".into(),
-        reference["itemId"].as_str().unwrap_or_default().to_owned(),
-        "--agent".into(),
-        agent.to_owned(),
-        "--expected-sha256".into(),
-        reference["sourceSha256"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned(),
-        "--json".into(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .to_owned(),
-    ];
+    let command = crate::emitted::Route::new([
+        "project",
+        "context",
+        "guidance",
+        reference["itemId"].as_str().unwrap_or_default(),
+        "--agent",
+        agent,
+        "--expected-sha256",
+        reference["sourceSha256"].as_str().unwrap_or_default(),
+        "--json",
+    ])
+    .config(&loaded.path)
+    .argv()?;
     Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
         "readRoute":{"command":command,"readOnly":true,"sameConfigRequired":true,
             "sameExecutableRequired":true}}))

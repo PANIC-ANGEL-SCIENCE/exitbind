@@ -40,13 +40,20 @@ fn work_line_forms(
     index: Option<usize>,
     executable: &str,
 ) -> [String; 3] {
+    let read =
+        crate::emitted::Route::new(["work", "detail", item.work.as_str(), "--view", "action"])
+            .config_text(&item.config_path)
+            .run_by(executable)
+            .text();
     let core = format!(
-        "{}current Work {} ({} of Goal {goal}); read: {executable} work detail {} --view action --config {}",
+        "{}current Work {} ({} of Goal {goal}); read: {read}",
         index.map(|value| format!("{value}) ")).unwrap_or_default(),
         item.work,
-        if item.source == "journey_member" { "member" } else { "mapped Work" },
-        item.work,
-        item.config_path,
+        if item.source == "journey_member" {
+            "member"
+        } else {
+            "mapped Work"
+        },
     );
     let observation = item
         .observation
@@ -125,10 +132,10 @@ pub(super) fn derived_hook_text(
         shown += 1;
     }
     if total > shown {
-        out.push_str(&format!(
-            " {} more open Work(s): `{executable} session recovery show --json`.",
-            total - shown
-        ));
+        let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"])
+            .run_by(executable)
+            .text();
+        out.push_str(&format!(" {} more open Work(s): `{show}`.", total - shown));
     }
     if !trees.dirty.is_empty() {
         let mut listed = Vec::new();

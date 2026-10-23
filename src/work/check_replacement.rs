@@ -300,14 +300,14 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
                 json!({"effect":"no-change","state":"existing_successor_recovered","work":work,
                 "predecessor":{"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"]},
                 "successor":{"work":successor_work,"ledger":successor_ledger,"runId":claim["newRunId"],"checkReplacement":requested_relation},
-                "recovery":{"kind":"read_only","command":["work","detail",successor_work,"--json"],"meaning":"Read the committed successor. Do not repeat replacement."}}),
+                "recovery":detail_recovery(loaded, &successor_work, "Read the committed successor. Do not repeat replacement.")}),
             );
         }
         return Ok(
             json!({"effect":"no-change","state":"partial_successor_claim","work":work,
             "predecessor":{"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"]},
             "successor":{"work":successor_work,"ledger":successor_ledger,"runId":claim["newRunId"],"checkReplacement":requested_relation,"ledgerPresent":false},
-            "recovery":{"kind":"read_only","command":["work","detail",work,"--json"],"meaning":"Inspect the predecessor's verified or unverified successor relation. Do not repeat replacement."}}),
+            "recovery":detail_recovery(loaded, work, "Inspect the predecessor's verified or unverified successor relation. Do not repeat replacement.")}),
         );
     }
     if !options.apply {
@@ -323,30 +323,30 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             json!({"ledger":new_ledger,"workflow":workflow,"goalSha256":crate::evidence::hash::text(goal),
                 "checkCommandSha256":policy.command_sha256,"proofOrigin":policy.origin.as_str()})
         };
-        let mut apply_argv = vec![
-            "work".into(),
-            "replace-check".into(),
-            work.into(),
-            "--reason".into(),
-            options.reason.into(),
-            "--classification".into(),
-            "defective-contract".into(),
-            "--current-binding".into(),
-            binding.into(),
-            "--apply".into(),
-        ];
+        let mut apply_argv = crate::emitted::Route::new([
+            "work",
+            "replace-check",
+            work,
+            "--reason",
+            options.reason,
+            "--classification",
+            "defective-contract",
+            "--current-binding",
+            binding,
+            "--apply",
+        ]);
         if let Some(policy) = &new_pre_return_policy {
-            apply_argv.extend(["--pre-return-command".into(), policy.command.clone()]);
-            apply_argv.extend([
-                "--pre-return-timeout-ms".into(),
+            apply_argv = apply_argv.words(["--pre-return-command", policy.command.as_str()]);
+            apply_argv = apply_argv.words([
+                "--pre-return-timeout-ms".to_owned(),
                 policy.timeout_ms.to_string(),
             ]);
-            apply_argv.extend([
-                "--pre-return-capture-bytes".into(),
+            apply_argv = apply_argv.words([
+                "--pre-return-capture-bytes".to_owned(),
                 policy.capture_limit_bytes.to_string(),
             ]);
         } else if let Some(policy) = &new_check_policy {
-            apply_argv.extend(["--check-command".into(), policy.command.clone()]);
+            apply_argv = apply_argv.words(["--check-command", policy.command.as_str()]);
         }
         return Ok(json!({
             "effect":"no-change", "state":"preview", "work":work,
@@ -402,7 +402,7 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         "effect":"committed", "state":"successor_created", "work":work,
         "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"])},
         "successor":value,
-        "recovery":{"kind":"read_only","command":["work","detail",value["work"],"--json"],"meaning":"The successor is committed. Inspect this current Work route; do not repeat replacement."}
+        "recovery":detail_recovery(loaded, value["work"].as_str().unwrap_or_default(), "The successor is committed. Inspect this current Work route; do not repeat replacement.")
     }))
 }
 
@@ -443,4 +443,15 @@ fn lead_native_for_agent<'a>(start: &'a Value, selected: &str) -> Result<&'a str
         .next()
         .filter(|name| !name.trim().is_empty())
         .ok_or("configured Lead native identity is empty".into())
+}
+
+/// The read-only route to a Work's detail after a replacement step.
+fn detail_recovery(loaded: &Loaded, work: &str, meaning: &str) -> Value {
+    let mut route = crate::emitted::Route::new(["work", "detail", work, "--json"])
+        .config(&loaded.path)
+        .bounded(2048)
+        .command_json();
+    route["kind"] = json!("read_only");
+    route["meaning"] = json!(meaning);
+    route
 }

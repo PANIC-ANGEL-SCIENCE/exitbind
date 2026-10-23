@@ -1,6 +1,7 @@
 //! State-specific, executable next-action descriptors for the Lead.
 
 use crate::config::Loaded;
+use crate::emitted::Route;
 use serde_json::{json, Value};
 
 mod environmental;
@@ -8,21 +9,14 @@ pub(crate) mod fill;
 mod quarantine;
 mod repair;
 
-pub(super) fn command(loaded: &Loaded, mut suffix: Vec<String>) -> Value {
-    suffix.push("--config".into());
-    let command = super::response_recovery::bounded_argv(suffix, loaded.path.to_str(), 16 * 1024);
-    json!({
-        "argv": command.argv,
-        "sameConfigRequired": command.same_config,
-        "sameExecutableRequired": command.same_executable,
-    })
+/// A printed action form's command: the route with this configuration,
+/// bounded to the action view's budget.
+pub(super) fn command(loaded: &Loaded, route: Route) -> Value {
+    route.config(&loaded.path).bounded(16 * 1024).json()
 }
 
 pub(crate) fn current_detail_command(loaded: &Loaded, work: &str) -> Value {
-    command(
-        loaded,
-        vec!["work".into(), "detail".into(), work.into(), "--json".into()],
-    )
+    command(loaded, Route::new(["work", "detail", work, "--json"]))
 }
 
 /// Forward the held-result admission check to its existing owner. Recovery
@@ -38,7 +32,7 @@ pub(crate) fn has_held_result(
 
 fn choice(
     loaded: &Loaded,
-    suffix: Vec<String>,
+    suffix: Route,
     label: &str,
     placeholders: &[&str],
     input: Value,
@@ -135,18 +129,18 @@ fn return_choice(
 ) -> Value {
     choice(
         loaded,
-        vec![
-            "work".into(),
-            "return".into(),
-            work.into(),
-            assignment.into(),
-            "--current-binding".into(),
-            binding.into(),
-            "--outcome".into(),
-            outcome.into(),
-            "--reason".into(),
-            crate::emitted::slot("REASON"),
-        ],
+        Route::new([
+            "work",
+            "return",
+            work,
+            assignment,
+            "--current-binding",
+            binding,
+            "--outcome",
+            outcome,
+            "--reason",
+            crate::emitted::slot("REASON").as_str(),
+        ]),
         label,
         &["REASON"],
         return_input(),
@@ -216,26 +210,26 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                     "mechanicalAction": Value::Null,
                     "meaning": "The check termination is unknown. Preserve this blocked Work; no retry or replacement is available.",
                     "diagnostic": {
-                        "command": command(loaded, vec!["work".into(), "recover-check".into(), work.into(), "--json".into()]),
+                        "command": command(loaded, Route::new(["work", "recover-check", work, "--json"])),
                         "readOnly": true, "inspectionOnly": true,
                         "meaning": "Inspect the retained unknown observation without execution or check credit."
                     }
                 });
             }
-            let suffix = vec![
-                "work".into(),
-                "replace-check".into(),
-                work.into(),
-                "--check-command".into(),
-                crate::emitted::slot("NEW_CHECK_COMMAND"),
-                "--reason".into(),
-                crate::emitted::slot("REASON"),
-                "--classification".into(),
-                "defective-contract".into(),
-                "--current-binding".into(),
-                binding.into(),
-                "--apply".into(),
-            ];
+            let suffix = Route::new([
+                "work",
+                "replace-check",
+                work,
+                "--check-command",
+                crate::emitted::slot("NEW_CHECK_COMMAND").as_str(),
+                "--reason",
+                crate::emitted::slot("REASON").as_str(),
+                "--classification",
+                "defective-contract",
+                "--current-binding",
+                binding,
+                "--apply",
+            ]);
             let mut choices = vec![json!({
                 "label": "replace an explicitly defective frozen check",
                 "command": command(loaded, suffix),
@@ -249,13 +243,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             if let Some(attempt_id) = &diagnostic_attempt {
                 choices.push(json!({
                     "label": "replace an explicitly defective frozen pre-return check",
-                    "command": command(loaded, vec![
-                        "work".into(), "replace-check".into(), work.into(),
-                        "--pre-return-command".into(), crate::emitted::slot("NEW_PRE_RETURN_COMMAND"),
-                        "--reason".into(), crate::emitted::slot("REASON"),
-                        "--classification".into(), "defective-contract".into(),
-                        "--current-binding".into(), binding.into(),
-                    ]),
+                    "command": command(loaded, Route::new(["work", "replace-check", work, "--pre-return-command", crate::emitted::slot("NEW_PRE_RETURN_COMMAND").as_str(), "--reason", crate::emitted::slot("REASON").as_str(), "--classification", "defective-contract", "--current-binding", binding])),
                     "placeholders": ["NEW_PRE_RETURN_COMMAND", "REASON"],
                     "stdin": {"required": false, "kind": "none"},
                     "source": {"kind":"blocked_worker","diagnosticAttemptId":attempt_id},
@@ -276,19 +264,19 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                 Some("check_failed" | "preservation_failed")
             )
         {
-            let suffix = vec![
-                "work".into(),
-                "replace-check".into(),
-                work.into(),
-                "--check-command".into(),
-                crate::emitted::slot("NEW_CHECK_COMMAND"),
-                "--reason".into(),
-                crate::emitted::slot("REASON"),
-                "--classification".into(),
-                "defective-contract".into(),
-                "--current-binding".into(),
-                binding.into(),
-            ];
+            let suffix = Route::new([
+                "work",
+                "replace-check",
+                work,
+                "--check-command",
+                crate::emitted::slot("NEW_CHECK_COMMAND").as_str(),
+                "--reason",
+                crate::emitted::slot("REASON").as_str(),
+                "--classification",
+                "defective-contract",
+                "--current-binding",
+                binding,
+            ]);
             return json!({"version":1,"state":"lead_check_replacement_preview",
                 "binding":binding,"leadChoiceRequired":true,
                 "choices":[{"label":"preview replacement of an explicitly defective frozen check",
@@ -300,7 +288,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         return json!({"version": 1, "state": next["action"], "binding": binding,
             "leadChoiceRequired": false, "choices": [],
             "mechanicalAction": if next["action"] == "check" {
-                json!({"command": command(loaded, vec!["work".into(), "check".into(), work.into()]),
+                json!({"command": command(loaded, Route::new(["work", "check", work])),
                     "meaning": "execute only the current frozen applicable check; failure requires a Lead decision",
                     "executionOptions": {"timeoutMs": {"option": "--timeout-ms", "default": 1_800_000, "minimum": 1, "maximum": crate::run::check_observation::MAX_TIMEOUT_MS}, "repeat": "an admitted observation is never automatically retried"}})
             } else { Value::Null }});
@@ -350,12 +338,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         if next["packet"]["checkObservation"]["state"] == "running" {
             let mut preview = choice(
                 loaded,
-                vec![
-                    "work".into(),
-                    "recover-check".into(),
-                    work.into(),
-                    "--json".into(),
-                ],
+                Route::new(["work", "recover-check", work, "--json"]),
                 "preview_ended_failure_recovery",
                 &[],
                 no_input(),
@@ -374,22 +357,22 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         if available.contains(&"repair") {
             choices.push(choice(
                 loaded,
-                vec![
-                    "work".into(),
-                    "disposition".into(),
-                    work.into(),
-                    assignment.into(),
-                    "--current-binding".into(),
-                    binding.into(),
-                    "--decision".into(),
-                    "repair".into(),
-                    "--reason".into(),
-                    crate::emitted::slot("REASON"),
-                    "--repair-boundary".into(),
-                    crate::emitted::slot("REPAIR_BOUNDARY"),
-                    "--regression".into(),
-                    crate::emitted::slot("REGRESSION"),
-                ],
+                Route::new([
+                    "work",
+                    "disposition",
+                    work,
+                    assignment,
+                    "--current-binding",
+                    binding,
+                    "--decision",
+                    "repair",
+                    "--reason",
+                    crate::emitted::slot("REASON").as_str(),
+                    "--repair-boundary",
+                    crate::emitted::slot("REPAIR_BOUNDARY").as_str(),
+                    "--regression",
+                    crate::emitted::slot("REGRESSION").as_str(),
+                ]),
                 "repair",
                 &["REASON", "REPAIR_BOUNDARY", "REGRESSION"],
                 no_input(),
@@ -398,18 +381,18 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         if available.contains(&"defer") {
             choices.push(choice(
                 loaded,
-                vec![
-                    "work".into(),
-                    "disposition".into(),
-                    work.into(),
-                    assignment.into(),
-                    "--current-binding".into(),
-                    binding.into(),
-                    "--decision".into(),
-                    "defer".into(),
-                    "--reason".into(),
-                    crate::emitted::slot("REASON"),
-                ],
+                Route::new([
+                    "work",
+                    "disposition",
+                    work,
+                    assignment,
+                    "--current-binding",
+                    binding,
+                    "--decision",
+                    "defer",
+                    "--reason",
+                    crate::emitted::slot("REASON").as_str(),
+                ]),
                 "defer",
                 &["REASON"],
                 no_input(),
@@ -418,18 +401,18 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         if available.contains(&"reject") {
             choices.push(choice(
                 loaded,
-                vec![
-                    "work".into(),
-                    "disposition".into(),
-                    work.into(),
-                    assignment.into(),
-                    "--current-binding".into(),
-                    binding.into(),
-                    "--decision".into(),
-                    "reject".into(),
-                    "--reason".into(),
-                    crate::emitted::slot("REASON"),
-                ],
+                Route::new([
+                    "work",
+                    "disposition",
+                    work,
+                    assignment,
+                    "--current-binding",
+                    binding,
+                    "--decision",
+                    "reject",
+                    "--reason",
+                    crate::emitted::slot("REASON").as_str(),
+                ]),
                 "reject",
                 &["REASON"],
                 no_input(),
@@ -438,24 +421,24 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         if available.contains(&"supersede") {
             choices.push(choice(
                 loaded,
-                vec![
-                    "work".into(),
-                    "disposition".into(),
-                    work.into(),
-                    assignment.into(),
-                    "--current-binding".into(),
-                    binding.into(),
-                    "--decision".into(),
-                    "supersede".into(),
-                    "--reason".into(),
-                    crate::emitted::slot("REASON"),
-                    "--repair-boundary".into(),
-                    crate::emitted::slot("REPAIR_BOUNDARY"),
-                    "--regression".into(),
-                    crate::emitted::slot("REGRESSION"),
-                    "--successor-basis".into(),
-                    crate::emitted::slot("SUCCESSOR_BASIS_JSON"),
-                ],
+                Route::new([
+                    "work",
+                    "disposition",
+                    work,
+                    assignment,
+                    "--current-binding",
+                    binding,
+                    "--decision",
+                    "supersede",
+                    "--reason",
+                    crate::emitted::slot("REASON").as_str(),
+                    "--repair-boundary",
+                    crate::emitted::slot("REPAIR_BOUNDARY").as_str(),
+                    "--regression",
+                    crate::emitted::slot("REGRESSION").as_str(),
+                    "--successor-basis",
+                    crate::emitted::slot("SUCCESSOR_BASIS_JSON").as_str(),
+                ]),
                 "supersede",
                 &[
                     "REASON",
@@ -520,19 +503,19 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         ));
         choices.push(choice(
             loaded,
-            vec![
-                "work".into(),
-                "replace-check".into(),
-                work.into(),
-                "--check-command".into(),
-                crate::emitted::slot("NEW_CHECK_COMMAND"),
-                "--reason".into(),
-                crate::emitted::slot("REASON"),
-                "--classification".into(),
-                "defective-contract".into(),
-                "--current-binding".into(),
-                binding.into(),
-            ],
+            Route::new([
+                "work",
+                "replace-check",
+                work,
+                "--check-command",
+                crate::emitted::slot("NEW_CHECK_COMMAND").as_str(),
+                "--reason",
+                crate::emitted::slot("REASON").as_str(),
+                "--classification",
+                "defective-contract",
+                "--current-binding",
+                binding,
+            ]),
             "preview replacement of an explicitly defective frozen check",
             &["NEW_CHECK_COMMAND", "REASON"],
             no_input(),
@@ -546,15 +529,8 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             .and_then(|name| loaded.agent(name))
             .is_some_and(|agent| agent.runtime.host.as_deref() == Some("codex"))
     {
-        let suffix = vec![
-            "work".into(),
-            "act".into(),
-            work.into(),
-            "--current-binding".into(),
-            binding.into(),
-        ];
-        let mut inspect = suffix.clone();
-        inspect.push("--inspect".into());
+        let suffix = Route::new(["work", "act", work, "--current-binding", binding]);
+        let inspect = suffix.clone().words(["--inspect"]);
         result["productManaged"] = json!({"host": "codex", "command": command(loaded, suffix),
             "inspect": {"command": command(loaded, inspect), "readOnly": true},
             "profileSha256": next["packet"]["profileSha256"],
@@ -589,9 +565,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         }
         if grant.is_none() && governor_phase == Some("ready") && !held {
             result["beforeEditing"] = json!({
-                "command": command(loaded, vec!["work".into(), "permit".into(), work.into(),
-                    assignment.into(), "--operation".into(), crate::emitted::slot("OPERATION"),
-                    "--request-id".into(), format!("permit-{binding}")]),
+                "command": command(loaded, Route::new(["work", "permit", work, assignment, "--operation", crate::emitted::slot("OPERATION").as_str(), "--request-id", format!("permit-{binding}").as_str()])),
                 "placeholders": ["OPERATION"],
                 "inputConstraints": {
                     "OPERATION": {

@@ -41,12 +41,7 @@ fn exact_assignment(name: &str, value: &str) -> String {
 
 /// The read route for a run ledger, naming the executable this process runs as.
 pub(crate) fn read_command(action: &str, config: &str, ledger: &str) -> String {
-    read_command_with(
-        crate::emitted::command_text("").trim_end(),
-        action,
-        config,
-        ledger,
-    )
+    read_command_with(&crate::emitted::executable_word(), action, config, ledger)
 }
 
 fn read_command_with(executable: &str, action: &str, config: &str, ledger: &str) -> String {
@@ -173,7 +168,7 @@ mod tests {
             format!("{executable} run inspect --config='config.json' -- 'ledger.json'")
         );
         assert!(super::read_command("inspect", "c", "l")
-            .starts_with(&crate::emitted::command_text("run")[..]));
+            .starts_with(&format!("{} run ", crate::emitted::executable_word())));
     }
 
     #[cfg(unix)]

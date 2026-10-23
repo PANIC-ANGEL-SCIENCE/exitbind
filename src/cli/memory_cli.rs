@@ -29,7 +29,17 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 );
             }
             let mut form = memory::lessons::input_form(l)?;
-            form["validationRoute"] = json!({"command":[crate::emitted::executable()?,"memory","form",crate::emitted::slot("SOURCE"),"--scope",scope,"--json","--config",l.path.to_str().ok_or("configuration path is not UTF-8")?],
+            let config = l.path.to_str().ok_or("configuration path is not UTF-8")?;
+            let route = crate::emitted::Route::new([
+                "memory",
+                "form",
+                crate::emitted::slot("SOURCE").as_str(),
+                "--scope",
+                scope,
+                "--json",
+            ])
+            .config_text(config);
+            form["validationRoute"] = json!({"command":route.argv()?,
                 "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current owner/project/config/profile binding only; no lifecycle or qualification decision"});
             form["validation"] = a
                 .positional

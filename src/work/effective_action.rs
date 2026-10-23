@@ -63,8 +63,9 @@ pub(crate) fn project(response: &Value) -> Value {
         "source":{"version":1,"owner":"work actionForms/current","location":if response["actionForms"].is_object() { "actionForms" } else if response.get("current").is_some() { "current.actionForm" } else { "next.current.actionForm" }}})
 }
 
-/// A sign for the Lead, never a refusal: an open assignment is done by the
-/// named delegated agent, not by the reader of this detail.
+/// Who performs the open assignment, never a refusal: the same line is true
+/// for the Lead, who delegates it to that native agent, and for the agent
+/// itself, who performs it.
 fn delegation(response: &Value, current: &Value, forms: &Value) -> Value {
     let recipient = [
         &response["recipient"],
@@ -79,18 +80,27 @@ fn delegation(response: &Value, current: &Value, forms: &Value) -> Value {
         return Value::Null;
     };
     let role = recipient["role"].as_str().unwrap_or(agent);
+    let native = recipient["nativeName"]
+        .as_str()
+        .or(response["next"]["packet"]["nativeTaskName"].as_str())
+        .or(response["recipientContext"]["nativeName"].as_str())
+        .unwrap_or(agent);
     let assignment = recipient["assignment"]
         .as_str()
         .or(forms["assignment"].as_str())
         .or(current["assignment"].as_str());
-    let text = match assignment {
-        Some(assignment) => {
-            format!("next action: delegate to {role} agent '{agent}' (assignment {assignment})")
-        }
-        None => format!("next action: delegate to {role} agent '{agent}'"),
+    let task = assignment.map_or_else(
+        || "the pending assignment".to_owned(),
+        |assignment| format!("assignment {assignment}"),
+    );
+    let configured = if native == agent {
+        String::new()
+    } else {
+        format!(" (configured as '{agent}')")
     };
-    json!({"nextAction":"delegate","agent":agent,"role":role,"assignment":assignment,"text":text,
-        "meaning":"a sign for the Lead, not a refusal: the delegated agent performs this assignment with its beforeEditing and choices forms"})
+    let text = format!("next action: {role} agent '{native}' performs {task}{configured}");
+    json!({"nextAction":"delegate","agent":agent,"nativeName":native,"role":role,"assignment":assignment,"text":text,
+        "meaning":"who performs this assignment, not a refusal: that agent uses its beforeEditing and choices forms; a Lead delegates the assignment to that native agent"})
 }
 
 pub(crate) fn attach(response: &Value) -> Value {
@@ -121,7 +131,13 @@ mod tests {
         assert_eq!(project(&delegated)["delegation"]["nextAction"], "delegate");
         assert_eq!(
             project(&delegated)["delegation"]["text"],
-            "next action: delegate to worker agent 'builder' (assignment sma_1)"
+            "next action: worker agent 'builder' performs assignment sma_1"
+        );
+        let mut named = delegated.clone();
+        named["recipient"]["nativeName"] = json!("sonic");
+        assert_eq!(
+            project(&named)["delegation"]["text"],
+            "next action: worker agent 'sonic' performs assignment sma_1 (configured as 'builder')"
         );
         let mut check = delegated.clone();
         check["current"]["action"] = json!("check");

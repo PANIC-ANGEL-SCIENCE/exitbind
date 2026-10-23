@@ -13,17 +13,11 @@ pub(super) fn response(
     let event = rendered.as_ref().ok().and_then(|rendered| {
         record.and_then(|record| crate::presentation_events::goal_completion(record, rendered))
     });
-    let mut argv = vec![
-        "goal".to_owned(),
-        "status".to_owned(),
-        "--view".to_owned(),
-        "event".to_owned(),
-        "--json".to_owned(),
-    ];
+    let mut route = crate::emitted::Route::new(["goal", "status", "--view", "event", "--json"]);
     if project {
-        argv.push("--project".to_owned());
+        route = route.words(["--project"]);
     }
-    let recovery = crate::work::compact::continuation_route(&loaded.path, argv);
+    let recovery = crate::work::compact::continuation_route(&loaded.path, route);
     let mut metadata = event.clone().unwrap_or(Value::Null);
     if let Some(object) = metadata.as_object_mut() {
         object.remove("terminal");

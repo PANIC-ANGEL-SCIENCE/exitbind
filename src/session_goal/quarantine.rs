@@ -516,7 +516,11 @@ pub(crate) fn record(owner: &Loaded, request: Request<'_>) -> Result<Value, Stri
     let current = super::read(&root)?.ok_or("no native session Goal is incorporated")?;
     owner_scope(owner, &current)?;
     let (selected, binding, _residual) = current_state(owner, &source, &current, &request)?;
-    let apply_suffix = vec![
+    let owner_config = owner
+        .path
+        .to_str()
+        .ok_or("owner configuration path is not valid UTF-8")?;
+    let apply_command = crate::emitted::Route::new([
         "goal",
         "quarantine",
         request.old_work,
@@ -532,21 +536,9 @@ pub(crate) fn record(owner: &Loaded, request: Request<'_>) -> Result<Value, Stri
         binding.as_str(),
         "--apply",
         "--json",
-        "--config",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<Vec<_>>();
-    let apply_command = crate::work::response_recovery::bounded_argv(
-        apply_suffix,
-        Some(
-            owner
-                .path
-                .to_str()
-                .ok_or("owner configuration path is not valid UTF-8")?,
-        ),
-        16 * 1024,
-    );
+    ])
+    .config_text(owner_config)
+    .bounded(16 * 1024);
     if !request.apply {
         return Ok(
             json!({"kind":"native_goal_quarantine_preview","readOnly":true,

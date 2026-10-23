@@ -426,8 +426,10 @@ fn attested_check(view: &Value, target: &Value) -> bool {
     crate::run::environmental_check::target_has_check(events, target, true)
 }
 
-fn command(args: &[&str]) -> Value {
-    json!({"program": crate::compatibility::profile().caller, "args": args})
+/// The help route as `{"program", "args"}`: the product's command name and
+/// the route's words.
+fn command(route: crate::emitted::Route) -> Value {
+    json!({"program": crate::compatibility::profile().caller, "args": route.suffix()})
 }
 
 fn label(target: &Value) -> String {
@@ -471,7 +473,7 @@ fn help(
     inputs: &InputContext,
     config: &std::path::Path,
 ) -> Value {
-    let next_command = command(&["work", "next", work]);
+    let next_command = command(crate::emitted::Route::new(["work", "next", work]));
     let (what, actor, summary, cmd, owner) = if view["status"] != "running" {
         let status = view["status"].as_str().unwrap_or("unknown");
         let (what, summary, owner) = match status {
@@ -552,7 +554,7 @@ fn help(
             what,
             "exitbind",
             format!("run the bound {}", label(missing)),
-            command(&["work", "check", work]),
+            command(crate::emitted::Route::new(["work", "check", work])),
             "not_required",
         )
     } else if next["action"] == "lead_decision" && next_outcome_is(next, "scoped") {

@@ -54,21 +54,16 @@ pub(super) fn next_action(
         }
         (true, None)
     };
-    let mut args = vec![
-        "goal".into(),
-        "close".into(),
-        "--goal-id".into(),
-        goal_id.into(),
-    ];
+    let mut args = crate::emitted::Route::new(["goal", "close", "--goal-id", goal_id]);
     if direct {
-        args.push("--direct".into());
+        args = args.words(["--direct"]);
     }
     if let Some(reference) = result_ref {
-        args.extend(["--result-ref".into(), reference.into()]);
+        args = args.words(["--result-ref", reference]);
     }
-    args.extend(["--view".into(), "event".into(), "--json".into()]);
+    args = args.words(["--view", "event", "--json"]);
     if project_selected {
-        args.push("--project".into());
+        args = args.words(["--project"]);
     }
     let mut route = crate::work::compact::continuation_route(&loaded.path, args);
     route["ownerDecisionRequired"] = json!(true);

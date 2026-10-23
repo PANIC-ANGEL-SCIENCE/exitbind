@@ -117,7 +117,7 @@ pub(crate) fn select(
     let binding = preview_binding(loaded, &digest, prior.as_ref(), reason);
     let mut response = json!({"version":1,"state":"preview","effect":"no-change","currentBinding":binding,
         "selection":spec,"reason":reason,"declaration":"Caller records an existing owner decision; this is not authentication or an inferred approval.",
-        "apply":{"command":argv(loaded,&["select",source,"--reason",reason,"--current-binding",&binding,"--apply"])?}});
+        "apply":{"command":argv(loaded,&["select",source,"--reason",reason,"--current-binding",&binding,"--apply"]).argv()?}});
     if !apply {
         return Ok(response);
     }
@@ -250,8 +250,8 @@ fn projection(loaded: &Loaded, record: &Record) -> Result<Value, String> {
         let status = work_status(loaded,claim);
         Ok(json!({"taskId":claim.task_id,"planId":claim.plan.id,"plan":claim.plan,"work":claim.work,
             "actualWork":status.as_ref().ok(),"unresolved":status.err(),
-            "detail":{"command":work_argv(loaded,&claim.work)?},
-            "savedStartRecovery":{"command":argv(loaded,&["recover",&record.specification.mandate.id,"--task",&claim.task_id])?}}))
+            "detail":{"command":work_argv(loaded,&claim.work).argv()?},
+            "savedStartRecovery":{"command":argv(loaded,&["recover",&record.specification.mandate.id,"--task",&claim.task_id]).argv()?}}))
     }).collect::<Result<Vec<Value>,String>>()?;
     let estimated: u64 = record.claims.iter().map(|c| c.plan.estimated_actions).sum();
     let unresolved = record
@@ -308,29 +308,17 @@ pub(crate) fn stop(loaded: &Loaded, mandate: &str, reason: &str) -> Result<Value
     })
 }
 
-pub(super) fn argv(loaded: &Loaded, tail: &[&str]) -> Result<Vec<String>, String> {
-    let mut args = vec![
-        crate::emitted::executable()?,
-        "project".into(),
-        "advance".into(),
-    ];
-    args.extend(tail.iter().map(|s| s.to_string()));
-    args.extend([
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .into(),
-        "--json".into(),
-    ]);
-    Ok(args)
+/// The `project advance` route with these words and this configuration.
+pub(super) fn argv(loaded: &Loaded, tail: &[&str]) -> crate::emitted::Route {
+    crate::emitted::Route::new(["project", "advance"])
+        .words(tail.iter().copied())
+        .words(["--json"])
+        .config(&loaded.path)
 }
 
-pub(super) fn work_argv(loaded: &Loaded, work: &str) -> Result<Vec<String>, String> {
-    let mut args = argv(loaded, &[])?;
-    args.splice(1..3, ["work".into(), "detail".into(), work.into()]);
-    Ok(args)
+/// The `work detail` route for `work` with this configuration.
+pub(super) fn work_argv(loaded: &Loaded, work: &str) -> crate::emitted::Route {
+    crate::emitted::Route::new(["work", "detail", work, "--json"]).config(&loaded.path)
 }
 
 pub(crate) use admission::admit;

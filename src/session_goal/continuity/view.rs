@@ -2,10 +2,10 @@
 
 use super::*;
 
-fn route(loaded: &Loaded, work_id: &str, tail: Vec<String>) -> Value {
-    let mut suffix = vec!["work".into(), "continuation".into(), work_id.into()];
-    suffix.extend(tail);
-    crate::work::compact::continuation_route(&loaded.path, suffix)
+fn route(loaded: &Loaded, work_id: &str, tail: &[&str]) -> Value {
+    let route =
+        crate::emitted::Route::new(["work", "continuation", work_id]).words(tail.iter().copied());
+    crate::work::compact::continuation_route(&loaded.path, route)
 }
 
 fn mutation_context(work_id: &str, goal_revision: &Value, binding_revision: u64) -> Value {
@@ -155,7 +155,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
             valid.push(
                 json!({"relation":support,"integrityCurrent":current,"acquiredConditionsCurrent":acquired_conditions_current,
                 "revisionCurrent":revision_current,"applicableCurrent":applicable,
-                "exactRead":{"command":"run inspect","ledger":ledger,"event":event}}),
+                "exactRead":{"command":crate::emitted::Route::new(["run","inspect",ledger.as_str(),"--event",event,"--json"]).config(&loaded.path).argv()?,"ledger":ledger,"event":event}}),
             );
         }
         requirements.push(json!({"requirement":requirement,"support":valid,"unresolved":valid.iter().all(|x| x["applicableCurrent"]!=true)}));
@@ -206,38 +206,38 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
     let bound_context = token
         .as_str()
         .map_or_else(|| crate::emitted::slot("FRESH_TOKEN"), str::to_owned);
-    let bind: Vec<String> = vec![
-        "work".into(),
-        "bind".into(),
-        work_id.into(),
-        "--context".into(),
-        bound_context,
-        "--host".into(),
-        crate::emitted::slot("HOST"),
-        "--session".into(),
-        crate::emitted::slot("NATIVE_SESSION"),
-        "--host-version".into(),
-        crate::emitted::slot("HOST_VERSION"),
-    ];
-    let child: Vec<String> = vec![
-        "work".into(),
-        "child".into(),
-        work_id.into(),
-        crate::emitted::slot("SHORT_ASSIGNMENT"),
-        "--context".into(),
-        crate::emitted::slot("FRESH_TOKEN"),
-        "--native-child".into(),
-        crate::emitted::slot("CHILD_ID"),
-    ];
-    let prepare: Vec<String> = vec![
-        "work".into(),
-        "child".into(),
-        "prepare".into(),
-        work_id.into(),
-        crate::emitted::slot("SHORT_ASSIGNMENT"),
-        "--context".into(),
-        crate::emitted::slot("FRESH_TOKEN"),
-    ];
+    let bind = crate::emitted::Route::new([
+        "work",
+        "bind",
+        work_id,
+        "--context",
+        bound_context.as_str(),
+        "--host",
+        crate::emitted::slot("HOST").as_str(),
+        "--session",
+        crate::emitted::slot("NATIVE_SESSION").as_str(),
+        "--host-version",
+        crate::emitted::slot("HOST_VERSION").as_str(),
+    ]);
+    let child = crate::emitted::Route::new([
+        "work",
+        "child",
+        work_id,
+        crate::emitted::slot("SHORT_ASSIGNMENT").as_str(),
+        "--context",
+        crate::emitted::slot("FRESH_TOKEN").as_str(),
+        "--native-child",
+        crate::emitted::slot("CHILD_ID").as_str(),
+    ]);
+    let prepare = crate::emitted::Route::new([
+        "work",
+        "child",
+        "prepare",
+        work_id,
+        crate::emitted::slot("SHORT_ASSIGNMENT").as_str(),
+        "--context",
+        crate::emitted::slot("FRESH_TOKEN").as_str(),
+    ]);
     let bind = crate::work::compact::continuation_route(&loaded.path, bind);
     let prepare = crate::work::compact::continuation_route(&loaded.path, prepare);
     let child = crate::work::compact::continuation_route(&loaded.path, child);
@@ -274,7 +274,7 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
     let sections = SECTIONS
         .iter()
         .map(|name| {
-            let route = route(loaded, work_id, vec!["--section".into(), (*name).into()]);
+            let route = route(loaded, work_id, &["--section", name]);
             json!({"name":name,"command":route["command"],
                 "sameConfigRequired":route["sameConfigRequired"],
                 "sameExecutableRequired":route["sameExecutableRequired"]})
@@ -336,16 +336,18 @@ pub(crate) fn continuation_section(
             .ok_or("oversized requirement has no history")?;
         let mut compact_item = item.clone();
         compact_item["requirement"]["history"] = Value::Null;
+        let index_text = index.to_string();
+        let history_index = crate::emitted::slot("HISTORY_INDEX");
         let history_route = route(
             loaded,
             work_id,
-            vec![
-                "--section".into(),
-                "requirements".into(),
-                "--index".into(),
-                index.to_string(),
-                "--history-index".into(),
-                "N".into(),
+            &[
+                "--section",
+                "requirements",
+                "--index",
+                &index_text,
+                "--history-index",
+                &history_index,
             ],
         );
         let summary = json!({"work":work_id,"goalRevision":full["goalRevision"],
@@ -373,15 +375,11 @@ pub(crate) fn continuation_section(
         .iter()
         .enumerate()
         .map(|(index, item)| {
+            let index_text = index.to_string();
             let route = route(
                 loaded,
                 work_id,
-                vec![
-                    "--section".into(),
-                    section.into(),
-                    "--index".into(),
-                    index.to_string(),
-                ],
+                &["--section", section, "--index", &index_text],
             );
             json!({"index":index,"id":item["id"],"nativeChild":item["nativeChild"],
                 "resultSha256":item["resultSha256"],"command":route["command"],

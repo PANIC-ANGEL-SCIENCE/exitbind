@@ -19,7 +19,7 @@ pub(super) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
         "work":work,"assignment":next["assignment"],"actor":next["resolvedActor"],
         "leadChoiceRequired":next["role"]=="lead","choices":choices,
         "mechanicalAction":if next["action"]=="check" {
-            json!({"command":command(loaded,vec!["work".into(),"check".into(),work.into()]),
+            json!({"command":command(loaded,crate::emitted::Route::new(["work", "check", work])),
                 "meaning":"Execute the separately authorized frozen verification once; an admitted execution is never retried.",
                 "executionOptions":{"timeoutMs":{"option":"--timeout-ms","default":1_800_000,
                     "minimum":1,"maximum":crate::run::check_observation::MAX_TIMEOUT_MS}}})

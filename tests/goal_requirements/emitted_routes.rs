@@ -66,9 +66,6 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
         1,
         "spawns benchmark children",
     ),
-    ("src/work/recovery.rs", 1, "unit test"),
-    ("src/work/mutation_response.rs", 3, "unit tests"),
-    ("src/work/compact_tests.rs", 4, "unit tests"),
 ];
 
 /// The product's top-level commands; a literal `exitbind <command>`,
@@ -242,7 +239,7 @@ fn every_placeholder_and_executable_lookup_goes_through_the_emitted_route_regist
                 .map_or(0, |(_, count, _)| *count);
             if named != listed {
                 failures.push(format!(
-                    "{path}: {named} printed command(s) name the product literally, {listed} listed; print crate::emitted::executable() or crate::emitted::command_text"
+                    "{path}: {named} printed command(s) name the product literally, {listed} listed; build it with crate::emitted::Route"
                 ));
             }
         }
@@ -595,4 +592,84 @@ fn lead_and_worker_forms_run_through_the_fill_route_and_refusals_write_nothing()
     assert!(output.status.success(), "{output:?}");
     let permit: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(permit["allowed"], true, "{permit}");
+}
+
+/// R55 F8: every form a Work's roles meet, from the Lead's scope to its
+/// acceptance, runs from the typed route as printed: each choice and the
+/// permit through the fill route, the mechanical check by its own argv.
+#[test]
+fn every_role_form_of_a_work_runs_as_printed_to_acceptance() {
+    let project = Project::new("emitted-typed-forms");
+    project.setup();
+    let work = project.begin("R1", "sh check.sh R1");
+    let artifact = project.root.join("result.md");
+    fs::write(
+        &artifact,
+        "Deterministic fixture result; not a semantic review.\n",
+    )
+    .unwrap();
+    let artifact = artifact.to_str().unwrap();
+    let reason = ("--reason", "Deterministic fixture decision.");
+    let mut used = Vec::new();
+    let mut done = false;
+    for _ in 0..12 {
+        let view = action_view(&project, &work);
+        assert_every_choice_fillable(&view);
+        let action = &view["effectiveAction"];
+        let labels: Vec<&str> = action["choices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|choice| choice["label"].as_str())
+            .collect();
+        let (argv, label) = match action["state"].as_str().unwrap() {
+            "done" => {
+                done = true;
+                break;
+            }
+            _ if action["kind"] == "check" => {
+                let command = &action["command"];
+                assert_eq!(command["sameExecutableRequired"], false, "{view}");
+                assert_eq!(command["sameConfigRequired"], false, "{view}");
+                let argv: Vec<String> = command["argv"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|word| word.as_str().unwrap().to_owned())
+                    .collect();
+                (argv, "check")
+            }
+            _ if action["beforeEditing"].is_object() && action["currentGrant"].is_null() => (
+                fill_argv(
+                    &project,
+                    &view,
+                    "permit",
+                    &[("--operation", "Fixture edit")],
+                ),
+                "permit",
+            ),
+            _ => {
+                let label = ["scoped", "completed", "approved", "accepted"]
+                    .into_iter()
+                    .find(|label| labels.contains(label))
+                    .unwrap_or_else(|| panic!("no expected choice in {labels:?}"));
+                let form = &action["choices"][labels.iter().position(|l| *l == label).unwrap()];
+                let mut options = vec![reason];
+                if form["fill"]["artifactOption"].is_string() {
+                    options.push(("--artifact-file", artifact));
+                }
+                (fill_argv(&project, &view, label, &options), label)
+            }
+        };
+        let output = project.call_exact_argv(&argv);
+        assert!(output.status.success(), "{label}: {output:?}");
+        used.push(label);
+    }
+    assert!(
+        done,
+        "the Work did not reach done through its forms: {used:?}"
+    );
+    for label in ["scoped", "permit", "completed", "check", "accepted"] {
+        assert!(used.contains(&label), "{label} not run: {used:?}");
+    }
 }

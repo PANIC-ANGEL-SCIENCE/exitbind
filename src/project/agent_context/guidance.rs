@@ -304,33 +304,19 @@ fn overflow_item(
         return Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
             "readRoute":null,"readRouteUnavailable":"recipient_task_required"}));
     };
-    let mut command = vec![
-        crate::emitted::executable()?,
-        "project".into(),
-        "context".into(),
-        "memory".into(),
-        item_id.into(),
-    ];
-    command.extend(["--agent".into(), agent.into(), "--task".into(), task.into()]);
+    let mut route = crate::emitted::Route::new([
+        "project", "context", "memory", item_id, "--agent", agent, "--task", task,
+    ]);
     if !host.is_empty() {
-        command.extend(["--host".into(), host.into()]);
+        route = route.words(["--host", host]);
     }
-    command.extend([
-        "--expected-sha256".into(),
-        reference["sourceSha256"]
-            .as_str()
-            .ok_or("eligible guidance has no source hash")?
-            .into(),
-    ]);
-    command.extend([
-        "--json".into(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not UTF-8")?
-            .into(),
-    ]);
+    let sha = reference["sourceSha256"]
+        .as_str()
+        .ok_or("eligible guidance has no source hash")?;
+    let command = route
+        .words(["--expected-sha256", sha, "--json"])
+        .config(&loaded.path)
+        .argv()?;
     Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
         "readRoute":{"command":command,"readOnly":true,"sameConfigRequired":true,
             "sameExecutableRequired":true}}))

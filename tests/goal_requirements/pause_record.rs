@@ -223,6 +223,12 @@ fn a_new_session_reads_the_pause_record_and_the_running_check_after_adoption() {
     assert_eq!(active["step"], STEP, "{context}");
     assert_eq!(active["leadDecisions"], json!(DECISIONS), "{context}");
     assert_eq!(active["goalCurrent"], false, "adoption advanced the Goal");
+    // The saved-state line agrees with the active step: saved, not current.
+    let saved = shown["savedState"].as_str().unwrap();
+    assert!(
+        saved.starts_with("historical: the Goal moved past the revision the step was saved at"),
+        "{saved}"
+    );
     // The unmapped requirements with their recorded sources.
     let unmapped = shown["unmappedRequirements"].as_array().unwrap();
     let ids: Vec<&str> = unmapped

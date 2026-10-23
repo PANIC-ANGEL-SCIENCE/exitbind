@@ -34,17 +34,9 @@ fn deliver(
     match detail {
         Ok(detail) => detail,
         Err(error) => {
-            let route = super::response_recovery::bounded_argv(
-                vec![
-                    "work".into(),
-                    "detail".into(),
-                    work.into(),
-                    "--json".into(),
-                    "--config".into(),
-                ],
-                loaded.path.to_str(),
-                1024,
-            );
+            let route = crate::emitted::Route::new(["work", "detail", work, "--json"])
+                .config(&loaded.path)
+                .bounded(1024);
             json!({"work": work, "effect": "recorded", "status": "recorded",
                 "complete": false, "creation": {"effect": "recorded", "focus": focus},
                 "reason": {"code": "recorded_then_failed"},

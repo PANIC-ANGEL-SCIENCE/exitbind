@@ -53,10 +53,11 @@ pub(crate) fn prepare(loaded: &Loaded, work: &str, assignment: &str) -> Result<V
         managed_files::ensure_state_directory(&loaded.state_root, parent)?;
         let tool = directory.join("edit");
         let prepared = state::preparation(loaded, &lock, &session, &binding)?;
-        let script = format!("#!/bin/sh\nif [ \"$#\" -ne 2 ]; then printf '%s\\n' 'Usage: edit read|refresh|edit|inspect PATH' >&2; exit 2; fi\nexec {} work file \"$1\" {} \"$2\" --config {}\n",
-            crate::presentation::shell_quote(&binding.executable),
-            crate::presentation::shell_quote(&session),
-            crate::presentation::shell_quote(&binding.config));
+        let exec = crate::emitted::Route::new(["work", "file", "$1", session.as_str(), "$2"])
+            .config_text(&binding.config)
+            .run_by(&binding.executable)
+            .exec_line()?;
+        let script = format!("#!/bin/sh\nif [ \"$#\" -ne 2 ]; then printf '%s\\n' 'Usage: edit read|refresh|edit|inspect PATH' >&2; exit 2; fi\n{exec}\n");
         if directory.exists() {
             if !prepared {
                 return Err(

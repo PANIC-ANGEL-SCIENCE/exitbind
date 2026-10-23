@@ -60,34 +60,34 @@ pub(super) fn attach(
     let form = match state {
         Some("replan_required") => Some(choice(
             loaded,
-            vec![
-                "work".into(),
-                "replan".into(),
-                work.into(),
-                assignment.into(),
-                "--hypothesis".into(),
-                crate::emitted::slot("HYPOTHESIS"),
-                "--scope-decision".into(),
-                crate::emitted::slot("SCOPE_DECISION"),
-                "--evidence-request".into(),
-                crate::emitted::slot("EVIDENCE_REQUEST"),
-            ],
+            crate::emitted::Route::new([
+                "work",
+                "replan",
+                work,
+                assignment,
+                "--hypothesis",
+                crate::emitted::slot("HYPOTHESIS").as_str(),
+                "--scope-decision",
+                crate::emitted::slot("SCOPE_DECISION").as_str(),
+                "--evidence-request",
+                crate::emitted::slot("EVIDENCE_REQUEST").as_str(),
+            ]),
             "replan",
             &["HYPOTHESIS", "SCOPE_DECISION", "EVIDENCE_REQUEST"],
             no_input(),
         )),
         Some("evidence_required") => Some(choice(
             loaded,
-            vec![
-                "work".into(),
-                "evidence".into(),
-                work.into(),
-                assignment.into(),
-                "--artifact-root".into(),
-                crate::emitted::slot("ARTIFACT_ROOT"),
-                "--artifact".into(),
-                crate::emitted::slot("ARTIFACT_PATH"),
-            ],
+            crate::emitted::Route::new([
+                "work",
+                "evidence",
+                work,
+                assignment,
+                "--artifact-root",
+                crate::emitted::slot("ARTIFACT_ROOT").as_str(),
+                "--artifact",
+                crate::emitted::slot("ARTIFACT_PATH").as_str(),
+            ]),
             "evidence",
             &["ARTIFACT_ROOT", "ARTIFACT_PATH"],
             no_input(),
@@ -128,12 +128,7 @@ pub(super) fn attach(
                         "ownerRecoveryDraft":candidate["decision"],
                         "effectsInventory":candidate["effectsInventory"],
                         "ownerDecisionRequired":true,
-                        "command":command(loaded,vec![
-                            "run".into(),"supersede".into(),predecessor.into(),
-                            "--workflow".into(),workflow.into(),"--goal".into(),goal.into(),
-                            "--ledger".into(),crate::emitted::slot("SUCCESSOR_LEDGER"),
-                            "--owner-recovery".into(),crate::emitted::slot("OWNER_RECOVERY_STATE_ARTIFACT"),
-                        ]),
+                        "command":command(loaded,crate::emitted::Route::new(["run", "supersede", predecessor, "--workflow", workflow, "--goal", goal, "--ledger", crate::emitted::slot("SUCCESSOR_LEDGER").as_str(), "--owner-recovery", crate::emitted::slot("OWNER_RECOVERY_STATE_ARTIFACT").as_str()])),
                         "placeholders":["SUCCESSOR_LEDGER","OWNER_RECOVERY_STATE_ARTIFACT"],
                         "meaning":"This read-only candidate records no approval or effect conclusion. The owner must verify exact invocation and complete effect evidence before executing the emitted successor command."
                     });
@@ -150,9 +145,7 @@ pub(super) fn attach(
     let forms: Vec<Value> = held.into_iter().filter_map(|held| {
         let reference = held["reference"].as_str()?;
         Some(json!({"reference":reference,"sha256":held["sha256"],"bytes":held["bytes"],
-            "command":command(loaded,vec!["work".into(),"return".into(),work.into(),assignment.into(),
-                "--current-binding".into(),binding.into(),"--outcome".into(),"completed".into(),
-                "--result-ref".into(),reference.into(),"--reason".into(),crate::emitted::slot("REASON")]),
+            "command":command(loaded,crate::emitted::Route::new(["work", "return", work, assignment, "--current-binding", binding, "--outcome", "completed", "--result-ref", reference, "--reason", crate::emitted::slot("REASON").as_str()])),
             "placeholders":["REASON"],"stdin":no_input()}))
     }).collect();
     result["recovery"] = json!({"state":"retained_result","heldResults":forms,

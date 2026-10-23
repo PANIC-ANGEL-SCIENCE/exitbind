@@ -28,18 +28,9 @@ fn token(binding: &str) -> String {
 }
 
 fn route(loaded: &Loaded, work: &str, binding: &str) -> Value {
-    let command = super::response_recovery::bounded_argv(
-        vec![
-            "work".into(),
-            "expand".into(),
-            work.into(),
-            token(binding),
-            "--json".into(),
-            "--config".into(),
-        ],
-        loaded.path.to_str(),
-        1024,
-    );
+    let command = crate::emitted::Route::new(["work", "expand", work, &token(binding), "--json"])
+        .config(&loaded.path)
+        .bounded(1024);
     json!({
         "version": 1,
         "kind": "work_detail",
@@ -276,11 +267,8 @@ fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), 
                 } else if suffix.last().map(String::as_str) != Some("--config") {
                     return Err("action command argv is malformed".into());
                 }
-                let command = super::response_recovery::bounded_argv(
-                    suffix,
-                    loaded.path.to_str(),
-                    ACTION_VIEW_ARGV_BUDGET,
-                );
+                let command = crate::emitted::Route::reprinted(suffix, &loaded.path)?
+                    .bounded(ACTION_VIEW_ARGV_BUDGET);
                 object.insert("argv".into(), command.argv);
                 object.insert("sameConfigRequired".into(), json!(command.same_config));
                 object.insert(
@@ -368,19 +356,17 @@ fn grouped_sections(
     assignment["projection"] = json!({"equalAliases": aliases,
         "recoveryAliases": "equal recovery goal/scope/subject/current/missing/loop/next refer to context goal/scope/subject/evidence/obligations/loop/next"});
     if next["role"] == "lead" {
-        let command = super::response_recovery::bounded_argv(
-            vec![
-                "work".into(),
-                "challenge".into(),
-                work.into(),
-                "--question".into(),
-                crate::emitted::slot("QUESTION"),
-                "--json".into(),
-                "--config".into(),
-            ],
-            loaded.path.to_str(),
-            1024,
-        );
+        let question = crate::emitted::slot("QUESTION");
+        let command = crate::emitted::Route::new([
+            "work",
+            "challenge",
+            work,
+            "--question",
+            &question,
+            "--json",
+        ])
+        .config(&loaded.path)
+        .bounded(1024);
         assignment["optionalChallenge"] = json!({"required":false,"readOnly":true,
             "when":"Only for a consequential unresolved assumption in this approved task.",
             "command":command.argv,"sameConfigRequired":command.same_config,
@@ -427,7 +413,7 @@ fn response(
         "reference": token(binding),
         "work": work,
         "binding": binding,
-        "recipient": {"role": next["role"], "agent": next["agent"], "assignment": next["assignment"], "actor": next["resolvedActor"]},
+        "recipient": {"role": next["role"], "agent": next["agent"], "nativeName": next["packet"]["nativeTaskName"], "assignment": next["assignment"], "actor": next["resolvedActor"]},
         "complete": readable_complete,
         "sections": sections,
         "recipientContext": recipient,

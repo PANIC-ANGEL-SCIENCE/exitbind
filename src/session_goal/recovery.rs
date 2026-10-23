@@ -561,7 +561,11 @@ pub(crate) fn recover(
         .map_err(|error| format!("--source-config is unavailable: {error}"))?;
     let current = super::read(root)?.ok_or("no native session Goal is incorporated")?;
     let (active, preview_sha256) = preview_decision(owner_loaded, &source, &current, &request)?;
-    let apply_suffix = vec![
+    let owner_config = owner_loaded
+        .path
+        .to_str()
+        .ok_or("owner configuration path is not valid UTF-8")?;
+    let apply_command = crate::emitted::Route::new([
         "goal",
         "recover",
         "--source-config",
@@ -578,21 +582,9 @@ pub(crate) fn recover(
         preview_sha256.as_str(),
         "--apply",
         "--json",
-        "--config",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<Vec<_>>();
-    let apply_command = crate::work::response_recovery::bounded_argv(
-        apply_suffix,
-        Some(
-            owner_loaded
-                .path
-                .to_str()
-                .ok_or("owner configuration path is not valid UTF-8")?,
-        ),
-        16 * 1024,
-    );
+    ])
+    .config_text(owner_config)
+    .bounded(16 * 1024);
     if !request.apply {
         return Ok(
             json!({"kind":"native_goal_recovery_preview","readOnly":true,

@@ -271,7 +271,7 @@ fn snapshot_after_source(
     let profile_access = if profile.len() <= 4096 {
         Value::Null
     } else {
-        json!({"command":[crate::emitted::executable()?,"profile",name,"--config",loaded.path.to_str().ok_or("configuration path is not UTF-8")?],
+        json!({"command":crate::emitted::Route::new(["profile", name]).config(&loaded.path).argv()?,
             "sameConfigRequired":true,"sameExecutableRequired":true,"readOnly":true})
     };
     let value = json!({"projectIdentity": selected["projectIdentity"],"configurationSha256":hash::text(&loaded.source),

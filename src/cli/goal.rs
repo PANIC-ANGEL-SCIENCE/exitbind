@@ -135,35 +135,35 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     .err()
                     .map(|error| crate::drift::plain(&error))
             };
-            let mut begin = vec![
-                "work".into(),
-                "begin".into(),
-                "change".into(),
-                "--goal".into(),
-                record["goal"].as_str().unwrap_or_default().into(),
-                "--goal-id".into(),
-                goal_id.into(),
-                "--requirement".into(),
-                ids.into(),
-                "--artifact".into(),
-                checker.into(),
-                "--check-command".into(),
-                command.into(),
-                "--review-policy".into(),
-                crate::emitted::slot("REVIEW_DECISION"),
-                "--detail".into(),
-            ];
+            let mut begin = crate::emitted::Route::new([
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                record["goal"].as_str().unwrap_or_default(),
+                "--goal-id",
+                goal_id,
+                "--requirement",
+                ids,
+                "--artifact",
+                checker,
+                "--check-command",
+                command,
+                "--review-policy",
+                crate::emitted::slot("REVIEW_DECISION").as_str(),
+                "--detail",
+            ]);
             if integration {
-                begin.extend(["--scope".into(), "integration".into()]);
+                begin = begin.words(["--scope", "integration"]);
                 if journey_omitted.is_none() {
-                    begin.push("--journey-integration".into());
+                    begin = begin.words(["--journey-integration"]);
                 }
             }
             if let Some(basis) = a.options.get("basis") {
-                begin.extend(["--basis".into(), basis.clone()]);
+                begin = begin.words(["--basis", basis.as_str()]);
             }
             if a.flags.contains_key("project") {
-                begin.push("--project-goal".into());
+                begin = begin.words(["--project-goal"]);
             }
             let route = crate::work::compact::continuation_route(&l.path, begin);
             let scope_label = match prepared.scope {

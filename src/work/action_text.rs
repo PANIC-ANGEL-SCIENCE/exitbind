@@ -258,11 +258,9 @@ fn argv(context: &Context, command: &Value) -> String {
         }
         parts.push(context.config.clone());
     }
-    parts
-        .iter()
-        .map(|part| quote(part))
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::emitted::Route::printed(&parts)
+        .map(|route| route.text())
+        .unwrap_or_default()
 }
 
 fn quote(word: &str) -> String {
@@ -294,7 +292,7 @@ mod tests {
         let view = json!({"work":"smw_1","decision":{"readiness":"IN_PROGRESS",
             "phase":{"stage":2,"attempt":1,"status":"running"}},
             "effectiveAction":{"state":"action","kind":"spawn","actor":"worker",
-                "delegation":{"text":"next action: delegate to worker agent 'worker' (assignment sma_1)"},
+                "delegation":{"text":"next action: worker agent 'worker' performs assignment sma_1"},
                 "beforeEditing":{"command":{"argv":["/bin/exitbind","work","permit","smw_1","sma_1",
                     "--operation",crate::emitted::slot("OPERATION")],"sameConfigRequired":false},"placeholders":["OPERATION"]},
                 "choices":[{"label":"completed","command":{"argv":["/bin/exitbind","work","return",
@@ -306,7 +304,7 @@ mod tests {
             config: "/p/exitbind.json".into(),
         };
         let text = render_with(&view, &context);
-        assert!(text.contains("next action: delegate to worker agent 'worker' (assignment sma_1)"));
+        assert!(text.contains("next action: worker agent 'worker' performs assignment sma_1"));
         let operation = crate::emitted::slot("OPERATION");
         assert!(text.contains(&format!(
             "Before editing: /bin/exitbind work permit smw_1 sma_1 --operation {operation}"

@@ -63,8 +63,7 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
         "complete": content.is_some(), "content": content,
         "reason": if content.is_some() { Value::Null } else { json!("oversized_or_non_utf8") },
         "access": if content.is_some() { Value::Null } else { json!({
-            "command": super::super::response_recovery::bounded_argv(
-                vec!["profile".into(), name.into(), "--config".into()], loaded.path.to_str(), 1024).argv,
+            "command": crate::emitted::Route::new(["profile", name]).config(&loaded.path).bounded(1024).argv,
             "readOnly": true, "sameConfigRequired": true, "sameExecutableRequired": true}) }});
     let rules = agent_rules::detail_projection(&agent_context::current_rules(loaded)?)?;
     let mut result = json!({"complete": content.is_some(), "available": true,

@@ -4,6 +4,17 @@ use super::{project, MAX_RESPONSE_BYTES};
 use serde_json::json;
 use std::path::Path;
 
+/// A suffix ending in `--config`, bounded with `config` as the product does.
+fn bounded_argv(
+    suffix: Vec<String>,
+    config: Option<&str>,
+    budget: usize,
+) -> crate::emitted::Bounded {
+    crate::emitted::Route::reprinted(suffix, Path::new(config.unwrap()))
+        .unwrap()
+        .bounded(budget)
+}
+
 fn optional_bool_field(value: &serde_json::Value, key: &str) -> bool {
     match value.get(key) {
         None => false,
@@ -297,7 +308,7 @@ fn oversized_candidate_details_keep_counts_and_a_full_resume_route() {
 
 #[test]
 fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths() {
-    use super::super::response_recovery::{bounded_argv, recovery_command};
+    use super::super::response_recovery::recovery_command;
 
     let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
     let working_directory = format!("/tmp/{}/project", "w".repeat(2_400));
@@ -374,8 +385,6 @@ fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths(
 
 #[test]
 fn fallback_preserves_work_candidate_route_after_nonessential_detail_overflow() {
-    use super::super::response_recovery::bounded_argv;
-
     let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
     let work = "smw_other";
     let candidate_route = bounded_argv(
@@ -432,7 +441,7 @@ fn fallback_preserves_work_candidate_route_after_nonessential_detail_overflow() 
 
 #[test]
 fn fallback_does_not_fake_empty_unreadable_when_essential_route_is_too_large() {
-    use super::super::response_recovery::{bounded_argv, recovery_command};
+    use super::super::response_recovery::recovery_command;
 
     let config = format!("/tmp/{}/exitbind.json", "c".repeat(3_500));
     let working_directory = format!("/tmp/{}/project", "w".repeat(12_000));
@@ -579,7 +588,6 @@ fn config_path_over_budget_keeps_explicit_same_config_route() {
 
 #[test]
 fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
-    use super::super::response_recovery::bounded_argv;
     let fixture = include_str!("../../tests/fixtures/compact-completed-goal.json");
     for config_bytes in [32, 512, 6_000, 64_000] {
         let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
@@ -636,13 +644,13 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
             let command = completion.pointer(pointer).unwrap();
             let mut argv = command["argv"].as_array().unwrap().clone();
             if command["sameExecutableRequired"] == true {
-                argv.insert(0, json!(std::env::current_exe().unwrap().to_str().unwrap()));
+                argv.insert(0, json!(crate::emitted::executable().unwrap().as_str()));
             }
             if command["sameConfigRequired"] == true {
                 argv.push(json!(config));
             }
             let mut expected = vec![
-                json!(std::env::current_exe().unwrap().to_str().unwrap()),
+                json!(crate::emitted::executable().unwrap().as_str()),
                 json!("work"),
                 json!("closeout"),
                 json!(work),
@@ -670,7 +678,7 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
             assert_eq!(route["readOnly"], true);
             let mut argv = route["command"].as_array().unwrap().clone();
             if route["sameExecutableRequired"] == true {
-                argv.insert(0, json!(std::env::current_exe().unwrap().to_str().unwrap()));
+                argv.insert(0, json!(crate::emitted::executable().unwrap().as_str()));
             }
             if route["sameConfigRequired"] == true {
                 argv.push(json!(config));
@@ -678,7 +686,7 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
             assert_eq!(
                 argv,
                 vec![
-                    json!(std::env::current_exe().unwrap().to_str().unwrap()),
+                    json!(crate::emitted::executable().unwrap().as_str()),
                     json!("work"),
                     json!("expand"),
                     json!(work),

@@ -28,17 +28,9 @@ pub(super) fn read_route(
     attempt_id: &str,
     stream: Option<&str>,
 ) -> Value {
-    let mut argv = vec![
-        "run".into(),
-        "pre-return".into(),
-        "read".into(),
-        work.into(),
-        attempt_id.into(),
-    ];
+    let mut route = crate::emitted::Route::new(["run", "pre-return", "read", work, attempt_id]);
     if let Some(stream) = stream {
-        argv.extend(["--stream".into(), stream.into()]);
+        route = route.words(["--stream", stream]);
     }
-    argv.push("--config".into());
-    let route = crate::work::response_recovery::bounded_argv(argv, loaded.path.to_str(), 2048);
-    json!({"argv":route.argv,"sameConfigRequired":route.same_config,"sameExecutableRequired":route.same_executable})
+    route.config(&loaded.path).bounded(2048).json()
 }

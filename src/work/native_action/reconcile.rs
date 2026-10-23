@@ -278,7 +278,8 @@ fn diagnostic_projection(observation: &Value) -> Value {
 fn action(work: &str, kind: &str, safe: bool, reason: Option<&str>) -> Value {
     let mut value = json!({"type": kind, "safe": safe});
     if safe {
-        value["commandSuffix"] = json!(["work", "act", work, "--resume"]);
+        value["commandSuffix"] =
+            json!(crate::emitted::Route::new(["work", "act", work, "--resume"]).suffix());
         value["sameConfigRequired"] = json!(true);
         value["sameExecutableRequired"] = json!(true);
     }

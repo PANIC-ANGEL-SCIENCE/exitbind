@@ -1,13 +1,13 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
-use super::response_recovery::{bounded_argv, RecoveryCommand};
+use crate::emitted::{Bounded, Route};
 
 const RECOVERY_ARGV_BUDGET: usize = 2048;
 
 pub(super) type Candidate = (String, Value, Value, String, Value, Value);
 
-pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<RecoveryCommand, String> {
+pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<Bounded, String> {
     let config = loaded
         .path
         .to_str()
@@ -15,18 +15,10 @@ pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<RecoveryC
     Ok(candidate_command_for_config(config, work))
 }
 
-fn candidate_command_for_config(config: &str, work: &str) -> RecoveryCommand {
-    bounded_argv(
-        vec![
-            "work".into(),
-            "next".into(),
-            work.into(),
-            "--json".into(),
-            "--config".into(),
-        ],
-        Some(config),
-        RECOVERY_ARGV_BUDGET,
-    )
+fn candidate_command_for_config(config: &str, work: &str) -> Bounded {
+    Route::new(["work", "next", work, "--json"])
+        .config_text(config)
+        .bounded(RECOVERY_ARGV_BUDGET)
 }
 
 pub(super) fn compact_progress(progress: &Value) -> Value {
@@ -60,7 +52,7 @@ pub(super) fn unreadable_candidate(
     }))
 }
 
-pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<RecoveryCommand, String> {
+pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<Bounded, String> {
     let config = loaded
         .path
         .to_str()
@@ -68,18 +60,10 @@ pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<RecoveryC
     Ok(inspect_command_for_config(config, ledger))
 }
 
-pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> RecoveryCommand {
-    bounded_argv(
-        vec![
-            "run".into(),
-            "inspect".into(),
-            ledger.into(),
-            "--json".into(),
-            "--config".into(),
-        ],
-        Some(config),
-        RECOVERY_ARGV_BUDGET,
-    )
+pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> Bounded {
+    Route::new(["run", "inspect", ledger, "--json"])
+        .config_text(config)
+        .bounded(RECOVERY_ARGV_BUDGET)
 }
 
 fn classify_discovery_error(error: &str) -> &'static str {
@@ -162,11 +146,11 @@ mod tests {
     #[test]
     fn ambiguous_candidate_command_is_executable_argv() {
         let route = candidate_command_for_config("/project/exitbind.json", "smw_abc");
-        let executable = std::env::current_exe().unwrap();
+        let executable = crate::emitted::executable().unwrap();
         assert_eq!(
             route.argv,
             json!([
-                executable.to_str().unwrap(),
+                executable,
                 "work",
                 "next",
                 "smw_abc",

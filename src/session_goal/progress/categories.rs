@@ -166,30 +166,27 @@ fn item_revalidation_route(
         return Value::Null;
     };
     let disposition = item["disposition"].as_str().unwrap_or("accepted");
-    let mut args = vec![
-        "goal".into(),
-        "incorporate".into(),
-        "--goal-id".into(),
-        record["goalId"].as_str().unwrap_or_default().into(),
-        "--goal".into(),
-        record["goal"].as_str().unwrap_or_default().into(),
-        field.into(),
-        value.into(),
-        "--disposition".into(),
-        disposition.into(),
-        "--result-ref".into(),
-        crate::emitted::slot("CURRENT_ACCEPTED_WORK"),
-    ];
+    let mut args = crate::emitted::Route::new([
+        "goal",
+        "incorporate",
+        "--goal-id",
+        record["goalId"].as_str().unwrap_or_default(),
+        "--goal",
+        record["goal"].as_str().unwrap_or_default(),
+        field,
+        value,
+        "--disposition",
+        disposition,
+        "--result-ref",
+        crate::emitted::slot("CURRENT_ACCEPTED_WORK").as_str(),
+    ]);
     if category == "externalActions" {
-        args.extend([
-            "--scope".into(),
-            item["scope"].as_str().unwrap_or("in_scope").into(),
-        ]);
+        args = args.words(["--scope", item["scope"].as_str().unwrap_or("in_scope")]);
     }
     if project {
-        args.push("--project".into());
+        args = args.words(["--project"]);
     }
-    args.push("--json".into());
+    args = args.words(["--json"]);
     let mut route = crate::work::compact::continuation_route(&loaded.path, args);
     route["purpose"] = json!("replace_stale_goal_category_evidence");
     route["evidenceState"] = json!(state);
@@ -241,19 +238,19 @@ fn category_route(
     choice: &str,
     project: bool,
 ) -> Value {
-    let mut args = vec![
-        "goal".into(),
-        "incorporate".into(),
-        "--goal-id".into(),
-        record["goalId"].as_str().unwrap_or_default().into(),
-        "--goal".into(),
-        record["goal"].as_str().unwrap_or_default().into(),
-        choice.into(),
-        category.into(),
-        "--json".into(),
-    ];
+    let mut args = crate::emitted::Route::new([
+        "goal",
+        "incorporate",
+        "--goal-id",
+        record["goalId"].as_str().unwrap_or_default(),
+        "--goal",
+        record["goal"].as_str().unwrap_or_default(),
+        choice,
+        category,
+        "--json",
+    ]);
     if project {
-        args.push("--project".into());
+        args = args.words(["--project"]);
     }
     crate::work::compact::continuation_route(&loaded.path, args)
 }
@@ -282,42 +279,39 @@ fn item_routes(
     ["accepted", "outside_scope", "successor", "direct"]
         .into_iter()
         .map(|choice| {
-            let mut args = vec![
-                "goal".into(),
-                "incorporate".into(),
-                "--goal-id".into(),
-                record["goalId"].as_str().unwrap_or_default().into(),
-                "--goal".into(),
-                record["goal"].as_str().unwrap_or_default().into(),
-                field.into(),
-                value.into(),
-            ];
+            let mut args = crate::emitted::Route::new([
+                "goal",
+                "incorporate",
+                "--goal-id",
+                record["goalId"].as_str().unwrap_or_default(),
+                "--goal",
+                record["goal"].as_str().unwrap_or_default(),
+                field,
+                value,
+            ]);
             if choice == "direct" {
-                args.push("--direct".into());
+                args = args.words(["--direct"]);
                 if category == "externalActions" {
-                    args.extend([
-                        "--external-scope".into(),
-                        item["scope"].as_str().unwrap_or("in_scope").into(),
+                    args = args.words([
+                        "--external-scope",
+                        item["scope"].as_str().unwrap_or("in_scope"),
                     ]);
                 }
             } else {
-                args.extend([
-                    "--disposition".into(),
-                    choice.into(),
-                    "--result-ref".into(),
-                    crate::emitted::slot("ACCEPTED_WORK"),
+                args = args.words([
+                    "--disposition",
+                    choice,
+                    "--result-ref",
+                    crate::emitted::slot("ACCEPTED_WORK").as_str(),
                 ]);
                 if category == "externalActions" {
-                    args.extend([
-                        "--scope".into(),
-                        item["scope"].as_str().unwrap_or("in_scope").into(),
-                    ]);
+                    args = args.words(["--scope", item["scope"].as_str().unwrap_or("in_scope")]);
                 }
             }
             if project {
-                args.push("--project".into());
+                args = args.words(["--project"]);
             }
-            args.push("--json".into());
+            args = args.words(["--json"]);
             let mut route = crate::work::compact::continuation_route(&loaded.path, args);
             route["ownerDecisionRequired"] = json!(true);
             route["disposition"] = json!(choice);

@@ -560,25 +560,24 @@ fn prompt_for(loaded: &Loaded, ledger: &str, prepared: &Prepared) -> Result<Stri
     } else {
         "Soulmate"
     };
-    let submit = [
-        crate::emitted::executable()?,
-        "run".into(),
-        "submit".into(),
-        prepared.assignment["agent"].as_str().unwrap_or("").into(),
-        ledger.into(),
-        "--outcome".into(),
-        crate::emitted::slot("OUTCOME"),
-        "--artifact".into(),
-        prepared.artifact_relative.clone(),
-        "--artifact-root".into(),
-        "state".into(),
-        "--config".into(),
-        loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not valid UTF-8")?
-            .to_owned(),
-    ]
+    let config = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    let submit = crate::emitted::Route::new([
+        "run",
+        "submit",
+        prepared.assignment["agent"].as_str().unwrap_or(""),
+        ledger,
+        "--outcome",
+        crate::emitted::slot("OUTCOME").as_str(),
+        "--artifact",
+        prepared.artifact_relative.as_str(),
+        "--artifact-root",
+        "state",
+    ])
+    .config_text(config)
+    .argv()?
     .iter()
     .map(|value| shell_quote(value))
     .collect::<Vec<_>>()

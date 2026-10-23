@@ -348,7 +348,7 @@ fn argv_templates(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
 
 /// Every command family with the subcommands its dispatcher accepts; an
 /// option-only command has none.
-fn dispatched() -> Vec<(&'static str, Vec<String>)> {
+pub(super) fn dispatched() -> Vec<(&'static str, Vec<String>)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();
     let mut families: Vec<(&'static str, Vec<String>)> = DISPATCHERS

@@ -588,3 +588,5 @@ mod setup_first_work;
 mod setup_start_path;
 #[path = "goal_requirements/successor_timing.rs"]
 mod successor_timing;
+#[path = "goal_requirements/typed_routes.rs"]
+mod typed_routes;

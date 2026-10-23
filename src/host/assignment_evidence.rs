@@ -91,7 +91,7 @@ pub(crate) fn lines(loaded: &Loaded, work: &str, context: &Value) -> Vec<String>
     }
     let packet_route = exact_route(
         loaded,
-        vec!["work".into(), "next".into(), work.into(), "--full".into()],
+        crate::emitted::Route::new(["work", "next", work, "--full"]),
     );
     lines.push(match packet_route {
         Some(route) => format!("Full assignment packet route: {route}"),
@@ -138,7 +138,7 @@ fn read_route_line(loaded: &Loaded, work: &str, reference: &Value, label: &str) 
     };
     let route = exact_route(
         loaded,
-        vec!["work".into(), "expand".into(), work.into(), id.to_owned()],
+        crate::emitted::Route::new(["work", "expand", work, id]),
     );
     match route {
         Some(route) => format!("  {label} route: {route}"),
@@ -146,8 +146,8 @@ fn read_route_line(loaded: &Loaded, work: &str, reference: &Value, label: &str) 
     }
 }
 
-fn exact_route(loaded: &Loaded, suffix: Vec<String>) -> Option<String> {
-    let route = crate::work::compact::continuation_route(&loaded.path, suffix);
+fn exact_route(loaded: &Loaded, route: crate::emitted::Route) -> Option<String> {
+    let route = crate::work::compact::continuation_route(&loaded.path, route);
     if route["sameConfigRequired"] != false || route["sameExecutableRequired"] != false {
         return None;
     }

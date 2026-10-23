@@ -599,7 +599,7 @@ fn bridge_health() -> Vec<String> {
             }
             other => {
                 if host["hostPresent"] == Value::Bool(true) {
-                    let install = crate::emitted::command_text("host install");
+                    let install = crate::emitted::Route::new(["host", "install"]).text();
                     lines.push(format!(
                         "Host bridge {name}: bootstrap {other}; run '{install}' to restore it"
                     ));

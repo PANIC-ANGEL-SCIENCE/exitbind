@@ -83,21 +83,12 @@ fn token(identity: &str, section: &str, page: usize) -> String {
 }
 
 fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
-    let command = super::response_recovery::bounded_argv(
-        vec![
-            "work".into(),
-            "expand".into(),
-            work.into(),
-            id.into(),
-            "--json".into(),
-            "--config".into(),
-        ],
-        loaded.path.to_str(),
-        // Current section routes share the bounded response with the
-        // grouped route and its effective-action projection. Preserve every
-        // route and require exact invocation arguments when paths are long.
-        768,
-    );
+    // Current section routes share the bounded response with the grouped
+    // route and its effective-action projection. Preserve every route and
+    // require exact invocation arguments when paths are long.
+    let command = crate::emitted::Route::new(["work", "expand", work, id, "--json"])
+        .config(&loaded.path)
+        .bounded(768);
     json!({"reference": id, "command": command.argv,
         "sameConfigRequired": command.same_config,
         "sameExecutableRequired": command.same_executable,
@@ -191,7 +182,7 @@ pub(super) fn attach(
             "retainedPreviousResult": artifact_exists && !current_attempt,
             "subject": {"sha256":subject["sha256"], "attempt":subject["attempt"], "workerArtifactSha256":subject["workerArtifactSha256"]}, "historical": view["status"] != "running" || (artifact_exists && !current_attempt)},
         "phase": {"stage": stage, "attempt": attempt, "status": view["status"]},
-        "recipient": {"role": next["role"], "agent": next["agent"],
+        "recipient": {"role": next["role"], "agent": next["agent"], "nativeName": next["packet"]["nativeTaskName"],
             "assignment": next["assignment"], "actor": next["resolvedActor"]},
         "action": next["action"],
         "missing": {"count": residual["remaining"].as_array().map_or(0, Vec::len),

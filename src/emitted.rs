@@ -2,14 +2,19 @@
 //! role to run, and the registry of every placeholder such an argv or a
 //! printed decision template may carry, with the input that fills it.
 //!
-//! A printed route names its executable through [`executable`] and its
-//! placeholders through [`slot`]; [`fill`] substitutes supplied values so the
-//! filled argv runs without hand editing. The repository inventory test scans
-//! `src/` and fails on a `<NAME>` literal or an executable lookup outside this
-//! module, and on a slot name this registry does not carry.
+//! A printed route is a [`Route`] value: built from its command words here,
+//! naming its placeholders through [`slot`] and rendered only by its own
+//! renderers; [`fill`] substitutes supplied values so the filled route runs
+//! without hand editing. The repository inventory tests scan `src/` and fail
+//! on a `<NAME>` literal, an executable lookup or a command argv built outside
+//! this module, on a route-carrying field not rendered from a [`Route`], and
+//! on a slot name this registry does not carry.
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+
+mod route;
+pub(crate) use route::{unavailable, Bounded, Route};
 
 /// How a placeholder is filled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,6 +247,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the lesson source file",
     },
     Placeholder {
+        name: "HISTORY_INDEX",
+        fills: &[Fill::Flag("--history-index")],
+        meaning: "the requirement history entry to read, from 0 below historyCount",
+    },
+    Placeholder {
         name: "SAVED_STEP",
         fills: &[Fill::Flag("--step")],
         meaning: "the step the Lead continues from after a pause",
@@ -331,10 +341,16 @@ pub(crate) fn executable_path() -> Result<std::path::PathBuf, String> {
 /// quoted as one shell word, then `rest`. A path that cannot be resolved is
 /// named as unavailable rather than replaced by a command name another
 /// executable may answer.
-pub(crate) fn command_text(rest: &str) -> String {
+fn command_text(rest: &str) -> String {
+    format!("{} {rest}", executable_word())
+}
+
+/// The executable this process runs as, quoted as one shell word, or a note
+/// that it is unavailable; for a renderer that quotes the rest itself.
+pub(crate) fn executable_word() -> String {
     match executable_path() {
-        Ok(path) => format!("{} {rest}", word(&path.display().to_string())),
-        Err(_) => format!("(executable unavailable) {rest}"),
+        Ok(path) => word(&path.display().to_string()),
+        Err(_) => "(executable unavailable)".to_owned(),
     }
 }
 
@@ -342,12 +358,11 @@ pub(crate) fn command_text(rest: &str) -> String {
 /// word, then `--config CONFIG` when the route reads a configuration. Every
 /// word is quoted with [`word`], so a path with spaces survives copy-paste.
 pub(crate) fn command_line(words: &[&str], config: Option<&std::path::Path>) -> String {
-    let mut rest = words.iter().map(|item| word(item)).collect::<Vec<_>>();
-    if let Some(config) = config {
-        rest.push("--config".into());
-        rest.push(word(&config.display().to_string()));
+    let route = Route::new(words.iter().copied());
+    match config {
+        Some(config) => route.config(config).text(),
+        None => route.text(),
     }
-    command_text(&rest.join(" "))
 }
 
 /// The follow-up a refusal names when its reader must read the current Work
@@ -416,13 +431,11 @@ pub(crate) fn fill_flags(argv: &[String]) -> Value {
     Value::Object(map)
 }
 
-/// Substitute every placeholder of a printed argv from `values`, keyed by the
-/// option that fills it. Every placeholder must be filled, and every supplied
-/// value must fill one; the argv is otherwise unchanged.
-pub(crate) fn fill(
-    argv: &[String],
-    values: &BTreeMap<String, String>,
-) -> Result<Vec<String>, String> {
+/// Substitute every placeholder of a printed route from `values`, keyed by
+/// the option that fills it. Every placeholder must be filled, and every
+/// supplied value must fill one; the route is otherwise unchanged.
+pub(crate) fn fill(printed: &Route, values: &BTreeMap<String, String>) -> Result<Route, String> {
+    let argv = printed.argv()?;
     let mut used = std::collections::BTreeSet::new();
     let mut filled = Vec::with_capacity(argv.len());
     for (index, token) in argv.iter().enumerate() {
@@ -452,7 +465,7 @@ pub(crate) fn fill(
     if let Some(unused) = values.keys().find(|option| !used.contains(option.as_str())) {
         return Err(format!("{unused} fills no placeholder of this route"));
     }
-    Ok(filled)
+    Route::printed(&filled)
 }
 
 #[cfg(test)]
@@ -476,8 +489,9 @@ mod tests {
         ]);
         assert_eq!(fill_flags(&printed), json!({"REASON": "--reason"}));
         let values = BTreeMap::from([("--reason".to_owned(), "two words".to_owned())]);
+        let route = Route::printed(&printed).unwrap();
         assert_eq!(
-            fill(&printed, &values).unwrap(),
+            fill(&route, &values).unwrap().argv().unwrap(),
             argv(&[
                 "x",
                 "work",
@@ -488,14 +502,14 @@ mod tests {
                 "c"
             ])
         );
-        assert!(fill(&printed, &BTreeMap::new())
+        assert!(fill(&route, &BTreeMap::new())
             .unwrap_err()
             .contains("--reason"));
         let extra = BTreeMap::from([
             ("--reason".to_owned(), "r".to_owned()),
             ("--question".to_owned(), "q".to_owned()),
         ]);
-        assert!(fill(&printed, &extra).unwrap_err().contains("--question"));
+        assert!(fill(&route, &extra).unwrap_err().contains("--question"));
         assert!(placeholder_in("<NOT_REGISTERED>").is_none());
     }
 

@@ -421,29 +421,24 @@ pub(crate) fn choose(l: &Loaded, q: Request<'_>) -> Result<Value, String> {
         .map_err(|e| e.to_string())?
         .to_str()
         .ok_or("choice path is not UTF-8")?;
-    let mut argv = vec![
-        crate::emitted::executable()?,
-        "memory".into(),
-        "choose".into(),
-        agent.into(),
-    ];
-    argv.extend(items.iter().cloned());
-    argv.extend([
-        "--task".into(),
-        task.into(),
-        "--host".into(),
-        host.into(),
-        "--reason".into(),
-        reason.into(),
-        "--previous".into(),
-        previous.into(),
-        "--apply".into(),
-        "--expected-sha256".into(),
-        token.clone(),
-        "--json".into(),
-        "--config".into(),
-        l.path.to_str().ok_or("config is not UTF-8")?.into(),
-    ]);
+    let argv = crate::emitted::Route::new(["memory", "choose", agent])
+        .words(items.iter().cloned())
+        .words([
+            "--task",
+            task,
+            "--host",
+            host,
+            "--reason",
+            reason,
+            "--previous",
+            previous,
+            "--apply",
+            "--expected-sha256",
+            token.as_str(),
+            "--json",
+        ])
+        .config(&l.path)
+        .argv()?;
     if !apply {
         return Ok(
             json!({"version":2,"effect":"no-change","expectedSha256":token,"record":record,"artifact":rel,"apply":{"command":argv},"authority":"Configured Lead applicability choice, not a new memory approval or host permission."}),

@@ -321,21 +321,10 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
     if items.is_empty() && omitted == unavailable.len() {
         return Ok(None);
     }
-    let executable = crate::emitted::executable()?;
-    let command = vec![
-        executable.as_str(),
-        "memory",
-        "resolve",
-        agent,
-        "--task",
-        task,
-        "--json",
-        "--config",
-        loaded
-            .path
-            .to_str()
-            .ok_or("lesson configuration is not UTF-8")?,
-    ];
+    let command =
+        crate::emitted::Route::new(["memory", "resolve", agent, "--task", task, "--json"])
+            .config(&loaded.path)
+            .argv()?;
     let mut value = json!({"items":items,"omittedCount":omitted,
         "maxItems":MAX_ITEMS,"maxBytes":MAX_DELIVERY,
         "meaning":"reviewed durable project facts; no permission, check, review or acceptance authority",

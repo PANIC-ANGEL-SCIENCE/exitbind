@@ -208,7 +208,7 @@ fn hint_text(
     let goal_id = record["goalId"].as_str().unwrap_or("unknown");
     let revision = record["revision"].as_u64().unwrap_or(0);
     let current_event = record["eventSha256"].as_str().unwrap_or("unknown");
-    let show = crate::emitted::command_text("session recovery show --json");
+    let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"]).text();
     let Some(hint) = hint else {
         let mut text = finish(format!(
             "Exitbind recovered native Goal {goal_id} revision {revision} (event {current_event}); its owner is {}. No current Work is selected by this hook. Use `{show}`; record an exact hint only with the verified owner configuration, then reread Goal and known Work details before acting.",
@@ -319,13 +319,13 @@ fn hint_text(
         )
     };
     if graph_observation.is_none() {
-        let show = crate::emitted::command_text("session recovery show --json");
+        let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"]).text();
         out.push_str(&format!(
             " Use the executable-bound read routes in `{show}`; no saved action is replayed."
         ));
     }
     if graph_observation.is_none() && out.len() > 900 {
-        let show = crate::emitted::command_text("session recovery show --json");
+        let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"]).text();
         out = format!("Exitbind native Goal {goal_id} revision {revision} is known. Saved step/corrections/pending details remain historical until exact Work detail is reread; use `{show}`. No saved action is replayed.");
     }
     let selected = known_locator.is_some();
@@ -341,7 +341,7 @@ fn graph_hook_presentation(
     locator: &str,
     observation: &Value,
 ) -> String {
-    let show = crate::emitted::command_text("session recovery show --json");
+    let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"]).text();
     let fallback = format!("Exitbind recovery: a prior CodeGraph observation exists; saved details remain historical with no current Work/action binding. Source identity is not revalidated and provider/index currentness is not asserted. Use `{show}` for the exact Goal, member locator, full query, and project route. No saved action is replayed; requery before relying on the finding.");
     let prefix = format!(
         "Exitbind recovery: native Goal {goal_id} rev {revision}; owner={} Goal current={fresh_goal} declared guidance current={fresh_sources}. {locator}. Saved step/corrections/pending remain historical; no current Work/action binding. Exact Goal/member/project query routes: `{show}`; no saved action is replayed. Prior CodeGraph observation: ",
