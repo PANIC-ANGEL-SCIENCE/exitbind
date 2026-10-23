@@ -2,11 +2,40 @@
 //! keeps the stamped bytes it replaces when a memory ledger carries their
 //! hash. The calls are read from the source, not listed by hand: each one
 //! must reach `settings::atomic_write`, the only definition, and that writer
-//! keeps the replaced bytes before anything is replaced.
+//! keeps the replaced bytes before anything is replaced. The class is the
+//! mechanism, not the spelling: any other production file operation whose
+//! destination is the configuration path fails the test.
 use super::root_inputs::sources;
 
 const WRITER: &str = "src/host/settings.rs";
 const KEEP: &str = "crate::memory::stamped_config::keep_replaced(target, replaced)?";
+
+/// File operations that create or replace a file, with the index of the
+/// argument that names the destination.
+const FILE_WRITES: &[(&str, usize)] = &[
+    ("fs::rename(", 1),
+    ("fs::copy(", 1),
+    ("fs::write(", 0),
+    ("fs::hard_link(", 1),
+    ("write_exclusive(", 0),
+    ("write_temp(", 0),
+    ("File::create(", 0),
+    (".open(", 0),
+];
+/// The names production code gives the configuration path.
+const CONFIGURATION_PATHS: &[&str] = &[
+    "loaded.path",
+    "l.path",
+    "config_path",
+    "config",
+    "configuration",
+    "configuration_path",
+];
+/// A configuration written where none existed: no stamped bytes to keep.
+const CREATIONS: &[(&str, &str)] = &[(
+    "src/project/onboarding.rs",
+    "write_exclusive(&config", // `init` creates the configuration
+)];
 
 struct Call {
     file: String,
@@ -85,6 +114,64 @@ fn calls() -> Vec<Call> {
         }
     }
     found
+}
+
+/// Every production file write outside the one writer whose destination is
+/// the configuration path, as `file: operation destination`.
+fn configuration_writes_outside_the_writer() -> Vec<String> {
+    let mut found = Vec::new();
+    for (file, text) in sources() {
+        if file == WRITER {
+            continue;
+        }
+        for (operation, destination) in FILE_WRITES {
+            for (index, _) in text.match_indices(operation) {
+                let line_start = text[..index].rfind('\n').map_or(0, |at| at + 1);
+                if text[line_start..].trim_start().starts_with("//") {
+                    continue;
+                }
+                // An `OpenOptions` chain writes only with a write flag.
+                if *operation == ".open(" {
+                    let chain = &text[text[..index].rfind("OpenOptions").unwrap_or(index)..index];
+                    let writes = [
+                        ".write(true)",
+                        ".append(true)",
+                        ".create(true)",
+                        ".create_new(true)",
+                    ]
+                    .iter()
+                    .any(|flag| chain.contains(flag));
+                    if !writes {
+                        continue;
+                    }
+                }
+                let open = index + operation.len() - 1;
+                let Some(target) = arguments(&text, open).get(*destination).cloned() else {
+                    continue;
+                };
+                let target = target.trim_start_matches('&').trim();
+                let named = CONFIGURATION_PATHS
+                    .iter()
+                    .any(|name| target == *name || target.ends_with(&format!(".{name}")));
+                let created = CREATIONS
+                    .iter()
+                    .any(|(owner, call)| file == *owner && text[index..].starts_with(call));
+                if named && !created {
+                    found.push(format!("{file}: {operation}{target}"));
+                }
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn the_configuration_file_is_replaced_only_by_the_one_writer() {
+    let outside = configuration_writes_outside_the_writer();
+    assert!(
+        outside.is_empty(),
+        "replace the configuration through settings::atomic_write, which keeps the stamped bytes: {outside:#?}"
+    );
 }
 
 #[test]

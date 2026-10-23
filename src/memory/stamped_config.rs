@@ -126,11 +126,29 @@ pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<
             .any(|event| event["configSha256"] == sha256.as_str())
     });
     if carried {
-        keep(&previous).map_err(|error| {
-            format!("stamped configuration copy: {error}; no configuration was written")
-        })?;
+        keep(&previous).map_err(|error| keep_refused(&previous, &sha256, &error))?;
     }
     Ok(())
+}
+
+/// The refusal when the copy cannot be kept: nothing was written, the file
+/// in the way is named, and the same command runs again once it is moved.
+fn keep_refused(previous: &Loaded, sha256: &str, error: &str) -> String {
+    let blocking = memory_root(previous)
+        .zip(file_name(sha256))
+        .map(|(root, name)| previous.state_root.join(root).join(name));
+    let blocking = blocking.map_or_else(
+        || "the stamped configuration copy".to_owned(),
+        |path| path.display().to_string(),
+    );
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    let words = arguments.iter().map(String::as_str).collect::<Vec<_>>();
+    let again = crate::emitted::command_line(&words, None);
+    format!(
+        "no configuration was written: the stamped bytes cannot be kept at {blocking} ({error}); \
+         that file is not their copy (changed by hand, a link, or not hidden from Git). \
+         Move it aside, then run the same command again: {again}"
+    )
 }
 
 /// The typed refusal for lesson events stamped with `bound`: the kept copy

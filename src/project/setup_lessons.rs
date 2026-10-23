@@ -83,8 +83,8 @@ pub(super) fn apply(
         let mut source = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         source.push('\n');
         let root = fs::canonicalize(&loaded.control_root).map_err(|error| error.to_string())?;
-        settings::atomic_write(&loaded.path, &source, None, Some(&loaded.source), &root)
-            .map_err(|error| format!("setup partially applied: {error}"))?;
+        // A refusal here wrote nothing; setup names any earlier write.
+        settings::atomic_write(&loaded.path, &source, None, Some(&loaded.source), &root)?;
         let path = loaded
             .path
             .to_str()

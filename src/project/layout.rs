@@ -280,29 +280,29 @@ pub(crate) fn run(loaded: &Loaded, apply: bool) -> Result<Value, String> {
             }
         }
 
-        let name = loaded
-            .path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or("configuration path must name a UTF-8 file")?;
-        let temporary = loaded.path.with_file_name(format!(
-            ".{name}.exitbind-layout-{}.tmp",
-            std::process::id()
-        ));
-        managed_files::write_exclusive(&temporary, next_source.as_bytes())?;
-        fs::set_permissions(
-            &temporary,
-            fs::metadata(&loaded.path)
-                .map_err(|error| error.to_string())?
-                .permissions(),
+        // The one configuration writer: it keeps the file mode, refuses
+        // changed bytes and keeps the stamped bytes it replaces.
+        #[cfg(unix)]
+        let mode = {
+            use std::os::unix::fs::PermissionsExt;
+            Some(
+                fs::metadata(&loaded.path)
+                    .map_err(|error| error.to_string())?
+                    .permissions()
+                    .mode()
+                    & 0o777,
+            )
+        };
+        #[cfg(not(unix))]
+        let mode = None;
+        let root = fs::canonicalize(&loaded.control_root).map_err(|error| error.to_string())?;
+        crate::host::settings::atomic_write(
+            &loaded.path,
+            &next_source,
+            mode,
+            Some(&loaded.source),
+            &root,
         )
-        .map_err(|error| error.to_string())?;
-        unchanged(loaded)?;
-        if let Err(error) = fs::rename(&temporary, &loaded.path) {
-            let _ = fs::remove_file(&temporary);
-            return Err(error.to_string());
-        }
-        Ok(())
     })();
     if let Err(error) = result {
         for path in created.iter().rev() {

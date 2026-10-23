@@ -292,8 +292,9 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         let mut source = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         source.push('\n');
         let root = fs::canonicalize(&loaded.control_root).map_err(|error| error.to_string())?;
+        // The writer writes nothing when it refuses; only a fresh init was.
         settings::atomic_write(&loaded.path, &source, None, Some(&loaded.source), &root)
-            .map_err(|error| format!("setup partially applied: {error}"))?;
+            .map_err(|error| partially(initialized, error))?;
     }
 
     let loaded_path = loaded
@@ -303,7 +304,8 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     let loaded = config::load(Some(loaded_path))
         .map_err(|error| format!("setup partially applied: {error}"))?;
     let (loaded, lessons_edited) =
-        setup_lessons::apply(loaded, facts.lessons_from.as_deref(), &mut report)?;
+        setup_lessons::apply(loaded, facts.lessons_from.as_deref(), &mut report)
+            .map_err(|error| partially(initialized || config_edited, error))?;
     let projection_changed = projection_before
         .as_ref()
         .is_some_and(projection_needs_write);
@@ -711,6 +713,15 @@ fn skill_state_label(state: project_skills::SkillObservationState) -> &'static s
         project_skills::SkillObservationState::Unsafe => "unsafe path or nonregular",
         project_skills::SkillObservationState::Unreadable => "unreadable",
         project_skills::SkillObservationState::Unsupported => "unsupported inspection",
+    }
+}
+
+/// A setup refusal says "partially applied" only when something was written.
+fn partially(written: bool, error: String) -> String {
+    if written && !error.starts_with("setup partially applied") {
+        format!("setup partially applied: {error}")
+    } else {
+        error
     }
 }
 

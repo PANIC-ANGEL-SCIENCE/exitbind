@@ -221,3 +221,101 @@ fn a_hand_edit_refuses_once_with_every_ledger_and_the_previous_config_slot() {
     let begun = exitbind(root, &BEGIN);
     assert!(begun.status.success(), "{}", text(&begun));
 }
+
+#[test]
+fn a_profile_import_keeps_the_stamped_bytes_and_the_refusal_names_the_copy() {
+    let (_previous, fresh, stamped) = without_copy("kept-config-profile");
+    let root = fresh.0.as_path();
+    let stamped_bytes = config_bytes(root);
+    fs::write(root.join("sonic.md"), "Sonic implements.\n").unwrap();
+
+    // `profile import` adds a named agent: a product-driven replacement.
+    let imported = exitbind(
+        root,
+        &[
+            "profile",
+            "import",
+            "sonic",
+            "sonic.md",
+            "--purpose",
+            "Implements",
+            "--config",
+            "exitbind.json",
+        ],
+    );
+    assert!(imported.status.success(), "{}", text(&imported));
+    assert_ne!(config_bytes(root), stamped_bytes);
+    let copies = kept_copies(root);
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    let copy = root.join(".exitbind/memory").join(&copies[0]);
+    assert_eq!(fs::read(&copy).unwrap(), stamped_bytes);
+
+    let (refused, route) = refused_begin(root);
+    assert_eq!(refused["boundSha256"], stamped.as_str());
+    let (_, from) = named(&route);
+    assert_eq!(
+        fs::canonicalize(from).unwrap(),
+        fs::canonicalize(&copy).unwrap()
+    );
+}
+
+#[test]
+fn a_copy_that_cannot_be_kept_is_named_and_nothing_is_written() {
+    let (_previous, fresh, stamped) = without_copy("kept-config-blocked");
+    let root = fresh.0.as_path();
+    let stamped_bytes = config_bytes(root);
+    // A hand-changed file sits where the copy of the stamped bytes belongs.
+    let blocking = root
+        .join(".exitbind/memory")
+        .join(format!("stamped-config-{}.json", &stamped[..16]));
+    fs::write(&blocking, b"{\"changed\": \"by hand\"}\n").unwrap();
+
+    let args = [
+        "setup",
+        "--apply",
+        "--mode",
+        "portable",
+        "--root",
+        root.to_str().unwrap(),
+        "--scope",
+        "worker",
+        "--observe",
+        "notes",
+        "--write",
+        "notes",
+        "--commands",
+        "git status",
+        "--check-command",
+        "true",
+        "--goal",
+        "Carry the reviewed lessons",
+        "--review-policy",
+        "required",
+        "--hosts",
+        "claude",
+        "--skip-skills",
+    ];
+    let refused = exitbind(root, &args);
+    assert!(!refused.status.success(), "{}", text(&refused));
+    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+    assert!(stderr.contains("no configuration was written"), "{stderr}");
+    assert!(stderr.contains(blocking.to_str().unwrap()), "{stderr}");
+    assert!(!stderr.contains("partially applied"), "{stderr}");
+    assert_eq!(config_bytes(root), stamped_bytes, "nothing was written");
+
+    // The named recovery: move the file aside and run the printed command.
+    fs::rename(&blocking, root.join("moved-aside.json")).unwrap();
+    let again = stderr
+        .split("run the same command again: ")
+        .nth(1)
+        .and_then(|rest| rest.lines().next())
+        .unwrap_or_else(|| panic!("{stderr}"))
+        .trim();
+    let rerun = super::support::git_topology::command("sh")
+        .args(["-c", again])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(rerun.status.success(), "{}", text(&rerun));
+    assert_eq!(fs::read(&blocking).unwrap(), stamped_bytes, "kept now");
+}

@@ -67,17 +67,7 @@ pub fn import(
     }
 
     let profile_temp = profiles_dir.join(format!(".{name}.md.exitbind-{}.tmp", std::process::id()));
-    let config_name = l
-        .path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("configuration path must name a UTF-8 file")?;
-    let config_temp = l.path.with_file_name(format!(
-        ".{config_name}.exitbind-{}.tmp",
-        std::process::id()
-    ));
     let mut profile_written = false;
-    let mut config_written = false;
     let result: Result<(), String> = (|| {
         write_temp(&profile_temp, &source_bytes)?;
         profile_written = true;
@@ -91,21 +81,21 @@ pub fn import(
         let mut config_source =
             serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
         config_source.push('\n');
-        write_temp(&config_temp, config_source.as_bytes())?;
-        config_written = true;
-        unchanged(&config_path, &l.source)?;
-        fs::rename(&config_temp, &config_path).map_err(|e| e.to_string())?;
-        Ok(())
+        // The one configuration writer: it refuses changed bytes and keeps
+        // the stamped bytes it replaces.
+        crate::host::settings::atomic_write(
+            &config_path,
+            &config_source,
+            None,
+            Some(&l.source),
+            &project,
+        )
     })();
     if result.is_err() {
         if profile_written {
             let _ = remove_if_same(&destination, &source_bytes);
         }
-        if config_written {
-            let _ = fs::remove_file(&config_temp);
-        }
         let _ = fs::remove_file(&profile_temp);
-        let _ = fs::remove_file(&config_temp);
     }
     result?;
     Ok(format!(
