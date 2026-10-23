@@ -226,14 +226,27 @@ pub(super) fn append(loaded: &Loaded, record: &Value, view: &mut Value) {
 pub(crate) fn hook_line(record: &Value, owner: Option<&Loaded>) -> Option<String> {
     let journey = journey(record, None, false, None);
     let lessons = owner.map(|loaded| lessons(loaded, record["goal"].as_str()));
-    if journey.is_none() && lessons.is_none() {
+    let unmapped = unmapped_text(record);
+    if journey.is_none() && lessons.is_none() && unmapped.is_none() {
         return None;
     }
     Some(format!(
         "Goal {}: {}",
         record["goalId"].as_str().unwrap_or("unknown"),
-        joined(&[journey.as_deref(), lessons.as_deref()])
+        joined(&[journey.as_deref(), unmapped.as_deref(), lessons.as_deref()])
     ))
+}
+
+/// `Requirements without a Work: R2 (source S), R3 (source S)`, or nothing.
+pub(crate) fn unmapped_text(record: &Value) -> Option<String> {
+    let items = super::requirements::unmapped(record);
+    (!items.is_empty()).then(|| {
+        let items = items
+            .iter()
+            .map(|(id, source)| format!("{id} (source {source})"))
+            .collect::<Vec<_>>();
+        format!("Requirements without a Work: {}", items.join(", "))
+    })
 }
 
 /// The `setup --apply` response line: the current Goal's system text in the

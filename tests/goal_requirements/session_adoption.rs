@@ -42,7 +42,7 @@ fn shell_line(argv: &[String]) -> String {
 
 /// SessionStart hook context for the current session, launched in the
 /// project root.
-fn session_start(p: &Project) -> String {
+pub(super) fn session_start(p: &Project) -> String {
     let (identity, store) = p.native_session.as_ref().unwrap();
     let payload = json!({"hook_event_name":"SessionStart","source":"startup",
         "session_id":identity,"cwd":p.root});

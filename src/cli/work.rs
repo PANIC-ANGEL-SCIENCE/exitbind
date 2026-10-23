@@ -592,11 +592,14 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             args::assert_options("work resume", a, &["config", "json", "full", "history"])?;
             args::assert_positionals("work resume", a, 1)?;
             let result = crate::producer::observed(crate::work::resume(l, a.flags.contains_key("history"))?);
-            let result = if a.flags.contains_key("full") || result["status"] != "resumed" {
+            let mut result = if a.flags.contains_key("full") || result["status"] != "resumed" {
                 result
             } else {
                 crate::work::compact::project(&result, &l.path, "resume")?
             };
+            if let Some(routes) = crate::host::session_recovery::pause_routes(l) {
+                result["pauseRecord"] = routes;
+            }
             print_work_json(&result)
         }
         _ => Err(

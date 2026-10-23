@@ -53,6 +53,24 @@ pub(crate) fn unresolved(record: &Value) -> bool {
         })
 }
 
+/// The named requirements no active Work mapping covers, each with the
+/// source it was recorded from, read from the Goal record alone.
+pub(crate) fn unmapped(record: &Value) -> Vec<(String, String)> {
+    let Ok(goal) = Goal::read(record) else {
+        return Vec::new();
+    };
+    goal.requirements
+        .iter()
+        .filter(|requirement| {
+            !goal
+                .mappings
+                .iter()
+                .any(|mapping| mapping.active && mapping.requirement == requirement.reference())
+        })
+        .map(|requirement| (requirement.id.clone(), requirement.source.reference.clone()))
+        .collect()
+}
+
 pub(crate) fn identity(loaded: &Loaded) -> Result<String, String> {
     let root = loaded
         .product_root

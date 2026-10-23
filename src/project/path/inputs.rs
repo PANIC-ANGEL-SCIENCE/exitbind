@@ -195,6 +195,7 @@ pub(crate) const INPUTS: &[Input] = &[
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const NOT_PATHS: &[&str] = &[
     "session-key",
+    "step",
     "agent",
     "role",
     "artifact-root",

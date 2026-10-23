@@ -22,6 +22,7 @@ mod project;
 mod project_graph;
 mod replan_input;
 mod run_cli;
+mod session_recovery;
 mod status;
 mod work;
 mod work_check_replacement;
@@ -186,7 +187,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         "doctor" => crate::project::commands::doctor(&parsed),
         "hooks" => hooks_command(&parsed),
         "host" => host_command(&parsed),
-        "session" => session_recovery_command(&parsed),
+        "session" => session_recovery::command(&parsed),
         "project" if parsed.positional.first().map(String::as_str) == Some("graph") => {
             project_graph::command(&parsed)
         }
@@ -202,60 +203,6 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
             activity::command(&loaded, &parsed)
         }
         command => configured_command(command, &parsed),
-    }
-}
-
-/// Every `session` action this dispatcher accepts (`recovery show|record`).
-pub(crate) const SESSION_ACTIONS: &[&str] = &["recovery"];
-
-fn session_recovery_command(a: &Arguments) -> Result<(), String> {
-    args::assert_options("session recovery", a, &["config", "json"])?;
-    if !a
-        .positional
-        .first()
-        .is_some_and(|action| SESSION_ACTIONS.contains(&action.as_str()))
-    {
-        return Err("session requires recovery show or recovery record".into());
-    }
-    if a.positional.len() == 2 && a.positional[0] == "recovery" && a.positional[1] == "show" {
-        let value = crate::host::session_recovery::show()?;
-        if a.flags.contains_key("json") {
-            print_json(&crate::producer::observed(value))
-        } else {
-            println!(
-                "Native Goal: {} revision {}",
-                value["goal"]["goalId"], value["goal"]["revision"]
-            );
-            println!(
-                "Current Work selection: {}",
-                value["workSelection"]["state"]
-            );
-            println!(
-                "Recovery hint SHA-256: {}",
-                value["hintSha256"].as_str().unwrap_or("absent")
-            );
-            println!("Authority: none; inspect current Goal and Work detail before acting.");
-            Ok(())
-        }
-    } else if a.positional.len() == 2
-        && a.positional[0] == "recovery"
-        && a.positional[1] == "record"
-    {
-        let config_path = option(
-            a,
-            "config",
-            "session recovery record requires --config OWNER_CONFIG",
-        )?;
-        let loaded = config::load(Some(config_path))?;
-        let mut input = Vec::new();
-        std::io::stdin()
-            .take(8 * 1024 + 1)
-            .read_to_end(&mut input)
-            .map_err(|error| format!("session recovery record input: {error}"))?;
-        let result = crate::host::session_recovery::record(&loaded, &input)?;
-        print_json(&result)
-    } else {
-        Err("session requires recovery show or recovery record".into())
     }
 }
 

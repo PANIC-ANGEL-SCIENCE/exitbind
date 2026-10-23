@@ -13,6 +13,12 @@ pub(crate) fn check_with_timeout(
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
+    let observation = &snapshot.state()["checkObservation"];
+    if observation["state"] == "running" {
+        let refusal =
+            crate::run::check_observation::admitted_refusal(observation, Some(work), &loaded.path);
+        return Err(refusal);
+    }
     let pending = retry_check_target(&snapshot)?;
     let observed = if let Some(pending) = pending {
         run::observe_check_for_requirement(

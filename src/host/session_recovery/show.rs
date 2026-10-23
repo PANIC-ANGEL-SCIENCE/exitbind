@@ -27,13 +27,7 @@ pub(crate) fn show() -> Result<Value, String> {
         .ok_or("native session has no canonical Goal to recover")?;
     let hint_result = read_hint(&session.root);
     let (hint, hint_issue) = match hint_result {
-        Ok(Some(hint))
-            if hint.host == session.host
-                && hint.session_key == session.key
-                && hint.owner_identity_sha256 == owner.identity_sha256
-                && hint.owner_project_id == owner.project_id
-                && hint.goal_id == record["goalId"] =>
-        {
+        Ok(Some(hint)) if hint.belongs_to(&session, &owner, &record["goalId"]) => {
             (Some(hint), None)
         }
         Ok(Some(_)) => (None, Some("saved hint belongs to another session or Goal")),
@@ -215,6 +209,25 @@ pub(crate) fn show() -> Result<Value, String> {
     let verified_owner = route_owner.as_ref().filter(|loaded| {
         session_goal::native::scope(loaded, false).is_ok_and(|scope| scope.owner_matches)
     });
+    // The Lead's saved step and decisions, whether or not the Goal advanced
+    // since; `goalCurrent` says which.
+    let active_step = hint.as_ref().map_or(Value::Null, |value| {
+        super::pause::active_step(value, freshness["goalCurrent"] == true)
+    });
+    let pause_config = verified_owner
+        .map(|loaded| loaded.path.clone())
+        .or_else(|| {
+            super::owner_config::goal_owner(&serde_json::Map::new())
+                .and_then(|found| found.config)
+                .map(|(path, _)| path.into())
+        });
+    let pause_record = match (
+        pause_config,
+        session_goal::goal_summary::closed_revision(&record),
+    ) {
+        (Some(path), None) => super::pause::routes(&path).unwrap_or(Value::Null),
+        _ => Value::Null,
+    };
     let deadline = Instant::now() + HOOK_BUDGET;
     let derived = current_work::derive(
         &record,
@@ -241,7 +254,10 @@ pub(crate) fn show() -> Result<Value, String> {
         "workSelection":selection,
         "currentWorkReadSnapshot":Value::Null,
         "savedState":if metadata_current {"Goal and declared references current; saved step remains historical until exact Work detail is reread"} else {"historical"},
-        "activeSavedStep":Value::Null,
+        "activeSavedStep":active_step,
+        "pauseRecord":pause_record,
+        "unmappedRequirements":session_goal::requirements::unmapped(&record).iter()
+            .map(|(id, source)| json!({"id":id,"source":source})).collect::<Vec<_>>(),
         "savedHint":hint_value,
         "activeRecovery":active_recovery,
         "milestone":super::milestone::project(&record, &session, &owner, hint.as_ref()),

@@ -72,6 +72,28 @@ pub(crate) fn event(
     })))
 }
 
+/// The refusal of a second check while one observation is admitted: the
+/// observation, whether it is still running or failed, and the route that
+/// reads it. `work` is the Work the refused command named, when known.
+pub(crate) fn admitted_refusal(
+    observation: &Value,
+    work: Option<&str>,
+    config: &std::path::Path,
+) -> String {
+    let slot = crate::emitted::slot("WORK");
+    let detail = crate::emitted::command_line(
+        &["work", "detail", work.unwrap_or(&slot), "--view", "action"],
+        Some(config),
+    );
+    let event = observation["eventSha256"].as_str().unwrap_or("unknown");
+    let on = work.map_or_else(|| "this Work".to_owned(), |work| format!("Work {work}"));
+    if observation["state"] == "running" {
+        format!("check observation {event} is running on {on}: admitted, no end recorded yet; no check was launched. Read it with {detail}")
+    } else {
+        format!("check observation {event} on {on} failed without a check result; no check was launched. Read it and follow the Lead decision with {detail}")
+    }
+}
+
 pub(super) fn admit(
     loaded: &Loaded,
     path: &run_ledger::LedgerPath,
@@ -92,12 +114,7 @@ pub(super) fn admit(
         if current["binding"] != details["binding"] || current["timeoutMs"] != timeout_ms {
             return Err("check observation binding or execution limit changed; inspect the current Work decision".into());
         }
-        let work = crate::emitted::slot("WORK");
-        let detail = crate::emitted::command_line(
-            &["work", "detail", &work, "--view", "action"],
-            Some(&loaded.path),
-        );
-        return Err(format!("check observation is already admitted or failed; inspect {detail} and follow the Lead decision; no check was launched"));
+        return Err(admitted_refusal(current, None, &loaded.path));
     }
     // Re-read and revalidate under the ledger lock immediately before the
     // durable admission. Marked advisory-only config edits are allowed; the

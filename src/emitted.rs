@@ -242,6 +242,16 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the lesson source file",
     },
     Placeholder {
+        name: "SAVED_STEP",
+        fills: &[Fill::Flag("--step")],
+        meaning: "the step the Lead continues from after a pause",
+    },
+    Placeholder {
+        name: "LEAD_DECISION",
+        fills: &[Fill::Flag("--decision")],
+        meaning: "a Lead decision taken on an in-flight Work before its Lead act",
+    },
+    Placeholder {
         name: "COMPLETE_SAVED_STORAGE_FAILURE_RESPONSE",
         fills: &[Fill::Field("response")],
         meaning: "the complete saved storage-failure response",

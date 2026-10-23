@@ -36,7 +36,37 @@ pub(super) struct Hint {
     pub(super) pending_operation: Option<PendingOperation>,
     pub(super) guidance_refs: Vec<Reference>,
     pub(super) last_checkpoint: Option<Checkpoint>,
+    /// The hashed identity of the session that wrote this record when it is
+    /// not the journal's own session: a session that adopted the journal.
+    /// Two sessions sharing one journal share one record; the last writer
+    /// wins and is named here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) recorded_by_session_key: Option<String>,
     pub(super) sha256: String,
+}
+
+impl Hint {
+    /// The hashed identity of the session that wrote this record.
+    pub(super) fn recorded_by(&self) -> &str {
+        self.recorded_by_session_key
+            .as_deref()
+            .unwrap_or(&self.session_key)
+    }
+
+    /// Whether this record belongs to `session`'s journal, its fixed owner
+    /// and the Goal `goal_id`.
+    pub(super) fn belongs_to(
+        &self,
+        session: &session_goal::native::Session,
+        owner: &session_goal::native::Owner,
+        goal_id: &Value,
+    ) -> bool {
+        self.host == session.host
+            && self.session_key == session.key
+            && self.owner_identity_sha256 == owner.identity_sha256
+            && self.owner_project_id == owner.project_id
+            && *goal_id == self.goal_id.as_str()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -209,6 +239,10 @@ pub(super) fn validate_hint(hint: &Hint) -> Result<(), String> {
         || hint.evidence_refs.len() > MAX_ITEMS
         || hint.work_refs.len() > MAX_ITEMS
         || hint.guidance_refs.len() > MAX_ITEMS
+        || hint
+            .recorded_by_session_key
+            .as_deref()
+            .is_some_and(|key| !valid_sha(key) || key == hint.session_key)
     {
         return Err("native session recovery hint has invalid bounded fields".into());
     }

@@ -298,7 +298,12 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     );
     let shown: Value = serde_json::from_slice(&show.stdout).unwrap();
     assert_eq!(shown["activeRecovery"], Value::Null);
-    assert_eq!(shown["activeSavedStep"], Value::Null);
+    // The saved step is reported with its Goal revision; it selects nothing.
+    assert_eq!(
+        shown["activeSavedStep"]["step"],
+        "Inspect the exact Goal and known Work details"
+    );
+    assert_eq!(shown["activeSavedStep"]["goalCurrent"], true);
     assert_eq!(
         shown["savedHint"]["currentStep"],
         "Inspect the exact Goal and known Work details"

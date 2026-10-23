@@ -410,6 +410,7 @@ mod tests {
             }),
             guidance_refs: Vec::new(),
             last_checkpoint: None,
+            recorded_by_session_key: None,
             sha256: String::new(),
         }
     }

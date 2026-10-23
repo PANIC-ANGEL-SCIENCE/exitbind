@@ -100,10 +100,15 @@ pub(crate) fn attach_graph_result(
     })
 }
 
-fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, String> {
-    if bytes.len() > 8 * 1024 {
-        return Err("session recovery record input exceeds 8192 bytes".into());
-    }
+/// The session, its fixed Goal owner and canonical Goal a record is for,
+/// checked against the owner configuration the caller supplied.
+pub(super) struct Owned {
+    pub(super) session: session_goal::native::Session,
+    pub(super) owner: session_goal::native::Owner,
+    pub(super) record: Value,
+}
+
+pub(super) fn owned(owner_loaded: &config::Loaded) -> Result<Owned, String> {
     let session = session_goal::native::current()?
         .ok_or("session recovery record requires a host-reported native session")?;
     let scope = session_goal::native::scope(owner_loaded, false)?;
@@ -120,6 +125,43 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
         .ok_or("native session Goal owner is unavailable")?;
     let record = session_goal::read_for_recovery(&session.root)?
         .ok_or("native session has no canonical Goal to recover")?;
+    Ok(Owned {
+        session,
+        owner,
+        record,
+    })
+}
+
+/// The navigation one record carries.
+pub(super) struct Draft {
+    pub(super) current_step: String,
+    pub(super) current_work: WorkSelection,
+    pub(super) latest_corrections: Vec<String>,
+    pub(super) evidence_refs: Vec<Reference>,
+    pub(super) work_refs: Vec<WorkRef>,
+    pub(super) pending_operation: Option<PendingOperation>,
+    pub(super) guidance_refs: Vec<Reference>,
+}
+
+impl Draft {
+    pub(super) fn of(hint: &Hint) -> Draft {
+        Draft {
+            current_step: hint.current_step.clone(),
+            current_work: hint.current_work.clone(),
+            latest_corrections: hint.latest_corrections.clone(),
+            evidence_refs: hint.evidence_refs.clone(),
+            work_refs: hint.work_refs.clone(),
+            pending_operation: hint.pending_operation.clone(),
+            guidance_refs: hint.guidance_refs.clone(),
+        }
+    }
+}
+
+fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, String> {
+    if bytes.len() > 8 * 1024 {
+        return Err("session recovery record input exceeds 8192 bytes".into());
+    }
+    let owned = owned(owner_loaded)?;
     let input: Value = serde_json::from_slice(bytes)
         .map_err(|_| "session recovery record input must be one JSON object")?;
     let object = input
@@ -145,80 +187,23 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
         .as_str()
         .ok_or("session recovery record requires the exact host-reported sessionId")?;
     bounded_text(session_id, "session ID", 512)?;
-    if !session.reports(session_id) {
+    if !owned.session.reports(session_id) {
         return Err("session recovery payload ID does not match current host selectors".into());
     }
     let current_step = input["currentStep"]
         .as_str()
         .ok_or("session recovery record requires currentStep")?;
-    bounded_text(current_step, "current step", MAX_TEXT)?;
     let current_work: WorkSelection = serde_json::from_value(input["currentWork"].clone())
         .map_err(|_| "session recovery currentWork must explicitly select or mark unresolved")?;
-    if !matches!(
-        current_work.state.as_str(),
-        "unresolved" | "not_selected" | "known"
-    ) || (current_work.state == "known") != current_work.work.is_some()
-    {
-        return Err("session recovery currentWork must be unresolved, not_selected, or an exact known Work locator".into());
-    }
-    let latest_corrections: Vec<String> = serde_json::from_value(
-        input
-            .get("latestCorrections")
-            .cloned()
-            .unwrap_or_else(|| json!([])),
-    )
-    .map_err(|_| "session recovery latestCorrections must be a text array")?;
-    if latest_corrections.len() > MAX_ITEMS {
-        return Err("session recovery accepts at most eight corrections".into());
-    }
-    for item in &latest_corrections {
-        bounded_text(item, "correction", 512)?;
-    }
-    let evidence_refs: Vec<Reference> = serde_json::from_value(
-        input
-            .get("evidenceRefs")
-            .cloned()
-            .unwrap_or_else(|| json!([])),
-    )
-    .map_err(|_| "session recovery evidenceRefs are malformed")?;
-    let guidance_refs: Vec<Reference> = serde_json::from_value(
-        input
-            .get("guidanceRefs")
-            .cloned()
-            .unwrap_or_else(|| json!([])),
-    )
-    .map_err(|_| "session recovery guidanceRefs are malformed")?;
-    for item in evidence_refs.iter().chain(&guidance_refs) {
-        bounded_text(&item.label, "reference label", 128)?;
-        bounded_text(&item.path, "reference path", 512)?;
-        if let Some(work) = item.work.as_deref() {
-            bounded_text(work, "reference Work locator", 128)?;
-        }
-        if !valid_sha(&item.sha256)
-            || !valid_sha(&item.producer_executable_sha256)
-            || item.consumption != "caller_reported_read"
-            || !matches!(item.root.as_str(), "product" | "control" | "state")
-        {
-            return Err("session recovery reference must bind a caller-reported read to a source and producer".into());
-        }
-    }
-    if evidence_refs.len() > MAX_ITEMS || guidance_refs.len() > MAX_ITEMS {
-        return Err(
-            "session recovery accepts at most eight evidence and guidance references".into(),
-        );
-    }
-    let work_refs: Vec<WorkRef> =
-        serde_json::from_value(input.get("workRefs").cloned().unwrap_or_else(|| json!([])))
-            .map_err(|_| "session recovery workRefs are malformed")?;
-    verify_work_refs(&record, &session, &owner, &work_refs)?;
-    if current_work.state == "known"
-        && !work_refs
-            .iter()
-            .any(|reference| current_work.work.as_deref() == Some(reference.work.as_str()))
-    {
-        return Err("known currentWork must match an exact workRefs Goal member".into());
-    }
-    let _known_locator = known_work_locator(&current_work, &work_refs)?;
+    let list = |field: &str| input.get(field).cloned().unwrap_or_else(|| json!([]));
+    let latest_corrections: Vec<String> = serde_json::from_value(list("latestCorrections"))
+        .map_err(|_| "session recovery latestCorrections must be a text array")?;
+    let evidence_refs: Vec<Reference> = serde_json::from_value(list("evidenceRefs"))
+        .map_err(|_| "session recovery evidenceRefs are malformed")?;
+    let guidance_refs: Vec<Reference> = serde_json::from_value(list("guidanceRefs"))
+        .map_err(|_| "session recovery guidanceRefs are malformed")?;
+    let work_refs: Vec<WorkRef> = serde_json::from_value(list("workRefs"))
+        .map_err(|_| "session recovery workRefs are malformed")?;
     let pending_operation: Option<PendingOperation> = serde_json::from_value(
         input
             .get("pendingOperation")
@@ -226,35 +211,108 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
             .unwrap_or(Value::Null),
     )
     .map_err(|_| "session recovery pendingOperation must be null or a read-only reference")?;
-    verify_source_refs(
-        owner_loaded,
-        &record,
-        &session,
-        &owner,
-        &work_refs,
-        &evidence_refs,
-    )?;
-    verify_source_refs(
-        owner_loaded,
-        &record,
-        &session,
-        &owner,
-        &work_refs,
-        &guidance_refs,
-    )?;
-    verify_pending(
-        owner_loaded,
-        &record,
-        &session,
-        &owner,
-        &work_refs,
-        pending_operation.as_ref(),
-    )?;
-    if let Some(PendingOperation::WorkDetail { work, .. }) = pending_operation.as_ref() {
+    let draft = Draft {
+        current_step: current_step.into(),
+        current_work,
+        latest_corrections,
+        evidence_refs,
+        work_refs,
+        pending_operation,
+        guidance_refs,
+    };
+    for item in draft.evidence_refs.iter().chain(&draft.guidance_refs) {
+        if item.consumption != "caller_reported_read" {
+            return Err("session recovery reference must bind a caller-reported read to a source and producer".into());
+        }
+    }
+    store_locked(owner_loaded, &owned, draft)
+}
+
+/// Check every field and reference of `draft` against the current Goal and
+/// owner, as a stored record must be.
+pub(super) fn verify_draft(
+    owner_loaded: &config::Loaded,
+    owned: &Owned,
+    draft: &Draft,
+) -> Result<(), String> {
+    let Owned {
+        session,
+        owner,
+        record,
+    } = owned;
+    bounded_text(&draft.current_step, "current step", MAX_TEXT)?;
+    let current_work = &draft.current_work;
+    if !matches!(
+        current_work.state.as_str(),
+        "unresolved" | "not_selected" | "known"
+    ) || (current_work.state == "known") != current_work.work.is_some()
+    {
+        return Err("session recovery currentWork must be unresolved, not_selected, or an exact known Work locator".into());
+    }
+    if draft.latest_corrections.len() > MAX_ITEMS {
+        return Err("session recovery accepts at most eight corrections".into());
+    }
+    for item in &draft.latest_corrections {
+        bounded_text(item, "correction", 512)?;
+    }
+    for item in draft.evidence_refs.iter().chain(&draft.guidance_refs) {
+        bounded_text(&item.label, "reference label", 128)?;
+        bounded_text(&item.path, "reference path", 512)?;
+        if let Some(work) = item.work.as_deref() {
+            bounded_text(work, "reference Work locator", 128)?;
+        }
+        if !valid_sha(&item.sha256)
+            || !valid_sha(&item.producer_executable_sha256)
+            || !matches!(
+                item.consumption.as_str(),
+                "caller_reported_read" | "generated_query_result"
+            )
+            || !matches!(item.root.as_str(), "product" | "control" | "state")
+        {
+            return Err("session recovery reference must bind a caller-reported read to a source and producer".into());
+        }
+    }
+    if draft.evidence_refs.len() > MAX_ITEMS || draft.guidance_refs.len() > MAX_ITEMS {
+        return Err(
+            "session recovery accepts at most eight evidence and guidance references".into(),
+        );
+    }
+    let work_refs = &draft.work_refs;
+    verify_work_refs(record, session, owner, work_refs)?;
+    if current_work.state == "known"
+        && !work_refs
+            .iter()
+            .any(|reference| current_work.work.as_deref() == Some(reference.work.as_str()))
+    {
+        return Err("known currentWork must match an exact workRefs Goal member".into());
+    }
+    let _known_locator = known_work_locator(current_work, work_refs)?;
+    for refs in [&draft.evidence_refs, &draft.guidance_refs] {
+        verify_source_refs(owner_loaded, record, session, owner, work_refs, refs)?;
+    }
+    let pending = draft.pending_operation.as_ref();
+    verify_pending(owner_loaded, record, session, owner, work_refs, pending)?;
+    if let Some(PendingOperation::WorkDetail { work, .. }) = pending {
         if !work_refs.iter().any(|item| &item.work == work) {
             return Err("pending Work detail must name an exact workRefs Goal member".into());
         }
     }
+    Ok(())
+}
+
+/// Verify `draft` and replace the session's record with it under the
+/// caller's ledger lock. The last writer wins and is named in the record.
+pub(super) fn store_locked(
+    owner_loaded: &config::Loaded,
+    owned: &Owned,
+    draft: Draft,
+) -> Result<Value, String> {
+    verify_draft(owner_loaded, owned, &draft)?;
+    let Owned {
+        session,
+        owner,
+        record,
+    } = owned;
     let owner_config_path = canonical_path(&owner_loaded.path, "native owner configuration")?;
     let last_checkpoint = match read_hint(&session.root)? {
         Some(existing)
@@ -274,8 +332,8 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
         session_key: session.key.clone(),
         owner_config_path,
         owner_config_sha256: hash::text(&owner_loaded.source),
-        owner_project_id: owner.project_id,
-        owner_identity_sha256: owner.identity_sha256,
+        owner_project_id: owner.project_id.clone(),
+        owner_identity_sha256: owner.identity_sha256.clone(),
         goal_id: record["goalId"]
             .as_str()
             .ok_or("native Goal identity is unavailable")?
@@ -287,19 +345,20 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
             .as_str()
             .ok_or("native Goal event identity is unavailable")?
             .into(),
-        current_step: current_step.into(),
-        current_work,
-        latest_corrections,
-        evidence_refs,
-        work_refs,
-        pending_operation,
-        guidance_refs,
+        current_step: draft.current_step,
+        current_work: draft.current_work,
+        latest_corrections: draft.latest_corrections,
+        evidence_refs: draft.evidence_refs,
+        work_refs: draft.work_refs,
+        pending_operation: draft.pending_operation,
+        guidance_refs: draft.guidance_refs,
         last_checkpoint,
+        recorded_by_session_key: session.adopted().then(|| session.selector_key.clone()),
         sha256: String::new(),
     };
     validate_hint(&hint)?;
     hint.sha256 = hash::value(&serde_json::to_value(&hint).map_err(|error| error.to_string())?);
-    write_hint_locked(&session, &hint)?;
+    write_hint_locked(session, &hint)?;
     Ok(json!({
         "recorded":true,
         "readOnlyAuthority":false,
@@ -307,6 +366,9 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
         "goalId":hint.goal_id,
         "goalRevision":hint.goal_revision,
         "currentWork":hint.current_work,
+        "savedStep":hint.current_step,
+        "leadDecisions":hint.latest_corrections,
+        "recordedBySessionKey":hint.recorded_by(),
         "next":"session recovery show",
     }))
 }

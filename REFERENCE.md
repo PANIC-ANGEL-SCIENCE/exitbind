@@ -827,6 +827,17 @@ read; the host independently rechecks bytes and executable identity on use.
 An optional exact `work` member lets the host resolve the file under that
 member's validated configured roots when the fixed Goal owner's roots differ.
 
+The Lead's pause uses the same record without JSON: `session recovery record
+--step TEXT` replaces the saved step and keeps saved decisions, and
+`--decision TEXT` adds one Lead decision taken on an in-flight Work before
+its Lead act (at most eight; the oldest is dropped). `goal status`,
+`work resume` and `session recovery show` print both routes as
+`pauseRecord` with the owner configuration filled in, while this session owns
+or adopted the open Goal. `show --json` reports the saved step and decisions
+as `activeSavedStep`, with the Goal revision they were recorded at, whether
+the Goal has advanced since, and the session that wrote them: sessions that
+share an adopted journal share one record, and the last writer wins.
+
 In local mode, `hook-run` resolves ControlRoot only through the exact private
 machine binding whose ProductRoot matches the host `cwd`; it never searches
 arbitrary parent directories. Bindings created before ControlRoot was recorded

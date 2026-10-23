@@ -52,10 +52,20 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         && record
             .as_ref()
             .is_some_and(|goal| goal["closure"]["kind"] != "direct");
+    if let Some(routes) = crate::host::session_recovery::pause_routes(l) {
+        value["pauseRecord"] = routes;
+    }
     if named || native_governed {
         value["presentation"] = json!({"terminal": presentation["terminal"]});
         if !a.flags.contains_key("json") {
             if let Some(terminal) = presentation["terminal"].as_str() {
+                for line in value["pauseRecord"]["text"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                {
+                    println!("{}", line.as_str().unwrap_or_default());
+                }
                 println!("{terminal}");
                 return Ok(());
             }

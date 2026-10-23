@@ -48,8 +48,19 @@ fn work_line_forms(
         item.work,
         item.config_path,
     );
+    let observation = item
+        .observation
+        .as_ref()
+        .map(|(state, event)| {
+            format!(
+                " Check observation {}: {}.",
+                bounded_hook_text(event, 16),
+                bounded_hook_text(state, 16)
+            )
+        })
+        .unwrap_or_default();
     let next = format!(
-        "{core}; next action: {}.",
+        "{core}; next action: {}.{observation}",
         bounded_hook_text(
             item.next_action
                 .as_deref()
@@ -175,6 +186,7 @@ mod tests {
                     role: "worker".into(),
                 })
                 .collect(),
+            observation: None,
         }
     }
 

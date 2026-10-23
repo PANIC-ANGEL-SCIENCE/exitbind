@@ -30,6 +30,9 @@ pub(super) struct CurrentWork {
     pub(super) source: &'static str,
     pub(super) next_action: Option<String>,
     pub(super) assignments: Vec<Assignment>,
+    /// The Work's admitted check observation without a check result:
+    /// its state (`running` or `failed`) and admission event.
+    pub(super) observation: Option<(String, String)>,
 }
 
 pub(super) struct Derived {
@@ -73,8 +76,8 @@ pub(super) fn derive(
             derived.unverified += 1;
             continue;
         };
-        let assignments = match open_run(&loaded, &work) {
-            Ok(Some(assignments)) => assignments,
+        let (assignments, observation) = match open_run(&loaded, &work) {
+            Ok(Some(open)) => open,
             Ok(None) => continue,
             Err(_) => {
                 derived.unverified += 1;
@@ -98,6 +101,7 @@ pub(super) fn derive(
             source,
             next_action,
             assignments,
+            observation,
         });
     }
     derived
@@ -156,8 +160,11 @@ fn member_project(
     Ok(loaded)
 }
 
-/// `Ok(None)` for a Work whose run has ended; open assignments otherwise.
-fn open_run(loaded: &config::Loaded, work: &str) -> Result<Option<Vec<Assignment>>, String> {
+type OpenRun = (Vec<Assignment>, Option<(String, String)>);
+
+/// `Ok(None)` for a Work whose run has ended; otherwise its open assignments
+/// and its admitted check observation, if one has no check result.
+fn open_run(loaded: &config::Loaded, work: &str) -> Result<Option<OpenRun>, String> {
     let ledger = crate::work::resolve(loaded, work)?;
     let snapshot = crate::run::RunSnapshot::capture(loaded, &ledger)?;
     if snapshot.status() != "running" {
@@ -174,7 +181,12 @@ fn open_run(loaded: &config::Loaded, work: &str) -> Result<Option<Vec<Assignment
             })
         })
         .collect();
-    Ok(Some(assignments))
+    let observation = &snapshot.state()["checkObservation"];
+    let observation = observation["state"].as_str().map(|state| {
+        let event = observation["eventSha256"].as_str().unwrap_or("unknown");
+        (state.to_owned(), event.to_owned())
+    });
+    Ok(Some((assignments, observation)))
 }
 
 /// The next action, computed on a helper thread so the caller never waits
@@ -239,6 +251,9 @@ pub(super) fn show_value(derived: &Derived, executable: &str, trees: Value) -> V
             "openAssignments":item.assignments.iter().map(|assignment| json!({
                 "assignment":assignment.id,"agent":assignment.agent,"role":assignment.role,"state":"open"
             })).collect::<Vec<_>>(),
+            "checkObservation":item.observation.as_ref().map(|(state, event)| json!({
+                "state":state,"admissionEventSha256":event
+            })),
         })).collect::<Vec<_>>(),
         "moreOpenWorks":derived.more,
         "unverifiedMembers":derived.unverified,

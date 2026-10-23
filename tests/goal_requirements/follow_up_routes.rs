@@ -215,7 +215,7 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
 const DECLARED: &[(&str, &str, &str)] = &[
     ("project", "src/cli/project.rs", "PROJECT_ACTIONS"),
     ("host", "src/cli/mod.rs", "HOST_ACTIONS"),
-    ("session", "src/cli/mod.rs", "SESSION_ACTIONS"),
+    ("session", "src/cli/session_recovery.rs", "SESSION_ACTIONS"),
 ];
 
 /// Top-level commands without subcommands; options follow the command.

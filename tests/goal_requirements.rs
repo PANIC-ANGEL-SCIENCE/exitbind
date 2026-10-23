@@ -574,6 +574,8 @@ mod follow_up_routes;
 mod intake_and_identity;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
+#[path = "goal_requirements/pause_record.rs"]
+mod pause_record;
 #[path = "goal_requirements/refuse_before_write.rs"]
 mod refuse_before_write;
 #[path = "goal_requirements/root_inputs.rs"]
