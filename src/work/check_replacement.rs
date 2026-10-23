@@ -79,22 +79,12 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
         }
         _ => {}
     }
-    let prepared = crate::session_goal::prepared_children_for_work(loaded, work);
-    if prepared["error"].is_string() {
-        return Err("prepared child state is unreadable; check replacement is blocked".into());
-    }
-    let children = prepared.as_array().map(Vec::as_slice).unwrap_or(&[]);
-    if children.iter().any(|child| {
-        !matches!(
-            child["state"].as_str(),
-            Some("recorded" | "failed" | "abandoned" | "superseded")
-        ) || child["retainedResultBytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes > 0)
-    }) {
-        return Err(
-            "check replacement is blocked by a live, prepared, or retained child result".into(),
-        );
+    let blocking = crate::session_goal::blocking_child(loaded, work)
+        .map_err(|_| "prepared child state is unreadable; check replacement is blocked")?;
+    if let Some(child) = blocking {
+        return Err(format!(
+            "check replacement is blocked by a live, prepared, or retained child result: {child}"
+        ));
     }
     if options.classification != "defective-contract" {
         return Err("--classification must explicitly be defective-contract".into());

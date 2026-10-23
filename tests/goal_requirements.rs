@@ -555,6 +555,8 @@ mod changed_after_acceptance;
 mod changed_after_binding_inventory;
 #[path = "goal_requirements/checker_derivation.rs"]
 mod checker_derivation;
+#[path = "goal_requirements/child_block_refusals.rs"]
+mod child_block_refusals;
 #[path = "inventory/cli_tables.rs"]
 mod cli_tables;
 #[path = "goal_requirements/closure_flows.rs"]

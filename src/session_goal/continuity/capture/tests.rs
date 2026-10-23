@@ -31,13 +31,13 @@ fn rejected_identity_wins_over_a_new_prepared_intent() {
 fn the_recover_line_takes_a_context_only_for_a_child_received_from_another_host() {
     let loaded = adviser_floor::loaded(None, None, None, &[]);
     let same = json!({"id": "abc", "receiving": same_host::RECEIVING});
-    let line = recover_route(&loaded, "smw_w", &same);
+    let line = summary::recover_route(&loaded, "smw_w", &same);
     assert!(
         line.ends_with(" work child recover smw_w abc --config /control/exitbind.json"),
         "{line}"
     );
     let received = json!({"id": "abc"});
-    let line = recover_route(&loaded, "smw_w", &received);
+    let line = summary::recover_route(&loaded, "smw_w", &received);
     assert!(
         line.contains(" work child recover smw_w abc --context ")
             && line.contains("FRESH_TOKEN")

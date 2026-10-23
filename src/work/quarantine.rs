@@ -433,19 +433,12 @@ fn configured_lead(plan: &Value) -> Result<Value, String> {
 }
 
 fn ensure_no_children(loaded: &Loaded, work: &str) -> Result<(), String> {
-    let prepared = crate::session_goal::prepared_children_for_work(loaded, work);
-    if prepared["error"].is_string() {
-        return Err("prepared child state is unreadable; quarantine is blocked".into());
-    }
-    if prepared.as_array().into_iter().flatten().any(|child| {
-        !matches!(
-            child["state"].as_str(),
-            Some("recorded" | "failed" | "abandoned" | "superseded")
-        ) || child["retainedResultBytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes > 0)
-    }) {
-        return Err("quarantine is blocked by a live, prepared, or retained child".into());
+    let blocking = crate::session_goal::blocking_child(loaded, work)
+        .map_err(|_| "prepared child state is unreadable; quarantine is blocked")?;
+    if let Some(child) = blocking {
+        return Err(format!(
+            "quarantine is blocked by a live, prepared, or retained child: {child}"
+        ));
     }
     Ok(())
 }

@@ -19,8 +19,11 @@ mod adviser;
 mod context;
 #[path = "capture/same_host.rs"]
 mod same_host;
+#[path = "capture/summary.rs"]
+mod summary;
 pub(crate) use context::context;
 pub(crate) use same_host::route as same_host_route;
+pub(crate) use summary::{blocking, summary};
 
 const FILE: &str = "child-intents.json";
 const MAX_ASSIGNMENT: usize = 128;
@@ -636,50 +639,6 @@ pub(crate) fn recover(
         record(loaded, work, &goal, intent, &message)?;
         Ok(json!({"work": work, "intent": intent["id"], "effect": "recorded"}))
     })
-}
-
-/// The `work child recover` line for a retained result: without `--context`
-/// for a child of the native session that holds the Work.
-fn recover_route(loaded: &Loaded, work: &str, intent: &Value) -> String {
-    let id = intent["id"].as_str().unwrap_or_default();
-    let route = crate::emitted::Route::new(["work", "child", "recover", work, id]);
-    let route = if intent["receiving"] == same_host::RECEIVING {
-        route
-    } else {
-        route.words(["--context".to_owned(), crate::emitted::slot("FRESH_TOKEN")])
-    };
-    route.config(&loaded.path).shell_text()
-}
-
-/// Read-only summary of this work's prepared children, without result text.
-pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
-    let Ok(intents) = load(loaded) else {
-        return json!({"error": "child intent state is unreadable"});
-    };
-    Value::Array(
-        intents
-            .iter()
-            .filter(|intent| intent["work"] == work)
-            .map(|intent| {
-                let pending = intent["pendingResult"].as_str().map(str::len);
-                json!({
-                    "intent": intent["id"],
-                    "assignment": intent["assignment"],
-                    "state": intent["state"],
-                    "bindingRevision": intent["bindingRevision"],
-                    "session": intent["session"],
-                    "host": intent["host"],
-                    "nativeChild": intent["nativeChild"],
-                    "agentType": intent["agentType"],
-                    "failure": intent["failure"],
-                    "conflict": intent["conflict"],
-                    "resultSha256": intent["resultSha256"],
-                    "retainedResultBytes": pending,
-                    "recover": pending.map(|_| recover_route(loaded, work, intent)),
-                })
-            })
-            .collect(),
-    )
 }
 
 #[cfg(test)]

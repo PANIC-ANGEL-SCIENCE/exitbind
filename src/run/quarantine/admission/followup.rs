@@ -41,23 +41,19 @@ pub(super) fn validate_predecessor(loaded: &Loaded, marker: &Value) -> Result<()
         check_code.ok_or("first verification check result is missing")?,
     )?;
     crate::run::artifact::assert_current(loaded, &state)?;
-    let children = crate::session_goal::prepared_children_for_work(
-        loaded,
-        link["work"]
-            .as_str()
-            .ok_or("first verification Work is invalid")?,
-    );
-    if children["error"].is_string()
-        || children.as_array().into_iter().flatten().any(|child| {
-            !matches!(
-                child["state"].as_str(),
-                Some("recorded" | "failed" | "abandoned" | "superseded")
-            ) || child["retainedResultBytes"]
-                .as_u64()
-                .is_some_and(|bytes| bytes > 0)
-        })
-    {
-        return Err("follow-up is blocked by live, prepared, or retained child effects".into());
+    let first = link["work"]
+        .as_str()
+        .ok_or("first verification Work is invalid")?;
+    match crate::session_goal::blocking_child(loaded, first) {
+        Ok(None) => {}
+        Ok(Some(child)) => {
+            return Err(format!(
+                "follow-up is blocked by live, prepared, or retained child effects: {child}"
+            ))
+        }
+        Err(_) => {
+            return Err("follow-up is blocked by live, prepared, or retained child effects".into())
+        }
     }
     Ok(())
 }
