@@ -1,8 +1,8 @@
 # Release series and compatibility
 
-Source candidate tag: v0.31.21
+Source candidate tag: v0.31.22
 
-The source version is 0.31.21. Its release commit carries the tag of the same
+The source version is 0.31.22. Its release commit carries the tag of the same
 name, and the release workflow publishes that tag's assets; a source version or
 passing CI alone does not establish an official release. Source metadata,
 schemas, installation defaults and current-version mentions in the

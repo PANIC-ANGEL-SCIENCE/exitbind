@@ -1,8 +1,83 @@
 # Changelog
 
-## 0.31.21
+## 0.31.22
 
 Unreleased source candidate; no stable tag or release assets are published.
+
+Install the hook binary and the governor together, and check that
+`exitbind version` on PATH (the hook binary) prints the governor's version
+before relying on saved Lead decisions, adopted Goals or journey members.
+There is no rollback to 0.31.21 once 0.31.22 has written these fields. Every
+Work 0.31.22 starts carries `start.observationNoveltyProtocol`, so 0.31.21
+refuses every such Work (`invalid run ledger line 1: unknown field
+'observationNoveltyProtocol'`); it also refuses a Lead act's
+`submit.reason`. A 0.31.21 hook that reads a session recovery hint carrying
+`latestCorrectionWorks` drops the saved Lead decisions the next time it saves
+a step; one carrying `recordedBySessionKey` it reports unusable, and its
+record writes fail until 0.31.22 rewrites the hint. After `goal adopt`,
+0.31.21 refuses the adopting session's owner record carrying
+`journalSessionKey` and does not carry `sessionAdoptions` into the Goal
+revisions it writes. A configuration replaced by 0.31.21, or by a writer
+outside the owner's native session, keeps no stamped copy, so journey
+members stamped with the replaced bytes stay refused until those bytes are
+supplied with
+`memory revalidate LEAD --from-config PREVIOUS_CONFIG --reason TEXT --apply`.
+
+- The architecture budget covers every file under `src`, `tests` and
+  `tests/fixtures`; files already over 32 KiB keep a ceiling that only falls,
+  and near-limit sources move one responsibility each into its own module.
+- A recipient's name, profile and phase guidance carry no lesson authority;
+  `memory revalidate` takes several ledgers, checks them all under one lock
+  before any append, and the configuration-changed refusal prints one route
+  for every ledger stamped with the same kept copy.
+- A passing observed check on a new worker result is new governor
+  information; the same pass on the same result and a repeated failure still
+  count toward their limits.
+- Every hook event resolves the project its session's native Goal belongs
+  to, verified by owner identity and project ID, never by path alone, and
+  says which configuration it used.
+- For a Work held in the current session, `work next` prints a
+  `work child prepare` route with lens files and no `--context`; a same-host
+  child whose binding stops verifying is failed with its message kept, not
+  lost.
+- `work disposition --decision environmental --reason TEXT` re-runs a failed
+  check on the same result; the failure stays in the ledger and still counts
+  toward the repeated-failure limit.
+- Every replacement of `exitbind.json`, including `profile import` and
+  `migrate layout --apply`, goes through one writer, which first keeps the
+  bytes it replaces when a lesson ledger, or a journey member of the
+  owner's Goal written in the owner's native session, carries their hash.
+- `goal adopt --session-key KEY` lets a new session read and write the
+  project's one open Goal, printed as one route wherever the Goal reads
+  unavailable.
+- `session recovery record --step TEXT` and `--decision TEXT` save a Lead
+  pause through printed routes that `goal status`, `work resume` and
+  `session recovery show` offer; a second `work check` while an observation
+  runs is refused naming it.
+- Every printed route is a typed value from one builder and runs as printed,
+  including permit, continuation, reconcile and propose routes; a registry
+  test fails on a route field not rendered from it.
+- A Lead's `--reason` on `work return`, `work fill`, `work act` and
+  `run submit` is recorded on the submit event (ledger version 8, at most
+  1024 bytes), together with the saved Lead decisions bound to that Work,
+  which the act then spends.
+- Every test takes its temp root from one guard that removes it on success
+  and names it on failure; `test-affected.sh` keeps logs only for failing
+  targets.
+- Inventory oracles read the product with one shared Rust source scanner and
+  the CLI's own tables; the gate (26) and legacy-reader inventories run on
+  every platform, and an expired provisional gate is refused at release.
+- `work child recover` without `--context` recovers a failed same-host
+  child; a refusal a retained child causes names it and prints its recover
+  line; session record lock refusals name the session record.
+- A journey member stays integrable across a configuration change that
+  moves no authority, proven by the kept copy of the bytes it was stamped
+  with; without that copy `goal prepare`, `work begin --journey-integration`
+  and `goal status` print one route naming the members.
+
+## 0.31.21
+
+Published stable release; the `v0.31.21` tag and release assets are available.
 
 - `work detail WORK --view action` carries the phase guidance and project
   lessons delivered to the current recipient, each with its read route, and

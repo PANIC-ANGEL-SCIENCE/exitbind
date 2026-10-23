@@ -27,7 +27,7 @@ wsl.exe --list --verbose
 
 ## Install Exitbind inside Ubuntu
 
-To install the published `v0.31.21` release, open the Ubuntu terminal.
+To install the published `v0.31.22` release, open the Ubuntu terminal.
 Keep projects under the Linux home directory, not under `/mnt/c`, so Linux path,
 permission, and filesystem behavior remain the ones Exitbind tests.
 

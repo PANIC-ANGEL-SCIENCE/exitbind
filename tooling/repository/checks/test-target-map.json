@@ -2173,8 +2173,8 @@
     },
     "tests/release_integrity.rs": {
       "baselineSha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b",
-      "currentSha256": "4c24ac8f1ff088a2fe93f7656fac2896418b1ac5b51d1c79ea79081faba38671",
-      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module. R54 docver rework: registers the readme_only_gates module. R55 F11 (D8): declares provisional_bases, the release refusal of an expired provisionalUntil; existing modules are unchanged."
+      "currentSha256": "8df2034229cb90071aeba97efcc3f2b03392a5b32de66d924299bdbee74b02d2",
+      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module. R54 docver rework: registers the readme_only_gates module. R55 F11 (D8): declares provisional_bases, the release refusal of an expired provisionalUntil; existing modules are unchanged. R55 F12: declares record_fields, the CHANGELOG mixed-version check over the allowlists, and the shared Rust source scanner it reads src with; existing modules are unchanged."
     },
     "tests/release_integrity/context.rs": {
       "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
