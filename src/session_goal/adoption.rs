@@ -294,15 +294,39 @@ pub(crate) fn adopt(loaded: &Loaded, journal_key: &str) -> Result<Value, String>
     }
     let goal_id = latest["goalId"].clone();
     let recorded = record::append(&target.root, &goal_id, &session, &owner)?;
-    if !session.adopted() {
+    // A rerun after a crash between the journal and the owner record writes
+    // only the owner record; the response names what this run wrote.
+    let owner_record = !session.adopted();
+    if owner_record {
         native::Session::for_key(session.host, &session.selector_key)?
-            .write_adoption(&owner, journal_key)?;
+            .write_adoption(&owner, journal_key)
+            .map_err(|error| {
+                let journal = if recorded.appended {
+                    "recorded this session's adoption"
+                } else {
+                    "already listed this session"
+                };
+                let rerun = crate::emitted::Route::new(["goal", "adopt", "--session-key", journal_key])
+                    .config(&loaded.path)
+                    .shell_text();
+                format!(
+                    "{error}; the Goal journal {journal}, but this session's owner record was not written; rerun {rerun}"
+                )
+            })?;
     }
+    let written: Vec<&str> = [
+        (recorded.appended, "goalJournal"),
+        (owner_record, "sessionOwnerRecord"),
+    ]
+    .into_iter()
+    .filter_map(|(wrote, what)| wrote.then_some(what))
+    .collect();
     Ok(json!({
         "kind":"native_goal_adopted",
         "goalId":recorded.record["goalId"],
         "revision":recorded.record["revision"],
-        "effect":if recorded.appended { "recorded" } else { "unchanged" },
+        "effect":if written.is_empty() { "unchanged" } else { "recorded" },
+        "written":written,
         "next":crate::emitted::goal_status(&loaded.path),
     }))
 }

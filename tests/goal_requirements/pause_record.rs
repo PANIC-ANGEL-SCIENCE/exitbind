@@ -273,6 +273,29 @@ fn a_new_session_reads_the_pause_record_and_the_running_check_after_adoption() {
     let _ = fs::remove_file(&release);
     assert!(ended.success(), "{ended:?}");
 
+    // F13 review D7: B reads the ended observation. The observed check
+    // completes the admitted observation, and no view still says running.
+    let completed = fs::read_to_string(&ledger)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .filter(|item| item["action"] == "check" && item["acquisition"] == "observed")
+        .last()
+        .expect("the check recorded its observed result");
+    assert_eq!(completed["observationEventSha256"], event, "{completed}");
+    let hook = session_start(&p);
+    let shown = p.value(&["session", "recovery", "show", "--json"], None);
+    let next = p.value(&["work", "next", &work, "--json"], None);
+    let context = format!("HOOK:\n{hook}\nSHOW:\n{shown:#}\nNEXT:\n{next:#}");
+    let current = &shown["currentWorks"]["works"][0];
+    assert_eq!(current["work"], work, "{context}");
+    assert!(current["checkObservation"].is_null(), "{context}");
+    assert!(!hook.contains("Check observation"), "{context}");
+    assert_ne!(
+        next["current"]["actionForm"]["state"], "unresolved_check_observation",
+        "{context}"
+    );
+
     // One record for two sessions: the last writer wins and is named.
     let by_b =
         ok_json(&p.call_exact_argv(&filled(&routes["saveStep"], "SAVED_STEP", "B continues")));

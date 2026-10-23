@@ -717,3 +717,24 @@ fn default_role_profiles_separate_findings_from_requirements() {
     assert!(read("worker").contains("smallest faithful change"));
     assert!(read("reviewer").contains("valid without being in the current scope"));
 }
+
+/// F7a review D2: the route's own refusal. A Lead decision pending on a
+/// reviewer finding, with no failed observed check, cannot be attested
+/// environmental; the route says why and records nothing.
+#[test]
+fn an_environmental_attestation_without_a_failed_check_is_refused_by_the_route() {
+    let fixture = Fixture::new("disposition-environmental-no-check");
+    let (work, _) = fixture.begin(&["--review-policy", "required"]);
+    let lead = pending_lead(&fixture, &work);
+    let before = fixture.events(&work).len();
+    let refused = fixture.dispose(&work, &lead, "environmental", &[]);
+    assert!(!refused.status.success(), "{}", text(&refused));
+    assert!(
+        text(&refused).contains(
+            "no failed observed check is current; an environmental attestation needs a new failed observation"
+        ),
+        "{}",
+        text(&refused)
+    );
+    assert_eq!(fixture.events(&work).len(), before);
+}

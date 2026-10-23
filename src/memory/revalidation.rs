@@ -65,13 +65,39 @@ pub(crate) fn run(
             refused.len()
         ));
     }
-    let mut responses = Vec::new();
+    let mut responses: Vec<Value> = Vec::new();
+    let total = prepared.len();
     for ready in prepared {
-        responses.push(match ready {
+        let response = match ready {
             Prepared::Current(response) => response,
-            Prepared::Ready(ready) if apply => ready.apply(loaded, &previous, actor)?,
+            Prepared::Ready(ready) if apply => {
+                let ledger = ready.ledger.clone();
+                ready.apply(loaded, &previous, actor).map_err(|error| {
+                    // Only a race after the shared checks reaches here; say
+                    // what is already recorded and how the rest completes.
+                    let recorded: Vec<&str> = responses
+                        .iter()
+                        .filter(|response| response["effect"] == "recorded")
+                        .filter_map(|response| response["ledger"].as_str())
+                        .collect();
+                    if recorded.is_empty() {
+                        return error;
+                    }
+                    let again = crate::emitted::Route::new(["memory", "revalidate", actor])
+                        .words(ledgers.iter().copied())
+                        .words(["--from-config", from, "--reason", reason, "--apply"])
+                        .config(&loaded.path)
+                        .shell_text();
+                    format!(
+                        "memory revalidate recorded {} of {total} ledgers ({}) and refused {ledger}: {error}; a ledger already recorded is skipped when this runs again: {again}",
+                        recorded.len(),
+                        recorded.join(", "),
+                    )
+                })?
+            }
             Prepared::Ready(ready) => ready.response,
-        });
+        };
+        responses.push(response);
     }
     if responses.len() == 1 {
         return Ok(responses.remove(0));
@@ -113,8 +139,7 @@ enum Prepared {
 struct Ready {
     snapshot: LedgerSnapshot,
     item: Value,
-    proof: Value,
-    new_hash: String,
+    event: Value,
     ledger: String,
     response: Value,
 }
@@ -225,14 +250,58 @@ fn prepare(
         "nextAction":{"command":lesson_route(loaded, actor, ledger, "inspect").full_argv()?,"readOnly":true},
         "meaning":"explicit reviewed project-fact lineage; no Work, task grant, check, review approval or acceptance is transferred"});
     let item = item.clone();
+    // Every check the event itself needs runs here, before any ledger of a
+    // multi-ledger run is appended to (F4a review D1).
+    let event = revalidation_event(loaded, actor, &snapshot, &item, proof, &new_hash)?;
+    crate::project::git_preflight::refuse_tracked_targets(
+        &loaded.state_root,
+        &[snapshot.path.as_path()],
+    )?;
     Ok(Prepared::Ready(Box::new(Ready {
         snapshot,
         item,
-        proof,
-        new_hash,
+        event,
         ledger: ledger.to_owned(),
         response,
     })))
+}
+
+/// The ordinary revalidation event for one ledger, validated against that
+/// ledger as it stands.
+fn revalidation_event(
+    loaded: &Loaded,
+    actor: &str,
+    snapshot: &LedgerSnapshot,
+    item: &Value,
+    proof: Value,
+    new_hash: &str,
+) -> Result<Value, String> {
+    let last = snapshot
+        .events
+        .last()
+        .ok_or("lesson ledger has no events")?;
+    let agent = loaded.agent(actor).ok_or("configured Lead missing")?;
+    let profile = project_file(&loaded.control_root, &agent.profile, "actor profile")?;
+    let mut event = json!({"version":2,"kind":"memory","producer":crate::producer::evidence(),
+        "action":"revalidate","itemId":item["itemId"],"scope":item["scope"],"actor":actor,
+        "source":item["source"],"configSha256":new_hash,"actorProfile":{
+            "path":relative_project_path(&loaded.control_root,&profile)?,
+            "sha256":hash::text(&stable_text(&profile,"actor profile")?)},
+        "previousEventSha256":snapshot.last_event_sha256,"timestamp":super::now(),"revalidation":proof});
+    if let Some(expiry) = last.get("expiresAt") {
+        event["expiresAt"] = expiry.clone();
+    }
+    event["eventSha256"] = json!(hash::value(&event));
+    super::state::validate_event(
+        &event,
+        &loaded.product_root,
+        &loaded.control_root,
+        snapshot.events.len() + 1,
+        snapshot.last_event_sha256.as_deref(),
+        snapshot.last_timestamp.as_deref(),
+        &snapshot.items,
+    )?;
+    Ok(event)
 }
 
 /// The lesson lifecycle route `memory ACTION [ACTOR] LEDGER --config CONFIG`;
@@ -249,44 +318,14 @@ impl Ready {
         let Ready {
             snapshot,
             item,
-            proof,
-            new_hash,
+            event,
             ledger,
             mut response,
         } = self;
-        let last = snapshot
-            .events
-            .last()
-            .ok_or("lesson ledger has no events")?;
-        let agent = loaded.agent(actor).ok_or("configured Lead missing")?;
-        let profile = project_file(&loaded.control_root, &agent.profile, "actor profile")?;
-        let mut event = json!({"version":2,"kind":"memory","producer":crate::producer::evidence(),
-            "action":"revalidate","itemId":item["itemId"],"scope":item["scope"],"actor":actor,
-            "source":item["source"],"configSha256":new_hash,"actorProfile":{
-                "path":relative_project_path(&loaded.control_root,&profile)?,
-                "sha256":hash::text(&stable_text(&profile,"actor profile")?)},
-            "previousEventSha256":snapshot.last_event_sha256,"timestamp":super::now(),"revalidation":proof});
-        if let Some(expiry) = last.get("expiresAt") {
-            event["expiresAt"] = expiry.clone();
-        }
-        event["eventSha256"] = json!(hash::value(&event));
-        super::state::validate_event(
-            &event,
-            &loaded.product_root,
-            &loaded.control_root,
-            snapshot.events.len() + 1,
-            snapshot.last_event_sha256.as_deref(),
-            snapshot.last_timestamp.as_deref(),
-            &snapshot.items,
-        )?;
         super::ensure_config_current(previous)?;
         super::ensure_config_current(loaded)?;
         history_against(previous, &snapshot)?;
         super::validate_source_current(loaded, &snapshot)?;
-        crate::project::git_preflight::refuse_tracked_targets(
-            &loaded.state_root,
-            &[snapshot.path.as_path()],
-        )?;
         let next = if item["state"] == "accepted" {
             "revoke"
         } else {

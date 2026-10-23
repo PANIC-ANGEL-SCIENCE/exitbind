@@ -6,6 +6,7 @@
 //! Goal and a second open journal get no route, and the act refuses them
 //! with nothing written. Every renderer of the native UNAVAILABLE reasons is
 //! read from the source and must go through the one route builder.
+use super::rust_source::{blank, code_words, literals, production};
 use super::*;
 
 const SESSION_A: &str = "f14-session-a";
@@ -274,45 +275,48 @@ fn two_open_journals_of_one_project_produce_no_route_and_the_act_refuses() {
     assert_eq!(p.native_store_snapshot(), before);
 }
 
+/// Calls of `adoption::NAME` in code, in any spacing (`adoption :: NAME (`).
+fn adoption_calls(source: &str, name: &str) -> usize {
+    let code = blank(source);
+    code_words(source, name)
+        .into_iter()
+        .filter(|at| {
+            let before: String = code[..*at].chars().filter(|c| !c.is_whitespace()).collect();
+            before.ends_with("adoption::") && code[at + name.len()..].trim_start().starts_with('(')
+        })
+        .count()
+}
+
 /// Every renderer of the native UNAVAILABLE reasons, read from `src/`: the
 /// reason codes are spelled once, in the route builder, and every reason
 /// value is passed to that builder, which attaches the route.
 #[test]
 fn every_native_unavailable_renderer_goes_through_the_adoption_route_builder() {
     const BUILDER: &str = "src/session_goal/adoption.rs";
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    let mut stack = vec![root.join("src")];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                files.push(path);
-            }
-        }
-    }
+    let sources = production();
+    assert!(sources.iter().any(|(path, _)| path == BUILDER));
     let mut renderers = Vec::new();
-    for path in &files {
-        let relative = path.strip_prefix(root).unwrap().to_str().unwrap();
-        let source = fs::read_to_string(path).unwrap();
+    for (relative, source) in &sources {
+        let relative = relative.as_str();
         for code in [
-            "\"native_session_goal_unavailable\"",
-            "\"native_session_goal_context_invalid\"",
+            "native_session_goal_unavailable",
+            "native_session_goal_context_invalid",
             "native Goal owner record is absent",
         ] {
             assert!(
-                relative == BUILDER || !source.contains(code),
+                relative == BUILDER || !literals(source).iter().any(|lit| lit.text.contains(code)),
                 "{relative} renders {code} outside the adoption route builder"
             );
         }
         if relative == BUILDER {
             continue;
         }
-        let calls = source.matches("adoption::unavailable(").count();
-        let reasons = source.matches("Reason::Unavailable").count()
-            + source.matches("Reason::ContextInvalid").count();
+        let calls = adoption_calls(source, "unavailable");
+        let reasons = code_words(source, "Unavailable")
+            .into_iter()
+            .chain(code_words(source, "ContextInvalid"))
+            .filter(|at| blank(source)[..*at].trim_end().ends_with("Reason::"))
+            .count();
         assert_eq!(
             calls, reasons,
             "{relative}: every native reason is passed to adoption::unavailable"
@@ -320,7 +324,7 @@ fn every_native_unavailable_renderer_goes_through_the_adoption_route_builder() {
         for _ in 0..calls {
             renderers.push(relative.to_owned());
         }
-        if source.contains("adoption::hook_text(") {
+        if adoption_calls(source, "hook_text") > 0 {
             renderers.push(relative.to_owned());
         }
     }
@@ -339,7 +343,7 @@ fn every_native_unavailable_renderer_goes_through_the_adoption_route_builder() {
         ],
         "a new renderer joins this inventory"
     );
-    let builder = fs::read_to_string(root.join(BUILDER)).unwrap();
+    let builder = &sources.iter().find(|(path, _)| path == BUILDER).unwrap().1;
     let body = builder
         .split("pub(crate) fn unavailable(")
         .nth(1)
@@ -351,4 +355,117 @@ fn every_native_unavailable_renderer_goes_through_the_adoption_route_builder() {
     assert!(body.contains("\"adoptRoute\""), "{body}");
     let hook = builder.split("pub(crate) fn hook_text(").nth(1).unwrap();
     assert!(hook.split("\n}\n").next().unwrap().contains("route.line"));
+}
+
+/// The owner record a session that adopted a journal keeps in its own root.
+fn adopted_owner_records(p: &Project) -> Vec<PathBuf> {
+    let (_, store) = p.native_session.as_ref().unwrap();
+    let mut found = Vec::new();
+    for entry in fs::read_dir(store).unwrap() {
+        let owner = entry.unwrap().path().join("owner.json");
+        if fs::read_to_string(&owner).is_ok_and(|text| text.contains("journalSessionKey")) {
+            found.push(owner);
+        }
+    }
+    found
+}
+
+fn adopt(p: &Project, command: &[String]) -> Value {
+    let output = p.call_exact_argv(command);
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+/// F14 review D4/D5: a crash between the journal append and B's owner record
+/// is completed by running the same route, which writes only the owner
+/// record and says so; adopting again writes nothing.
+#[test]
+fn a_rerun_after_a_partial_adoption_writes_only_the_owner_record_and_says_so() {
+    let mut p = Project::new("f14-partial").with_native_session(SESSION_A);
+    p.setup();
+    p.begin("R1,R2,R3", "sh check.sh all");
+    p.set_native_session(SESSION_B);
+    let command = argv(&p.status()["goalProgress"]["adoptRoute"]);
+    let adopted = adopt(&p, &command);
+    assert_eq!(adopted["effect"], "recorded", "{adopted}");
+    assert_eq!(
+        adopted["written"],
+        json!(["goalJournal", "sessionOwnerRecord"])
+    );
+    let revision = p.status()["revision"].clone();
+
+    // The crash: the journal lists B, B's owner record was never written.
+    let owners = adopted_owner_records(&p);
+    assert_eq!(owners.len(), 1, "{owners:?}");
+    fs::remove_file(&owners[0]).unwrap();
+    assert!(p.status()["goalProgress"].get("adoptRoute").is_some());
+    let rerun = adopt(&p, &command);
+    assert_eq!(rerun["effect"], "recorded", "{rerun}");
+    assert_eq!(rerun["written"], json!(["sessionOwnerRecord"]), "{rerun}");
+    assert_eq!(p.status()["revision"], revision, "the journal is unchanged");
+    assert_eq!(adopted_owner_records(&p).len(), 1);
+
+    // Adopting again writes nothing.
+    let before = p.native_store_snapshot();
+    let again = adopt(&p, &command);
+    assert_eq!(again["effect"], "unchanged", "{again}");
+    assert_eq!(again["written"], json!([]), "{again}");
+    assert_eq!(p.native_store_snapshot(), before);
+}
+
+/// F14 review D5: a sidecar naming the journal counts only in the project
+/// whose state root holds it and whose owner the journal names. Moved to
+/// another project, it makes no route there (another owner) and no longer
+/// one here (no Work of this project names the key); both acts refuse with
+/// nothing written.
+#[test]
+fn a_sidecar_moved_to_another_project_adopts_in_neither() {
+    let mut p = Project::new("f14-sidecar").with_native_session(SESSION_A);
+    p.setup();
+    p.begin("R1,R2,R3", "sh check.sh all");
+    p.set_native_session(SESSION_B);
+    let command = argv(&p.status()["goalProgress"]["adoptRoute"]);
+    let mut other = Project::new("f14-sidecar-other");
+    other.native_session = p.native_session.clone();
+    let runs = p.root.join(".exitbind/runs");
+    let other_runs = other.root.join(".exitbind/runs");
+    fs::create_dir_all(&other_runs).unwrap();
+    let mut moved = 0;
+    for entry in fs::read_dir(runs).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        if name.ends_with(".session-goal.json") {
+            fs::rename(&path, other_runs.join(&name)).unwrap();
+            moved += 1;
+        }
+    }
+    assert!(moved > 0, "the Work names its session in a sidecar");
+
+    let before = p.native_store_snapshot();
+    let here = p.call_exact_argv(&command);
+    assert!(!here.status.success(), "{here:?}");
+    assert!(
+        stderr(&here).contains("no Work of this project names that session key")
+            && stderr(&here).contains("nothing was written"),
+        "{here:?}"
+    );
+    let mut elsewhere = command.clone();
+    let config = elsewhere
+        .iter()
+        .position(|word| word == "--config")
+        .unwrap()
+        + 1;
+    elsewhere[config] = other
+        .root
+        .join("exitbind.json")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let there = other.call_exact_argv(&elsewhere);
+    assert!(!there.status.success(), "{there:?}");
+    assert!(
+        stderr(&there).contains("belongs to another project"),
+        "{there:?}"
+    );
+    assert_eq!(p.native_store_snapshot(), before);
 }

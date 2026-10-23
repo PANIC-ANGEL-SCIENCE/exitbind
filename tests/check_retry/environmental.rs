@@ -160,6 +160,12 @@ fn environmental_failure_reruns_the_same_target_without_a_worker_return() {
         "again",
     ]);
     assert!(!again.status.success(), "{again:?}");
+    // The Lead decision is no longer pending: the target waits for a check.
+    assert!(
+        String::from_utf8_lossy(&again.stderr)
+            .contains("assignment is not the current pending Lead decision"),
+        "{again:?}"
+    );
 
     let rerun = fixture.value(&["work", "check", work]);
     let checks = observed_checks(&ledger);
@@ -224,5 +230,57 @@ fn a_seeded_second_attestation_without_a_new_observation_refuses() {
         format!("{stdout}{stderr}")
             .contains("environmental attestation needs a new failed observation"),
         "{refused:?}"
+    );
+}
+
+/// F7a review D1: re-run with the lock still held. The same failure adds no
+/// governor observation; the new failed observation makes the attestation
+/// available again, naming only the new check.
+#[test]
+fn a_rerun_under_the_same_lock_adds_no_governor_observation_and_offers_only_the_new_failure() {
+    let case = failed_under_lock("env-lock-held");
+    let (fixture, work) = (&case.fixture, case.work.as_str());
+    let ledger = fixture.ledger(work);
+    let relative = ledger
+        .strip_prefix(&fixture.root)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let governed = || {
+        let inspected = fixture.value(&["run", "inspect", &relative, "--json"]);
+        inspected["governor"]["observations"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{inspected}"))
+            .len()
+    };
+    let observed = governed();
+    let attested = attest(fixture, work, "the build lock was held");
+    assert!(attested.status.success(), "{attested:?}");
+
+    let failed = fixture.failed_value(&["work", "check", work]);
+    assert_eq!(failed["next"]["progress"]["reason"]["code"], "check_failed");
+    let checks = observed_checks(&ledger);
+    assert_eq!(checks.len(), 2, "both failed observations are kept");
+    assert_eq!(checks[1]["result"]["code"], 101);
+    assert_eq!(
+        governed(),
+        observed,
+        "the same failure is no new governor observation"
+    );
+
+    let view = action_view(fixture, work);
+    assert!(choice(&view, "environmental").is_some(), "{view}");
+    let again = attest(fixture, work, "the build lock is still held");
+    assert!(again.status.success(), "{again:?}");
+    let dispositions: Vec<Value> = events(&ledger)
+        .into_iter()
+        .filter(|event| event["outcome"] == "disposition")
+        .collect();
+    assert_eq!(dispositions.len(), 2);
+    assert_eq!(
+        dispositions[1]["disposition"]["findingSha256s"],
+        json!([checks[1]["eventSha256"]]),
+        "the second attestation names only the new failed check"
     );
 }

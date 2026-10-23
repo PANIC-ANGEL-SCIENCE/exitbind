@@ -128,3 +128,42 @@ fn one_route_revalidates_every_ledger_or_none_and_a_rerun_completes() {
     let begun = exitbind(root, &BEGIN);
     assert!(begun.status.success(), "{}", text(&begun));
 }
+
+/// F4a review D2: the combined route covers only ledgers stamped with the
+/// same kept copy. A ledger revalidated on its own under a later
+/// configuration is stamped with another hash; after the next change the
+/// printed route never mixes it with the two still stamped with the copy.
+#[test]
+fn the_combined_route_names_only_ledgers_stamped_with_the_same_copy() {
+    let (_previous, fresh, _copy) = carried_lessons(
+        "lesson-batch-membership",
+        &[
+            ("first-lesson", "Trace every delivery consumer."),
+            ("second-lesson", "Run the affected feature tests."),
+            ("third-lesson", "Name the exact candidate."),
+        ],
+    );
+    let root = fresh.0.as_path();
+    set_config(root, |config| {
+        config["agents"]["worker"]["nativeName"] = json!("sonic");
+    });
+    let route = route_of(root);
+    let ledgers = ledgers_in(&route);
+    assert_eq!(ledgers.len(), 3, "{route:?}");
+    // One ledger moves on alone: it is now stamped with this configuration.
+    let alone = run_route(root, &with_ledgers(&route, &ledgers[2..]), REASON);
+    assert!(alone.status.success(), "{}", text(&alone));
+    set_config(root, |config| {
+        config["agents"]["worker"]["nativeName"] = json!("nova");
+    });
+    let next = ledgers_in(&route_of(root));
+    let copy_stamped = ledgers[..2].to_vec();
+    assert!(
+        next == copy_stamped || next == ledgers[2..],
+        "the route mixes ledgers stamped with different configurations: {next:?} of {ledgers:?}"
+    );
+    assert!(
+        !(next.contains(&ledgers[2]) && next.iter().any(|ledger| copy_stamped.contains(ledger))),
+        "{next:?}"
+    );
+}

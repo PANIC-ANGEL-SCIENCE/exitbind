@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 119,
-  "declarations": 918,
+  "declarations": 921,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -1683,8 +1683,8 @@
     },
     "tests/agent_context_delivery.rs": {
       "baselineSha256": "51920d121179b9281e456bdcea2a69b47f237d0162022ff14f982847ba4c9a78",
-      "currentSha256": "d54b822933068a1c3bd104a032450713c2f87f74d3a1e5c8c4d740150f9aeb90",
-      "reason": "Preserve original assertions and add marked R52 coverage. R53: registers the phase-guidance delivery tests module and routes spawns through the isolating helper; existing assertions unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "fd9495b1508045c6783d6eaf404e2662bbc0fdf3eaf6be0ee3c85c931faf37e8",
+      "reason": "Preserve original assertions and add marked R52 coverage. R53: registers the phase-guidance delivery tests module and routes spawns through the isolating helper; existing assertions unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R55 F11: the target includes the shared source scanner and the CLI-table reader (tests/inventory/) so the recipient-view inventory reads the accepted --view values from the CLI; assertions are unchanged."
     },
     "tests/agent_first_control.rs": {
       "baselineSha256": "f13af407f4dfb5bf33988149741556472d028db1640eed732a3ae91171fee71c",
@@ -1703,8 +1703,8 @@
     },
     "tests/architecture_budget.rs": {
       "baselineSha256": "4ea2442881657c2f7bb78a53f7bbc8c415d57457db3672a7710c6bcbe40cf0c4",
-      "currentSha256": "99d1a250ac62b96fdbffd4b65d0ee7d55fcb82297d6a10b08ca15f0260b7b76a",
-      "reason": "R55 F10: the budget covers every file under src, tests and tests/fixtures (test modules, integration tests and fixtures included) with a ceiling list that only falls; the original production-source case is kept as every_covered_file_stays_within_its_ceiling with the same growth, over-limit, missing and under-limit failures, plus a ceiling above the current size now fails. Two cases are added: a seeded 33 KiB test file under each test root fails the budget, and Git-tracked files agree with the covered walk and the ceiling list. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "ce88644612f59573264078bbf30525e4b141b2c2a6055e3d6fa66d0e20b7bc3f",
+      "reason": "R55 F10: the budget covers every file under src, tests and tests/fixtures (test modules, integration tests and fixtures included) with a ceiling list that only falls; the original production-source case is kept as every_covered_file_stays_within_its_ceiling with the same growth, over-limit, missing and under-limit failures, plus a ceiling above the current size now fails. Two cases are added: a seeded 33 KiB test file under each test root fails the budget, and Git-tracked files agree with the covered walk and the ceiling list. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R55 F11: the target includes the shared source scanner (tests/inventory/rust_source.rs) that the temp-root scan reads test code with; the budget assertions are unchanged."
     },
     "tests/architecture_contract.rs": {
       "baselineSha256": "86e772e4e2ccf50b60a346400ca4fbb58d7205fb2f77a71949eb7659723ea8a0",
@@ -1778,8 +1778,8 @@
     },
     "tests/ci_policy.rs": {
       "baselineSha256": "399a5ccc9847cdc8e2627e0e6b67cf8a7fac025356ad97f2a73148214c1633a0",
-      "currentSha256": "8ac8803156116ef38dcafe370b1e62545be16a2082c09a2cd023bb426a0ea825",
-      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: add one test asserting the release workflow dispatches the README badge refresh after publish with only actions: write (GITHUB_TOKEN-published releases start no release or workflow_run runs); the release checkout-identity pair now ends the publish job at that job, with the same assertion."
+      "currentSha256": "8086e6bc8aea414c220f7095f4b62fe55307a73da06334bf0cdc2e019f3f8237",
+      "reason": "Workflow policy assertions now inspect the repository-owned release verifier and stable-readiness writer for implementation moved out of release.yml, and require an exact shallow candidate checkout before the readiness helper; all workflow boundary assertions remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54: add one test asserting the release workflow dispatches the README badge refresh after publish with only actions: write (GITHUB_TOKEN-published releases start no release or workflow_run runs); the release checkout-identity pair now ends the publish job at that job, with the same assertion. R55 F11: the lifecycle-label scan strips test-only items with the shared literal-aware scanner instead of its own line brace counter, with a seeded test-module-before-production case; the label assertions are unchanged."
     },
     "tests/ci_test_execution.rs": {
       "baselineSha256": "84a1be79d74aafb1094ea972b295e51532e483ffa26077cc31126e31d475fc98",
@@ -1918,8 +1918,8 @@
     },
     "tests/fixture_host_isolation.rs": {
       "baselineSha256": "74d11342f4ef66840cdd446871b682c62b7fed0b72894ec7054f4c1fe5091628",
-      "currentSha256": "4556fa01b48d80d63489949d171f03cfbc47093835b0509ec78b42e48292b2e1",
-      "reason": "R53: adds a test that every test spawn goes through the isolating helper and that the helper removes each host session variable; existing assertions unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "cf8a74d86a66a04aa53004924b53ae55e55a80c8a82a759a736dd3a31129fcae",
+      "reason": "R53: adds a test that every test spawn goes through the isolating helper and that the helper removes each host session variable; existing assertions unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R55 F11: the spawn inventory reads tests/ with the shared scanner and finds every spelling of a raw process spawn (path, spacing, rename, split lines) in code only, with a seeded self-test; the isolation assertions are unchanged."
     },
     "tests/fresh_user_surface.rs": {
       "baselineSha256": "1954df4ba0a2d35f221a0124b127e5dc6596bd0f9607ff59537d361ba258f948",
@@ -1928,8 +1928,8 @@
     },
     "tests/goal_requirements.rs": {
       "baselineSha256": "53628d73b06393d45723e4cfc69b4d3d2b1e7ffbd823b565f80d6244ff9abdfb",
-      "currentSha256": "3e199ede8fd45703c0bc51197957cd22b1ac5e291d1687197a7653118ed46032",
-      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: registers the changed-after-binding (F2) acceptance and inventory modules; existing modules unchanged. R55 F3: registers the root-inputs (P3) module; existing modules unchanged. R55 integration: registers the follow-up-route (P1 across every CLI family) module split from emitted_routes; existing modules unchanged. R55 F2a: registers the configuration-writer keep inventory module; existing modules unchanged. R55 F14: registers the session-adoption module; existing modules unchanged. R55 F13: registers the pause-record module; existing modules unchanged. R55 F8: registers the typed-route registry module; existing modules unchanged. R55 F8 rework: registers the route-value and Rust-source modules. R55 F15: registers the Lead-reason module; existing modules unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "3a1e054e690fcf56b7df28a30d19c34e0969af82160a5b7456d33724bfa54449",
+      "reason": "Register the native Goal recovery regression module and add a session-aware exact emitted-argv fixture helper; preserve every existing test module, fixture path and original assertion. This baseline root contains no direct test declarations. R53: registers the successor timing, acceptance rehash and producer envelope tests module and routes spawns through the isolating helper; existing assertions unchanged. R54: registers the checker-derivation tests module (goal prepare and named work begin without --artifact) and the setup --task-card start-path tests module; existing assertions unchanged. R54 native UX: the native-store snapshot skips the top-level display directory, the human display projection written beside the Goal journals; journal assertions are unchanged. R55: registers the emitted-route (F1), first-Work start path and refuse-before-write (P4) modules; existing modules unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 W3: registers the changed-after-binding (F2) acceptance and inventory modules; existing modules unchanged. R55 F3: registers the root-inputs (P3) module; existing modules unchanged. R55 integration: registers the follow-up-route (P1 across every CLI family) module split from emitted_routes; existing modules unchanged. R55 F2a: registers the configuration-writer keep inventory module; existing modules unchanged. R55 F14: registers the session-adoption module; existing modules unchanged. R55 F13: registers the pause-record module; existing modules unchanged. R55 F8: registers the typed-route registry module; existing modules unchanged. R55 F8 rework: registers the route-value and Rust-source modules. R55 F15: registers the Lead-reason module; existing modules unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R55 F11: declares the shared scanner and CLI-table modules (tests/inventory/) and the new inventory modules (source scanner, view refusals, attested-check consumers); fixtures are unchanged."
     },
     "tests/goal_requirements/closure_flows.rs": {
       "baselineSha256": "9dd3bc9703eec97f56a97bb1843bb796f0cd0bb167d95ef864185cceadec6b2a",
@@ -2008,8 +2008,8 @@
     },
     "tests/lead_disposition.rs": {
       "baselineSha256": "b09788c6601462e67cfa68a08a94ac2802195b550feb307a3aa9cb1e9c4997b3",
-      "currentSha256": "f91956ff26e2507a6df61285d6606afed4ad2a496dcafa488f16d4e1bfa3b7e6",
-      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F7: the historical-start fixture removes the new observationNoveltyProtocol marker together with recoveryProtocol, which it requires; assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "1d14323a941b9654accdce631f1bf4d534a81947ea0868f57bb858d778be399e",
+      "reason": "R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F7: the historical-start fixture removes the new observationNoveltyProtocol marker together with recoveryProtocol, which it requires; assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R55 F11 (F7a review D2): adds the route-level refusal of an environmental attestation without a failed check; existing tests are unchanged."
     },
     "tests/legacy_installer_bridge.rs": {
       "baselineSha256": "010bde494eb192df47e3e9d2a53c32746617036b6c55a30c9769f8020ea13738",
@@ -2173,8 +2173,8 @@
     },
     "tests/release_integrity.rs": {
       "baselineSha256": "e79946d3c23027f7c4cc8eaa1001ce434711e6785ed753be920d9918b998b07b",
-      "currentSha256": "8476bcb89647a47c105c693d2799cdb35ee97a4bb30b8da296e16a7128bf3767",
-      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module. R54 docver rework: registers the readme_only_gates module."
+      "currentSha256": "4c24ac8f1ff088a2fe93f7656fac2896418b1ac5b51d1c79ea79081faba38671",
+      "reason": "R54 docver: registers the new installer_asset module; existing modules are unchanged. R54 docver: registers the new doc_versions module. R54 docver rework: registers the readme_only_gates module. R55 F11 (D8): declares provisional_bases, the release refusal of an expired provisionalUntil; existing modules are unchanged."
     },
     "tests/release_integrity/context.rs": {
       "baselineSha256": "d9bec62e4ae9d298824b30132f306e76cab28cf81b0e8a3b662bc6c692dd0d3b",
