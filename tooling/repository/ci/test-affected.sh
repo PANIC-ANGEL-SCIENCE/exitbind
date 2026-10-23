@@ -36,7 +36,13 @@ unset_args=
 for variable in $host_session_variables; do
   unset_args="$unset_args -u $variable"
 done
-log_dir=$(mktemp -d "${TMPDIR:-/tmp}/test-affected.XXXXXX")
+if [ "$list_only" = true ]; then
+  log_dir=
+else
+  # Per-target logs live only as long as a target fails; a passing run leaves
+  # nothing in TMPDIR, and a failing one names the logs it keeps.
+  log_dir=$(mktemp -d "${TMPDIR:-/tmp}/test-affected.XXXXXX")
+fi
 failed=
 tab=$(printf '\t')
 while IFS="$tab" read -r target features; do
@@ -53,7 +59,12 @@ while IFS="$tab" read -r target features; do
   if env $unset_args "$cargo" "$@" > "$log" 2>&1; then status=0; else status=$?; fi
   passed=$(sed -n 's/^test result: [A-Za-z]*\. \([0-9][0-9]*\) passed;.*/\1/p' "$log" | awk '{n += $1} END {print n + 0}')
   failed_count=$(sed -n 's/^test result: [A-Za-z]*\. [0-9]* passed; \([0-9][0-9]*\) failed;.*/\1/p' "$log" | awk '{n += $1} END {print n + 0}')
-  printf '  %s: exit=%s passed=%s failed=%s log=%s\n' "$target" "$status" "$passed" "$failed_count" "$log"
+  if [ "$status" -ne 0 ] || [ "$passed" -eq 0 ]; then
+    printf '  %s: exit=%s passed=%s failed=%s log=%s\n' "$target" "$status" "$passed" "$failed_count" "$log"
+  else
+    printf '  %s: exit=%s passed=%s failed=%s\n' "$target" "$status" "$passed" "$failed_count"
+    rm -f "$log"
+  fi
   if [ "$status" -ne 0 ]; then
     sed -n '/^failures:$/,/^test result:/p' "$log" | tail -n 60 | sed 's/^/  | /'
     test "$failed_count" -gt 0 || tail -n 25 "$log" | sed 's/^/  | /'
@@ -66,5 +77,6 @@ done <<SELECTION
 $selection
 SELECTION
 test "$list_only" = true && exit 0
-test -z "$failed" || fail "failing target(s):$failed"
+test -z "$failed" || fail "failing target(s):$failed; logs kept in $log_dir"
+rmdir "$log_dir"
 printf 'test-affected: %s target(s) passed\n' "$count"
