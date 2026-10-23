@@ -44,7 +44,10 @@ pub(super) fn command(a: &Arguments) -> Result<(), String> {
             );
         }
         for decision in saved["leadDecisions"].as_array().into_iter().flatten() {
-            println!("Saved Lead decision: {}", decision.as_str().unwrap_or(""));
+            println!(
+                "{}",
+                crate::host::session_recovery::decision_line(decision.as_str().unwrap_or(""))
+            );
         }
         for line in value["pauseRecord"]["text"]
             .as_array()

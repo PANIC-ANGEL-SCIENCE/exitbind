@@ -62,19 +62,21 @@ pub(crate) fn pending(state: &Value) -> Vec<Value> {
             event["agent"].as_str().unwrap_or_default(),
             event["role"].as_str().unwrap_or_default()
         );
-        upstream_by_identity.insert(
-            key,
-            json!({
-                "stage": event["stage"],
-                "attempt": event["attempt"],
-                "agent": event["agent"],
-                "role": event["role"],
-                "root": event["artifact"]["root"].as_str().unwrap_or("product"),
-                "path": event["artifact"]["path"],
-                "sha256": event["artifact"]["sha256"],
-                "attemptStatus": if event["attempt"] == state["attempt"] { "current" } else { "prior" }
-            }),
-        );
+        let mut item = json!({
+            "stage": event["stage"],
+            "attempt": event["attempt"],
+            "agent": event["agent"],
+            "role": event["role"],
+            "root": event["artifact"]["root"].as_str().unwrap_or("product"),
+            "path": event["artifact"]["path"],
+            "sha256": event["artifact"]["sha256"],
+            "attemptStatus": if event["attempt"] == state["attempt"] { "current" } else { "prior" }
+        });
+        // The Lead's recorded reason travels with its result.
+        if let Some(reason) = event.get("reason") {
+            item["reason"] = reason.clone();
+        }
+        upstream_by_identity.insert(key, item);
     }
     let mut upstream: Vec<Value> = upstream_by_identity.into_values().collect();
     upstream.sort_by_key(|item| {

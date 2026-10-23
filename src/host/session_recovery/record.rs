@@ -137,6 +137,8 @@ pub(super) struct Draft {
     pub(super) current_step: String,
     pub(super) current_work: WorkSelection,
     pub(super) latest_corrections: Vec<String>,
+    /// One entry per decision: the Work it was bound to when recorded.
+    pub(super) latest_correction_works: Vec<Option<String>>,
     pub(super) evidence_refs: Vec<Reference>,
     pub(super) work_refs: Vec<WorkRef>,
     pub(super) pending_operation: Option<PendingOperation>,
@@ -149,6 +151,11 @@ impl Draft {
             current_step: hint.current_step.clone(),
             current_work: hint.current_work.clone(),
             latest_corrections: hint.latest_corrections.clone(),
+            latest_correction_works: if hint.latest_correction_works.is_empty() {
+                vec![None; hint.latest_corrections.len()]
+            } else {
+                hint.latest_correction_works.clone()
+            },
             evidence_refs: hint.evidence_refs.clone(),
             work_refs: hint.work_refs.clone(),
             pending_operation: hint.pending_operation.clone(),
@@ -211,10 +218,30 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
             .unwrap_or(Value::Null),
     )
     .map_err(|_| "session recovery pendingOperation must be null or a read-only reference")?;
+    // A decision already saved keeps the Work it was bound to. A correction
+    // given here is bound to none: only `--decision` binds one, to the
+    // current Work.
+    let saved = read_hint(&owned.session.root)
+        .ok()
+        .flatten()
+        .filter(|hint| hint.belongs_to(&owned.session, &owned.owner, &owned.record["goalId"]))
+        .map(|hint| Draft::of(&hint));
+    let latest_correction_works = latest_corrections
+        .iter()
+        .map(|text| {
+            let draft = saved.as_ref()?;
+            let at = draft
+                .latest_corrections
+                .iter()
+                .position(|item| item == text)?;
+            draft.latest_correction_works[at].clone()
+        })
+        .collect();
     let draft = Draft {
         current_step: current_step.into(),
         current_work,
         latest_corrections,
+        latest_correction_works,
         evidence_refs,
         work_refs,
         pending_operation,
@@ -254,6 +281,9 @@ pub(super) fn verify_draft(
     }
     for item in &draft.latest_corrections {
         bounded_text(item, "correction", 512)?;
+    }
+    if draft.latest_correction_works.len() != draft.latest_corrections.len() {
+        return Err("session recovery must bind each correction to a Work or to none".into());
     }
     for item in draft.evidence_refs.iter().chain(&draft.guidance_refs) {
         bounded_text(&item.label, "reference label", 128)?;
@@ -348,6 +378,11 @@ pub(super) fn store_locked(
         current_step: draft.current_step,
         current_work: draft.current_work,
         latest_corrections: draft.latest_corrections,
+        latest_correction_works: if draft.latest_correction_works.iter().all(Option::is_none) {
+            Vec::new()
+        } else {
+            draft.latest_correction_works
+        },
         evidence_refs: draft.evidence_refs,
         work_refs: draft.work_refs,
         pending_operation: draft.pending_operation,

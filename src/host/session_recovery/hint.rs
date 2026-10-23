@@ -31,6 +31,11 @@ pub(super) struct Hint {
     pub(super) current_step: String,
     pub(super) current_work: WorkSelection,
     pub(super) latest_corrections: Vec<String>,
+    /// The Work each saved Lead decision was bound to when it was recorded,
+    /// by position in `latest_corrections`; empty when none is bound. The
+    /// Lead act on that Work records the decision and removes it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) latest_correction_works: Vec<Option<String>>,
     pub(super) evidence_refs: Vec<Reference>,
     pub(super) work_refs: Vec<WorkRef>,
     pub(super) pending_operation: Option<PendingOperation>,
@@ -281,6 +286,16 @@ pub(super) fn validate_hint(hint: &Hint) -> Result<(), String> {
     }
     for item in &hint.latest_corrections {
         bounded_text(item, "correction", 512)?;
+    }
+    if !hint.latest_correction_works.is_empty()
+        && hint.latest_correction_works.len() != hint.latest_corrections.len()
+    {
+        return Err(
+            "native session recovery decision Works must name one Work per decision".into(),
+        );
+    }
+    for work in hint.latest_correction_works.iter().flatten() {
+        bounded_text(work, "decision Work locator", 128)?;
     }
     for item in hint.evidence_refs.iter().chain(&hint.guidance_refs) {
         bounded_text(&item.label, "reference label", 128)?;

@@ -90,11 +90,15 @@ pub(crate) fn record(
             (Some(hint), _) => {
                 let mut draft = Draft::of(&hint);
                 if verify_draft(owner_loaded, &owned, &draft).is_err() {
-                    draft = fresh(draft.current_step, draft.latest_corrections);
+                    draft = fresh(
+                        draft.current_step,
+                        draft.latest_corrections,
+                        draft.latest_correction_works,
+                    );
                 }
                 draft
             }
-            (None, Some(step)) => fresh(step.to_owned(), Vec::new()),
+            (None, Some(step)) => fresh(step.to_owned(), Vec::new(), Vec::new()),
             (None, None) => {
                 let route = &lines(&owner_loaded.path)[0];
                 return Err(format!(
@@ -106,15 +110,26 @@ pub(crate) fn record(
             draft.current_step = step.to_owned();
         }
         if let Some(decision) = decision {
+            // Bound to the record's current Work when it is known; the Lead
+            // act on that Work records and removes it.
+            let bound = (draft.current_work.state == "known")
+                .then(|| draft.current_work.work.clone())
+                .flatten();
             draft.latest_corrections.push(decision.to_owned());
+            draft.latest_correction_works.push(bound);
             let excess = draft.latest_corrections.len().saturating_sub(MAX_ITEMS);
             draft.latest_corrections.drain(..excess);
+            draft.latest_correction_works.drain(..excess);
         }
         store_locked(owner_loaded, &owned, draft)
     })
 }
 
-fn fresh(current_step: String, latest_corrections: Vec<String>) -> Draft {
+fn fresh(
+    current_step: String,
+    latest_corrections: Vec<String>,
+    latest_correction_works: Vec<Option<String>>,
+) -> Draft {
     Draft {
         current_step,
         current_work: super::hint::WorkSelection {
@@ -122,11 +137,18 @@ fn fresh(current_step: String, latest_corrections: Vec<String>) -> Draft {
             work: None,
         },
         latest_corrections,
+        latest_correction_works,
         evidence_refs: Vec::new(),
         work_refs: Vec::new(),
         pending_operation: None,
         guidance_refs: Vec::new(),
     }
+}
+
+/// One saved Lead decision as a line of text: the `session recovery show`
+/// line, and a line of the reason the Lead act on its Work records.
+pub(crate) fn decision_line(decision: &str) -> String {
+    format!("Saved Lead decision: {decision}")
 }
 
 /// The saved step and decisions `session recovery show` reports, with the

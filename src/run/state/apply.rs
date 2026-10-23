@@ -248,6 +248,7 @@ pub(super) fn apply_submission(state: &mut Value, event: &Value) -> Result<(), S
             event["outcome"]
         ));
     }
+    crate::run::lead_reason::validate_event(event)?;
     if outcome == "unavailable" {
         return apply_unavailable(state, event, &assignment);
     }
@@ -284,7 +285,7 @@ pub(super) fn apply_submission(state: &mut Value, event: &Value) -> Result<(), S
         submission["inputsSha256"] = inputs.clone();
         state["inputsSha256"] = inputs.clone();
     }
-    for field in ["basisSha256", "reviewDecisionSha256"] {
+    for field in ["basisSha256", "reviewDecisionSha256", "reason"] {
         if let Some(value) = event.get(field) {
             submission[field] = value.clone();
         }

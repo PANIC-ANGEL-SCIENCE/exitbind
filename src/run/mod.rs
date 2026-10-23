@@ -29,6 +29,7 @@ mod governor_sensor;
 pub(crate) mod guidance_continuity;
 pub(crate) mod human;
 pub(crate) mod inputs;
+mod lead_reason;
 pub(crate) mod ledger;
 mod lifecycle;
 mod observed_check;

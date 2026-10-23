@@ -19,7 +19,7 @@ const DECISIONS: [&str; 2] = [
     "An attested environmental failure still counts toward the repeated-failure limit",
 ];
 
-fn argv(route: &Value) -> Vec<String> {
+pub(super) fn argv(route: &Value) -> Vec<String> {
     route["command"]
         .as_array()
         .unwrap_or_else(|| panic!("a record route: {route}"))
@@ -30,7 +30,7 @@ fn argv(route: &Value) -> Vec<String> {
 
 /// The printed form with its one registered placeholder filled, nothing else
 /// edited.
-fn filled(route: &Value, slot: &str, value: &str) -> Vec<String> {
+pub(super) fn filled(route: &Value, slot: &str, value: &str) -> Vec<String> {
     let mut words = argv(route);
     let option = route["fill"][slot].as_str().unwrap();
     let at = words.iter().position(|word| word == option).unwrap();
@@ -39,7 +39,7 @@ fn filled(route: &Value, slot: &str, value: &str) -> Vec<String> {
     words
 }
 
-fn ok_json(output: &Output) -> Value {
+pub(super) fn ok_json(output: &Output) -> Value {
     assert!(
         output.status.success(),
         "{}{}",

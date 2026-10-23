@@ -27,23 +27,35 @@ pub fn submit(
     } else {
         None
     };
-    submit_locked(
-        loaded,
-        &path,
-        agent,
-        outcome,
-        reason,
-        None,
-        None,
-        disposition,
-        SubmitSubject {
-            root: artifact_root,
-            artifact: || Ok(artifact),
-        },
-        |_, _| Ok(()),
-        None,
-        pre_return_attempt.as_deref(),
-    )
+    let work = canonical_work_for_ledger(&path).ok();
+    crate::host::session_recovery::with_saved_decisions(work.as_deref(), |decisions| {
+        let result = submit_locked(
+            loaded,
+            &path,
+            agent,
+            outcome,
+            reason,
+            decisions,
+            None,
+            None,
+            disposition,
+            SubmitSubject {
+                root: artifact_root,
+                artifact: || Ok(artifact),
+            },
+            |_, _| Ok(()),
+            None,
+            pre_return_attempt.as_deref(),
+        )?;
+        let recorded = records_decisions(&result, decisions);
+        Ok((result, recorded))
+    })
+}
+
+/// Whether the recorded event carries `decisions` in its reason: the act
+/// spent them.
+fn records_decisions(result: &Value, decisions: &[String]) -> bool {
+    !decisions.is_empty() && result["event"].get("reason").is_some()
 }
 
 /// Submit a work result after revalidating the façade's exact assignment
@@ -108,28 +120,34 @@ where
         } else {
             (Box::new(artifact), None)
         };
-    submit_locked(
-        loaded,
-        &path,
-        &agent,
-        outcome,
-        reason,
-        Some(&expected),
-        Some(&assignment_sha256),
-        disposition,
-        SubmitSubject {
-            root: Some("state"),
-            artifact: subject_artifact,
-        },
-        |events, source| {
-            if !super::repair_recovery::only_own_repair(events, own_repair.as_deref()) {
-                binding()?;
-            }
-            preflight(events, source)
-        },
-        Some(recorded_protection),
-        pre_return_attempt.as_deref(),
-    )
+    let work = canonical_work_for_ledger(&path).ok();
+    crate::host::session_recovery::with_saved_decisions(work.as_deref(), |decisions| {
+        let result = submit_locked(
+            loaded,
+            &path,
+            &agent,
+            outcome,
+            reason,
+            decisions,
+            Some(&expected),
+            Some(&assignment_sha256),
+            disposition,
+            SubmitSubject {
+                root: Some("state"),
+                artifact: subject_artifact,
+            },
+            |events, source| {
+                if !super::repair_recovery::only_own_repair(events, own_repair.as_deref()) {
+                    binding()?;
+                }
+                preflight(events, source)
+            },
+            Some(recorded_protection),
+            pre_return_attempt.as_deref(),
+        )?;
+        let recorded = records_decisions(&result, decisions);
+        Ok((result, recorded))
+    })
 }
 
 /// The submitted subject: an artifact root and a producer deferred until the
@@ -199,6 +217,7 @@ fn submit_locked<F, P>(
     agent: &str,
     outcome: &str,
     reason: Option<&str>,
+    decisions: &[String],
     expected: Option<&AssignmentIdentity>,
     assignment_sha256: Option<&str>,
     disposition: Option<&str>,
@@ -258,6 +277,20 @@ where
                 );
             }
         }
+        // The Lead's reason and this Work's saved decisions, refused above
+        // their bound before any write.
+        let version = state["version"]
+            .as_u64()
+            .ok_or("run state is missing version")?;
+        let lead_reason = if version >= super::lead_reason::FIRST_VERSION
+            && super::lead_reason::recorded(
+                assignment["role"].as_str().unwrap_or_default(),
+                outcome,
+            ) {
+            super::lead_reason::compose(reason, decisions)?
+        } else {
+            None
+        };
         let known_work = super::governor::canonical_work_for_ledger(path).ok();
         let known_assignment = known_work
             .as_deref()
@@ -315,11 +348,9 @@ where
             )?;
         }
         let last = events.last().ok_or("run ledger has no head event")?;
-        // Preserve the ledger's historical event version. Optional fields
-        // must not silently upgrade a v3 checked run on its next submission.
-        let version = state["version"]
-            .as_u64()
-            .ok_or("run state is missing version")?;
+        // Preserve the ledger's historical event version (read above).
+        // Optional fields must not silently upgrade a v3 checked run on its
+        // next submission.
         let result_inputs = if version >= 6 {
             Some(live_inputs(&state)?)
         } else {
@@ -411,6 +442,9 @@ where
         }
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {
             event_value["fallback"] = fallback;
+        }
+        if let Some(lead_reason) = lead_reason {
+            event_value["reason"] = json!(lead_reason);
         }
         if state["governor"]["enabled"] == true
             && assignment["role"] == "worker"

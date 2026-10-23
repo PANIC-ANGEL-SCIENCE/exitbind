@@ -838,6 +838,15 @@ as `activeSavedStep`, with the Goal revision they were recorded at, whether
 the Goal has advanced since, and the session that wrote them: sessions that
 share an adopted journal share one record, and the last writer wins.
 
+A decision saved with `--decision` is bound to the record's current Work if
+one is selected; corrections given in the JSON form are not bound. The
+Lead's next act on that Work (`work return`, `work fill`, `work act` or
+`run submit` with a Lead outcome other than `disposition`) records the
+decision after the Lead's own `--reason` text, one
+`Saved Lead decision: TEXT` line each, and removes it from the record under
+the record's lock; decisions bound to no Work stay. The act is refused before
+any write when the recorded reason would exceed 1024 bytes.
+
 In local mode, `hook-run` resolves ControlRoot only through the exact private
 machine binding whose ProductRoot matches the host `cwd`; it never searches
 arbitrary parent directories. Bindings created before ControlRoot was recorded

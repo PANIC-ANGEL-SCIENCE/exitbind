@@ -72,7 +72,29 @@ path. `diagnostic.phases` independently names `projection` and
 remain available.
 
 `work permit` reports `allowed`, the recorded event ID, governor state, and a
-short next-action hint. Its `nextAction.commandSuffix` reads the full current
-work assignment; `audit.commandSuffix` inspects the named event. Both are
-read-only and require the same executable and config used for the permit call.
-The full governor history stays in those read surfaces.
+short next-action hint. `nextAction.command` is the full route that reads the
+current Work action (`work detail WORK --view action --json`) and
+`audit.command` the full route that inspects the named event (`run inspect
+LEDGER --event EVENT --json`); each starts with the executable that produced
+the reply and ends with `--config CONFIG`, and carries `type`, `safe: true`,
+`sameConfigRequired` and `sameExecutableRequired`. Both are read-only. The
+full governor history stays in those read surfaces.
+
+A mutation reply's `continuation` is the full read-only `work next WORK`
+route in the same shape (`command`, `sameConfigRequired`,
+`sameExecutableRequired`, `readOnly: true`). A native `reconcile` action that
+is safe to take carries the full `work act WORK --resume` route as `command`
+with the same two markers; an unsafe one carries no command and names its
+`reason` when one is known. When either marker is `true` the route was bounded: prepend the
+exact executable, or append the exact config value, used for the current
+invocation.
+
+A Lead `work return`, `work fill`, `work act` or `run submit` with an outcome
+other than `disposition` records the Lead's `--reason` text as `reason` on
+its `submit` event, followed by the saved Lead decisions bound to that Work
+(see `session recovery record --decision` in the command reference). The
+same text is on the run state's submission item (`run inspect LEDGER
+--json`, `submissions`) and on the next role's packet as the Lead item's
+`reason` in `upstreamArtifacts`. It is at most 1024 bytes; a longer reason
+is refused before any write. A `disposition` keeps its reason in its own
+record. Ledgers written before this field read as before.

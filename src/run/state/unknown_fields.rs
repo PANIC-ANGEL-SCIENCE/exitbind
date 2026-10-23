@@ -119,6 +119,9 @@ pub(super) fn reject_unknown(
             allowed.push("disposition");
             allowed.push("quarantineVerificationAck");
         }
+        if version >= crate::run::lead_reason::FIRST_VERSION {
+            allowed.push("reason");
+        }
         if version >= 6 {
             allowed.push("governorEvent");
         }
@@ -386,4 +389,29 @@ fn reject_unknown_fields(
                 "invalid run ledger line {line}: unknown field '{key}'"
             ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_unknown;
+    use serde_json::json;
+
+    /// The Lead's `reason` on a `submit` event passes the field inventory at
+    /// the current ledger version (8) and at no version below it.
+    #[test]
+    fn a_submit_reason_passes_at_the_current_version_and_nowhere_below() {
+        for version in 1..=8u64 {
+            let base = json!({"version": version, "kind": "run", "action": "submit",
+                "role": "lead", "outcome": "accepted"});
+            let mut with = base.clone();
+            with["reason"] = json!("Accepted after the review.");
+            assert!(reject_unknown(base.as_object().unwrap(), "submit", version, 1).is_ok());
+            let admitted = reject_unknown(with.as_object().unwrap(), "submit", version, 1);
+            assert_eq!(
+                admitted.is_ok(),
+                version == 8,
+                "version {version}: {admitted:?}"
+            );
+        }
+    }
 }

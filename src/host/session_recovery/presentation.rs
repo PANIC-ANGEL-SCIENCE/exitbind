@@ -405,6 +405,7 @@ mod tests {
                 work: None,
             },
             latest_corrections: Vec::new(),
+            latest_correction_works: Vec::new(),
             evidence_refs: Vec::new(),
             work_refs: Vec::new(),
             pending_operation: Some(PendingOperation::GoalStatus {
