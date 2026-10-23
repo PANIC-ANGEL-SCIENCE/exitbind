@@ -32,5 +32,5 @@ pub(super) fn read_route(
     if let Some(stream) = stream {
         route = route.words(["--stream", stream]);
     }
-    route.config(&loaded.path).bounded(2048).json()
+    route.config(&loaded.path).within(2048).argv_json()
 }

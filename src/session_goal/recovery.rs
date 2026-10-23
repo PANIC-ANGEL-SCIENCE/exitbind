@@ -584,13 +584,13 @@ pub(crate) fn recover(
         "--json",
     ])
     .config_text(owner_config)
-    .bounded(16 * 1024);
+    .within(16 * 1024);
     if !request.apply {
         return Ok(
             json!({"kind":"native_goal_recovery_preview","readOnly":true,
-            "currentBinding":preview_sha256,"decision":active,"applyArgv":apply_command.argv,
-            "sameConfigRequired":apply_command.same_config,
-            "sameExecutableRequired":apply_command.same_executable}),
+            "currentBinding":preview_sha256,"decision":active,"applyArgv":apply_command.argv_value(),
+            "sameConfigRequired":apply_command.needs_config(),
+            "sameExecutableRequired":apply_command.needs_executable()}),
         );
     }
     if request.current_binding != Some(preview_sha256.as_str()) {

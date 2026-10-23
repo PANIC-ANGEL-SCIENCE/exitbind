@@ -222,7 +222,7 @@ fn prepare(
         "differences":differences,"reason":reason});
     let response = json!({"effect":"no-change","status":"preview","ledger":ledger,
         "itemId":item["itemId"],"lessonId":lesson_id,"configSha256":new_hash,"revalidation":proof,
-        "nextAction":{"command":lesson_route(loaded, actor, ledger, "inspect").argv()?,"readOnly":true},
+        "nextAction":{"command":lesson_route(loaded, actor, ledger, "inspect").full_argv()?,"readOnly":true},
         "meaning":"explicit reviewed project-fact lineage; no Work, task grant, check, review approval or acceptance is transferred"});
     let item = item.clone();
     Ok(Prepared::Ready(Box::new(Ready {
@@ -292,7 +292,7 @@ impl Ready {
         } else {
             "inspect"
         };
-        response["nextAction"] = json!({"command":lesson_route(loaded, actor, &ledger, next).argv()?,
+        response["nextAction"] = json!({"command":lesson_route(loaded, actor, &ledger, next).full_argv()?,
             "readOnly":next == "inspect",
             "meaning":"retire this immutable lesson before correcting it; current guards still determine delivery"});
         append_event(&snapshot, &event)?;
@@ -469,7 +469,7 @@ pub(crate) fn next_action(
         _ => "inspect",
     };
     Ok(
-        json!({"command":lesson_route(loaded, actor, ledger, action).argv()?,"readOnly":action == "inspect", "state":state,
+        json!({"command":lesson_route(loaded, actor, ledger, action).full_argv()?,"readOnly":action == "inspect", "state":state,
         "meaning":"current lesson lifecycle only; correction requires a new immutable source and ledger"}),
     )
 }

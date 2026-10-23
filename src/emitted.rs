@@ -360,8 +360,8 @@ pub(crate) fn executable_word() -> String {
 pub(crate) fn command_line(words: &[&str], config: Option<&std::path::Path>) -> String {
     let route = Route::new(words.iter().copied());
     match config {
-        Some(config) => route.config(config).text(),
-        None => route.text(),
+        Some(config) => route.config(config).shell_text(),
+        None => route.shell_text(),
     }
 }
 
@@ -435,7 +435,7 @@ pub(crate) fn fill_flags(argv: &[String]) -> Value {
 /// the option that fills it. Every placeholder must be filled, and every
 /// supplied value must fill one; the route is otherwise unchanged.
 pub(crate) fn fill(printed: &Route, values: &BTreeMap<String, String>) -> Result<Route, String> {
-    let argv = printed.argv()?;
+    let argv = printed.full_argv()?;
     let mut used = std::collections::BTreeSet::new();
     let mut filled = Vec::with_capacity(argv.len());
     for (index, token) in argv.iter().enumerate() {
@@ -491,7 +491,7 @@ mod tests {
         let values = BTreeMap::from([("--reason".to_owned(), "two words".to_owned())]);
         let route = Route::printed(&printed).unwrap();
         assert_eq!(
-            fill(&route, &values).unwrap().argv().unwrap(),
+            fill(&route, &values).unwrap().full_argv().unwrap(),
             argv(&[
                 "x",
                 "work",

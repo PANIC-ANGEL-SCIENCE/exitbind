@@ -73,16 +73,16 @@ fn rebudget_route(route: &mut Value, argv_key: &str, config_path: &Path) {
     let Ok(printed) = Route::reprinted(suffix, config_path) else {
         return;
     };
-    let command = printed.bounded(256);
-    route[argv_key] = command.argv;
-    route["sameConfigRequired"] = json!(command.same_config);
-    route["sameExecutableRequired"] = json!(command.same_executable);
+    let command = printed.within(256);
+    route[argv_key] = command.argv_value().clone();
+    route["sameConfigRequired"] = json!(command.needs_config());
+    route["sameExecutableRequired"] = json!(command.needs_executable());
 }
 
 /// A read route with its configuration, bounded for a compact response:
 /// `{"command", "sameConfigRequired", "sameExecutableRequired"}`.
 pub(crate) fn continuation_route(config_path: &Path, route: Route) -> Value {
-    route.config(config_path).bounded(1024).command_json()
+    route.config(config_path).within(1024).command_json()
 }
 
 pub(crate) fn continuation_mutation(
@@ -198,11 +198,11 @@ pub(crate) fn project(
     );
     result.insert("omitted".into(), omitted_fields());
     result.insert("truncated".into(), json!(false));
-    result.insert("fullCommand".into(), recovery.argv.clone());
-    if recovery.same_config {
+    result.insert("fullCommand".into(), recovery.argv_value().clone());
+    if recovery.needs_config() {
         result.insert("fullCommandSameConfigRequired".into(), json!(true));
     }
-    if recovery.same_executable {
+    if recovery.needs_executable() {
         result.insert("fullCommandSameExecutableRequired".into(), json!(true));
     }
 
@@ -335,9 +335,9 @@ pub(crate) fn project(
                 "terminal": response["presentation"]["terminal"],
                 "goalProgress": compact_goal_progress(&response["presentation"]["goalProgress"]),
             },
-            "fullCommand": recovery.argv.clone(),
-            "fullCommandSameConfigRequired": recovery.same_config,
-            "fullCommandSameExecutableRequired": recovery.same_executable,
+            "fullCommand": recovery.argv_value().clone(),
+            "fullCommandSameConfigRequired": recovery.needs_config(),
+            "fullCommandSameExecutableRequired": recovery.needs_executable(),
             "omitted": ["large response detail; use fullCommand"],
             "truncated": true,
         });
@@ -371,9 +371,9 @@ pub(crate) fn project(
             "next": minimal_inspection_next(response, &result["next"], assignment),
             "nextAction": minimal_next_action(&result["nextAction"]),
             "humanHelp": minimal_human_help(&response["residual"]["humanHelp"]),
-            "fullCommand": recovery.argv.clone(),
-            "fullCommandSameConfigRequired": recovery.same_config,
-            "fullCommandSameExecutableRequired": recovery.same_executable,
+            "fullCommand": recovery.argv_value().clone(),
+            "fullCommandSameConfigRequired": recovery.needs_config(),
+            "fullCommandSameExecutableRequired": recovery.needs_executable(),
             "omitted": ["oversized response detail"],
             "truncated": true,
         });
@@ -419,9 +419,9 @@ pub(crate) fn project(
             "next": minimal_inspection_next(response, &result["next"], assignment),
             "nextAction": minimal_next_action(&result["nextAction"]),
             "humanHelp": minimal_human_help(&response["residual"]["humanHelp"]),
-            "fullCommand": recovery.argv,
-            "fullCommandSameConfigRequired": recovery.same_config,
-            "fullCommandSameExecutableRequired": recovery.same_executable,
+            "fullCommand": recovery.argv_value(),
+            "fullCommandSameConfigRequired": recovery.needs_config(),
+            "fullCommandSameExecutableRequired": recovery.needs_executable(),
             "omitted": ["oversized response detail; use the required current executable and config"],
             "truncated": true,
         });

@@ -29,7 +29,23 @@ fn completed_but_unsubmitted_result_returns_through_the_same_work() {
     assert!(!conflict.status.success());
     assert!(text(&conflict).contains("changed execution parameters"));
     assert_eq!(fs::read(&path).unwrap(), retained);
-    let response = fixture.value(&["work", "act", &work, "--resume"], b"");
+    // The inspection's printed route returns the saved result as printed.
+    let inspected = fixture.value(&["work", "act", &work, "--inspect"], b"");
+    let route: Vec<&str> = inspected["nextAction"]["command"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no printed route: {inspected}"))
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect();
+    assert_eq!(route[0], env!("CARGO_BIN_EXE_exitbind"));
+    let output = support::git_topology::command(route[0])
+        .current_dir(&fixture.root)
+        .args(&route[1..])
+        .env("EXITBIND_NATIVE_RECOVERY_TEST", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output));
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(response["recoveryEvent"]["kind"], "native_saved_return");
     assert_eq!(response["recoveryEvent"]["cue"], "same_door");
     assert_eq!(response["recoveryEvent"]["providerExecuted"], false);

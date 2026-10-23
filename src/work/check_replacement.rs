@@ -449,7 +449,7 @@ fn lead_native_for_agent<'a>(start: &'a Value, selected: &str) -> Result<&'a str
 fn detail_recovery(loaded: &Loaded, work: &str, meaning: &str) -> Value {
     let mut route = crate::emitted::Route::new(["work", "detail", work, "--json"])
         .config(&loaded.path)
-        .bounded(2048)
+        .within(2048)
         .command_json();
     route["kind"] = json!("read_only");
     route["meaning"] = json!(meaning);

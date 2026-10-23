@@ -316,10 +316,11 @@ fn overflow_item(
     let command = route
         .words(["--expected-sha256", sha, "--json"])
         .config(&loaded.path)
-        .argv()?;
+        .within(4096);
     Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
-        "readRoute":{"command":command,"readOnly":true,"sameConfigRequired":true,
-            "sameExecutableRequired":true}}))
+        "readRoute":{"command":command.argv_value(),"readOnly":true,
+            "sameConfigRequired":command.needs_config(),
+            "sameExecutableRequired":command.needs_executable()}}))
 }
 
 /// Apply a recipient's byte budget without clipping items. Omitted entries

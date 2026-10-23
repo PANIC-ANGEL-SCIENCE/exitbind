@@ -21,7 +21,7 @@ fn record_route(option: &str, slot: &str, config: &Path) -> crate::emitted::Rout
 /// The two record routes for the Goal owner configuration `config`.
 pub(crate) fn routes(config: &Path) -> Result<Value, String> {
     let route = |option: &str, slot: String, meaning: &str| -> Result<Value, String> {
-        let argv = record_route(option, &slot, config).argv()?;
+        let argv = record_route(option, &slot, config).full_argv()?;
         Ok(json!({"command": argv, "fill": crate::emitted::fill_flags(&argv), "meaning": meaning}))
     };
     Ok(json!({
@@ -36,7 +36,7 @@ pub(crate) fn routes(config: &Path) -> Result<Value, String> {
 
 /// The same two routes as printed lines.
 pub(crate) fn lines(config: &Path) -> Vec<String> {
-    let line = |option: &str, slot: String| record_route(option, &slot, config).text();
+    let line = |option: &str, slot: String| record_route(option, &slot, config).shell_text();
     vec![
         format!(
             "Lead pause, save the step: {}",

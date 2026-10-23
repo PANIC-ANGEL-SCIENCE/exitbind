@@ -299,7 +299,7 @@ pub(crate) fn refusal(
 /// The `nextAction` object for `route`, with the meaning the caller gives.
 pub(crate) fn next_action(route: &Route<'_>, meaning: &str) -> Value {
     let (route, read_only) = route.route();
-    let command = route.display_argv();
+    let command = route.shown_argv();
     json!({
         "command": command,
         "fill": crate::emitted::fill_flags(&command),
@@ -360,14 +360,16 @@ pub(crate) fn human(value: &Value) -> String {
         text.push_str(&format!("; kept copy {copy}"));
     }
     let next = &value["nextAction"];
-    let command = next["command"]
+    let argv: Vec<String> = next["command"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .map(crate::emitted::word)
-        .collect::<Vec<_>>()
-        .join(" ");
+        .map(str::to_owned)
+        .collect();
+    let command = crate::emitted::Route::printed(&argv)
+        .map(|route| route.shell_text())
+        .unwrap_or_default();
     if !command.is_empty() {
         text.push_str(&format!(
             ". Next: {command} ({})",

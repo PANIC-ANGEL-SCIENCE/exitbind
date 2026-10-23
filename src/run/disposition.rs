@@ -23,22 +23,20 @@ pub(crate) fn lead_route(
     work: Option<&str>,
     assignment: Option<&str>,
     config: &std::path::Path,
-) -> String {
+) -> crate::emitted::Route {
     let work = work.map_or_else(|| crate::emitted::slot("WORK"), str::to_owned);
     let assignment = assignment.map_or_else(|| crate::emitted::slot("ASSIGNMENT"), str::to_owned);
-    crate::emitted::command_line(
-        &[
-            "work",
-            "disposition",
-            &work,
-            &assignment,
-            "--decision",
-            &crate::emitted::slot("DISPOSITION_DECISION"),
-            "--reason",
-            &crate::emitted::slot("REASON"),
-        ],
-        Some(config),
-    )
+    crate::emitted::Route::new([
+        "work",
+        "disposition",
+        work.as_str(),
+        assignment.as_str(),
+        "--decision",
+        crate::emitted::slot("DISPOSITION_DECISION").as_str(),
+        "--reason",
+        crate::emitted::slot("REASON").as_str(),
+    ])
+    .config(config)
 }
 
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
@@ -77,6 +75,12 @@ pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), S
 /// Admit a submission's disposition at write time: the Lead may not skip a
 /// pending disposition, and only a Lead disposition carries a record that
 /// matches the pending cycle.  Historical ledgers replay without this check.
+/// The Work and assignment a refusal's disposition route fills when known.
+pub(crate) struct Known<'a> {
+    pub(crate) work: Option<&'a str>,
+    pub(crate) assignment: Option<&'a str>,
+}
+
 pub(crate) fn submission(
     state: &Value,
     role: &Value,
@@ -84,8 +88,9 @@ pub(crate) fn submission(
     raw: Option<&str>,
     explicit: bool,
     config: &std::path::Path,
+    known: Known<'_>,
 ) -> Result<Option<Disposition>, String> {
-    lead_outcome_allowed(state, role, outcome, config)?;
+    lead_outcome_allowed(state, role, outcome, config, &known)?;
     if outcome == "disposition" && role != "lead" {
         return Err("disposition requires the pending Lead assignment".into());
     }
@@ -102,7 +107,7 @@ pub(crate) fn submission(
     // A reviewer finding is decided with a named decision, so a repair always
     // carries the Lead's boundary to the next attempt.
     if parsed.decision.is_none() && state["pendingDisposition"]["kind"] == "review_rework" {
-        let route = lead_route(None, None, config);
+        let route = lead_route(known.work, known.assignment, config).shell_text();
         return Err(format!("a reviewer finding needs a Lead decision: {route}"));
     }
     validate(state, &parsed)?;
@@ -114,6 +119,7 @@ fn lead_outcome_allowed(
     role: &Value,
     outcome: &str,
     config: &std::path::Path,
+    known: &Known<'_>,
 ) -> Result<(), String> {
     if role == "lead"
         && crate::run::state::check_observation::unresolved(state)
@@ -125,7 +131,7 @@ fn lead_outcome_allowed(
         && state["pendingDisposition"].is_object()
         && !PENDING_LEAD_OUTCOMES.contains(&outcome)
     {
-        let route = lead_route(None, None, config);
+        let route = lead_route(known.work, known.assignment, config).shell_text();
         return Err(format!(
             "a pending finding requires a Lead disposition first: {route}"
         ));

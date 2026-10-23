@@ -88,10 +88,10 @@ fn route(loaded: &Loaded, work: &str, id: &str) -> Value {
     // require exact invocation arguments when paths are long.
     let command = crate::emitted::Route::new(["work", "expand", work, id, "--json"])
         .config(&loaded.path)
-        .bounded(768);
-    json!({"reference": id, "command": command.argv,
-        "sameConfigRequired": command.same_config,
-        "sameExecutableRequired": command.same_executable,
+        .within(768);
+    json!({"reference": id, "command": command.argv_value(),
+        "sameConfigRequired": command.needs_config(),
+        "sameExecutableRequired": command.needs_executable(),
         "readOnly": true})
 }
 

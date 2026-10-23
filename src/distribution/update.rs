@@ -599,7 +599,7 @@ fn bridge_health() -> Vec<String> {
             }
             other => {
                 if host["hostPresent"] == Value::Bool(true) {
-                    let install = crate::emitted::Route::new(["host", "install"]).text();
+                    let install = crate::emitted::Route::new(["host", "install"]).shell_text();
                     lines.push(format!(
                         "Host bridge {name}: bootstrap {other}; run '{install}' to restore it"
                     ));
@@ -623,10 +623,9 @@ fn delegate_bridge_sync(installed: &Path) -> Vec<String> {
         ];
     };
     if !output.status.success() {
-        let status = format!(
-            "{} host status",
-            crate::emitted::word(&installed.display().to_string())
-        );
+        let status = crate::emitted::Route::new(["host", "status"])
+            .run_by(&installed.display().to_string())
+            .shell_text();
         return vec![format!(
             "Host bridge not synchronized; run '{status}' to inspect it"
         )];

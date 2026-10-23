@@ -96,7 +96,7 @@ pub(crate) fn route(loaded: &Loaded, bounded: bool) -> Option<Route> {
     };
     let route =
         crate::emitted::Route::new(["goal", "adopt", "--session-key", journal.key.as_str()]);
-    let command = route.clone().config(&loaded.path).text();
+    let command = route.clone().config(&loaded.path).shell_text();
     let goal = crate::run_presentation::inert(&journal.goal_id);
     Some(Route {
         line: format!("Adopt Goal {goal}, open in an earlier session of this project: {command}"),

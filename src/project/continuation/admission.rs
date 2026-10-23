@@ -238,7 +238,7 @@ fn replay(
     Ok(Some(
         json!({"version":1,"state":if actual.is_ok(){"existing_work"}else{"reserved_unresolved"},
         "effect":"no-change","work":claim.work,"taskId":claim.task_id,"actualWork":actual.as_ref().ok(),
-        "unresolved":actual.err(),"detail":{"command":work_argv(loaded,&claim.work).argv()?},
+        "unresolved":actual.err(),"detail":{"command":work_argv(loaded,&claim.work).full_argv()?},
         "replay":"No Work or native child was started. Inspect this exact claim; a missing/unknown start is held and is never retried under a new name."}),
     ))
 }
@@ -286,7 +286,7 @@ pub(crate) fn admit(
         "plan":digest,"configuration":hash::text(&loaded.source),"startIntent":start_intent}));
     let mut response = json!({"version":1,"state":"preview","readOnly":true,"effect":"no-change",
         "currentBinding":binding,"plan":plan,"startIntentSha256":start_intent,
-        "apply":{"command":argv(loaded,&["admit",source,"--proposal",plan_path,"--current-binding",&binding,"--apply"]).argv()?},
+        "apply":{"command":argv(loaded,&["admit",source,"--proposal",plan_path,"--current-binding",&binding,"--apply"]).full_argv()?},
         "nativeExecution":"Admission creates ordinary Work only; consume its complete current native assignment and action forms through the existing host."});
     if !apply {
         return Ok(response);
@@ -428,7 +428,7 @@ pub(crate) fn admit(
             if let Err(error) = linked {
                 response["linkageRecovery"] = json!(error)
             }
-            response["detail"] = json!({"command":work_argv(loaded,&work).argv()?});
+            response["detail"] = json!({"command":work_argv(loaded,&work).full_argv()?});
         }
     }
     Ok(response)

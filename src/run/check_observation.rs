@@ -167,6 +167,14 @@ pub(super) fn fail(
     })
 }
 
+/// Where an unrecorded observation failure is read: the Work, or the run.
+fn failure_read(work: Option<&str>, ledger: &str) -> crate::emitted::Route {
+    match work {
+        Some(work) => crate::emitted::Route::new(["work", "detail", work, "--json"]),
+        None => crate::emitted::Route::new(["run", "status", ledger, "--json"]),
+    }
+}
+
 pub(super) fn record_failure(
     loaded: &Loaded,
     ledger: &str,
@@ -176,15 +184,13 @@ pub(super) fn record_failure(
 ) -> Result<Value, String> {
     fail(loaded, path, admission, facts.clone()).map_err(|error| {
         let work = canonical_work_for_ledger(path).ok();
-        let route = if let Some(work) = &work { crate::emitted::Route::new(["work", "detail", work.as_str(), "--json"]) }
-            else { crate::emitted::Route::new(["run", "status", ledger, "--json"]) };
-        let route = route.config(&loaded.path).bounded(2048);
+        let route = failure_read(work.as_deref(), ledger).config(&loaded.path).within(2048);
         format!("EXITBIND_JSON:{}", json!({
             "effect": "unknown", "checkRecorded": false, "durableFailureRecorded": false,
             "work": work, "reason": {"code": "observation_failure_storage_unavailable"},
             "observation": facts, "diagnostic": crate::drift::plain(&error).chars().filter(|c| !c.is_control()).take(512).collect::<String>(),
-            "nextAction": {"type": "inspect", "safe": true, "command": route.argv,
-                "sameConfigRequired": route.same_config, "sameExecutableRequired": route.same_executable},
+            "nextAction": {"type": "inspect", "safe": true, "command": route.argv_value(),
+                "sameConfigRequired": route.needs_config(), "sameExecutableRequired": route.needs_executable()},
             "recovery": "the admitted execution remains unresolved; inspect or stop, never retry"
         }))
     })

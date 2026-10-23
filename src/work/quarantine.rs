@@ -361,8 +361,8 @@ pub(crate) fn start(
             json!({"work": old_work, "verificationWork": verified.work(), "preview": true,
             "decisionSha256": marker["decisionSha256"],
             "ownerConfigPath": owner_loaded.path, "ownerConfigSha256": owner_sha256,
-            "apply": argv.argv,
-            "sameConfigRequired": argv.same_config, "sameExecutableRequired": argv.same_executable,
+            "apply": argv.argv_value(),
+            "sameConfigRequired": argv.needs_config(), "sameExecutableRequired": argv.needs_executable(),
             "effect": "no-change"}),
         );
     }
@@ -619,5 +619,5 @@ fn apply_argv(
             "--json",
         ])
         .config(&loaded.path)
-        .bounded(crate::work::compact::MAX_RESPONSE_BYTES - 1024)
+        .within(crate::work::compact::MAX_RESPONSE_BYTES - 1024)
 }

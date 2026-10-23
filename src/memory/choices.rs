@@ -438,7 +438,7 @@ pub(crate) fn choose(l: &Loaded, q: Request<'_>) -> Result<Value, String> {
             "--json",
         ])
         .config(&l.path)
-        .argv()?;
+        .full_argv()?;
     if !apply {
         return Ok(
             json!({"version":2,"effect":"no-change","expectedSha256":token,"record":record,"artifact":rel,"apply":{"command":argv},"authority":"Configured Lead applicability choice, not a new memory approval or host permission."}),

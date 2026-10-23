@@ -20,44 +20,26 @@ pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", escaped.replace('\'', "'\\''"))
 }
 
-fn has_control(value: &str) -> bool {
-    value.chars().any(char::is_control)
-}
-
-fn printf_encoded(value: &str) -> String {
-    use std::fmt::Write;
-
-    let mut encoded = String::new();
-    for byte in value.as_bytes() {
-        write!(&mut encoded, "\\0{byte:03o}").expect("writing to String cannot fail");
-    }
-    encoded
-}
-
-fn exact_assignment(name: &str, value: &str) -> String {
-    let encoded = printf_encoded(value);
-    format!("{name}=$(printf '%bX' '{encoded}'); {name}=${{{name}%X}}")
-}
-
 /// The read route for a run ledger, naming the executable this process runs as.
 pub(crate) fn read_command(action: &str, config: &str, ledger: &str) -> String {
-    read_command_with(&crate::emitted::executable_word(), action, config, ledger)
+    read_route(action, config).posix_operand_line(ledger)
 }
 
+fn read_route(action: &str, config: &str) -> crate::emitted::Route {
+    let route = crate::emitted::Route::new(["run", action]);
+    let route = if action == "next" {
+        route.words(["--text"])
+    } else {
+        route
+    };
+    route.config_text(config)
+}
+
+#[cfg(test)]
 fn read_command_with(executable: &str, action: &str, config: &str, ledger: &str) -> String {
-    let format = if action == "next" { " --text" } else { "" };
-    if has_control(config) || has_control(ledger) {
-        return format!(
-            "{}; {}; {executable} run {action}{format} --config=\"$__sm_config\" -- \"$__sm_ledger\"",
-            exact_assignment("__sm_config", config),
-            exact_assignment("__sm_ledger", ledger),
-        );
-    }
-    format!(
-        "{executable} run {action}{format} --config={} -- {}",
-        shell_quote(config),
-        shell_quote(ledger)
-    )
+    read_route(action, config)
+        .run_by(executable)
+        .posix_operand_line(ledger)
 }
 
 pub(crate) fn print_next(value: &Value) -> Result<(), String> {

@@ -129,8 +129,8 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), String> {
     let check = crate::emitted::command_line(&["check"], Some(&path));
     let placeholder = crate::emitted::slot("CHECK_COMMAND");
     let root = created.product_root.display().to_string();
-    let refresh =
-        crate::emitted::Route::new(["init", "--refresh-skills", "--root", root.as_str()]).text();
+    let refresh = crate::emitted::Route::new(["init", "--refresh-skills", "--root", root.as_str()])
+        .shell_text();
     if skip_skills {
         println!(
             "Created {}\nProject skill projection skipped by explicit --skip-skills.\n\nBounded setup facts for your existing root agent:\n  Configuration: {quoted_config}\n  Review the declared task boundary and the host's native worker/reviewer mapping before project-scoped work.\n  Setup did not inspect, install, or change project skill destinations, host software, or host permissions; resolve skill ownership before running {refresh} to request project skill projection.\n  Setup does not start agents or grant host permissions.\n\nIllustrative request in this conversation:\n  Inspect the configuration above, review my task and actual check command, then decide whether the governed path is appropriate. Keep ordinary reversible work direct and report what still needs doing before acceptance.\n\nCLI reference (replace {placeholder} with a real project check command):\n  {brief}\n  {begin}\n  {check}\nThe host executes the frozen check command and reports its actual result. '{skill_name} check' validates configuration, profiles, and declared boundaries; it does not run project tests.",
@@ -374,10 +374,15 @@ fn path_presentation(path: &Path) -> PathPresentation {
 
 fn refresh_instruction(binary: &PathPresentation, control_root: &Path) -> String {
     let root = path_presentation(control_root);
-    match (binary.command.as_deref(), root.command.as_deref()) {
-        (Some(binary), Some(root)) => {
-            format!("Explicitly run matching binary {binary} init --refresh-skills --root {root}.")
-        }
+    let copyable = (binary.command.is_some() && root.command.is_some())
+        .then(|| control_root.to_str())
+        .flatten()
+        .map(|root| {
+            crate::emitted::Route::new(["init", "--refresh-skills", "--root", root])
+                .values_quoted_line()
+        });
+    match copyable {
+        Some(Ok(line)) => format!("Explicitly run matching binary {line}."),
         _ => format!(
             "No copyable refresh command is available: inspect invoking binary {} and ControlRoot {}; move control-bearing or non-UTF-8 paths to safe paths, then run that exact binary with init --refresh-skills.",
             binary.display, root.display

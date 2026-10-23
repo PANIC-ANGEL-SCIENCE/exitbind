@@ -155,7 +155,7 @@ fn complete_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
             valid.push(
                 json!({"relation":support,"integrityCurrent":current,"acquiredConditionsCurrent":acquired_conditions_current,
                 "revisionCurrent":revision_current,"applicableCurrent":applicable,
-                "exactRead":{"command":crate::emitted::Route::new(["run","inspect",ledger.as_str(),"--event",event,"--json"]).config(&loaded.path).argv()?,"ledger":ledger,"event":event}}),
+                "exactRead":{"command":crate::emitted::Route::new(["run","inspect",ledger.as_str(),"--event",event,"--json"]).config(&loaded.path).full_argv()?,"ledger":ledger,"event":event}}),
             );
         }
         requirements.push(json!({"requirement":requirement,"support":valid,"unresolved":valid.iter().all(|x| x["applicableCurrent"]!=true)}));

@@ -580,6 +580,10 @@ mod pause_record;
 mod refuse_before_write;
 #[path = "goal_requirements/root_inputs.rs"]
 mod root_inputs;
+#[path = "goal_requirements/route_values.rs"]
+mod route_values;
+#[path = "goal_requirements/rust_source.rs"]
+mod rust_source;
 #[path = "goal_requirements/session_adoption.rs"]
 mod session_adoption;
 #[path = "goal_requirements/setup_first_work.rs"]

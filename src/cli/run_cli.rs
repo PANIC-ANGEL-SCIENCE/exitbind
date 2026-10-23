@@ -315,14 +315,17 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
 fn supersede_route(value: &serde_json::Value) -> String {
     value["nextAction"]["command"]
         .as_array()
-        .map(|argv| {
-            argv.iter()
+        .and_then(|argv| {
+            let argv: Vec<String> = argv
+                .iter()
                 .filter_map(serde_json::Value::as_str)
-                .map(crate::emitted::word)
-                .collect::<Vec<_>>()
-                .join(" ")
+                .map(str::to_owned)
+                .collect();
+            crate::emitted::Route::printed(&argv)
+                .ok()
+                .map(|route| route.shell_text())
         })
-        .unwrap_or_else(|| crate::emitted::Route::new(["run", "supersede"]).text())
+        .unwrap_or_else(|| crate::emitted::Route::new(["run", "supersede"]).shell_text())
 }
 
 pub(super) fn map_run_error(error: String, json_output: bool) -> String {

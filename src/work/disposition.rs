@@ -125,6 +125,7 @@ pub(super) fn lead_help(
                     next["assignment"].as_str(),
                     config
                 )
+                .shell_text()
             ),
         )),
         _ if next["action"] == "lead_decision" => Some((

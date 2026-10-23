@@ -62,9 +62,7 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     let profile = json!({"path": agent.profile, "sha256": digest, "bytes": bytes.len(),
         "complete": content.is_some(), "content": content,
         "reason": if content.is_some() { Value::Null } else { json!("oversized_or_non_utf8") },
-        "access": if content.is_some() { Value::Null } else { json!({
-            "command": crate::emitted::Route::new(["profile", name]).config(&loaded.path).bounded(1024).argv,
-            "readOnly": true, "sameConfigRequired": true, "sameExecutableRequired": true}) }});
+        "access": if content.is_some() { Value::Null } else { profile_access(loaded, name) }});
     let rules = agent_rules::detail_projection(&agent_context::current_rules(loaded)?)?;
     let mut result = json!({"complete": content.is_some(), "available": true,
         "agent": name, "role": next["role"], "nativeName": agent.native_name(name),
@@ -114,4 +112,14 @@ pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     }
     crate::memory::contextual::assert_assignment(loaded, &next["packet"])?;
     Ok(result)
+}
+
+/// The read route for a profile too large to deliver inline.
+fn profile_access(loaded: &Loaded, name: &str) -> Value {
+    let mut access = crate::emitted::Route::new(["profile", name])
+        .config(&loaded.path)
+        .within(1024)
+        .command_json();
+    access["readOnly"] = json!(true);
+    access
 }

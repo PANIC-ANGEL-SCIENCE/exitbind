@@ -129,7 +129,7 @@ pub(crate) fn run(
             "--apply",
         ])
         .config(&loaded.path)
-        .argv()?;
+        .full_argv()?;
         return Ok(
             json!({"effect":"no-change","status":"preview","ownerDecision":template,
             "meaning":"The project owner must explicitly approve these exact policy differences. This is not compatible revalidation or a grant from the old agent.",

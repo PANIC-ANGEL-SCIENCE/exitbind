@@ -12,7 +12,7 @@ fn bounded_argv(
 ) -> crate::emitted::Bounded {
     crate::emitted::Route::reprinted(suffix, Path::new(config.unwrap()))
         .unwrap()
-        .bounded(budget)
+        .within(budget)
 }
 
 fn optional_bool_field(value: &serde_json::Value, key: &str) -> bool {
@@ -333,9 +333,9 @@ fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths(
             "ledger": ledger,
             "reason": "corrupt_ledger",
             "error": "x".repeat(9_000),
-            "command": inspect.argv.clone(),
-            "sameConfigRequired": inspect.same_config,
-            "sameExecutableRequired": inspect.same_executable,
+            "command": inspect.argv_value().clone(),
+            "sameConfigRequired": inspect.needs_config(),
+            "sameExecutableRequired": inspect.needs_executable(),
             "workingDirectory": working_directory.clone(),
         }],
         "next": {"action": "check", "assignment": "sma_assignment"},
@@ -356,11 +356,11 @@ fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths(
     assert_eq!(unreadable["work"], "smw_old");
     assert_eq!(unreadable["reason"], "corrupt_ledger");
     assert_eq!(unreadable["workingDirectory"], working_directory);
-    assert_eq!(unreadable["command"], inspect.argv);
-    assert_eq!(unreadable["sameConfigRequired"], inspect.same_config);
+    assert_eq!(unreadable["command"], inspect.argv_value().clone());
+    assert_eq!(unreadable["sameConfigRequired"], inspect.needs_config());
     assert_eq!(
         unreadable["sameExecutableRequired"],
-        inspect.same_executable
+        inspect.needs_executable()
     );
     assert!(unreadable.get("error").is_none());
     assert!(unreadable.get("ledger").is_none());
@@ -371,14 +371,14 @@ fn fallback_preserves_empty_works_and_unreadable_inspect_route_under_long_paths(
         "resume",
         MAX_RESPONSE_BYTES - 2_048,
     );
-    assert_eq!(compact["fullCommand"], resume.argv);
+    assert_eq!(compact["fullCommand"], resume.argv_value().clone());
     assert_eq!(
         optional_bool_field(&compact, "fullCommandSameConfigRequired"),
-        resume.same_config
+        resume.needs_config()
     );
     assert_eq!(
         optional_bool_field(&compact, "fullCommandSameExecutableRequired"),
-        resume.same_executable
+        resume.needs_executable()
     );
     assert_eq!(compact["fullCommand"][2], "resume");
 }
@@ -406,9 +406,9 @@ fn fallback_preserves_work_candidate_route_after_nonessential_detail_overflow() 
             "workflow": "w".repeat(9_000),
             "goal": "g".repeat(9_000),
             "progress": {"state": "running", "percent": 42},
-            "command": candidate_route.argv.clone(),
-            "sameConfigRequired": candidate_route.same_config,
-            "sameExecutableRequired": candidate_route.same_executable,
+            "command": candidate_route.argv_value().clone(),
+            "sameConfigRequired": candidate_route.needs_config(),
+            "sameExecutableRequired": candidate_route.needs_executable(),
             "ledgerProducer": {"name": "exitbind", "detail": "p".repeat(2_000)},
         }],
         "next": {"action": "check", "assignment": "sma_assignment"},
@@ -425,14 +425,17 @@ fn fallback_preserves_work_candidate_route_after_nonessential_detail_overflow() 
         compact["works"][0]["progress"],
         json!({"state": "running", "percent": 42})
     );
-    assert_eq!(compact["works"][0]["command"], candidate_route.argv);
+    assert_eq!(
+        compact["works"][0]["command"],
+        candidate_route.argv_value().clone()
+    );
     assert_eq!(
         compact["works"][0]["sameConfigRequired"],
-        candidate_route.same_config
+        candidate_route.needs_config()
     );
     assert_eq!(
         compact["works"][0]["sameExecutableRequired"],
-        candidate_route.same_executable
+        candidate_route.needs_executable()
     );
     assert!(compact["works"][0].get("workflow").is_none());
     assert!(compact["works"][0].get("goal").is_none());
@@ -466,9 +469,9 @@ fn fallback_does_not_fake_empty_unreadable_when_essential_route_is_too_large() {
             "ledger": ledger,
             "reason": "corrupt_ledger",
             "error": "x".repeat(9_000),
-            "command": inspect.argv.clone(),
-            "sameConfigRequired": inspect.same_config,
-            "sameExecutableRequired": inspect.same_executable,
+            "command": inspect.argv_value().clone(),
+            "sameConfigRequired": inspect.needs_config(),
+            "sameExecutableRequired": inspect.needs_executable(),
             "workingDirectory": working_directory,
         }],
         "next": {"action": "check", "assignment": "sma_assignment"},
@@ -492,14 +495,14 @@ fn fallback_does_not_fake_empty_unreadable_when_essential_route_is_too_large() {
         "resume",
         MAX_RESPONSE_BYTES - 2_048,
     );
-    assert_eq!(compact["fullCommand"], resume.argv);
+    assert_eq!(compact["fullCommand"], resume.argv_value().clone());
     assert_eq!(
         optional_bool_field(&compact, "fullCommandSameConfigRequired"),
-        resume.same_config
+        resume.needs_config()
     );
     assert_eq!(
         optional_bool_field(&compact, "fullCommandSameExecutableRequired"),
-        resume.same_executable
+        resume.needs_executable()
     );
 }
 
@@ -611,9 +614,9 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
                 Some(&config),
                 1024,
             );
-            route["command"] = command.argv;
-            route["sameConfigRequired"] = json!(command.same_config);
-            route["sameExecutableRequired"] = json!(command.same_executable);
+            route["command"] = command.argv_value().clone();
+            route["sameConfigRequired"] = json!(command.needs_config());
+            route["sameExecutableRequired"] = json!(command.needs_executable());
         }
         for (pointer, export) in [
             ("/next/current/completion/detail/command", false),
@@ -625,9 +628,9 @@ fn completed_goal_keeps_all_detail_routes_and_completion_with_long_paths() {
             }
             suffix.extend(["--json".into(), "--config".into()]);
             let command = bounded_argv(suffix, Some(&config), 768);
-            *response.pointer_mut(pointer).unwrap() = json!({"argv":command.argv,
-                "sameConfigRequired":command.same_config,
-                "sameExecutableRequired":command.same_executable});
+            *response.pointer_mut(pointer).unwrap() = json!({"argv":command.argv_value(),
+                "sameConfigRequired":command.needs_config(),
+                "sameExecutableRequired":command.needs_executable()});
         }
         response["presentation"]["oversized"] = json!("x".repeat(16_000));
         let compact = project(&response, Path::new(&config), "next").unwrap();

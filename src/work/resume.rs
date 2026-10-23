@@ -300,9 +300,9 @@ fn discovery_limited(loaded: &Loaded, reason: &str, observed: usize) -> Value {
                     "type": "read_current_work",
                     "safe": true,
                     "summary": "Discovery is bounded; read the saved current Work with its exact config.",
-                    "command": route.argv,
-                    "sameConfigRequired": route.same_config,
-                    "sameExecutableRequired": route.same_executable,
+                    "command": route.argv_value(),
+                    "sameConfigRequired": route.needs_config(),
+                    "sameExecutableRequired": route.needs_executable(),
                 }),
                 json!({"work": work, "valid": true}),
             ),
@@ -367,9 +367,9 @@ fn candidate_values(
                 "workflow": workflow,
                 "goal": goal,
                 "progress": compact_progress(progress),
-                "command": route.argv,
-                "sameConfigRequired": route.same_config,
-                "sameExecutableRequired": route.same_executable,
+                "command": route.argv_value(),
+                "sameConfigRequired": route.needs_config(),
+                "sameExecutableRequired": route.needs_executable(),
                 "ledgerProducer": identity["ledgerProducer"],
             }))
         })
@@ -383,12 +383,12 @@ fn history_reference(loaded: &Loaded, running: usize) -> Result<Value, String> {
         .ok_or("configuration path is not valid UTF-8")?;
     let route = crate::emitted::Route::new(["work", "resume", "--history"])
         .config_text(config)
-        .bounded(2048);
+        .within(2048);
     Ok(json!({
         "running": running,
-        "command": route.argv,
-        "sameConfigRequired": route.same_config,
-        "sameExecutableRequired": route.same_executable,
+        "command": route.argv_value(),
+        "sameConfigRequired": route.needs_config(),
+        "sameExecutableRequired": route.needs_executable(),
     }))
 }
 

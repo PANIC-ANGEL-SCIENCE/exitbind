@@ -46,7 +46,7 @@ pub(crate) fn select(
         "approval":{"declaration":decision,"reason":reason,"meaning":"existing owner approval asserted by the configured caller; no new permission inferred"},
         "nextLaunch":"pending next launch; existing Work keeps its frozen configuration and requires its supported supersession after a changed selection",
         "apply":{"command":crate::emitted::Route::new(["project","capabilities","select",source,"--decision",decision,"--reason",reason,
-            "--current-binding",current.as_str(),"--apply","--json"]).config_text(config_path).argv()?}});
+            "--current-binding",current.as_str(),"--apply","--json"]).config_text(config_path).full_argv()?}});
     let unchanged = || {
         fs::read_to_string(&loaded.path)
             .map_err(|e| e.to_string())
@@ -111,7 +111,7 @@ pub(crate) fn select(
     report["configurationSha256"] = json!(hash::text(&source));
     report["currentBinding"] = Value::Null;
     report["apply"] = Value::Null;
-    report["nextAction"] = json!({"command":crate::emitted::Route::new(["project","capabilities","--json"]).config_text(config_path).argv()?,"safe":true,"effect":"no-change"});
+    report["nextAction"] = json!({"command":crate::emitted::Route::new(["project","capabilities","--json"]).config_text(config_path).full_argv()?,"safe":true,"effect":"no-change"});
     if fs::read_to_string(&loaded.path).ok().as_deref() != Some(source.as_str()) {
         report["state"] = json!("applied_current_changed");
     }

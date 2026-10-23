@@ -22,7 +22,7 @@ pub(crate) fn input_form(
         "--json",
     ])
     .config(&loaded.path);
-    let validation_command = json!({"command":validation_route.argv()?,
+    let validation_command = json!({"command":validation_route.full_argv()?,
         "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current author/project/config/profile binding only; no lifecycle, trial or qualification decision"});
     let validation = source
         .map(|source| validate_source(loaded, name, source))
@@ -52,7 +52,7 @@ pub(crate) fn input_form(
                 "meaning":"Optional file-byte prerequisites only. Use [] for none; narrative authority or applicability restrictions belong in preconditions."}},
         "textRules":"All source strings are nonblank and contain no control characters; array bounds use UTF-8 bytes per item.",
         "validationRoute":validation_command,"validation":validation,
-        "lifecycle":{"propose":crate::emitted::Route::new(["memory","propose",name,crate::emitted::slot("SOURCE").as_str(),"--scope",scope,"--ledger",crate::emitted::slot("NEW_LEDGER").as_str(),"--expires-at",crate::emitted::slot("RFC3339_EXPIRY").as_str()]).suffix(),
+        "lifecycle":{"propose":crate::emitted::Route::new(["memory","propose",name,crate::emitted::slot("SOURCE").as_str(),"--scope",scope,"--ledger",crate::emitted::slot("NEW_LEDGER").as_str(),"--expires-at",crate::emitted::slot("RFC3339_EXPIRY").as_str()]).config(&loaded.path).full_argv()?,
             "next":"Use the returned nextAction; a separate authorized reviewer reviews exact bytes, then the configured Lead promotes.",
             "inactiveStates":["draft","proposed","reviewed"]},
         "evidence":"References and lifecycle labels are reported claims, not verified trials or authenticated actor independence.",
@@ -119,7 +119,7 @@ pub(crate) fn next_action(
             .words(actor)
             .words([ledger])
             .config(&loaded.path)
-            .argv()
+            .full_argv()
     };
     let choices = actors
         .iter()

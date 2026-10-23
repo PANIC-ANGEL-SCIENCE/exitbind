@@ -39,7 +39,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "--json",
             ])
             .config_text(config);
-            form["validationRoute"] = json!({"command":route.argv()?,
+            form["validationRoute"] = json!({"command":route.full_argv()?,
                 "readOnly":true,"placeholders":["SOURCE"],"meaning":"exact typed source and current owner/project/config/profile binding only; no lifecycle or qualification decision"});
             form["validation"] = a
                 .positional

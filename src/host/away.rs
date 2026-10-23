@@ -577,11 +577,7 @@ fn prompt_for(loaded: &Loaded, ledger: &str, prepared: &Prepared) -> Result<Stri
         "state",
     ])
     .config_text(config)
-    .argv()?
-    .iter()
-    .map(|value| shell_quote(value))
-    .collect::<Vec<_>>()
-    .join(" ");
+    .quoted_line()?;
     let memories = if prepared.memories.is_empty() {
         "No memory source was selected.".to_owned()
     } else {

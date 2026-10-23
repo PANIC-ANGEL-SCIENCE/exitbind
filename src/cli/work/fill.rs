@@ -41,7 +41,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     };
     let status = bound
         .route
-        .process()?
+        .to_process()?
         .stdin(stdin)
         .status()
         .map_err(|error| format!("the filled route could not start: {error}"))?;

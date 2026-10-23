@@ -17,8 +17,8 @@ fn command(loaded: &Loaded, work: &str, options: &[&str]) -> Value {
         .words(options.iter().copied())
         .words(["--json"])
         .config(&loaded.path)
-        .bounded(768)
-        .json()
+        .within(768)
+        .argv_json()
 }
 
 fn current_receipt(loaded: &Loaded, work: &str) -> Result<Value, String> {

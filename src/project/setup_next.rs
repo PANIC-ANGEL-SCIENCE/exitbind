@@ -17,11 +17,11 @@ pub(super) fn next_actions(
     let config = config
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
-    let mut routes = Vec::new();
+    let mut commands = Vec::new();
     let mut task_card = None;
     let card = super::setup_card::plan(facts)?;
     if !facts.apply {
-        routes.push(Route::new(["check"]));
+        commands.push(printed(Route::new(["check"]), config)?);
     }
     if let (Some(check), Some(review_policy), Some(goal)) =
         (&facts.check_command, &facts.review_policy, &facts.goal)
@@ -33,7 +33,7 @@ pub(super) fn next_actions(
             let (named, card_view) = card_start(card, check, config, &scope)?;
             work = work.words(named.begin);
             project = named.project;
-            routes.extend(named.goal_commands);
+            commands.extend(named.goal_commands);
             task_card = Some(card_view);
         }
         work = work.words(["--check-command", check.as_str()]);
@@ -50,15 +50,9 @@ pub(super) fn next_actions(
         if project {
             work = work.words(["--project-goal"]);
         }
-        routes.push(work);
+        commands.push(printed(work, config)?);
     }
-    let mut actions = Vec::new();
-    let mut argv = Vec::new();
-    for route in routes {
-        let command = route.config_text(config).canonical()?.argv()?;
-        actions.push(shell_command(&command));
-        argv.push(command);
-    }
+    let (actions, argv): (Vec<String>, Vec<Vec<String>>) = commands.into_iter().unzip();
     let mut next = json!({
         "root": root,
         "workingDirectory": cwd,
@@ -73,9 +67,16 @@ pub(super) fn next_actions(
     Ok(next)
 }
 
+/// One next action as the shell line and the argv, with this configuration
+/// and the canonical executable.
+fn printed(route: Route, config: &str) -> Result<(String, Vec<String>), String> {
+    let route = route.config_text(config).canonical()?;
+    Ok((route.quoted_line()?, route.full_argv()?))
+}
+
 struct NamedStart {
-    /// `goal cover` and `goal prepare`, without their configuration.
-    goal_commands: Vec<Route>,
+    /// `goal cover` and `goal prepare`, printed.
+    goal_commands: Vec<(String, Vec<String>)>,
     /// Named options inserted into the printed `work begin`.
     begin: Vec<String>,
     project: bool,
@@ -126,17 +127,10 @@ fn card_start(
     };
     Ok((
         NamedStart {
-            goal_commands: vec![cover, prepare],
+            goal_commands: vec![printed(cover, config)?, printed(prepare, config)?],
             begin: named,
             project,
         },
         view,
     ))
-}
-
-fn shell_command(argv: &[String]) -> String {
-    argv.iter()
-        .map(|item| crate::presentation::shell_quote(item))
-        .collect::<Vec<_>>()
-        .join(" ")
 }

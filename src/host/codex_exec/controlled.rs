@@ -163,7 +163,7 @@ pub(super) fn configure(command: &mut Command, tool: &Tool) {
     let serve = crate::emitted::Route::new(["work", "file-serve", tool.session.as_str()])
         .config_text(&tool.config)
         .run_by(&tool.executable)
-        .display_argv();
+        .shown_argv();
     for setting in [
         "approval_policy=\"never\"".into(),
         format!("mcp_servers.exitbind-file.command={}", quote(&serve[0])),

@@ -179,7 +179,7 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
             // installs partial until the one install command adds it.
             if item["activationHook"] == "partial" {
                 item["activationHookAction"] =
-                    json!(crate::emitted::Route::new(["host", "install"]).text());
+                    json!(crate::emitted::Route::new(["host", "install"]).shell_text());
             }
             Ok(item)
         })

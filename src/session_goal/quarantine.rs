@@ -538,12 +538,12 @@ pub(crate) fn record(owner: &Loaded, request: Request<'_>) -> Result<Value, Stri
         "--json",
     ])
     .config_text(owner_config)
-    .bounded(16 * 1024);
+    .within(16 * 1024);
     if !request.apply {
         return Ok(
             json!({"kind":"native_goal_quarantine_preview","readOnly":true,
-            "currentBinding":binding,"residualState":selected,"applyArgv":apply_command.argv,
-            "sameConfigRequired":apply_command.same_config,"sameExecutableRequired":apply_command.same_executable}),
+            "currentBinding":binding,"residualState":selected,"applyArgv":apply_command.argv_value(),
+            "sameConfigRequired":apply_command.needs_config(),"sameExecutableRequired":apply_command.needs_executable()}),
         );
     }
     if request.current_binding != Some(binding.as_str()) {

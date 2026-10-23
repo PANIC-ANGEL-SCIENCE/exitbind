@@ -61,7 +61,7 @@ pub(crate) fn select(
         "--json",
     ])
     .config_text(configuration);
-    report["apply"] = json!({"command": apply_route.argv()?,
+    report["apply"] = json!({"command": apply_route.full_argv()?,
         "meaning": "select the exact reviewed source in this configuration; rerun preview if inputs change"});
     if fs::read_to_string(&loaded.path).map_err(|e| e.to_string())? != loaded.source {
         return Err(
@@ -175,7 +175,7 @@ pub(crate) fn select(
                 .collect::<String>());
             report["nextAction"] = json!({"type": "inspect", "safe": true,
                 "command": crate::emitted::Route::new(["project", "architecture", "--json"])
-                    .config(&loaded.path).argv()?});
+                    .config(&loaded.path).full_argv()?});
         }
     }
     Ok(report)

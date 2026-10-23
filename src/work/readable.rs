@@ -30,14 +30,14 @@ fn token(binding: &str) -> String {
 fn route(loaded: &Loaded, work: &str, binding: &str) -> Value {
     let command = crate::emitted::Route::new(["work", "expand", work, &token(binding), "--json"])
         .config(&loaded.path)
-        .bounded(1024);
+        .within(1024);
     json!({
         "version": 1,
         "kind": "work_detail",
         "reference": token(binding),
-        "command": command.argv,
-        "sameConfigRequired": command.same_config,
-        "sameExecutableRequired": command.same_executable,
+        "command": command.argv_value(),
+        "sameConfigRequired": command.needs_config(),
+        "sameExecutableRequired": command.needs_executable(),
         "readOnly": true,
     })
 }
@@ -268,12 +268,12 @@ fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), 
                     return Err("action command argv is malformed".into());
                 }
                 let command = crate::emitted::Route::reprinted(suffix, &loaded.path)?
-                    .bounded(ACTION_VIEW_ARGV_BUDGET);
-                object.insert("argv".into(), command.argv);
-                object.insert("sameConfigRequired".into(), json!(command.same_config));
+                    .within(ACTION_VIEW_ARGV_BUDGET);
+                object.insert("argv".into(), command.argv_value().clone());
+                object.insert("sameConfigRequired".into(), json!(command.needs_config()));
                 object.insert(
                     "sameExecutableRequired".into(),
-                    json!(command.same_executable),
+                    json!(command.needs_executable()),
                 );
             }
             for (key, child) in object.iter_mut() {
@@ -366,11 +366,11 @@ fn grouped_sections(
             "--json",
         ])
         .config(&loaded.path)
-        .bounded(1024);
+        .within(1024);
         assignment["optionalChallenge"] = json!({"required":false,"readOnly":true,
             "when":"Only for a consequential unresolved assumption in this approved task.",
-            "command":command.argv,"sameConfigRequired":command.same_config,
-            "sameExecutableRequired":command.same_executable,
+            "command":command.argv_value(),"sameConfigRequired":command.needs_config(),
+            "sameExecutableRequired":command.needs_executable(),
             "meaning":"Prepare a bounded native-host evidence packet; no agent or probe is launched."});
     }
     sections.insert("assignment".into(), assignment);

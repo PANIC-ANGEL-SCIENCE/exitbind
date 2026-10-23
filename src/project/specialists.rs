@@ -271,8 +271,12 @@ fn snapshot_after_source(
     let profile_access = if profile.len() <= 4096 {
         Value::Null
     } else {
-        json!({"command":crate::emitted::Route::new(["profile", name]).config(&loaded.path).argv()?,
-            "sameConfigRequired":true,"sameExecutableRequired":true,"readOnly":true})
+        let mut access = crate::emitted::Route::new(["profile", name])
+            .config(&loaded.path)
+            .within(1024)
+            .command_json();
+        access["readOnly"] = json!(true);
+        access
     };
     let value = json!({"projectIdentity": selected["projectIdentity"],"configurationSha256":hash::text(&loaded.source),
         "agent":name,"nativeName":agent.native_name(name),"role":role,"task":task,"host":host,

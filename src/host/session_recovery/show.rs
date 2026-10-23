@@ -146,7 +146,7 @@ pub(crate) fn show() -> Result<Value, String> {
         .map(|hint| {
             hint.work_refs.iter().map(|work| json!({
         "work":work.work,
-        "argv":Route::new(["work","detail",work.work.as_str(),"--json"]).config_text(&work.config_path).run_by(&executable).display_argv()
+        "argv":Route::new(["work","detail",work.work.as_str(),"--json"]).config_text(&work.config_path).run_by(&executable).shown_argv()
     })).collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -164,7 +164,7 @@ pub(crate) fn show() -> Result<Value, String> {
                     let query_argv = restored.as_ref().and_then(|value| {
                         let work = item.work.as_deref()?;
                         let member = hint.work_refs.iter().find(|reference| reference.work == work)?;
-                        Some(Route::new(["project","graph","query","--query",value["query"].as_str()?,"--json"]).config_text(&member.config_path).run_by(&executable).display_argv())
+                        Some(Route::new(["project","graph","query","--query",value["query"].as_str()?,"--json"]).config_text(&member.config_path).run_by(&executable).shown_argv())
                     });
                     json!({
                         "label":item.label,
@@ -194,12 +194,12 @@ pub(crate) fn show() -> Result<Value, String> {
         Route::new(["goal", "status", "--json"])
             .config_text(&value.owner_config_path)
             .run_by(&executable)
-            .display_argv()
+            .shown_argv()
     });
     let pending_route = hint.as_ref().and_then(|value| {
         value.pending_operation.as_ref().map(|pending| match pending {
             PendingOperation::GoalStatus { .. } => json!({"argv":goal_route,"authority":"read_only","historical":true}),
-            PendingOperation::WorkDetail { work, .. } => value.work_refs.iter().find(|item| &item.work == work).map(|item| json!({"argv":Route::new(["work","detail",work.as_str(),"--json"]).config_text(&item.config_path).run_by(&executable).display_argv(),"authority":"read_only","historical":true})).unwrap_or(Value::Null),
+            PendingOperation::WorkDetail { work, .. } => value.work_refs.iter().find(|item| &item.work == work).map(|item| json!({"argv":Route::new(["work","detail",work.as_str(),"--json"]).config_text(&item.config_path).run_by(&executable).shown_argv(),"authority":"read_only","historical":true})).unwrap_or(Value::Null),
             PendingOperation::EvidenceFile { handle, root, path, work, sha256, bytes, .. } => json!({"kind":"verified_file_read","handle":handle,"root":root,"path":path,"work":work,"sha256":sha256,"bytes":bytes,"authority":"read_only","historical":true}),
         })
     });
@@ -264,7 +264,7 @@ pub(crate) fn show() -> Result<Value, String> {
         "milestone":super::milestone::project(&record, &session, &owner, hint.as_ref()),
         "freshness":freshness,
         "issue":dynamic_issue,
-        "readRoutes":{"recoveryShowArgv":Route::new(["session","recovery","show","--json"]).run_by(&executable).display_argv(),"goalStatusArgv":goal_route,"workDetailArgv":work_routes,"references":reference_routes,"pendingOperation":pending_route},
+        "readRoutes":{"recoveryShowArgv":Route::new(["session","recovery","show","--json"]).run_by(&executable).shown_argv(),"goalStatusArgv":goal_route,"workDetailArgv":work_routes,"references":reference_routes,"pendingOperation":pending_route},
         "referenceFreshness":reference_freshness,
         "hintSha256":hint.as_ref().map(|value| value.sha256.as_str()),
         "hintIssue":hint_issue,

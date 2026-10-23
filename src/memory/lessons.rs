@@ -324,7 +324,7 @@ pub(crate) fn delivery(loaded: &Loaded, agent: &str, task: &str) -> Result<Optio
     let command =
         crate::emitted::Route::new(["memory", "resolve", agent, "--task", task, "--json"])
             .config(&loaded.path)
-            .argv()?;
+            .full_argv()?;
     let mut value = json!({"items":items,"omittedCount":omitted,
         "maxItems":MAX_ITEMS,"maxBytes":MAX_DELIVERY,
         "meaning":"reviewed durable project facts; no permission, check, review or acceptance authority",

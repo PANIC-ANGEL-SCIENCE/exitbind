@@ -673,3 +673,59 @@ fn every_role_form_of_a_work_runs_as_printed_to_acceptance() {
         assert!(used.contains(&label), "{label} not run: {used:?}");
     }
 }
+
+/// R55 F8 rework: the read routes a role meets outside the action forms run
+/// as printed with no executable or configuration added: the humanHelp
+/// route of `work next`, the continuation of a recorded return, and the
+/// permit reply's next read and audit.
+#[test]
+fn agent_surface_read_routes_run_as_printed() {
+    let project = Project::new("emitted-surface-reads");
+    project.setup();
+    let work = project.begin("R1", "sh check.sh R1");
+    let run = |route: &Value, label: &str| {
+        let argv: Vec<String> = route["command"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{label}: no route in {route}"))
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(argv[0], env!("CARGO_BIN_EXE_exitbind"), "{label}");
+        assert_ne!(route["sameConfigRequired"], true, "{label}");
+        assert_ne!(route["sameExecutableRequired"], true, "{label}");
+        let output = project.call_exact_argv(&argv);
+        assert!(output.status.success(), "{label}: {output:?}");
+    };
+    let full = project.value(&["work", "next", &work, "--json", "--full"], None);
+    let help = &full["residual"]["humanHelp"]["nextAction"]["command"];
+    assert_eq!(help["args"][0], "work", "{help}");
+    run(&json!({"command": help["argv"]}), "humanHelp");
+
+    let view = action_view(&project, &work);
+    let reason = ("--reason", "Deterministic fixture decision.");
+    let artifact = project.root.join("scope.md");
+    fs::write(&artifact, "Scope: R1 only.\n").unwrap();
+    let artifact = artifact.to_str().unwrap();
+    let scoped = project.call_exact_argv(&fill_argv(
+        &project,
+        &view,
+        "scoped",
+        &[reason, ("--artifact-file", artifact)],
+    ));
+    assert!(scoped.status.success(), "{scoped:?}");
+    let scoped: Value = serde_json::from_slice(&scoped.stdout).unwrap();
+    assert_eq!(scoped["continuation"]["readOnly"], true, "{scoped}");
+    run(&scoped["continuation"], "continuation");
+
+    let view = action_view(&project, &work);
+    let permit = project.call_exact_argv(&fill_argv(
+        &project,
+        &view,
+        "permit",
+        &[("--operation", "Fixture edit")],
+    ));
+    assert!(permit.status.success(), "{permit:?}");
+    let permit: Value = serde_json::from_slice(&permit.stdout).unwrap();
+    run(&permit["nextAction"], "permit nextAction");
+    run(&permit["audit"], "permit audit");
+}

@@ -223,7 +223,7 @@ pub(crate) fn amend(
                 .into(),
         );
     }
-    let apply_argv = amend_route(loaded, work, reason, request_id, &binding).argv()?;
+    let apply_argv = amend_route(loaded, work, reason, request_id, &binding).full_argv()?;
     let mut response = json!({"version":1,"state":"preview","effect":"no-change","readOnly":true,
         "work":work,"originalRevision":claim.association.mandate_revision,
         "selectedRevision":record.specification.mandate.revision,"currentBinding":binding,
@@ -372,7 +372,7 @@ pub(super) fn held_action(
         "version":1,"state":"held_time_amendment_required","binding":binding,
         "leadChoiceRequired":true,"choices":[],"mechanicalAction":Value::Null,
         "meaning":"The selected mandate revision differs from this frozen Work association. Selection alone does not rebind it. A configured Lead may inspect a time-only amendment preview; no Work action is currently available.",
-        "diagnostic":{"readOnly":true,"command":super::argv(loaded, &["amend",work,"--reason",&crate::emitted::slot("REASON"),"--request-id",&crate::emitted::slot("REQUEST_ID")]).argv()?,"placeholders":["REASON","REQUEST_ID"]}
+        "diagnostic":{"readOnly":true,"command":super::argv(loaded, &["amend",work,"--reason",&crate::emitted::slot("REASON"),"--request-id",&crate::emitted::slot("REQUEST_ID")]).full_argv()?,"placeholders":["REASON","REQUEST_ID"]}
     })))
 }
 

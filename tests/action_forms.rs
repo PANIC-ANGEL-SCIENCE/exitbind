@@ -460,13 +460,7 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
     let out = fixture.run_argv(&permit, b"");
     assert!(out.status.success(), "{}", text(&out));
     let permit: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let suffix = permit["nextAction"]["commandSuffix"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s.as_str().unwrap())
-        .collect::<Vec<_>>();
-    let output = fixture.call(&suffix, b"");
+    let output = fixture.run_route(&permit["nextAction"]);
     assert!(output.status.success(), "{}", text(&output));
     assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
     let current: Value = serde_json::from_slice(&output.stdout).unwrap();

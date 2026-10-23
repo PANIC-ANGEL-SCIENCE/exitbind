@@ -77,7 +77,7 @@ pub(crate) fn recover(
         "state":"verified_saved_start","work":claim.work,"taskId":task,"currentBinding":binding,
         "outcome":old.outcome,"recovery":"Account observation only; no Work, child, check or effect is started.",
         "committedDecisionRecovery":decisions,"lineageHeld":head.err(),
-        "apply":{"command":argv(loaded,&["recover",mandate,"--task",task,"--current-binding",&binding,"--apply"]).argv()?}});
+        "apply":{"command":argv(loaded,&["recover",mandate,"--task",task,"--current-binding",&binding,"--apply"]).full_argv()?}});
     if !apply {
         return Ok(response);
     }

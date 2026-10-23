@@ -112,8 +112,8 @@ pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
 pub(crate) fn recovery(loaded: &Loaded, work: &str, error: &str) -> Value {
     let route = crate::emitted::Route::new(["work", "focus", work])
         .config(&loaded.path)
-        .bounded(2048);
-    json!({"updated": false, "error": error, "command": route.argv,
-        "sameConfigRequired": route.same_config,
-        "sameExecutableRequired": route.same_executable})
+        .within(2048);
+    json!({"updated": false, "error": error, "command": route.argv_value(),
+        "sameConfigRequired": route.needs_config(),
+        "sameExecutableRequired": route.needs_executable()})
 }

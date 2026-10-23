@@ -302,7 +302,7 @@ fn resume_refuses_focused_predecessor_with_invalid_successor_lineage() {
     assert!(created.status.success(), "{created:?}");
     let created_value: Value = serde_json::from_slice(&created.stdout).unwrap();
     assert_eq!(created_value["work"], successor_work);
-    assert_eq!(created_value["currentDetail"]["route"], "work detail");
+    assert_eq!(created_value["currentDetail"]["routeName"], "work detail");
     assert_eq!(created_value["currentDetail"]["readOnly"], true);
     assert_eq!(created_value["currentDetail"]["requiresFreshContext"], true);
     assert_eq!(created_value["currentDetail"]["command"]["argv"][1], "work");

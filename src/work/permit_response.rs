@@ -40,7 +40,15 @@ pub(crate) fn permit(
             ));
         }
     };
-    let mut response = compact(work, assignment, operation, &ledger, &permission, &next);
+    let mut response = compact(
+        &loaded.path,
+        work,
+        assignment,
+        operation,
+        &ledger,
+        &permission,
+        &next,
+    );
     super::refreshed_action::attach(loaded, work, &next, &mut response);
     Ok(agent_response(response))
 }
@@ -55,6 +63,7 @@ fn projection_failure(
     error: &str,
 ) -> Value {
     let mut response = compact(
+        config_path,
         work,
         assignment,
         operation,
@@ -72,7 +81,18 @@ fn projection_failure(
     agent_response(response)
 }
 
+#[allow(clippy::too_many_arguments)]
+/// A safe read route of the permit reply with its configuration, bounded
+/// for the compact response: `{"type", "safe", "command", flags}`.
+fn read_route(config: &std::path::Path, route: crate::emitted::Route, kind: &str) -> Value {
+    let mut value = route.config(config).within(1024).command_json();
+    value["type"] = json!(kind);
+    value["safe"] = json!(true);
+    value
+}
+
 pub(super) fn compact(
+    config: &std::path::Path,
     work: &str,
     assignment: &str,
     operation: &str,
@@ -103,17 +123,10 @@ pub(super) fn compact(
             "action": next["action"], "role": next["role"],
             "assignment": next["assignment"], "requiresExpansion": true,
         },
-        "nextAction": {
-            "type": "read_work", "safe": true,
-            "commandSuffix": crate::emitted::Route::new(["work", "detail", work, "--view", "action", "--json"]).suffix(),
-            "sameExecutableRequired": true, "sameConfigRequired": true,
-            "when": "after the permitted edit, or now to inspect an uncertain effect; never reuse the pre-permit return binding",
-        },
-        "audit": {
-            "commandSuffix": event_sha.as_str().map(|sha| crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"]).suffix()),
-            "sameExecutableRequired": true, "sameConfigRequired": true,
-        },
+        "nextAction": read_route(config, crate::emitted::Route::new(["work", "detail", work, "--view", "action", "--json"]), "read_work"),
+        "audit": event_sha.as_str().map(|sha| read_route(config, crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"]), "audit")),
     });
+    response["nextAction"]["when"] = json!("after the permitted edit, or now to inspect an uncertain effect; never reuse the pre-permit return binding");
     if current_grant {
         response["currentGrant"] = json!({
             "governorEventSha256": permission["event"]["governorEvent"]["eventSha256"],
@@ -246,6 +259,7 @@ mod tests {
         });
         let next = json!({"action": "lead_decision", "role": "lead", "assignment": "lead-a", "packet": huge});
         let result = compact(
+            std::path::Path::new("/p/exitbind.json"),
             "work-a",
             "worker-a",
             "edit",
@@ -260,7 +274,9 @@ mod tests {
         assert_eq!(result["eventSha256"], "event");
         assert_eq!(result["governor"]["state"], "blocked");
         assert_eq!(result["next"]["role"], "lead");
-        assert_eq!(result["audit"]["commandSuffix"][3], "--event");
+        let audit = result["audit"]["command"].as_array().unwrap();
+        assert_eq!(audit[4], "--event");
+        assert_eq!(audit[audit.len() - 1], "/p/exitbind.json");
     }
 
     #[test]
@@ -339,6 +355,7 @@ mod tests {
         }});
         assert!(is_current_grant(&permission, &next, "worker-a"));
         let result = compact(
+            std::path::Path::new("/p/exitbind.json"),
             "work-a",
             "worker-a",
             "edit",
@@ -352,6 +369,7 @@ mod tests {
         let mut held_next = next.clone();
         held_next["held"] = json!({"reference":"held-result","sha256":"held-sha","bytes":24});
         let held_result = compact(
+            std::path::Path::new("/p/exitbind.json"),
             "work-a",
             "worker-a",
             "edit",

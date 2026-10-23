@@ -60,7 +60,7 @@ fn same_goal_successor_carries_replayed_accounting_and_fresh_work_detail() {
     ];
     let created = fixture.value(&args, None);
     assert_eq!(created["work"], successor_work);
-    assert_eq!(created["currentDetail"]["route"], "work detail");
+    assert_eq!(created["currentDetail"]["routeName"], "work detail");
     assert_eq!(created["currentDetail"]["readOnly"], true);
     assert_eq!(created["currentDetail"]["requiresFreshContext"], true);
     assert_eq!(created["currentDetail"]["command"]["argv"][2], "detail");

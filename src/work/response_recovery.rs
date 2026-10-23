@@ -23,5 +23,5 @@ pub(super) fn recovery_command(
     route
         .words(["--full"])
         .config(config_path)
-        .bounded(argv_budget)
+        .within(argv_budget)
 }

@@ -182,18 +182,26 @@ fn typed_form_returns_inactive_shape_and_independent_lifecycle_actors() {
         .unwrap()
         .starts_with("root:"));
     f.draft("draft.json", "r1");
-    let proposed = f.ok(&[
-        "memory",
-        "propose",
-        "record-specialist",
-        "draft.json",
-        "--scope",
-        "specialist.record-specialist.v1",
-        "--ledger",
-        ".exitbind/memory/form.jsonl",
-        "--expires-at",
-        "2100-01-01T00:00:00Z",
-    ]);
+    // The form's propose route runs as printed once its slots are filled.
+    let propose: Vec<String> = form["lifecycle"]["propose"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| match word.as_str().unwrap() {
+            "<SOURCE>" => "draft.json",
+            "<NEW_LEDGER>" => ".exitbind/memory/form.jsonl",
+            "<RFC3339_EXPIRY>" => "2100-01-01T00:00:00Z",
+            other => other,
+        })
+        .map(str::to_owned)
+        .collect();
+    let out = support::git_topology::command(&propose[0])
+        .current_dir(&f.root)
+        .args(&propose[1..])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let proposed: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(proposed["nextAction"]["command"][3], "reviewer");
     assert_eq!(f.route("aggregation")["snapshot"]["experience"], json!([]));
     let reviewed = f.ok(&[

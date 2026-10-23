@@ -82,10 +82,11 @@ pub(super) fn overflow_entry(
         "--json",
     ])
     .config(&loaded.path)
-    .argv()?;
+    .within(4096);
     Ok(json!({"reference":reference,"bytes":bytes,"reason":reason,
-        "readRoute":{"command":command,"readOnly":true,"sameConfigRequired":true,
-            "sameExecutableRequired":true}}))
+        "readRoute":{"command":command.argv_value(),"readOnly":true,
+            "sameConfigRequired":command.needs_config(),
+            "sameExecutableRequired":command.needs_executable()}}))
 }
 
 /// The role-scoped read behind an overflow route: only the named agent's own

@@ -44,7 +44,7 @@ fn work_line_forms(
         crate::emitted::Route::new(["work", "detail", item.work.as_str(), "--view", "action"])
             .config_text(&item.config_path)
             .run_by(executable)
-            .text();
+            .shell_text();
     let core = format!(
         "{}current Work {} ({} of Goal {goal}); read: {read}",
         index.map(|value| format!("{value}) ")).unwrap_or_default(),
@@ -134,7 +134,7 @@ pub(super) fn derived_hook_text(
     if total > shown {
         let show = crate::emitted::Route::new(["session", "recovery", "show", "--json"])
             .run_by(executable)
-            .text();
+            .shell_text();
         out.push_str(&format!(" {} more open Work(s): `{show}`.", total - shown));
     }
     if !trees.dirty.is_empty() {

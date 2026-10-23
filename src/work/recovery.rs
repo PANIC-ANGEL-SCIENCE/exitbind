@@ -18,7 +18,7 @@ pub(super) fn candidate_command(loaded: &Loaded, work: &str) -> Result<Bounded, 
 fn candidate_command_for_config(config: &str, work: &str) -> Bounded {
     Route::new(["work", "next", work, "--json"])
         .config_text(config)
-        .bounded(RECOVERY_ARGV_BUDGET)
+        .within(RECOVERY_ARGV_BUDGET)
 }
 
 pub(super) fn compact_progress(progress: &Value) -> Value {
@@ -45,9 +45,9 @@ pub(super) fn unreadable_candidate(
         "ledger": ledger,
         "reason": classify_discovery_error(error),
         "error": error,
-        "command": route.argv,
-        "sameConfigRequired": route.same_config,
-        "sameExecutableRequired": route.same_executable,
+        "command": route.argv_value(),
+        "sameConfigRequired": route.needs_config(),
+        "sameExecutableRequired": route.needs_executable(),
         "workingDirectory": working_directory,
     }))
 }
@@ -63,7 +63,7 @@ pub(super) fn inspect_command(loaded: &Loaded, ledger: &str) -> Result<Bounded, 
 pub(super) fn inspect_command_for_config(config: &str, ledger: &str) -> Bounded {
     Route::new(["run", "inspect", ledger, "--json"])
         .config_text(config)
-        .bounded(RECOVERY_ARGV_BUDGET)
+        .within(RECOVERY_ARGV_BUDGET)
 }
 
 fn classify_discovery_error(error: &str) -> &'static str {
@@ -148,7 +148,7 @@ mod tests {
         let route = candidate_command_for_config("/project/exitbind.json", "smw_abc");
         let executable = crate::emitted::executable().unwrap();
         assert_eq!(
-            route.argv,
+            *route.argv_value(),
             json!([
                 executable,
                 "work",
@@ -159,8 +159,8 @@ mod tests {
                 "/project/exitbind.json",
             ])
         );
-        assert!(!route.same_config);
-        assert!(!route.same_executable);
+        assert!(!route.needs_config());
+        assert!(!route.needs_executable());
     }
 
     #[test]

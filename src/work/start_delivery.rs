@@ -36,14 +36,14 @@ fn deliver(
         Err(error) => {
             let route = crate::emitted::Route::new(["work", "detail", work, "--json"])
                 .config(&loaded.path)
-                .bounded(1024);
+                .within(1024);
             json!({"work": work, "effect": "recorded", "status": "recorded",
                 "complete": false, "creation": {"effect": "recorded", "focus": focus},
                 "reason": {"code": "recorded_then_failed"},
                 "projectionError": error.chars().take(512).collect::<String>(),
                 "nextAction": {"type": "inspect", "safe": true, "readOnly": true,
-                    "command": route.argv, "sameConfigRequired": route.same_config,
-                    "sameExecutableRequired": route.same_executable},
+                    "command": route.argv_value(), "sameConfigRequired": route.needs_config(),
+                    "sameExecutableRequired": route.needs_executable()},
                 "recovery": format!("Inspect this existing Work; do not repeat work begin. If its reply was lost, use {}.",
                     crate::emitted::command_line(&["work", "resume", "--json"], Some(&loaded.path)))})
         }

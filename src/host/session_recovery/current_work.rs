@@ -247,7 +247,7 @@ pub(super) fn show_value(derived: &Derived, executable: &str, trees: Value) -> V
             "relation":item.source,
             "configPath":item.config_path,
             "nextAction":item.next_action,
-            "workDetailArgv":crate::emitted::Route::new(["work","detail",item.work.as_str(),"--view","action"]).config_text(&item.config_path).run_by(executable).display_argv(),
+            "workDetailArgv":crate::emitted::Route::new(["work","detail",item.work.as_str(),"--view","action"]).config_text(&item.config_path).run_by(executable).shown_argv(),
             "openAssignments":item.assignments.iter().map(|assignment| json!({
                 "assignment":assignment.id,"agent":assignment.agent,"role":assignment.role,"state":"open"
             })).collect::<Vec<_>>(),

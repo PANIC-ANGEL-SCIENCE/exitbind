@@ -108,6 +108,7 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         (
             "inspection_required",
             action(
+                loaded,
                 work,
                 "inspect_effects",
                 false,
@@ -119,25 +120,32 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
             "completed" => match validate_completed_observation(&journal)
                 .and_then(|_| journal_result(&journal).map(|_| ()))
             {
-                Ok(()) => ("replay_ready", action(work, "replay_saved", true, None)),
+                Ok(()) => (
+                    "replay_ready",
+                    action(loaded, work, "replay_saved", true, None),
+                ),
                 Err(error) => (
                     "inspection_required",
-                    action(work, "inspect_effects", false, Some(&error)),
+                    action(loaded, work, "inspect_effects", false, Some(&error)),
                 ),
             },
             "started" | "running" if result_state == "provisional" => {
                 if role == "worker" && liveness == "ended" {
                     match recovery::validate_provisional_observation(&journal) {
-                        Ok(()) => ("resume_ready", action(work, "resume_current", true, None)),
+                        Ok(()) => (
+                            "resume_ready",
+                            action(loaded, work, "resume_current", true, None),
+                        ),
                         Err(error) => (
                             "inspection_required",
-                            action(work, "inspect_effects", false, Some(&error)),
+                            action(loaded, work, "inspect_effects", false, Some(&error)),
                         ),
                     }
                 } else {
                     (
                         "inspection_required",
                         action(
+                            loaded,
                             work,
                             "inspect_effects",
                             false,
@@ -146,20 +154,25 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
                     )
                 }
             }
-            "started" if role == "worker" && journal["threadId"].is_string() => {
-                ("resume_ready", action(work, "resume_current", true, None))
-            }
+            "started" if role == "worker" && journal["threadId"].is_string() => (
+                "resume_ready",
+                action(loaded, work, "resume_current", true, None),
+            ),
             "running"
                 if role == "worker" && liveness == "ended" && journal["threadId"].is_string() =>
             {
-                ("resume_ready", action(work, "resume_current", true, None))
+                (
+                    "resume_ready",
+                    action(loaded, work, "resume_current", true, None),
+                )
             }
             "running" if liveness == "alive" => {
-                ("wait", action(work, "wait_existing", false, None))
+                ("wait", action(loaded, work, "wait_existing", false, None))
             }
             "started" | "running" => (
                 "inspection_required",
                 action(
+                    loaded,
                     work,
                     "inspect_effects",
                     false,
@@ -275,13 +288,15 @@ fn diagnostic_projection(observation: &Value) -> Value {
     })
 }
 
-fn action(work: &str, kind: &str, safe: bool, reason: Option<&str>) -> Value {
+fn action(loaded: &Loaded, work: &str, kind: &str, safe: bool, reason: Option<&str>) -> Value {
     let mut value = json!({"type": kind, "safe": safe});
     if safe {
-        value["commandSuffix"] =
-            json!(crate::emitted::Route::new(["work", "act", work, "--resume"]).suffix());
-        value["sameConfigRequired"] = json!(true);
-        value["sameExecutableRequired"] = json!(true);
+        let route = crate::emitted::Route::new(["work", "act", work, "--resume"])
+            .config(&loaded.path)
+            .within(2048);
+        value["command"] = route.argv_value().clone();
+        value["sameConfigRequired"] = json!(route.needs_config());
+        value["sameExecutableRequired"] = json!(route.needs_executable());
     }
     if let Some(reason) = reason {
         value["reason"] = json!(reason);

@@ -34,13 +34,8 @@ pub(super) fn bounded(
     let held = response["effect"] == "held";
     let refused = event["action"] == "protect";
     let effect = if held { "held" } else { "recorded" };
-    let detail_route = if let Some(sha) = event_sha {
-        crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"])
-    } else {
-        crate::emitted::Route::new(["work", "next", work, "--full"])
-    }
-    .config_text(config_path);
-    let detail = detail_route.bounded(crate::work::compact::MAX_RESPONSE_BYTES - 512);
+    let detail_route = detail_route(work, ledger, event_sha).config_text(config_path);
+    let detail = detail_route.within(crate::work::compact::MAX_RESPONSE_BYTES - 512);
     let mut value = json!({
         "compact": true,
         "current": response["next"]["current"],
@@ -61,7 +56,7 @@ pub(super) fn bounded(
         } else {
             json!({"ledger": ledger, "eventSha256": event_sha})
         },
-        "nextAction": {"type": "inspect", "safe": true, "command": detail.argv},
+        "nextAction": {"type": "inspect", "safe": true, "command": detail.argv_value()},
         "next": {
             "action": response["next"]["action"],
             "assignment": response["next"]["assignment"],
@@ -71,21 +66,21 @@ pub(super) fn bounded(
             "progress": {"state": response["next"]["progress"]["state"], "reason": {"code": response["next"]["progress"]["reason"]["code"]}},
             "requiresExpansion": true,
         },
-        "continuation": {"readOnly": true, "commandSuffix": crate::emitted::Route::new(["work", "next", work]).suffix(), "sameConfig": true},
+        "continuation": continuation(config_path, work),
     });
-    if detail.same_config {
+    if detail.needs_config() {
         value["nextAction"]["sameConfigRequired"] = json!(true);
         value["nextAction"]["configArgument"] =
             json!("reuse the exact --config value from this invocation");
     }
-    if detail.same_executable {
+    if detail.needs_executable() {
         value["nextAction"]["sameExecutableRequired"] = json!(true);
         value["nextAction"]["executableArgument"] =
             json!("prepend the exact executable used for this invocation");
     }
-    if detail.same_config || detail.same_executable {
+    if detail.needs_config() || detail.needs_executable() {
         value["nextAction"]["commandKind"] =
-            json!(match (detail.same_executable, detail.same_config) {
+            json!(match (detail.needs_executable(), detail.needs_config()) {
                 (true, true) => "argv_suffix_requires_executable_and_config",
                 (true, false) => "argv_suffix_requires_executable",
                 (false, true) => "argv_prefix_requires_config_value",
@@ -177,7 +172,7 @@ pub(super) fn bounded(
     if serialized_len(&value) > crate::work::compact::MAX_RESPONSE_BYTES {
         // The exact executable and config were supplied by this invocation.
         // Require both explicitly rather than guessing either at the limit.
-        value["nextAction"]["command"] = json!(detail_route.suffix());
+        value["nextAction"]["command"] = detail_route.within(0).argv_value().clone();
         value["nextAction"]["sameConfigRequired"] = json!(true);
         value["nextAction"]["sameExecutableRequired"] = json!(true);
         value["nextAction"]["commandKind"] = json!("argv_suffix_requires_executable_and_config");
@@ -252,11 +247,32 @@ pub(super) fn recorded_projection_failure(
         "nextAction": {
             "type": "inspect",
             "safe": true,
-            "command": route.argv,
-            "sameConfigRequired": route.same_config,
-            "sameExecutableRequired": route.same_executable,
+            "command": route.argv_value(),
+            "sameConfigRequired": route.needs_config(),
+            "sameExecutableRequired": route.needs_executable(),
         },
     })
+}
+
+/// The detail read of a mutation reply: the recorded event when there is
+/// one, otherwise the full `work next`.
+fn detail_route(work: &str, ledger: &str, event_sha: Option<&str>) -> crate::emitted::Route {
+    match event_sha {
+        Some(sha) => {
+            crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"])
+        }
+        None => crate::emitted::Route::new(["work", "next", work, "--full"]),
+    }
+}
+
+/// The read-only `work next` route the caller continues with.
+fn continuation(config_path: &str, work: &str) -> Value {
+    let mut route = super::compact::continuation_route(
+        std::path::Path::new(config_path),
+        crate::emitted::Route::new(["work", "next", work]),
+    );
+    route["readOnly"] = json!(true);
+    route
 }
 
 #[cfg(test)]

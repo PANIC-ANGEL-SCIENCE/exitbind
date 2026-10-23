@@ -258,6 +258,10 @@ where
                 );
             }
         }
+        let known_work = super::governor::canonical_work_for_ledger(path).ok();
+        let known_assignment = known_work
+            .as_deref()
+            .and_then(|work| crate::run::assignment::handle(work, &assignment).ok());
         let parsed_disposition = crate::run::disposition::submission(
             &state,
             &assignment["role"],
@@ -265,6 +269,10 @@ where
             disposition.or(reason),
             disposition.is_some(),
             &loaded.path,
+            crate::run::disposition::Known {
+                work: known_work.as_deref(),
+                assignment: known_assignment.as_deref(),
+            },
         )?;
         let mut grant_hashes = Vec::new();
         if state["governor"]["enabled"] == true

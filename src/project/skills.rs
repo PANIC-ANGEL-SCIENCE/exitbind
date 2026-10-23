@@ -71,7 +71,7 @@ pub(crate) fn activate(control: &Path, coffee: bool) -> Result<(), String> {
         let root = control.display().to_string();
         let refresh =
             crate::emitted::Route::new(["init", "--refresh-skills", "--root", root.as_str()])
-                .text();
+                .shell_text();
         return Err(format!(
             "project skill differs from embedded bytes: {}; inspect it and explicitly run {refresh}",
             destination.path.display()

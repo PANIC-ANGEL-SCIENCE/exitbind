@@ -459,7 +459,7 @@ pub(crate) fn candidates(
                 "--json",
             ])
             .config_text(config)
-            .argv()?;
+            .full_argv()?;
             Ok(json!({"reference":r,"readSource":{"command":read,"readOnly":true}}))
         })
         .collect::<Result<Vec<_>, String>>()?;

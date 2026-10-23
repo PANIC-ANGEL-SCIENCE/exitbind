@@ -12,7 +12,7 @@ mod repair;
 /// A printed action form's command: the route with this configuration,
 /// bounded to the action view's budget.
 pub(super) fn command(loaded: &Loaded, route: Route) -> Value {
-    route.config(&loaded.path).bounded(16 * 1024).json()
+    route.config(&loaded.path).within(16 * 1024).argv_json()
 }
 
 pub(crate) fn current_detail_command(loaded: &Loaded, work: &str) -> Value {

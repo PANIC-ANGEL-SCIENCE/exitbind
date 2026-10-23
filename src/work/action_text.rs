@@ -259,7 +259,7 @@ fn argv(context: &Context, command: &Value) -> String {
         parts.push(context.config.clone());
     }
     crate::emitted::Route::printed(&parts)
-        .map(|route| route.text())
+        .map(|route| route.shell_text())
         .unwrap_or_default()
 }
 

@@ -117,7 +117,7 @@ pub(crate) fn select(
     let binding = preview_binding(loaded, &digest, prior.as_ref(), reason);
     let mut response = json!({"version":1,"state":"preview","effect":"no-change","currentBinding":binding,
         "selection":spec,"reason":reason,"declaration":"Caller records an existing owner decision; this is not authentication or an inferred approval.",
-        "apply":{"command":argv(loaded,&["select",source,"--reason",reason,"--current-binding",&binding,"--apply"]).argv()?}});
+        "apply":{"command":argv(loaded,&["select",source,"--reason",reason,"--current-binding",&binding,"--apply"]).full_argv()?}});
     if !apply {
         return Ok(response);
     }
@@ -250,8 +250,8 @@ fn projection(loaded: &Loaded, record: &Record) -> Result<Value, String> {
         let status = work_status(loaded,claim);
         Ok(json!({"taskId":claim.task_id,"planId":claim.plan.id,"plan":claim.plan,"work":claim.work,
             "actualWork":status.as_ref().ok(),"unresolved":status.err(),
-            "detail":{"command":work_argv(loaded,&claim.work).argv()?},
-            "savedStartRecovery":{"command":argv(loaded,&["recover",&record.specification.mandate.id,"--task",&claim.task_id]).argv()?}}))
+            "detail":{"command":work_argv(loaded,&claim.work).full_argv()?},
+            "savedStartRecovery":{"command":argv(loaded,&["recover",&record.specification.mandate.id,"--task",&claim.task_id]).full_argv()?}}))
     }).collect::<Result<Vec<Value>,String>>()?;
     let estimated: u64 = record.claims.iter().map(|c| c.plan.estimated_actions).sum();
     let unresolved = record

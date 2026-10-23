@@ -5,7 +5,7 @@ pub(super) fn attach_successor_work(loaded: &Loaded, new_ledger: &str, mut value
     if let Some(work) = crate::work::locator_for_ledger(new_ledger) {
         value["work"] = json!(work);
         value["currentDetail"] = json!({
-            "route": "work detail",
+            "routeName": "work detail",
             "readOnly": true,
             "requiresFreshContext": true,
             "command": crate::work::action_forms::current_detail_command(loaded, &work),

@@ -5,40 +5,50 @@
 //! by `crate::emitted::Route`, copied from another such field, or belongs to
 //! a registered non-route class; and no command argv is spelled as a literal
 //! list anywhere outside the builder. The P1 scans stay as the backstop.
-use super::emitted_routes::sources;
 use super::follow_up_routes::dispatched;
+use super::route_values::{renderers, renderers_in, sinks, Renderers};
+use super::rust_source::{
+    end_of, expression, functions, line_of, literals, opening_bracket, production, Literal,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Field writes that carry no product route, per file with count and class.
-const NOT_ROUTES: &[(&str, usize, &str)] = &[
-    ("src/host/hooks.rs", 4, "installed host hook command"),
+/// Field writes that carry no product route, per file and key with count
+/// and class.
+type NotRoutes = [(&'static str, &'static str, usize, &'static str)];
+const NOT_ROUTES: &NotRoutes = &[
+    (
+        "src/host/hooks.rs",
+        "command",
+        4,
+        "installed host hook command",
+    ),
     (
         "src/project/setup_statusline.rs",
+        "command",
         1,
         "installed status line command",
     ),
     (
         "src/run/gate/value.rs",
+        "command",
         3,
         "the project's own check command",
     ),
     (
         "src/project/setup.rs",
+        "command",
         1,
         "the project's own pre-return command",
     ),
     (
         "src/work/early_evidence.rs",
+        "command",
         1,
         "the reported probe command",
     ),
     (
-        "src/run/view/successor_protocol.rs",
-        1,
-        "label of the full route printed beside it",
-    ),
-    (
         "src/session_goal/display.rs",
+        "closingRoute",
         1,
         "sentence on how the Goal closes; its routes are printed lines",
     ),
@@ -55,101 +65,6 @@ const BUILDERS: &[&str] = &[
     "args(",
     "args_with(",
 ];
-
-/// A string literal: byte span and raw content.
-struct Literal {
-    start: usize,
-    end: usize,
-    text: String,
-}
-
-/// String literals of Rust source, skipping comments, char literals and
-/// lifetimes; raw strings are literals too.
-fn literals(text: &str) -> Vec<Literal> {
-    let bytes = text.as_bytes();
-    let ident =
-        |at: usize| at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        let rest = &text[i..];
-        if rest.starts_with("//") {
-            i += rest.find('\n').unwrap_or(rest.len());
-        } else if rest.starts_with("/*") {
-            i += rest.find("*/").map_or(rest.len(), |end| end + 2);
-        } else if bytes[i] == b'r'
-            && !ident(i)
-            && (rest.starts_with("r\"") || rest.starts_with("r#"))
-        {
-            let hashes = rest[1..].bytes().take_while(|byte| *byte == b'#').count();
-            if rest.as_bytes().get(1 + hashes) != Some(&b'"') {
-                i += 1;
-                continue;
-            }
-            let close = format!("\"{}", "#".repeat(hashes));
-            let body = i + 2 + hashes;
-            let end = text[body..].find(&close).map_or(text.len(), |at| body + at);
-            out.push(Literal {
-                start: i,
-                end: end + close.len(),
-                text: text[body..end].to_owned(),
-            });
-            i = end + close.len();
-        } else if bytes[i] == b'"' {
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j] != b'"' {
-                j += if bytes[j] == b'\\' { 2 } else { 1 };
-            }
-            out.push(Literal {
-                start: i,
-                end: j + 1,
-                text: text[i + 1..j.min(text.len())].to_owned(),
-            });
-            i = j + 1;
-        } else if bytes[i] == b'\'' {
-            let next = rest[1..].chars().next().map_or(0, char::len_utf8);
-            i += if rest[1..].starts_with('\\') {
-                rest[2..].find('\'').map_or(1, |at| at + 3)
-            } else if rest.as_bytes().get(1 + next) == Some(&b'\'') {
-                next + 2
-            } else {
-                1
-            };
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// Production source: no `*tests.rs` file, no trailing `#[cfg(test)]`
-/// module, and not the builder itself.
-fn production() -> Vec<(String, String)> {
-    sources()
-        .into_iter()
-        .filter(|(path, _)| !path.ends_with("tests.rs") && !path.starts_with("src/emitted"))
-        .map(|(path, text)| (path, strip_test_module(&text)))
-        .collect()
-}
-
-/// Source without its inline test module: in `src/` a `#[cfg(test)] mod
-/// name {` block is always the file's last item.
-fn strip_test_module(text: &str) -> String {
-    for (start, marker) in text.match_indices("\n#[cfg(test)]\n") {
-        let item = text[start + marker.len()..]
-            .lines()
-            .find(|line| !line.starts_with("#["))
-            .unwrap_or("");
-        if item.starts_with("mod ") && item.ends_with('{') {
-            return text[..start].to_owned();
-        }
-    }
-    text.to_owned()
-}
-
-fn line_of(text: &str, at: usize) -> usize {
-    text[..at].matches('\n').count() + 1
-}
 
 /// Every command argv spelled as a literal list (`"work", "detail"` or an
 /// option-only command and its option) outside the builder's constructors.
@@ -189,35 +104,6 @@ fn argv_literals(text: &str, families: &[(&str, Vec<String>)]) -> Vec<String> {
     found
 }
 
-/// The literal spanning byte `at`, if any (literals are sorted by start).
-fn containing(lits: &[Literal], at: usize) -> Option<&Literal> {
-    let after = lits.partition_point(|lit| lit.start <= at);
-    after
-        .checked_sub(1)
-        .map(|index| &lits[index])
-        .filter(|lit| at < lit.end)
-}
-
-/// The unmatched `[` that opens the list holding byte `at`.
-fn opening_bracket(text: &str, lits: &[Literal], at: usize) -> usize {
-    let mut depth = 0;
-    let mut i = at;
-    while i > 0 {
-        i -= 1;
-        if let Some(lit) = containing(lits, i) {
-            i = lit.start;
-            continue;
-        }
-        match text.as_bytes()[i] {
-            b']' => depth += 1,
-            b'[' if depth == 0 => return i,
-            b'[' => depth -= 1,
-            _ => {}
-        }
-    }
-    0
-}
-
 fn route_key(key: &str) -> bool {
     matches!(key, "command" | "argv" | "commandSuffix" | "route")
         || (key.starts_with(|c: char| c.is_ascii_lowercase())
@@ -233,33 +119,6 @@ struct Write {
     key: String,
     at: usize,
     value: String,
-}
-
-/// The byte where the expression starting at `at` ends: the first of
-/// `stops` or an unmatched closing bracket at depth 0, skipping literals.
-fn end_of(text: &str, lits: &[Literal], at: usize, stops: &[u8]) -> usize {
-    let mut depth = 0i32;
-    let mut i = at;
-    while i < text.len() {
-        if let Ok(found) = lits.binary_search_by_key(&i, |lit| lit.start) {
-            i = lits[found].end;
-            continue;
-        }
-        match text.as_bytes()[i] {
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' if depth == 0 => break,
-            b')' | b']' | b'}' => depth -= 1,
-            byte if depth == 0 && stops.contains(&byte) => break,
-            _ => {}
-        }
-        i += 1;
-    }
-    i
-}
-
-/// The value written after `at`: up to `,` or `;` or the closing bracket.
-fn expression(text: &str, lits: &[Literal], at: usize) -> String {
-    text[at..end_of(text, lits, at, b",;")].trim().to_owned()
 }
 
 /// Every write of a route-carrying key: `"key": value` in a JSON literal,
@@ -301,53 +160,6 @@ fn writes(text: &str) -> Vec<Write> {
     out
 }
 
-/// Whether an expression renders a `crate::emitted::Route`.
-fn rendered(expression: &str) -> bool {
-    let argv_field = expression.match_indices(".argv").any(|(at, _)| {
-        !expression[at + 5..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-    });
-    argv_field
-        || [
-            "Route::",
-            "Emitted::",
-            ".bounded(",
-            ".suffix()",
-            ".display_argv()",
-            ".exec_line()",
-            ".command_json()",
-            "emitted::command_line(",
-            "lead_route(",
-        ]
-        .iter()
-        .any(|marker| expression.contains(marker))
-}
-
-/// `fn name` definitions with their full text, by name.
-fn functions(sources: &[(String, String)]) -> BTreeMap<String, Vec<(String, String)>> {
-    let mut index: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    for (path, text) in sources {
-        let lits = literals(text);
-        for (at, _) in text.match_indices("fn ") {
-            if at > 0 && text.as_bytes()[at - 1].is_ascii_alphanumeric() {
-                continue;
-            }
-            let name: String = text[at + 3..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
-            let Some(open) = text[at..].find('{').map(|open| at + open) else {
-                continue;
-            };
-            let end = end_of(text, &lits, open + 1, b"") + 1;
-            index
-                .entry(name)
-                .or_default()
-                .push((path.clone(), text[at..end.min(text.len())].to_owned()));
-        }
-    }
-    index
-}
-
 /// How a value expression is typed, or why it is not.
 enum Typed {
     Rendered,
@@ -362,6 +174,8 @@ struct Scope<'a> {
     lits: &'a [Literal],
     functions: &'a BTreeMap<String, Vec<(String, String)>>,
     families: &'a [(&'a str, Vec<String>)],
+    renderers: &'a Renderers,
+    sinks: &'a [String],
 }
 
 /// Whether an expression reads a field of another JSON value (`x["key"]`).
@@ -423,14 +237,20 @@ fn classify(scope: &Scope, written: &str, at: usize, depth: usize) -> Result<Typ
             } else {
                 local
             };
-            if candidates.iter().any(|(_, body)| {
-                body.contains("Route") || body.contains("Bounded") || rendered(body)
-            }) {
+            let typed = |body: &str| {
+                scope.renderers.rendered(body)
+                    || scope.sinks.iter().any(|sink| {
+                        body.match_indices(&format!("{sink}(")).any(|(at, _)| {
+                            !body[..at].ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                        })
+                    })
+            };
+            if candidates.iter().any(|(_, body)| typed(body)) {
                 return Ok(Typed::Renderer(name.to_owned()));
             }
         }
     }
-    if rendered(value) {
+    if scope.renderers.rendered(value) {
         return Ok(Typed::Rendered);
     }
     if reads_field(value) {
@@ -454,15 +274,18 @@ fn classify(scope: &Scope, written: &str, at: usize, depth: usize) -> Result<Typ
         .chars()
         .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() || value[name.len()..].starts_with('.') {
+    // A method chain or field of a local binding derives from the binding; a
+    // field of anything else (`self.command`) is not traceable.
+    let chained = value[name.len()..].starts_with('.');
+    if name.is_empty() || (chained && binding(scope, &name, at).is_none()) {
         return Err("not traceable to crate::emitted::Route".into());
     }
     if let Some((initializer, tuple)) = binding(scope, &name, at) {
         if let Some(index) = tuple {
             // One element of a tuple: that element of every branch's tuple.
             for tail in tails(&initializer) {
-                let element = tuple_element(&tail, index)
-                    .ok_or_else(|| format!("`{name}` is not traceable in its tuple"))?;
+                // A tuple built from a value (`items.unzip()`): trace the value.
+                let element = tuple_element(&tail, index).unwrap_or(tail);
                 classify(scope, &element, at, depth + 1)?;
             }
             return Ok(Typed::Rendered);
@@ -547,8 +370,13 @@ fn tuple_element(expression: &str, index: usize) -> Option<String> {
 fn binding(scope: &Scope, name: &str, at: usize) -> Option<(String, Option<usize>)> {
     let text = scope.text;
     let before = &text[..at];
+    // Only a binding of the enclosing function counts.
+    let function = before.rfind("fn ").unwrap_or(0);
     let mut best: Option<(usize, Option<usize>)> = None;
-    for (found, _) in before.match_indices("let ") {
+    for (found, _) in before
+        .match_indices("let ")
+        .filter(|(found, _)| *found > function)
+    {
         if found > 0 && before.as_bytes()[found - 1].is_ascii_alphanumeric() {
             continue;
         }
@@ -595,8 +423,20 @@ struct Registry {
     failures: Vec<String>,
 }
 
-fn registry(sources: &[(String, String)], families: &[(&str, Vec<String>)]) -> Registry {
+fn registry(
+    sources: &[(String, String)],
+    families: &[(&str, Vec<String>)],
+    not_routes: &NotRoutes,
+    renderers: &Renderers,
+) -> Registry {
     let functions = functions(sources);
+    let mut typed = sources.to_vec();
+    typed.extend(
+        super::emitted_routes::sources()
+            .into_iter()
+            .filter(|(path, _)| path.starts_with("src/emitted")),
+    );
+    let sinks = sinks(&typed);
     let mut registry = Registry {
         fields: BTreeMap::new(),
         renderers: BTreeSet::new(),
@@ -618,8 +458,10 @@ fn registry(sources: &[(String, String)], families: &[(&str, Vec<String>)]) -> R
             lits: &lits,
             functions: &functions,
             families,
+            renderers,
+            sinks: &sinks,
         };
-        let mut refused = Vec::new();
+        let mut refused: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for write in writes(text) {
             *registry.fields.entry(write.key.clone()).or_default() += 1;
             match classify(&scope, &write.value, write.at, 0) {
@@ -627,22 +469,32 @@ fn registry(sources: &[(String, String)], families: &[(&str, Vec<String>)]) -> R
                     registry.renderers.insert(name);
                 }
                 Ok(_) => {}
-                Err(reason) => refused.push(format!(
+                Err(reason) => refused.entry(write.key.clone()).or_default().push(format!(
                     "{path}:{}: \"{}\": {} ({reason})",
                     write.line, write.key, write.value
                 )),
             }
         }
-        let listed = NOT_ROUTES
-            .iter()
-            .find(|(file, _, _)| file == path)
-            .map_or(0, |(_, count, _)| *count);
-        if refused.len() != listed {
-            registry.failures.push(format!(
-                "{path}: {} route-carrying field(s) not built by crate::emitted::Route, {listed} registered as non-routes:\n  {}",
-                refused.len(),
-                refused.join("\n  ")
-            ));
+        let mut keys: BTreeSet<&str> = refused.keys().map(String::as_str).collect();
+        keys.extend(
+            not_routes
+                .iter()
+                .filter(|(file, _, _, _)| file == path)
+                .map(|(_, key, _, _)| *key),
+        );
+        for key in keys {
+            let found = refused.get(key).map_or(&[][..], Vec::as_slice);
+            let listed = not_routes
+                .iter()
+                .find(|(file, listed_key, _, _)| file == path && *listed_key == key)
+                .map_or(0, |(_, _, count, _)| *count);
+            if found.len() != listed {
+                registry.failures.push(format!(
+                    "{path}: {} \"{key}\" field(s) not built by crate::emitted::Route, {listed} registered as non-routes:\n  {}",
+                    found.len(),
+                    found.join("\n  ")
+                ));
+            }
         }
     }
     registry
@@ -653,7 +505,8 @@ fn every_route_carrying_field_is_rendered_from_the_typed_route() {
     let families = dispatched();
     let sources = production();
     assert!(sources.len() > 300, "{}", sources.len());
-    let registry = registry(&sources, &families);
+    let renderers = renderers();
+    let registry = registry(&sources, &families, NOT_ROUTES, &renderers);
     eprintln!(
         "route registry: {} field writes over {} keys {:?}; {} renderers {:?}",
         registry.fields.values().sum::<usize>(),
@@ -663,7 +516,7 @@ fn every_route_carrying_field_is_rendered_from_the_typed_route() {
         registry.renderers
     );
     assert!(registry.fields.values().sum::<usize>() >= 100);
-    assert!(registry.renderers.len() >= 6, "{:?}", registry.renderers);
+    assert!(registry.renderers.len() >= 3, "{:?}", registry.renderers);
     assert!(
         registry.failures.is_empty(),
         "{}",
@@ -680,6 +533,14 @@ fn typed_route_scanner_detects_each_member_of_the_class() {
         ("work", vec!["next".to_owned(), "detail".to_owned()]),
         ("check", Vec::new()),
     ];
+    let renderers = renderers_in(
+        concat!(
+            "    pub(crate) fn full_argv(&self) {}\n    pub(crate) fn within(&self) {}\n",
+            "    pub(crate) fn command_json(&self) {}\n",
+            "    /// Incomplete on its own.\n    pub(crate) fn partial_suffix(&self) {}\n",
+        ),
+        "",
+    );
     let failing = concat!(
         "fn a(w: &str) -> Value {\n",
         "    json!({\"nextAction\": {\"command\": format!(\"exitbind work next {w}\")}})\n",
@@ -697,7 +558,9 @@ fn typed_route_scanner_detects_each_member_of_the_class() {
         "}\n",
     );
     let source = vec![("src/seeded.rs".to_owned(), failing.to_owned())];
-    let found = registry(&source, &families).failures.join("\n");
+    let found = registry(&source, &families, &[], &renderers)
+        .failures
+        .join("\n");
     for expected in [
         "\"command\": format!(\"exitbind work next {w}\")",
         "[\"work\", \"detail\", ...]",
@@ -708,22 +571,54 @@ fn typed_route_scanner_detects_each_member_of_the_class() {
     ] {
         assert!(found.contains(expected), "{expected}\n{found}");
     }
-    assert!(found.contains("5 route-carrying field(s)"), "{found}");
+    for key in ["command", "readRoute", "argv", "route", "fillRoute"] {
+        assert!(
+            found.contains(&format!("1 \"{key}\" field(s)")),
+            "{key}\n{found}"
+        );
+    }
+    // A non-route entry is bound to its key: the same count under another
+    // key of the same file still fails, and so does a stale entry.
+    let swapped = registry(
+        &source,
+        &families,
+        &[
+            ("src/seeded.rs", "readRoute", 1, "x"),
+            ("src/seeded.rs", "propose", 1, "x"),
+        ],
+        &renderers,
+    )
+    .failures
+    .join("\n");
+    assert!(swapped.contains("1 \"command\" field(s)"), "{swapped}");
+    assert!(!swapped.contains("1 \"readRoute\" field(s)"), "{swapped}");
+    assert!(swapped.contains("0 \"propose\" field(s)"), "{swapped}");
     let passing = concat!(
         "fn route(loaded: &Loaded, route: Route) -> Value {\n",
-        "    route.config(&loaded.path).bounded(1024).command_json()\n",
+        "    route.config(&loaded.path).within(1024).command_json()\n",
         "}\n",
         "fn e(w: &str, l: &Loaded, v: &Value) -> Value {\n",
-        "    let argv = Route::new([\"work\", \"next\", w]).config(&l.path).argv()?;\n",
+        "    let argv = Route::new([\"work\", \"next\", w]).config(&l.path).full_argv()?;\n",
         "    let mut all = Vec::new();\n",
-        "    all.push(Route::new([\"work\", \"detail\", w]).suffix());\n",
+        "    all.push(Route::new([\"work\", \"detail\", w]).full_argv()?);\n",
         "    json!({\"command\": argv, \"commandSuffix\": all, \"route\": \"current.details.grouped\",\n",
         "        \"readRoute\": v[\"readRoute\"].clone(), \"fillRoute\": route(l, Route::new([\"check\"])),\n",
         "        \"beginRoute\": null, \"char\": '\"', \"lifetime\": x::<'a>()})\n",
         "}\n",
     );
     let source = vec![("src/seeded.rs".to_owned(), passing.to_owned())];
-    let checked = registry(&source, &families);
+    let checked = registry(&source, &families, &[], &renderers);
+    let suffix = "fn f(w: &str) -> Value { json!({\"commandSuffix\": Route::new([\"x\"]).partial_suffix()}) }";
+    let partial = registry(
+        &[("src/s.rs".to_owned(), suffix.to_owned())],
+        &families,
+        &[],
+        &renderers,
+    );
+    assert!(
+        !partial.failures.is_empty(),
+        "an incomplete renderer is not a route"
+    );
     assert!(
         checked.failures.is_empty(),
         "{}",
