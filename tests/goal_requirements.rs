@@ -562,6 +562,8 @@ mod changed_after_binding_inventory;
 mod checker_derivation;
 #[path = "goal_requirements/closure_flows.rs"]
 mod closure_flows;
+#[path = "goal_requirements/config_writer_keep.rs"]
+mod config_writer_keep;
 #[path = "goal_requirements/correction_and_journey.rs"]
 mod correction_and_journey;
 #[path = "goal_requirements/emitted_routes.rs"]

@@ -138,7 +138,11 @@ pub fn load_bytes_at(source_path: &str, at: &Path) -> Result<Loaded, String> {
     Ok(loaded)
 }
 
-fn from_source(path: PathBuf, source: String, requested: &str) -> Result<Loaded, String> {
+pub(crate) fn from_source(
+    path: PathBuf,
+    source: String,
+    requested: &str,
+) -> Result<Loaded, String> {
     let config: Value = serde_json::from_str(&source)
         .map_err(|error| format!("invalid JSON in {requested}: {error}"))?;
     let errors = validate(&config);

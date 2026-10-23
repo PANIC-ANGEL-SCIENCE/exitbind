@@ -93,11 +93,53 @@ fn same_root(left: &std::path::Path, right: &std::path::Path) -> bool {
     left == right || matches!((left.canonicalize(), right.canonicalize()), (Ok(a), Ok(b)) if a == b)
 }
 
+/// Called by the one configuration writer (`settings::atomic_write`) with
+/// the bytes it is about to replace at `target`: when they are a
+/// configuration with a memory policy and a memory ledger carries their
+/// hash, keep them beside the ledgers first, so every product-driven change
+/// leaves the copy the refusal names. Anything else is not a stamped
+/// configuration and is left alone; a failure to keep refuses the write.
+pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<(), String> {
+    // Cheap first: most managed files are no configuration with a memory root.
+    let stamped_shape = serde_json::from_str::<serde_json::Value>(replaced)
+        .is_ok_and(|value| value["memory"]["root"].is_string());
+    if !stamped_shape {
+        return Ok(());
+    }
+    let Ok(at) = std::fs::canonicalize(target) else {
+        return Ok(());
+    };
+    let Ok(previous) =
+        crate::config::from_source(at, replaced.to_owned(), "replaced configuration")
+    else {
+        return Ok(());
+    };
+    let sha256 = hash::text(replaced);
+    let Ok(Some(ledgers)) = super::discovery::discover(&previous) else {
+        return Ok(());
+    };
+    let carried = ledgers.iter().any(|ledger| {
+        ledger
+            .snapshot
+            .events
+            .iter()
+            .any(|event| event["configSha256"] == sha256.as_str())
+    });
+    if carried {
+        keep(&previous).map_err(|error| {
+            format!("stamped configuration copy: {error}; no configuration was written")
+        })?;
+    }
+    Ok(())
+}
+
 /// The typed refusal for lesson events stamped with `bound`: the kept copy
 /// when it exists, and one `memory revalidate` route that covers this ledger
-/// and every other project-lesson ledger stamped with the same copy that the
-/// route would revalidate. A specialist ledger, or one refused for another
-/// reason, keeps its own route.
+/// and every other project-lesson ledger stamped with the same hash. With
+/// the copy, only ledgers the route would revalidate join; without it (a hand
+/// edit the writer never saw) the route keeps the previous-configuration slot
+/// and still covers every ledger stamped with that hash. A specialist
+/// ledger, or one refused for another reason, keeps its own route.
 pub(crate) fn changed(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> String {
     let others = same_copy_ledgers(loaded, ledger, bound);
     let mut group = vec![ledger];
@@ -139,20 +181,25 @@ fn is_project_lesson(ledger: &LedgerSnapshot) -> bool {
         .is_some_and(|item| item["scope"] == super::lessons::SCOPE)
 }
 
-/// Other project-lesson ledgers whose history was stamped with `bound` and
-/// that pass every revalidation check against its kept copy.
+/// Other project-lesson ledgers whose history was stamped with `bound`; when
+/// the kept copy exists, only those that pass every revalidation check
+/// against it.
 fn same_copy_ledgers(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> Vec<LedgerSnapshot> {
-    let (Some(lead), Some(copy)) = (loaded.lead(), find(loaded, bound)) else {
+    let Some(lead) = loaded.lead() else {
         return Vec::new();
     };
     if !is_project_lesson(ledger) {
         return Vec::new();
     }
-    let Some(previous) = copy
-        .to_str()
-        .and_then(|copy| crate::config::load_bytes_at(copy, &loaded.path).ok())
-    else {
-        return Vec::new();
+    let previous = match find(loaded, bound) {
+        Some(copy) => match copy
+            .to_str()
+            .and_then(|copy| crate::config::load_bytes_at(copy, &loaded.path).ok())
+        {
+            Some(previous) => Some(previous),
+            None => return Vec::new(),
+        },
+        None => None,
     };
     let Ok(Some(discovered)) = super::discovery::discover(loaded) else {
         return Vec::new();
@@ -164,7 +211,9 @@ fn same_copy_ledgers(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> V
                 && is_project_lesson(&other.snapshot)
                 && matches!(super::state::history_drift(loaded, &other.snapshot),
                     Err(super::state::HistoryDrift::Configuration(other_bound)) if other_bound == bound)
-                && super::revalidation::check(loaded, &previous, lead, &other.path) == Ok(true)
+                && previous.as_ref().map_or(true, |previous| {
+                    super::revalidation::check(loaded, previous, lead, &other.path) == Ok(true)
+                })
         })
         .map(|other| other.snapshot)
         .collect()

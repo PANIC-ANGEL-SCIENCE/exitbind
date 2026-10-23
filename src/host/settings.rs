@@ -248,6 +248,8 @@ pub(crate) fn require_compatible_command(protocol: &str) -> Result<(), String> {
 /// exact expected contents (`None` means it must not exist yet), the temporary
 /// is created exclusively, and the rename replaces the name rather than
 /// writing through it - so a symlink planted at the target overwrites nothing.
+/// Replaced configuration bytes a memory ledger is stamped with are kept
+/// first (`stamped_config::keep_replaced`), for every caller at once.
 /// Both checks run again immediately before the rename. That narrows the race
 /// window; it is not a guarantee against a determined same-account attacker
 /// who can win it.
@@ -261,6 +263,10 @@ pub(crate) fn atomic_write(
     let directory = target.parent().ok_or("managed file has no parent")?;
     ensure_directory(directory, real_root, target)?;
     assert_unchanged(target, expected_source)?;
+    if let Some(replaced) = expected_source {
+        // Bytes a lesson ledger is stamped with are kept before they go.
+        crate::memory::stamped_config::keep_replaced(target, replaced)?;
+    }
     let temporary = directory.join(format!(
         ".exitbind-{}-{}.tmp",
         std::process::id(),

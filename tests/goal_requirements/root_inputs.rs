@@ -369,7 +369,7 @@ fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn sources() -> Vec<(String, String)> {
+pub(super) fn sources() -> Vec<(String, String)> {
     fn visit(dir: &Path, out: &mut Vec<(String, String)>) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
