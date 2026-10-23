@@ -199,8 +199,8 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
     ("src/cli/mod.rs", 1, "receipt --output under the state root"),
     (
         "src/config/profile.rs",
-        3,
-        "agent profiles under the control root",
+        2,
+        "agent profiles under the control root; the configuration goes through the one writer",
     ),
     (
         "src/distribution/update.rs",
@@ -256,11 +256,6 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
         "src/memory/lessons.rs",
         1,
         "the lesson mutation lock under the state root",
-    ),
-    (
-        "src/project/layout.rs",
-        1,
-        "legacy layout migration under the state root",
     ),
     (
         "src/project/layout_types.rs",
