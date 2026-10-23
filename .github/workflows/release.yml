@@ -105,6 +105,7 @@ jobs:
       - name: Run shared native CI checks
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
+          EXITBIND_RELEASE_CHECKS: '1'
         run: ./tooling/repository/ci/ci-local.sh --checks-only
       - run: cargo audit
       - name: Build native Linux stable release
@@ -234,6 +235,7 @@ jobs:
       - name: Run shared native CI checks
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
+          EXITBIND_RELEASE_CHECKS: '1'
         run: ./tooling/repository/ci/ci-local.sh --checks-only
       - name: Build native macOS stable release
         env:

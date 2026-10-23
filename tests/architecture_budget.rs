@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+#[path = "inventory/rust_source.rs"]
+mod rust_source;
 #[path = "support/temp_root.rs"]
 mod temp_root;
 #[path = "architecture_budget/temp_root_guard.rs"]

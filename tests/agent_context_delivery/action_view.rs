@@ -373,32 +373,28 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
         "{prompt}"
     );
 
-    // Every declared `work detail --view` is covered above: the list is the
-    // one the CLI accepts, read from its declaration.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let readable = fs::read_to_string(root.join("src/work/readable.rs")).unwrap();
-    let declared = readable
-        .split("pub(crate) const DETAIL_VIEWS: &[&str] = &[")
-        .nth(1)
-        .and_then(|rest| rest.split("];").next())
-        .expect("declared work detail views");
-    let views: Vec<&str> = declared
-        .split(',')
-        .map(|name| name.trim().trim_matches('"'))
-        .filter(|name| !name.is_empty())
+    // Every `work detail --view` value is covered above: the set is the one
+    // the CLI's dispatch accepts, read from its own code (a view arm added
+    // there is a member; its refusal must name it, see view_refusals).
+    let sources = super::super::rust_source::production();
+    let detail: Vec<(String, String)> = sources
+        .iter()
+        .filter(|(path, _)| path == "src/cli/work/detail.rs")
+        .cloned()
         .collect();
-    assert!(!views.is_empty());
-    for name in &views {
+    let readers = super::super::cli_tables::views_in(&sources, &detail);
+    let accepted: Vec<String> = readers
+        .iter()
+        .flat_map(|reader| reader.accepted.iter().cloned())
+        .collect();
+    assert!(!accepted.is_empty(), "work detail reads no --view");
+    for name in &accepted {
         assert!(
-            COVERED_VIEWS.contains(name),
+            COVERED_VIEWS.contains(&name.as_str()),
             "work detail --view {name} is not in the recipient surface inventory"
         );
     }
-    let cli = fs::read_to_string(root.join("src/cli/work/detail.rs")).unwrap();
-    assert!(
-        cli.contains("DETAIL_VIEWS.contains(&view)"),
-        "the CLI accepts the declared list"
-    );
+    let views: Vec<&str> = accepted.iter().map(String::as_str).collect();
     let refused = fixture.call(&["work", "detail", &work, "--view", "uncovered"], b"");
     assert!(!refused.status.success());
     assert!(text(&refused).contains(&format!("--view accepts {}", views.join(", "))));

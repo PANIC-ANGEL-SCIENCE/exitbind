@@ -91,7 +91,8 @@ pub(super) fn run_status(l: &config::Loaded, a: &Arguments) -> Result<(), String
     let ledger = positional(a, 1, "run status requires LEDGER")?;
     let json_output = a.flags.contains_key("json");
     if json_output {
-        let mut value = run::status(l, ledger).map_err(|error| map_run_error(error, true))?;
+        let mut value =
+            run::status(l, ledger).map_err(|error| map_run_error(error, true, &l.path))?;
         value["goalProgress"] = crate::session_goal::progress_for_loaded(l, &value["progress"])?;
         if let Some(terminal) = run::terminal_display(l, ledger) {
             value["terminal"] = json!(terminal);
@@ -114,7 +115,7 @@ pub(super) fn run_status(l: &config::Loaded, a: &Arguments) -> Result<(), String
                 crate::presentation::read_command("inspect", config, ledger)
             );
         }
-        map_run_error(error, false)
+        map_run_error(error, false, &l.path)
     })?;
     let current_goal = crate::session_goal::read(&l.state_root)?;
     let session_goal = crate::session_goal::presentation_for_loaded(l, current_goal.as_ref())?;
@@ -167,7 +168,7 @@ pub(super) fn run_explain(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             positional(a, 1, "run explain requires LEDGER")?,
             a.options.get("event").map(String::as_str),
         )
-        .map_err(|error| map_run_error(error, true))?;
+        .map_err(|error| map_run_error(error, true, &l.path))?;
         print_json(&machine)?;
     } else {
         let value = run::human_explain(
@@ -175,7 +176,7 @@ pub(super) fn run_explain(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             positional(a, 1, "run explain requires LEDGER")?,
             a.options.get("event").map(String::as_str),
         )
-        .map_err(|error| map_run_error(error, false))?;
+        .map_err(|error| map_run_error(error, false, &l.path))?;
         let current_goal = crate::session_goal::read(&l.state_root)?;
         let session_goal = crate::session_goal::presentation_for_loaded(l, current_goal.as_ref())?;
         crate::run_presentation::print_explain(

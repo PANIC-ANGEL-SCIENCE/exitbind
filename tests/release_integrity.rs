@@ -4,6 +4,8 @@ include!("release_integrity/context.rs");
 mod doc_versions;
 #[path = "release_integrity/installer_asset.rs"]
 mod installer_asset;
+#[path = "release_integrity/provisional_bases.rs"]
+mod provisional_bases;
 #[path = "release_integrity/publication_workflows.rs"]
 mod publication_workflows;
 #[path = "release_integrity/readme_only_gates.rs"]

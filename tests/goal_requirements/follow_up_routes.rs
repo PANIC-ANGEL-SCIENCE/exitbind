@@ -2,8 +2,8 @@
 //! product prints names its follow-up command as a full route (this
 //! executable, `--config`, registered `<NAME>` placeholders), never by bare
 //! command words, a product-name variable or an upper-case template.
-use super::emitted_routes::sources;
-use super::*;
+use super::cli_tables::{families, families_in};
+use super::rust_source::{literals, production};
 
 /// Stems of words that ask the reader to run what follows them; inflected
 /// forms (`running`, `uses`, `inspecting`, `reran`...) count too.
@@ -78,56 +78,6 @@ fn template_options(rest: &str) -> bool {
             })
 }
 
-/// Commands with subcommands, each read from the CLI file that dispatches it.
-const DISPATCHERS: &[(&str, &str)] = &[
-    ("work", "src/cli/work.rs"),
-    ("goal", "src/cli/goal.rs"),
-    ("memory", "src/cli/memory_cli.rs"),
-    ("run", "src/cli/run_cli.rs"),
-];
-
-/// The names of a dispatcher's match arms: `"name" =>` or `"a" | "b" =>`.
-fn arms(text: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    for line in text.lines() {
-        let Some((head, _)) = line.trim_start().split_once(" =>") else {
-            continue;
-        };
-        let parts: Vec<&str> = head.split(" | ").collect();
-        let quoted = |part: &&str| {
-            part.len() > 2
-                && part.starts_with('"')
-                && part.ends_with('"')
-                && part[1..part.len() - 1]
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c == '-')
-        };
-        if parts.iter().all(quoted) {
-            names.extend(parts.iter().map(|part| part[1..part.len() - 1].to_owned()));
-        }
-    }
-    names
-}
-
-fn string_literals(line: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = line;
-    while let Some(start) = rest.find('"') {
-        let after = &rest[start + 1..];
-        let mut escaped = false;
-        let Some((end, _)) = after.char_indices().find(|(_, ch)| {
-            let close = *ch == '"' && !escaped;
-            escaped = *ch == '\\' && !escaped;
-            close
-        }) else {
-            break;
-        };
-        out.push(after[..end].to_owned());
-        rest = &after[end + 1..];
-    }
-    out
-}
-
 /// Words between a subcommand and its arguments that make a usage error, not
 /// a command template: `work next requires WORK`.
 const USAGE_WORDS: &[&str] = &["requires", "accepts", "supports"];
@@ -156,7 +106,7 @@ fn template_arguments(rest: &str) -> bool {
 /// is left out, or that prints a command template with upper-case arguments
 /// instead of registered placeholders. Lines that build the route through
 /// `crate::emitted` pass.
-fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
+fn bare_follow_ups(text: &str, commands: &[(String, Vec<String>)]) -> Vec<String> {
     let mut found = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim_start();
@@ -166,7 +116,7 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
         {
             continue;
         }
-        for literal in string_literals(line) {
+        for literal in located_literals(line).into_iter().map(|(_, text)| text) {
             let lower = literal.to_ascii_lowercase();
             let bare = commands.iter().any(|(command, names)| {
                 let needle = format!("{command} ");
@@ -211,70 +161,25 @@ fn bare_follow_ups(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> 
     found
 }
 
-/// Commands whose dispatcher declares its actions as a named list it checks.
-const DECLARED: &[(&str, &str, &str)] = &[
-    ("project", "src/cli/project.rs", "PROJECT_ACTIONS"),
-    ("host", "src/cli/mod.rs", "HOST_ACTIONS"),
-    ("session", "src/cli/session_recovery.rs", "SESSION_ACTIONS"),
-];
-
-/// Top-level commands without subcommands; options follow the command.
-const OPTION_ONLY: &[&str] = &[
-    "init",
-    "setup",
-    "bind",
-    "doctor",
-    "statusline",
-    "check",
-    "brief",
-    "plan",
-    "verify",
-    "receipt",
-    "away",
-    "migrate",
-    "activity",
-];
-
-/// The names a `const NAME: &[&str] = &[...]` declaration lists.
-fn declared(text: &str, name: &str) -> Vec<String> {
-    text.split(&format!("const {name}: &[&str] = &["))
-        .nth(1)
-        .and_then(|rest| rest.split("];").next())
-        .map(|list| {
-            list.split(',')
-                .map(|item| item.trim().trim_matches('"').to_owned())
-                .filter(|item| !item.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn upper_word(text: &str) -> bool {
     text.len() >= 3
         && text.starts_with(|c: char| c.is_ascii_uppercase())
         && text.chars().all(|c| c.is_ascii_uppercase() || c == '_')
 }
 
-/// String literals with the byte offset of their opening quote.
+/// The string literals one line opens and closes, with the byte offset of
+/// their opening quote, read by the shared scanner (a literal that runs on
+/// past the line is not one of its literals).
 fn located_literals(line: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    let mut offset = 0;
-    let mut rest = line;
-    while let Some(start) = rest.find('"') {
-        let after = &rest[start + 1..];
-        let mut escaped = false;
-        let Some((end, _)) = after.char_indices().find(|(_, ch)| {
-            let close = *ch == '"' && !escaped;
-            escaped = *ch == '\\' && !escaped;
-            close
-        }) else {
-            break;
-        };
-        out.push((offset + start, after[..end].to_owned()));
-        offset += start + end + 2;
-        rest = &after[end + 1..];
-    }
-    out
+    literals(line)
+        .into_iter()
+        .filter(|lit| {
+            line.as_bytes()[lit.start] == b'"'
+                && lit.end == lit.start + lit.text.len() + 2
+                && line.as_bytes()[lit.end - 1] == b'"'
+        })
+        .map(|lit| (lit.start, lit.text))
+        .collect()
 }
 
 /// Every bare upper-case word an argv array prints as an argument, such as
@@ -282,7 +187,7 @@ fn located_literals(line: &str) -> Vec<(usize, String)> {
 /// of a registered `crate::emitted::slot`. The statement around it must
 /// carry a command word and an option, so environment-variable lists,
 /// placeholder-name lists and JSON values do not count.
-fn argv_templates(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
+fn argv_templates(text: &str, commands: &[(String, Vec<String>)]) -> Vec<String> {
     let lines: Vec<&str> = text.lines().collect();
     let mut found = Vec::new();
     for (index, line) in lines.iter().enumerate() {
@@ -346,38 +251,10 @@ fn argv_templates(text: &str, commands: &[(&str, Vec<String>)]) -> Vec<String> {
     found
 }
 
-/// Every command family with the subcommands its dispatcher accepts; an
-/// option-only command has none.
-pub(super) fn dispatched() -> Vec<(&'static str, Vec<String>)> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();
-    let mut families: Vec<(&'static str, Vec<String>)> = DISPATCHERS
-        .iter()
-        .map(|(command, file)| {
-            let names = arms(&read(file));
-            assert!(!names.is_empty(), "{file} dispatches no subcommand");
-            (*command, names)
-        })
-        .collect();
-    for (command, file, list) in DECLARED {
-        let text = read(file);
-        let names = declared(&text, list);
-        assert!(!names.is_empty(), "{file} declares no {list}");
-        assert!(
-            text.contains(&format!("{list}.contains(")),
-            "the {command} dispatcher checks {list}"
-        );
-        families.push((*command, names));
-    }
-    let top = read("src/cli/mod.rs");
-    for command in OPTION_ONLY {
-        assert!(
-            top.contains(&format!("\"{command}\" =>")),
-            "{command} is a dispatched top-level command"
-        );
-        families.push((*command, Vec::new()));
-    }
-    families
+/// Every command family with the subcommands its dispatcher accepts, read
+/// from the CLI's own tables; an option-only command has none.
+pub(super) fn dispatched() -> Vec<(String, Vec<String>)> {
+    families()
 }
 
 /// A refusal or hint that names a follow-up command prints the full route:
@@ -386,9 +263,10 @@ pub(super) fn dispatched() -> Vec<(&'static str, Vec<String>)> {
 #[test]
 fn every_follow_up_a_refusal_or_hint_names_is_a_full_route() {
     let commands = dispatched();
-    assert!(commands[0].1.iter().any(|name| name == "next"));
+    let work = commands.iter().find(|(name, _)| name == "work").unwrap();
+    assert!(work.1.iter().any(|name| name == "next"), "{commands:?}");
     let mut failures = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in production() {
         if path == "src/cli/help.rs" {
             continue;
         }
@@ -410,23 +288,83 @@ fn every_follow_up_a_refusal_or_hint_names_is_a_full_route() {
 /// prose, usage errors, product-named lines and routes built by the builder.
 #[test]
 fn follow_up_scanner_detects_each_member_of_the_class() {
-    let commands = vec![
-        ("work", vec!["next".to_owned(), "detail".to_owned()]),
-        ("goal", vec!["status".to_owned()]),
-        ("project", vec!["agents".to_owned(), "advance".to_owned()]),
-        ("init", Vec::new()),
-    ];
-    assert_eq!(
-        declared(
-            "const X_ACTIONS: &[&str] = &[\n    \"a\",\n    \"b-c\",\n];",
-            "X_ACTIONS"
+    // Families come from the dispatcher and the handler it calls: a
+    // subcommand arm or a declared action list, in any spelling, is one; an
+    // arm-like line in a literal or comment, or a nested match, is not.
+    let seeded = vec![
+        (
+            "src/cli/mod.rs".to_owned(),
+            concat!(
+                "fn run(argv: Vec<String>) -> Result<(), String> {\n",
+                "    match command {\n",
+                "        \"init\" => init(&parsed),\n",
+                "        \"project\" if parsed.positional.first().map(String::as_str) == Some(\"graph\") => {\n",
+                "            project_graph::command(&parsed)\n",
+                "        }\n",
+                "        command => configured_command(command, &parsed),\n",
+                "    }\n",
+                "}\n",
+                "fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {\n",
+                "    match command {\n",
+                "        \"work\" => work::work_command(&loaded, a),\n",
+                "        \"project\" => project::command(&loaded, a),\n",
+                "        _ => Err(\"unknown\".into()),\n",
+                "    }\n",
+                "}\n",
+            )
+            .to_owned(),
         ),
-        ["a", "b-c"]
-    );
+        (
+            "src/cli/work.rs".to_owned(),
+            concat!(
+                "pub(super) fn work_command(l: &Loaded, a: &Arguments) -> Result<(), String> {\n",
+                "    let action = positional(\n        a,\n        0,\n        \"work requires next\",\n    )?;\n",
+                "    // \"commented\" => old,\n",
+                "    match action {\n",
+                "        \"next\" => next(),\n",
+                "        \"a-b\" | \"c\" => {\n            match mode { \"nested\" => 1, _ => 2 }\n        }\n",
+                "        \"new-arm\" => Err(\"x => y\".into()),\n",
+                "        _ => Err(\"\\\"text\\\" => no\".into()),\n",
+                "    }\n",
+                "}\n",
+            )
+            .to_owned(),
+        ),
+        (
+            "src/cli/project.rs".to_owned(),
+            concat!(
+                "pub(crate) const PROJECT_ACTIONS: &[&str] = &[\n    \"agents\",\n    \"advance\",\n];\n",
+                "pub(super) fn command(l: &Loaded, arguments: &Arguments) -> Result<(), String> {\n",
+                "    let action = arguments.positional.first().map(String::as_str);\n",
+                "    if !action.is_some_and(|action| PROJECT_ACTIONS.contains(&action)) { return Err(x); }\n",
+                "    Ok(())\n",
+                "}\n",
+            )
+            .to_owned(),
+        ),
+    ];
+    let commands = families_in(&seeded);
     assert_eq!(
-        arms("        \"next\" => {\n        \"a-b\" | \"c\" => x,\n    \"Not\" => y,\n"),
-        ["next", "a-b", "c"]
+        commands,
+        [
+            ("init".to_owned(), Vec::new()),
+            (
+                "project".to_owned(),
+                vec![
+                    "graph".to_owned(),
+                    "agents".to_owned(),
+                    "advance".to_owned()
+                ]
+            ),
+            (
+                "work".to_owned(),
+                ["next", "a-b", "c", "new-arm"].map(str::to_owned).to_vec()
+            ),
+        ]
     );
+    let mut commands = commands;
+    commands[2].1.push("detail".to_owned());
+    commands.push(("goal".to_owned(), vec!["status".to_owned()]));
     let found = bare_follow_ups(
         concat!(
             "Err(\"stale; Refresh With `Work Next` now\".into())\n",

@@ -5,7 +5,7 @@
 //! keeps the replaced bytes before anything is replaced. The class is the
 //! mechanism, not the spelling: any other production file operation whose
 //! destination is the configuration path fails the test.
-use super::root_inputs::sources;
+use super::rust_source::{blank, call_arguments, production as sources};
 
 const WRITER: &str = "src/host/settings.rs";
 const KEEP: &str = "crate::memory::stamped_config::keep_replaced(target, replaced)?";
@@ -44,40 +44,6 @@ struct Call {
     arguments: Vec<String>,
 }
 
-/// Top-level comma-separated arguments of the call whose `(` is at `open`.
-fn arguments(text: &str, open: usize) -> Vec<String> {
-    let mut depth = 0;
-    let mut current = String::new();
-    let mut out = Vec::new();
-    for c in text[open..].chars() {
-        match c {
-            '(' | '[' | '{' => {
-                depth += 1;
-                if depth == 1 {
-                    continue;
-                }
-            }
-            ')' | ']' | '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            ',' if depth == 1 => {
-                out.push(current.trim().to_owned());
-                current.clear();
-                continue;
-            }
-            _ => {}
-        }
-        current.push(c);
-    }
-    if !current.trim().is_empty() {
-        out.push(current.trim().to_owned());
-    }
-    out
-}
-
 /// Every occurrence of `atomic_write` in production source: definitions
 /// (callee `fn`) and calls with their qualified path and arguments.
 fn calls() -> Vec<Call> {
@@ -106,7 +72,7 @@ fn calls() -> Vec<Call> {
                     file: file.clone(),
                     line,
                     callee: text[start..index + "atomic_write".len()].to_owned(),
-                    arguments: arguments(&text, index + "atomic_write".len()),
+                    arguments: call_arguments(&text, index + "atomic_write".len()),
                 });
             } else {
                 panic!("{file}:{line}: `atomic_write` used other than as a call (alias or pointer): the one writer must be called by name");
@@ -116,23 +82,31 @@ fn calls() -> Vec<Call> {
     found
 }
 
-/// Every production file write outside the one writer whose destination is
-/// the configuration path, as `file: operation destination`.
-fn configuration_writes_outside_the_writer() -> Vec<String> {
+/// Every file write in `sources` outside the one writer whose destination
+/// is the configuration path, as `file: operation destination`. Calls are
+/// found on code in any spacing (`std::fs::write (`), not in a literal or
+/// comment.
+fn configuration_writes_outside_the_writer(sources: &[(String, String)]) -> Vec<String> {
     let mut found = Vec::new();
-    for (file, text) in sources() {
+    for (file, text) in sources {
         if file == WRITER {
             continue;
         }
+        let code = blank(text);
         for (operation, destination) in FILE_WRITES {
-            for (index, _) in text.match_indices(operation) {
-                let line_start = text[..index].rfind('\n').map_or(0, |at| at + 1);
-                if text[line_start..].trim_start().starts_with("//") {
+            let name = operation.trim_end_matches('(');
+            for (index, _) in code.match_indices(name) {
+                let after = &code[index + name.len()..];
+                let spaced = after.len() - after.trim_start().len();
+                let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+                if !after.trim_start().starts_with('(')
+                    || (!name.starts_with('.') && code[..index].ends_with(ident))
+                {
                     continue;
                 }
                 // An `OpenOptions` chain writes only with a write flag.
                 if *operation == ".open(" {
-                    let chain = &text[text[..index].rfind("OpenOptions").unwrap_or(index)..index];
+                    let chain = &code[code[..index].rfind("OpenOptions").unwrap_or(index)..index];
                     let writes = [
                         ".write(true)",
                         ".append(true)",
@@ -145,8 +119,8 @@ fn configuration_writes_outside_the_writer() -> Vec<String> {
                         continue;
                     }
                 }
-                let open = index + operation.len() - 1;
-                let Some(target) = arguments(&text, open).get(*destination).cloned() else {
+                let open = index + name.len() + spaced;
+                let Some(target) = call_arguments(text, open).get(*destination).cloned() else {
                     continue;
                 };
                 let target = target.trim_start_matches('&').trim();
@@ -165,9 +139,34 @@ fn configuration_writes_outside_the_writer() -> Vec<String> {
     found
 }
 
+/// The scan sees the class in any spelling and only in code.
+#[test]
+fn configuration_write_scanner_detects_each_member_of_the_class() {
+    let seeded = concat!(
+        "fn a(loaded: &Loaded) { std::fs::write (&loaded.path, b).unwrap(); }\n",
+        "fn b(l: &Loaded) { OpenOptions::new().write(true).open(&l.path).unwrap(); }\n",
+        "fn c(config: &Path) { fs::rename(tmp, config).unwrap(); }\n",
+        "fn d(loaded: &Loaded) { let _ = fs::read(&loaded.path); }\n",
+        "// fs::write(&loaded.path, b)\n",
+        "const S: &str = \"fs::write(&loaded.path, b)\";\n",
+        "fn e(loaded: &Loaded) { OpenOptions::new().read(true).open(&loaded.path).unwrap(); }\n",
+    );
+    let found =
+        configuration_writes_outside_the_writer(&[("src/seeded.rs".to_owned(), seeded.to_owned())]);
+    assert_eq!(
+        found,
+        [
+            "src/seeded.rs: fs::rename(config",
+            "src/seeded.rs: fs::write(loaded.path",
+            "src/seeded.rs: .open(l.path",
+        ],
+        "{found:#?}"
+    );
+}
+
 #[test]
 fn the_configuration_file_is_replaced_only_by_the_one_writer() {
-    let outside = configuration_writes_outside_the_writer();
+    let outside = configuration_writes_outside_the_writer(&sources());
     assert!(
         outside.is_empty(),
         "replace the configuration through settings::atomic_write, which keeps the stamped bytes: {outside:#?}"

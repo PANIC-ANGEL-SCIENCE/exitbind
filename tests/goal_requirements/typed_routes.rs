@@ -6,53 +6,70 @@
 //! a registered non-route class; and no command argv is spelled as a literal
 //! list anywhere outside the builder. The P1 scans stay as the backstop.
 use super::follow_up_routes::dispatched;
-use super::route_values::{renderers, renderers_in, sinks, Renderers};
+use super::route_values::{renderers, renderers_in, route_sources, sinks, Renderers};
 use super::rust_source::{
-    end_of, expression, functions, line_of, literals, opening_bracket, production, Literal,
+    end_of, expression, functions, line_of, literals, opening_bracket, Literal,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Field writes that carry no product route, per file and key with count
-/// and class.
-type NotRoutes = [(&'static str, &'static str, usize, &'static str)];
+/// Field writes that carry no product route, per file and key with the
+/// value expressions written (whitespace-normalized) and their class. An
+/// entry is bound to its values: a route written under the same key of the
+/// same file is a different value and fails.
+type NotRoutes = [(
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    &'static str,
+)];
 const NOT_ROUTES: &NotRoutes = &[
     (
         "src/host/hooks.rs",
         "command",
-        4,
+        &[
+            "HOOK_COMMAND",
+            "HOOK_COMMAND",
+            "hook_command()",
+            "hook_command()",
+        ],
         "installed host hook command",
     ),
     (
         "src/project/setup_statusline.rs",
         "command",
-        1,
+        &["COMMAND"],
         "installed status line command",
     ),
     (
         "src/run/gate/value.rs",
         "command",
-        3,
+        &["self.command", "self.command", "self.command"],
         "the project's own check command",
     ),
     (
         "src/project/setup.rs",
         "command",
-        1,
+        &["facts.pre_return_command"],
         "the project's own pre-return command",
     ),
     (
         "src/work/early_evidence.rs",
         "command",
-        1,
+        &["json!(command)"],
         "the reported probe command",
     ),
     (
         "src/session_goal/display.rs",
         "closingRoute",
-        1,
+        &["closing_route(&record, progress)"],
         "sentence on how the Goal closes; its routes are printed lines",
     ),
 ];
+
+/// A value expression with its whitespace runs collapsed.
+fn normalized(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
 /// Where an argv literal may be spelled: the builder's constructors, and the
 /// argument list of a process this product spawns (never printed).
@@ -68,7 +85,7 @@ const BUILDERS: &[&str] = &[
 
 /// Every command argv spelled as a literal list (`"work", "detail"` or an
 /// option-only command and its option) outside the builder's constructors.
-fn argv_literals(text: &str, families: &[(&str, Vec<String>)]) -> Vec<String> {
+fn argv_literals(text: &str, families: &[(String, Vec<String>)]) -> Vec<String> {
     let lits = literals(text);
     let mut found = Vec::new();
     for pair in lits.windows(2) {
@@ -91,7 +108,11 @@ fn argv_literals(text: &str, families: &[(&str, Vec<String>)]) -> Vec<String> {
         if !argv {
             continue;
         }
+        // Only a list: two match arms or two arguments are not an argv.
         let open = opening_bracket(text, &lits, pair[0].start);
+        if text.as_bytes().get(open) != Some(&b'[') {
+            continue;
+        }
         let context = text[..open].trim_end().trim_end_matches('&').trim_end();
         if !BUILDERS.iter().any(|builder| context.ends_with(builder)) {
             found.push(format!(
@@ -173,7 +194,7 @@ struct Scope<'a> {
     text: &'a str,
     lits: &'a [Literal],
     functions: &'a BTreeMap<String, Vec<(String, String)>>,
-    families: &'a [(&'a str, Vec<String>)],
+    families: &'a [(String, Vec<String>)],
     renderers: &'a Renderers,
     sinks: &'a [String],
 }
@@ -425,14 +446,14 @@ struct Registry {
 
 fn registry(
     sources: &[(String, String)],
-    families: &[(&str, Vec<String>)],
+    families: &[(String, Vec<String>)],
     not_routes: &NotRoutes,
     renderers: &Renderers,
 ) -> Registry {
     let functions = functions(sources);
     let mut typed = sources.to_vec();
     typed.extend(
-        super::emitted_routes::sources()
+        super::rust_source::sources()
             .into_iter()
             .filter(|(path, _)| path.starts_with("src/emitted")),
     );
@@ -461,7 +482,7 @@ fn registry(
             renderers,
             sinks: &sinks,
         };
-        let mut refused: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut refused: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         for write in writes(text) {
             *registry.fields.entry(write.key.clone()).or_default() += 1;
             match classify(&scope, &write.value, write.at, 0) {
@@ -469,9 +490,12 @@ fn registry(
                     registry.renderers.insert(name);
                 }
                 Ok(_) => {}
-                Err(reason) => refused.entry(write.key.clone()).or_default().push(format!(
-                    "{path}:{}: \"{}\": {} ({reason})",
-                    write.line, write.key, write.value
+                Err(reason) => refused.entry(write.key.clone()).or_default().push((
+                    normalized(&write.value),
+                    format!(
+                        "{path}:{}: \"{}\": {} ({reason})",
+                        write.line, write.key, write.value
+                    ),
                 )),
             }
         }
@@ -484,15 +508,24 @@ fn registry(
         );
         for key in keys {
             let found = refused.get(key).map_or(&[][..], Vec::as_slice);
-            let listed = not_routes
+            let mut values: Vec<&str> = found.iter().map(|(value, _)| value.as_str()).collect();
+            values.sort_unstable();
+            let mut listed: Vec<&str> = not_routes
                 .iter()
-                .find(|(file, listed_key, _, _)| file == path && *listed_key == key)
-                .map_or(0, |(_, _, count, _)| *count);
-            if found.len() != listed {
+                .filter(|(file, listed_key, _, _)| file == path && *listed_key == key)
+                .flat_map(|(_, _, values, _)| values.iter().copied())
+                .collect();
+            listed.sort_unstable();
+            if values != listed {
                 registry.failures.push(format!(
-                    "{path}: {} \"{key}\" field(s) not built by crate::emitted::Route, {listed} registered as non-routes:\n  {}",
+                    "{path}: {} \"{key}\" field(s) not built by crate::emitted::Route, {} registered as non-routes {listed:?}:\n  {}",
                     found.len(),
-                    found.join("\n  ")
+                    listed.len(),
+                    found
+                        .iter()
+                        .map(|(value, at)| format!("{at} [value: {value}]"))
+                        .collect::<Vec<_>>()
+                        .join("\n  ")
                 ));
             }
         }
@@ -503,7 +536,7 @@ fn registry(
 #[test]
 fn every_route_carrying_field_is_rendered_from_the_typed_route() {
     let families = dispatched();
-    let sources = production();
+    let sources = route_sources();
     assert!(sources.len() > 300, "{}", sources.len());
     let renderers = renderers();
     let registry = registry(&sources, &families, NOT_ROUTES, &renderers);
@@ -530,8 +563,11 @@ fn every_route_carrying_field_is_rendered_from_the_typed_route() {
 #[test]
 fn typed_route_scanner_detects_each_member_of_the_class() {
     let families = vec![
-        ("work", vec!["next".to_owned(), "detail".to_owned()]),
-        ("check", Vec::new()),
+        (
+            "work".to_owned(),
+            vec!["next".to_owned(), "detail".to_owned()],
+        ),
+        ("check".to_owned(), Vec::new()),
     ];
     let renderers = renderers_in(
         concat!(
@@ -577,21 +613,32 @@ fn typed_route_scanner_detects_each_member_of_the_class() {
             "{key}\n{found}"
         );
     }
-    // A non-route entry is bound to its key: the same count under another
-    // key of the same file still fails, and so does a stale entry.
+    // A non-route entry is bound to its key and its value: the same count
+    // under another key of the same file still fails, a stale entry fails,
+    // and a route written in place of a listed non-route under the same key
+    // of the same file fails (R3).
     let swapped = registry(
         &source,
         &families,
         &[
-            ("src/seeded.rs", "readRoute", 1, "x"),
-            ("src/seeded.rs", "propose", 1, "x"),
+            (
+                "src/seeded.rs",
+                "readRoute",
+                &["[exe, \"work\", \"detail\", \"--json\"]"],
+                "x",
+            ),
+            ("src/seeded.rs", "propose", &["hook_line"], "x"),
+            ("src/seeded.rs", "command", &["hook_command(root)"], "x"),
         ],
         &renderers,
     )
     .failures
     .join("\n");
-    assert!(swapped.contains("1 \"command\" field(s)"), "{swapped}");
-    assert!(!swapped.contains("1 \"readRoute\" field(s)"), "{swapped}");
+    assert!(
+        swapped.contains("1 \"command\" field(s) not built by crate::emitted::Route, 1 registered"),
+        "{swapped}"
+    );
+    assert!(!swapped.contains("\"readRoute\" field(s)"), "{swapped}");
     assert!(swapped.contains("0 \"propose\" field(s)"), "{swapped}");
     let passing = concat!(
         "fn route(loaded: &Loaded, route: Route) -> Value {\n",

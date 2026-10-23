@@ -89,6 +89,13 @@ expect full macos "$full_macos"
 for stage in history workflows workflow-regression ci-stage-contract quiet-command-regression; do
   ci_stage_selected unexpected "$stage" linux || fail "shared stage omitted: $stage"
 done
+# This stage runs the two inventory checks below, so it runs everywhere.
+for mode in full pre-return; do
+  for platform in linux macos; do
+    ci_stage_selected "$mode" ci-stage-contract "$platform" ||
+      fail "the inventory checks must run on every platform: $mode $platform"
+  done
+done
 for stage in tests value-proof drift-warning native-handoff; do
   if ci_stage_selected pre-return "$stage" linux; then
     fail "full-only stage selected for pre-return: $stage"
@@ -172,4 +179,12 @@ rm -rf "$proof_work"
 trap - EXIT HUP INT TERM
 
 "$root/tooling/repository/ci/test-ci-selected-history.sh"
+
+# Inventory checks every platform runs: every gate above in the gate
+# inventory (an expired provisional date is reported here and refused at
+# release), and every historical reader in docs/legacy-compatibility.md.
+for check in check_gate_inventory.py check_legacy_inventory.py; do
+  python3 "$root/tooling/repository/checks/$check" --self-test || fail "$check self-test failed"
+  python3 "$root/tooling/repository/checks/$check" || fail "$check failed"
+done
 printf 'ci-stage contract passed\n'

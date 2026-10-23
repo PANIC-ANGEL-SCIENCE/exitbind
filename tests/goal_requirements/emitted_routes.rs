@@ -3,6 +3,8 @@
 //! through the one emitted-route module, every printed placeholder is
 //! registered with the option that fills it, and the fill route runs a
 //! current form with its placeholders filled; a refused fill writes nothing.
+use super::cli_tables::top_level;
+use super::rust_source::{code_words, line_of, literals, production};
 use super::*;
 
 const REGISTRY: &str = "src/emitted.rs";
@@ -19,8 +21,9 @@ const STATIC_TEXT: &[(&str, &str)] = &[
     ),
 ];
 
-/// Executable lookups that print no route: identity hashing, self-spawned
-/// children, the self-update and unit tests. Count per file.
+/// Executable lookups in production code that print no route: identity
+/// hashing, self-spawned children and the self-update. Count per file; test
+/// code prints nothing and is not scanned.
 const NOT_EMITTERS: &[(&str, usize, &str)] = &[
     (
         "src/producer.rs",
@@ -29,22 +32,10 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
     ),
     ("src/main.rs", 1, "invoked-name compatibility check"),
     ("src/host/away.rs", 1, "spawns its own detached runner"),
-    ("src/host/native_session.rs", 1, "unit test fixture"),
     (
         "src/run/capture_supervisor/linux.rs",
         1,
         "spawns its capture supervisor",
-    ),
-    ("src/run/capture_supervisor/tests.rs", 1, "unit test"),
-    (
-        "src/test_root.rs",
-        1,
-        "unit test re-runs its own seeded failing test",
-    ),
-    (
-        "src/run/cleanup_fixture.rs",
-        1,
-        "spawns its cleanup fixture",
     ),
     (
         "src/distribution/update.rs",
@@ -73,32 +64,6 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
     ),
 ];
 
-/// The product's top-level commands; a literal `exitbind <command>`,
-/// `soulmate <command>` or `{product} <command>` in printed text names the
-/// command instead of the executable the route must run with.
-const COMMANDS: &[&str] = &[
-    "work",
-    "goal",
-    "memory",
-    "project",
-    "setup",
-    "session",
-    "host",
-    "hook-run",
-    "hooks",
-    "statusline",
-    "check",
-    "init",
-    "update",
-    "run",
-    "brief",
-    "profile",
-    "away",
-    "receipt",
-    "doctor",
-    "version",
-];
-
 /// Printed text that names a command by its literal product name, per file
 /// with its count and class. A new occurrence anywhere fails until it is
 /// built through `crate::emitted` or listed here with its class.
@@ -116,20 +81,14 @@ const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
         2,
         "benchmark command identity, not printed",
     ),
-    (
-        "src/host/session_recovery/presentation.rs",
-        1,
-        "unit test of a refused hint",
-    ),
 ];
 
-/// Every printed `<product> <command>` occurrence outside comments.
-fn named_commands(text: &str) -> usize {
+/// Every printed `<product> <command>` in a string literal, for the
+/// product's top-level `commands` (read from the CLI dispatcher).
+fn named_commands(text: &str, commands: &[String]) -> usize {
     let mut found = 0;
-    for line in text
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-    {
+    for lit in literals(text) {
+        let line = lit.text.as_str();
         for needle in ["exitbind ", "soulmate ", "{product} "] {
             for (at, _) in line.match_indices(needle) {
                 let before = line[..at].chars().next_back().unwrap_or(' ');
@@ -140,7 +99,7 @@ fn named_commands(text: &str) -> usize {
                     .collect();
                 let after = rest[word.len()..].chars().next().unwrap_or(' ');
                 if "\"`( :'".contains(before)
-                    && COMMANDS.contains(&word.as_str())
+                    && commands.iter().any(|command| *command == word)
                     && " `\"'".contains(after)
                 {
                     found += 1;
@@ -151,26 +110,22 @@ fn named_commands(text: &str) -> usize {
     found
 }
 
-pub(super) fn sources() -> Vec<(String, String)> {
-    fn visit(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                visit(&path, root, out);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let relative = path.strip_prefix(root).unwrap().to_string_lossy();
-                out.push((
-                    relative.replace('\\', "/"),
-                    fs::read_to_string(&path).unwrap(),
-                ));
-            }
-        }
-    }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut out = Vec::new();
-    visit(&root.join("src"), root, &mut out);
-    out.sort();
-    out
+/// The line of every executable lookup in code, by any spelling:
+/// `std::env::current_exe()`, `env::current_exe ()`, an imported
+/// `current_exe` called or the function passed as a value by path; not in a
+/// literal or comment, and not a variable that happens to share the name.
+fn executable_lookups(text: &str) -> Vec<usize> {
+    let code = super::rust_source::blank(text);
+    code_words(text, "current_exe")
+        .into_iter()
+        .filter(|at| {
+            code[..*at].trim_end().ends_with("::")
+                || code[at + "current_exe".len()..]
+                    .trim_start()
+                    .starts_with('(')
+        })
+        .map(|at| line_of(text, at))
+        .collect()
 }
 
 /// Every `<NAME>` token (upper case, digits, underscore; two or more bytes).
@@ -210,7 +165,9 @@ fn registered(registry: &str) -> Vec<String> {
 
 #[test]
 fn every_placeholder_and_executable_lookup_goes_through_the_emitted_route_registry() {
-    let sources = sources();
+    let sources = production();
+    let commands: Vec<String> = top_level(&sources).into_iter().map(|c| c.name).collect();
+    assert!(commands.len() >= 20, "{commands:?}");
     let registry = &sources
         .iter()
         .find(|(path, _)| path == REGISTRY)
@@ -237,7 +194,7 @@ fn every_placeholder_and_executable_lookup_goes_through_the_emitted_route_regist
             used.insert(name);
         }
         if path != "src/cli/help.rs" {
-            let named = named_commands(text);
+            let named = named_commands(text, &commands);
             let listed = NAMED_COMMANDS
                 .iter()
                 .find(|(file, _, _)| file == path)
@@ -248,7 +205,7 @@ fn every_placeholder_and_executable_lookup_goes_through_the_emitted_route_regist
                 ));
             }
         }
-        let lookups = text.matches("current_exe()").count();
+        let lookups = executable_lookups(text).len();
         let allowed = NOT_EMITTERS
             .iter()
             .find(|(file, _, _)| file == path)
@@ -285,19 +242,61 @@ fn emitted_route_scanner_detects_each_member_of_the_class() {
         registered("Placeholder {\n name: \"REASON\",\n"),
         ["REASON"]
     );
+    // The commands come from the dispatcher: a command added there is one.
+    let dispatcher = concat!(
+        "pub fn run(argv: Vec<String>) -> Result<(), String> {\n",
+        "    if command == \"update\" { return update(); }\n",
+        "    match command {\n",
+        "        \"session\" => session(&parsed),\n",
+        "        \"new-thing\" | \"work\" => configured_command(command, &parsed),\n",
+        "        command => configured_command(command, &parsed),\n",
+        "    }\n",
+        "}\n",
+        "fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {\n",
+        "    match command { \"init\" => init(a), _ => Err(\"x\".into()) }\n",
+        "}\n",
+    );
+    let seeded = vec![("src/cli/mod.rs".to_owned(), dispatcher.to_owned())];
+    let commands: Vec<String> = top_level(&seeded).into_iter().map(|c| c.name).collect();
+    assert_eq!(commands, ["session", "new-thing", "work", "update", "init"]);
     // A literal product-name command, in a format string or plain literal;
     // prose, paths, comments and non-commands are not commands.
     assert_eq!(
         named_commands(
-            "format!(\"read: exitbind work detail {w}\"); \"`exitbind session recovery show`\""
+            "format!(\"read: exitbind work detail {w}\"); \"`exitbind session recovery show`\"",
+            &commands
         ),
         2
     );
-    assert_eq!(named_commands("format!(\"{product} work act {w}\")"), 1);
     assert_eq!(
-        named_commands("\"/bin/exitbind work\" \"{product} update: x\" \"Exitbind recovered\"\n// exitbind work"),
+        named_commands("format!(\"{product} new-thing {w}\")", &commands),
+        1
+    );
+    assert_eq!(
+        named_commands("\"/bin/exitbind work\" \"{product} update: x\" \"Exitbind recovered\"\n// \"exitbind work\"", &commands),
         0
     );
+    // An executable lookup in any spelling is one; a comment, a literal and
+    // a test module are not code that prints.
+    let lookups = concat!(
+        "fn a() { let _ = std::env::current_exe(); }\n",
+        "fn b() { let _ = env::current_exe (); }\n",
+        "use std::env::current_exe;\n",
+        "fn c() { current_exe().ok(); }\n",
+        "fn d() -> Lookup { std::env::current_exe }\n",
+        "// current_exe() in a comment\n",
+        "const S: &str = \"current_exe()\";\n",
+        "fn not_current_exe_named() {}\n",
+        "fn e(current_exe: Option<&Path>) { let current_exe = current_exe.clone(); }\n",
+    );
+    assert_eq!(executable_lookups(lookups), [1, 2, 3, 4, 5]);
+    let tested = format!(
+        "#[cfg(test)]\nmod tests {{\n    const C: char = '}}';\n    fn t() {{ std::env::current_exe(); }}\n}}\n{lookups}"
+    );
+    let production = super::rust_source::strip_test_modules(&tested);
+    assert_eq!(executable_lookups(&production), [6, 7, 8, 9, 10]);
+    // The base spelling missed the spaced and path-value forms.
+    assert_eq!(lookups.matches("current_exe()").count(), 4);
 }
 
 fn prepared_integration(project: &Project) -> Value {

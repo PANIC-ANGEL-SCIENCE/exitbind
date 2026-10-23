@@ -9,6 +9,7 @@ the "Reader inventory" table. A form marked retired must not be read again.
 
 from __future__ import annotations
 
+import bisect
 import re
 import sys
 from pathlib import Path
@@ -20,8 +21,11 @@ DOC = "docs/legacy-compatibility.md"
 HEADING = "## Reader inventory"
 COLUMNS = ["Reader", "Old form", "Last write", "Live file or fixture", "Pinning test", "Decision"]
 
-TEST_MODULE = re.compile(r"^\s*#\[cfg\(test\)\]\s*\n\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{", re.M)
-FULL_LINE_COMMENT = re.compile(r"^\s*//.*$", re.M)
+# A test-only module item: `#[cfg(test)]` or `#[cfg(all(test, ..))]`, other
+# attributes, then `mod name {`. Matched only where code starts.
+TEST_MODULE = re.compile(
+    r"#\[cfg\((?:test|all\(\s*test\b[^\]]*)\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{"
+)
 LEGACY_NAME = re.compile(r"soulmate", re.I)
 # A version operand: an identifier containing "version", or a JSON "version"
 # field read by index or get, optionally followed by accessor calls.
@@ -40,12 +44,100 @@ SRC_PATH = re.compile(r"`(src/[^`]+\.rs)`")
 TOKEN = re.compile(r"`([^`]+)`")
 
 
+def non_code(text: str) -> List[Tuple[int, int, bool]]:
+    """Comments and string or char literals as (start, end, is_comment), in
+    order; raw strings, escapes and lifetimes are handled."""
+    spans: List[Tuple[int, int, bool]] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            spans.append((i, end, True))
+            i = end
+        elif text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            spans.append((i, j, True))
+            i = j
+        elif text[i] == "r" and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")) and re.match(r'r#*"', text[i:]):
+            hashes = len(re.match(r"r(#*)", text[i:]).group(1))
+            close = '"' + "#" * hashes
+            end = text.find(close, i + 2 + hashes)
+            end = n if end < 0 else end + len(close)
+            spans.append((i, end, False))
+            i = end
+        elif text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            spans.append((i, min(j + 1, n), False))
+            i = j + 1
+        elif text[i] == "'":
+            if text.startswith("\\", i + 1):
+                end = text.find("'", i + 3)
+                end = n if end < 0 else end + 1
+                spans.append((i, end, False))
+                i = end
+            elif i + 2 < n and text[i + 2] == "'":
+                spans.append((i, i + 3, False))
+                i += 3
+            else:
+                i += 1
+        else:
+            i += 1
+    return spans
+
+
 def code_of(text: str) -> str:
-    """Production code: drop a trailing test module and full-line comments."""
-    match = TEST_MODULE.search(text)
-    if match:
-        text = text[: match.start()]
-    return FULL_LINE_COMMENT.sub("", text)
+    """Production code: every test-only module removed by its brace extent,
+    wherever it sits, and every comment; string literals stay (an old name
+    in a literal is a reader). Braces inside literals and comments do not
+    count."""
+    spans = non_code(text)
+    starts = [start for start, _, _ in spans]
+
+    def inside(at: int) -> bool:
+        index = bisect.bisect_right(starts, at) - 1
+        return index >= 0 and at < spans[index][1]
+
+    removed: List[Tuple[int, int]] = []
+    position = 0
+    while True:
+        match = TEST_MODULE.search(text, position)
+        if not match:
+            break
+        if inside(match.start()):
+            position = match.start() + 1
+            continue
+        depth, i = 1, match.end()
+        while i < len(text) and depth:
+            index = bisect.bisect_right(starts, i) - 1
+            if index >= 0 and i < spans[index][1]:
+                i = spans[index][1]
+                continue
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        removed.append((match.start(), i))
+        position = i
+    removed.extend((start, end) for start, end, comment in spans if comment)
+    removed.sort()
+    out: List[str] = []
+    cursor = 0
+    for start, end in removed:
+        if start >= cursor:
+            out.append(text[cursor:start])
+            cursor = end
+        elif end > cursor:
+            cursor = end
+    out.append(text[cursor:])
+    return "".join(out)
 
 
 def is_test_file(path: str) -> bool:
@@ -158,7 +250,18 @@ def self_test() -> int:
         "src/comment.rs": "// soulmate history lives in the docs\nfn f() {}\n",
         "src/test_only.rs": 'fn f() {}\n#[cfg(test)]\nmod tests {\n    const P: &str = "soulmate";\n}\n',
         "src/run/tests.rs": 'const P: &str = "soulmate";\n',
+        "src/braces_in_test.rs": (
+            "#[cfg(test)]\nmod tests {\n    const OPEN: char = '{';\n"
+            '    const S: &str = "}}{";\n    // }\n    const P: &str = "soulmate";\n}\nfn f() {}\n'
+        ),
     }
+    # A test module before production code, with brace literals inside it:
+    # the reader after it is still found.
+    detected_spellings["src/after_test_module.rs"] = (
+        "#[cfg(test)]\nmod tests {\n    const C: char = '}';\n"
+        '    const S: &str = "{{";\n}\nconst P: &str = ".soulmate";\n'
+    )
+    ignored["src/all_test.rs"] = '#[cfg(all(test, unix))]\nmod tests {\n    const P: &str = "soulmate";\n}\n'
     failures = []
     found = detect({**detected_spellings, **ignored})
     for path in detected_spellings:
@@ -186,7 +289,10 @@ def self_test() -> int:
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
     if not failures:
-        print("Legacy inventory self-test passed: mixed spellings found; unlisted, stale and revived readers rejected")
+        print(
+            "Legacy inventory self-test passed: mixed spellings found, test modules stripped by extent; "
+            "unlisted, stale and revived readers rejected"
+        )
     return 1 if failures else 0
 
 

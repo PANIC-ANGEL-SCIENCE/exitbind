@@ -1,3 +1,5 @@
+#[path = "inventory/rust_source.rs"]
+mod rust_source;
 #[allow(dead_code)]
 mod support;
 use std::{fs, path::Path};
@@ -35,64 +37,37 @@ fn canonical_skills_keep_lf_checkout_rules() {
     }
 }
 
-fn brace_delta(line: &str) -> i32 {
-    let mut delta = 0;
-    let mut chars = line.chars().peekable();
-    let mut quoted = false;
-    let mut escaped = false;
-    while let Some(character) = chars.next() {
-        if quoted {
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == '"' {
-                quoted = false;
+/// The lifecycle wire labels a production line may not spell outside their
+/// owner, in `source` without its test-only items.
+fn label_lines(source: &str, labels: &[&str]) -> Vec<(usize, String)> {
+    let mut found = Vec::new();
+    for (line, contents) in rust_source::strip_test_modules(source).lines().enumerate() {
+        for label in labels {
+            if contents.contains(label) {
+                found.push((line + 1, (*label).to_owned()));
             }
-            continue;
-        }
-        if character == '/' && chars.peek() == Some(&'/') {
-            break;
-        }
-        if character == '"' {
-            quoted = true;
-        } else if character == '{' {
-            delta += 1;
-        } else if character == '}' {
-            delta -= 1;
         }
     }
-    delta
+    found
 }
 
-fn production_source(source: &str) -> String {
-    let mut output = String::new();
-    let mut test_depth = None;
-    for line in source.lines() {
-        if test_depth.is_none() && line.trim() == "#[cfg(test)]" {
-            test_depth = Some(0);
-            continue;
-        }
-        if let Some(depth) = test_depth.as_mut() {
-            let delta = brace_delta(line);
-            if *depth == 0 {
-                if delta != 0 {
-                    *depth = delta;
-                } else if line.trim_end().ends_with(';') {
-                    test_depth = None;
-                }
-            } else {
-                *depth += delta;
-                if *depth == 0 {
-                    test_depth = None;
-                }
-            }
-            continue;
-        }
-        output.push_str(line);
-        output.push('\n');
-    }
-    output
+/// The label scan reads production code by extent: a label after a test
+/// module holding brace literals is found, one inside it is not.
+#[test]
+fn lifecycle_label_scan_reads_production_after_a_test_module() {
+    let seeded = concat!(
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    const OPEN: char = '{';\n",
+        "    const S: &str = \"}}\";\n",
+        "    fn t() -> &'static str { \"READY\" }\n",
+        "}\n",
+        "fn production() -> &'static str { \"REFUSED\" }\n",
+    );
+    assert_eq!(
+        label_lines(seeded, &["\"READY\"", "\"REFUSED\""]),
+        [(7, "\"REFUSED\"".to_owned())]
+    );
 }
 
 #[test]
@@ -112,13 +87,9 @@ fn lifecycle_wire_labels_have_one_production_owner() {
         {
             continue;
         }
-        let source = production_source(&fs::read_to_string(&path).unwrap());
-        for (line, contents) in source.lines().enumerate() {
-            for label in labels {
-                if contents.contains(label) {
-                    violations.push(format!("{}:{} contains {label}", path.display(), line + 1));
-                }
-            }
+        let source = fs::read_to_string(&path).unwrap();
+        for (line, label) in label_lines(&source, &labels) {
+            violations.push(format!("{}:{line} contains {label}", path.display()));
         }
     }
     assert!(

@@ -7,6 +7,10 @@ passes to its run helper. Each gate is listed once with a cost class, the
 failure class it prevents, and exactly one justification: ledger references to
 real failures, a provisional date, or a deterrent reason.
 
+A provisional date that has passed is reported on every run and refused by
+--release, which the release_integrity target runs at release time: a basis
+ends, but an unrelated pre-return never fails on the calendar.
+
 --append records one failure line in the ledger (used by ci-failure.sh).
 """
 
@@ -65,6 +69,23 @@ def valid_date(value: object) -> bool:
     except ValueError:
         return False
     return True
+
+
+def expired(inventory: dict, today: datetime.date) -> List[str]:
+    """Every provisionalUntil date before `today`, one line per gate."""
+    found: List[str] = []
+    for gate in inventory.get("gates") or []:
+        until = gate.get("provisionalUntil") if isinstance(gate, dict) else None
+        if valid_date(until) and datetime.date.fromisoformat(until) < today:
+            found.append(
+                f"gate {gate.get('id')} provisionalUntil {until} has passed ({today.isoformat()}): "
+                "reference a real failure (ci-failure.sh --record) or give a deterrent reason"
+            )
+    return found
+
+
+def utc_today() -> datetime.date:
+    return datetime.datetime.now(datetime.timezone.utc).date()
 
 
 def workflow_step_exists(root: Path, gate: str) -> bool:
@@ -269,10 +290,22 @@ def self_test(root: Path) -> int:
     for name, (inventory, case_labels, ledger, expected) in cases.items():
         if not any(expected in error for error in check(root, inventory, ["a", "b"], case_labels, ledger)):
             failures.append(f"self-test case did not fail: {name}")
+    # A seeded expired basis is valid inventory (pre-return passes) and is
+    # found by the release check; the last valid day is not expired.
+    stale = variant(lambda g: g[2].update(provisionalUntil="2000-01-01"))
+    if check(root, stale, ["a", "b"], labels, [line]):
+        failures.append("an expired provisional date failed the ordinary check")
+    if not any("tail-one provisionalUntil 2000-01-01 has passed" in e for e in expired(stale, datetime.date(2026, 10, 23))):
+        failures.append(f"an expired provisional date was not found: {expired(stale, datetime.date(2026, 10, 23))}")
+    if expired(good, datetime.date(2027, 1, 1)) or not expired(good, datetime.date(2027, 1, 2)):
+        failures.append("provisionalUntil must end after its own day")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
     if not failures:
-        print("Gate inventory self-test passed: mixed run spellings found; missing, stale and unjustified gates rejected")
+        print(
+            "Gate inventory self-test passed: mixed run spellings found; missing, stale and unjustified gates "
+            "rejected; expired provisional dates found"
+        )
     return 1 if failures else 0
 
 
@@ -282,10 +315,17 @@ def main(argv: List[str]) -> int:
         return self_test(root)
     if argv[:1] == ["--append"]:
         return append(root, argv[1:])
-    if argv:
-        print("usage: check_gate_inventory.py [--self-test | --append ...]", file=sys.stderr)
+    release = argv == ["--release"]
+    if argv and not release:
+        print("usage: check_gate_inventory.py [--self-test | --release | --append ...]", file=sys.stderr)
         return 2
     errors = load(root)
+    passed = expired(json.loads((root / INVENTORY).read_text(encoding="utf-8")), utc_today())
+    if release:
+        errors.extend(passed)
+    else:
+        for line in passed:
+            print(f"REPORT: {line}; a release refuses it")
     for error in errors:
         print(f"FAIL: {error}", file=sys.stderr)
     if not errors:

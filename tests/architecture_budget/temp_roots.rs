@@ -4,19 +4,23 @@
 //! directory when the test passes and keeps and names it when the test fails.
 //! Any other acquisition in test code is a member and fails the scan.
 //!
-//! Test code is every `.rs` file under `tests/` (fixtures excluded), every
-//! `src/` file declared by a `#[cfg(test)]` module item (and the modules it
-//! declares in turn), and the text of a `src/` file from an inline
-//! `#[cfg(test)] mod … {` to the end of that file. A member is a line that
-//! acquires a temp location by any spelling: `temp_dir` (any path form), an
-//! environment read of `TMPDIR`, `TMP` or `TEMP`, `CARGO_TARGET_TMPDIR`, a
-//! temp-file crate or helper (`tempfile::`, `tempdir(`, `TempDir::`),
-//! `mkdtemp`/`mktemp` (also in embedded shell text), or a `create_dir` of an
-//! absolute literal path. Setting `TMPDIR` for a child (`.env("TMPDIR", root)`)
-//! points it into the test's own root and is not a member.
+//! Test code, read with the shared scanner (`tests/inventory/rust_source.rs`):
+//! every `.rs` file under `tests/` (fixtures excluded), every `src/` file a
+//! `cfg(test)`, `cfg(all(test, ..))` or `cfg(any(test, ..))` module item
+//! declares (and the modules it declares in turn), and each such inline item
+//! of any other `src/` file by its own extent. A member is a line that
+//! acquires a temp location by any spelling, also across lines: the
+//! helpers `temp_dir`, `mkdtemp`, `tempfile::`, `tempdir(` or `TempDir::`; a
+//! read of `TMPDIR`, `TMP`, `TEMP` or `CARGO_TARGET_TMPDIR` (`var`,
+//! `var_os`, `env!`), also through a constant or binding; shell text running
+//! `mktemp` or reading `$TMPDIR`, `$TMP` or `$TEMP`; a `/tmp` path created
+//! where it is built or through its binding
+//! (`create_dir_all(format!("/tmp/{x}"))`, `let p = Path::new("/tmp")` then
+//! `create_dir_all(p.join(..))`); and any absolute literal created as a
+//! directory. Setting a variable for a child and an inert `/tmp` string are
+//! not members.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use super::rust_source::{blank, gated_items, line_of, literals, sources_in, test_files};
 use std::path::Path;
 
 /// The owners allowed to acquire a temp location: the two helpers and this
@@ -27,177 +31,201 @@ const OWNERS: &[&str] = &[
     "tests/architecture_budget/temp_roots.rs",
 ];
 
-fn rust_files(root: &Path, dir: &str, found: &mut BTreeSet<String>) {
-    let Ok(entries) = fs::read_dir(root.join(dir)) else {
-        return;
-    };
-    for entry in entries {
-        let entry = entry.unwrap();
-        let name = entry.file_name().into_string().unwrap();
-        let relative = format!("{dir}/{name}");
-        if entry.file_type().unwrap().is_dir() {
-            if relative != "tests/fixtures" {
-                rust_files(root, &relative, found);
-            }
-        } else if name.ends_with(".rs") {
-            found.insert(relative);
-        }
-    }
-}
+/// Identifiers that acquire a temp location, with what must follow them
+/// (`TempDir::new`, not a type alias that happens to be named `TempDir`).
+const IDENTIFIERS: &[(&str, &str)] = &[
+    ("temp_dir", ""),
+    ("mkdtemp", ""),
+    ("tempfile", "::"),
+    ("tempdir", "("),
+    ("TempDir", "::"),
+];
+/// Environment variables that name the temp directory.
+const VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP", "CARGO_TARGET_TMPDIR"];
+/// Calls that read an environment variable.
+const READS: &[&str] = &["var", "var_os", "env!", "option_env!"];
+/// Calls that create a file or a directory.
+const CREATES: &[&str] = &[
+    "create_dir(",
+    "create_dir_all(",
+    "File::create(",
+    "fs::write(",
+    ".open(",
+    "set_current_dir(",
+];
 
-/// One `mod` item: its name, whether it is out of line (`mod x;`), whether a
-/// `#[cfg(test)]` attribute gates it, its `#[path]`, and its first line.
-struct ModItem {
-    name: String,
-    out_of_line: bool,
-    test_only: bool,
-    path: Option<String>,
-    line: usize,
-}
+/// One file of test code: path, text and the byte ranges that are test code.
+type TestCode = (String, String, Vec<(usize, usize)>);
 
-fn mod_items(text: &str) -> Vec<ModItem> {
-    let mut items = Vec::new();
-    let mut attributes: Vec<(usize, String)> = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("#[") {
-            attributes.push((index, trimmed.replace(' ', "")));
-            continue;
-        }
-        let item = trimmed
-            .strip_prefix("pub(crate) ")
-            .or_else(|| trimmed.strip_prefix("pub(super) "))
-            .or_else(|| trimmed.strip_prefix("pub "))
-            .unwrap_or(trimmed);
-        if let Some(rest) = item.strip_prefix("mod ") {
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            let after = rest[name.len()..].trim_start();
-            if !name.is_empty() && (after.starts_with(';') || after.starts_with('{')) {
-                items.push(ModItem {
-                    name,
-                    out_of_line: after.starts_with(';'),
-                    test_only: attributes.iter().any(|(_, attribute)| {
-                        attribute.starts_with("#[cfg(test)")
-                            || attribute.starts_with("#[cfg(all(test")
-                    }),
-                    path: attributes.iter().find_map(|(_, attribute)| {
-                        let value = attribute.strip_prefix("#[path=\"")?;
-                        Some(value[..value.find('"')?].to_owned())
-                    }),
-                    line: attributes.first().map_or(index, |(first, _)| *first),
-                });
-            }
-        }
-        if !trimmed.is_empty() && !trimmed.starts_with("//") {
-            attributes.clear();
-        }
-    }
-    items
-}
-
-/// The file an out-of-line `mod` item of `file` declares.
-fn declared_file(root: &Path, file: &str, item: &ModItem) -> Option<String> {
-    let parent = file.rsplit_once('/').map_or("", |(parent, _)| parent);
-    if let Some(path) = &item.path {
-        return Some(format!("{parent}/{path}"));
-    }
-    let stem = file.trim_end_matches(".rs");
-    let own_dir = match stem.rsplit_once('/') {
-        Some((dir, "mod" | "main" | "lib")) => dir.to_owned(),
-        _ => stem.to_owned(),
-    };
-    [
-        format!("{own_dir}/{}.rs", item.name),
-        format!("{own_dir}/{}/mod.rs", item.name),
-    ]
-    .into_iter()
-    .find(|candidate| root.join(candidate).is_file())
-}
-
-/// Every test-code file with the line its test code starts at (0 = whole file).
-fn test_code(root: &Path) -> BTreeMap<String, usize> {
-    let mut files = BTreeSet::new();
-    rust_files(root, "src", &mut files);
-    rust_files(root, "tests", &mut files);
-    let items: BTreeMap<String, Vec<ModItem>> = files
-        .iter()
-        .map(|file| {
-            let text = fs::read_to_string(root.join(file)).unwrap();
-            (file.clone(), mod_items(&text))
-        })
-        .collect();
-    let mut whole: BTreeSet<String> = files
-        .iter()
-        .filter(|file| file.starts_with("tests/"))
-        .cloned()
-        .collect();
-    loop {
-        let mut added = false;
-        for (file, declared) in &items {
-            for item in declared.iter().filter(|item| item.out_of_line) {
-                if item.test_only || whole.contains(file) {
-                    if let Some(child) = declared_file(root, file, item) {
-                        added |= files.contains(&child) && whole.insert(child);
-                    }
-                }
-            }
-        }
-        if !added {
-            break;
-        }
-    }
-    let mut code: BTreeMap<String, usize> = whole.into_iter().map(|file| (file, 0)).collect();
-    for (file, declared) in &items {
-        if code.contains_key(file) {
-            continue;
-        }
-        if let Some(item) = declared
-            .iter()
-            .find(|item| item.test_only && !item.out_of_line)
-        {
-            code.insert(file.clone(), item.line);
+/// Every test-code file of `root` with the byte ranges of its test code.
+fn test_code(root: &Path) -> Vec<TestCode> {
+    let test = test_files(root);
+    let mut code = Vec::new();
+    for (file, text) in sources_in(root, "src")
+        .into_iter()
+        .chain(sources_in(root, "tests"))
+    {
+        let ranges = if test.contains_key(&file) {
+            vec![(0, text.len())]
+        } else {
+            gated_items(&text)
+                .into_iter()
+                .map(|item| (item.start, item.end))
+                .collect()
+        };
+        if !ranges.is_empty() {
+            code.push((file, text, ranges));
         }
     }
     code
 }
 
-/// Whether one line of test code acquires a temp location.
-fn acquires_temp(line: &str) -> bool {
-    let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
-    let environment_read = ["TMPDIR", "TMP", "TEMP"].iter().any(|name| {
-        compact.contains(&format!("var(\"{name}\""))
-            || compact.contains(&format!("var_os(\"{name}\""))
-    });
-    let mktemp = line
-        .match_indices("mktemp")
-        .any(|(at, _)| !line[at + "mktemp".len()..].starts_with('"'));
-    compact.contains("temp_dir")
-        || environment_read
-        || compact.contains("CARGO_TARGET_TMPDIR")
-        || compact.contains("tempfile::")
-        || compact.contains("tempdir(")
-        || compact.contains("TempDir::")
-        || compact.contains("mkdtemp")
-        || mktemp
-        || compact.contains("create_dir(\"/")
-        || compact.contains("create_dir_all(\"/")
+/// The name of the call whose argument list holds byte `at` of blanked
+/// `code`, with a macro's `!` kept (`format!`).
+fn enclosing_call(code: &str, at: usize) -> String {
+    let mut depth = 0;
+    let bytes = code.as_bytes();
+    let mut i = at;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b')' | b']' => depth += 1,
+            b'[' if depth > 0 => depth -= 1,
+            b'(' if depth > 0 => depth -= 1,
+            b'(' => {
+                return code[..i]
+                    .trim_end()
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '!')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+            }
+            _ => {}
+        }
+    }
+    String::new()
+}
+
+/// The statement of blanked `code` that holds byte `at`.
+fn statement(code: &str, at: usize) -> &str {
+    let start = code[..at]
+        .rfind([';', '{', '}'])
+        .map_or(0, |found| found + 1);
+    let end = code[at..].find(';').map_or(code.len(), |found| at + found);
+    &code[start..end]
+}
+
+/// The name a `let NAME =`, `const NAME: T =` or `static NAME: T =`
+/// statement binds the value at `at` to.
+fn bound_name(code: &str, at: usize) -> Option<String> {
+    let statement = statement(code, at).trim_start();
+    let rest = [
+        "let mut ",
+        "let ",
+        "const ",
+        "static ",
+        "pub const ",
+        "pub(crate) const ",
+    ]
+    .iter()
+    .find_map(|keyword| statement.strip_prefix(keyword))?;
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Whole-word uses of `name` in blanked `code` after byte `from`.
+fn uses(code: &str, name: &str, from: usize) -> Vec<usize> {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    code[from..]
+        .match_indices(name)
+        .map(|(at, _)| from + at)
+        .filter(|at| !code[..*at].ends_with(ident) && !code[at + name.len()..].starts_with(ident))
+        .collect()
+}
+
+/// Byte offsets in `text` where a temp location is acquired.
+fn acquisitions(text: &str) -> Vec<usize> {
+    let code = blank(text);
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let creates = |at: usize| {
+        let statement = statement(&code, at);
+        CREATES.iter().any(|call| statement.contains(call))
+    };
+    let mut found = Vec::new();
+    for (name, follows) in IDENTIFIERS {
+        for (at, _) in code.match_indices(name) {
+            let after = &code[at + name.len()..];
+            if !code[..at].ends_with(ident)
+                && !after.starts_with(ident)
+                && after.trim_start().starts_with(follows)
+            {
+                found.push(at);
+            }
+        }
+    }
+    for lit in literals(text) {
+        let call = enclosing_call(&code, lit.start);
+        let bound = bound_name(&code, lit.start);
+        // A read of the variable, also through a constant or binding.
+        let variable = VARIABLES.contains(&lit.text.as_str())
+            && (READS.contains(&call.as_str())
+                || bound.as_deref().is_some_and(|name| {
+                    uses(&code, name, lit.end)
+                        .into_iter()
+                        .any(|at| READS.contains(&enclosing_call(&code, at).as_str()))
+                }));
+        let shell = lit.text.match_indices("mktemp").any(|(at, _)| {
+            !(lit.text == "mktemp" || lit.text[at + "mktemp".len()..].starts_with('"'))
+        }) || VARIABLES.iter().any(|name| {
+            [format!("${name}"), format!("${{{name}")]
+                .iter()
+                .any(|spelled| {
+                    lit.text.match_indices(spelled.as_str()).any(|(at, _)| {
+                        !lit.text[at + spelled.len()..]
+                            .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                    })
+                })
+        });
+        // A /tmp path created where it is built or through its binding;
+        // any absolute directory created from a literal.
+        let temp_path = (lit.text.starts_with("/tmp") || lit.text.starts_with("/var/tmp"))
+            && (creates(lit.start)
+                || bound
+                    .as_deref()
+                    .is_some_and(|name| uses(&code, name, lit.end).into_iter().any(creates)));
+        let absolute = lit.text.starts_with('/') && call.starts_with("create_dir");
+        if variable || shell || temp_path || absolute {
+            found.push(lit.start);
+        }
+    }
+    found.sort_unstable();
+    found
 }
 
 /// Every member: `path:line: text` of a temp acquisition in test code outside
-/// the owners.
+/// the owners, one per line.
 pub fn members(root: &Path) -> Vec<String> {
     let mut found = Vec::new();
-    for (file, start) in test_code(root) {
+    for (file, text, ranges) in test_code(root) {
         if OWNERS.contains(&file.as_str()) {
             continue;
         }
-        let text = fs::read_to_string(root.join(&file)).unwrap();
-        for (index, line) in text.lines().enumerate().skip(start) {
-            if !line.trim_start().starts_with("//") && acquires_temp(line) {
-                found.push(format!("{file}:{}: {}", index + 1, line.trim()));
+        let lines: Vec<&str> = text.lines().collect();
+        let mut seen = Vec::new();
+        for at in acquisitions(&text) {
+            if !ranges.iter().any(|(start, end)| *start <= at && at < *end) {
+                continue;
+            }
+            let line = line_of(&text, at);
+            if !seen.contains(&line) {
+                seen.push(line);
+                found.push(format!("{file}:{line}: {}", lines[line - 1].trim()));
             }
         }
     }
@@ -220,14 +248,15 @@ fn test_code_takes_every_temp_root_from_its_helper() {
 
 /// Seeded tree: each spelling in test code is a member, production code and
 /// the helpers are not, and test-only files are found through `#[cfg(test)]`
-/// declarations, `#[path]` and nesting.
+/// declarations, `#[path]` and nesting; a test module ends at its own brace
+/// even when a literal holds one.
 #[test]
 fn a_seeded_temp_acquisition_in_test_code_is_a_member() {
     let root = super::temp_root::temp("temp-root-scan");
     let write = |path: &str, text: &str| {
         let path = root.join(path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
     };
     write(
         "src/main.rs",
@@ -263,15 +292,52 @@ fn a_seeded_temp_acquisition_in_test_code_is_a_member() {
             "const TOOLS: &[&str] = &[\"mktemp\", \"tar\"];\n",
         ),
     );
+    // F9 review D3: a read through a constant, shell text without mktemp, a
+    // formatted or bound /tmp path, a call split across lines, and a
+    // `cfg(any(test, ..))` module after production code with brace literals.
+    write(
+        "tests/blind_spots.rs",
+        concat!(
+            "const TMP_NAME: &str = \"TMPDIR\";\n",
+            "fn a() { let _ = std::env::var(TMP_NAME); }\n",
+            "const SH: &str = \"cd ${TMPDIR:-/tmp} && ls $TMP/x\";\n",
+            "fn b(x: &str) { std::fs::create_dir_all(format!(\"/tmp/{x}\")).unwrap(); }\n",
+            "fn c() { let p = std::path::Path::new(\"/tmp\"); std::fs::create_dir_all(p.join(\"x\")).unwrap(); }\n",
+            "fn d() {\n    let _ = std::env::\n        temp_dir();\n}\n",
+            "fn e() {\n    let _ = std::env::var(\n        \"TMP\",\n    );\n}\n",
+            "fn f(c: &mut std::process::Command) { c.env_remove(\"TMPDIR\").args([\"--root\", \"/tmp/x\"]); }\n",
+            "fn g() { let inert = std::path::Path::new(\"/tmp/inert\"); let _ = inert.display(); }\n",
+            "fn h(name: &str) { run(\"TMPDIR\", name); for n in [\"TMPDIR\", \"HOME\"] { let _ = n; } }\n",
+            "type TempDir = Root;\n",
+        ),
+    );
+    write(
+        "src/helpers.rs",
+        concat!(
+            "#[cfg(any(test, feature = \"fixtures\"))]\n",
+            "pub mod fixtures {\n",
+            "    const BRACE: char = '}';\n",
+            "    pub fn dir() -> std::path::PathBuf { std::env::temp_dir() }\n",
+            "}\n",
+            "pub fn production() -> std::path::PathBuf { std::env::temp_dir() }\n",
+        ),
+    );
     write(
         "tests/fixtures/ignored.rs",
         "fn t() { std::env::temp_dir(); }\n",
     );
     let found = members(&root);
     let expected = [
+        "src/helpers.rs:4:",
         "src/main.rs:10:",
         "src/production/tests.rs:1:",
         "src/unit_checks/nested.rs:1:",
+        "tests/blind_spots.rs:1:",
+        "tests/blind_spots.rs:3:",
+        "tests/blind_spots.rs:4:",
+        "tests/blind_spots.rs:5:",
+        "tests/blind_spots.rs:8:",
+        "tests/blind_spots.rs:12:",
         "tests/seeded.rs:1:",
         "tests/seeded.rs:2:",
         "tests/seeded.rs:3:",

@@ -1,4 +1,6 @@
 //! Fixture children must not inherit the invoking host's Goal identity.
+#[path = "inventory/rust_source.rs"]
+mod rust_source;
 mod support;
 
 use serde_json::Value;
@@ -313,6 +315,60 @@ exit 92
     );
 }
 
+/// The line of every process spawn in code, in any spelling: a path to
+/// `Command` (`std::process::Command`, an imported or renamed `Command`)
+/// followed by `::new`, also across spaces and lines; not in a literal or
+/// comment.
+fn raw_spawns(text: &str) -> Vec<usize> {
+    let code = rust_source::blank(text);
+    let compact = |at: usize| -> String {
+        code[at..]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .take(8)
+            .collect()
+    };
+    let mut names = vec!["Command".to_owned()];
+    for (at, _) in code.match_indices("Command as ") {
+        let alias: String = code[at + "Command as ".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !alias.is_empty() {
+            names.push(alias);
+        }
+    }
+    let mut lines = Vec::new();
+    for name in &names {
+        for at in rust_source::code_words(text, name) {
+            if compact(at + name.len()).starts_with("::new(") {
+                let line = rust_source::line_of(text, at);
+                if !lines.contains(&line) {
+                    lines.push(line);
+                }
+            }
+        }
+    }
+    lines.sort_unstable();
+    lines
+}
+
+/// The spawn scan finds every spelling and only code.
+#[test]
+fn the_spawn_scan_finds_every_spelling_in_code() {
+    let seeded = concat!(
+        "fn a() { std::process::Command::new(\"x\"); }\n",
+        "fn b() { Command :: new (\"x\"); }\n",
+        "use std::process::Command as Spawn;\n",
+        "fn c() { Spawn::new(\"x\"); }\n",
+        "fn d() {\n    process::Command\n        ::new(\"x\");\n}\n",
+        "// Command::new(\"comment\")\n",
+        "const S: &str = \"Command::new(\";\n",
+        "fn e() { let _ = CommandLine::new(); }\n",
+    );
+    assert_eq!(raw_spawns(seeded), [1, 2, 4, 6]);
+}
+
 /// Every process a test spawns, including the exitbind binary, is built by
 /// `support::git_topology::command`, which removes the host session variables.
 /// A spawn that bypassed it would inherit the invoking session's Goal identity
@@ -331,25 +387,17 @@ fn every_test_spawn_goes_through_the_isolating_helper() {
             "{name} would be inherited"
         );
     }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut offenders = Vec::new();
-    let mut pending = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")];
-    while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(&directory).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "rs")
-                && !path.ends_with("support/git_topology.rs")
-            {
-                let text = fs::read_to_string(&path).unwrap();
-                let lines: Vec<&str> = text.lines().collect();
-                for (index, line) in lines.iter().enumerate() {
-                    // A deliberate raw probe names its reason on the line above.
-                    let excepted = index > 0 && lines[index - 1].contains("raw-spawn:");
-                    if line.contains(concat!("Command", "::new(")) && !excepted {
-                        offenders.push(format!("{}:{}", path.display(), index + 1));
-                    }
-                }
+    for (path, text) in rust_source::sources_in(root, "tests") {
+        if path.ends_with("support/git_topology.rs") {
+            continue;
+        }
+        let lines: Vec<&str> = text.lines().collect();
+        for line in raw_spawns(&text) {
+            // A deliberate raw probe names its reason on the line above.
+            if !(line > 1 && lines[line - 2].contains("raw-spawn:")) {
+                offenders.push(format!("{path}:{line}"));
             }
         }
     }

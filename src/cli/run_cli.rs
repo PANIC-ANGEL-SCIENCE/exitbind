@@ -287,7 +287,7 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         }
         _ => return Err("unsupported run action".into()),
     }
-    .map_err(|error| map_run_error(error, a.flags.contains_key("json")))?;
+    .map_err(|error| map_run_error(error, a.flags.contains_key("json"), &l.path))?;
     if action == "start" {
         if a.options.contains_key("check-command") {
             eprintln!("Checked run: v8 acceptance may use local observe-check or a caller-reported record-check for each current worker submission, bound to the frozen command. Historical v1-v7 runs remain readable.");
@@ -310,9 +310,9 @@ pub(super) fn run_command(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     Ok(())
 }
 
-/// The supersede route a drift refusal carries, or the bare command with the
-/// executable when the refusal names none.
-fn supersede_route(value: &serde_json::Value) -> String {
+/// The supersede route a drift refusal carries, or the command with the
+/// executable and this configuration when the refusal names none.
+fn supersede_route(value: &serde_json::Value, config: &std::path::Path) -> String {
     value["nextAction"]["command"]
         .as_array()
         .and_then(|argv| {
@@ -325,17 +325,21 @@ fn supersede_route(value: &serde_json::Value) -> String {
                 .ok()
                 .map(|route| route.shell_text())
         })
-        .unwrap_or_else(|| crate::emitted::Route::new(["run", "supersede"]).shell_text())
+        .unwrap_or_else(|| {
+            crate::emitted::Route::new(["run", "supersede"])
+                .config(config)
+                .shell_text()
+        })
 }
 
-pub(super) fn map_run_error(error: String, json_output: bool) -> String {
+pub(super) fn map_run_error(error: String, json_output: bool, config: &std::path::Path) -> String {
     let Some(machine) = error.strip_prefix(crate::run::error::DRIFT_PREFIX) else {
         return error;
     };
     if json_output {
         return machine_json(machine);
     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(machine) {
-        let supersede = supersede_route(&value);
+        let supersede = supersede_route(&value, config);
         if value["classification"] == "config_drift" {
             eprintln!(
                 "configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Use '{supersede}' only to bind a new run to changed inputs.",

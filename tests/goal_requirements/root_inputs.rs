@@ -4,6 +4,7 @@
 //! creation under a root in the one private writer; an outside task card is
 //! snapshotted through the plan-card route and hidden from Git; a confined
 //! input's outside path is refused naming the input and its route.
+use super::rust_source::{production, string_list, strip_test_modules};
 use super::*;
 use std::collections::BTreeMap;
 
@@ -278,11 +279,6 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
         "captured logs under the state root",
     ),
     (
-        "src/run/cleanup_fixture.rs",
-        3,
-        "test-only fixture, compiled only through run/cleanup_tests.rs",
-    ),
-    (
         "src/run/ledger.rs",
         3,
         "run ledgers and locks under the state root",
@@ -364,67 +360,6 @@ fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-pub(super) fn sources() -> Vec<(String, String)> {
-    fn visit(dir: &Path, out: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            // Test-only module files are compiled only under `cfg(test)`.
-            let name = path.file_name().unwrap().to_string_lossy();
-            let test_file = name == "tests.rs" || name.ends_with("_tests.rs");
-            if path.is_dir() {
-                visit(&path, out);
-            } else if path.extension().is_some_and(|ext| ext == "rs") && !test_file {
-                let relative = path
-                    .strip_prefix(manifest())
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push((relative, production(&fs::read_to_string(&path).unwrap())));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    visit(&manifest().join("src"), &mut out);
-    out.sort();
-    out
-}
-
-/// `text` without its `#[cfg(test)]`/`#[cfg(all(test, ..))]` modules.
-fn production(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    loop {
-        let found = rest.match_indices("#[cfg(").find(|(index, _)| {
-            let line = &rest[*index..];
-            let attribute = &line[..line.find('\n').unwrap_or(line.len())];
-            let next = line[attribute.len()..].trim_start_matches('\n');
-            (attribute == "#[cfg(test)]" || attribute.starts_with("#[cfg(all(test"))
-                && (next.starts_with("mod ") || next.starts_with("pub(crate) mod "))
-                && next[..next.find('\n').unwrap_or(next.len())].ends_with('{')
-        });
-        let Some((index, _)) = found else {
-            out.push_str(rest);
-            return out;
-        };
-        out.push_str(&rest[..index]);
-        let open = index + rest[index..].find('{').unwrap() + 1;
-        let mut depth = 1;
-        let mut end = rest.len();
-        for (offset, c) in rest[open..].char_indices() {
-            depth += match c {
-                '{' => 1,
-                '}' => -1,
-                _ => 0,
-            };
-            if depth == 0 {
-                end = open + offset + 1;
-                break;
-            }
-        }
-        rest = &rest[end..];
-    }
-}
-
 /// Occurrences per file of a call whose argument names a root.
 fn root_checks(text: &str) -> usize {
     let mut count = 0;
@@ -462,18 +397,6 @@ fn counted(table: &[(&str, usize, &str)]) -> BTreeMap<String, usize> {
         .collect()
 }
 
-/// `"name"` items of the `const NAME: &[&str] = &[ ... ];` array in `text`.
-fn string_array(text: &str, name: &str) -> Vec<String> {
-    let start = text.find(&format!("const {name}: &[&str] = &[")).unwrap();
-    let body = &text[start..];
-    let body = &body[body.find("= &[").unwrap() + 4..body.find("];").unwrap()];
-    body.split('"')
-        .skip(1)
-        .step_by(2)
-        .map(str::to_owned)
-        .collect()
-}
-
 /// `(label, options, outcome, judge)` of every registered input.
 fn registry() -> Vec<(String, String, String, String)> {
     let text = fs::read_to_string(manifest().join(REGISTRY)).unwrap();
@@ -501,10 +424,10 @@ fn registry() -> Vec<(String, String, String, String)> {
 #[test]
 fn path_inputs_inventory_declares_one_outcome_for_every_path_option() {
     let args = fs::read_to_string(manifest().join("src/cli/args.rs")).unwrap();
-    let options = string_array(&args, "VALUE_OPTIONS");
+    let options = string_list(&args, "VALUE_OPTIONS");
     assert!(options.len() > 100, "{options:?}");
     let registry_text = fs::read_to_string(manifest().join(REGISTRY)).unwrap();
-    let not_paths = string_array(&registry_text, "NOT_PATHS");
+    let not_paths = string_list(&registry_text, "NOT_PATHS");
     let inputs = registry();
     assert!(inputs.len() >= 15, "{inputs:?}");
     let registered = |option: &str| {
@@ -528,7 +451,7 @@ fn path_inputs_inventory_declares_one_outcome_for_every_path_option() {
             "NOT_PATHS lists unknown --{listed}"
         );
     }
-    let sources: BTreeMap<_, _> = sources().into_iter().collect();
+    let sources: BTreeMap<_, _> = production().into_iter().collect();
     for (label, _, outcome, judge) in &inputs {
         if !(outcome.starts_with("Outcome::Confined") || outcome == "Outcome::Snapshotted") {
             continue;
@@ -551,7 +474,7 @@ fn root_checks_and_private_writes_live_in_the_helper_and_the_writer() {
     let creates = counted(OTHER_WRITES);
     let mut found_roots = BTreeMap::new();
     let mut found_creates = BTreeMap::new();
-    for (file, text) in sources() {
+    for (file, text) in production() {
         let checks = root_checks(&text);
         if checks > 0 {
             found_roots.insert(file.clone(), checks);
@@ -583,6 +506,32 @@ fn root_checks_and_private_writes_live_in_the_helper_and_the_writer() {
             "{file} writes its {owner} through the private writer"
         );
     }
+}
+
+/// The P3 scan reads production code by extent: a write or root comparison
+/// after a test module that holds brace literals is counted, the ones inside
+/// it are not; every write spelling counts.
+#[test]
+fn root_and_write_scan_detects_each_member_after_a_test_module() {
+    let seeded = concat!(
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    const OPEN: char = '{';\n",
+        "    const CLOSE: char = '}';\n",
+        "    fn t() { std::fs::write(\"x\", \"}\").unwrap(); }\n",
+        "}\n",
+        "fn production(root: &Path, p: &Path) {\n",
+        "    let _ = p.strip_prefix(root);\n",
+        "    std::fs::write(p, \"{\").unwrap();\n",
+        "    std::fs::OpenOptions::new().create(true).open(p).unwrap();\n",
+        "}\n",
+        "#[cfg(all(test, unix))]\n",
+        "mod unix_tests { fn t(root: &Path, p: &Path) { let _ = p.starts_with(root); } }\n",
+    );
+    let code = strip_test_modules(seeded);
+    assert_eq!(root_checks(&code), 1, "{code}");
+    assert_eq!(writes(&code), 2, "{code}");
+    assert_eq!(code.lines().count(), seeded.lines().count());
 }
 
 /// A local-mode project in its own Git worktree: the control and state roots

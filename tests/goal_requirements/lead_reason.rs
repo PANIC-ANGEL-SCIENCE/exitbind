@@ -7,7 +7,9 @@
 //! the state's submission item (`run inspect`), byte-identical. The second
 //! fixture saves two decisions while W is the current Work and one with no
 //! current Work, and the Lead's act on W records and removes only W's.
+use super::cli_tables::option_commands;
 use super::pause_record::{filled, ok_json};
+use super::rust_source::production;
 use super::session_adoption::session_start;
 use super::*;
 
@@ -18,7 +20,7 @@ const ARTIFACT: &str = "Deterministic Lead fixture result; not a semantic decisi
 const LEAD_ACTS: [&str; 4] = ["work return", "work act", "work disposition", "run submit"];
 /// Commands that take `--reason` but write no `submit` event: not a Lead act
 /// on a Work, each keeps its text in its own record.
-const NOT_LEAD_ACTS: [&str; 13] = [
+const NOT_LEAD_ACTS: [&str; 14] = [
     "goal quarantine",
     "goal recover",
     "memory choose",
@@ -30,7 +32,8 @@ const NOT_LEAD_ACTS: [&str; 13] = [
     "project architecture select",
     "project capabilities select",
     "run review-policy",
-    "src/cli/work_quarantine.rs:command",
+    "work quarantine",
+    "work quarantine-followup",
     "work replace-check",
 ];
 
@@ -53,52 +56,13 @@ fn lead_outcomes() -> Vec<String> {
         .collect()
 }
 
-/// Every CLI command whose option list includes `reason`.
+/// Every CLI command whose option check accepts `--reason`, read from the
+/// CLI with the shared scanner (`cli_tables::option_commands`).
 fn reason_forms() -> Vec<String> {
-    let mut forms = Vec::new();
-    let mut files = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli")];
-    while let Some(path) = files.pop() {
-        if path.is_dir() {
-            files.extend(
-                fs::read_dir(&path)
-                    .unwrap()
-                    .map(|entry| entry.unwrap().path()),
-            );
-            continue;
-        }
-        let text = fs::read_to_string(&path).unwrap();
-        let relative = path
-            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        for call in text.split("assert_options(").skip(1) {
-            let call = call.trim_start();
-            let name = match call.strip_prefix('"') {
-                Some(rest) => rest.split('"').next().unwrap().to_owned(),
-                None => format!("{relative}:{}", call.split(',').next().unwrap().trim()),
-            };
-            let Some(list) = call
-                .split("&[")
-                .nth(1)
-                .and_then(|rest| rest.split(']').next())
-            else {
-                continue;
-            };
-            if list.contains("\"reason\"") {
-                forms.push(name);
-            }
-        }
-        if relative.ends_with("run_cli.rs") {
-            for line in text.lines() {
-                let line = line.trim();
-                if line.contains("\" => &[") && line.contains("\"reason\"") {
-                    forms.push(format!("run {}", line.split('"').nth(1).unwrap()));
-                }
-            }
-        }
-    }
+    let mut forms: Vec<String> = option_commands(&production(), "reason")
+        .into_iter()
+        .map(|(_, command)| command)
+        .collect();
     forms.sort();
     forms.dedup();
     forms

@@ -1,10 +1,14 @@
 //! Native work receives complete current project rules and role-scoped memory.
 #![cfg(unix)]
 
+#[path = "inventory/cli_tables.rs"]
+mod cli_tables;
 #[path = "agent_context_delivery/guidance.rs"]
 mod guidance;
 #[path = "agent_context_delivery/phase_guidance.rs"]
 mod phase_guidance;
+#[path = "inventory/rust_source.rs"]
+mod rust_source;
 mod support;
 
 use serde_json::{json, Value};

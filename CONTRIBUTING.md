@@ -296,7 +296,9 @@ small verification needed to prove behavior.
   `tooling/repository/ci/failure-ledger.jsonl`. Every `ci-local.sh` gate is
   listed in `tooling/repository/ci/gate-inventory.json` with its cost, the
   failure it prevents, and a ledger reference, provisional date or deterrent
-  reason; `check_gate_inventory.py` enforces this inside `product-surface`.
+  reason; `check_gate_inventory.py` enforces this in the `ci-stage-contract`
+  stage on every platform, reports a provisional date that has passed, and
+  `release_integrity` refuses a release while one has.
 - For noisy verification in an agent session, use
   `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: ordinary success remains
   one labeled line, while recognized successful `cargo test` output is reduced

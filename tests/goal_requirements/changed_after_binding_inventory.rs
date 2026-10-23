@@ -8,6 +8,7 @@
 //! the file named for its source domain (`src/run/...` in `run.tsv`); a new
 //! hit, a stale entry, an unknown reason or an entry filed under another
 //! domain fails, and so does a registered member that no source constructs.
+use super::rust_source::{literals, sources};
 use super::*;
 
 const REGISTRY: &str = "src/drift.rs";
@@ -75,7 +76,7 @@ fn class_literals(text: &str) -> Vec<String> {
                     && earlier.contains("!=")
                     && RECOMPUTED.iter().any(|needle| earlier.contains(needle))
             });
-        for literal in literals(line) {
+        for literal in literals(line).into_iter().map(|lit| lit.text) {
             if !literal.trim().contains(' ') {
                 continue;
             }
@@ -86,52 +87,6 @@ fn class_literals(text: &str) -> Vec<String> {
         }
     }
     found
-}
-
-fn literals(line: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = line;
-    while let Some(start) = rest.find('"') {
-        let after = &rest[start + 1..];
-        let mut end = None;
-        let mut escaped = false;
-        for (at, ch) in after.char_indices() {
-            match ch {
-                '\\' if !escaped => escaped = true,
-                '"' if !escaped => {
-                    end = Some(at);
-                    break;
-                }
-                _ => escaped = false,
-            }
-        }
-        let Some(end) = end else { break };
-        out.push(after[..end].to_owned());
-        rest = &after[end + 1..];
-    }
-    out
-}
-
-fn sources() -> Vec<(String, String)> {
-    fn visit(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                visit(&path, root, out);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let relative = path.strip_prefix(root).unwrap().to_string_lossy();
-                out.push((
-                    relative.replace('\\', "/"),
-                    fs::read_to_string(&path).unwrap(),
-                ));
-            }
-        }
-    }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut out = Vec::new();
-    visit(&root.join("src"), root, &mut out);
-    out.sort();
-    out
 }
 
 /// The registered classes of `src/drift.rs`.

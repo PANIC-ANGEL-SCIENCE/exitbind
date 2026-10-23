@@ -7,9 +7,10 @@
 //! incomplete rendering sits beside the full argv in the same object, no
 //! other code joins quoted words into a shell line, and no format string
 //! prints an executable variable followed by a command.
-use super::emitted_routes::sources;
 use super::follow_up_routes::dispatched;
-use super::rust_source::{end_of, functions, line_of, literals, opening, production, Literal};
+use super::rust_source::{
+    end_of, functions, line_of, literals, opening, production, sources, Literal,
+};
 use std::collections::BTreeMap;
 
 /// Shell lines joined outside the builder that are run, never printed:
@@ -76,6 +77,15 @@ pub(super) fn renderers_in(route: &str, emitted: &str) -> Renderers {
             return found;
         }
     }
+}
+
+/// Production source the route scans read: every file but the builder
+/// itself (`src/emitted*`), whose renderers are read separately.
+pub(super) fn route_sources() -> Vec<(String, String)> {
+    production()
+        .into_iter()
+        .filter(|(path, _)| !path.starts_with("src/emitted"))
+        .collect()
 }
 
 pub(super) fn renderers() -> Renderers {
@@ -173,7 +183,7 @@ pub(super) fn unrendered(
     sources: &[(String, String)],
     sinks: &[String],
     renderers: &Renderers,
-    families: &[(&str, Vec<String>)],
+    families: &[(String, Vec<String>)],
 ) -> Vec<String> {
     let mut failures = Vec::new();
     let mut spawns: BTreeMap<&str, usize> = BTreeMap::new();
@@ -279,6 +289,253 @@ pub(super) fn unrendered(
     failures
 }
 
+/// Whether the expression starting at `at` carries the configuration on its
+/// chain.
+fn configured_chain(text: &str, lits: &[Literal], at: usize) -> bool {
+    let chain = &text[at..end_of(text, lits, at, b",;")];
+    chain.contains(".config(") || chain.contains(".config_text(")
+}
+
+/// Whether the function a call names (`name`, `module::name`) adds the
+/// configuration to the Route it is given: its body calls `.config(` or
+/// passes on to a function that does. The definition is looked up in the
+/// named module's file, else the caller's file, else every definition.
+fn adds_config(
+    definitions: &BTreeMap<String, Vec<(String, String)>>,
+    qualified: &str,
+    caller: &str,
+    depth: usize,
+) -> bool {
+    // `"key":name(` in a JSON literal: the `:` belongs to the key.
+    let qualified = qualified.trim_start_matches(':');
+    let mut segments: Vec<&str> = qualified.split("::").filter(|s| !s.is_empty()).collect();
+    let Some(name) = segments.pop() else {
+        return false;
+    };
+    let Some(bodies) = definitions.get(name) else {
+        return false;
+    };
+    let module = segments.last().copied();
+    let pick = |keep: &dyn Fn(&str) -> bool| -> Vec<(&String, &String)> {
+        bodies
+            .iter()
+            .filter_map(|(file, body)| keep(file).then_some((file, body)))
+            .collect()
+    };
+    let mut chosen = match module {
+        // `super::name` from `dir/child.rs` is defined in `dir.rs` or `dir/mod.rs`.
+        Some("super") => {
+            let dir = caller
+                .rsplit_once('/')
+                .map_or("", |(dir, _)| dir)
+                .to_owned();
+            pick(&|file: &str| file == format!("{dir}.rs") || file == format!("{dir}/mod.rs"))
+        }
+        Some(module) => pick(&|file: &str| {
+            file.ends_with(&format!("/{module}.rs")) || file.contains(&format!("/{module}/"))
+        }),
+        None => Vec::new(),
+    };
+    if chosen.is_empty() {
+        chosen = pick(&|file: &str| file == caller);
+    }
+    if chosen.is_empty() {
+        // A child module calls what its parent defines (`use super::*`).
+        let dir = caller
+            .rsplit_once('/')
+            .map_or("", |(dir, _)| dir)
+            .to_owned();
+        chosen = pick(&|file: &str| file == format!("{dir}.rs") || file == format!("{dir}/mod.rs"));
+    }
+    if chosen.is_empty() {
+        chosen = pick(&|_: &str| true);
+    }
+    chosen.iter().all(|(file, body)| {
+        if body.contains(".config(") || body.contains(".config_text(") {
+            return true;
+        }
+        // Passes its Route parameter on to a function that adds it.
+        let signature = &body[..body.find('{').unwrap_or(body.len())];
+        let params: Vec<String> = signature
+            .split(['(', ','])
+            .filter_map(|param| {
+                let (name, kind) = param.split_once(':')?;
+                kind.contains("Route")
+                    .then(|| name.trim().trim_start_matches("mut ").to_owned())
+            })
+            .collect();
+        depth < 3 && !params.is_empty() && {
+            let lits = literals(body);
+            body.match_indices('(').any(|(open, _)| {
+                let callee: String = body[..open]
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                !callee.is_empty()
+                    && super::rust_source::containing(&lits, open).is_none()
+                    && super::rust_source::call_arguments(body, open)
+                        .iter()
+                        .any(|argument| {
+                            params
+                                .iter()
+                                .any(|param| !occurrences(argument, param, 0).is_empty())
+                        })
+                    && adds_config(definitions, &callee, file, depth + 1)
+            })
+        }
+    })
+}
+
+/// F8 review R2: every Route for a command that reads the configuration
+/// carries `--config`: on its own chain, on a later use of the name it is
+/// bound to, inside the function it is passed to, or at every call of the
+/// function that returns it. `configured` is read from the CLI dispatcher.
+pub(super) fn config_less(
+    sources: &[(String, String)],
+    configured: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
+    let definitions = functions(sources);
+    let configured_at = |path: &str, text: &str, lits: &[Literal], at: usize| {
+        if configured_chain(text, lits, at) {
+            return true;
+        }
+        let call = opening(text, lits, at, b'(', b')');
+        let qualified: String = text[..call]
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        call > 0 && adds_config(&definitions, &qualified, path, 0)
+    };
+    let calls_configure = |name: &str| {
+        let mut sites = 0;
+        let mut configured_sites = 0;
+        for (path, text) in sources {
+            let lits = literals(text);
+            for at in occurrences(text, name, 0) {
+                if !text[at + name.len()..].starts_with('(') || text[..at].ends_with("fn ") {
+                    continue;
+                }
+                sites += 1;
+                if configured_at(path, text, &lits, at) {
+                    configured_sites += 1;
+                }
+            }
+        }
+        sites > 0 && sites == configured_sites
+    };
+    let mut failures = Vec::new();
+    for (path, text) in sources {
+        let lits = literals(text);
+        for (found, _) in text.match_indices("Route::new(") {
+            let open = found + "Route::new(".len();
+            let Some(first) = lits.iter().find(|lit| lit.start >= open) else {
+                continue;
+            };
+            if !matches!(text[open..first.start].trim(), "[" | "&[")
+                || !configured.contains(&first.text)
+            {
+                continue;
+            }
+            let at = text[..found]
+                .trim_end_matches(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+                .len();
+            if configured_at(path, text, &lits, at) {
+                continue;
+            }
+            let bound: String = text[..at]
+                .trim_end()
+                .strip_suffix('=')
+                .map(|left| {
+                    left.trim_end()
+                        .chars()
+                        .rev()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !bound.is_empty()
+                && occurrences(text, &bound, at)
+                    .into_iter()
+                    .any(|use_at| configured_at(path, text, &lits, use_at))
+            {
+                continue;
+            }
+            let function = text[..at].rfind("fn ").unwrap_or(0);
+            let name: String = text[function + 3..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            let signature =
+                &text[function..text[function..].find('{').map_or(at, |end| function + end)];
+            let returned = signature
+                .split("->")
+                .nth(1)
+                .is_some_and(|kind| kind.contains("Route"));
+            if returned && calls_configure(&name) {
+                continue;
+            }
+            failures.push(format!(
+                "{path}:{}: a `{}` route without --config; the command reads the configuration",
+                line_of(text, at),
+                first.text
+            ));
+        }
+    }
+    failures
+}
+
+#[test]
+fn every_route_for_a_configured_command_carries_its_configuration() {
+    let sources = route_sources();
+    let configured = super::cli_tables::configured(&sources);
+    for command in ["work", "goal", "run", "memory", "project"] {
+        assert!(configured.contains(command), "{configured:?}");
+    }
+    assert!(!configured.contains("init") && !configured.contains("setup"));
+    let failures = config_less(&sources, &configured);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Seeded: a configured command's route left without `--config` fails in
+/// any position; one configured on its chain, through its binding, inside
+/// the typed function it is passed to, or at every call of the function
+/// that returns it passes, and an unconfigured command needs none.
+#[test]
+fn a_configured_route_without_config_is_a_member() {
+    let configured: std::collections::BTreeSet<String> =
+        ["run".to_owned(), "work".to_owned()].into();
+    let seeded = concat!(
+        "fn a(v: &Value) -> String { v.as_str().map(str::to_owned).unwrap_or_else(|| crate::emitted::Route::new([\"run\", \"supersede\"]).shell_text()) }\n",
+        "fn b(w: &str, l: &Loaded) -> Value { json!(Route::new([\"work\", \"next\", w]).config(&l.path).full_argv()) }\n",
+        "fn c(w: &str, l: &Loaded) -> String { let r = Route::new([\"work\", \"detail\", w]); r.config(&l.path).shell_text() }\n",
+        "fn d(l: &Loaded) -> String { render(l, Route::new([\"work\", \"resume\"])) }\n",
+        "fn render(l: &Loaded, r: Route) -> String { r.config(&l.path).shell_text() }\n",
+        "fn made(w: &str) -> Route { Route::new([\"work\", \"act\", w]) }\n",
+        "fn e(l: &Loaded) -> String { made(\"x\").config(&l.path).shell_text() }\n",
+        "fn f() -> String { Route::new([\"init\", \"--root\"]).shell_text() }\n",
+    );
+    let found = config_less(
+        &[("src/seeded.rs".to_owned(), seeded.to_owned())],
+        &configured,
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("src/seeded.rs:1: a `run` route"),
+        "{found:?}"
+    );
+}
+
 #[test]
 fn every_route_value_is_rendered_whole_by_the_typed_route() {
     let renderers = renderers();
@@ -296,10 +553,10 @@ fn every_route_value_is_rendered_whole_by_the_typed_route() {
     }
     assert_eq!(renderers.incomplete, ["partial_suffix"]);
     assert!(renderers.free.iter().any(|name| name == "command_line"));
-    let sources = production();
+    let sources = route_sources();
     let mut typed = sources.clone();
     typed.extend(
-        super::emitted_routes::sources()
+        super::rust_source::sources()
             .into_iter()
             .filter(|(path, _)| path.starts_with("src/emitted")),
     );
@@ -333,7 +590,10 @@ fn route_value_scanner_detects_each_member_of_the_class() {
     assert_eq!(renderers.complete, ["full_argv"]);
     assert_eq!(renderers.incomplete, ["partial_suffix"]);
     assert_eq!(renderers.free, ["command_line"]);
-    let families = vec![("work", vec!["next".to_owned()]), ("init", Vec::new())];
+    let families = vec![
+        ("work".to_owned(), vec!["next".to_owned()]),
+        ("init".to_owned(), Vec::new()),
+    ];
     let failing = concat!(
         "fn a(w: &str) -> Value {\n",
         "    json!({\"lifecycle\": {\"propose\": Route::new([\"memory\", \"propose\"]).partial_suffix()}})\n",

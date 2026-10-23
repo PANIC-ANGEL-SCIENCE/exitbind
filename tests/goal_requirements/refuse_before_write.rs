@@ -3,6 +3,8 @@
 //! Goal another configured project owns, each one leaves the project tree
 //! and the session store byte-unchanged and names its route, or (setup)
 //! selects the project journal and says so.
+use super::cli_tables::{applying_in, families};
+use super::rust_source::production;
 use super::setup_first_work::{fresh, setup, tree};
 use super::*;
 
@@ -32,20 +34,130 @@ const GOAL_COMMANDS: &[(&str, Route)] = &[
     ("status", Route::ReadOnly),
 ];
 
-/// Applying commands outside `goal`, with the test that drives each one
-/// under a foreign-owned session Goal.
-const OTHER_COMMANDS: &[(&str, &str, &str)] = &[
+/// How an applying command outside `goal` meets a foreign-owned session
+/// Goal. The commands are read from the CLI (every option check that accepts
+/// `--apply`); each one is classified here.
+enum Applying {
+    /// Driven under a foreign-owned session Goal by this test (file, fn).
+    Driven(&'static str, &'static str),
+    /// Dispatched to the same admission as another applying command.
+    Shares(&'static str, &'static str),
+    /// Never writes a native session Goal: what it writes instead.
+    NoSessionGoal(&'static str),
+}
+
+const APPLYING: &[(&str, Applying)] = &[
     (
-        "setup --apply --task-card",
-        "tests/goal_requirements/refuse_before_write.rs",
-        "fn setup_task_card_under_a_foreign_session_goal_uses_the_project_journal_and_says_so",
+        "setup",
+        Applying::Driven(
+            "tests/goal_requirements/refuse_before_write.rs",
+            "fn setup_task_card_under_a_foreign_session_goal_uses_the_project_journal_and_says_so",
+        ),
     ),
     (
-        "work quarantine --apply",
-        "tests/check_observation_recovery/quarantine/foreign_session_goal.rs",
-        "fn quarantine_apply_under_a_foreign_session_goal_writes_nothing",
+        "work quarantine",
+        Applying::Driven(
+            "tests/check_observation_recovery/quarantine/foreign_session_goal.rs",
+            "fn quarantine_apply_under_a_foreign_session_goal_writes_nothing",
+        ),
+    ),
+    (
+        "work quarantine-followup",
+        Applying::Shares(
+            "work quarantine",
+            "one dispatcher arm and one admission (work::quarantine::start)",
+        ),
+    ),
+    (
+        "work replace-check",
+        Applying::NoSessionGoal(
+            "a successor Work ledger; it reads the Work's Goal association and refuses a foreign one",
+        ),
+    ),
+    (
+        "work recover-check",
+        Applying::NoSessionGoal("the Work's own check-observation ledger"),
+    ),
+    (
+        "work usage",
+        Applying::NoSessionGoal("usage records under this project's state root"),
+    ),
+    (
+        "memory choose",
+        Applying::NoSessionGoal("task memory choices under the state root"),
+    ),
+    (
+        "memory correct-policy",
+        Applying::NoSessionGoal("a memory ledger's policy correction"),
+    ),
+    (
+        "memory revalidate",
+        Applying::NoSessionGoal("lesson ledgers under the state root"),
+    ),
+    (
+        "migrate",
+        Applying::NoSessionGoal("this project's own layout"),
+    ),
+    (
+        "project agents",
+        Applying::NoSessionGoal("native agent profile projections"),
+    ),
+    (
+        "project architecture select",
+        Applying::NoSessionGoal("this project's configuration"),
+    ),
+    (
+        "project capabilities select",
+        Applying::NoSessionGoal("this project's configuration"),
+    ),
+    (
+        "project advance admit",
+        Applying::NoSessionGoal("the project continuation journal; Work admission uses this project's Goal journal (ContractScope::Project)"),
+    ),
+    (
+        "project advance amend",
+        Applying::NoSessionGoal("the project continuation journal"),
+    ),
+    (
+        "project advance recover",
+        Applying::NoSessionGoal("the project continuation journal"),
+    ),
+    (
+        "project advance select",
+        Applying::NoSessionGoal("the project continuation journal"),
     ),
 ];
+
+/// Every applying command outside `goal` that `APPLYING` does not classify,
+/// and every classified one the CLI no longer has.
+fn unclassified(applying: &[(String, String)], classified: &[(&str, Applying)]) -> Vec<String> {
+    let names: Vec<&str> = applying
+        .iter()
+        .map(|(_, name)| name.as_str())
+        .filter(|name| !name.starts_with("goal "))
+        .collect();
+    let mut failures: Vec<String> = names
+        .iter()
+        .filter(|name| !classified.iter().any(|(listed, _)| listed == *name))
+        .map(|name| format!("applying command `{name}` is not in the P4 inventory"))
+        .collect();
+    for (listed, class) in classified {
+        if !names.contains(listed) {
+            failures.push(format!(
+                "P4 inventory lists `{listed}`, which no option check accepts --apply for"
+            ));
+        }
+        if let Applying::Shares(other, _) = class {
+            if !classified
+                .iter()
+                .any(|(name, class)| name == other && matches!(class, Applying::Driven(..)))
+            {
+                failures.push(format!("`{listed}` shares `{other}`, which is not driven"));
+            }
+        }
+    }
+    failures
+}
 
 const FOREIGN: &str = "native session Goal is owned by another configured project";
 
@@ -59,21 +171,29 @@ fn foreign_session(label: &str) -> (Project, (String, PathBuf)) {
 
 #[test]
 fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
-    let source =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/goal.rs")).unwrap();
-    let mut arms: Vec<&str> = source
-        .lines()
-        .filter_map(|line| line.strip_prefix("        \""))
-        .filter_map(|rest| rest.split_once("\" =>").map(|(name, _)| name))
+    let families = families();
+    let mut arms = families
+        .iter()
+        .find(|(name, _)| name == "goal")
+        .map(|(_, subs)| subs.clone())
+        .expect("goal family");
+    let mut listed: Vec<String> = GOAL_COMMANDS
+        .iter()
+        .map(|(name, _)| (*name).to_owned())
         .collect();
-    let mut listed: Vec<&str> = GOAL_COMMANDS.iter().map(|(name, _)| *name).collect();
     arms.sort_unstable();
     listed.sort_unstable();
     assert_eq!(arms, listed, "every goal subcommand is in the P4 inventory");
+    let applying = applying_in(&production());
+    assert!(applying.len() >= 15, "{applying:?}");
+    let failures = unclassified(&applying, APPLYING);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for (command, file, test) in OTHER_COMMANDS {
-        let text = fs::read_to_string(root.join(file)).unwrap();
-        assert!(text.contains(test), "{command}: {file} lacks {test}");
+    for (command, class) in APPLYING {
+        if let Applying::Driven(file, test) = class {
+            let text = fs::read_to_string(root.join(file)).unwrap();
+            assert!(text.contains(test), "{command}: {file} lacks {test}");
+        }
     }
 
     let (_owner, session) = foreign_session("p4-goal-owner");
@@ -219,6 +339,45 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
             "{name} wrote before refusing"
         );
     }
+}
+
+/// The P4 inventory is read from the CLI: an applying command added to a
+/// dispatcher, with its option list inline, bound by `let` or under a
+/// command name bound by `let`, is a member until it is classified.
+#[test]
+fn an_applying_command_added_to_the_dispatcher_is_a_p4_member() {
+    let seeded = concat!(
+        "pub(super) fn work_command(l: &Loaded, a: &Arguments) -> Result<(), String> {\n",
+        "    match action {\n",
+        "        \"frobnicate\" => {\n",
+        "            args::assert_options(\n                \"work frobnicate\",\n                a,\n                &[\"config\", \"apply\"],\n            )?;\n",
+        "            Ok(())\n",
+        "        }\n",
+        "        \"look\" => args::assert_options(\"work look\", a, &[\"config\", \"json\"]),\n",
+        "        _ => Ok(()),\n",
+        "    }\n",
+        "}\n",
+        "fn grow(a: &Arguments) -> Result<(), String> {\n",
+        "    let mut allowed = vec![\"root\", \"apply\"];\n",
+        "    allowed.push(\"json\");\n",
+        "    let command = if a.flags.contains_key(\"x\") { \"grow fast\" } else { \"grow\" };\n",
+        "    args::assert_options(command, a, &allowed)\n",
+        "}\n",
+        "// args::assert_options(\"work commented\", a, &[\"apply\"]);\n",
+    );
+    let applying = applying_in(&[("src/cli/seeded.rs".to_owned(), seeded.to_owned())]);
+    let names: Vec<&str> = applying.iter().map(|(_, name)| name.as_str()).collect();
+    assert_eq!(names, ["grow", "grow fast", "work frobnicate"]);
+    let failures = unclassified(&applying, &[("grow", Applying::NoSessionGoal("x"))]);
+    assert_eq!(
+        failures,
+        [
+            "applying command `grow fast` is not in the P4 inventory",
+            "applying command `work frobnicate` is not in the P4 inventory",
+        ]
+    );
+    let stale = unclassified(&[], &[("gone", Applying::Shares("work quarantine", "x"))]);
+    assert_eq!(stale.len(), 2, "{stale:?}");
 }
 
 /// The R54 case: setup used to apply the configuration, then fail on the

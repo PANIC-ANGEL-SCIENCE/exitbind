@@ -547,12 +547,16 @@ fn incorporate_native_generic_goal(project: &Project, goal_id: &str, goal: &str)
     )
 }
 
+#[path = "goal_requirements/attested_check_consumers.rs"]
+mod attested_check_consumers;
 #[path = "goal_requirements/changed_after_acceptance.rs"]
 mod changed_after_acceptance;
 #[path = "goal_requirements/changed_after_binding_inventory.rs"]
 mod changed_after_binding_inventory;
 #[path = "goal_requirements/checker_derivation.rs"]
 mod checker_derivation;
+#[path = "inventory/cli_tables.rs"]
+mod cli_tables;
 #[path = "goal_requirements/closure_flows.rs"]
 mod closure_flows;
 #[path = "goal_requirements/config_writer_keep.rs"]
@@ -577,7 +581,7 @@ mod refuse_before_write;
 mod root_inputs;
 #[path = "goal_requirements/route_values.rs"]
 mod route_values;
-#[path = "goal_requirements/rust_source.rs"]
+#[path = "inventory/rust_source.rs"]
 mod rust_source;
 #[path = "goal_requirements/session_adoption.rs"]
 mod session_adoption;
@@ -585,7 +589,11 @@ mod session_adoption;
 mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]
 mod setup_start_path;
+#[path = "goal_requirements/source_scanner.rs"]
+mod source_scanner;
 #[path = "goal_requirements/successor_timing.rs"]
 mod successor_timing;
 #[path = "goal_requirements/typed_routes.rs"]
 mod typed_routes;
+#[path = "goal_requirements/view_refusals.rs"]
+mod view_refusals;

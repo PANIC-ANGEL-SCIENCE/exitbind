@@ -32,7 +32,7 @@
       "id": "ci-stage-contract",
       "kind": "stage",
       "cost": "light",
-      "prevents": "stage membership drifting between full and pre-return modes",
+      "prevents": "stage membership drifting between modes and platforms; a gate or historical reader missing from its inventory, on every platform",
       "provisionalUntil": "2027-01-22"
     },
     {
@@ -60,7 +60,7 @@
       "id": "product-surface",
       "kind": "stage",
       "cost": "light",
-      "prevents": "experimental code, unlisted dependencies, stale test-target, package, skill, legacy-reader or gate inventories",
+      "prevents": "experimental code, unlisted dependencies, stale test-target, package or skill inventories",
       "provisionalUntil": "2027-01-22"
     },
     {
