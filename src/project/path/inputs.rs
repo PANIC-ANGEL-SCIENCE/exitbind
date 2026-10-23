@@ -194,6 +194,7 @@ pub(crate) const INPUTS: &[Input] = &[
 /// boundary patterns that `config::validate` judges as patterns.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const NOT_PATHS: &[&str] = &[
+    "session-key",
     "agent",
     "role",
     "artifact-root",

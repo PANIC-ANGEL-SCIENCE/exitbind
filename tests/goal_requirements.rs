@@ -578,6 +578,8 @@ mod native_recovery;
 mod refuse_before_write;
 #[path = "goal_requirements/root_inputs.rs"]
 mod root_inputs;
+#[path = "goal_requirements/session_adoption.rs"]
+mod session_adoption;
 #[path = "goal_requirements/setup_first_work.rs"]
 mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]

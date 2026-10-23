@@ -692,6 +692,7 @@ pub(crate) fn compact_goal_progress(goal: &Value) -> Value {
         "decomposition",
         "resultReadiness",
         "workAssociation",
+        "adoptRoute",
     ] {
         if let Some(value) = goal.get(key) {
             compact.insert(key.into(), value.clone());

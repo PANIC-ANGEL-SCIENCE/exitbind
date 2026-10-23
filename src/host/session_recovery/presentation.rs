@@ -8,7 +8,7 @@ use super::{
     },
 };
 use crate::{config, evidence::hash, session_goal};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{path::Path, time::Instant};
 
 /// The recovery part of the SessionStart text stays within this bound so the
@@ -34,13 +34,12 @@ pub(crate) fn hook_context(
     let Some(id) = payload.get("session_id").and_then(Value::as_str) else {
         return Some("Exitbind session recovery declined: host payload session ID is missing or malformed; no Work was selected.".into());
     };
-    let reported = hash::value(&json!({"host":session.host,"identity":id}));
-    if reported != session.key {
+    if !session.reports(id) {
         return Some("Exitbind session recovery declined: host payload session ID disagrees with current session selectors; no Work was selected.".into());
     }
     let owner = match session.owner() {
         Ok(Some(owner)) => owner,
-        _ => return Some("Exitbind session recovery is unresolved: the current native Goal owner record is absent or unavailable; no Work was selected.".into()),
+        _ => return Some(session_goal::adoption::hook_text(cwd_config_path)),
     };
     let record = match session_goal::read_for_recovery(&session.root) {
         Ok(Some(record)) => record,
@@ -383,6 +382,7 @@ mod tests {
         Reference, WorkRef, WorkSelection,
     };
     use super::*;
+    use serde_json::json;
 
     fn hint() -> Hint {
         Hint {

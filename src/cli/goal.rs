@@ -8,7 +8,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "goal requires prepare, incorporate, require, cover, assign, close, recover, status, or usage",
+        "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage",
     )?;
     match action {
         "quarantine" => {
@@ -425,9 +425,17 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             };
             print_json(&value)
         }
+        "adopt" => {
+            args::assert_options("goal adopt", a, &["config", "session-key", "json"])?;
+            args::assert_positionals("goal adopt", a, 1)?;
+            print_json(&crate::session_goal::adoption::adopt(
+                l,
+                option(a, "session-key", "goal adopt requires --session-key KEY")?,
+            )?)
+        }
         "status" => status::goal_status(l, a),
         _ => Err(
-            "goal requires prepare, incorporate, require, cover, assign, close, recover, status, or usage"
+            "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage"
                 .into(),
         ),
     }

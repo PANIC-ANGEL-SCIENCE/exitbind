@@ -1,4 +1,5 @@
 # Plain changed-after-binding literals under src/session_goal: REASON<TAB>path<TAB>literal.
+Identity	src/session_goal/adoption.rs	that Goal journal belongs to another project: its owner identity {} differs from this project's {}
 Identity	src/session_goal/association/admission.rs	actual Work goal differs from the admitted request; pending admission remains unresolved
 Identity	src/session_goal/association/admission.rs	current Work configuration, roots or native session do not match the exact admission
 Integrity	src/session_goal/association/companion.rs	{label} digest mismatch

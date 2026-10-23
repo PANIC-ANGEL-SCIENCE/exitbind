@@ -93,6 +93,13 @@ configuration. The host still performs the returned assignment.
 root-thread preservation rule, its distinction from durable role memory, and
 the limits of the advisory hook and regression evidence.
 
+## Native Goal adoption
+
+`goal adopt --session-key KEY` lets a new session of the same host continue
+this project's one open Goal from an earlier session. Run it as printed by
+`goal status`, the SessionStart hook or a Work view; see
+[native conversation Goal](docs/goal-requirements.md#native-conversation-goal-and-work-context).
+
 ## Native Goal recovery
 
 `goal recover` is an exceptional owner-context operation for reconnecting a

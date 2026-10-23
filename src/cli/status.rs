@@ -15,7 +15,7 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     let scope = super::goal::journal_scope(l, a, false)?;
     let record = crate::session_goal::read(&scope.root)?;
     if scope.is_session() && !scope.owner_matches {
-        let value = crate::session_goal::context_summary(record.as_ref(), scope.owner.as_ref());
+        let value = crate::session_goal::context_summary(l, record.as_ref(), scope.owner.as_ref());
         print_json(&crate::producer::observed(value))?;
         return Ok(());
     }

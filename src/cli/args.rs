@@ -91,6 +91,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "root",
     "scope",
     "source-config",
+    "session-key",
     "feature-config",
     "feature-work",
     "owner-config",

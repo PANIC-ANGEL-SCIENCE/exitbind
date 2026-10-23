@@ -62,6 +62,7 @@ pub(crate) fn admit(
     let session = super::super::native::Session {
         host: candidate.host,
         key: candidate.session_key.clone(),
+        selector_key: candidate.session_key.clone(),
         root: root.to_path_buf(),
     };
     let owner = super::super::native::Owner {

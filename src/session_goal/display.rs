@@ -140,7 +140,7 @@ pub(crate) fn refresh(
     session: &super::native::Session,
     journal: Option<Journal>,
 ) -> Result<(), String> {
-    let path = path_for_key(&session.key)?;
+    let path = path_for_key(&session.selector_key)?;
     let journal = journal.unwrap_or(match read(&path) {
         Some(previous) if previous["journal"] == "project" => Journal::Project,
         _ => Journal::Session,

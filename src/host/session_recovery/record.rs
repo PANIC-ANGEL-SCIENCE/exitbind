@@ -145,8 +145,7 @@ fn record_locked(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, S
         .as_str()
         .ok_or("session recovery record requires the exact host-reported sessionId")?;
     bounded_text(session_id, "session ID", 512)?;
-    let expected = hash::value(&json!({"host":session.host,"identity":session_id}));
-    if expected != session.key {
+    if !session.reports(session_id) {
         return Err("session recovery payload ID does not match current host selectors".into());
     }
     let current_step = input["currentStep"]
@@ -339,7 +338,7 @@ fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> R
             .get("session_id")
             .and_then(Value::as_str)
             .ok_or("host event session ID is unavailable")?;
-        if hash::value(&json!({"host":session.host,"identity":id})) != session.key {
+        if !session.reports(id) {
             return Err("host event session ID disagrees with selectors".into());
         }
         let owner = session.owner()?.ok_or("native Goal owner is unavailable")?;

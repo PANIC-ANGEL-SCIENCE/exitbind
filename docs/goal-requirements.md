@@ -22,6 +22,16 @@ unavailable. A project other than the fixed owner may read a bounded
 context-only Goal preview, but cannot edit its requirements, map named
 coverage, evaluate owner evidence, or close it.
 
+A new session of the same host (after `/clear` or a restart) has no Goal of
+its own. When the project's Work records name exactly one open Goal journal of
+the same project, every UNAVAILABLE Goal surface (`goal status`, the
+SessionStart hook, `work next`, `work resume`) prints one full
+`goal adopt --session-key KEY` route. Running it records the adoption in that
+journal (one new revision) and in the new session's own owner record; from
+then on both sessions read and write the same journal. A journal of another
+project, a closed Goal, a session that already owns a Goal, or two reachable
+open journals are refused with nothing written; then no route is printed.
+
 An ordinary `work begin` in a native conversation links the new Work to the
 current conversation Goal when one exists, even if the Work belongs to a
 different configured project or has a narrower task scope. Before starting the

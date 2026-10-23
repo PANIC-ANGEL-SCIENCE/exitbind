@@ -25,9 +25,6 @@ NotARefusal	src/host/receive_text.rs	For a known Work or explicit smw_ locator, 
 Integrity	src/host/session_recovery/hint.rs	session recovery hint integrity check failed
 NotARefusal	src/host/session_recovery/presentation.rs	Exitbind found a stale or foreign recovery hint for native Goal {goal_id} revision {revision}; do not use its saved action. Reread the exact Goal and Work detail before acting.
 NotARefusal	src/host/session_recovery/presentation.rs	Exitbind recovery hint Work references are stale or no longer match native Goal {goal_id}; reread the exact Goal and Work detail before acting.
-Identity	src/host/session_recovery/record.rs	host event session ID disagrees with selectors
-Identity	src/host/session_recovery/record.rs	native Goal is unavailable
-Validation	src/host/session_recovery/record.rs	native recovery checkpoint exceeded its four-second hook budget
 Identity	src/host/session_recovery/record.rs	recovery hint owner configuration no longer matches the fixed Goal owner
 Identity	src/host/session_recovery/references.rs	saved configuration no longer matches the fixed native Goal owner
 ReadAsFact	src/host/session_recovery/references.rs	session recovery source changed or is unavailable: {}/{}

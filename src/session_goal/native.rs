@@ -12,11 +12,19 @@ use std::{
 
 const OWNER_FILE: &str = "owner.json";
 const OWNER_MAX_BYTES: u64 = 4096;
+/// The owner-record field of a session that adopted another session's
+/// journal: that journal's session key.
+const ADOPTED_FIELD: &str = "journalSessionKey";
 
 #[derive(Clone)]
 pub(crate) struct Session {
     pub(crate) host: &'static str,
+    /// The key of the Goal journal this session reads and writes: its own,
+    /// or the journal it explicitly adopted (`goal adopt`).
     pub(crate) key: String,
+    /// The hashed host-reported identity of this session. A payload
+    /// `session_id` is matched against this key, never against `key`.
+    pub(crate) selector_key: String,
     pub(crate) root: PathBuf,
 }
 
@@ -130,12 +138,16 @@ fn session(host: &'static str, identity: Option<String>) -> Result<Option<Sessio
     let Some(identity) = identity else {
         return Ok(None);
     };
-    let key = session_key(host, &identity);
-    let base = base_directory()?;
-    Ok(Some(Session {
-        host,
-        key: key.clone(),
-        root: base.join(format!("session-{key}")),
+    let own = Session::for_key(host, &session_key(host, &identity))?;
+    // A session that adopted another session's journal reads and writes that
+    // journal. An unreadable adoption record leaves the session on its own
+    // root, where `owner()` reports the record's error.
+    Ok(Some(match own.adopted_key() {
+        Ok(Some(journal)) => Session {
+            selector_key: own.selector_key,
+            ..Session::for_key(host, &journal)?
+        },
+        _ => own,
     }))
 }
 
@@ -167,6 +179,73 @@ pub(crate) fn base_directory() -> Result<PathBuf, String> {
 }
 
 impl Session {
+    /// The session whose own journal has this key.
+    pub(crate) fn for_key(host: &'static str, key: &str) -> Result<Session, String> {
+        Ok(Session {
+            host,
+            key: key.to_owned(),
+            selector_key: key.to_owned(),
+            root: base_directory()?.join(format!("session-{key}")),
+        })
+    }
+
+    /// Whether a host payload's `session_id` names this session.
+    pub(crate) fn reports(&self, identity: &str) -> bool {
+        session_key(self.host, identity) == self.selector_key
+    }
+
+    /// Whether this session reads a journal it adopted.
+    pub(crate) fn adopted(&self) -> bool {
+        self.key != self.selector_key
+    }
+
+    fn owner_value(&self) -> Result<Option<Value>, String> {
+        if !self.ensure_root(false)? {
+            return Ok(None);
+        }
+        let Some(bytes) = read_private(
+            &self.root,
+            OWNER_FILE,
+            "native session Goal owner",
+            OWNER_MAX_BYTES,
+        )?
+        else {
+            return Ok(None);
+        };
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| "native session Goal owner record is malformed".to_owned())
+    }
+
+    /// The journal key this session's own owner record adopted, if any.
+    fn adopted_key(&self) -> Result<Option<String>, String> {
+        let Some(value) = self.owner_value()? else {
+            return Ok(None);
+        };
+        validate_owner(&value, &self.key, self.host)?;
+        Ok(value[ADOPTED_FIELD].as_str().map(str::to_owned))
+    }
+
+    /// Record in this session's own root that it reads the journal `journal`
+    /// of the same owner. Refuses when this session has any owner record.
+    pub(crate) fn write_adoption(&self, owner: &Owner, journal: &str) -> Result<(), String> {
+        if self.adopted() || !valid_hash(journal) || journal == self.key {
+            return Err("native session Goal adoption target is invalid".into());
+        }
+        self.ensure_root(true)?;
+        let mut value = json!({
+            "kind":"native_session_goal_owner",
+            "protocol":1,
+            "host":self.host,
+            "sessionKey":self.key,
+            "ownerProjectId":owner.project_id,
+            "ownerIdentitySha256":owner.identity_sha256,
+            ADOPTED_FIELD:journal,
+        });
+        value["sha256"] = json!(hash::value(&value));
+        write_owner(&self.root, &value)
+    }
+
     pub(crate) fn ensure_root(&self, create: bool) -> Result<bool, String> {
         let base = self
             .root
@@ -202,21 +281,15 @@ impl Session {
     }
 
     pub(crate) fn owner(&self) -> Result<Option<Owner>, String> {
-        if !self.ensure_root(false)? {
-            return Ok(None);
-        }
-        let Some(bytes) = read_private(
-            &self.root,
-            OWNER_FILE,
-            "native session Goal owner",
-            OWNER_MAX_BYTES,
-        )?
-        else {
+        let Some(value) = self.owner_value()? else {
             return Ok(None);
         };
-        let value: Value = serde_json::from_slice(&bytes)
-            .map_err(|_| "native session Goal owner record is malformed".to_owned())?;
         validate_owner(&value, &self.key, self.host)?;
+        // The journal an adoption names is never itself an adoption, and an
+        // adoption record that did not resolve names no journal to read.
+        if value.get(ADOPTED_FIELD).is_some() {
+            return Err("native session Goal owner record names another session's journal that cannot be read".into());
+        }
         Ok(Some(Owner {
             project_id: value["ownerProjectId"].as_str().map(str::to_owned),
             identity_sha256: value["ownerIdentitySha256"]
@@ -249,17 +322,18 @@ impl Session {
             "ownerIdentitySha256":owner.identity_sha256,
         });
         value["sha256"] = json!(hash::value(&value));
-        let mut file = crate::project::path::secure_create_new(
-            &self.root,
-            OWNER_FILE,
-            "native session Goal owner",
-        )?;
-        use std::io::Write;
-        file.write_all(value.to_string().as_bytes())
-            .map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
+        write_owner(&self.root, &value)?;
         Ok(owner)
     }
+}
+
+fn write_owner(root: &Path, value: &Value) -> Result<(), String> {
+    let mut file =
+        crate::project::path::secure_create_new(root, OWNER_FILE, "native session Goal owner")?;
+    use std::io::Write;
+    file.write_all(value.to_string().as_bytes())
+        .map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| error.to_string())
 }
 
 pub(crate) fn scope(loaded: &Loaded, establish_owner: bool) -> Result<Scope, String> {
@@ -390,7 +464,15 @@ fn validate_owner(value: &Value, key: &str, host: &str) -> Result<(), String> {
     let object = value
         .as_object()
         .ok_or("native session Goal owner record is malformed")?;
-    if object.len() != 7
+    let adopted = match value.get(ADOPTED_FIELD) {
+        None => false,
+        Some(journal) => journal
+            .as_str()
+            .filter(|journal| valid_hash(journal) && *journal != key)
+            .map(|_| true)
+            .ok_or("native session Goal owner record is invalid or unsupported")?,
+    };
+    if object.len() != 7 + usize::from(adopted)
         || value["kind"] != "native_session_goal_owner"
         || value["protocol"] != 1
         || value["sessionKey"] != key

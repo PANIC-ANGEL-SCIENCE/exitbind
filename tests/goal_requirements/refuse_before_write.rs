@@ -28,6 +28,7 @@ const GOAL_COMMANDS: &[(&str, Route)] = &[
     ("usage", Route::Project),
     ("recover", Route::OwnerContext),
     ("quarantine", Route::OwnerContext),
+    ("adopt", Route::OwnerContext),
     ("status", Route::ReadOnly),
 ];
 
@@ -83,6 +84,7 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
     let config = config.to_str().unwrap();
     let work = format!("smw_{}", "1".repeat(64));
     let other = format!("smw_{}", "2".repeat(64));
+    let journal = "3".repeat(64);
     let cases: Vec<(&str, Vec<&str>, Option<&str>)> = vec![
         (
             "prepare",
@@ -165,6 +167,11 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "--reason",
                 "recover",
             ],
+            None,
+        ),
+        (
+            "adopt",
+            vec!["goal", "adopt", "--session-key", &journal],
             None,
         ),
         (

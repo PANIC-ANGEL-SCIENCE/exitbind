@@ -82,9 +82,7 @@ fn session(payload: &serde_json::Map<String, Value>) -> Option<session_goal::nat
     let reported = payload.get("session_id").and_then(Value::as_str);
     match session_goal::native::current() {
         Ok(Some(session)) => reported
-            .map_or(true, |id| {
-                session_goal::native::session_key(session.host, id) == session.key
-            })
+            .map_or(true, |id| session.reports(id))
             .then_some(session),
         Ok(None) => reported.and_then(|id| session_goal::native::claude_session(id).ok().flatten()),
         Err(_) => None,

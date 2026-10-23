@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+pub(crate) mod adoption;
 pub(crate) mod association;
 mod closure;
 mod continuity;
@@ -230,6 +231,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
     journey::validate_record(value, line)?;
     recovery::validate_record(value, line)?;
     quarantine::validate_record(value, line)?;
+    adoption::validate_record(value, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -303,6 +305,7 @@ pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
         journey::preserve_same_goal(previous, &mut value);
         recovery::preserve_same_goal(previous, &mut value);
         quarantine::preserve_same_goal(previous, &mut value);
+        adoption::preserve_same_goal(previous, &mut value);
     }
     value["previousEventSha256"] = previous
         .and_then(|record| record["eventSha256"].as_str())

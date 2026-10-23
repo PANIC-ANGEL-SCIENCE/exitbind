@@ -1,6 +1,7 @@
 //! Validated overall-goal progress and automatic terminal presentation.
 
 use super::*;
+use adoption::Reason;
 
 pub(crate) fn presentation(value: Option<&Value>) -> Value {
     let Some(record) = value else {
@@ -39,6 +40,7 @@ pub(crate) fn presentation(value: Option<&Value>) -> Value {
 /// Display a cross-project native Goal without importing its closure or
 /// owner evidence into the caller's configured project.
 pub(crate) fn context_summary(
+    loaded: &crate::config::Loaded,
     value: Option<&Value>,
     owner: Option<&super::native::Owner>,
 ) -> Value {
@@ -47,7 +49,7 @@ pub(crate) fn context_summary(
             "contextOnly":true,
             "authority":"none",
             "ownerRequired":true,
-            "goalProgress":progress::unavailable(None,"native_session_goal_unavailable","no native session Goal has been incorporated",None,"unavailable"),
+            "goalProgress":adoption::unavailable(loaded,None,Reason::Unavailable,"no native session Goal has been incorporated"),
         });
     };
     let goal_id = record["goalId"].as_str().unwrap_or_default();
@@ -188,12 +190,11 @@ pub(crate) fn progress_for_work(
         super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
             let Some(root) = association.owner_root else {
-                return Ok(progress::unavailable(
+                return Ok(adoption::unavailable(
+                    loaded,
                     Some(result),
-                    "native_session_goal_context_invalid",
+                    Reason::ContextInvalid,
                     "verified native session Goal root is unavailable",
-                    None,
-                    "unavailable",
                 ));
             };
             progress_from_record(loaded, work, result, Some(&record), &root)
@@ -201,19 +202,17 @@ pub(crate) fn progress_for_work(
         super::association::WorkContext::Session(record) => {
             Ok(context_progress(&record, work, result, false))
         }
-        super::association::WorkContext::Unavailable => Ok(progress::unavailable(
+        super::association::WorkContext::Unavailable => Ok(adoption::unavailable(
+            loaded,
             Some(result),
-            "native_session_goal_unavailable",
+            Reason::Unavailable,
             "no verified native session Goal association",
-            None,
-            "unavailable",
         )),
-        super::association::WorkContext::Invalid => Ok(progress::unavailable(
+        super::association::WorkContext::Invalid => Ok(adoption::unavailable(
+            loaded,
             Some(result),
-            "native_session_goal_context_invalid",
+            Reason::ContextInvalid,
             "native session Goal context could not be verified",
-            None,
-            "unavailable",
         )),
         super::association::WorkContext::Local => local_progress_for_work(loaded, work, result),
     }
@@ -262,12 +261,11 @@ pub(crate) fn progress_detail_for_work(
         super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
         super::association::WorkContext::Owner(record) => {
             let Some(root) = association.owner_root else {
-                return Ok(progress::unavailable(
+                return Ok(adoption::unavailable(
+                    loaded,
                     Some(result),
-                    "native_session_goal_context_invalid",
+                    Reason::ContextInvalid,
                     "verified native session Goal root is unavailable",
-                    None,
-                    "unavailable",
                 ));
             };
             progress_detail_from_record(loaded, work, result, Some(&record), &root)
@@ -275,19 +273,17 @@ pub(crate) fn progress_detail_for_work(
         super::association::WorkContext::Session(record) => {
             Ok(context_progress(&record, work, result, true))
         }
-        super::association::WorkContext::Unavailable => Ok(progress::unavailable(
+        super::association::WorkContext::Unavailable => Ok(adoption::unavailable(
+            loaded,
             Some(result),
-            "native_session_goal_unavailable",
+            Reason::Unavailable,
             "no verified native session Goal association",
-            None,
-            "unavailable",
         )),
-        super::association::WorkContext::Invalid => Ok(progress::unavailable(
+        super::association::WorkContext::Invalid => Ok(adoption::unavailable(
+            loaded,
             Some(result),
-            "native_session_goal_context_invalid",
+            Reason::ContextInvalid,
             "native session Goal context could not be verified",
-            None,
-            "unavailable",
         )),
         super::association::WorkContext::Local => {
             local_progress_detail_for_work(loaded, work, result)
