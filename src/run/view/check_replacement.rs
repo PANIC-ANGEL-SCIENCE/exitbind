@@ -54,7 +54,7 @@ pub fn replace_pre_return_contract(
     workflow: &str,
     goal: &str,
     new_ledger: &str,
-    policy: crate::run_value::PreReturnPolicy,
+    policy: crate::run::gate::value::PreReturnPolicy,
     reason: &str,
     source_event_sha256: &str,
     attempt_id: &str,
@@ -67,7 +67,7 @@ pub fn replace_pre_return_contract(
     let old_policy = old_state
         .get("preReturnPolicy")
         .ok_or("pre-return replacement predecessor has no frozen policy")?;
-    let old_policy = crate::run_value::pre_return_policy_from_value(old_policy, 0)?;
+    let old_policy = crate::run::gate::value::pre_return_policy_from_value(old_policy, 0)?;
     let old_policy_sha256 = crate::evidence::hash::value(&old_policy.value());
     let new_policy_sha256 = crate::evidence::hash::value(&policy.value());
     supersede_with_policy_and_recovery(
@@ -112,9 +112,9 @@ pub(super) fn bind_marker(
     old_events: &[Value],
     old_state: &Value,
     replacement: &mut Value,
-    requested_policy: Option<&crate::run_value::CheckPolicy>,
+    requested_policy: Option<&crate::run::gate::value::CheckPolicy>,
     pre_return_policy: &mut Option<Value>,
-    pre_return_policy_override: Option<&crate::run_value::PreReturnPolicy>,
+    pre_return_policy_override: Option<&crate::run::gate::value::PreReturnPolicy>,
 ) -> Result<(), String> {
     if replacement["classification"] != "defective_contract"
         || replacement["reason"]
@@ -174,7 +174,8 @@ pub(super) fn bind_marker(
                         .into(),
                 );
             }
-            let previous = crate::run_value::policy_from_value(&old_state["checkPolicy"], 0)?;
+            let previous =
+                crate::run::gate::value::policy_from_value(&old_state["checkPolicy"], 0)?;
             let successor = requested_policy.expect("checked above");
             if previous == *successor {
                 return Err("check replacement must identify a changed successor policy".into());

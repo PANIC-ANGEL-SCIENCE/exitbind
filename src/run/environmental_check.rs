@@ -64,7 +64,7 @@ fn named<'a>(records: impl Iterator<Item = &'a Value>) -> BTreeSet<String> {
 /// The failed observed checks that are the latest result of a current check
 /// target, in target order: exactly what one attestation names.
 pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
-    Ok(crate::run_exit::assess(state)?
+    Ok(crate::run::gate::exit::assess(state)?
         .targets
         .iter()
         .filter(|target| target.is_failed() && target.acquisition.as_deref() == Some("observed"))
