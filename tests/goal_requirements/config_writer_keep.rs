@@ -8,7 +8,7 @@
 use super::rust_source::{blank, call_arguments, production as sources};
 
 const WRITER: &str = "src/host/settings.rs";
-const KEEP: &str = "crate::memory::stamped_config::keep_replaced(target, replaced)?";
+const KEEP: &str = "crate::memory::stamped_config::keep_replaced(target, replaced, journey)?";
 
 /// File operations that create or replace a file, with the index of the
 /// argument that names the destination.

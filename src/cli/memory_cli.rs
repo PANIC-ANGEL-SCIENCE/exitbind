@@ -166,6 +166,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "memory revalidate requires --reason REVIEWED_REASON",
                 )?,
                 a.flags.contains_key("apply"),
+                crate::session_goal::journey::stamps,
             )?)
         }
         "resolve" => {

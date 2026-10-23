@@ -24,6 +24,7 @@ pub(crate) fn run(
     from: &str,
     reason: &str,
     apply: bool,
+    journey: super::stamped_config::JourneyStamps,
 ) -> Result<Value, String> {
     super::ensure_config_current(loaded)?;
     if Some(actor) != loaded.lead() || reason.trim().is_empty() || reason.len() > 1024 {
@@ -45,7 +46,7 @@ pub(crate) fn run(
         return Err("lesson configuration is unchanged; no revalidation is needed".into());
     }
     let stamped = hash::text(&previous.source);
-    let is_stamp = super::stamped_config::is_stamp(loaded, &stamped);
+    let is_stamp = super::stamped_config::is_stamp(loaded, &stamped, journey);
     if ledgers.is_empty() && !is_stamp {
         return Err(format!(
             "{from} (sha256 {stamped}) is no configuration a lesson event or journey member of this project was stamped with; nothing was kept"

@@ -54,13 +54,18 @@ pub(crate) fn read(loaded: &Loaded, sha256: &str) -> Option<(PathBuf, String)> {
     }
 }
 
-/// Whether `sha256` is a stamp of this project: a lesson event's, or a
-/// journey member's of the owner's Goal in the current native session.
-pub(crate) fn is_stamp(loaded: &Loaded, sha256: &str) -> bool {
+/// Whether a journey member of the owner's Goal carries a configuration
+/// stamp. The caller supplies it (`session_goal::journey::stamps`), so the
+/// memory layer reads no Goal record and depends on no Goal module.
+pub(crate) type JourneyStamps = fn(&Loaded, &str) -> bool;
+
+/// Whether `sha256` is a stamp of this project: a lesson event's, or (by
+/// `journey`) a journey member's of the owner's Goal.
+pub(crate) fn is_stamp(loaded: &Loaded, sha256: &str, journey: JourneyStamps) -> bool {
     let lesson = matches!(super::discovery::discover(loaded), Ok(Some(ledgers))
         if ledgers.iter().any(|ledger| ledger.snapshot.events.iter()
             .any(|event| event["configSha256"] == sha256)));
-    lesson || crate::session_goal::journey::stamps(loaded, sha256)
+    lesson || journey(loaded, sha256)
 }
 
 /// Whether `path` is this project's kept copy of the bytes it holds.
@@ -123,7 +128,11 @@ fn same_root(left: &std::path::Path, right: &std::path::Path) -> bool {
 /// ledgers first, so every product-driven change leaves the copy the
 /// refusal names and the journey admits. Anything else is not a stamped
 /// configuration and is left alone; a failure to keep refuses the write.
-pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<(), String> {
+pub(crate) fn keep_replaced(
+    target: &std::path::Path,
+    replaced: &str,
+    journey: JourneyStamps,
+) -> Result<(), String> {
     // Cheap first: most managed files are no configuration with a memory root.
     let stamped_shape = serde_json::from_str::<serde_json::Value>(replaced)
         .is_ok_and(|value| value["memory"]["root"].is_string());
@@ -139,7 +148,7 @@ pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<
         return Ok(());
     };
     let sha256 = hash::text(replaced);
-    if is_stamp(&previous, &sha256) {
+    if is_stamp(&previous, &sha256, journey) {
         keep(&previous).map_err(|error| keep_refused(&previous, &sha256, &error))?;
     }
     Ok(())
