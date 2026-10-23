@@ -752,8 +752,10 @@ fn config_binding(loaded: &Loaded) -> Result<String, String> {
         "configSha256": hash::text(&loaded.source),
     })))
 }
+mod config_stamp;
 mod integration;
 mod readiness;
+pub(crate) use config_stamp::stamps;
 
 use integration::{
     accepted_endpoint, current_integration_for_project, project_loaded, validate_member_loaded,

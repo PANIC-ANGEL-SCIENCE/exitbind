@@ -13,7 +13,10 @@ const MAX_LEDGERS: usize = 64;
 /// ledger is checked with the same rule under one lock before any is
 /// appended to; a refusal appends nothing. Each ledger then receives its own
 /// ordinary revalidation event. A ledger already current is skipped, so an
-/// interrupted run completes by running the same command again.
+/// interrupted run completes by running the same command again. With
+/// `--apply`, supplied bytes that are a stamp of this project (a lesson
+/// event's or a journey member's) are kept under their hash first; with no
+/// ledger listed, keeping them is all the command does.
 pub(crate) fn run(
     loaded: &Loaded,
     actor: &str,
@@ -28,9 +31,9 @@ pub(crate) fn run(
             "lesson revalidation requires the current configured Lead and reviewed reason".into(),
         );
     }
-    if ledgers.is_empty() || ledgers.len() > MAX_LEDGERS {
+    if ledgers.len() > MAX_LEDGERS {
         return Err(format!(
-            "memory revalidate requires 1 to {MAX_LEDGERS} LEDGER arguments"
+            "memory revalidate accepts at most {MAX_LEDGERS} LEDGER arguments"
         ));
     }
     if (1..ledgers.len()).any(|index| ledgers[..index].contains(&ledgers[index])) {
@@ -40,6 +43,13 @@ pub(crate) fn run(
     let previous = load_previous(loaded, from)?;
     if hash::text(&previous.source) == hash::text(&loaded.source) {
         return Err("lesson configuration is unchanged; no revalidation is needed".into());
+    }
+    let stamped = hash::text(&previous.source);
+    let is_stamp = super::stamped_config::is_stamp(loaded, &stamped);
+    if ledgers.is_empty() && !is_stamp {
+        return Err(format!(
+            "{from} (sha256 {stamped}) is no configuration a lesson event or journey member of this project was stamped with; nothing was kept"
+        ));
     }
     let mut prepared = Vec::new();
     let mut refused = Vec::new();
@@ -64,6 +74,21 @@ pub(crate) fn run(
             ledgers.len(),
             refused.len()
         ));
+    }
+    let kept = if apply && is_stamp {
+        let at = config::from_source(loaded.path.clone(), previous.source.clone(), from)?;
+        let existed = super::stamped_config::find(&at, &stamped).is_some();
+        Some((super::stamped_config::keep(&at)?, existed))
+    } else {
+        None
+    };
+    if ledgers.is_empty() {
+        return Ok(
+            json!({"effect":if kept.as_ref().is_some_and(|(_, existed)| !existed) {"recorded"} else {"no-change"},
+            "status":if apply {"kept"} else {"preview"},"configSha256":hash::text(&loaded.source),
+            "stampedSha256":stamped,"keptCopy":kept.map(|(path, _)| path.display().to_string()),
+            "meaning":"the configuration this project was stamped with is kept under its hash; no lesson, Work, check, review approval or acceptance changed"}),
+        );
     }
     let mut responses: Vec<Value> = Vec::new();
     let total = prepared.len();

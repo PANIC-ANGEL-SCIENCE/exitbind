@@ -571,6 +571,8 @@ mod emitted_routes;
 mod follow_up_routes;
 #[path = "goal_requirements/intake_and_identity.rs"]
 mod intake_and_identity;
+#[path = "goal_requirements/journey_config_change.rs"]
+mod journey_config_change;
 #[path = "goal_requirements/lead_reason.rs"]
 mod lead_reason;
 #[path = "goal_requirements/native_recovery.rs"]

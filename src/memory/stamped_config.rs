@@ -27,6 +27,12 @@ fn memory_root(loaded: &Loaded) -> Option<String> {
 /// The absolute path of the kept copy for `sha256` when it exists with
 /// exactly those bytes.
 pub(crate) fn find(loaded: &Loaded, sha256: &str) -> Option<PathBuf> {
+    read(loaded, sha256).map(|(path, _)| path)
+}
+
+/// The kept copy for `sha256` and its bytes, read once and only when they
+/// hash to `sha256`.
+pub(crate) fn read(loaded: &Loaded, sha256: &str) -> Option<(PathBuf, String)> {
     let relative = format!("{}/{}", memory_root(loaded)?, file_name(sha256)?);
     match crate::project::path::secure_bytes_observation(
         &loaded.state_root,
@@ -34,10 +40,22 @@ pub(crate) fn find(loaded: &Loaded, sha256: &str) -> Option<PathBuf> {
         "stamped configuration copy",
     ) {
         crate::project::path::SecureBytesResult::Bytes(bytes) if hash::bytes(&bytes) == sha256 => {
-            Some(loaded.state_root.join(relative))
+            Some((
+                loaded.state_root.join(relative),
+                String::from_utf8(bytes).ok()?,
+            ))
         }
         _ => None,
     }
+}
+
+/// Whether `sha256` is a stamp of this project: a lesson event's, or a
+/// journey member's of the owner's Goal in the current native session.
+pub(crate) fn is_stamp(loaded: &Loaded, sha256: &str) -> bool {
+    let lesson = matches!(super::discovery::discover(loaded), Ok(Some(ledgers))
+        if ledgers.iter().any(|ledger| ledger.snapshot.events.iter()
+            .any(|event| event["configSha256"] == sha256)));
+    lesson || crate::session_goal::journey::stamps(loaded, sha256)
 }
 
 /// Whether `path` is this project's kept copy of the bytes it holds.
@@ -95,9 +113,10 @@ fn same_root(left: &std::path::Path, right: &std::path::Path) -> bool {
 
 /// Called by the one configuration writer (`settings::atomic_write`) with
 /// the bytes it is about to replace at `target`: when they are a
-/// configuration with a memory policy and a memory ledger carries their
-/// hash, keep them beside the ledgers first, so every product-driven change
-/// leaves the copy the refusal names. Anything else is not a stamped
+/// configuration with a memory policy and a memory ledger or a journey
+/// member of the owner's Goal carries their hash, keep them beside the
+/// ledgers first, so every product-driven change leaves the copy the
+/// refusal names and the journey admits. Anything else is not a stamped
 /// configuration and is left alone; a failure to keep refuses the write.
 pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<(), String> {
     // Cheap first: most managed files are no configuration with a memory root.
@@ -115,17 +134,7 @@ pub(crate) fn keep_replaced(target: &std::path::Path, replaced: &str) -> Result<
         return Ok(());
     };
     let sha256 = hash::text(replaced);
-    let Ok(Some(ledgers)) = super::discovery::discover(&previous) else {
-        return Ok(());
-    };
-    let carried = ledgers.iter().any(|ledger| {
-        ledger
-            .snapshot
-            .events
-            .iter()
-            .any(|event| event["configSha256"] == sha256.as_str())
-    });
-    if carried {
+    if is_stamp(&previous, &sha256) {
         keep(&previous).map_err(|error| keep_refused(&previous, &sha256, &error))?;
     }
     Ok(())
@@ -244,6 +253,28 @@ fn same_copy_ledgers(loaded: &Loaded, ledger: &LedgerSnapshot, bound: &str) -> V
         })
         .map(|other| other.snapshot)
         .collect()
+}
+
+/// Every project-lesson ledger whose history was stamped with `bound`, as
+/// the state-root relative paths a revalidate route names.
+pub(crate) fn stamped_lesson_ledgers(loaded: &Loaded, bound: &str) -> Vec<String> {
+    let Ok(Some(discovered)) = super::discovery::discover(loaded) else {
+        return Vec::new();
+    };
+    let mut paths = discovered
+        .into_iter()
+        .filter(|ledger| {
+            is_project_lesson(&ledger.snapshot)
+                && matches!(super::state::history_drift(loaded, &ledger.snapshot),
+                    Err(super::state::HistoryDrift::Configuration(other)) if other == bound)
+        })
+        .map(|ledger| {
+            crate::config::rel(&loaded.state_root, &ledger.snapshot.path)
+                .unwrap_or_else(|_| ledger.snapshot.path.display().to_string())
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
 }
 
 #[cfg(test)]

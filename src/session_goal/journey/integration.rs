@@ -388,16 +388,21 @@ fn covered_snapshot(
             "journey integration recovery context changed; prepare a fresh integration".into(),
         );
     }
-    for member in members
+    let project_members = members
         .iter()
         .filter(|member| member.project_identity_sha256 == project_identity)
-    {
-        let original = project_loaded(loaded, member)?;
+        .collect::<Vec<_>>();
+    for member in &project_members {
+        let Some(original) = member_loaded(loaded, member)? else {
+            return Err(unproven_members(loaded, member, &project_members));
+        };
         validate_member_loaded(&original, member, header)?;
         let endpoint_loaded = recovery
             .as_ref()
             .and_then(|context| context.endpoints.get(&member.work))
-            .unwrap_or(loaded);
+            .unwrap_or(super::config_stamp::evidence_under(
+                loaded, &original, member,
+            ));
         let endpoint = accepted_endpoint(endpoint_loaded, member)?
             .ok_or_else(|| format!("journey member {} has no terminal accepted result; integration cannot create acceptance", member.work))?;
         let evidence = crate::run::result_ref_evidence(endpoint_loaded, &endpoint.work)?
@@ -485,11 +490,14 @@ pub(super) fn current_integration_for_project(
         let endpoint_loaded = recovery
             .as_ref()
             .and_then(|context| context.endpoints.get(&member.work))
-            .unwrap_or(loaded);
+            .unwrap_or(super::config_stamp::evidence_under(
+                loaded, &original, member,
+            ));
         let Some(endpoint) = accepted_endpoint(endpoint_loaded, member)? else {
             continue;
         };
-        let Some((contract, _start)) = contract_for_work(loaded, &endpoint.work)? else {
+        let contract_loaded = super::config_stamp::evidence_under(loaded, &original, member);
+        let Some((contract, _start)) = contract_for_work(contract_loaded, &endpoint.work)? else {
             continue;
         };
         if contract_sha256(&contract) != entry.contract_sha256 {
@@ -535,7 +543,29 @@ fn current_required_review(loaded: &Loaded, work: &str) -> Result<bool, String> 
         && exit.reviewer_approved())
 }
 
+/// The configuration `member` is read under (see `config_stamp::admitted`):
+/// every member consumer reaches it here. A member whose stamped bytes are
+/// not kept refuses with the one typed route.
 pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded, String> {
+    member_loaded(loaded, member)?.ok_or_else(|| {
+        super::config_stamp::unproven(loaded, &member.config_sha256, &[&member.work])
+    })
+}
+
+/// The one route for `member` names every member in `members` whose same
+/// stamp is not kept either, in member order.
+fn unproven_members(loaded: &Loaded, member: &Member, members: &[&Member]) -> String {
+    let works = members
+        .iter()
+        .filter(|other| other.config_sha256 == member.config_sha256)
+        .filter(|other| matches!(member_loaded(loaded, other), Ok(None)))
+        .map(|other| other.work.as_str())
+        .collect::<Vec<_>>();
+    super::config_stamp::unproven(loaded, &member.config_sha256, &works)
+}
+
+/// `project_loaded` with an unkept stamp as `None` rather than a refusal.
+fn member_loaded(loaded: &Loaded, member: &Member) -> Result<Option<Loaded>, String> {
     let original = crate::config::load(Some(member.config_path.as_str()))?;
     let selected_product = canonical_path(&loaded.product_root, "configured product root")?;
     let selected_state = canonical_path(&loaded.state_root, "configured state root")?;
@@ -551,6 +581,9 @@ pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded,
             "selected journey configuration belongs to another project or state owner".into(),
         );
     }
+    let Some(original) = super::config_stamp::admitted(original, member)? else {
+        return Ok(None);
+    };
     validate_member_loaded(
         &original,
         member,
@@ -570,5 +603,5 @@ pub(super) fn project_loaded(loaded: &Loaded, member: &Member) -> Result<Loaded,
             },
         },
     )?;
-    Ok(original)
+    Ok(Some(original))
 }

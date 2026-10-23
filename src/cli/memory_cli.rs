@@ -147,14 +147,13 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 a,
                 &["config", "from-config", "reason", "apply", "json"],
             )?;
-            positional(a, 2, "memory revalidate requires AGENT LEDGER...")?;
             let ledgers = a.positional[2..]
                 .iter()
                 .map(String::as_str)
                 .collect::<Vec<_>>();
             print_json(&memory::revalidation::run(
                 l,
-                positional(a, 1, "memory revalidate requires AGENT LEDGER...")?,
+                positional(a, 1, "memory revalidate requires AGENT [LEDGER...]")?,
                 &ledgers,
                 option(
                     a,

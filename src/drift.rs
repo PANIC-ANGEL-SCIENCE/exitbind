@@ -57,6 +57,8 @@ pub(crate) enum Class {
     RecoveryOwnerConfiguration,
     /// A recovery reference's Work configuration differs from the file.
     RecoveryWorkConfiguration,
+    /// A journey member's stamped configuration bytes are not kept.
+    JourneyMemberConfiguration,
 }
 
 /// What a class says and which route it offers.
@@ -182,6 +184,12 @@ pub(crate) const MEMBERS: &[Member] = &[
         classification: "recovery_work_configuration_changed",
         message: "session recovery Work configuration changed",
         meaning: "read the current recovery record and the Work's current detail; a saved reference is navigation, never authority",
+    },
+    Member {
+        class: Class::JourneyMemberConfiguration,
+        classification: "journey_member_configuration_changed",
+        message: "journey member belongs to another or changed project/session configuration",
+        meaning: "supply the configuration these journey members were stamped with; it is kept under its hash and admits them when the change moves no authority or read right",
     },
 ];
 

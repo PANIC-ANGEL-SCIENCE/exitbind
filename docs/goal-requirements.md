@@ -74,6 +74,25 @@ current journey integration. A context-only link does not satisfy a named
 requirement, create a mapping, or import another project's acceptance. Named
 requirement coverage remains explicit and project-bound.
 
+Each journey member keeps the configuration sha256 it was recorded under and
+is never restamped. When the configuration changes later, the member stays
+integrable only on proof by those stamped bytes: the copy kept under their
+hash beside the lesson ledgers (`MEMORY_ROOT/stamped-config-*.json`, which
+needs a memory policy), whose agent authority and read rights equal the
+current ones, so only `profile`, `nativeName`, `displayName` or
+`phaseGuidance` changed. The member's acceptance is then read under the
+stamped bytes. The configuration writer (`setup --apply` and the other
+product writers) keeps that copy when a journey member of the owner's Goal
+carries the hash. After a hand edit the product never saw, `goal prepare`
+omits `--journey-integration`, `work begin --journey-integration` refuses and
+`goal status` marks the members unavailable, each with one route
+`memory revalidate LEAD --from-config <PREVIOUS_CONFIG> --reason <REASON>
+--apply` naming the members; run with the owner's copy of the earlier bytes,
+it keeps them under their hash (with no lesson ledger listed, keeping is all
+it does). A file whose hash is no stamp refuses and keeps nothing. Any other
+difference (another project, session, owner or root, or an authority or
+read-right change) refuses as before.
+
 The `exitbind.session-journey-integration.*` basis constraints are reserved for
 the explicit `--journey-integration` path. Do not copy or author these markers
 in `--basis`; Exitbind rejects caller-supplied reserved markers before starting

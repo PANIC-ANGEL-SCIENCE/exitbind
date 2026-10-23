@@ -25,8 +25,10 @@ fn member_currentness(
         (Some(context), Some(_)) => &context.source,
         _ => loaded,
     };
-    let endpoint_loaded = recovered_endpoint.unwrap_or(selected);
     let project = project_loaded(selected, member)?;
+    let endpoint_loaded = recovered_endpoint.unwrap_or(super::config_stamp::evidence_under(
+        selected, &project, member,
+    ));
     let session =
         super::super::native::current()?.ok_or("native session identity is unavailable")?;
     let scope = super::super::native::scope(loaded, false)?;
@@ -416,12 +418,14 @@ pub(crate) fn result_ref_current_or_supported(
         return Ok(false);
     }
     let member = matched[0];
-    project_loaded(selected, member)?;
+    let project = project_loaded(selected, member)?;
     let endpoint_loaded = recovery
         .as_ref()
         .filter(|_| recovered_member.is_some())
         .and_then(|context| context.endpoints.get(&member.work))
-        .unwrap_or(selected);
+        .unwrap_or(super::config_stamp::evidence_under(
+            selected, &project, member,
+        ));
     let local_endpoint = accepted_endpoint(endpoint_loaded, member)?;
     if local_endpoint.is_none() {
         return Ok(false);
