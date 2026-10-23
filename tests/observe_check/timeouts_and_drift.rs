@@ -274,13 +274,9 @@ fn marked_observation_preserves_advisory_config_outside_product_fingerprint() {
     {
         let root = support::temp(label);
         support::git_topology::repository(&root);
-        let name = root.file_name().unwrap().to_string_lossy();
-        let control_root = root.with_file_name(format!("{name}-control"));
-        let state_root = root.with_file_name(format!("{name}-state"));
-        let bindings_dir = root.with_file_name(format!("{name}-bindings"));
-        fs::create_dir_all(&control_root).unwrap();
-        fs::create_dir_all(&state_root).unwrap();
-        fs::create_dir_all(&bindings_dir).unwrap();
+        let control_root = support::temp(&format!("{label}-control"));
+        let state_root = support::temp(&format!("{label}-state"));
+        let bindings_dir = support::temp(&format!("{label}-bindings"));
         let project_id = format!("observe-b1-{index}-{}", std::process::id());
         let root_arg = root.to_str().unwrap();
         let control_arg = control_root.to_str().unwrap();

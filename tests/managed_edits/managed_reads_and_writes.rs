@@ -344,7 +344,7 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
     let tool = PathBuf::from(prepared["tool"].as_str().unwrap());
     let output = super::support::git_topology::command(tool)
         .args(["read", "src/fresh.txt"])
-        .current_dir(std::env::temp_dir())
+        .current_dir(super::support::temp("managed-read-outside").path())
         .env("PATH", "/missing-native-tools")
         .output()
         .unwrap();

@@ -387,7 +387,7 @@ fn relocated_project_cannot_reuse_a_named_goal_identity() {
     let relocated = support::temp("goal-other-root");
     fs::remove_dir(&relocated).unwrap();
     fs::rename(&p.root, &relocated).unwrap();
-    p.root = relocated;
+    p.root = relocated.to_path_buf();
     p.reject(&["goal", "status", "--json"], "another project");
 }
 

@@ -8,14 +8,14 @@ use serde_json::Value;
 use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+
 use std::process::{Child, ChildStdin, Output, Stdio};
 
 const EVALUATION_DOC: &str = include_str!("../docs/agent-first-evaluation.md");
 const BLOCKED_RESULT_BYTES: usize = 2 * 1024 * 1024;
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     trace: RefCell<Vec<CallTrace>>,
 }
 
@@ -110,12 +110,6 @@ impl Fixture {
         assert!(output.status.success(), "{args:?}: {output:?}");
         serde_json::from_slice(&output.stdout)
             .unwrap_or_else(|error| panic!("{args:?}: {error}; {output:?}"))
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

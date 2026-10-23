@@ -6,16 +6,7 @@ use serde_json::Value;
 
 #[test]
 fn default_work_next_is_bounded_json_with_recovery_identity() {
-    let root = std::env::temp_dir().join(format!(
-        "exitbind-compact-work-{}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-        "path".repeat(24)
-    ));
-    std::fs::create_dir(&root).unwrap();
+    let root = support::temp(&format!("compact-work-{}", "path".repeat(24)));
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
@@ -72,7 +63,7 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert_eq!(command[command.len() - 2], "--config");
     assert_eq!(command.last().unwrap(), config.to_str().unwrap());
     let recovered = support::git_topology::command(command[0].as_str().unwrap())
-        .current_dir(std::env::temp_dir())
+        .current_dir(support::temp("compact-outside").path())
         .args(command[1..].iter().map(|arg| arg.as_str().unwrap()))
         .output()
         .unwrap();

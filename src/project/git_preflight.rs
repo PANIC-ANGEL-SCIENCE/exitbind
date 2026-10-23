@@ -195,18 +195,9 @@ fn command_error(error: std::io::Error) -> String {
 mod tests {
     use super::*;
     use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn repository(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("test clock")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-git-preflight-{label}-{}-{nonce}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&root).expect("create test root");
+    fn repository(_label: &str) -> crate::test_root::TempRoot {
+        let root = crate::test_root::temp("git-preflight");
         assert!(Command::new("git")
             .args(["-C", root.to_str().expect("UTF-8 test path"), "init", "-q"])
             .status()

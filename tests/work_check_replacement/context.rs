@@ -10,7 +10,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -220,11 +220,6 @@ fn clear_native_selectors(command: &mut Command) {
         "XDG_STATE_HOME",
     ] {
         command.env_remove(name);
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

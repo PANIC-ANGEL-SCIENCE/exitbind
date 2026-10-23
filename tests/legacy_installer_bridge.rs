@@ -7,7 +7,6 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 mod matrix {
@@ -18,15 +17,7 @@ const TARGET: &str = "x86_64-unknown-linux-gnu";
 
 #[test]
 fn stable_installer_refuses_legacy_command_before_fetch() {
-    let root = std::env::temp_dir().join(format!(
-        "exitbind-stable-legacy-refusal-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let root = support::temp("stable-legacy-refusal");
     let output = support::git_topology::command("sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
         .env("HOME", &root)
@@ -47,7 +38,7 @@ fn stable_installer_refuses_legacy_command_before_fetch() {
 }
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     archive: PathBuf,
     checksum: PathBuf,
     payload: Vec<u8>,
@@ -56,11 +47,7 @@ struct Fixture {
 
 impl Fixture {
     fn new_with_asset(label: &str, asset_surface: &str, payload: &[u8]) -> Self {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("exitbind-legacy-installer-{label}-{stamp}"));
+        let root = support::temp(&format!("legacy-installer-{label}"));
         let bin = root.join("bin");
         let server = root.join("server");
         let payload_dir = root.join("payload");
@@ -192,12 +179,6 @@ esac
             }
         }
         command.output().unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

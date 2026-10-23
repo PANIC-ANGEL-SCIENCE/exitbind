@@ -26,7 +26,7 @@ fn benchmark_reports_the_current_exitbind_surface() {
 
 #[test]
 fn current_away_surface_names_exitbind_configuration_and_state() {
-    let parent = TempDir::new("away-surface");
+    let parent = temp_root::temp("value-reconstruction-away-surface");
     let missing = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(parent.path())
         .args(["away", "list"])

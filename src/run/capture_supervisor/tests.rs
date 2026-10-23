@@ -396,10 +396,9 @@ fn early_reader_failure_cancels_owned_tree_without_claiming_deadline_expiry() {
         return;
     }
     let _owner = FixtureOwner::new();
-    let root = std::env::temp_dir().join(format!("exitbind-capsule-reader-{}", std::process::id()));
-    std::fs::create_dir(&root).unwrap();
+    let root = crate::test_root::temp("capsule-reader");
     let mut req = request("printf oversized; exec sleep 2", 30_000);
-    req.state_root = root.clone();
+    req.state_root = root.to_path_buf();
     req.artifact_dir = root.join(".exitbind/artifacts");
     req.capture = CapturePolicy {
         per_stream_bytes: 1,
@@ -424,10 +423,9 @@ fn unsolicited_capsule_cancellation_cannot_become_a_passing_check() {
         return;
     }
     let _owner = FixtureOwner::new();
-    let root = std::env::temp_dir().join(format!("exitbind-capsule-cancel-{}", std::process::id()));
-    std::fs::create_dir(&root).unwrap();
+    let root = crate::test_root::temp("capsule-cancel");
     let mut req = request("kill -TERM $PPID; exit 0", 30_000);
-    req.state_root = root.clone();
+    req.state_root = root.to_path_buf();
     req.artifact_dir = root.join(".exitbind/artifacts");
     let captured = crate::run::capture::capture_observed_command(&req)
         .err()

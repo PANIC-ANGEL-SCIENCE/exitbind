@@ -37,6 +37,11 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
     ),
     ("src/run/capture_supervisor/tests.rs", 1, "unit test"),
     (
+        "src/test_root.rs",
+        1,
+        "unit test re-runs its own seeded failing test",
+    ),
+    (
         "src/run/cleanup_fixture.rs",
         1,
         "spawns its cleanup fixture",

@@ -7,7 +7,7 @@ mod support;
 use fixture::{Fixture, FACT, LEDGER, SPECIALIST_GUIDANCE, SPECIALIST_TASK, TASK};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 fn diagnostic(o: &std::process::Output) -> String {
     format!(

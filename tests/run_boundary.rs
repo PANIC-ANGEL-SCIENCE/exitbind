@@ -7,7 +7,7 @@ use std::{
     process::Output,
 };
 
-fn temp(label: &str) -> PathBuf {
+fn temp(label: &str) -> support::TempRoot {
     support::temp(label)
 }
 
@@ -27,7 +27,7 @@ fn text(output: &Output) -> String {
     )
 }
 
-fn fixture() -> (PathBuf, PathBuf) {
+fn fixture() -> (support::TempRoot, PathBuf) {
     let root = temp("run-boundary");
     let initialized = invoke(
         &root,

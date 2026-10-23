@@ -121,15 +121,7 @@ mod tests {
 
     #[test]
     fn direct_result_references_new_file_bytes_without_accepting_the_task() {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-direct-snapshot-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("direct-snapshot");
         assert!(Command::new("git")
             .args(["init", "-q"])
             .current_dir(&root)

@@ -15,7 +15,9 @@ const ROWS: [(&str, &str); 3] = [
 /// A fresh Git project with the card and its project check script, but no
 /// Exitbind configuration yet.
 fn fresh(label: &str, session: Option<&str>) -> (Project, Outside, String) {
-    let root = support::temp(label);
+    let base = support::temp(label);
+    let root = base.join("project");
+    fs::create_dir(&root).unwrap();
     support::git_topology::repository(&root);
     fs::create_dir_all(root.join("work/r9")).unwrap();
     fs::create_dir_all(root.join("scripts")).unwrap();
@@ -30,6 +32,7 @@ fn fresh(label: &str, session: Option<&str>) -> (Project, Outside, String) {
         fixture_store: root.with_file_name(format!("{name}-native-session-goals")),
         root,
         native_session: None,
+        _base: base,
     };
     if let Some(identity) = session {
         project.set_native_session(identity);

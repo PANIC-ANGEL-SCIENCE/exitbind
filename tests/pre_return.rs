@@ -3,12 +3,12 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::PathBuf, process::Output};
+use std::{fs, process::Output};
 
 const CHECK: &str = "test -f actual-product-check";
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -203,11 +203,6 @@ impl Fixture {
     }
     fn work_check(&self, work: &str) -> Output {
         self.call(&["work", "check", work])
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

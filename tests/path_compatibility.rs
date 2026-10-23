@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 mod support;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 
 fn invoke(arguments: &[&str]) -> Output {
@@ -12,7 +12,7 @@ fn invoke(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
-fn project(label: &str) -> (PathBuf, String) {
+fn project(label: &str) -> (support::TempRoot, String) {
     let root = support::temp(&format!("path-compat-{label}"));
     let output = invoke(&[
         "init",

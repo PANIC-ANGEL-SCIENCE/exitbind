@@ -7,14 +7,13 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
     sync::{Arc, Barrier},
     thread,
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -95,12 +94,6 @@ impl Fixture {
             .collect::<Vec<_>>();
         files.sort_by(|left, right| left.0.cmp(&right.0));
         files
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

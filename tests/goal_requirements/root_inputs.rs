@@ -588,7 +588,7 @@ fn root_checks_and_private_writes_live_in_the_helper_and_the_writer() {
 /// A local-mode project in its own Git worktree: the control and state roots
 /// live outside it, so nothing but the product hides `.exitbind/` from Git.
 struct Local {
-    base: PathBuf,
+    base: support::TempRoot,
     product: PathBuf,
     control: PathBuf,
     state: PathBuf,
@@ -690,12 +690,6 @@ impl Local {
             .lines()
             .map(str::to_owned)
             .collect()
-    }
-}
-
-impl Drop for Local {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.base);
     }
 }
 

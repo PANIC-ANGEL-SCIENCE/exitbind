@@ -5,25 +5,16 @@
 use super::*;
 
 /// A directory outside the fixture project, removed with the test.
-pub(super) struct Outside(PathBuf);
+pub(super) struct Outside(support::TempRoot);
 
 impl Outside {
-    pub(super) fn new(project: &Project) -> Self {
-        let name = project.root.file_name().unwrap().to_string_lossy();
-        let path = project.root.with_file_name(format!("{name}-outside"));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
+    pub(super) fn new(_project: &Project) -> Self {
+        Self(support::temp("goal-checker-outside"))
     }
     pub(super) fn script(&self, name: &str, body: &str) -> String {
         let path = self.0.join(name);
         fs::write(&path, body).unwrap();
         path.to_str().unwrap().to_owned()
-    }
-}
-
-impl Drop for Outside {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

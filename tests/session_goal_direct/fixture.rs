@@ -10,7 +10,7 @@ pub(crate) const CARD: &str =
     "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
 pub(crate) struct Project {
-    pub(crate) root: std::path::PathBuf,
+    pub(crate) root: super::support::TempRoot,
     pub(crate) session_store: std::path::PathBuf,
 }
 

@@ -10,6 +10,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+#[path = "support/temp_root.rs"]
+mod temp_root;
+#[path = "architecture_budget/temp_root_guard.rs"]
+mod temp_root_guard;
+#[path = "architecture_budget/temp_roots.rs"]
+mod temp_roots;
+
 const LIMIT: u64 = 32 * 1024;
 
 /// The covered roots. Every file under each counts, whatever its extension.
@@ -97,11 +104,7 @@ fn every_covered_file_stays_within_its_ceiling() {
 /// listed file that grew, and on a ceiling left above a file that fell.
 #[test]
 fn a_seeded_33_kib_test_file_fails_the_budget() {
-    let root = std::env::temp_dir().join(format!(
-        "exitbind-architecture-budget-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&root);
+    let root = temp_root::temp("architecture-budget");
     fs::create_dir_all(root.join("src")).unwrap();
     fs::create_dir_all(root.join("tests/fixtures/nested")).unwrap();
     let seeded = vec![b'x'; 33 * 1024];
@@ -139,7 +142,6 @@ fn a_seeded_33_kib_test_file_fails_the_budget() {
     assert!(grown[0].starts_with("tests/seeded.rs grew"), "{grown:?}");
     let raised = failures(&root, &listed(size + 1));
     assert!(raised[0].starts_with("tests/seeded.rs fell"), "{raised:?}");
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Enumerated another way: every Git-tracked file over the limit under a

@@ -6,7 +6,6 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
@@ -15,7 +14,7 @@ use std::{
 /// reason.  Fallback substitutes where a review runs, never what it must
 /// satisfy.
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 /// The authorized alternate binding: a different provider and model for the
@@ -178,12 +177,6 @@ impl Fixture {
         let checked = self.value(&["work", "check", &work], None);
         assert_eq!(checked["next"]["role"], "reviewer");
         (work, checked)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

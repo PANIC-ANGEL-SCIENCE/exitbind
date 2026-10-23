@@ -7,7 +7,7 @@ mod support;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
-fn host_home(label: &str) -> std::path::PathBuf {
+fn host_home(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     fs::create_dir_all(root.join(".codex")).unwrap();
     fs::create_dir_all(root.join(".claude")).unwrap();

@@ -84,7 +84,7 @@ fn applied_setup_delivers_current_context_without_a_second_discovery() {
     support::git_topology::isolate(&mut command);
     let started = value(
         command
-            .current_dir(std::env::temp_dir())
+            .current_dir(support::temp("start-context-outside").path())
             .args(argv[1..].iter().map(|v| v.as_str().unwrap()))
             .output()
             .unwrap(),

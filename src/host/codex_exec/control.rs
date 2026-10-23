@@ -147,26 +147,13 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::{fs::PermissionsExt, process::CommandExt};
-    use std::path::PathBuf;
-    use std::process::{Command, Stdio};
-    use std::sync::atomic::{AtomicU64, Ordering};
 
-    struct Fixture(PathBuf);
+    use std::process::{Command, Stdio};
+
+    struct Fixture(crate::test_root::TempRoot);
     impl Fixture {
         fn new(script: &str) -> Self {
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            let root = loop {
-                let path = std::env::temp_dir().join(format!(
-                    "exitbind-native-control-{}-{}",
-                    std::process::id(),
-                    NEXT.fetch_add(1, Ordering::Relaxed)
-                ));
-                match fs::create_dir(&path) {
-                    Ok(()) => break fs::canonicalize(path).unwrap(),
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                    Err(error) => panic!("create control fixture: {error}"),
-                }
-            };
+            let root = crate::test_root::temp("native-control");
             let executable = root.join("native.sh");
             fs::write(&executable, format!("#!/bin/sh\n{script}\n")).unwrap();
             fs::set_permissions(executable, fs::Permissions::from_mode(0o755)).unwrap();
@@ -175,7 +162,7 @@ mod tests {
         fn request(&self) -> Request {
             Request {
                 executable: self.0.join("native.sh"),
-                cwd: self.0.clone(),
+                cwd: self.0.to_path_buf(),
                 prompt: String::new(),
                 model: None,
                 effort: None,
@@ -188,12 +175,6 @@ mod tests {
             }
         }
     }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.0).unwrap();
-        }
-    }
-
     #[test]
     fn initial_control_hold_never_spawns_or_persists_callback_reason() {
         let fixture = Fixture::new("printf started > spawned");

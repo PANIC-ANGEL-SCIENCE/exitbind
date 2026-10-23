@@ -5,12 +5,11 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
 }
 
@@ -184,11 +183,6 @@ impl Fixture {
         let output = child.wait_with_output().unwrap();
         assert!(output.status.success(), "{output:?}");
         serde_json::from_slice(&output.stdout).unwrap()
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

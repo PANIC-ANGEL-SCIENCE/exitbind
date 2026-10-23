@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Fixture {
-    base: PathBuf,
+    base: support::TempRoot,
     source: PathBuf,
     state: PathBuf,
     bindings: PathBuf,
@@ -20,9 +20,7 @@ struct Fixture {
 }
 impl Fixture {
     fn no_git() -> Option<Self> {
-        Some(Self::from_base(support::git_topology::marker_free_temp(
-            "portability",
-        )?))
+        Some(Self::from_base(support::marker_free_temp("portability")?))
     }
     fn repository() -> Self {
         let mut fixture = Self::from_base(support::temp("portability-git"));
@@ -42,7 +40,7 @@ impl Fixture {
         fixture.invalid_marker = true;
         fixture
     }
-    fn from_base(base: PathBuf) -> Self {
+    fn from_base(base: support::TempRoot) -> Self {
         let source = base.join("source");
         let state = base.join("user-state");
         let bindings = state.join("bindings");
@@ -117,13 +115,12 @@ impl Drop for Fixture {
             eprintln!("retained portability fixture: {}", self.base.display());
             return;
         }
-        for root in [&self.base, &self.state, &self.bindings] {
+        for root in [&*self.base, self.state.as_path(), self.bindings.as_path()] {
             if root.exists() {
                 fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
             }
         }
         fs::set_permissions(&self.source, fs::Permissions::from_mode(0o700)).unwrap();
-        fs::remove_dir_all(&self.base).unwrap();
     }
 }
 

@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Output, Stdio};
 
 mod support;
@@ -35,7 +35,7 @@ fn ok(root: &Path, args: &[&str]) -> Value {
 }
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
 }
 
@@ -157,12 +157,6 @@ impl Fixture {
 
     fn history(&self) -> Vec<u8> {
         fs::read(self.root.join(".exitbind/session-goal.jsonl")).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

@@ -311,14 +311,7 @@ mod tests {
 
     #[test]
     fn marked_verification_inputs_compare_with_the_state_aware_digest() {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-quarantine-inputs-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock after Unix epoch")
-                .as_nanos()
-        ));
+        let root = crate::test_root::temp("quarantine-inputs");
         std::fs::create_dir_all(root.join(".exitbind")).unwrap();
         std::fs::write(root.join("exitbind.json"), "{}\n").unwrap();
         std::fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
@@ -332,7 +325,7 @@ mod tests {
             verification_preparation: None,
             path: root.join("exitbind.json"),
             control_root: root.join(".exitbind"),
-            product_root: root.clone(),
+            product_root: root.to_path_buf(),
             state_root: root.join(".exitbind"),
             mode: crate::project::layout_types::Mode::Portable,
             project_id: None,

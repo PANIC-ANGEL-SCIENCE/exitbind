@@ -217,7 +217,7 @@ fn recovery_uses_the_exact_long_executable_path() {
     let started: Value = serde_json::from_slice(&begin.stdout).unwrap();
     let work = started["work"].as_str().unwrap();
     let binary_root = support::temp("long-executable-binary");
-    let mut nested = binary_root.clone();
+    let mut nested = binary_root.to_path_buf();
     for _ in 0..7 {
         nested.push("nested".repeat(16));
     }

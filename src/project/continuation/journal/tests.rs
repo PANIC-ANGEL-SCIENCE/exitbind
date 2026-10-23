@@ -1,10 +1,10 @@
 use super::*;
 use crate::{evidence::hash, project::onboarding};
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 struct Fixture {
-    root: PathBuf,
+    _root: crate::test_root::TempRoot,
     loaded: Loaded,
     relative: String,
     record: Record,
@@ -12,15 +12,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-journal-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("journal-test");
         let status = std::process::Command::new("git")
             .args(["init", "-q"])
             .current_dir(&root)
@@ -149,7 +141,7 @@ impl Fixture {
             event_sha256: String::new(),
         };
         Self {
-            root,
+            _root: root,
             loaded,
             relative,
             record,
@@ -171,12 +163,6 @@ impl Fixture {
         }
         assert!(raw.len() > 1024 * 1024);
         (selected, raw, previous.unwrap())
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

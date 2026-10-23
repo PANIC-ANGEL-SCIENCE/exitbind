@@ -163,22 +163,14 @@ mod tests {
     use super::provider_identity;
     use std::{
         fs,
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant},
     };
 
     #[test]
     fn provider_identity_refuses_non_utf8_executable_before_invocation() {
         use std::os::unix::ffi::OsStringExt;
 
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "codegraph-provider-path-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("codegraph-provider-path");
         let executable = root.join(std::ffi::OsString::from_vec(b"provider-\xff".to_vec()));
         fs::write(&executable, b"fixture executable").unwrap();
 

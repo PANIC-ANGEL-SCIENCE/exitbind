@@ -92,7 +92,7 @@ fn supersede_claim_is_atomic_and_idempotent_under_concurrency() {
     ]);
 
     let barrier = Arc::new(Barrier::new(2));
-    let root = fixture.root.clone();
+    let root = fixture.root.to_path_buf();
     // Different requests must choose one successor even if the OS schedules
     // their children sequentially. Identical requests may both validly succeed
     // because the later request replays the already committed claim.

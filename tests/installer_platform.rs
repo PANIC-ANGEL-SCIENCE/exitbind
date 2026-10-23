@@ -59,7 +59,7 @@ fn digest(path: &Path) -> String {
 }
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     bin: PathBuf,
     archive: PathBuf,
     checksum: PathBuf,
@@ -171,12 +171,6 @@ esac
 
     fn calls(&self) -> String {
         fs::read_to_string(self.root.join("calls")).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

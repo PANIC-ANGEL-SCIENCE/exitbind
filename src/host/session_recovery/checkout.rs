@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn worktree_listing_keeps_branch_and_detached_trees_and_skips_bare_or_prunable() {
-        let root = std::env::temp_dir();
+        let root = crate::test_root::temp("worktree-listing");
         let root = root.to_str().unwrap();
         let listed = format!(
             "worktree {root}\0HEAD 0123456789abcdef0123\0branch refs/heads/feature/x\0\0\

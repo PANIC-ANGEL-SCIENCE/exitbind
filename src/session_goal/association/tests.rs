@@ -58,7 +58,7 @@ fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
 fn capacity_fixture(
     sequence: u64,
 ) -> (
-    std::path::PathBuf,
+    crate::test_root::TempRoot,
     crate::config::Loaded,
     std::path::PathBuf,
     super::super::native::Session,
@@ -67,11 +67,7 @@ fn capacity_fixture(
     String,
     std::path::PathBuf,
 ) {
-    let project_root = std::env::temp_dir().join(format!(
-        "exitbind-session-capacity-{}-{sequence}",
-        std::process::id()
-    ));
-    fs::create_dir(&project_root).expect("create private test project root");
+    let project_root = crate::test_root::temp("session-capacity");
     let config_path =
         crate::project::onboarding::init_with_options(crate::project::onboarding::InitOptions {
             product_root: project_root.to_str().expect("UTF-8 test project path"),
@@ -125,14 +121,6 @@ fn capacity_fixture(
         identity,
         session_store,
     )
-}
-
-struct RemoveProjectOnDrop(std::path::PathBuf);
-
-impl Drop for RemoveProjectOnDrop {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 fn capacity_member(
@@ -270,7 +258,7 @@ fn pending_admissions_reserve_the_last_member_slot_before_start() {
     let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (project_root, loaded, session_root, session, owner, _, identity, session_store) =
         capacity_fixture(sequence);
-    let _cleanup = RemoveProjectOnDrop(project_root);
+    let _project_root = project_root;
     let current = install_capacity_state(&session_root, &loaded, &session, &owner, 31, 1);
     let scope = super::super::native::Scope {
         root: session_root.clone(),
@@ -424,12 +412,8 @@ fn same_goal_sealing_preserves_associations_but_successors_start_unbound() {
 #[test]
 fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successor() {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let project_root = std::env::temp_dir().join(format!(
-        "exitbind-session-admission-{}-{sequence}",
-        std::process::id()
-    ));
-    fs::create_dir(&project_root).expect("create private test project root");
+    let _sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let project_root = crate::test_root::temp("session-admission");
     let config_path =
         crate::project::onboarding::init_with_options(crate::project::onboarding::InitOptions {
             product_root: project_root.to_str().expect("UTF-8 test project path"),

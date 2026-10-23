@@ -4,12 +4,12 @@ mod support;
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Output, Stdio},
 };
 
-fn temp(label: &str) -> PathBuf {
-    let root = fs::canonicalize(support::temp(label)).unwrap();
+fn temp(label: &str) -> support::TempRoot {
+    let root = support::temp(label);
     support::git_topology::repository(&root);
     root
 }

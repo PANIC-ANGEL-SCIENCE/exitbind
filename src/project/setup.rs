@@ -783,7 +783,6 @@ fn print_report(report: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn facts(root: String) -> SetupFacts {
         SetupFacts {
@@ -816,17 +815,8 @@ mod tests {
         }
     }
 
-    fn temp_root() -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-setup-test-{}-{stamp}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        root
+    fn temp_root() -> crate::test_root::TempRoot {
+        crate::test_root::temp("setup-test")
     }
 
     #[test]

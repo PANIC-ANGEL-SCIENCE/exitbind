@@ -213,24 +213,15 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
     use std::fs;
-    use std::path::PathBuf;
 
     struct Fixture {
-        root: PathBuf,
+        root: crate::test_root::TempRoot,
         loaded: Loaded,
     }
 
     impl Fixture {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "exitbind-project-sources-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            ));
-            fs::create_dir(&root).unwrap();
+            let root = crate::test_root::temp("project-sources");
             git(&root, &["init", "-q"], 4096).unwrap();
             let configuration = crate::project::onboarding::init_with_options(
                 crate::project::onboarding::InitOptions {

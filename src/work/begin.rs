@@ -177,26 +177,13 @@ pub(crate) fn begin_with_pre_return(
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::{fs, path::PathBuf};
-
-    struct RemoveProjectOnDrop(PathBuf);
-
-    impl Drop for RemoveProjectOnDrop {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
+    use std::fs;
 
     #[test]
     fn caller_basis_cannot_inject_native_journey_markers_at_common_begin_boundary() {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-work-begin-basis-origin-{}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir(&root).expect("create private test project root");
-        let _cleanup = RemoveProjectOnDrop(root.clone());
+        let _sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = crate::test_root::temp("work-begin-basis-origin");
         let config_path = crate::project::onboarding::init_with_options(
             crate::project::onboarding::InitOptions {
                 product_root: root.to_str().expect("UTF-8 test project path"),

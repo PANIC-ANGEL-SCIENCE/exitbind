@@ -10,7 +10,7 @@ use std::{
 
 const CHECK: &str = "exitbind check --config verification.json";
 
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let output = invoke(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
@@ -126,7 +126,7 @@ fn record_check(root: &Path, ledger: &str, target: &str, exit_code: &str) {
     assert_eq!(value["event"]["action"], "check");
 }
 
-fn prepare_checked_project(label: &str) -> (PathBuf, String, Vec<Value>, String) {
+fn prepare_checked_project(label: &str) -> (support::TempRoot, String, Vec<Value>, String) {
     let root = project(label);
     let ledger = ".exitbind/runs/replay.jsonl".to_owned();
     checked_start(&root, &ledger);

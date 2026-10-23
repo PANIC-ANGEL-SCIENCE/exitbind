@@ -1,10 +1,10 @@
 mod support;
 
-use std::{fs, path::PathBuf};
+use std::fs;
 
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
 
-fn init(root: &PathBuf) -> std::process::Output {
+fn init(root: &std::path::Path) -> std::process::Output {
     support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(root)

@@ -3,10 +3,10 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::PathBuf, process::Output};
+use std::{fs, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {

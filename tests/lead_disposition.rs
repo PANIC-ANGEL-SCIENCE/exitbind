@@ -9,14 +9,13 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 const SUGGESTION: &str = "Suggested fix: also add a retry cache for the parser";
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -160,12 +159,6 @@ impl Fixture {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -337,11 +330,8 @@ fn reports_resolution(fixture: &Fixture, work: &str, decision: &str, disposition
     let verified = fixture.ok(&["verify", receipt_path, "--json"], b"");
     assert_eq!(verified["valid"], true, "{verified}");
 
-    let outside = std::env::temp_dir().join(format!(
-        "exitbind-outside-receipt-{}-{}.json",
-        std::process::id(),
-        decision
-    ));
+    let outside_root = support::temp("outside-receipt");
+    let outside = outside_root.join(format!("{decision}.json"));
     let outside_text = outside.to_string_lossy().into_owned();
     let refused_output = fixture.call(
         &["receipt", &ledger, "--output", &outside_text, "--json"],

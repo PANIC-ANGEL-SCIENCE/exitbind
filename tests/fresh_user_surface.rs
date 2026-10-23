@@ -19,6 +19,7 @@ struct Fresh {
     project: PathBuf,
     bin: PathBuf,
     transcript: String,
+    _base: support::TempRoot,
 }
 
 impl Fresh {
@@ -46,6 +47,7 @@ impl Fresh {
             project,
             bin,
             transcript: String::new(),
+            _base: base,
         }
     }
 

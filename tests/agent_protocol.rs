@@ -4,12 +4,12 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -83,11 +83,6 @@ impl Fixture {
             Some(body),
         );
         assert!(output.status.success(), "{output:?}");
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 
@@ -349,7 +344,7 @@ fn approved_roles_apply_once_preserve_asymmetry_and_return_validated_begin() {
     );
     let begin = actions[0].as_array().unwrap();
     let run = support::git_topology::command(begin[0].as_str().unwrap())
-        .current_dir(std::env::temp_dir())
+        .current_dir(support::temp("protocol-outside").path())
         .args(begin[1..].iter().map(|v| v.as_str().unwrap()))
         .output()
         .unwrap();

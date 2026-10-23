@@ -44,7 +44,7 @@ fn run(root: &Path, args: &[&str]) -> Value {
     json(&output)
 }
 
-fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
+fn checked_worker(label: &str, command: &str) -> (support::TempRoot, String, String) {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
@@ -113,7 +113,7 @@ fn checked_worker(label: &str, command: &str) -> (std::path::PathBuf, String, St
     (root, ledger, target)
 }
 
-fn checked_exitbind_worker(label: &str, command: &str) -> (std::path::PathBuf, String, String) {
+fn checked_exitbind_worker(label: &str, command: &str) -> (support::TempRoot, String, String) {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))

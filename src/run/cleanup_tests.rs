@@ -213,6 +213,11 @@ fn isolated_deadline_failure_survives_later_successful_child_exit() {
     assert!(failure.contains("status deadline exceeded"), "{failure}");
     assert!(failure.contains("status=exit status: 0"), "{failure}");
     assert!(started.elapsed() < Duration::from_secs(2), "{failure}");
+    // The expected failure keeps its capture for diagnosis; this test owns it.
+    let (_, retained) = failure
+        .rsplit_once("fixture capture retained at ")
+        .expect("the failure names its retained capture");
+    fs::remove_dir_all(retained).unwrap();
 }
 
 fn descendant_state(pid: i32) -> String {

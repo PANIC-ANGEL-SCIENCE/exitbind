@@ -29,7 +29,7 @@ struct Session {
 impl Session {
     fn new(label: &str) -> Self {
         let owned = repository(label);
-        let root = owned.0.clone();
+        let root = owned.0.to_path_buf();
         let home = root.with_extension("home");
         fs::create_dir_all(&home).unwrap();
         Self {

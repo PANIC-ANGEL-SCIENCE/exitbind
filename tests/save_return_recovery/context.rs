@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -158,12 +158,6 @@ if let Err(error) = child.stdin.take().unwrap().write_all(input) { assert_eq!(er
         .unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         marker
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

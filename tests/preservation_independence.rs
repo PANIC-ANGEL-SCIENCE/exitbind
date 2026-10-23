@@ -23,6 +23,7 @@ struct Fixture {
     home: PathBuf,
     root: PathBuf,
     path: String,
+    _base: support::TempRoot,
 }
 
 impl Fixture {
@@ -51,6 +52,7 @@ impl Fixture {
                 bin.display(),
                 std::env::var("PATH").unwrap_or_default()
             ),
+            _base: base,
         };
         let init = fixture.call(&["init", "--mode", "portable", "--root", "."], None);
         assert!(init.status.success(), "{init:?}");

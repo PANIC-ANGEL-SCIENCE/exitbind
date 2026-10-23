@@ -583,11 +583,7 @@ mod tests {
 
         let marked = crate::producer::exitbind_surface();
         for fault in [1, 2, 3] {
-            let root = std::env::temp_dir().join(format!(
-                "exitbind-post-append-{}-{fault}",
-                std::process::id()
-            ));
-            fs::create_dir(&root).unwrap();
+            let root = crate::test_root::temp("post-append");
             let git_init = std::process::Command::new("git")
                 .args(["-C", root.to_str().unwrap(), "init", "--quiet"])
                 .status()

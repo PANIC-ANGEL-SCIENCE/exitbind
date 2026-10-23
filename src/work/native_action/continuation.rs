@@ -620,12 +620,7 @@ mod tests {
 
     #[test]
     fn aggregate_failure_preserves_exact_owner_result_and_pending_recovery() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-native-account-fault-{}-{}",
-            std::process::id(),
-            timestamp()
-        ));
-        fs::create_dir(&directory).unwrap();
+        let directory = crate::test_root::temp("native-account-fault");
         let path = directory.join("native.json");
         let (journal, bytes) = completed(&pending());
         write_journal(&path, &journal, true).unwrap();
@@ -655,12 +650,7 @@ mod tests {
 
     #[test]
     fn aggregate_failure_keeps_owned_interruption_and_unknown_end() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-native-interrupt-fault-{}-{}",
-            std::process::id(),
-            timestamp()
-        ));
-        fs::create_dir(&directory).unwrap();
+        let directory = crate::test_root::temp("native-interrupt-fault");
         let path = directory.join("native.json");
         let mut journal = journal(&pending());
         journal["error"] = json!("controlled eligibility hold");

@@ -46,7 +46,7 @@ fn value(root: &Path, args: &[&str], input: &[u8]) -> Value {
 }
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
 }
 impl Fixture {
@@ -171,11 +171,6 @@ impl Fixture {
             json!({"summary":"Accepted result without a report"}),
         );
         self.submit_events().pop().unwrap()
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

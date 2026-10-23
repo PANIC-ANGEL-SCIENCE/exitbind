@@ -736,16 +736,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn fixture() -> (PathBuf, LedgerPath, String) {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-run-ledger-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&root).unwrap();
+    fn fixture() -> (crate::test_root::TempRoot, LedgerPath, String) {
+        let root = crate::test_root::temp("run-ledger");
         let path = root.join("runs.jsonl");
         let source = "{\"version\":8,\"kind\":\"run\",\"action\":\"start\"}\n".to_owned();
         fs::write(&path, &source).unwrap();

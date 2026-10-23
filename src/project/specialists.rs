@@ -358,24 +358,12 @@ fn parse(loaded: &Loaded, bytes: &[u8], name: &str, project: &str) -> Result<Exp
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::{fs, process::Command};
 
     #[test]
     fn excluded_item_late_ledger_and_history_failures_do_not_disclose_private_names() {
         for mutate_ledger in [true, false] {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let root = std::env::temp_dir().join(format!(
-                "specialist-late-read-{}-{nonce}",
-                std::process::id()
-            ));
-            fs::create_dir(&root).unwrap();
+            let root = crate::test_root::temp("specialist-late-read");
             assert!(Command::new("git")
                 .arg("-C")
                 .arg(&root)

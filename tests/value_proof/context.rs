@@ -5,13 +5,13 @@ use sha2::{Digest, Sha256};
 mod support;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Path},
     process::Output,
 };
 
 const CHECK: &str = "exitbind check --config verification.json";
 
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let output = invoke(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));

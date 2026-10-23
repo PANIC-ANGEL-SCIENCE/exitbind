@@ -1,13 +1,9 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
-fn project() -> PathBuf {
+fn project() -> support::TempRoot {
     let root = support::temp("harness-test");
     let output = invoke(&[
         "init",

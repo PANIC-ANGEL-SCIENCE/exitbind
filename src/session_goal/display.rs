@@ -232,11 +232,8 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_the_state_and_reads_back_within_the_time_bound() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-display-{}-{}",
-            std::process::id(),
-            line!()
-        ));
+        let root = crate::test_root::temp("display");
+        let directory = root.join("store");
         let path = directory.join(DIRECTORY).join("key.json");
         let state = json!({"kind":KIND,"version":1,"state":"open","revision":3,
             "goal":"g".repeat(MAX_TEXT_CHARS),"requirements":(0..40).map(|i| json!({"id":format!("S{i}"),
@@ -265,12 +262,7 @@ mod tests {
 
     #[test]
     fn foreign_or_malformed_files_read_as_absent() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-display-{}-{}",
-            std::process::id(),
-            line!()
-        ));
-        std::fs::create_dir_all(&directory).unwrap();
+        let directory = crate::test_root::temp("display");
         let path = directory.join("x.json");
         assert!(read(&path).is_none());
         std::fs::write(&path, b"{\"kind\":\"other\",\"version\":1}").unwrap();

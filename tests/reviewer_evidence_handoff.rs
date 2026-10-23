@@ -65,7 +65,7 @@ fn ok_config(
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
@@ -76,7 +76,7 @@ fn project(label: &str) -> PathBuf {
     root
 }
 
-fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+fn local_project(label: &str) -> (support::TempRoot, PathBuf, PathBuf, PathBuf) {
     let base = support::temp(label);
     let root = base.join("product");
     let control = base.join("control");
@@ -312,7 +312,8 @@ fn reviewer_context_resolves_current_check_record_and_log() {
         .any(|pair| { pair[0] == "--config" && pair[1] == config.to_str().unwrap() }));
     assert_eq!(record["cwd"], root.to_str().unwrap());
 
-    let stale_bin = root.with_extension("stale-bin");
+    let stale_root = support::temp("reviewer-stale-bin");
+    let stale_bin = stale_root.join("bin");
     fs::create_dir(&stale_bin).unwrap();
     let stale_executable = stale_bin.join("exitbind");
     fs::write(&stale_executable, "#!/bin/sh\nexit 97\n").unwrap();

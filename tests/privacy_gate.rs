@@ -630,8 +630,8 @@ fn credential_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || "_./+=-".contains(character)
 }
 
-fn temp(label: &str) -> PathBuf {
-    support::temp(&format!("privacy-{label}"))
+fn temp(label: &str) -> support::TempRoot {
+    support::temp(label)
 }
 
 #[test]

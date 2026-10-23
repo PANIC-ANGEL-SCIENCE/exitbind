@@ -9,7 +9,7 @@ pub const SPECIALIST_TASK: &str = "Combine rows while preserving whether any obs
 pub const SPECIALIST_GUIDANCE: &str = "Track presence and sum independently.";
 
 pub struct Fixture {
-    pub root: PathBuf,
+    pub root: support::TempRoot,
 }
 
 impl Fixture {
@@ -334,7 +334,7 @@ impl Fixture {
     pub fn child_start(&self, child: &str) -> Value {
         self.input(
             &["hook-run"],
-            &json!({"hook_event_name":"SubagentStart","cwd":self.root,
+            &json!({"hook_event_name":"SubagentStart","cwd":self.root.path(),
             "session_id":"contextual-parent","agent_id":child,"agent_type":"record_specialist"})
             .to_string(),
         )
@@ -343,18 +343,12 @@ impl Fixture {
     pub fn child_stop(&self, child: &str, message: &str) {
         let output = self.input_result(
             &["hook-run"],
-            &json!({"hook_event_name":"SubagentStop","cwd":self.root,
+            &json!({"hook_event_name":"SubagentStop","cwd":self.root.path(),
             "session_id":"contextual-parent","agent_id":child,"agent_type":"record_specialist",
             "last_assistant_message":message})
             .to_string(),
         );
         assert!(output.status.success(), "{output:?}");
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

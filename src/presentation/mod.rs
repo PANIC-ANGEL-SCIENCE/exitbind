@@ -115,12 +115,7 @@ pub(crate) fn print_next(value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
-    use std::{
-        env, fs,
-        os::unix::fs::PermissionsExt,
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::{env, fs, os::unix::fs::PermissionsExt, process::Command};
 
     #[cfg(unix)]
     fn hex(value: &[u8]) -> String {
@@ -157,14 +152,7 @@ mod tests {
     #[test]
     fn read_command_preserves_control_bytes_under_posix_sh() {
         let command = crate::compatibility::profile().caller;
-        let root = env::temp_dir().join(format!(
-            "{command}-presentation-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should be after epoch")
-                .as_nanos()
-        ));
-        fs::create_dir(&root).expect("temporary directory should be created");
+        let root = crate::test_root::temp("presentation");
         let binary = root.join(command);
         fs::write(
             &binary,
@@ -188,9 +176,10 @@ mod tests {
         );
         assert!(!command.bytes().any(|byte| byte < 0x20 || byte == 0x7f));
         let existing_path = env::var_os("PATH").unwrap_or_default();
-        let path =
-            env::join_paths(std::iter::once(root.clone()).chain(env::split_paths(&existing_path)))
-                .expect("fixture root and existing PATH should form a valid PATH");
+        let path = env::join_paths(
+            std::iter::once(root.to_path_buf()).chain(env::split_paths(&existing_path)),
+        )
+        .expect("fixture root and existing PATH should form a valid PATH");
         let result = Command::new("/bin/sh")
             .current_dir(&root)
             .args(["-c", &command])

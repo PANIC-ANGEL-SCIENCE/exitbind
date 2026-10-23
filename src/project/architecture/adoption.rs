@@ -238,12 +238,7 @@ mod tests {
         if !crate::compatibility::is_exitbind() {
             return;
         }
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-selection-race-{}-{}",
-            std::process::id(),
-            chrono::Utc::now().timestamp_nanos_opt().unwrap()
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("selection-race");
         let mut git = std::process::Command::new("git");
         for key in [
             "GIT_DIR",

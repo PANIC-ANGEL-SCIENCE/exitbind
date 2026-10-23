@@ -1,11 +1,12 @@
 use super::*;
 use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
-fn fake_provider(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+/// The provider log lives in `logs`, outside the project it observes.
+fn fake_provider(root: &Path, logs: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let bin = root.join("fake-provider-bin");
     fs::create_dir_all(&bin).unwrap();
     let executable = bin.join("codegraph");
-    let log = root.with_extension("codegraph.log");
+    let log = logs.join("codegraph.log");
     let source = root.join("impact.rs");
     fs::write(
         &executable,
@@ -186,7 +187,8 @@ fn project_graph_uses_exact_config_from_different_launch_cwd_and_never_borrows_n
 fn project_graph_reuses_structured_results_and_reconciles_freshness_classes() {
     let root = project("project-graph-protocol");
     fs::write(root.join("impact.rs"), "fn parse_config() {}\n").unwrap();
-    let (bin, _, log, source) = fake_provider(&root);
+    let logs = support::temp("project-graph-log");
+    let (bin, _, log, source) = fake_provider(&root, &logs);
     commit_fixture(&root);
     let config = root.join("exitbind.json");
 
@@ -364,7 +366,8 @@ fn project_graph_reuses_structured_results_and_reconciles_freshness_classes() {
 fn project_graph_refuses_provider_identity_drift_before_crediting_query() {
     let root = project("project-graph-provider-drift");
     fs::write(root.join("impact.rs"), "fn parse_config() {}\n").unwrap();
-    let (bin, _, log, source) = fake_provider(&root);
+    let logs = support::temp("project-graph-log");
+    let (bin, _, log, source) = fake_provider(&root, &logs);
     commit_fixture(&root);
     let config = root.join("exitbind.json");
     let enabled = graph_json(graph_command(
@@ -414,7 +417,8 @@ fn project_graph_refuses_provider_identity_drift_before_crediting_query() {
 fn project_graph_default_discovery_and_missing_provider_stay_project_bound() {
     let root = project("project-graph-default-target");
     fs::write(root.join("impact.rs"), "fn caller() {}\n").unwrap();
-    let (bin, _, log, source) = fake_provider(&root);
+    let logs = support::temp("project-graph-log");
+    let (bin, _, log, source) = fake_provider(&root, &logs);
     commit_fixture(&root);
     let enable = graph_json(graph_command(
         &root,
@@ -449,7 +453,8 @@ fn project_graph_default_discovery_and_missing_provider_stay_project_bound() {
 #[test]
 fn project_graph_reports_aggregate_dirty_byte_bound_without_indexing() {
     let root = project("project-graph-resource-bound");
-    let (bin, _, log, source) = fake_provider(&root);
+    let logs = support::temp("project-graph-log");
+    let (bin, _, log, source) = fake_provider(&root, &logs);
     commit_fixture(&root);
     fs::write(
         root.join("large-dirty.rs"),

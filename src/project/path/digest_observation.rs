@@ -94,8 +94,7 @@ mod tests {
     use super::*;
     #[test]
     fn streaming_digest_rejects_change_replacement_and_unsafe_paths() {
-        let root = std::env::temp_dir().join(format!("exitbind-streaming-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("streaming");
         for size in [0, 1, 32767, 32768, 32769, 8 * 1024 * 1024] {
             let bytes = vec![0xff; size];
             fs::write(root.join("guard"), &bytes).unwrap();

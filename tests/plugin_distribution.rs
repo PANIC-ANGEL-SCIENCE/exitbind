@@ -3,23 +3,12 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 fn script(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tooling/repository/release")
         .join(name)
-}
-
-fn temp_dir(label: &str) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("exitbind-plugin-{label}-{stamp}"));
-    fs::create_dir_all(&path).unwrap();
-    path
 }
 
 fn run_check(archive: Option<&Path>) {
@@ -40,7 +29,7 @@ fn isolated_distribution_and_catalogs_pass_the_deterministic_check() {
 
 #[test]
 fn archive_is_reproducible_and_existing_output_is_not_overwritten() {
-    let output_dir = temp_dir("archive");
+    let output_dir = support::temp("plugin-archive");
     let first = output_dir.join("one.tar.gz");
     let second = output_dir.join("two.tar.gz");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

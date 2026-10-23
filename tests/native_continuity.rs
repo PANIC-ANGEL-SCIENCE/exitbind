@@ -15,7 +15,7 @@ use std::{
 };
 
 struct Fixture {
-    base: PathBuf,
+    base: support::TempRoot,
     product: PathBuf,
     control: PathBuf,
     bindings: PathBuf,
@@ -131,12 +131,6 @@ impl Fixture {
             "config_path": self.host.join("config.toml"),
             "command": "codex resume existing-root-sentinel"
         })
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.base).unwrap();
     }
 }
 

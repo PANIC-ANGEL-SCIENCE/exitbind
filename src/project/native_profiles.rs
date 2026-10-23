@@ -160,11 +160,7 @@ mod tests {
 
     #[test]
     fn an_external_replacement_after_preflight_cannot_become_the_expected_source() {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-native-projection-{}-{}",
-            std::process::id(),
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        ));
+        let root = crate::test_root::temp("native-projection");
         fs::create_dir_all(root.join(".codex/agents")).unwrap();
         let item = Projection {
             agent: "worker".into(),

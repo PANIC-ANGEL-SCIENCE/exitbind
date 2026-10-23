@@ -20,7 +20,7 @@ fn invoke(root: &Path, args: &[&str], session: Option<&str>) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-fn project(label: &str) -> std::path::PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     fs::write(

@@ -358,8 +358,7 @@ mod tests {
 
     #[test]
     fn exact_paths_reject_globs_duplicates_and_missing_observe_files() {
-        let root =
-            std::env::temp_dir().join(format!("soulmate-boundary-unit-{}", std::process::id()));
+        let root = crate::test_root::temp("boundary-unit");
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(root.join("src/lib.rs"), "fixture\n").unwrap();
         assert_eq!(

@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     executable: PathBuf,
     work: String,
     assignment: String,
@@ -136,9 +136,10 @@ impl Fixture {
         );
     }
     fn edit(&self, action: &str, path: &str, content: &[u8]) -> Output {
+        let outside = support::temp("managed-edit-outside");
         let mut child = support::git_topology::command(&self.tool)
             .args([action, path])
-            .current_dir(std::env::temp_dir())
+            .current_dir(&outside)
             .env("PATH", "/missing-native-tools")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -164,11 +165,6 @@ impl Fixture {
             .collect::<Vec<_>>();
         assert_eq!(paths.len(), 1);
         paths[0].clone()
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 fn value(output: Output) -> Value {

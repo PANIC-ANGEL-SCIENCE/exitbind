@@ -7,12 +7,11 @@ use std::{
     fmt::Write as _,
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
     goal: String,
     old_ledger: String,
@@ -578,12 +577,6 @@ impl Fixture {
         )
         .unwrap();
         ".exitbind/artifacts/recovery.json".to_owned()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

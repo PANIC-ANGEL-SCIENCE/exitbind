@@ -10,7 +10,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
 }
 impl Fixture {
@@ -199,15 +199,6 @@ impl Fixture {
         );
         self.ok(&["work", "closeout", &self.work, "--export"], b"");
         assert_eq!(fs::read(self.ledger()).unwrap(), before);
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        if std::thread::panicking() {
-            eprintln!("retained fixture {}", self.root.display());
-        } else {
-            let _ = fs::remove_dir_all(&self.root);
-        }
     }
 }
 fn value(p: &Output) -> Value {

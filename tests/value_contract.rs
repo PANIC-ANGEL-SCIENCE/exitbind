@@ -7,7 +7,6 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Output,
-    sync::atomic::{AtomicU64, Ordering},
 };
 #[cfg(feature = "repository-checks")]
 use std::{collections::BTreeSet, os::unix::fs::PermissionsExt};
@@ -35,37 +34,7 @@ fn write_json(path: &Path, value: &Value) {
     fs::write(path, bytes).unwrap();
 }
 
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(label: &str) -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        loop {
-            let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path = env::temp_dir().join(format!(
-                "soulmate-value-contract-{label}-{}-{sequence}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Self { path },
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => panic!("create fixture: {error}"),
-            }
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+type TempDir = support::TempRoot;
 
 fn copy_relative(source: &Path, destination: &Path, relative: &str) {
     let from = source.join(relative);
@@ -77,7 +46,7 @@ fn copy_relative(source: &Path, destination: &Path, relative: &str) {
 #[cfg(feature = "repository-checks")]
 fn registry_fixture() -> TempDir {
     let source = repo_root();
-    let fixture = TempDir::new("registry");
+    let fixture = support::temp("value-contract-registry");
     let registry = read_json(&source.join("proof/claims.json"));
 
     copy_relative(&source, fixture.path(), "proof/claims.json");
@@ -105,7 +74,7 @@ fn registry_fixture() -> TempDir {
 
 fn schema_fixture() -> TempDir {
     let source = repo_root();
-    let fixture = TempDir::new("schemas");
+    let fixture = support::temp("value-contract-schemas");
     fs::create_dir_all(fixture.path().join("schema")).unwrap();
     for entry in fs::read_dir(source.join("schema")).unwrap() {
         let entry = entry.unwrap();
@@ -925,7 +894,7 @@ fn schema_lock_rejects_unknown_or_unversioned_lock_paths() {
 
 #[test]
 fn current_receipt_verification_refusal_does_not_emit_lifecycle_labels() {
-    let fixture = TempDir::new("verify-operational-refusal");
+    let fixture = support::temp("value-contract-verify-operational-refusal");
     let root = fixture.path();
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])

@@ -128,7 +128,7 @@ fn select(root: &Path, contract: &Value) {
     save_config(root, &config);
 }
 
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--skip-skills", "--root"])
@@ -384,7 +384,7 @@ fn worker_and_reviewer_receive_relevant_slice_and_lead_retains_proposals() {
         &root,
         &["hook-run"],
         Some(&json!({
-        "hook_event_name":"SubagentStart", "cwd":root, "agent_type":"worker"})),
+        "hook_event_name":"SubagentStart", "cwd":root.path(), "agent_type":"worker"})),
     );
     assert!(output.status.success(), "{output:?}");
     let hook_text = String::from_utf8(output.stdout).unwrap();

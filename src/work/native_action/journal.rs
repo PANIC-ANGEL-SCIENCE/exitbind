@@ -208,12 +208,7 @@ mod tests {
 
     #[test]
     fn exclusive_publication_preserves_the_first_complete_record() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-journal-{}-{}",
-            std::process::id(),
-            timestamp()
-        ));
-        fs::create_dir(&directory).unwrap();
+        let directory = crate::test_root::temp("journal");
         let path = directory.join("one.json");
         write_journal(&path, &json!({"status":"started"}), true).unwrap();
         assert!(write_journal(&path, &json!({"status":"wrong"}), true).is_err());
@@ -225,12 +220,7 @@ mod tests {
 
     #[test]
     fn short_write_never_publishes_or_overwrites_a_complete_journal() {
-        let directory = std::env::temp_dir().join(format!(
-            "exitbind-journal-fault-{}-{}",
-            std::process::id(),
-            timestamp()
-        ));
-        fs::create_dir(&directory).unwrap();
+        let directory = crate::test_root::temp("journal-fault");
         let path = directory.join("one.json");
         let short = |file: &mut File, bytes: &[u8]| {
             file.write_all(&bytes[..3]).unwrap();

@@ -10,3 +10,5 @@ mod bundle_reconstruction;
 mod event_shape_validation;
 #[path = "value_reconstruction/surface_compatibility.rs"]
 mod surface_compatibility;
+#[path = "support/temp_root.rs"]
+mod temp_root;

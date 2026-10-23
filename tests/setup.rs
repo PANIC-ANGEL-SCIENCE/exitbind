@@ -30,7 +30,7 @@ mod plan_card;
 
 use std::{fs, path::Path, process::Output};
 
-fn fixture(label: &str) -> std::path::PathBuf {
+fn fixture(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     root

@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: PathBuf,
     native_session: Option<(String, PathBuf)>,
 }
@@ -188,12 +188,6 @@ fn permissive_umask(command: &mut Command) {
             libc::umask(0o002);
             Ok(())
         });
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

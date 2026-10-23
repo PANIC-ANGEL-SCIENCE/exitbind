@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Output, Stdio},
 };
 mod support;
@@ -30,7 +30,7 @@ fn ok(root: &Path, args: &[&str], body: &[u8]) -> Value {
     assert!(output.status.success(), "{args:?}: {output:?}");
     serde_json::from_slice(&output.stdout).unwrap()
 }
-fn project(broad: bool) -> (PathBuf, String, String) {
+fn project(broad: bool) -> (support::TempRoot, String, String) {
     let root = support::temp("file-effect");
     support::git_topology::repository(&root);
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))

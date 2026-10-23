@@ -479,15 +479,7 @@ mod tests {
     #[test]
     fn actual_context_reads_keep_binding_changes_volatile_and_refuse_mid_use_rule_change() {
         use super::{project_parts, project_parts_after_reads, RequestedBinding};
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-context-mid-use-{}-{stamp}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("context-mid-use");
         let mut git = std::process::Command::new("git");
         for key in [
             "GIT_DIR",

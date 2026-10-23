@@ -1,12 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    process::Output,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, process::Output};
 
 fn invoke(arguments: &[&str]) -> Output {
     support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
@@ -21,16 +16,6 @@ fn text(output: &Output) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     )
-}
-
-fn temporary_parent(label: &str) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("soulmate-value-test-{label}-{stamp}"));
-    fs::create_dir(&path).expect("temporary parent should be created");
-    path
 }
 
 #[test]
@@ -109,7 +94,7 @@ fn benchmark_human_output_explains_the_bounded_result() {
 
 #[test]
 fn benchmark_exports_inspectable_bundle_with_private_file_modes() {
-    let parent = temporary_parent("export");
+    let parent = support::temp("value-test-export");
     let destination = parent.join("bundle");
     let destination_text = destination.to_str().unwrap();
     let output = invoke(&["benchmark", "--json", "--output", destination_text]);
@@ -177,7 +162,7 @@ fn benchmark_exports_inspectable_bundle_with_private_file_modes() {
 
 #[test]
 fn benchmark_refuses_existing_output_without_overwriting_it() {
-    let parent = temporary_parent("existing");
+    let parent = support::temp("value-test-existing");
     let destination = parent.join("already-there");
     fs::create_dir(&destination).unwrap();
     let sentinel = destination.join("sentinel");
@@ -199,7 +184,7 @@ fn benchmark_refuses_existing_output_without_overwriting_it() {
 fn benchmark_refuses_symlink_output_without_following_it() {
     use std::os::unix::fs::symlink;
 
-    let parent = temporary_parent("symlink");
+    let parent = support::temp("value-test-symlink");
     let real = parent.join("real");
     let link = parent.join("link");
     fs::create_dir(&real).unwrap();
@@ -212,7 +197,7 @@ fn benchmark_refuses_symlink_output_without_following_it() {
 
 #[test]
 fn benchmark_rejects_unknown_and_arbitrary_command_options() {
-    let parent = temporary_parent("options");
+    let parent = support::temp("value-test-options");
     let marker = parent.join("marker");
     let unknown = invoke(&["benchmark", "--json", "--unknown"]);
     assert!(!unknown.status.success(), "{}", text(&unknown));

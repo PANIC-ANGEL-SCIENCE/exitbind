@@ -1,12 +1,8 @@
 use serde_json::Value;
 mod support;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
-fn project() -> (PathBuf, String) {
+fn project() -> (support::TempRoot, String) {
     let root = support::temp("memory");
     let output = invoke(&[
         "init",
@@ -540,7 +536,8 @@ fn recall_source_rejects_a_symlinked_parent_directory() {
             .success()
     );
 
-    let outside = root.with_extension("outside-memory-source");
+    let outside_root = support::temp("memory-outside-source");
+    let outside = outside_root.join("source");
     fs::create_dir(&outside).unwrap();
     fs::write(outside.join("invariant.md"), "accepted invariant\n").unwrap();
     fs::remove_dir_all(&source_dir).unwrap();

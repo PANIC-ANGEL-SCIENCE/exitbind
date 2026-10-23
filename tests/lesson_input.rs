@@ -3,10 +3,10 @@
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf, process::Output};
+use std::{fs, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -75,11 +75,6 @@ impl Fixture {
             "--expires-at",
             "2100-01-01T00:00:00Z",
         ])
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

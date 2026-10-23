@@ -103,9 +103,7 @@ mod tests {
 
     #[test]
     fn exports_only_safe_ids_to_an_absolute_env_file() {
-        let root =
-            std::env::temp_dir().join(format!("exitbind-native-session-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_root::temp("native-session");
         let file = root.join("env");
         std::fs::write(&file, "export KEPT=1\n").unwrap();
         #[cfg(unix)]

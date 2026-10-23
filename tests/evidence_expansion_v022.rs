@@ -11,7 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: PathBuf,
 }
 
@@ -159,12 +159,6 @@ fn ledger_reference(work: &str) -> String {
         ".exitbind/runs/work-{}.jsonl",
         work.strip_prefix("smw_").unwrap()
     )
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {

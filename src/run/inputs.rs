@@ -495,14 +495,8 @@ mod tests {
 
     #[test]
     fn bounded_stream_hash_matches_existing_full_file_digest() {
-        let path = std::env::temp_dir().join(format!(
-            "exitbind-bounded-fingerprint-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock after Unix epoch")
-                .as_nanos()
-        ));
+        let root = crate::test_root::temp("bounded-fingerprint");
+        let path = root.join("fixture");
         let contents = (0..50_000)
             .map(|index| (index % 251) as u8)
             .collect::<Vec<_>>();

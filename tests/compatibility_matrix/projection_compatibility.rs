@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 #[path = "../support/git_topology.rs"]
 mod git_topology;
+#[path = "../support/temp_root.rs"]
+mod temp_root;
 use super::*;
 
 #[test]
@@ -16,12 +18,7 @@ fn current_exitbind_paths_are_active_and_legacy_paths_are_historical() {
     assert_eq!(legacy["defaultState"], ".soulmate");
     assert_eq!(legacy["status"], "historical-only");
 
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!("exitbind-matrix-current-{stamp}"));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root::temp("matrix-current");
     let initialized = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)
@@ -42,12 +39,7 @@ fn current_exitbind_paths_are_active_and_legacy_paths_are_historical() {
 
 #[test]
 fn producer_projection_keeps_current_writes_and_reads_frozen_historical_bytes() {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!("exitbind-producer-matrix-{stamp}"));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root::temp("producer-matrix");
     let initialized = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
         .arg(&root)

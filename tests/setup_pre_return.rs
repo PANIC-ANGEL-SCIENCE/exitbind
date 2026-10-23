@@ -1,12 +1,9 @@
 mod support;
 
 use serde_json::Value;
-use std::{
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{path::Path, process::Output};
 
-fn fixture(label: &str) -> PathBuf {
+fn fixture(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     root

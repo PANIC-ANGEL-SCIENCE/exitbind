@@ -60,9 +60,7 @@ mod tests {
         if !crate::compatibility::is_exitbind() {
             return;
         }
-        let root =
-            std::env::temp_dir().join(format!("exitbind-start-delivery-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_root::temp("start-delivery");
         let config = crate::project::onboarding::init_with_options(
             crate::project::onboarding::InitOptions {
                 product_root: root.to_str().unwrap(),

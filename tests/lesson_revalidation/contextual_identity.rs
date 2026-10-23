@@ -10,7 +10,7 @@ use super::support;
 use fixture::{Fixture, LEDGER};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 fn revalidate(f: &Fixture, ledger: &str, apply: bool) -> std::process::Output {
     let mut args = vec![

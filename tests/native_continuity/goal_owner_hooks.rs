@@ -65,18 +65,12 @@ fn the_event_list_reader_reads_a_differently_written_declaration() {
 }
 
 struct Fixture {
-    base: PathBuf,
+    _base: super::support::TempRoot,
     product: PathBuf,
     decoy: PathBuf,
     store: PathBuf,
     config: String,
     work: String,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.base);
-    }
 }
 
 fn exitbind(
@@ -171,7 +165,7 @@ impl Fixture {
             .unwrap()
             .to_owned();
         let mut fixture = Self {
-            base,
+            _base: base,
             product,
             decoy,
             store,

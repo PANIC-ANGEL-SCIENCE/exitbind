@@ -37,7 +37,7 @@ const SCAN_DIRS: &[&str] = &["docs", "examples", "schema", "scripts", "src"];
 const LATEST_INSTALL: &str =
     "curl -fsSL https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/latest/download/install.sh | sh";
 
-struct Fixture(PathBuf);
+struct Fixture(support::TempRoot);
 
 impl Fixture {
     fn new(label: &str) -> Self {
@@ -75,12 +75,6 @@ impl Fixture {
             "fixture did not contain {old} in {file}"
         );
         fs::write(path, text.replace(old, new)).unwrap();
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
     }
 }
 

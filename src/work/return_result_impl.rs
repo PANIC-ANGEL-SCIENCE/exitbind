@@ -372,19 +372,11 @@ fn remove_created_artifact(path: &Path) -> std::io::Result<()> {
 mod artifact_cleanup_tests {
     use super::remove_created_artifact;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn path(label: &str) -> std::path::PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("exitbind-{label}-{}-{nonce}", std::process::id()))
-    }
 
     #[test]
     fn created_artifact_cleanup_removes_the_file() {
-        let file = path("cleanup-file");
+        let root = crate::test_root::temp("cleanup-file");
+        let file = root.join("artifact");
         fs::write(&file, b"artifact").unwrap();
         remove_created_artifact(&file).unwrap();
         assert!(!file.exists());
@@ -392,7 +384,8 @@ mod artifact_cleanup_tests {
 
     #[test]
     fn cleanup_failure_remains_visible_to_the_caller() {
-        let directory = path("cleanup-directory");
+        let root = crate::test_root::temp("cleanup-directory");
+        let directory = root.join("artifact");
         fs::create_dir(&directory).unwrap();
         let error = remove_created_artifact(&directory).unwrap_err();
         assert_ne!(error.kind(), std::io::ErrorKind::NotFound);

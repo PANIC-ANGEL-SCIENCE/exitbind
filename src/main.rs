@@ -15,6 +15,8 @@ mod producer;
 mod project;
 mod run;
 mod session_goal;
+#[cfg(test)]
+mod test_root;
 mod value_benchmark;
 mod work;
 

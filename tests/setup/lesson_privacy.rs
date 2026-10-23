@@ -3,7 +3,7 @@
 //! writer, so `git status` lists none of them and the privacy gate's untracked
 //! enumeration (`git ls-files --others --exclude-standard`) never reaches a
 //! carried fact. R54 failed the privacy gate on exactly such a file.
-use super::lesson_carry::{accept, previous_project, Root};
+use super::lesson_carry::{accept, previous_project};
 use super::support;
 use serde_json::Value;
 use std::{fs, path::Path, process::Stdio};
@@ -28,12 +28,12 @@ fn carried_lessons_in_a_local_mode_checkout_are_never_listed_by_git() {
     // (Built at run time so this test source itself stays clean.)
     let fact = format!("Logs live under /{}/fixture-operator/runs.", "home");
     accept(&previous.0, "carry-private", &fact, "2100-01-01T00:00:00Z");
-    let base = Root(support::temp("lesson-privacy"));
-    let product = base.0.join("product");
-    let control = base.0.join("control");
+    let base = support::temp("lesson-privacy");
+    let product = base.join("product");
+    let control = base.join("control");
     // The local-mode state root sits inside an unrelated repository, which
     // the stamped configuration copy must never touch.
-    let outer = base.0.join("outer");
+    let outer = base.join("outer");
     let state = outer.join("state");
     for dir in [&product, &control, &state] {
         fs::create_dir_all(dir).unwrap();
@@ -80,7 +80,7 @@ fn carried_lessons_in_a_local_mode_checkout_are_never_listed_by_git() {
         ])
         .current_dir(&product)
         .env("PATH", &bin)
-        .env("EXITBIND_BINDINGS_DIR", base.0.join("bindings"))
+        .env("EXITBIND_BINDINGS_DIR", base.join("bindings"))
         .env("EXITBIND_NO_UPDATE_CHECK", "1")
         .stdin(Stdio::null());
     let output = support::run(&mut command);

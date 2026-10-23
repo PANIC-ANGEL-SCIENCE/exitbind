@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Project {
-    root: std::path::PathBuf,
+    root: support::TempRoot,
 }
 
 impl Project {

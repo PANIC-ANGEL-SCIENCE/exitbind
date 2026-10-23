@@ -12,7 +12,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -191,12 +191,6 @@ impl Fixture {
         self.outcome(&work, "approved");
         let result = self.outcome(&work, "accepted");
         (work, result)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -620,13 +614,14 @@ fn unrepresentable_output_refuses_before_write_and_representable_long_output_rep
 #[test]
 fn long_config_routes_require_exact_arguments_and_terminal_output_stays_bounded() {
     let parent = support::temp("closeout-long-path");
-    let mut root = parent.clone();
+    let mut root = parent.to_path_buf();
     // Five components keep macOS file paths practical while the exact
     // executable/config argv still exceeds closeout's 768-byte budget.
     for _ in 0..5 {
         root.push("segment".repeat(18));
     }
     fs::create_dir_all(&root).unwrap();
+    let root = support::temp_in(Some(&root), "closeout");
     support::git_topology::repository(&root);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])

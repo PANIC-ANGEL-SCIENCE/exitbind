@@ -5,12 +5,11 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -190,11 +189,6 @@ impl Fixture {
             w.to_owned(),
             prepared["intent"].as_str().unwrap().to_owned(),
         )
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

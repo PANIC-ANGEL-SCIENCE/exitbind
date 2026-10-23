@@ -3,7 +3,7 @@
 
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Output, Stdio};
 
 mod support;
@@ -48,7 +48,7 @@ fn fill(template: &Value, values: &[(&str, &str)]) -> Vec<String> {
         .collect()
 }
 
-fn project(label: &str, requirements: Value, source: &str) -> (PathBuf, String) {
+fn project(label: &str, requirements: Value, source: &str) -> (support::TempRoot, String) {
     let root = support::temp(label);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])

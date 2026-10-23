@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn exported_bundle_reconstructs_without_result_or_report() {
-    let parent = TempDir::new("run");
+    let parent = temp_root::temp("value-reconstruction-run");
     let destination = parent.path().join("bundle");
     let destination_text = destination
         .to_str()

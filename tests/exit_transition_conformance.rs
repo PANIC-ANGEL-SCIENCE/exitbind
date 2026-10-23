@@ -8,14 +8,14 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Output, Stdio},
 };
 
 const CHECK: &str = "test -f actual-product-check";
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {

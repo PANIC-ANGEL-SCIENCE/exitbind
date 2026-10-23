@@ -6,12 +6,11 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     work: String,
     worker: String,
     session: String,
@@ -112,9 +111,7 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        if !std::thread::panicking() {
-            fs::remove_dir_all(&self.root).unwrap();
-        }
+        if !std::thread::panicking() {}
     }
 }
 

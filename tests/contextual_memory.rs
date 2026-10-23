@@ -6,7 +6,7 @@ mod support;
 use fixture::{digest, Fixture, FACT, LEDGER, SPECIALIST_GUIDANCE, SPECIALIST_TASK, TASK};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf};
+use std::fs;
 
 #[test]
 fn lesson_source_preparation_is_exact_read_only_and_rejects_invalid_boundaries() {

@@ -15,7 +15,9 @@ use std::{
 
 struct Fixture {
     root: PathBuf,
-    cleanup_root: PathBuf,
+    _cleanup_root: support::TempRoot,
+    /// Counters and the native session store, outside the project.
+    sidecar: support::TempRoot,
     executable: PathBuf,
     native_session: Option<NativeSession>,
 }
@@ -44,10 +46,10 @@ fn isolated_command(program: impl AsRef<OsStr>) -> Command {
 impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
-        Self::at(root.clone(), root)
+        Self::at(root.to_path_buf(), root)
     }
 
-    fn at(root: PathBuf, cleanup_root: PathBuf) -> Self {
+    fn at(root: PathBuf, cleanup_root: support::TempRoot) -> Self {
         Self::at_with_executable(
             root,
             cleanup_root,
@@ -55,7 +57,11 @@ impl Fixture {
         )
     }
 
-    fn at_with_executable(root: PathBuf, cleanup_root: PathBuf, executable: PathBuf) -> Self {
+    fn at_with_executable(
+        root: PathBuf,
+        cleanup_root: support::TempRoot,
+        executable: PathBuf,
+    ) -> Self {
         fs::create_dir_all(&root).unwrap();
         support::git_topology::repository(&root);
         let output = isolated_command(&executable)
@@ -66,7 +72,8 @@ impl Fixture {
         assert!(output.status.success(), "{}", text(&output));
         Self {
             root,
-            cleanup_root,
+            _cleanup_root: cleanup_root,
+            sidecar: support::temp("action-forms-sidecar"),
             executable,
             native_session: None,
         }
@@ -79,9 +86,7 @@ impl Fixture {
             .expect("fixture root has a final component")
             .to_string_lossy()
             .into_owned();
-        let store = self
-            .root
-            .with_file_name(format!("{name}-native-session-goals"));
+        let store = self.sidecar.join("native-session-goals");
         assert!(
             !store.exists(),
             "fixture native session store already exists: {}",
@@ -308,7 +313,7 @@ impl Fixture {
     }
 
     fn counting_check(&self, name: &str, exit_code: i32) -> String {
-        let directory = self.root.with_extension("action-form-counters");
+        let directory = self.sidecar.join("action-form-counters");
         fs::create_dir_all(&directory).unwrap();
         let counter = directory.join(name);
         let script = directory.join(format!("{name}.sh"));
@@ -324,7 +329,7 @@ impl Fixture {
     }
 
     fn check_count(&self, name: &str) -> Vec<u8> {
-        fs::read(self.root.with_extension("action-form-counters").join(name)).unwrap_or_default()
+        fs::read(self.sidecar.join("action-form-counters").join(name)).unwrap_or_default()
     }
 
     fn ledger_path(&self, work: &str) -> PathBuf {
@@ -383,16 +388,6 @@ impl Fixture {
         assert!(check["requirementId"].is_null());
         assert_eq!(binding["requirementId"], check["requirementId"]);
         assert_eq!(check["observationEventSha256"], admission["eventSha256"]);
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        if let Some(session) = &self.native_session {
-            let _ = std::fs::remove_dir_all(&session.store);
-        }
-        let _ = std::fs::remove_dir_all(self.root.with_extension("action-form-counters"));
-        let _ = std::fs::remove_dir_all(&self.cleanup_root);
     }
 }
 
@@ -514,7 +509,7 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
         components.iter().all(|component| component.len() <= 255),
         "grouped-route fixture exceeds the filesystem component limit"
     );
-    let mut root = cleanup_root.clone();
+    let mut root = cleanup_root.to_path_buf();
     for component in components {
         root.push(component);
     }

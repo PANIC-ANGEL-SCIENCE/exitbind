@@ -519,7 +519,7 @@ fn concurrent_goal_incorporation_preserves_each_successful_revision() {
     );
     let handles = (0..8)
         .map(|index| {
-            let root = project.root.clone();
+            let root = project.root.to_path_buf();
             thread::spawn(move || {
                 let finding = format!("finding-{index}");
                 let output = git_topology::command(env!("CARGO_BIN_EXE_exitbind"))

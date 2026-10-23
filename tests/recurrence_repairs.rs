@@ -24,7 +24,7 @@ fn text(output: &Output) -> String {
 }
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -138,11 +138,6 @@ impl Fixture {
         assert!(output.status.success(), "{}", text(&output));
         let detail = self.value(&["work", "detail", &work, "--json"]);
         (work, detail)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

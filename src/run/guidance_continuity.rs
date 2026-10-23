@@ -210,9 +210,7 @@ mod tests {
 
     #[test]
     fn tracked_memory_sources_are_reported_and_untracked_ones_are_not() {
-        let root =
-            std::env::temp_dir().join(format!("exitbind-guidance-tracked-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = crate::test_root::temp("guidance-tracked");
         std::fs::create_dir_all(root.join("docs")).unwrap();
         std::fs::write(root.join("docs/RULES.md"), "rule").unwrap();
         std::fs::write(root.join("note.md"), "advice").unwrap();
@@ -502,14 +500,11 @@ mod tests {
     fn incidental_checker_read_preserves_evidence_but_declared_verdict_input_does_not() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let unique = SystemTime::now()
+        let _unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-guidance-checker-{}-{unique}",
-            std::process::id()
-        ));
+        let root = crate::test_root::temp("guidance-checker");
         std::fs::create_dir_all(root.join("memory")).unwrap();
         std::fs::write(root.join("memory/advice.md"), "first advice\n").unwrap();
         let checker = root.join("check.py");
@@ -527,7 +522,7 @@ mod tests {
         assert!(String::from_utf8_lossy(&observed.stdout).contains("first advice"));
 
         let mut loaded = loaded(config());
-        loaded.product_root = root.clone();
+        loaded.product_root = root.to_path_buf();
         loaded.state_root = root.join(".exitbind");
         loaded.path = root.join("exitbind.json");
         let state = json!({

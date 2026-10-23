@@ -44,7 +44,7 @@ esac
     fs::write(fixture.0.join("dist/archive"), b"fixture").unwrap();
     let calls = fixture.0.join("calls");
     let path = std::env::join_paths(
-        std::iter::once(fixture.0.clone())
+        std::iter::once(fixture.0.to_path_buf())
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();

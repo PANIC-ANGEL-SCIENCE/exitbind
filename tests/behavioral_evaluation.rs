@@ -1,10 +1,6 @@
 mod support;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
 const EVALUATOR: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -12,7 +8,7 @@ const EVALUATOR: &str = concat!(
 );
 const TARGET: &str = "synthetic-target";
 
-fn root(label: &str) -> PathBuf {
+fn root(label: &str) -> support::TempRoot {
     support::temp(&format!("behavioral-evaluation-{label}"))
 }
 
@@ -46,7 +42,7 @@ fn score(root: &Path, expected_result: &str, expected_disposition: &str) -> Outp
     )
 }
 
-fn cleanup(root: PathBuf) {
+fn cleanup(root: support::TempRoot) {
     fs::remove_dir_all(root).unwrap();
 }
 

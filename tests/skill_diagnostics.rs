@@ -11,7 +11,7 @@ use std::{
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
 const EXITBIND_REFERENCE: &[u8] = include_bytes!("../skills/exitbind/references/operators.md");
 
-fn temp(label: &str) -> PathBuf {
+fn temp(label: &str) -> support::TempRoot {
     support::temp(&format!("skill-diagnostics-{label}"))
 }
 
@@ -63,7 +63,7 @@ fn cache_guidance_keeps_host_and_session_layers_unverified() {
     }
 }
 
-fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+fn local_project(label: &str) -> (support::TempRoot, PathBuf, PathBuf, PathBuf) {
     let base = temp(label);
     let product = base.join("product");
     let control = base.join("control");

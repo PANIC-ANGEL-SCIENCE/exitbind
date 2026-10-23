@@ -90,7 +90,7 @@ fn resume_hook(project: &Project, session: &str, selectors: &[(&str, &str)]) -> 
         "hook_event_name":"SessionStart",
         "source":"resume",
         "session_id":session,
-        "cwd":project.root,
+        "cwd":project.root.path(),
     });
     let output = exitbind(
         &project.root,
@@ -227,7 +227,7 @@ fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
 
     // (c) `session recovery show --json` carries the same derived Work.
     let show = ok_json(exitbind(
-        &std::env::temp_dir(),
+        &super::support::temp("resume-show-outside"),
         &project.session_store,
         &claude(session),
         &["session", "recovery", "show", "--json"],
@@ -397,10 +397,8 @@ fn resume_hook_names_the_open_worker_assignment_and_the_dirty_checkout_trees() {
             "fixture",
         ],
     );
-    let extra = root.with_file_name(format!(
-        "{}-worktree",
-        root.file_name().unwrap().to_str().unwrap()
-    ));
+    let extra_root = super::support::temp("resume-extra-worktree");
+    let extra = extra_root.join("worktree");
     git(
         &root,
         &[
@@ -476,7 +474,7 @@ fn resume_hook_names_the_open_worker_assignment_and_the_dirty_checkout_trees() {
         "{context}"
     );
     let show = ok_json(exitbind(
-        &std::env::temp_dir(),
+        &super::support::temp("resume-show-outside"),
         &project.session_store,
         &claude(session),
         &["session", "recovery", "show", "--json"],
@@ -574,7 +572,7 @@ fn resume_hook_on_a_closed_goal_states_one_fact_and_no_recovery_route() {
 
     // The read route keeps its diagnostics.
     let show = ok_json(exitbind(
-        &std::env::temp_dir(),
+        &super::support::temp("resume-show-outside"),
         &project.session_store,
         &claude(session),
         &["session", "recovery", "show", "--json"],

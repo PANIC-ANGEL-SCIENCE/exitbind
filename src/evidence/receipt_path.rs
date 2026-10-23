@@ -75,10 +75,9 @@ mod tests {
 
     #[test]
     fn outside_absolute_output_explains_state_root_scope() {
-        let root =
-            std::env::temp_dir().join(format!("exitbind-receipt-scope-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
-        let outside = std::env::temp_dir().join("outside-receipt.json");
+        let root = crate::test_root::temp("receipt-scope");
+        let outside_root = crate::test_root::temp("receipt-outside");
+        let outside = outside_root.join("outside-receipt.json");
         let error = receipt_path(&root, outside.to_str().unwrap()).unwrap_err();
         assert!(error.contains("--output"));
         assert!(error.contains("StateRoot-relative"));

@@ -84,11 +84,12 @@ fn native_graph_command(
     command.output().unwrap()
 }
 
-fn install_native_provider(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+/// The provider log lives in `logs`, outside the project it observes.
+fn install_native_provider(root: &Path, logs: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let bin = root.join("recovery-provider-bin");
     fs::create_dir_all(&bin).unwrap();
     let executable = bin.join("codegraph");
-    let log = root.with_extension("recovery-codegraph.log");
+    let log = logs.join("recovery-codegraph.log");
     fs::write(
         &executable,
         r##"#!/bin/sh
@@ -316,7 +317,8 @@ fn existing_native_hint_checkpoint_restores_and_revalidates_graph_without_losing
     assert!(!rejected.status.success());
     assert_eq!(fs::read(&before_hint).unwrap(), original_hint);
 
-    let (bin, log, source) = install_native_provider(&root);
+    let logs = support::temp("project-graph-recovery-log");
+    let (bin, log, source) = install_native_provider(&root, &logs);
     let member_config = member["configPath"].as_str().unwrap();
     let enabled = native_graph_command(
         &root,

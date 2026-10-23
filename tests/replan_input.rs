@@ -12,7 +12,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: PathBuf,
     work: String,
     assignment: String,
@@ -113,12 +113,6 @@ impl Fixture {
             "work-{}.jsonl",
             self.work.strip_prefix("smw_").unwrap()
         ))
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

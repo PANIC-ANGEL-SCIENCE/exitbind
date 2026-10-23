@@ -5,9 +5,9 @@ mod contextual_identity;
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf, process::Output};
+use std::{fs, process::Output};
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -106,11 +106,6 @@ impl Fixture {
         let mut c = self.config();
         c["agents"]["worker"]["memoryRead"] = json!(["project-lessons.v1"]);
         self.save(&c);
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

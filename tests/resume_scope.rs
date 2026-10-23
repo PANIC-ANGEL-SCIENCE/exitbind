@@ -20,7 +20,7 @@ fn init(root: &Path) {
 
 fn invoke(args: &[&str]) -> std::process::Output {
     support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
+        .current_dir(support::temp("resume-scope-outside").path())
         .env("PATH", "/nonexistent")
         .args(args)
         .output()

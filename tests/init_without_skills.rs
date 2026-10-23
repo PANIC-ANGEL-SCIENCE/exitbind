@@ -1,12 +1,8 @@
 mod support;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
-fn temp(label: &str) -> PathBuf {
+fn temp(label: &str) -> support::TempRoot {
     let root = support::temp(&format!("init-without-skills-{label}"));
     support::git_topology::repository(&root);
     root

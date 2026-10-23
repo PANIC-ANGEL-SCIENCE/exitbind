@@ -158,7 +158,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     let mut wrong_session_event = json!({
         "hook_event_name":"PreCompact",
         "session_id":"different-session",
-        "cwd":context_project.root,
+        "cwd":context_project.root.path(),
     });
     let rejected = recovery_hook(&context_project, store, session, &wrong_session_event);
     assert!(rejected.status.success());
@@ -169,7 +169,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         let payload = json!({
             "hook_event_name":event,
             "session_id":session,
-            "cwd":context_project.root,
+            "cwd":context_project.root.path(),
         });
         let output = recovery_hook(&context_project, store, session, &payload);
         assert!(output.status.success(), "{output:?}");
@@ -262,7 +262,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         "hook_event_name":"SessionStart",
         "source":"resume",
         "session_id":session,
-        "cwd":context_project.root,
+        "cwd":context_project.root.path(),
     });
     let output = recovery_hook(&context_project, store, session, &start);
     assert!(output.status.success(), "{output:?}");
@@ -280,7 +280,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     assert!(context.len() <= 4096);
 
     let show = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
+        .current_dir(super::super::support::temp("recovery-show-outside").path())
         .args(["session", "recovery", "show", "--json"])
         .env("PATH", "")
         .env("CODEX_THREAD_ID", session)
@@ -518,7 +518,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     assert!(after_context.contains("session recovery show --json"));
     let shown_after_advance =
         super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-            .current_dir(std::env::temp_dir())
+            .current_dir(super::super::support::temp("recovery-show-outside").path())
             .args(["session", "recovery", "show", "--json"])
             .env("CODEX_THREAD_ID", session)
             .env("EXITBIND_SESSION_GOALS_DIR", store)
@@ -548,7 +548,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
     .unwrap();
     let changed_guidance =
         super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-            .current_dir(std::env::temp_dir())
+            .current_dir(super::super::support::temp("recovery-show-outside").path())
             .args(["session", "recovery", "show", "--json"])
             .env("CODEX_THREAD_ID", session)
             .env("EXITBIND_SESSION_GOALS_DIR", store)
@@ -582,7 +582,7 @@ fn codex_compaction_checkpoints_preserve_only_owner_bound_navigation_metadata() 
         .unwrap()
         .contains("hint is unusable"));
     let corrupt_show = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
+        .current_dir(super::super::support::temp("recovery-show-outside").path())
         .args(["session", "recovery", "show", "--json"])
         .env("CODEX_THREAD_ID", session)
         .env("EXITBIND_SESSION_GOALS_DIR", store)
@@ -641,7 +641,7 @@ fn recovery_hook(
 
 fn recovery_show(session: &str, store: &Path) -> Value {
     let output = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-        .current_dir(std::env::temp_dir())
+        .current_dir(super::super::support::temp("recovery-show-outside").path())
         .args(["session", "recovery", "show", "--json"])
         .env("CODEX_THREAD_ID", session)
         .env("EXITBIND_SESSION_GOALS_DIR", store)

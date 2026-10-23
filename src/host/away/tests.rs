@@ -37,7 +37,7 @@ fn harness_requirement_does_not_upgrade_evidence() {
 
 #[test]
 fn prompt_keeps_input() {
-    let root = std::env::temp_dir().join(format!("soulmate-away-prompt-{}", std::process::id()));
+    let root = crate::test_root::temp("away-prompt");
     let loaded = Loaded {
         config: json!({}),
         agents: std::collections::BTreeMap::new(),
@@ -47,9 +47,9 @@ fn prompt_keeps_input() {
         workflows: std::collections::BTreeMap::new(),
         verification_preparation: None,
         path: root.join("soulmate.json"),
-        control_root: root.clone(),
-        product_root: root.clone(),
-        state_root: root.clone(),
+        control_root: root.to_path_buf(),
+        product_root: root.to_path_buf(),
+        state_root: root.to_path_buf(),
         mode: crate::project::layout_types::Mode::Portable,
         project_id: None,
         source: String::new(),

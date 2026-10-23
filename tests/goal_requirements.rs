@@ -21,12 +21,16 @@ struct Project {
     root: PathBuf,
     fixture_store: PathBuf,
     native_session: Option<(String, PathBuf)>,
+    /// Holds the project and everything a test keeps beside it.
+    _base: support::TempRoot,
 }
 
 type NativeStoreSnapshot = (bool, Vec<(String, Option<Vec<u8>>)>);
 impl Project {
     fn new(label: &str) -> Self {
-        let root = support::temp(label);
+        let base = support::temp(label);
+        let root = base.join("project");
+        fs::create_dir(&root).unwrap();
         let mut init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         init.args(["init", "--mode", "portable", "--root"])
             .arg(&root)
@@ -52,6 +56,7 @@ impl Project {
             fixture_store: root.with_file_name(format!("{name}-native-session-goals")),
             root,
             native_session: None,
+            _base: base,
         }
     }
     fn with_native_session(mut self, identity: &str) -> Self {
@@ -312,7 +317,8 @@ impl Project {
         self.file(
             "check.sh",
             r#"set -eu
-scratch=$(mktemp -d)
+scratch="$PWD/.scratch-$$"
+rm -rf "$scratch"; mkdir "$scratch"
 trap 'rm -rf "$scratch"' EXIT
 db="$scratch/names"
 : > "$db"
@@ -513,19 +519,6 @@ esac
             }
         }
         panic!("fixture did not finish");
-    }
-}
-impl Drop for Project {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
-        let store = self
-            .native_session
-            .as_ref()
-            .map(|(_, store)| store)
-            .unwrap_or(&self.fixture_store);
-        if store.exists() {
-            fs::remove_dir_all(store).unwrap();
-        }
     }
 }
 fn row(status: &Value, id: &str) -> Value {

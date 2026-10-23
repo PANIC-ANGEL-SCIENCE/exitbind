@@ -16,7 +16,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -161,12 +161,6 @@ fn stable_rules(prompt: &str) -> String {
             .find("CURRENT VOLATILE NATIVE PROJECT CONTEXT")
             .unwrap();
     prompt[start..end].to_owned()
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
 }
 
 #[test]

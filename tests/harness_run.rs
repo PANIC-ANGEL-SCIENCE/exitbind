@@ -7,7 +7,7 @@ use std::{
     process::Output,
 };
 
-fn project() -> (PathBuf, String) {
+fn project() -> (support::TempRoot, String) {
     let root = support::temp("harness-run");
     let initialized = invoke(&[
         "init",

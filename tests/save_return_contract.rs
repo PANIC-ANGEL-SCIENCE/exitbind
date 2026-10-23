@@ -7,12 +7,11 @@ use serde_json::Value;
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -98,12 +97,6 @@ impl Fixture {
         let completed = self.return_result(work, &worker, "completed", b"implementation");
         assert!(completed.status.success(), "{}", text(&completed));
         self.json(&["work", "check", work], b"")["next"].clone()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

@@ -476,9 +476,7 @@ mod tests {
 
     #[test]
     fn a_target_that_changed_since_it_was_read_is_not_replaced() {
-        let root = std::env::temp_dir().join(format!("exitbind-cas-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let root = crate::test_root::temp("cas");
         let target = root.join("managed.json");
         fs::write(&target, b"what someone else wrote\n").unwrap();
 

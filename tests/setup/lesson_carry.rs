@@ -43,17 +43,17 @@ fn ok(root: &Path, args: &[&str]) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-pub(super) struct Root(pub(super) PathBuf);
-impl Drop for Root {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+/// A fixture project and the temp root that holds it. Files a test keeps next
+/// to the project (`<project>.home`, `<project>.session-goals`) stay inside
+/// that root, so the guard removes them with it.
+pub(super) struct Root(pub(super) PathBuf, pub(super) support::TempRoot);
 
 pub(super) fn repository(label: &str) -> Root {
-    let root = support::temp(label);
+    let base = support::temp(label);
+    let root = base.join("project");
+    fs::create_dir(&root).unwrap();
     support::git_topology::repository(&root);
-    Root(root)
+    Root(root, base)
 }
 
 /// The previous project: opted in to project lessons by its owner, with the

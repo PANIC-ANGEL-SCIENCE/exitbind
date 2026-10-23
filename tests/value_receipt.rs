@@ -1,22 +1,18 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 mod support;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
 const CHECK: &str = "exitbind check --config verification.json";
 
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let output = invoke_exitbind(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));
     root
 }
 
-fn exitbind_project(label: &str) -> PathBuf {
+fn exitbind_project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let output = invoke_exitbind(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(output.status.success(), "{}", text(&output));

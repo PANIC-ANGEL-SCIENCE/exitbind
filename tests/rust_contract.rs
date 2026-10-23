@@ -3,10 +3,10 @@ use serde_json::{json, Value};
 mod support;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-fn temp(label: &str) -> PathBuf {
+fn temp(label: &str) -> support::TempRoot {
     support::temp(&format!("rust-contract-{label}"))
 }
 
@@ -17,7 +17,7 @@ fn invoke(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
-fn project(label: &str) -> (PathBuf, String) {
+fn project(label: &str) -> (support::TempRoot, String) {
     let root = temp(label);
     let output = invoke(&[
         "init",
@@ -206,7 +206,7 @@ fn hooks_preserve_unrelated_settings_and_hook_runtime_presents_bounded_context()
     write!(
         child.stdin.take().unwrap(),
         "{}",
-        json!({"hook_event_name":"SubagentStart","cwd":root,"agent_name":"worker"})
+        json!({"hook_event_name":"SubagentStart","cwd":root.path(),"agent_name":"worker"})
     )
     .unwrap();
     let output = child.wait_with_output().unwrap();

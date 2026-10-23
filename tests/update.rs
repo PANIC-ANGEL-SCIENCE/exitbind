@@ -508,7 +508,7 @@ fn self_update_that_renames_over_the_running_binary_keeps_the_new_binary() {
 /// tarball holding a stub binary that reports `version`, and its checksum.
 /// `curl` is replaced so an updater under test reaches only these files.
 struct FakeRelease {
-    root: std::path::PathBuf,
+    root: support::TempRoot,
     path: String,
     version: &'static str,
 }

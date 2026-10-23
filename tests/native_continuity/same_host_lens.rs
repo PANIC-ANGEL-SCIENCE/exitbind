@@ -35,17 +35,11 @@ fn sha(bytes: &[u8]) -> String {
 }
 
 struct Fixture {
-    base: PathBuf,
+    base: super::support::TempRoot,
     product: PathBuf,
     store: PathBuf,
     config: String,
     work: String,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.base);
-    }
 }
 
 /// `argv[0]` is the executable; `session` is the native session selector.

@@ -13,7 +13,6 @@ use std::{
     fs::File,
     io::Read,
     process::{ExitStatus, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(target_os = "linux")]
@@ -38,24 +37,13 @@ pub(super) fn isolated_with_budget(
     mode: &str,
     budget: Duration,
 ) -> Result<Captured, String> {
-    let root = std::env::temp_dir().join(format!(
-        "exitbind-reaper-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir(&root).map_err(|error| format!("fixture directory: {error}"))?;
+    let root = crate::test_root::temp("reaper");
     let result = supervise(test, mode, &root, budget);
     match result {
-        Ok(captured) => {
-            let _ = fs::remove_dir_all(root);
-            Ok(captured)
-        }
+        Ok(captured) => Ok(captured),
         Err(error) => Err(format!(
             "{error}; fixture capture retained at {}",
-            root.display()
+            root.keep().display()
         )),
     }
 }
@@ -214,13 +202,19 @@ pub(super) struct OwnedGroup {
     pub marker: PathBuf,
     pub owner: PathBuf,
     registration: PathBuf,
+    _scratch: Option<crate::test_root::TempRoot>,
 }
 
 impl OwnedGroup {
     pub fn launch(mode: &str, reap: bool) -> Self {
-        let root = std::env::var_os("EXITBIND_CLEANUP_FIXTURE_ROOT")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
+        // The isolated child gets its root from its parent; a direct run owns one.
+        let (root, scratch) = match std::env::var_os("EXITBIND_CLEANUP_FIXTURE_ROOT") {
+            Some(root) => (PathBuf::from(root), None),
+            None => {
+                let scratch = crate::test_root::temp("cleanup-owned");
+                (scratch.to_path_buf(), Some(scratch))
+            }
+        };
         let marker = root.join(format!(
             "exitbind-cleanup-{}-{reap}.ready",
             std::process::id()
@@ -237,6 +231,7 @@ impl OwnedGroup {
             registration: marker.with_extension("group"),
             marker,
             owner,
+            _scratch: scratch,
         };
         fs::write(&guard.registration, group.to_string()).expect("register owned fixture group");
         guard

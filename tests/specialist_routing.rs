@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn input(&self, args: &[&str], input: &str) -> Value {
@@ -367,7 +367,7 @@ fn specialist_only_child_preparation_binds_and_rechecks_before_hook_presentation
         context["specialistExperience"]["experience"][0]["revision"],
         "r1"
     );
-    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root,"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
+    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root.path(),"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
     assert!(hook["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap()
@@ -377,7 +377,7 @@ fn specialist_only_child_preparation_binds_and_rechecks_before_hook_presentation
         .call(&["work", "child", "context", &work, intent])
         .status
         .success());
-    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root,"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
+    let hook = f.input(&["hook-run"], &json!({"hook_event_name":"SubagentStart","cwd":f.root.path(),"session_id":"parent","agent_id":"child","agent_type":"record_specialist"}).to_string());
     assert!(!hook["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap()
@@ -520,11 +520,6 @@ fn actual_work_recipient_excludes_wrong_host_command_guard_and_expired_experienc
         assert!(!serde_json::to_string(&detail["recipientContext"])
             .unwrap()
             .contains("Track presence and sum independently."));
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

@@ -375,9 +375,7 @@ mod tests {
 
     #[test]
     fn relative_path_allows_only_a_missing_leaf_under_a_real_parent() {
-        let root =
-            std::env::temp_dir().join(format!("soulmate-project-path-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("project-path");
         assert_eq!(
             rel(&root, &root.join("future.jsonl")).unwrap(),
             "future.jsonl"
@@ -391,9 +389,7 @@ mod tests {
     fn relative_path_rejects_non_utf8_evidence_names() {
         use std::os::unix::ffi::OsStringExt;
 
-        let root =
-            std::env::temp_dir().join(format!("soulmate-project-path-utf8-{}", std::process::id()));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("project-path-utf8");
         let path = root.join(std::ffi::OsString::from_vec(vec![b'a', 0xff]));
         assert!(rel(&root, &path).unwrap_err().contains("not valid UTF-8"));
         fs::remove_dir_all(root).unwrap();
@@ -404,11 +400,9 @@ mod tests {
     fn secure_observation_distinguishes_missing_from_unsafe_components() {
         use std::os::unix::fs::symlink;
 
-        let root = std::env::temp_dir().join(format!(
-            "soulmate-project-path-secure-{}",
-            std::process::id()
-        ));
-        let outside = root.with_extension("outside");
+        let base = crate::test_root::temp("project-path-secure");
+        let root = base.join("root");
+        let outside = base.join("outside");
         fs::create_dir(&root).unwrap();
         fs::create_dir(&outside).unwrap();
 

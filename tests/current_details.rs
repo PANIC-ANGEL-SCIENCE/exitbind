@@ -10,7 +10,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: PathBuf,
 }
 impl Fixture {
@@ -133,7 +133,7 @@ impl Fixture {
             assert_eq!(argv[5], "--json");
             assert_eq!(argv[6], "--config");
             let output = support::git_topology::command(&argv[0])
-                .current_dir(std::env::temp_dir())
+                .current_dir(support::temp("details-outside").path())
                 .env(
                     "PATH",
                     format!(
@@ -188,11 +188,6 @@ impl Fixture {
             .collect::<Vec<_>>();
         files.sort();
         files
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

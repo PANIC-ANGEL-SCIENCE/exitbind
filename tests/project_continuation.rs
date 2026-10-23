@@ -18,7 +18,7 @@ const PRESERVE: &str = "Keep existing records.";
 const OBLIGATION: &str = "Preserve valid records when importing.";
 
 struct Project {
-    root: PathBuf,
+    root: support::TempRoot,
     spec: Value,
     plan: Value,
 }
@@ -91,7 +91,7 @@ impl Project {
             "priorityPolicy":"Use current implementation and accepted Work evidence.",
             "expiresAt":"2099-01-01T00:00:00Z","maxWorks":3,"maxActions":12,"maxParallel":2,
             "maxElapsedSeconds":3600,"externalPublication":false},"sources":[{
-            "id":"brief","kind":kind,"repository":if kind=="git" {json!(project.root)} else {Value::Null},
+            "id":"brief","kind":kind,"repository":if kind=="git" {json!(project.root.path())} else {Value::Null},
             "revision":revision,"path":"docs/brief.md","section":"# Direction","sha256":digest,
             "acquiredAt":"2026-01-01T00:00:00Z",
             "currentness":if kind=="git" {"checkout_head"} else {"declared_export"},"trust":"ownerDirection"}]});
@@ -406,12 +406,6 @@ impl Project {
             .collect::<Vec<_>>();
         paths.sort();
         paths
-    }
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

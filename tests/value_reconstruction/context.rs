@@ -4,8 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    path::{Path},
 };
 
 const FORMAT_MARKER: &str = "x-soulmate-format-version";
@@ -23,37 +22,6 @@ const FIXTURE_CONFIGS: &[&str] = &[CURRENT_FIXTURE_CONFIG, HISTORICAL_FIXTURE_CO
 const FIXTURE_INVALID: &str = "fixtures/verification-invalid.json";
 const FIXTURE_VALID: &str = "fixtures/verification-valid.json";
 
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(label: &str) -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        loop {
-            let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "soulmate-value-reconstruction-{label}-{}-{sequence}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Self { path },
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => panic!("cannot create temporary directory: {error}"),
-            }
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 #[derive(Clone)]
 struct ManifestEntry {

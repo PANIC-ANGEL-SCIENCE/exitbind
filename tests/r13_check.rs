@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -45,7 +45,6 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_file(self.marker());
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

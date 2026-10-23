@@ -20,7 +20,7 @@ const HOST_CONTEXT: &[&str] = &[
     "XDG_STATE_HOME",
 ];
 
-struct Fixture(PathBuf);
+struct Fixture(support::TempRoot);
 
 impl Fixture {
     fn new() -> Self {
@@ -38,12 +38,6 @@ impl Fixture {
         let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
         command.current_dir(&self.0);
         command
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

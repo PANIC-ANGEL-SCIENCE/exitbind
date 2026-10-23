@@ -14,7 +14,7 @@ const REFERENCE: &str = include_str!("../REFERENCE.md");
 const RUN_RECOVERY_REFERENCE: &str = include_str!("../docs/reference-run-and-recovery.md");
 const EXTERNAL_SENTINEL: &[u8] = b"host-owned sentinel\n";
 
-fn temp(label: &str) -> PathBuf {
+fn temp(label: &str) -> support::TempRoot {
     support::temp(&format!("skill-refresh-{label}"))
 }
 
@@ -37,7 +37,7 @@ fn output_text(output: &Output) -> String {
     )
 }
 
-fn local_project(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+fn local_project(label: &str) -> (support::TempRoot, PathBuf, PathBuf, PathBuf) {
     let base = temp(label);
     fs::write(base.join("external-sentinel"), EXTERNAL_SENTINEL).unwrap();
     let product = base.join("product");

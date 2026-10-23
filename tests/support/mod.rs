@@ -1,27 +1,44 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub mod git_topology;
+mod temp_root;
 
-pub fn temp(label: &str) -> PathBuf {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    loop {
-        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "exitbind-{label}-{}-{sequence}",
-            std::process::id()
-        ));
-        match std::fs::create_dir(&path) {
-            Ok(()) => return std::fs::canonicalize(path).expect("canonicalize test directory"),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => panic!("create test directory: {error}"),
+#[allow(unused_imports)]
+pub use temp_root::{temp, temp_in, TempRoot, KEPT};
+
+/// A host can explicitly report unavailable no-Git coverage. By default a
+/// contaminated temporary namespace fails instead of silently skipping tests.
+#[allow(dead_code)]
+pub fn marker_free_temp(label: &str) -> Option<TempRoot> {
+    let parent = std::env::var_os("EXITBIND_TEST_NO_GIT_ROOT").map(PathBuf::from);
+    let root = temp_in(parent.as_deref(), label);
+    let parent = root.parent().expect("no-Git fixture parent");
+    if let Some(marker) = git_topology::marker(parent) {
+        let detail = format!(
+            "marker-free coverage unavailable: {} inherits {}",
+            parent.display(),
+            marker.display()
+        );
+        if std::env::var("EXITBIND_TEST_NO_GIT_UNAVAILABLE").as_deref() == Ok("1") {
+            eprintln!("COVERAGE UNAVAILABLE: {label}: {detail}; no product behavior was exercised");
+            return None;
         }
+        panic!("{detail}; provide a genuinely marker-free EXITBIND_TEST_NO_GIT_ROOT, or explicitly report unavailable coverage with EXITBIND_TEST_NO_GIT_UNAVAILABLE=1");
     }
+    assert!(
+        git_topology::marker(&root).is_none(),
+        "fixture topology mismatch: marker-free ancestors required"
+    );
+    assert!(
+        git_topology::worktree(&root).is_none(),
+        "fixture topology mismatch: no Git identity required"
+    );
+    Some(root)
 }
 
 /// Rewrite a Work ledger's start event as a legacy (unmarked) start event and

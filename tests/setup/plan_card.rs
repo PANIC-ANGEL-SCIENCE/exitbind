@@ -124,7 +124,7 @@ fn porcelain(root: &Path) -> String {
 #[test]
 fn an_approved_plan_with_a_table_becomes_a_private_card_and_one_line() {
     let owned: Root = repository("plan-card");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
 
     // Another tool and a plan without a table: nothing written, nothing printed.
@@ -206,7 +206,7 @@ fn an_approved_plan_with_a_table_becomes_a_private_card_and_one_line() {
 #[test]
 fn claude_hooks_apply_adds_the_plan_approval_record_with_its_matcher() {
     let owned: Root = repository("plan-card-hooks");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     let output = call(
         &root,
         &[
@@ -257,7 +257,7 @@ fn claude_hooks_apply_adds_the_plan_approval_record_with_its_matcher() {
 fn an_unreadable_exclude_file_is_kept_and_a_readable_one_keeps_its_bytes() {
     use std::os::unix::fs::PermissionsExt;
     let owned: Root = repository("plan-card-exclude");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
     let exclude = exclude_path(&root);
     let latin1 = b"# keep\n/caf\xe9/\n".to_vec();
@@ -294,7 +294,7 @@ fn an_unreadable_exclude_file_is_kept_and_a_readable_one_keeps_its_bytes() {
 fn a_card_never_follows_symlinks_or_overwrites_an_existing_card() {
     let outside = support::temp("plan-card-outside");
     let owned: Root = repository("plan-card-symlink-dir");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
     fs::create_dir_all(root.join(".exitbind")).unwrap();
     std::os::unix::fs::symlink(&outside, root.join(".exitbind/plan-cards")).unwrap();
@@ -303,7 +303,7 @@ fn a_card_never_follows_symlinks_or_overwrites_an_existing_card() {
     assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
 
     let owned: Root = repository("plan-card-symlink-file");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
     let target = outside.join("target.md");
     fs::write(&target, "target\n").unwrap();
@@ -318,7 +318,7 @@ fn a_card_never_follows_symlinks_or_overwrites_an_existing_card() {
     );
 
     let owned: Root = repository("plan-card-no-overwrite");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
     approve(&root, "ExitPlanMode", PLAN);
     let edited = PLAN.replace("rejects empty input", "rejects blank input");
@@ -345,7 +345,7 @@ fn a_card_never_follows_symlinks_or_overwrites_an_existing_card() {
 #[test]
 fn a_sub_agent_plan_approval_writes_and_prints_nothing() {
     let owned: Root = repository("plan-card-agent");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     setup(&root, None);
     for response in [
         json!({"plan":PLAN,"isAgent":true,"filePath":PLAN_FILE}),
@@ -362,7 +362,7 @@ fn a_sub_agent_plan_approval_writes_and_prints_nothing() {
 #[test]
 fn a_plan_approval_record_without_its_matcher_is_not_installed() {
     let owned: Root = repository("plan-card-matcher");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     let status = |root: &Path| -> Value {
         let output = call(
             root,
@@ -412,7 +412,7 @@ fn a_plan_approval_record_without_its_matcher_is_not_installed() {
 #[test]
 fn a_partial_claude_activation_hook_names_host_install() {
     let owned: Root = repository("plan-card-host-partial");
-    let root = owned.0.clone();
+    let root = owned.0.to_path_buf();
     let home = root.with_extension("home");
     fs::create_dir_all(home.join(".claude")).unwrap();
     let record = json!({"type": "command",

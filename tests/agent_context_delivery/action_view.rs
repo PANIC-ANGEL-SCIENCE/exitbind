@@ -249,7 +249,8 @@ fn run_route(fixture: &Fixture, route: &Value) -> String {
 }
 
 fn subagent_start(fixture: &Fixture, native: &str) -> String {
-    let payload = json!({"hook_event_name":"SubagentStart","cwd":fixture.root,"agent_type":native});
+    let payload =
+        json!({"hook_event_name":"SubagentStart","cwd":fixture.root.path(),"agent_type":native});
     let mut child = super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")
         .current_dir(&fixture.root)

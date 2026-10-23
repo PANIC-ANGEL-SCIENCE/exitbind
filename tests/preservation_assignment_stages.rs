@@ -5,9 +5,8 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::PathBuf};
 
-struct Fixture(PathBuf);
+struct Fixture(support::TempRoot);
 
 impl Fixture {
     fn new() -> Self {
@@ -30,12 +29,6 @@ impl Fixture {
             .unwrap();
         assert!(output.status.success(), "{args:?}: {output:?}");
         serde_json::from_slice(&output.stdout).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

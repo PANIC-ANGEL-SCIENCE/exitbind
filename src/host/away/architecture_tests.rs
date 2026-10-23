@@ -57,9 +57,7 @@ fn current_or_frozen_contract_refuses_all_roles_without_reading_sources() {
 
 #[test]
 fn child_preparation_refusal_preserves_existing_status_before_diagnostics() {
-    let root =
-        std::env::temp_dir().join(format!("exitbind-away-preparation-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = crate::test_root::temp("away-preparation");
     let config_path =
         crate::project::onboarding::init_with_options(crate::project::onboarding::InitOptions {
             product_root: root.to_str().unwrap(),

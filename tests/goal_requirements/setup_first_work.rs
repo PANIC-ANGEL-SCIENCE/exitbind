@@ -9,7 +9,9 @@ const CARD: &str = "# R9 task\n\n| Step | Do | Done when |\n| --- | --- | --- |\
 const IDS: [&str; 8] = ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7"];
 
 pub(super) fn fresh(label: &str) -> (Project, Outside, String) {
-    let root = support::temp(label);
+    let base = support::temp(label);
+    let root = base.join("project");
+    fs::create_dir(&root).unwrap();
     support::git_topology::repository(&root);
     fs::create_dir_all(root.join("work/r9")).unwrap();
     fs::create_dir_all(root.join("scripts")).unwrap();
@@ -24,6 +26,7 @@ pub(super) fn fresh(label: &str) -> (Project, Outside, String) {
         fixture_store: root.with_file_name(format!("{name}-native-session-goals")),
         root,
         native_session: None,
+        _base: base,
     };
     let outside = Outside::new(&project);
     let script = outside.script(

@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     native_session: Option<String>,
 }
 impl Fixture {
@@ -171,15 +171,6 @@ impl Fixture {
             b"",
         )["next"]
             .clone()
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        if std::thread::panicking() {
-            eprintln!("retained failed fixture: {}", self.root.display());
-            return;
-        }
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 fn value(output: &Output) -> Value {

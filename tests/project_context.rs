@@ -6,7 +6,7 @@ mod support;
 use serde_json::{json, Value};
 use std::{fs, io::Write, os::unix::fs::symlink, path::Path, process::Stdio};
 
-fn project(label: &str) -> std::path::PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     support::git_topology::repository(&root);
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
@@ -329,7 +329,7 @@ fn native_profile_requires_the_pending_named_assignment_and_current_source() {
     assert!(hook(&root, "worker").is_none());
     let reviewer_context = hook(&root, "reviewer").unwrap();
     assert!(reviewer_context.contains("assignment context mismatch"));
-    let conflict = json!({"hook_event_name":"SubagentStart", "cwd":root,
+    let conflict = json!({"hook_event_name":"SubagentStart", "cwd":root.path(),
         "agent_name":"sonic", "agent_type":"worker"});
     let mut process = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .arg("hook-run")

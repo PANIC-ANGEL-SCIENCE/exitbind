@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Output, Stdio};
 
 mod support;
@@ -41,7 +41,7 @@ fn ok(root: &Path, args: &[&str]) -> Value {
 
 /// An initialized project with opt-in memory whose Lead may read and manage
 /// the `project-rules` and `findings` scopes.
-fn project(label: &str) -> PathBuf {
+fn project(label: &str) -> support::TempRoot {
     let root = support::temp(label);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])

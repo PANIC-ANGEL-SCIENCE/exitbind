@@ -1,9 +1,9 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::Value;
 mod support;
-use std::{fs, io::Write, path::PathBuf, process::Output};
+use std::{fs, io::Write, process::Output};
 
-fn project() -> PathBuf {
+fn project() -> support::TempRoot {
     let path = support::temp("rust-test");
     let output = invoke(&[
         "init",

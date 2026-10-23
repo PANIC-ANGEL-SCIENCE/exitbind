@@ -9,14 +9,13 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 const CHECK: &str = "true";
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -249,12 +248,6 @@ impl Fixture {
             "--config",
             "exitbind.json",
         ])
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

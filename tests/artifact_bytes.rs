@@ -1,9 +1,9 @@
 mod support;
 
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::fs;
 
-fn call(root: &PathBuf, args: &[&str]) -> std::process::Output {
+fn call(root: &std::path::Path, args: &[&str]) -> std::process::Output {
     support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(root)
         .args(args)

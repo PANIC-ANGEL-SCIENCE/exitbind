@@ -585,15 +585,7 @@ mod tests {
 
     #[test]
     fn interactive_session_card_bridge_is_once_only_and_cache_loss_is_safe() {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-session-card-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        let root = std::fs::canonicalize(root).unwrap();
+        let root = crate::test_root::temp("session-card");
         let goal = json!({
             "requestId": "one", "explicitLeadClosure": true,
             "subgoals": [], "findings": [], "blockers": [], "decisions": [], "externalActions": []
@@ -622,15 +614,7 @@ mod tests {
 
     #[test]
     fn failure_joke_bridge_is_interactive_transition_only() {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-failure-joke-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        let root = std::fs::canonicalize(root).unwrap();
+        let root = crate::test_root::temp("failure-joke");
         assert!(failure_joke_once(
             &root,
             "run:blocked:check_missing",

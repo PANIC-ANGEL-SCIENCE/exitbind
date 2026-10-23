@@ -4,12 +4,11 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: String,
 }
 impl Fixture {
@@ -196,15 +195,6 @@ impl Fixture {
             b"",
         );
         assert_eq!(verified["valid"], true);
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        if std::thread::panicking() {
-            eprintln!("retained architecture fixture {}", self.root.display());
-        } else {
-            let _ = fs::remove_dir_all(&self.root);
-        }
     }
 }
 fn parse(output: &Output) -> Value {

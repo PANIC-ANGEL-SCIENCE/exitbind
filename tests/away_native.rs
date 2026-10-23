@@ -36,7 +36,7 @@ fn text(output: &Output) -> String {
     )
 }
 
-fn project() -> (PathBuf, String) {
+fn project() -> (support::TempRoot, String) {
     let root = support::temp("away-native");
     let initialized = invoke(
         &[

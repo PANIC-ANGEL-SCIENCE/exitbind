@@ -6,12 +6,12 @@ mod identity_fields;
 mod support;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf, process::Output};
+use std::{fs, process::Output};
 
 const LEDGER: &str = ".exitbind/memory/lesson.jsonl";
 const REASON: &str = "Owner selected recall and retirement for this exact project lesson.";
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new() -> Self {
@@ -143,11 +143,6 @@ impl Fixture {
     }
     fn resolve(&self, agent: &str, task: &str) -> Value {
         self.ok(&["memory", "resolve", agent, "--task", task, "--json"])
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

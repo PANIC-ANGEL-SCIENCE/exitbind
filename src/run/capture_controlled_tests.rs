@@ -1,24 +1,19 @@
 use super::*;
 
-struct Fixture(PathBuf);
+struct Fixture(crate::test_root::TempRoot);
 
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-controlled-capture-{}-{}",
-            std::process::id(),
-            timestamp_nanos(),
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::test_root::temp("controlled-capture");
         Self(root)
     }
 
     fn request(&self, command: &str, identity: &str) -> ObservationRequest {
         ObservationRequest {
             command: command.into(),
-            working_dir: self.0.clone(),
+            working_dir: self.0.to_path_buf(),
             artifact_dir: self.0.join(".exitbind/artifacts"),
-            state_root: self.0.clone(),
+            state_root: self.0.to_path_buf(),
             deadline: Instant::now() + Duration::from_secs(10),
             timeout_ms: 10_000,
             operation_id: identity.into(),
@@ -26,12 +21,6 @@ impl Fixture {
             retain_partial: true,
             preparation: None,
         }
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

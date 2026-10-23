@@ -144,8 +144,7 @@ fn release_body_limit_is_bounded_beyond_old_cap() {
 #[test]
 fn cache_rejects_symlink_and_keeps_private_modes() {
     use std::os::unix::fs::{symlink, PermissionsExt};
-    let root = std::env::temp_dir().join(format!("soulmate-cache-test-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = crate::test_root::temp("cache-test");
     let cache_dir = root.join("soulmate");
     let cache = cache_dir.join("update.json");
     write_cache(&cache, None, "all", None).unwrap();
@@ -169,11 +168,7 @@ fn cache_rejects_symlink_and_keeps_private_modes() {
 
 #[test]
 fn cache_recovers_an_interrupted_temporary_write() {
-    let root = std::env::temp_dir().join(format!(
-        "soulmate-cache-temp-test-{}-{}",
-        std::process::id(),
-        now()
-    ));
+    let root = crate::test_root::temp("cache-temp-test");
     let cache = root.join("soulmate/update.json");
     fs::create_dir_all(cache.parent().unwrap()).unwrap();
     let stale = cache.with_file_name("update.json.tmp-interrupted");
@@ -199,7 +194,7 @@ fn root_home_and_cache_directories_are_rejected() {
 #[cfg(unix)]
 #[test]
 fn marker_lock_has_contention_and_stale_recovery() {
-    let root = std::env::temp_dir().join(format!("soulmate-lock-test-{}", std::process::id()));
+    let root = crate::test_root::temp("lock-test");
     let marker = root.join("soulmate/update.lock");
     let first = acquire_marker(&marker).unwrap();
     assert!(acquire_marker(&marker).is_none());

@@ -12,7 +12,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -130,7 +130,6 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
         let checker = checker_path(&self.root);
         if checker.exists() {
             fs::remove_file(checker).unwrap();

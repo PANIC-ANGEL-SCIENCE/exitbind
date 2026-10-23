@@ -11,7 +11,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -63,7 +63,6 @@ impl Drop for Fixture {
         for suffix in ["check-pass", "preservation-check-pass"] {
             let _ = fs::remove_file(self.root.with_extension(suffix));
         }
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

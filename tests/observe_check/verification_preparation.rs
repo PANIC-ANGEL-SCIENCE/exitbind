@@ -114,7 +114,8 @@ fn selected_checker_source_drift_is_refused_before_observation_admission() {
     support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
-    let checker = root.with_extension("external-checker.py");
+    let outside = support::temp("observe-verification-checker-drift-outside");
+    let checker = outside.join("external-checker.py");
     fs::write(&checker, "print('EXECUTED_FIRST')\n").unwrap();
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -227,11 +228,12 @@ fn selected_checker_source_drift_is_refused_before_observation_admission() {
 fn selected_external_checker_run(
     label: &str,
 ) -> (
-    std::path::PathBuf,
+    support::TempRoot,
     String,
     std::path::PathBuf,
     std::path::PathBuf,
     String,
+    support::TempRoot,
 ) {
     selected_external_checker_run_with_source(label, "print('EXECUTED_EXTERNAL')\n")
 }
@@ -241,23 +243,22 @@ fn selected_external_checker_run_with_source(
     label: &str,
     checker_source: &str,
 ) -> (
-    std::path::PathBuf,
+    support::TempRoot,
     String,
     std::path::PathBuf,
     std::path::PathBuf,
     String,
+    support::TempRoot,
 ) {
     use std::os::unix::fs::symlink;
     let root = support::temp(label);
     support::git_topology::repository(&root);
     let init = call(&root, &["init", "--mode", "portable", "--root", "."]);
     assert!(init.status.success(), "{}", text(&init));
-    let name = root.file_name().unwrap().to_string_lossy();
-    let external = root.parent().unwrap().join(format!("{name}-external.py"));
-    let argument = root
-        .parent()
-        .unwrap()
-        .join(format!("{name}-checker-link.py"));
+    // The checker lives outside the project, in a root of its own.
+    let outside = support::temp(&format!("{label}-outside"));
+    let external = outside.join("external.py");
+    let argument = outside.join("checker-link.py");
     fs::write(&external, checker_source).unwrap();
     symlink(&external, &argument).unwrap();
     let config_path = root.join("exitbind.json");
@@ -327,6 +328,7 @@ fn selected_external_checker_run_with_source(
         external,
         argument,
         worker["event"]["eventSha256"].as_str().unwrap().to_owned(),
+        outside,
     )
 }
 
@@ -334,10 +336,11 @@ fn selected_external_checker_run_with_source(
 #[test]
 fn selected_external_checker_mutation_retains_effects_without_check_credit() {
     let source = "from pathlib import Path\nimport sys\np = Path(__file__).resolve()\np.write_text(p.read_text() + '# retained checker mutation\\n')\nprint('CHECKER_MUTATED_STDOUT')\nprint('CHECKER_MUTATED_STDERR', file=sys.stderr)\n";
-    let (root, ledger, external, argument, target) = selected_external_checker_run_with_source(
-        "observe-verification-checker-self-mutation",
-        source,
-    );
+    let (root, ledger, external, argument, target, _outside) =
+        selected_external_checker_run_with_source(
+            "observe-verification-checker-self-mutation",
+            source,
+        );
     let before = fs::read(&external).unwrap();
     let observed = run(
         &root,
@@ -414,10 +417,11 @@ fn selected_external_checker_mutation_retains_effects_without_check_credit() {
 #[test]
 fn selected_external_checker_edit_invalidates_live_credit_without_reexecution() {
     let source = "from pathlib import Path\np = Path(__file__).resolve()\np.with_suffix('.count').open('a').write('x')\nprint('EXECUTED_EXTERNAL')\n";
-    let (root, ledger, external, argument, target) = selected_external_checker_run_with_source(
-        "observe-verification-checker-live-drift",
-        source,
-    );
+    let (root, ledger, external, argument, target, _outside) =
+        selected_external_checker_run_with_source(
+            "observe-verification-checker-live-drift",
+            source,
+        );
     let count = external.with_extension("count");
     let observed = run(
         &root,
@@ -512,7 +516,7 @@ fn selected_external_checker_edit_invalidates_live_credit_without_reexecution() 
 fn selected_missing_or_managed_retargeted_checker_refuses_before_admission() {
     use std::os::unix::fs::symlink;
 
-    let (root, ledger, external, argument, target) =
+    let (root, ledger, external, argument, target, _outside) =
         selected_external_checker_run("observe-verification-checker-missing");
     fs::remove_file(external).unwrap();
     let before = fs::read(root.join(&ledger)).unwrap();
@@ -537,7 +541,7 @@ fn selected_missing_or_managed_retargeted_checker_refuses_before_admission() {
     fs::remove_file(argument).unwrap();
     fs::remove_dir_all(root).unwrap();
 
-    let (root, ledger, external, argument, target) =
+    let (root, ledger, external, argument, target, _outside) =
         selected_external_checker_run("observe-verification-checker-managed-retarget");
     let managed = root.join(".exitbind/managed-checker.py");
     fs::write(&managed, "print('EXECUTED_MANAGED')\n").unwrap();
@@ -568,7 +572,7 @@ fn selected_missing_or_managed_retargeted_checker_refuses_before_admission() {
 #[cfg(unix)]
 #[test]
 fn selected_configuration_drift_refuses_before_checker_effect_or_admission() {
-    let (root, ledger, external, argument, target) =
+    let (root, ledger, external, argument, target, _outside) =
         selected_external_checker_run("observe-verification-config-drift");
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -606,7 +610,7 @@ fn selected_start_marker_is_refused_by_installed_older_reader_before_effects() {
         eprintln!("skipped: set EXITBIND_PREPARATION_OLD_READER to the installed older reader");
         return;
     };
-    let (root, ledger, external, argument, target) =
+    let (root, ledger, external, argument, target, _outside) =
         selected_external_checker_run("observe-verification-old-reader");
     let old_config_path = root.join("old-reader.json");
     let mut config: Value =

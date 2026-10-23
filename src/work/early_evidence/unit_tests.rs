@@ -1,28 +1,15 @@
 use super::*;
 use crate::project::layout_types::Mode;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 struct Artifacts {
-    root: PathBuf,
+    root: crate::test_root::TempRoot,
     loaded: Loaded,
 }
 
 impl Artifacts {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-early-evidence-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).unwrap();
+        let root = crate::test_root::temp("early-evidence");
         let loaded = Loaded {
             config: json!({}),
             agents: BTreeMap::new(),
@@ -32,9 +19,9 @@ impl Artifacts {
             workflows: BTreeMap::new(),
             verification_preparation: None,
             path: root.join("exitbind.json"),
-            control_root: root.clone(),
-            product_root: root.clone(),
-            state_root: root.clone(),
+            control_root: root.to_path_buf(),
+            product_root: root.to_path_buf(),
+            state_root: root.to_path_buf(),
             mode: Mode::Portable,
             project_id: None,
             source: String::new(),
@@ -58,12 +45,6 @@ impl Artifacts {
             "subjectSha256":format!("subject-{name}"),
             "artifact":{"root":"state","path":name,"bytes":bytes.len(),
                 "sha256":hash::bytes(bytes)}})
-    }
-}
-
-impl Drop for Artifacts {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

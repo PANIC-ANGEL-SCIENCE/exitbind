@@ -342,15 +342,9 @@ fn valid_identifier(value: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn fixture(config: Value) -> (Loaded, PathBuf, Value) {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("exitbind-r50-alias-{}-{nonce}", std::process::id()));
+    fn fixture(config: Value) -> (Loaded, PathBuf, Value, crate::test_root::TempRoot) {
+        let root = crate::test_root::temp("r50-alias");
         fs::create_dir_all(root.join(".exitbind")).unwrap();
         let loaded = Loaded {
             config,
@@ -365,20 +359,20 @@ mod tests {
                 scratch: "taskOwned".into(),
             }),
             path: root.join("exitbind.json"),
-            control_root: root.clone(),
-            product_root: root.clone(),
-            state_root: root.clone(),
+            control_root: root.to_path_buf(),
+            product_root: root.to_path_buf(),
+            state_root: root.to_path_buf(),
             mode: crate::project::layout_types::Mode::Portable,
             project_id: None,
             source: String::new(),
         };
         let scratch = root.join(".exitbind/verification/run/operation");
         let state = json!({"runId":"run","plan":{"stages":[{"agents":[{"memoryReferences":[]}]}]}});
-        (loaded, scratch, state)
+        (loaded, scratch, state, root)
     }
 
-    fn disjoint_fixture(config: Value) -> (Loaded, PathBuf, Value, PathBuf) {
-        let (mut loaded, _, state) = fixture(config);
+    fn disjoint_fixture(config: Value) -> (Loaded, PathBuf, Value, crate::test_root::TempRoot) {
+        let (mut loaded, _, state, root) = fixture(config);
         let base = loaded.product_root.clone();
         loaded.control_root = base.join("control");
         loaded.product_root = base.join("product");
@@ -393,8 +387,7 @@ mod tests {
         let scratch = loaded
             .state_root
             .join(".exitbind/verification/run/operation");
-        let cleanup = base;
-        (loaded, scratch, state, cleanup)
+        (loaded, scratch, state, root)
     }
 
     fn memory(root: &str, contextual: Option<Value>) -> Value {
@@ -428,7 +421,7 @@ mod tests {
             ),
         ];
         for (config, selected_reference, diagnostic) in cases {
-            let (loaded, scratch, mut state) = fixture(json!({"memory":config}));
+            let (loaded, scratch, mut state, _root) = fixture(json!({"memory":config}));
             if let Some(source) = selected_reference {
                 state["plan"]["stages"][0]["agents"][0]["memoryReferences"] =
                     json!([{"sourcePath":source}]);
@@ -438,7 +431,7 @@ mod tests {
             fs::remove_dir_all(loaded.product_root).unwrap();
         }
 
-        let (loaded, scratch, state) = fixture(json!({}));
+        let (loaded, scratch, state, _root) = fixture(json!({}));
         let source = crate::run_value::CheckerSource {
             argument_path: None,
             path: loaded
@@ -490,7 +483,7 @@ mod tests {
     #[test]
     fn refuses_product_symlink_into_missing_descendant_of_owned_tree() {
         use std::os::unix::fs::symlink;
-        let (loaded, scratch, state) = fixture(json!({}));
+        let (loaded, scratch, state, _root) = fixture(json!({}));
         symlink(
             ".exitbind/verification/run/operation/cache",
             loaded.product_root.join("output-alias"),
@@ -503,7 +496,7 @@ mod tests {
 
     #[test]
     fn refuses_preexisting_foreign_operation_scratch_without_reuse_or_cleanup() {
-        let (loaded, _, _) = fixture(json!({}));
+        let (loaded, _, _, _root) = fixture(json!({}));
         let run_id = "a".repeat(64);
         let operation_id = "b".repeat(64);
         let state =
@@ -523,7 +516,7 @@ mod tests {
 
     #[test]
     fn refuses_config_file_inside_exact_owned_operation_scratch() {
-        let (mut loaded, _, _) = fixture(json!({}));
+        let (mut loaded, _, _, _root) = fixture(json!({}));
         let run_id = "a".repeat(64);
         let operation_id = "b".repeat(64);
         let state =

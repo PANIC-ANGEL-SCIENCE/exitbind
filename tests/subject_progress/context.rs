@@ -14,7 +14,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -163,7 +163,6 @@ if let Err(error) = child.stdin.take().unwrap().write_all(input) { assert_eq!(er
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
         let _ = fs::remove_dir_all(self.root.with_extension("counters"));
     }
 }

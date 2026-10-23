@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 mod support;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 
 fn invoke(arguments: &[&str]) -> Output {
@@ -11,7 +11,7 @@ fn invoke(arguments: &[&str]) -> Output {
         .unwrap()
 }
 
-fn legacy_project(label: &str) -> (PathBuf, String, Vec<u8>) {
+fn legacy_project(label: &str) -> (support::TempRoot, String, Vec<u8>) {
     let root = support::temp(&format!("layout-migration-{label}"));
     let initialized = invoke(&[
         "init",

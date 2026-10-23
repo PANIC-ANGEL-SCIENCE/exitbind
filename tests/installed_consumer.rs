@@ -12,7 +12,7 @@ use std::{
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 impl Fixture {
     fn new(name: Option<&str>) -> Self {
@@ -111,11 +111,6 @@ impl Fixture {
         child.wait_with_output().unwrap()
     }
 }
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
-    }
-}
 
 #[test]
 fn owner_chosen_names_reach_human_and_recipient_context_without_role_or_identity_changes() {
@@ -143,7 +138,7 @@ fn owner_chosen_names_reach_human_and_recipient_context_without_role_or_identity
             .take()
             .unwrap()
             .write_all(
-                &serde_json::to_vec(&json!({"hook_event_name":"SessionStart","cwd":f.root}))
+                &serde_json::to_vec(&json!({"hook_event_name":"SessionStart","cwd":f.root.path()}))
                     .unwrap(),
             )
             .unwrap();

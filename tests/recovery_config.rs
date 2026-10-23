@@ -3,14 +3,10 @@
 mod support;
 
 use serde_json::Value;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fs, path::Path, process::Output};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -47,12 +43,6 @@ impl Fixture {
             ".exitbind/runs/work-{}.jsonl",
             work.strip_prefix("smw_").unwrap()
         )
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

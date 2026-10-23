@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::{Output, Stdio};
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     config: PathBuf,
 }
 
@@ -116,12 +116,6 @@ impl Fixture {
             .collect::<Vec<_>>();
         files.sort_by(|left, right| left.0.cmp(&right.0));
         files
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

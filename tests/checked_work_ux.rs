@@ -3,13 +3,13 @@ mod support;
 
 use serde_json::{json, Value};
 use std::fs;
-use std::path::PathBuf;
+
 use std::process::Output;
 
 const CHECK: &str = "test -f actual-product-check";
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
     ledger: String,
 }
 
@@ -110,12 +110,6 @@ impl Fixture {
 
     fn bytes(&self) -> Vec<u8> {
         fs::read(self.root.join(&self.ledger)).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 

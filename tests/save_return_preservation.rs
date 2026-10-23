@@ -7,12 +7,11 @@ use serde_json::Value;
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
     process::{Output, Stdio},
 };
 
 struct Fixture {
-    root: PathBuf,
+    root: support::TempRoot,
 }
 
 impl Fixture {
@@ -155,12 +154,6 @@ impl Fixture {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.root).unwrap();
     }
 }
 
