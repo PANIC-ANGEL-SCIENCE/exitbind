@@ -12,6 +12,8 @@ pub(super) const FILE: &str = "recovery-hint.json";
 pub(super) const MAX_BYTES: u64 = 16 * 1024;
 pub(super) const MAX_TEXT: usize = 4096;
 pub(super) const MAX_ITEMS: usize = 8;
+/// The bound of one saved correction or Lead decision.
+pub(super) const MAX_DECISION_BYTES: usize = 512;
 pub(super) const HOOK_BUDGET: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -285,7 +287,7 @@ pub(super) fn validate_hint(hint: &Hint) -> Result<(), String> {
         }
     }
     for item in &hint.latest_corrections {
-        bounded_text(item, "correction", 512)?;
+        bounded_text(item, "correction", MAX_DECISION_BYTES)?;
     }
     if !hint.latest_correction_works.is_empty()
         && hint.latest_correction_works.len() != hint.latest_corrections.len()

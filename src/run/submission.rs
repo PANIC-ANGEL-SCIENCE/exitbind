@@ -55,7 +55,9 @@ pub fn submit(
 /// Whether the recorded event carries `decisions` in its reason: the act
 /// spent them.
 fn records_decisions(result: &Value, decisions: &[String]) -> bool {
-    !decisions.is_empty() && result["event"].get("reason").is_some()
+    !decisions.is_empty()
+        && result["event"]["outcome"] != "disposition"
+        && result["event"].get("reason").is_some()
 }
 
 /// Submit a work result after revalidating the façade's exact assignment
@@ -282,12 +284,14 @@ where
         let version = state["version"]
             .as_u64()
             .ok_or("run state is missing version")?;
-        let lead_reason = if version >= super::lead_reason::FIRST_VERSION
-            && super::lead_reason::recorded(
+        let lead_reason = if version >= super::lead_reason::FIRST_VERSION {
+            super::lead_reason::for_submission(
                 assignment["role"].as_str().unwrap_or_default(),
                 outcome,
-            ) {
-            super::lead_reason::compose(reason, decisions)?
+                reason,
+                disposition.is_some(),
+                decisions,
+            )?
         } else {
             None
         };

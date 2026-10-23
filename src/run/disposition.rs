@@ -160,7 +160,7 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         submission["inputsSha256"] = inputs.clone();
         state["inputsSha256"] = inputs.clone();
     }
-    for field in ["basisSha256", "reviewDecisionSha256"] {
+    for field in ["basisSha256", "reviewDecisionSha256", "reason"] {
         if let Some(value) = event.get(field) {
             submission[field] = value.clone();
         }

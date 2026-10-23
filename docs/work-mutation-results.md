@@ -95,6 +95,8 @@ its `submit` event, followed by the saved Lead decisions bound to that Work
 (see `session recovery record --decision` in the command reference). The
 same text is on the run state's submission item (`run inspect LEDGER
 --json`, `submissions`) and on the next role's packet as the Lead item's
-`reason` in `upstreamArtifacts`. It is at most 1024 bytes; a longer reason
-is refused before any write. A `disposition` keeps its reason in its own
-record. Ledgers written before this field read as before.
+`reason` in `upstreamArtifacts`. The Lead's own text is at most 1024 bytes;
+a longer one is refused before any write. A `disposition` keeps its reason
+in its own record; `--reason` given beside an explicit `--disposition` is
+recorded as the event's `reason`, while `--reason` alone still carries the
+disposition JSON. Ledgers written before this field read as before.

@@ -141,8 +141,15 @@ fn recorded(p: &Project, work: &str) -> (Value, Value) {
 fn assert_recorded(p: &Project, work: &str, form: &str, text: &str) {
     let (event, item) = recorded(p, work);
     if event["outcome"] == "disposition" {
-        // A disposition keeps its reason in its own record, unchanged.
-        assert!(event.get("reason").is_none(), "{form}: {event}");
+        // A disposition keeps its reason in its own record, unchanged; Lead
+        // text given beside an explicit --disposition is the event's reason.
+        if form == "work return" {
+            let beside = beside(text);
+            assert_eq!(event["reason"].as_str(), Some(beside.as_str()), "{form}");
+            assert_eq!(item["reason"].as_str(), Some(beside.as_str()), "{form}");
+        } else {
+            assert!(event.get("reason").is_none(), "{form}: {event}");
+        }
         assert_eq!(
             event["disposition"]["reason"].as_str(),
             Some(text),
@@ -208,6 +215,11 @@ fn fill(p: &Project, work: &str, label: &str, text: &str) {
 
 /// The Lead's `work return` of `outcome` with `--reason`; a disposition
 /// carries its reason inside the record the Lead returns.
+/// The Lead text `give` passes beside an explicit `--disposition`.
+fn beside(text: &str) -> String {
+    format!("{text} (beside --disposition)")
+}
+
 fn give(p: &Project, work: &str, outcome: &str, text: &str) {
     use sha2::{Digest, Sha256};
     let lead = next(p, work);
@@ -219,6 +231,7 @@ fn give(p: &Project, work: &str, outcome: &str, text: &str) {
         let digest = Sha256::digest(canonical(&record).as_bytes());
         record["sha256"] = json!(format!("{digest:x}"));
         let record = record.to_string();
+        let beside = beside(text);
         let args = [
             "work",
             "return",
@@ -228,6 +241,8 @@ fn give(p: &Project, work: &str, outcome: &str, text: &str) {
             outcome,
             "--disposition",
             &record,
+            "--reason",
+            &beside,
         ];
         p.value(&args, Some(ARTIFACT));
     } else {
@@ -482,51 +497,43 @@ fn every_lead_form_that_takes_a_reason_records_it_on_the_event_and_the_submissio
 }
 
 const STEP: &str = "Accept R1 after the review";
-const UNBOUND: &str = "Keep the import order; decided before any Work was selected";
+const UNBOUND: &str = "Keep the import order; decided while two Works were open";
 const DECISIONS: [&str; 2] = [
     "R1 scope: refuse invalid names before persistence only",
     "A repeated failure of the import check is a product defect",
 ];
 const LEAD_TEXT: &str = "Accepted: the check and the review hold for R1.";
 
-/// Record `work` as the session's current Work through the JSON record form,
-/// keeping `decisions`.
-fn select(p: &Project, work: &str, decisions: &[&str]) {
-    let status = p.status();
-    let member = status["journeyMembers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|member| member["work"] == work)
-        .unwrap_or_else(|| panic!("{work} is a Goal member: {status}"))
-        .clone();
-    let (identity, _) = p.native_session.as_ref().unwrap();
-    let input = json!({
-        "sessionId": identity, "currentStep": STEP,
-        "currentWork": {"state": "known", "work": work},
-        "workRefs": [{"work": member["work"], "configPath": member["configPath"],
-            "configSha256": member["configSha256"],
-            "startEventSha256": member["startEventSha256"], "relation": "member"}],
-        "latestCorrections": decisions,
-    });
-    p.value(&["session", "recovery", "record"], Some(&input.to_string()));
-}
-
 fn saved_decisions(p: &Project) -> Value {
     p.value(&["session", "recovery", "show", "--json"], None)["activeSavedStep"]["leadDecisions"]
         .clone()
 }
 
+fn lead_return(p: &Project, work: &str, outcome: &str, reason: Option<&str>) -> Output {
+    let lead = next(p, work);
+    let mut args = vec![
+        "work",
+        "return",
+        work,
+        lead["assignment"].as_str().unwrap(),
+        "--outcome",
+        outcome,
+    ];
+    if let Some(reason) = reason {
+        args.extend(["--reason", reason]);
+    }
+    p.call(&args, Some(ARTIFACT))
+}
+
+/// Decisions are saved only through the emitted pause routes. A decision
+/// saved while two Works are open stays unbound; one saved while W is the
+/// Goal's only open Work is bound to W and spent by the Lead's act on W.
 #[test]
 fn a_lead_act_records_and_spends_only_the_saved_decisions_of_its_work() {
     let p = Project::new("f15-spend").with_native_session("f15-spend-session");
     p.setup();
     let work = p.begin("R1", "sh check.sh R1");
     let other = p.begin("R2", "sh check.sh R2");
-    give(&p, &work, "scoped", "Scope R1.");
-    let lead = to_lead(&p, &work, "approved");
-
-    // One decision with no current Work, then two while W is current.
     let routes = p.status()["pauseRecord"].clone();
     let save = |slot: &str, value: &str| {
         let route = if slot == "SAVED_STEP" {
@@ -536,9 +543,20 @@ fn a_lead_act_records_and_spends_only_the_saved_decisions_of_its_work() {
         };
         ok_json(&p.call_exact_argv(&filled(&routes[route], slot, value)));
     };
+
+    // Two Works open: the decision is bound to none.
     save("SAVED_STEP", STEP);
     save("LEAD_DECISION", UNBOUND);
-    select(&p, &work, &[UNBOUND]);
+    // The Lead stops the second Work with its own text only.
+    assert!(lead_return(&p, &other, "blocked", Some("R2 waits for R1."))
+        .status
+        .success());
+    assert_recorded(&p, &other, "work return blocked", "R2 waits for R1.");
+    assert_eq!(saved_decisions(&p), json!([UNBOUND]));
+
+    // W is the only open Work: both decisions are bound to it.
+    give(&p, &work, "scoped", "Scope R1.");
+    let lead = to_lead(&p, &work, "approved");
     for decision in DECISIONS {
         save("LEAD_DECISION", decision);
     }
@@ -547,27 +565,17 @@ fn a_lead_act_records_and_spends_only_the_saved_decisions_of_its_work() {
         json!([UNBOUND, DECISIONS[0], DECISIONS[1]])
     );
 
-    // Above the bound the act is refused before any write.
+    // A Lead text above its bound is refused before any write.
     let ledger_path = p.root.join(ledger(&work));
     let before = fs::read(&ledger_path).unwrap();
-    let long = "x".repeat(1000);
-    let assignment = lead["assignment"].as_str().unwrap();
-    let args = [
-        "work",
-        "return",
-        &work,
-        assignment,
-        "--outcome",
-        "accepted",
-        "--reason",
-        &long,
-    ];
-    let refused = p.call(&args, Some(ARTIFACT));
+    let long = "x".repeat(1025);
+    let refused = lead_return(&p, &work, "accepted", Some(&long));
     assert!(!refused.status.success(), "{refused:?}");
     let refusal = String::from_utf8_lossy(&refused.stderr).into_owned();
     assert!(
-        refusal.contains("1000 from --reason and 2 saved Lead decisions of this Work")
-            && refusal.contains("at most 1024 bytes are recorded; no mutation was made"),
+        refusal.contains(
+            "--reason has 1025 bytes; at most 1024 bytes are recorded; no mutation was made"
+        ),
         "{refusal}"
     );
     assert_eq!(fs::read(&ledger_path).unwrap(), before);
@@ -575,6 +583,7 @@ fn a_lead_act_records_and_spends_only_the_saved_decisions_of_its_work() {
 
     // The Lead acts on W: its text, then both decisions; only the unbound
     // decision stays saved.
+    let assignment = lead["assignment"].as_str().unwrap();
     let args = [
         "work",
         "return",
@@ -593,17 +602,40 @@ fn a_lead_act_records_and_spends_only_the_saved_decisions_of_its_work() {
     assert_recorded(&p, &work, "work return accepted", &expected);
     assert_eq!(saved_decisions(&p), json!([UNBOUND]));
 
-    // A second Work shows none of W's decisions, and its Lead act records
-    // only its own text.
-    select(&p, &other, &[UNBOUND]);
-    assert_eq!(saved_decisions(&p), json!([UNBOUND]));
+    // A later Work shows none of W's decisions.
+    let third = p.begin("R3", "sh check.sh R3");
     let hook = session_start(&p);
-    let detail = p.call(&["work", "detail", &other], None);
+    let detail = p.call(&["work", "detail", &third], None);
     let shown = format!("{hook}\n{}", String::from_utf8_lossy(&detail.stdout));
     for decision in DECISIONS {
         assert!(!shown.contains(decision), "{decision}: {shown}");
     }
-    give(&p, &other, "scoped", "Scope R2.");
-    assert_recorded(&p, &other, "work return scoped", "Scope R2.");
+    assert_eq!(saved_decisions(&p), json!([UNBOUND]));
+
+    // Saved decisions never block the act: three 400-byte decisions are
+    // recorded by a rework without --reason, and a Lead text at its bound
+    // with three more decisions is recorded and replays.
+    give(&p, &third, "scoped", "Scope R3.");
+    to_lead(&p, &third, "approved");
+    let large: Vec<String> = (0..3).map(|n| format!("{n}{}", "d".repeat(399))).collect();
+    for decision in &large {
+        save("LEAD_DECISION", decision);
+    }
+    let reworked = lead_return(&p, &third, "rework", None);
+    assert!(reworked.status.success(), "{reworked:?}");
+    let lines: Vec<String> = large
+        .iter()
+        .map(|decision| format!("Saved Lead decision: {decision}"))
+        .collect();
+    assert_recorded(&p, &third, "work return rework", &lines.join("\n"));
+    to_lead(&p, &third, "approved");
+    for decision in &large {
+        save("LEAD_DECISION", decision);
+    }
+    let bound_text = "y".repeat(1024);
+    let accepted = lead_return(&p, &third, "accepted", Some(&bound_text));
+    assert!(accepted.status.success(), "{accepted:?}");
+    let expected = format!("{bound_text}\n{}", lines.join("\n"));
+    assert_recorded(&p, &third, "work return accepted", &expected);
     assert_eq!(saved_decisions(&p), json!([UNBOUND]));
 }

@@ -17,7 +17,9 @@ mod show;
 mod spend;
 
 pub(crate) use owner_config::{goal_owner, is_owner, GoalOwner};
-pub(crate) use pause::{decision_line, for_view as pause_routes, record as record_pause};
+pub(crate) use pause::{
+    decision_line, for_view as pause_routes, record as record_pause, SAVED_DECISIONS_MAX_BYTES,
+};
 pub(crate) use presentation::hook_context;
 pub(crate) use record::{attach_graph_result, checkpoint, record};
 pub(crate) use references::task_target;

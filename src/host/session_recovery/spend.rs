@@ -24,7 +24,9 @@ pub(crate) fn with_saved_decisions<T>(
         return act(&[]).map(|(value, _)| value);
     };
     let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-    crate::run::ledger::with_lock(&ledger, || {
+    let mut entered = false;
+    let result = crate::run::ledger::with_lock(&ledger, || {
+        entered = true;
         let Some(mut hint) = read_hint(&session.root).ok().flatten() else {
             return act(&[]).map(|(value, _)| value);
         };
@@ -40,11 +42,25 @@ pub(crate) fn with_saved_decisions<T>(
         if recorded {
             // The act is already recorded with these decisions in its reason.
             // A failed write leaves them saved, to be recorded again by the
-            // next Lead act on this Work: repeated, never lost.
-            let _ = write_hint_locked(&session, &hint);
+            // next Lead act on this Work: repeated, never lost. It is
+            // reported, and the recorded act stands.
+            if let Err(error) = write_hint_locked(&session, &hint) {
+                eprintln!(
+                    "exitbind: the Lead act on {work} is recorded with {} saved Lead decisions in its reason; they could not be removed from the session recovery record ({error}) and will be recorded again by the next Lead act on this Work",
+                    decisions.len()
+                );
+            }
         }
         Ok(value)
-    })
+    });
+    if entered {
+        result
+    } else {
+        // The lock was not taken: name the store that holds it.
+        result.map_err(|_| {
+            "the session recovery record is busy or unavailable; no mutation was made".to_owned()
+        })
+    }
 }
 
 /// The decisions of `hint` bound to `work`, oldest first, when the record is

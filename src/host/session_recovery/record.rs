@@ -280,7 +280,7 @@ pub(super) fn verify_draft(
         return Err("session recovery accepts at most eight corrections".into());
     }
     for item in &draft.latest_corrections {
-        bounded_text(item, "correction", 512)?;
+        bounded_text(item, "correction", super::hint::MAX_DECISION_BYTES)?;
     }
     if draft.latest_correction_works.len() != draft.latest_corrections.len() {
         return Err("session recovery must bind each correction to a Work or to none".into());

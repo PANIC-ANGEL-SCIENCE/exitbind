@@ -110,11 +110,13 @@ pub(crate) fn record(
             draft.current_step = step.to_owned();
         }
         if let Some(decision) = decision {
-            // Bound to the record's current Work when it is known; the Lead
-            // act on that Work records and removes it.
+            // Bound to the record's current Work when it is known, else to
+            // the Goal's one in-flight Work when exactly one is open; the
+            // Lead act on that Work records and removes it.
             let bound = (draft.current_work.state == "known")
                 .then(|| draft.current_work.work.clone())
-                .flatten();
+                .flatten()
+                .or_else(|| single_in_flight(owner_loaded, &owned));
             draft.latest_corrections.push(decision.to_owned());
             draft.latest_correction_works.push(bound);
             let excess = draft.latest_corrections.len().saturating_sub(MAX_ITEMS);
@@ -123,6 +125,25 @@ pub(crate) fn record(
         }
         store_locked(owner_loaded, &owned, draft)
     })
+}
+
+/// The Goal's in-flight Work when exactly one is open and every candidate
+/// was read; otherwise none.
+fn single_in_flight(owner_loaded: &config::Loaded, owned: &super::record::Owned) -> Option<String> {
+    let deadline = std::time::Instant::now() + super::hint::HOOK_BUDGET;
+    let derived = super::current_work::derive(
+        &owned.record,
+        &owned.session,
+        &owned.owner,
+        Some(owner_loaded),
+        2,
+        deadline,
+    );
+    let complete = derived.more == 0 && derived.unverified == 0 && !derived.incomplete;
+    match derived.works.as_slice() {
+        [only] if complete => Some(only.work.clone()),
+        _ => None,
+    }
 }
 
 fn fresh(
@@ -148,8 +169,15 @@ fn fresh(
 /// One saved Lead decision as a line of text: the `session recovery show`
 /// line, and a line of the reason the Lead act on its Work records.
 pub(crate) fn decision_line(decision: &str) -> String {
-    format!("Saved Lead decision: {decision}")
+    format!("{DECISION_PREFIX}{decision}")
 }
+
+const DECISION_PREFIX: &str = "Saved Lead decision: ";
+
+/// The most bytes the saved decisions can add to a recorded reason: every
+/// saved decision at its bound, each on its own line.
+pub(crate) const SAVED_DECISIONS_MAX_BYTES: usize =
+    MAX_ITEMS * (1 + DECISION_PREFIX.len() + super::hint::MAX_DECISION_BYTES);
 
 /// The saved step and decisions `session recovery show` reports, with the
 /// revision they were recorded at and the session that wrote them.
