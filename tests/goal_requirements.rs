@@ -585,6 +585,8 @@ mod route_values;
 mod rust_source;
 #[path = "goal_requirements/session_adoption.rs"]
 mod session_adoption;
+#[path = "goal_requirements/session_record_lock.rs"]
+mod session_record_lock;
 #[path = "goal_requirements/setup_first_work.rs"]
 mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]

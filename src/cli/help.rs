@@ -86,6 +86,9 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work child prepare WORK SHORT_ASSIGNMENT [--context TOKEN] [--agent-type NAME] [--perspectives JSON] (without --context: the native session that holds the Work; work next prints this route as next.prepareChild)"
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--config CONFIG]",
+        ["work", "child", "recover"] => {
+            "work child recover WORK INTENT [--context TOKEN] (without --context: a child the native session holding the Work prepared)"
+        }
         ["project", "graph"] => "project graph enable|disable [--config exactconfig] [--json] | query --query TEXT [--config exactconfig] [--json] (validated project target; indexing requires explicit enable)",
         ["project"] => "project context [memory ITEM_ID] [--task GOAL] [--json] | project route --task TASK --purpose PURPOSE --role ROLE --host HOST [--agent NAME] [--json] | project agents [--apply] [--json] | project architecture [check] [--json]",
         ["project", "advance"] => "project advance form|propose|select|amend|admit|status|recover|stop ... (amendment compares the frozen claim's original specification directly with the selected revision; only approved time fields may change)",

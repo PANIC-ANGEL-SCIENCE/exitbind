@@ -3,7 +3,8 @@
 //! native session's record under its lock. Decisions bound to another Work,
 //! or to none, stay.
 
-use super::hint::{read_hint, validate_hint, write_hint_locked, Hint, FILE};
+use super::hint::{read_hint, validate_hint, write_hint_locked, Hint};
+use super::lock::with_record_lock;
 use crate::{evidence::hash, session_goal};
 
 /// Run `act` with the saved Lead decisions bound to `work`, holding the
@@ -23,10 +24,7 @@ pub(crate) fn with_saved_decisions<T>(
     let (Some(session), Some(work)) = (session, work) else {
         return act(&[]).map(|(value, _)| value);
     };
-    let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-    let mut entered = false;
-    let result = crate::run::ledger::with_lock(&ledger, || {
-        entered = true;
+    with_record_lock(&session.root, || {
         let Some(mut hint) = read_hint(&session.root).ok().flatten() else {
             return act(&[]).map(|(value, _)| value);
         };
@@ -52,15 +50,7 @@ pub(crate) fn with_saved_decisions<T>(
             }
         }
         Ok(value)
-    });
-    if entered {
-        result
-    } else {
-        // The lock was not taken: name the store that holds it.
-        result.map_err(|_| {
-            "the session recovery record is busy or unavailable; no mutation was made".to_owned()
-        })
-    }
+    })
 }
 
 /// The decisions of `hint` bound to `work`, oldest first, when the record is

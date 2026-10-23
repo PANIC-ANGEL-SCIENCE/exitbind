@@ -35,12 +35,22 @@ fn verify(loaded: &Loaded, work: &str, host: &str, identity: &str) -> Result<(),
 /// The binding of the current native session, which must hold `work`.
 pub(super) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     let (host, identity) = crate::session_goal::native::current_identity()?.ok_or(
-        "work child prepare without --context needs the native session that holds this Work; a Work received from another host uses the --context token from work continuation",
+        "work child prepare or recover without --context needs the native session that holds this Work; a Work received from another host uses the --context token from work continuation",
     )?;
     verify(loaded, work, host, &identity).map_err(|error| {
         format!("this native session does not hold the Work ({error}); a Work received from another host uses the --context token from work continuation")
     })?;
     Ok(binding_value(host, &identity))
+}
+
+/// A retained result of a same-host intent is attributed only from the
+/// session that prepared it, which must hold `work` now.
+pub(super) fn attributable(loaded: &Loaded, work: &str, intent: &Value) -> Result<(), String> {
+    let binding = current(loaded, work)?;
+    if binding["session"] != intent["session"] || binding["host"] != intent["host"] {
+        return Err("the child ran under another receiving session; its result cannot be attributed to the current binding".into());
+    }
+    Ok(())
 }
 
 /// The binding a same-host intent was prepared under, re-verified now.

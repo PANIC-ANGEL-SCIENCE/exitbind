@@ -5,7 +5,8 @@
 //! session reads the record from `session recovery show`.
 
 use super::{
-    hint::{read_hint, FILE, MAX_ITEMS},
+    hint::{read_hint, MAX_ITEMS},
+    lock::with_record_lock,
     record::{owned, store_locked, verify_draft, Draft},
 };
 use crate::{config, session_goal};
@@ -79,8 +80,7 @@ pub(crate) fn record(
     }
     let session = session_goal::native::current()?
         .ok_or("session recovery record requires a host-reported native session")?;
-    let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-    crate::run::ledger::with_lock(&ledger, || {
+    with_record_lock(&session.root, || {
         let owned = owned(owner_loaded)?;
         let saved = read_hint(&owned.session.root)
             .ok()

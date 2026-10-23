@@ -564,3 +564,86 @@ fn an_oversized_lens_is_omitted_with_its_reason_and_the_route_still_runs() {
     let prepared = run(&argv, &fixture.product, &fixture.store, Some(SESSION), b"");
     assert!(prepared.status.success(), "{}", text(&prepared));
 }
+
+impl Fixture {
+    /// `work child recover WORK INTENT` with `extra`, from `session`.
+    fn recover(&self, session: Option<&str>, intent: &str, extra: &[&str]) -> Output {
+        let mut args = vec!["work", "child", "recover", self.work.as_str(), intent];
+        args.extend(extra);
+        self.call(session, &args, b"", true)
+    }
+}
+
+/// Review F5b R2: a failed same-host child's retained final message is
+/// reattached without a cross-host context. Recover without `--context`
+/// refuses another session and no session and changes nothing; with
+/// `--context` it keeps the cross-host route and its refusal; from the Lead
+/// session that holds the Work again it records the hash and state, as a
+/// same-host stop does, with no continuation record.
+#[test]
+fn a_failed_same_host_child_is_recovered_from_the_session_that_holds_the_work() {
+    let fixture = Fixture::new("f5b-same-host-recover");
+    fixture.prepare_sonic();
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let companion = fs::read(fixture.companion()).unwrap();
+    fs::remove_file(fixture.companion()).unwrap();
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":RESULT}),
+    );
+    let failed = fixture.intents().unwrap()[0].clone();
+    assert_eq!(failed["state"], "failed", "{failed}");
+    assert_eq!(failed["pendingResult"], RESULT, "{failed}");
+    let intent = failed["id"].as_str().unwrap().to_owned();
+    fs::write(fixture.companion(), companion).unwrap();
+
+    let other = fixture.recover(Some(OTHER), &intent, &[]);
+    assert!(!other.status.success(), "{}", text(&other));
+    assert!(
+        text(&other).contains("this native session does not hold the Work"),
+        "{}",
+        text(&other)
+    );
+    let none = fixture.recover(None, &intent, &[]);
+    assert!(!none.status.success(), "{}", text(&none));
+    assert!(
+        text(&none).contains("uses the --context token from work continuation"),
+        "{}",
+        text(&none)
+    );
+    let token = format!("{}:1:0:00", fixture.work);
+    let context = fixture.recover(Some(SESSION), &intent, &["--context", &token]);
+    assert!(!context.status.success(), "{}", text(&context));
+    assert!(
+        text(&context).contains("work context token is invalid"),
+        "{}",
+        text(&context)
+    );
+    assert_eq!(
+        fixture.intents().unwrap()[0],
+        failed,
+        "refusals change nothing"
+    );
+
+    let recovered = fixture.recover(Some(SESSION), &intent, &[]);
+    assert!(recovered.status.success(), "{}", text(&recovered));
+    let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(recovered["effect"], "recorded", "{recovered}");
+    assert_eq!(recovered["intent"], intent.as_str());
+    let intent = &fixture.intents().unwrap()[0];
+    assert_eq!(intent["state"], "recorded", "{intent}");
+    assert_eq!(intent["nativeChild"], CHILD);
+    assert_eq!(intent["resultSha256"], sha(RESULT.as_bytes()));
+    assert!(intent.get("pendingResult").is_none(), "{intent}");
+    assert!(intent.get("failure").is_none(), "{intent}");
+    fixture.assert_no_continuation();
+    let again = fixture.recover(Some(SESSION), intent["id"].as_str().unwrap(), &[]);
+    assert!(
+        text(&again).contains("this child has no retained result to recover"),
+        "{}",
+        text(&again)
+    );
+}

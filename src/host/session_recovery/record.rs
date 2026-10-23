@@ -2,8 +2,9 @@ use super::{
     hint::{
         bounded_text, canonical_path, checkpoint_is_ambiguous_older, current_executable_sha256,
         read_hint, valid_sha, validate_hint, write_hint_locked, Checkpoint, Hint, PendingOperation,
-        Reference, WorkRef, WorkSelection, FILE, HOOK_BUDGET, MAX_ITEMS, MAX_TEXT,
+        Reference, WorkRef, WorkSelection, HOOK_BUDGET, MAX_ITEMS, MAX_TEXT,
     },
+    lock::with_record_lock,
     references::{known_work_locator, verify_pending, verify_source_refs, verify_work_refs},
 };
 use crate::{config, evidence::hash, host::codegraph, session_goal};
@@ -15,8 +16,7 @@ use std::time::Instant;
 pub(crate) fn record(owner_loaded: &config::Loaded, bytes: &[u8]) -> Result<Value, String> {
     let session = session_goal::native::current()?
         .ok_or("session recovery record requires a host-reported native session")?;
-    let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-    crate::run::ledger::with_lock(&ledger, || record_locked(owner_loaded, bytes))
+    with_record_lock(&session.root, || record_locked(owner_loaded, bytes))
 }
 
 /// Store one generated graph artifact reference on the existing validated hint.
@@ -31,8 +31,7 @@ pub(crate) fn attach_graph_result(
     let Some(session) = session_goal::native::current()? else {
         return Ok(false);
     };
-    let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-    crate::run::ledger::with_lock(&ledger, || {
+    with_record_lock(&session.root, || {
         let owner = session.owner()?.ok_or("native Goal owner is unavailable")?;
         let record =
             session_goal::read_for_recovery(&session.root)?.ok_or("native Goal is unavailable")?;
@@ -417,8 +416,7 @@ pub(crate) fn checkpoint(payload: &serde_json::Map<String, Value>, event: &str) 
     let result = (|| -> Result<(), String> {
         let session =
             session_goal::native::current()?.ok_or("native session selector is unavailable")?;
-        let ledger = crate::run::ledger::ledger_path(&session.root, FILE, true)?;
-        crate::run::ledger::with_lock(&ledger, || checkpoint_locked(payload, event))
+        with_record_lock(&session.root, || checkpoint_locked(payload, event))
     })();
     let _ = result;
 }

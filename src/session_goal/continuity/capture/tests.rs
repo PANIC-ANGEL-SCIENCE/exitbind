@@ -25,6 +25,27 @@ fn rejected_identity_wins_over_a_new_prepared_intent() {
     );
 }
 
+/// The printed recover line: no `--context` for a child of the native
+/// session that holds the Work; the fresh-token slot for a received one.
+#[test]
+fn the_recover_line_takes_a_context_only_for_a_child_received_from_another_host() {
+    let loaded = adviser_floor::loaded(None, None, None, &[]);
+    let same = json!({"id": "abc", "receiving": same_host::RECEIVING});
+    let line = recover_route(&loaded, "smw_w", &same);
+    assert!(
+        line.ends_with(" work child recover smw_w abc --config /control/exitbind.json"),
+        "{line}"
+    );
+    let received = json!({"id": "abc"});
+    let line = recover_route(&loaded, "smw_w", &received);
+    assert!(
+        line.contains(" work child recover smw_w abc --context ")
+            && line.contains("FRESH_TOKEN")
+            && line.ends_with(" --config /control/exitbind.json"),
+        "{line}"
+    );
+}
+
 #[cfg(test)]
 mod adviser_floor {
     use super::adviser::validate_requested_binding;
@@ -32,7 +53,7 @@ mod adviser_floor {
     use serde_json::{json, Value};
     use std::path::PathBuf;
 
-    fn loaded(
+    pub(super) fn loaded(
         host: Option<&str>,
         model: Option<&str>,
         effort: Option<&str>,

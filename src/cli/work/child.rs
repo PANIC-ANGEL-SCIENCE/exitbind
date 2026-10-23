@@ -37,14 +37,10 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_positionals("work child recover", a, 4)?;
             let work = positional(a, 2, "work child recover requires WORK INTENT")?;
             let intent = positional(a, 3, "work child recover requires WORK INTENT")?;
-            let (expected_revision, binding_revision) = context_fence(a, work)?;
-            print_work_json(&crate::session_goal::recover_child(
-                l,
-                work,
-                intent,
-                expected_revision,
-                binding_revision,
-            )?)
+            // Without --context: the native session that holds the Work.
+            let fence = a.options.contains_key("context");
+            let fence = fence.then(|| context_fence(a, work)).transpose()?;
+            print_work_json(&crate::session_goal::recover_child(l, work, intent, fence)?)
         }
         _ => {
             args::assert_options(

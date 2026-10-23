@@ -138,7 +138,10 @@ re-verified by owner identity at prepare, SubagentStart and SubagentStop; a
 session that does not hold the Work is refused, and a Work received from
 another host keeps the `--context` route. SubagentStop records the final
 message's SHA-256 on the prepared intent; the Work's own return carries the
-result.
+result. When that binding stopped verifying before the child finished, the
+intent is `failed` with the final message retained; once the session holds
+the Work again, `work child recover WORK INTENT` without `--context`, run from
+that session, records it the same way. Another session, or none, is refused.
 
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind

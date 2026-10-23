@@ -582,13 +582,14 @@ fn record(
 }
 
 /// Record a retained child result that failed to attach, under the same
-/// receiving session and a current context, without re-running the child.
+/// receiving session, without re-running the child: with the `--context`
+/// fence of a continuation binding, or `None` for a child prepared by the
+/// native session that holds the Work, which records the hash and state only.
 pub(crate) fn recover(
     loaded: &Loaded,
     work: &str,
     intent_id: &str,
-    expected_revision: u64,
-    binding_revision: u64,
+    fence: Option<(u64, u64)>,
 ) -> Result<Value, String> {
     with_intents(loaded, |intents| {
         let Some(intent) = intents.iter_mut().find(|intent| {
@@ -601,6 +602,23 @@ pub(crate) fn recover(
         };
         let Some(message) = intent["pendingResult"].as_str().map(str::to_owned) else {
             return Err("this child has no retained result to recover".into());
+        };
+        let Some((expected_revision, binding_revision)) = fence else {
+            if intent["receiving"] != same_host::RECEIVING {
+                let route = continuation(loaded, work);
+                return Err(format!("this child was received from another host; recover it with --context and a fresh token from {route}"));
+            }
+            same_host::attributable(loaded, work, intent)?;
+            // As a same-host stop records: no continuation record exists; the
+            // hash identifies the final message, and the Work's own return
+            // carries the result.
+            intent["state"] = json!("recorded");
+            intent["resultSha256"] = json!(hash::text(&message));
+            if let Some(object) = intent.as_object_mut() {
+                object.remove("pendingResult");
+                object.remove("failure");
+            }
+            return Ok(json!({"work": work, "intent": intent["id"], "effect": "recorded"}));
         };
         let (goal, binding) = current_binding(loaded, work)?;
         if goal.as_u64() != Some(expected_revision)
@@ -618,6 +636,19 @@ pub(crate) fn recover(
         record(loaded, work, &goal, intent, &message)?;
         Ok(json!({"work": work, "intent": intent["id"], "effect": "recorded"}))
     })
+}
+
+/// The `work child recover` line for a retained result: without `--context`
+/// for a child of the native session that holds the Work.
+fn recover_route(loaded: &Loaded, work: &str, intent: &Value) -> String {
+    let id = intent["id"].as_str().unwrap_or_default();
+    let route = crate::emitted::Route::new(["work", "child", "recover", work, id]);
+    let route = if intent["receiving"] == same_host::RECEIVING {
+        route
+    } else {
+        route.words(["--context".to_owned(), crate::emitted::slot("FRESH_TOKEN")])
+    };
+    route.config(&loaded.path).shell_text()
 }
 
 /// Read-only summary of this work's prepared children, without result text.
@@ -644,11 +675,7 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
                     "conflict": intent["conflict"],
                     "resultSha256": intent["resultSha256"],
                     "retainedResultBytes": pending,
-                    "recover": pending.map(|_| crate::emitted::command_line(
-                        &["work", "child", "recover", work, intent["id"].as_str().unwrap_or_default(),
-                            "--context", &crate::emitted::slot("FRESH_TOKEN")],
-                        Some(&loaded.path),
-                    )),
+                    "recover": pending.map(|_| recover_route(loaded, work, intent)),
                 })
             })
             .collect(),

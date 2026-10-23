@@ -395,6 +395,26 @@ fn a_retained_result_is_recovered_and_a_messageless_repeat_changes_nothing() {
     assert_eq!(failed["state"], "failed");
     assert_eq!(failed["retainedResultBytes"], RESULT.len());
     let intent = failed["intent"].as_str().unwrap().to_owned();
+    let line = failed["recover"].as_str().unwrap();
+    assert!(
+        line.contains(" --context ") && line.contains("FRESH_TOKEN"),
+        "{line}"
+    );
+
+    // A received child is not recovered without its --context fence.
+    let unfenced = run(
+        &f.root,
+        &["work", "child", "recover", &f.work, &intent],
+        b"",
+        true,
+    );
+    assert!(!unfenced.status.success());
+    assert!(
+        String::from_utf8_lossy(&unfenced.stderr)
+            .contains("this child was received from another host; recover it with --context"),
+        "{unfenced:?}"
+    );
+    assert_eq!(f.view()["preparedChildren"][0], failed);
 
     // Recovery refuses another session's binding, then records under the
     // child's own session without re-running it.
