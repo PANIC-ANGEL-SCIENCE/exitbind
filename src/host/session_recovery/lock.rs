@@ -34,19 +34,9 @@ pub(super) fn with_record_lock<T>(
 mod tests {
     use super::*;
 
-    fn session_root(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "exitbind-record-lock-{name}-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        root
-    }
-
     #[test]
     fn a_held_lock_names_the_session_record_and_an_inner_error_passes_through() {
-        let root = session_root("held");
+        let root = crate::test_root::temp("record-lock");
         // A live holder: this process, so the lock is not stale.
         let lock = root.join(format!("{FILE}.lock"));
         let holder = format!(
@@ -72,6 +62,5 @@ mod tests {
             "an error from inside the lock is never renamed"
         );
         assert!(!lock.exists(), "the lock is released");
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }
