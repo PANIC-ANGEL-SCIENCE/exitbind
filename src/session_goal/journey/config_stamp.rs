@@ -57,8 +57,12 @@ pub(super) fn evidence_under<'a>(
 /// the owner fills. Run with the owner's copy of those bytes, it keeps them
 /// under their hash (and revalidates every lesson ledger stamped with
 /// them), which admits every member with that stamp when the change moves
-/// no authority.
+/// no authority. A project without a memory policy keeps no copy, so it
+/// refuses with today's text and no route.
 pub(super) fn unproven(loaded: &Loaded, bound: &str, works: &[&str]) -> String {
+    if !crate::memory::stamped_config::has_store(loaded) {
+        return "journey member belongs to another or changed project/session configuration".into();
+    }
     let ledgers = crate::memory::stamped_config::stamped_lesson_ledgers(loaded, bound);
     let refusal = crate::drift::refusal(
         crate::drift::Class::JourneyMemberConfiguration,

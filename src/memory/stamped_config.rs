@@ -24,6 +24,11 @@ fn memory_root(loaded: &Loaded) -> Option<String> {
     super::policy::get(&loaded.config).map(|policy| policy.root.trim_end_matches('/').to_owned())
 }
 
+/// Whether this project can keep a copy: it has a memory policy.
+pub(crate) fn has_store(loaded: &Loaded) -> bool {
+    memory_root(loaded).is_some()
+}
+
 /// The absolute path of the kept copy for `sha256` when it exists with
 /// exactly those bytes.
 pub(crate) fn find(loaded: &Loaded, sha256: &str) -> Option<PathBuf> {

@@ -520,3 +520,18 @@ fn every_member_consumer_reads_the_configuration_through_the_one_admit_rule() {
         assert!(functions.contains(consumer), "{consumer}: {functions:#?}");
     }
 }
+
+/// Without a memory policy no copy can be kept, so no route is printed that
+/// could not work: the omission keeps today's text.
+#[test]
+fn a_project_without_a_memory_policy_omits_with_todays_text() {
+    let p = Project::new("f16-no-memory").with_native_session("f16-no-memory-session");
+    p.setup();
+    let work = p.begin("R1", "sh check.sh R1");
+    p.drive(&work, true);
+    let x = fs::read(config(&p)).unwrap();
+    write_config(&p, &named(&p, &x));
+    let prepared = prepare(&p);
+    assert_eq!(prepared["journeyIntegrationOmitted"], CHANGED, "{prepared}");
+    assert!(!has_flag(&prepared), "{prepared}");
+}
