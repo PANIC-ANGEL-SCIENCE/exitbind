@@ -21,3 +21,5 @@ python3 tooling/repository/checks/check_test_target_map.py
 python3 tooling/repository/checks/check_package_inventory.py
 python3 tooling/repository/checks/check_package_inventory.py --self-test
 python3 tooling/repository/checks/check_skill_projection.py --check
+python3 tooling/repository/checks/check_compatibility_markers.py --self-test
+python3 tooling/repository/checks/check_compatibility_markers.py

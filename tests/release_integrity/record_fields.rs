@@ -2,20 +2,21 @@
 //! Every run-ledger and record field the product's allowlists admit now but
 //! did not admit at the previous published release is named, in backticks,
 //! in the mixed-version paragraph of the newest CHANGELOG entry (the text
-//! before its first bullet). Run-ledger fields read as `action.field`
-//! (`src/run/state/unknown_fields.rs`, with the constants and
-//! `append_allowed_fields` lists it pushes); record fields are the fields of
-//! every `deny_unknown_fields` struct and every `FIELD`/`*_FIELD` extension
-//! constant. The previous release's set is the snapshot in `SNAPSHOT`, which
+//! before its first bullet). The field inventory is the record-field rows of
+//! `tooling/repository/checks/compatibility-markers.json`, the one table
+//! `check_compatibility_markers.py` keeps against `src/`; this test intersects
+//! it with the previous release's fields (the snapshot below). The snapshot
 //! names its release; it must be the first stable entry below the newest
 //! stable CHANGELOG heading (the release before the current one, so each
-//! release commit regenerates it; prerelease headings are skipped), and where that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`)
-//! the snapshot must equal the set read from the tag's own source.
+//! release commit regenerates it; prerelease headings are skipped), and where
+//! that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`) the
+//! snapshot must equal the set read from the tag's own source.
 use super::rust_source::{blank, function, literals, production_in};
 use super::*;
 use std::collections::BTreeSet;
 
 const SNAPSHOT: &str = "tests/fixtures/release-record-fields.txt";
+const TABLE: &str = "tooling/repository/checks/compatibility-markers.json";
 const LEDGER_ALLOWLIST: &str = "src/run/state/unknown_fields.rs";
 const RELEASE_ENV: &str = "EXITBIND_RELEASE_CHECKS";
 
@@ -275,6 +276,26 @@ fn admitted(root: &Path) -> BTreeSet<String> {
     fields
 }
 
+/// The record fields the compatibility table lists, with no release scoping:
+/// `check_compatibility_markers.py` keeps this table equal to the fields
+/// `src/` declares but the previous release's snapshot does not hold.
+fn table_fields() -> BTreeSet<String> {
+    let text = fs::read_to_string(manifest().join(TABLE)).unwrap();
+    let table: serde_json::Value = serde_json::from_str(&text).unwrap();
+    table["markers"]
+        .as_array()
+        .expect("the compatibility table lists markers")
+        .iter()
+        .filter(|row| row["kind"] == "record-field")
+        .map(|row| {
+            row["marker"]
+                .as_str()
+                .expect("every row names its marker")
+                .to_owned()
+        })
+        .collect()
+}
+
 /// The snapshot's release and fields.
 fn snapshot(text: &str) -> (String, BTreeSet<String>) {
     let mut release = None;
@@ -355,10 +376,7 @@ fn every_field_admitted_since_the_previous_release_is_named_in_the_mixed_version
         previous_release(&changelog),
         "{SNAPSHOT} must be the fields of the first stable entry below the newest stable CHANGELOG heading; regenerate it in the release commit"
     );
-    let added: BTreeSet<String> = admitted(manifest())
-        .difference(&previous)
-        .cloned()
-        .collect();
+    let added: BTreeSet<String> = table_fields().difference(&previous).cloned().collect();
     let missing = unnamed(&added, &changelog);
     assert!(
         missing.is_empty(),

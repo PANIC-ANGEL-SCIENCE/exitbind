@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "rules": "Every in-band protocol marker and record field the product writes into, or reads from, a persisted record for format compatibility, with one writer, one reader, the change that introduced it and the condition under which it may be retired. check_compatibility_markers.py reads src/ against this table: a marker or record field it recognises in src/ must have a row, a row must be present in src/, and every row must carry a retirement condition. A record-field row names a field the release introduced after the previous release's snapshot (tests/fixtures/release-record-fields.txt); the rows are the field inventory tests/release_integrity/record_fields.rs requires in the CHANGELOG's mixed-version paragraph, and they stay listed, with their writer, reader and retirement condition, once the snapshot starts holding them.",
+  "markers": [
+    {
+      "id": "basis-protocol",
+      "marker": "basisProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/run/submission.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "guidance-continuity-protocol",
+      "marker": "guidanceContinuityProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/host/assignment_context.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "verification-preparation-protocol",
+      "marker": "verificationPreparationProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/verification_preparation.rs"],
+      "readers": ["src/run/carry.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "check-observation-protocol",
+      "marker": "checkObservationProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/run/observed_check.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "carry-protocol",
+      "marker": "carryProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/carry.rs"],
+      "readers": ["src/run/carry.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "recovery-protocol",
+      "marker": "recoveryProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/run/state/recovery.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "work-association-protocol",
+      "marker": "workAssociationProtocol",
+      "kind": "protocol",
+      "writers": ["src/session_goal/association/record.rs"],
+      "readers": ["src/session_goal/association/record.rs"],
+      "introduced": "Goal journal association extension (protocol 1)",
+      "retire": "when every Goal journal a release reads is on a journal form that carries no workAssociations"
+    },
+    {
+      "id": "grant-protocol",
+      "marker": "grantProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/context.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "repair-recovery-protocol",
+      "marker": "repairRecoveryProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/repair_recovery.rs"],
+      "readers": ["src/run/state/recovery.rs"],
+      "introduced": "run-event v8",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "journey-membership-protocol",
+      "marker": "journeyMembershipProtocol",
+      "kind": "protocol",
+      "writers": ["src/session_goal/journey.rs"],
+      "readers": ["src/session_goal/quarantine.rs"],
+      "introduced": "Goal journey format (protocol 3)",
+      "retire": "when no Goal journal below journey-membership protocol 3 is read"
+    },
+    {
+      "id": "membership-protocol",
+      "marker": "membershipProtocol",
+      "kind": "protocol",
+      "writers": ["src/session_goal/progress.rs"],
+      "readers": ["src/session_goal/progress.rs"],
+      "introduced": "Goal progress view",
+      "retire": "when the progress view stops projecting a journey member's protocol"
+    },
+    {
+      "id": "observation-novelty-protocol",
+      "marker": "observationNoveltyProtocol",
+      "kind": "protocol",
+      "writers": ["src/run/lifecycle.rs"],
+      "readers": ["src/run/state/observation_novelty.rs"],
+      "introduced": "0.31.22 (run-event v8)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "start-observation-novelty-protocol",
+      "marker": "start.observationNoveltyProtocol",
+      "kind": "record-field",
+      "writers": ["src/run/state/observation_novelty.rs"],
+      "readers": ["src/run/state/unknown_fields.rs"],
+      "introduced": "0.31.22 (run-event v8)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "submit-reason",
+      "marker": "submit.reason",
+      "kind": "record-field",
+      "writers": ["src/run/submission.rs"],
+      "readers": ["src/run/state/unknown_fields.rs"],
+      "introduced": "0.31.22 (run-event v8, submit FIRST_VERSION 8)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "latest-correction-works",
+      "marker": "latestCorrectionWorks",
+      "kind": "record-field",
+      "writers": ["src/host/session_recovery/spend.rs"],
+      "readers": ["src/host/session_recovery/hint.rs"],
+      "introduced": "0.31.22",
+      "retire": "with the session recovery hint format (protocol 2)"
+    },
+    {
+      "id": "recorded-by-session-key",
+      "marker": "recordedBySessionKey",
+      "kind": "record-field",
+      "writers": ["src/host/session_recovery/pause.rs", "src/host/session_recovery/record.rs"],
+      "readers": ["src/host/session_recovery/hint.rs"],
+      "introduced": "0.31.22",
+      "retire": "with the session recovery hint format (protocol 2)"
+    },
+    {
+      "id": "journal-session-key",
+      "marker": "journalSessionKey",
+      "kind": "record-field",
+      "writers": ["src/session_goal/native.rs"],
+      "readers": ["src/session_goal/native.rs"],
+      "introduced": "0.31.22",
+      "retire": "with the Goal owner record format"
+    },
+    {
+      "id": "session-adoptions",
+      "marker": "sessionAdoptions",
+      "kind": "record-field",
+      "writers": ["src/session_goal/adoption/record.rs"],
+      "readers": ["src/session_goal/adoption/record.rs"],
+      "introduced": "0.31.22",
+      "retire": "when every Goal journal a release reads is on a journal form that carries no sessionAdoptions"
+    },
+    {
+      "id": "lead-session-goal-delta",
+      "marker": "lead_session_goal_delta",
+      "kind": "record-kind",
+      "writers": ["src/session_goal/journal_form.rs"],
+      "readers": ["src/session_goal/journal_form.rs"],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when every Goal journal a release reads is on a new versioned journal form"
+    },
+    {
+      "id": "release-checks-env",
+      "marker": "EXITBIND_RELEASE_CHECKS",
+      "kind": "env",
+      "writers": [".github/workflows/release.yml"],
+      "readers": [
+        "tests/release_integrity/record_fields.rs",
+        "tests/release_integrity/provisional_bases.rs"
+      ],
+      "introduced": "R55",
+      "retire": "when release integrity runs only in release jobs"
+    },
+    {
+      "id": "temp-root-not-removed-text",
+      "marker": "test directory not removed: ",
+      "kind": "text",
+      "writers": ["src/test_root.rs"],
+      "readers": ["tests/support/temp_root.rs"],
+      "introduced": "R55 F11",
+      "retire": "when the temp-root guard reports a typed outcome instead of text"
+    }
+  ]
+}

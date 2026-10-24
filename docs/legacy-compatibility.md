@@ -118,6 +118,20 @@ managed guidance bytes for their supported history; it does not downgrade the
 ledger or transfer acceptance to changed inputs. Preserve custom profiles and
 settings.
 
+## Compatibility-marker inventory
+
+Every in-band protocol marker and record field the product reads or writes for
+format compatibility is listed in one table,
+[`tooling/repository/checks/compatibility-markers.json`](../tooling/repository/checks/compatibility-markers.json),
+with its kind, writer and reader files, the change that introduced it, and the
+condition under which it may be retired. `check_compatibility_markers.py` in
+the same directory reads `src/` without a build and fails when a recognised
+`*Protocol` key, `FIELD` extension constant, `deny_unknown_fields` struct field
+or run-ledger allowlist field has no row, when a row no longer exists in
+`src/`, and when a row carries no retirement condition. The record-field rows
+are the field inventory `tests/release_integrity/record_fields.rs` requires in
+the CHANGELOG's mixed-version paragraph.
+
 ## Reader inventory
 
 Every source file that reads a historical form appears below exactly as

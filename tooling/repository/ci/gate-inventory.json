@@ -60,7 +60,7 @@
       "id": "product-surface",
       "kind": "stage",
       "cost": "light",
-      "prevents": "experimental code, unlisted dependencies, stale test-target, package or skill inventories",
+      "prevents": "experimental code, unlisted dependencies, stale test-target, package or skill inventories, or an in-band compatibility marker or record field in src/ without a table row",
       "provisionalUntil": "2027-01-22"
     },
     {
