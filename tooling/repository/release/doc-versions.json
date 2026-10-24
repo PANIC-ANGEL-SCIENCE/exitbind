@@ -1,7 +1,7 @@
 {
   "about": "Every version mention in tracked Markdown, and every version the release commit used to edit by hand. A current rule is a whole line whose {version} equals the Cargo package version; a pinned line keeps its version for the stated reason. sync-doc-versions.py --apply rewrites current lines; --check fails on stale or unlisted mentions.",
   "archives": {
-    "CHANGELOG.md": "Release history: each entry names the version it describes; the release commit adds the new entry by hand."
+    "CHANGELOG.md": "Release history: each entry names the version it describes; the release commit adds the new entry by hand, its first line naming that version's release-tag URL (true before and after publication), and never rewrites an older entry."
   },
   "documents": {
     "CONTRIBUTING.md": [

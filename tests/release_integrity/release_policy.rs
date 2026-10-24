@@ -523,20 +523,49 @@ fn absent_or_drifted_required_version_values_are_rejected() {
     }
 }
 
+/// FR55-18: the release commit wrote "Unreleased source candidate; no stable
+/// tag or release assets are published." and only the next release commit
+/// flipped it, so the public CHANGELOG was false after every publish. The
+/// newest entry's first line now names its release tag, which stays true.
 #[test]
-fn released_and_candidate_changelog_versions_are_checked() {
-    for heading in [
-        format!("## {VERSION}"),
-        format!("## Unreleased — {VERSION} source candidate"),
+fn the_newest_changelog_entry_names_its_release_tag_and_no_pre_publish_status() {
+    let line = release_line(VERSION);
+    let entry = format!("{}\n\n{line}\n", current_changelog_heading());
+    assert!(
+        include_str!("../../CHANGELOG.md").contains(&entry),
+        "the current entry starts with: {line}"
+    );
+    expect_success(gate("check-release-refs.sh", &Fixture::release().0));
+    let heading = current_changelog_heading().to_owned();
+    assert_eq!(heading, format!("## {VERSION}"));
+    let old_sentence =
+        "Unreleased source candidate; no stable tag or release assets are published.";
+    let old_heading = format!("## Unreleased — {VERSION} source candidate");
+    for (label, old, new) in [
+        ("missing heading", heading.clone(), String::new()),
+        (
+            "another version's heading",
+            heading.clone(),
+            heading.replace(VERSION, "1.2.3"),
+        ),
+        ("old status sentence", line.clone(), old_sentence.to_owned()),
+        (
+            "old status sentence below the tag line",
+            line.clone(),
+            format!("{line}\n\n{old_sentence}"),
+        ),
+        ("missing tag line", format!("{line}\n"), String::new()),
+        ("another version's tag", line.clone(), release_line("1.2.3")),
+        ("old heading", heading.clone(), old_heading.clone()),
+        (
+            "old heading above the current entry",
+            heading.clone(),
+            format!("{old_heading}\n\n{line}\n\n{heading}"),
+        ),
     ] {
         let fixture = Fixture::release();
-        fixture.replace("CHANGELOG.md", current_changelog_heading(), &heading);
-        expect_success(gate("check-release-refs.sh", &fixture.0));
-        for replacement in [String::new(), heading.replace(VERSION, "1.2.3")] {
-            let fixture = Fixture::release();
-            fixture.replace("CHANGELOG.md", current_changelog_heading(), &replacement);
-            expect_failure(gate("check-release-refs.sh", &fixture.0), &replacement);
-        }
+        fixture.replace("CHANGELOG.md", &old, &new);
+        expect_failure(gate("check-release-refs.sh", &fixture.0), label);
     }
 }
 

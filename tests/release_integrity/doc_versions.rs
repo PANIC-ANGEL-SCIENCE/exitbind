@@ -99,7 +99,8 @@ fn bumping_the_package_version_moves_every_current_mention_and_no_pinned_one() {
         "CHANGELOG.md",
         current_changelog_heading(),
         &format!(
-            "## {BUMPED}\n\nFixture release.\n\n{}",
+            "## {BUMPED}\n\n{}\n\nFixture release.\n\n{}",
+            release_line(BUMPED),
             current_changelog_heading()
         ),
     );

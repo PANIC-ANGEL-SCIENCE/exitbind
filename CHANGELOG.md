@@ -2,7 +2,7 @@
 
 ## 0.31.22
 
-Unreleased source candidate; no stable tag or release assets are published.
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.22 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
 
 Install the hook binary and the governor together, and check that
 `exitbind version` on PATH (the hook binary) prints the governor's version

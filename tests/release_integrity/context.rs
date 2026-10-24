@@ -116,6 +116,15 @@ fn expect_failure(output: Output, context: &str) {
     );
 }
 
+/// The first line of the CHANGELOG entry for `version`: its release tag, true
+/// before the tag is published and after (check-release-refs.sh).
+fn release_line(version: &str) -> String {
+    format!(
+        "Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v{version} \u{2014} \
+         the tag sits on this entry's release commit, and the page lists its assets once they are published."
+    )
+}
+
 fn current_changelog_heading() -> &'static str {
     include_str!("../../CHANGELOG.md")
         .lines()

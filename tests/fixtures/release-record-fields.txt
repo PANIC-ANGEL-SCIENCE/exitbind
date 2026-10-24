@@ -1,6 +1,6 @@
 # Run-ledger (`action.field`) and record fields the allowlists admitted at
 # the release below, read by tests/release_integrity/record_fields.rs.
-# Replace it with that test's printed set when a newer release is published.
+# Regenerate it from that test's printed set in the next release commit.
 release 0.31.21
 $schema
 __verifiedContextOnlyWork

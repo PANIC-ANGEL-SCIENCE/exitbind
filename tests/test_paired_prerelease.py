@@ -503,6 +503,10 @@ class RealGitObjectTests(unittest.TestCase):
             self.assertIn('Source candidate tag: v'+NEXT+'\n', policy)
             self.assertIn('`v'+NEXT+'` includes', run(bare, 'show', candidate+':REFERENCE.md').decode())
             self.assertIn('version="${EXITBIND_VERSION:-v'+NEXT+'}"', run(bare, 'show', candidate+':install.sh').decode())
+            # The candidate's CHANGELOG entry names its tag, which the trusted check accepted.
+            changelog = run(bare, 'show', candidate+':CHANGELOG.md').decode()
+            self.assertTrue(changelog.startswith('# Changelog\n\n## '+NEXT+'\n\n'+PREPARE.release_line(NEXT)+'\n\n'))
+            self.assertIn('/releases/tag/v'+NEXT+' \u2014 ', PREPARE.release_line(NEXT))
 
 
 if __name__ == '__main__':

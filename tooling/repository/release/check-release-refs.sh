@@ -75,11 +75,20 @@ for guide in README.md REFERENCE.md; do
 done
 installer_version=$(sed -n 's/^version="${EXITBIND_VERSION:-\([^}]*\)}"$/\1/p' install.sh)
 equal_version install.sh "$installer_version" "$current"
-changelog_version=$(awk '
-  /^## Unreleased — [0-9]+\.[0-9]+\.[0-9]+ source candidate$/ { print $4; exit }
-  /^## [0-9]/ { print $2; exit }
-' CHANGELOG.md)
+changelog_version=$(awk '/^## / { print $2; exit }' CHANGELOG.md)
 equal_version CHANGELOG.md "$changelog_version" "$plain"
+# The newest entry's first line names its release tag. That line is true before
+# the tag is published and after, so no entry is rewritten once it ships. A
+# pre-publish availability sentence or an "Unreleased" heading becomes false
+# at publish, so either one anywhere in the history fails.
+release_line="Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/$current — the tag sits on this entry's release commit, and the page lists its assets once they are published."
+awk -v expected="$release_line" '
+  seen { if (NF) { found = ($0 == expected); exit }; next }
+  /^## / { seen = 1 }
+  END { exit !found }
+' CHANGELOG.md || fail "CHANGELOG.md: the line after '## $plain' must be: $release_line"
+! grep -Eq '^## Unreleased|Unreleased source candidate|no stable tag or release assets are published' CHANGELOG.md ||
+  fail 'CHANGELOG.md: an "Unreleased" heading or pre-publish availability sentence turns false at publish; name the release tag instead'
 
 # Current installed guides must not retain the pre-release availability claims
 # while version substitution alone makes their references look current.

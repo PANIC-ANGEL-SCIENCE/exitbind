@@ -7,8 +7,9 @@
 //! `append_allowed_fields` lists it pushes); record fields are the fields of
 //! every `deny_unknown_fields` struct and every `FIELD`/`*_FIELD` extension
 //! constant. The previous release's set is the snapshot in `SNAPSHOT`, which
-//! names its release; it must be the newest published CHANGELOG entry, and
-//! where that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`)
+//! names its release; it must be the entry directly below the newest
+//! CHANGELOG heading (the release before the current one, so each release
+//! commit regenerates it), and where that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`)
 //! the snapshot must equal the set read from the tag's own source.
 use super::rust_source::{blank, function, literals, production_in};
 use super::*;
@@ -296,7 +297,7 @@ fn render_snapshot(release: &str, fields: &BTreeSet<String>) -> String {
     let mut out = String::from(
         "# Run-ledger (`action.field`) and record fields the allowlists admitted at\n\
          # the release below, read by tests/release_integrity/record_fields.rs.\n\
-         # Replace it with that test's printed set when a newer release is published.\n",
+         # Regenerate it from that test's printed set in the next release commit.\n",
     );
     out.push_str(&format!("release {release}\n"));
     for field in fields {
@@ -306,14 +307,14 @@ fn render_snapshot(release: &str, fields: &BTreeSet<String>) -> String {
     out
 }
 
-/// The newest CHANGELOG entry that says it is published.
-fn newest_published(changelog: &str) -> String {
+/// The entry directly below the newest CHANGELOG heading: the release before
+/// the current one. Read from the structure, not from a status sentence.
+fn previous_release(changelog: &str) -> String {
     changelog
         .split("\n## ")
-        .skip(1)
-        .find(|section| section.contains("\nPublished stable release"))
+        .nth(2)
         .and_then(|section| section.lines().next())
-        .expect("a published release")
+        .expect("an entry below the newest CHANGELOG heading")
         .trim()
         .to_owned()
 }
@@ -345,8 +346,8 @@ fn every_field_admitted_since_the_previous_release_is_named_in_the_mixed_version
     let changelog = changelog();
     assert_eq!(
         release,
-        newest_published(&changelog),
-        "{SNAPSHOT} must be the newest published release's fields"
+        previous_release(&changelog),
+        "{SNAPSHOT} must be the fields of the entry below the newest CHANGELOG heading; regenerate it in the release commit"
     );
     let added: BTreeSet<String> = admitted(manifest())
         .difference(&previous)
@@ -361,23 +362,28 @@ fn every_field_admitted_since_the_previous_release_is_named_in_the_mixed_version
 
 #[test]
 fn a_start_field_left_out_of_the_mixed_version_paragraph_fails() {
+    // The seeded field comes from the snapshot fixture, so this test does not
+    // depend on which fields the current release happens to add.
     let (_, previous) = snapshot(&fs::read_to_string(manifest().join(SNAPSHOT)).unwrap());
-    let added: BTreeSet<String> = admitted(manifest())
-        .difference(&previous)
-        .cloned()
-        .collect();
-    let field = "start.observationNoveltyProtocol";
-    assert!(
-        added.contains(field),
-        "the seeded field is read from the allowlist: {added:?}"
+    let field = previous
+        .iter()
+        .find(|field| field.starts_with("start."))
+        .expect("the snapshot lists a start field")
+        .clone();
+    let record = field["start.".len()..].to_owned();
+    let added = BTreeSet::from([field.clone(), record]);
+    let named = format!(
+        "# Changelog\n\n## 9.8.7\n\n{}\n\nOlder readers refuse `{field}`.\n\n- A change.\n\n## 9.8.6\n",
+        release_line("9.8.7")
     );
-    let seeded = changelog().replacen(&format!("`{field}`"), "the novelty marker", 1);
+    assert!(unnamed(&added, &named).is_empty());
+    let seeded = named.replacen(&format!("`{field}`"), "the new marker", 1);
     assert_eq!(
         unnamed(&added, &seeded),
-        ["observationNoveltyProtocol", field],
-        "the start field and its extension constant are both unnamed"
+        added.iter().cloned().collect::<Vec<_>>(),
+        "the start field and its record field are both unnamed"
     );
-    assert!(unnamed(&added, &changelog()).is_empty());
+    assert_eq!(previous_release(&named), "9.8.6");
 }
 
 #[test]

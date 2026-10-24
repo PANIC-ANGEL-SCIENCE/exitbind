@@ -17,6 +17,13 @@ def load_channel():
     return load_sibling('release_channel', 'release-channel.py')
 
 
+def release_line(version):
+    """The first line of a CHANGELOG entry: its release tag, true before and after publish."""
+    return ('Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v'+version
+            + " \u2014 the tag sits on this entry's release commit, and the page lists its assets"
+            ' once they are published.')
+
+
 def prepare(root, version):
     root = Path(root).resolve()
     channel = load_channel()
@@ -60,7 +67,11 @@ def prepare(root, version):
     changelog = safe_file('CHANGELOG.md').read_text()
     if not changelog.startswith('# Changelog\n\n'):
         raise ValueError('Unexpected changelog heading')
-    changes['CHANGELOG.md'] = '# Changelog\n\n## '+version+'\n\nPaired prerelease candidate; Linux validation and assets only.\n\n'+changelog[len('# Changelog\n\n'):]
+    # The entry's first line names its tag, as check-release-refs.sh requires:
+    # it stays true after the tag is published, so the entry is never rewritten.
+    changes['CHANGELOG.md'] = ('# Changelog\n\n## '+version+'\n\n'+release_line(version)+'\n\n'
+                               'Paired prerelease candidate; Linux validation and assets only.\n\n'
+                               + changelog[len('# Changelog\n\n'):])
     # All shapes are checked before the first write; the version-free install
     # command and the release history stay intact.
     for name, text in changes.items():
