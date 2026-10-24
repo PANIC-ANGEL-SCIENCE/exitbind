@@ -7,9 +7,9 @@
 //! `append_allowed_fields` lists it pushes); record fields are the fields of
 //! every `deny_unknown_fields` struct and every `FIELD`/`*_FIELD` extension
 //! constant. The previous release's set is the snapshot in `SNAPSHOT`, which
-//! names its release; it must be the entry directly below the newest
-//! CHANGELOG heading (the release before the current one, so each release
-//! commit regenerates it), and where that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`)
+//! names its release; it must be the first stable entry below the newest
+//! stable CHANGELOG heading (the release before the current one, so each
+//! release commit regenerates it; prerelease headings are skipped), and where that release's tag resolves (always under `EXITBIND_RELEASE_CHECKS`)
 //! the snapshot must equal the set read from the tag's own source.
 use super::rust_source::{blank, function, literals, production_in};
 use super::*;
@@ -307,15 +307,21 @@ fn render_snapshot(release: &str, fields: &BTreeSet<String>) -> String {
     out
 }
 
-/// The entry directly below the newest CHANGELOG heading: the release before
-/// the current one. Read from the structure, not from a status sentence.
+/// The first stable entry below the newest stable CHANGELOG heading: the
+/// release before the current one. Read from the structure, not from a status
+/// sentence. Prerelease headings (`## 0.31.23-rc.1`, which paired-prerelease
+/// preparation puts on top) are skipped, so a prepared candidate reads the
+/// same release as main.
 fn previous_release(changelog: &str) -> String {
     changelog
         .split("\n## ")
-        .nth(2)
-        .and_then(|section| section.lines().next())
-        .expect("an entry below the newest CHANGELOG heading")
-        .trim()
+        .skip(1)
+        .filter_map(|section| section.lines().next().map(str::trim))
+        .filter(|heading| {
+            heading.starts_with(|c: char| c.is_ascii_digit()) && !heading.contains('-')
+        })
+        .nth(1)
+        .expect("a stable entry below the newest stable CHANGELOG heading")
         .to_owned()
 }
 
@@ -347,7 +353,7 @@ fn every_field_admitted_since_the_previous_release_is_named_in_the_mixed_version
     assert_eq!(
         release,
         previous_release(&changelog),
-        "{SNAPSHOT} must be the fields of the entry below the newest CHANGELOG heading; regenerate it in the release commit"
+        "{SNAPSHOT} must be the fields of the first stable entry below the newest stable CHANGELOG heading; regenerate it in the release commit"
     );
     let added: BTreeSet<String> = admitted(manifest())
         .difference(&previous)
@@ -384,6 +390,9 @@ fn a_start_field_left_out_of_the_mixed_version_paragraph_fails() {
         "the start field and its record field are both unnamed"
     );
     assert_eq!(previous_release(&named), "9.8.6");
+    // A paired prerelease candidate puts its rc entry on top of main's.
+    let candidate = named.replacen("## 9.8.7", "## 9.8.8-rc.1\n\nCandidate.\n\n## 9.8.7", 1);
+    assert_eq!(previous_release(&candidate), "9.8.6");
 }
 
 #[test]

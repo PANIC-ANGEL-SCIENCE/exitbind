@@ -33,8 +33,9 @@ every `current` mention, and adds its CHANGELOG entry; no other version edit is
 manual. The entry's first line is `Release:` followed by the release tag's URL
 for that version, a statement that stays true after publication, so a release
 commit never rewrites an older entry and `check-release-refs.sh` rejects an
-"Unreleased" heading or a pre-publication availability sentence. `--check` (run by the release-integrity tests) fails on a stale
-`current` mention and on any mention the inventory does not list.
+"Unreleased" heading or a pre-publication availability sentence. `--check`
+(run by the release-integrity tests) fails on a stale `current` mention and on
+any mention the inventory does not list.
 
 ## Delivery readback
 
