@@ -26,6 +26,8 @@ mod setup_lessons;
 mod setup_next;
 #[path = "setup_projection.rs"]
 mod setup_projection;
+#[path = "setup_readiness.rs"]
+mod setup_readiness;
 #[path = "setup_roles.rs"]
 mod setup_roles;
 #[path = "setup_statusline.rs"]
@@ -211,21 +213,13 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         crate::project::portability::source(&root)
             .map_err(|error| format!("setup source preflight; no files changed: {error}"))?;
     }
-    let readiness = crate::project::readiness::assess(&crate::project::readiness::Facts {
-        root: &root,
-        state_root: &state,
-        check_command: facts.check_command.as_deref(),
-        hosts: &hosts,
-    });
-    if facts.apply {
-        if let Some(command) = facts.check_command.as_deref() {
-            if let Some(refusal) = crate::project::readiness::checker_refusal(&root, command) {
-                return Err(format!(
-                    "setup refused before writing; no files changed: {refusal}"
-                ));
-            }
-        }
-    }
+    let readiness = setup_readiness::preflight(
+        &root,
+        &state,
+        facts.check_command.as_deref(),
+        &hosts,
+        facts.apply,
+    )?;
     let mut report = preview_report(
         facts,
         &root,
@@ -762,6 +756,7 @@ fn ordinary_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
 
 fn print_report(report: &Value) {
     println!("Setup {}.", report["status"].as_str().unwrap_or("unknown"));
+    setup_readiness::print(&report["readiness"]);
     setup_lessons::print(&report["lessons"]);
     if let Some(text) = report["goalText"].as_str() {
         println!("Goal: {text}");

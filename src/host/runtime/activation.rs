@@ -82,7 +82,6 @@ pub(crate) fn assess_activation(facts: ActivationFacts) -> ActivationAssessment 
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn classify_activation(
     material_consequence: bool,
     promotion_required: bool,

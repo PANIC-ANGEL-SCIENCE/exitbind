@@ -42,7 +42,7 @@ pub(crate) fn command_names(loaded: &Loaded, command: &str, checker: &str) -> bo
     }
     let wanted = checker.trim_start_matches("./");
     outside_scripts(loaded, command).iter().any(|(_, text)| {
-        tokens(text).any(|token| project_relative(loaded, token).as_deref() == Some(wanted))
+        tokens(text).any(|token| project_relative(loaded, &token).as_deref() == Some(wanted))
     })
 }
 
@@ -93,7 +93,7 @@ fn ambiguous(what: &str, found: &[String]) -> String {
 fn covered_named(loaded: &Loaded, text: &str) -> Result<Vec<String>, String> {
     let mut found: Vec<String> = Vec::new();
     for token in tokens(text) {
-        let Some(relative) = project_relative(loaded, token) else {
+        let Some(relative) = project_relative(loaded, &token) else {
             continue;
         };
         if found.contains(&relative) {
@@ -113,10 +113,10 @@ fn covered_named(loaded: &Loaded, text: &str) -> Result<Vec<String>, String> {
 fn outside_scripts(loaded: &Loaded, command: &str) -> Vec<(String, String)> {
     let mut scripts: Vec<(String, String)> = Vec::new();
     for token in tokens(command) {
-        let path = Path::new(token);
+        let path = Path::new(&token);
         if !path.is_absolute()
-            || project_relative(loaded, token).is_some()
-            || scripts.iter().any(|(existing, _)| existing == token)
+            || project_relative(loaded, &token).is_some()
+            || scripts.iter().any(|(existing, _)| existing == &token)
         {
             continue;
         }
@@ -127,16 +127,79 @@ fn outside_scripts(loaded: &Loaded, command: &str) -> Vec<(String, String)> {
             continue;
         }
         if let Ok(text) = std::fs::read_to_string(path) {
-            scripts.push((token.into(), text));
+            scripts.push((token, text));
         }
     }
     scripts
 }
 
-/// Shell-ish words: whitespace and shell punctuation separate path candidates.
-pub(crate) fn tokens(text: &str) -> impl Iterator<Item = &str> {
-    text.split(|c: char| c.is_whitespace() || ";&|()<>\"'`={}".contains(c))
-        .filter(|token| !token.is_empty())
+/// Shell-ish words: whitespace and shell punctuation separate words, quotes
+/// group one word, and a leading `NAME=value` assignment is not a command
+/// word. A `--flag=path` word also yields its value, so a project path after
+/// `=` stays a candidate for the checker search.
+pub(crate) fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = text.chars();
+    while let Some(character) = chars.next() {
+        match quote {
+            Some(delimiter) => {
+                if character == delimiter {
+                    quote = None;
+                } else if character == '\\' && delimiter == '"' {
+                    if let Some(escaped) = chars.next() {
+                        word.push(escaped);
+                    }
+                } else {
+                    word.push(character);
+                }
+            }
+            None => {
+                if character == '\'' || character == '"' {
+                    quote = Some(character);
+                } else if character == '\\' {
+                    if let Some(escaped) = chars.next() {
+                        word.push(escaped);
+                    }
+                } else if character.is_whitespace() || ";&|()<>{}`".contains(character) {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                } else {
+                    word.push(character);
+                }
+            }
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    let mut result = Vec::new();
+    for word in words {
+        if is_assignment(&word) {
+            continue;
+        }
+        if let Some((_, value)) = word.split_once('=') {
+            let value = value.trim_matches(|c| c == '\'' || c == '"');
+            if !value.is_empty() {
+                result.push(value.to_owned());
+            }
+        }
+        result.push(word);
+    }
+    result.into_iter()
+}
+
+/// `NAME=value` before the command word is the shell's environment prefix, not
+/// a command or a path.
+fn is_assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+    let mut characters = name.chars();
+    matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 /// The project-relative form of a token naming a path inside the project,
@@ -152,6 +215,8 @@ mod tests {
     #[test]
     fn tokens_split_shell_punctuation() {
         let words: Vec<_> = tokens("exec ./a.sh --x=\"b/c.sh\"; (sh d)").collect();
-        assert_eq!(words, ["exec", "./a.sh", "--x", "b/c.sh", "sh", "d"]);
+        assert_eq!(words, ["exec", "./a.sh", "b/c.sh", "--x=b/c.sh", "sh", "d"]);
+        let assignments: Vec<_> = tokens("X=1 \"/a b/check.sh\"").collect();
+        assert_eq!(assignments, ["/a b/check.sh"]);
     }
 }

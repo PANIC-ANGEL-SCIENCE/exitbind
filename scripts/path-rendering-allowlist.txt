@@ -3,3 +3,5 @@ src/cli/mod.rs:a.options.get("root").map(String::as_str).unwrap_or("."),
 src/project/commands.rs:.unwrap_or(".");
 # Human display fallback only; the separate command conversion below stays strict.
 src/project/commands.rs:let value = path.to_string_lossy();
+# Readiness prints a path; control characters are escaped for the terminal.
+src/project/readiness.rs:crate::presentation::escaped(&path.to_string_lossy())

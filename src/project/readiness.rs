@@ -53,6 +53,7 @@ pub(crate) fn assess(facts: &Facts<'_>) -> Value {
         _ => walk_breadth(facts.root, facts.state_root, deadline),
     };
     let checker = checker_fact(facts.root, facts.check_command);
+    let target = target_directory(facts.root);
     let ready = breadth["withinLimit"] == json!(true)
         && git["state"] == json!("worktree")
         && git["baseline"].as_str().is_some();
@@ -75,26 +76,79 @@ pub(crate) fn assess(facts: &Facts<'_>) -> Value {
         "checkerEnvironment": {
             "cargoTargetDir": std::env::var_os("CARGO_TARGET_DIR")
                 .and_then(|value| value.to_str().map(str::to_owned)),
-            "targetPresent": facts.root.join("target").symlink_metadata().is_ok(),
+            "targetDirectory": text(&target.0),
+            "targetPresent": target.1,
             "targetOwnership": "not stated",
-            "detail": "the product cannot name a build target's owner without the check script's own marker; the check command reports a build-target conflict",
         },
         "hostWrite": host_write_fact(facts.hosts),
     })
+}
+
+/// The build directory the check will inherit: `CARGO_TARGET_DIR` when it is
+/// set (relative values resolve against the product root), else `target/`
+/// beside the project. Its presence is a fact; its ownership is not.
+fn target_directory(root: &Path) -> (PathBuf, bool) {
+    let path = match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(value) if !value.is_empty() => {
+            let path = PathBuf::from(value);
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        }
+        _ => root.join("target"),
+    };
+    let present = path.is_dir();
+    (path, present)
 }
 
 /// The one refusal readiness owns: a checker program that exists but cannot
 /// run. A missing program has no single runnable route, so it stays a stated
 /// fact and the check command's own failure route reports it.
 pub(crate) fn checker_refusal(root: &Path, command: &str) -> Option<String> {
-    let fact = checker_fact(root, Some(command));
-    if fact["state"] != json!("not-executable") {
+    let program = crate::session_goal::requirements::command_tokens(command.trim())
+        .next()
+        .unwrap_or_default();
+    if program.is_empty() {
         return None;
     }
-    let path = fact["path"].as_str()?;
+    let outcome = program_state(root, &program);
+    if outcome.state != "not-executable" {
+        return None;
+    }
+    let path = normalized(&outcome.path?);
     Some(format!(
-        "checker program {path} exists but is not executable; run `chmod +x {path}` and retry"
+        "checker program {} exists but is not executable; run `{}` and retry",
+        shown_path(&path),
+        executable_route(&path)
     ))
+}
+
+/// The route the operator can run unedited, with the path shell-quoted.
+fn executable_route(path: &Path) -> String {
+    format!(
+        "chmod +x {}",
+        crate::presentation::shell_quote(&shown_path(path))
+    )
+}
+
+/// A path as text with its control characters spelled out.
+fn shown_path(path: &Path) -> String {
+    crate::presentation::escaped(&path.to_string_lossy())
+}
+
+/// The path without `.` components, so a relative command names the same file
+/// the operator sees rather than `./`-laden joins.
+fn normalized(path: &Path) -> PathBuf {
+    let mut clean = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            other => clean.push(other),
+        }
+    }
+    clean
 }
 
 /// Human lines for `check`, one per fact. The caller prints them in place.
@@ -114,18 +168,27 @@ pub(crate) fn text_lines(readiness: &Value) -> Vec<String> {
     ));
     lines.push(format!("  Git: {}", git_sentence(git)));
     lines.push(format!("  checker: {}", checker_sentence(checker)));
-    lines.push(format!(
-        "  checker environment: CARGO_TARGET_DIR {}; target directory {}; target ownership not stated (the check command reports a build-target conflict)",
-        environment["cargoTargetDir"]
-            .as_str()
-            .map(crate::presentation::escaped)
-            .unwrap_or_else(|| "not set".into()),
-        if environment["targetPresent"] == json!(true) {
-            "present"
-        } else {
-            "absent"
-        }
-    ));
+    // State the build directory only when a check would inherit one. Its
+    // ownership stays unstated: a stale foreign target can be reused silently.
+    if environment["cargoTargetDir"].is_string() || environment["targetPresent"] == json!(true) {
+        lines.push(format!(
+            "  checker environment: CARGO_TARGET_DIR {}; target directory {} at {}; target ownership not stated",
+            environment["cargoTargetDir"]
+                .as_str()
+                .map(crate::presentation::escaped)
+                .unwrap_or_else(|| "not set".into()),
+            if environment["targetPresent"] == json!(true) {
+                "present"
+            } else {
+                "absent"
+            },
+            crate::presentation::escaped(
+                environment["targetDirectory"]
+                    .as_str()
+                    .unwrap_or("an unknown path")
+            )
+        ));
+    }
     lines.push(format!(
         "  host write: {}",
         host_write_sentence(&readiness["hostWrite"])
@@ -149,15 +212,21 @@ fn breadth_sentence(root: &Value) -> String {
         ("git-listing", Some(true)) => format!(
             "{files} paths listed by Git; within the {file_limit}-path tested-input limit"
         ),
-        ("git-listing", _) => format!(
+        ("git-listing", Some(false)) => format!(
             "{files} paths listed by Git, over the {file_limit}-path tested-input limit; `work resume` cannot fingerprint this root"
         ),
         (_, Some(true)) => format!(
             "{files} files and {} directories under the root; within the tested-input walk limit ({file_limit} paths / {directory_limit} directories)",
             directories.unwrap_or(0)
         ),
-        _ => format!(
+        (_, Some(false)) => format!(
             "more than {file_limit} files or {directory_limit} directories under the root, over the tested-input walk limit; a non-Git root is walked on every tested-input fingerprint, so a broad root costs minutes"
+        ),
+        (_, None) => format!(
+            "not counted: {}; the count did not complete, so the root's tested-input breadth is unknown against {file_limit} paths / {directory_limit} directories",
+            crate::presentation::escaped(
+                root["detail"].as_str().unwrap_or("the count did not complete")
+            )
         ),
     }
 }
@@ -201,9 +270,11 @@ fn checker_sentence(checker: &Value) -> String {
             shown("path")
         ),
         Some("not-executable") => format!(
-            "{} exists but is not executable; work begin refuses until it can run (`chmod +x {}`)",
+            "{} exists but is not executable; work begin refuses until it can run (`{}`)",
             shown("path"),
-            shown("path")
+            executable_route(Path::new(
+                checker["path"].as_str().unwrap_or_default()
+            ))
         ),
         Some("missing") => format!(
             "{} does not exist; the check will fail when it runs",
@@ -333,18 +404,25 @@ fn walk_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
     let mut directories = 1usize;
     let mut pending = vec![PathBuf::new()];
     let mut sampled = false;
+    let mut unknown = false;
     let mut detail = None;
     'walk: while let Some(relative) = pending.pop() {
         if Instant::now() >= deadline {
             sampled = true;
             break;
         }
+        let listed = if relative.as_os_str().is_empty() {
+            ".".to_owned()
+        } else {
+            shown_path(&relative)
+        };
         let entries = match std::fs::read_dir(root.join(&relative)) {
             Ok(entries) => entries,
             Err(error) => {
                 detail = Some(format!(
-                    "the tested-input walk cannot list the root: {error}"
+                    "the tested-input walk cannot list {listed}: {error}"
                 ));
+                unknown = true;
                 break;
             }
         };
@@ -354,7 +432,10 @@ fn walk_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
                 break 'walk;
             }
             let Ok(entry) = entry else {
-                detail = Some("the tested-input walk cannot read a directory entry".into());
+                detail = Some(format!(
+                    "the tested-input walk cannot read an entry under {listed}"
+                ));
+                unknown = true;
                 break 'walk;
             };
             let path = relative.join(entry.file_name());
@@ -362,7 +443,11 @@ fn walk_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
                 continue;
             }
             let Ok(kind) = entry.file_type() else {
-                detail = Some("the tested-input walk cannot read an entry type".into());
+                detail = Some(format!(
+                    "the tested-input walk cannot read the type of {}",
+                    shown_path(&path)
+                ));
+                unknown = true;
                 break 'walk;
             };
             if kind.is_dir() {
@@ -397,7 +482,7 @@ fn walk_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
         "basis": "walk",
         "files": files,
         "directories": directories,
-        "withinLimit": if sampled { Value::Null } else { json!(true) },
+        "withinLimit": if sampled || unknown { Value::Null } else { json!(true) },
         "sampled": sampled,
         "detail": detail,
     })
@@ -406,7 +491,7 @@ fn walk_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
 fn unavailable_breadth(basis: &str, detail: &str) -> Value {
     json!({
         "basis": basis,
-        "files": 0,
+        "files": Value::Null,
         "directories": null,
         "withinLimit": Value::Null,
         "sampled": false,
@@ -431,7 +516,7 @@ fn checker_fact(root: &Path, command: Option<&str>) -> Value {
     };
     let program = crate::session_goal::requirements::command_tokens(command)
         .next()
-        .unwrap_or("");
+        .unwrap_or_default();
     if program.is_empty() {
         return json!({
             "state": "not-stated",
@@ -440,11 +525,11 @@ fn checker_fact(root: &Path, command: Option<&str>) -> Value {
             "detail": null,
         });
     }
-    let outcome = program_state(root, program);
+    let outcome = program_state(root, &program);
     json!({
         "state": outcome.state,
         "program": program,
-        "path": outcome.path.as_deref().map(text),
+        "path": outcome.path.as_deref().map(|path| text(&normalized(path))),
         "detail": outcome.detail,
     })
 }
