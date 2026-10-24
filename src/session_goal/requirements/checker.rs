@@ -134,7 +134,7 @@ fn outside_scripts(loaded: &Loaded, command: &str) -> Vec<(String, String)> {
 }
 
 /// Shell-ish words: whitespace and shell punctuation separate path candidates.
-fn tokens(text: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn tokens(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| c.is_whitespace() || ";&|()<>\"'`={}".contains(c))
         .filter(|token| !token.is_empty())
 }

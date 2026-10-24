@@ -45,6 +45,18 @@ pub(crate) fn begin_with_pre_return(
         }
         BasisOrigin::PreparedJourney(prepared) => Some(prepared.basis()),
     };
+    // Environment readiness is read before any ledger mutation, so a checker
+    // that exists but cannot run refuses before the first record. The same
+    // facts are returned beside the Work so the Lead sees the host's stated
+    // write posture and the tested-input breadth without another command.
+    let readiness = crate::project::commands::readiness_for(loaded, Some(options.check_command));
+    if let Some(refusal) =
+        crate::project::readiness::checker_refusal(&loaded.product_root, options.check_command)
+    {
+        return Err(format!(
+            "work begin refused before recording a Work: {refusal}"
+        ));
+    }
     // `work begin` is the governed activation boundary. Direct, harmless work
     // never enters this path. Availability is read from the loaded project
     // preconditions before any ledger mutation; the final boolean means those
@@ -170,7 +182,7 @@ pub(crate) fn begin_with_pre_return(
         Ok(()) => json!({"updated": true, "authority": "none"}),
         Err(error) => focus::recovery(loaded, &work, &error),
     };
-    Ok(json!({"work": work, "next": next, "focus": focus}))
+    Ok(json!({"work": work, "next": next, "focus": focus, "readiness": readiness}))
 }
 
 #[cfg(test)]

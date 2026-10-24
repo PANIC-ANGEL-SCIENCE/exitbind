@@ -99,6 +99,13 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 command,
             )?;
             let checker = derived.path.as_str();
+            if let Some(refusal) = crate::project::readiness::checker_refusal(&l.product_root, command)
+            {
+                return Err(format!(
+                    "goal prepare refused before preparing the contract: {refusal}"
+                ));
+            }
+            let readiness = crate::project::commands::readiness_for(l, Some(command));
             let integration = match a.options.get("scope").map(String::as_str) {
                 None => false,
                 Some("integration") => true,
@@ -176,6 +183,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "checker":{"path":checker,"sha256":crate::session_goal::requirements::checker_input(l, checker, command)?.sha256,
                     "derived":!a.options.contains_key("artifact"),"via":derived.via},
                 "integration":integration,"beginRoute":route,"journeyIntegrationOmitted":journey_omitted,
+                "readiness":readiness,
                 "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
                 "effect":"no Work is started or frozen until beginRoute is executed"}))
         }

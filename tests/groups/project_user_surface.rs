@@ -9,6 +9,8 @@ mod activation_classify;
 mod agent_first_control;
 #[path = "../checked_work_ux.rs"]
 mod checked_work_ux;
+#[path = "../environment_readiness.rs"]
+mod environment_readiness;
 #[path = "../external_selection.rs"]
 mod external_selection;
 #[path = "../fresh_user_surface.rs"]

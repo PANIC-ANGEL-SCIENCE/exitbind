@@ -211,6 +211,21 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         crate::project::portability::source(&root)
             .map_err(|error| format!("setup source preflight; no files changed: {error}"))?;
     }
+    let readiness = crate::project::readiness::assess(&crate::project::readiness::Facts {
+        root: &root,
+        state_root: &state,
+        check_command: facts.check_command.as_deref(),
+        hosts: &hosts,
+    });
+    if facts.apply {
+        if let Some(command) = facts.check_command.as_deref() {
+            if let Some(refusal) = crate::project::readiness::checker_refusal(&root, command) {
+                return Err(format!(
+                    "setup refused before writing; no files changed: {refusal}"
+                ));
+            }
+        }
+    }
     let mut report = preview_report(
         facts,
         &root,
@@ -220,6 +235,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
         &hosts,
         existing.as_ref(),
     )?;
+    report["readiness"] = readiness;
     if let Some(lessons) = setup_lessons::preview(facts.lessons_from.as_deref(), &root)? {
         report["lessons"] = lessons;
     }

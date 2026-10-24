@@ -8,7 +8,9 @@ mod run_report;
 
 pub(crate) use run_report::markdown as run_report_markdown;
 
-pub(crate) fn shell_quote(value: &str) -> String {
+/// A host-supplied path or name with its control characters spelled out, so
+/// terminal output can never carry them. Quotes stay as written.
+pub(crate) fn escaped(value: &str) -> String {
     let mut escaped = String::new();
     for character in value.chars() {
         if character.is_control() {
@@ -17,7 +19,11 @@ pub(crate) fn shell_quote(value: &str) -> String {
             escaped.push(character);
         }
     }
-    format!("'{}'", escaped.replace('\'', "'\\''"))
+    escaped
+}
+
+pub(crate) fn shell_quote(value: &str) -> String {
+    format!("'{}'", escaped(value).replace('\'', "'\\''"))
 }
 
 /// The read route for a run ledger, naming the executable this process runs as.

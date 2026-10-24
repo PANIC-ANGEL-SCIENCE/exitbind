@@ -110,6 +110,22 @@ fn expected_json() -> String {
     "{\"mode\":\"local\",\"projectId\":\"skill_diagnostics_fixture\",\"valid\":true,\"warnings\":[{\"classification\":\"empty_starter_boundary\",\"detail\":\"empty starter boundary: review observe, write, and commands before tasks needing project files or commands; empty declarations do not grant host permission or establish task readiness\"}]}\n".into()
 }
 
+/// `check --json` keeps the stable configuration object and adds the
+/// environment readiness section, whose values depend on the fixture's root.
+fn assert_check_json(stdout: &[u8]) {
+    let mut value: serde_json::Value = serde_json::from_slice(stdout).expect("check JSON parses");
+    let readiness = value
+        .as_object_mut()
+        .expect("check JSON object")
+        .remove("readiness")
+        .expect("check JSON carries a readiness section");
+    assert_eq!(
+        format!("{}\n", serde_json::to_string(&value).unwrap()),
+        expected_json()
+    );
+    assert_eq!(readiness["facts"], "environment-readiness-v1");
+}
+
 #[cfg(unix)]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -124,7 +140,15 @@ fn check_reports_hashes_and_keeps_json_stdout_stable() {
         &bindings,
     );
     assert!(json.status.success(), "{}", text(&json.stderr));
-    assert_eq!(json.stdout, expected_json().as_bytes());
+    assert_check_json(&json.stdout);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["readiness"]["checker"]["state"], "not-stated");
+    for key in ["root", "git", "checker", "checkerEnvironment", "hostWrite"] {
+        assert!(
+            value["readiness"].get(key).is_some(),
+            "readiness lacks {key}"
+        );
+    }
     assert!(json.stderr.is_empty());
 
     let human = invoke(&["check", "--config", config.to_str().unwrap()], &bindings);
@@ -154,7 +178,7 @@ fn managed_drift_warns_on_stderr_without_editing_or_relabeling_version() {
         &bindings,
     );
     assert!(checked.status.success(), "{}", text(&checked.stderr));
-    assert_eq!(checked.stdout, expected_json().as_bytes());
+    assert_check_json(&checked.stdout);
     let stderr = text(&checked.stderr);
     assert!(stderr.contains("differs from this binary's embedded skill"));
     assert!(stderr.contains(&format!("Exitbind package {}", env!("CARGO_PKG_VERSION"))));
@@ -207,7 +231,7 @@ fn hostile_control_root_paths_are_escaped_and_marked_non_copyable() {
         &bindings,
     );
     assert!(json.status.success(), "{}", text(&json.stderr));
-    assert_eq!(json.stdout, expected_json().as_bytes());
+    assert_check_json(&json.stdout);
     assert!(!json.stdout.contains(&0x1b));
     assert!(!json.stderr.contains(&0x1b));
 
@@ -266,7 +290,7 @@ fn check_does_not_create_absent_skill_directories() {
         &bindings,
     );
     assert!(checked.status.success(), "{}", text(&checked.stderr));
-    assert_eq!(checked.stdout, expected_json().as_bytes());
+    assert_check_json(&checked.stdout);
     assert!(checked.stderr.is_empty());
     assert!(!agents_skills.exists());
     assert!(!claude_skills.exists());
@@ -354,7 +378,7 @@ fn check_classifies_unmanaged_invalid_bytes_and_unsafe_paths_without_following_t
         "{}",
         text(&third_party.stderr)
     );
-    assert_eq!(third_party.stdout, expected_json().as_bytes());
+    assert_check_json(&third_party.stdout);
     assert!(third_party.stderr.is_empty());
 
     let outside = base.join("outside");
@@ -373,7 +397,7 @@ fn check_classifies_unmanaged_invalid_bytes_and_unsafe_paths_without_following_t
         "{}",
         text(&symlink_check.stderr)
     );
-    assert_eq!(symlink_check.stdout, expected_json().as_bytes());
+    assert_check_json(&symlink_check.stdout);
     assert!(text(&symlink_check.stderr).contains("unsafe path or nonregular"));
     assert_eq!(fs::read(&sentinel).unwrap(), b"outside bytes\n");
 
@@ -401,7 +425,7 @@ fn check_classifies_symlink_ancestors_without_creating_or_traversing_them() {
         &bindings,
     );
     assert!(checked.status.success(), "{}", text(&checked.stderr));
-    assert_eq!(checked.stdout, expected_json().as_bytes());
+    assert_check_json(&checked.stdout);
     assert!(text(&checked.stderr).contains("unsafe path or nonregular"));
     assert_eq!(fs::read(&sentinel).unwrap(), b"outside bytes\n");
 

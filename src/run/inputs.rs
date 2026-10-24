@@ -39,6 +39,11 @@ pub(crate) fn covered_file(loaded: &crate::config::Loaded, path: &str) -> Result
 
 const EXCLUDED_DIRS: [&str; 3] = [".git", ".exitbind", ".soulmate"];
 
+/// The tested-input walk limits `work resume` enforces. Readiness states the
+/// same numbers before a record exists instead of surfacing them after.
+pub(crate) const WALK_DIRECTORY_LIMIT: usize = 1024;
+pub(crate) const WALK_PATH_LIMIT: usize = 4096;
+
 /// Limits and successful fingerprint memoization owned by one read-only
 /// `work resume` request. Normal callers use `fingerprint` and stay unbounded.
 pub(crate) struct ResumeInputBudget {
@@ -76,7 +81,7 @@ impl ResumeInputBudget {
     pub(crate) fn count_directory_entry(&mut self) -> Result<(), &'static str> {
         self.check()?;
         self.directory_entries = self.directory_entries.saturating_add(1);
-        if self.directory_entries > 1024 {
+        if self.directory_entries > WALK_DIRECTORY_LIMIT {
             self.limited = Some("directory_entry_limit_exceeded");
             return Err("directory_entry_limit_exceeded");
         }
@@ -236,7 +241,7 @@ fn fingerprint_impl(
     for (index, relative) in paths.into_iter().enumerate() {
         if let Some(budget) = budget.as_deref_mut() {
             budget.check().map_err(str::to_owned)?;
-            if index >= 4096 {
+            if index >= WALK_PATH_LIMIT {
                 return Err("fingerprint_path_limit_exceeded".into());
             }
         }
@@ -313,7 +318,9 @@ fn hash_file_bounded(
     Ok(output)
 }
 
-fn excluded(root: &Path, state_root: &Path, relative: &Path) -> bool {
+/// The tested-input exclusion every walk uses: an excluded first component
+/// or a path under the state root.
+pub(crate) fn excluded(root: &Path, state_root: &Path, relative: &Path) -> bool {
     let first = relative
         .components()
         .next()
@@ -474,12 +481,12 @@ fn walk_paths_bounded(root: &Path, budget: &mut ResumeInputBudget) -> Result<Vec
             let kind = entry.file_type().map_err(|error| error.to_string())?;
             if kind.is_dir() {
                 directories += 1;
-                if directories > 1024 {
+                if directories > WALK_DIRECTORY_LIMIT {
                     return Err("fingerprint_directory_limit_exceeded".into());
                 }
                 pending.push(path);
             } else {
-                if found.len() >= 4096 {
+                if found.len() >= WALK_PATH_LIMIT {
                     return Err("fingerprint_path_limit_exceeded".into());
                 }
                 found.push(path);

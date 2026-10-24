@@ -215,7 +215,9 @@ pub(crate) fn doctor(arguments: &Arguments) -> Result<(), String> {
 pub(crate) fn check(loaded: &config::Loaded, arguments: &Arguments) -> Result<(), String> {
     args::assert_options("check", arguments, &["config", "json"])?;
     args::assert_positionals("check", arguments, 0)?;
-    let validation = validated_configuration(loaded)?;
+    let mut validation = validated_configuration(loaded)?;
+    let readiness = readiness_for(loaded, None);
+    validation["readiness"] = readiness.clone();
     let warnings = validation["warnings"].as_array().unwrap();
     let skill_diagnostics = project_skills::diagnose(&loaded.control_root);
     let mode = validation["mode"].as_str().unwrap();
@@ -245,10 +247,23 @@ pub(crate) fn check(loaded: &config::Loaded, arguments: &Arguments) -> Result<()
                 println!("warning: agents.{}.{} entry '{}' is descriptive or unsupported for exact run narrowing", warning["agent"], warning["field"], warning["entry"]);
             }
         }
+        for line in crate::project::readiness::text_lines(&readiness) {
+            println!("{line}");
+        }
         print_skill_diagnostics(&skill_diagnostics);
     }
     print_skill_warnings(&skill_diagnostics, &loaded.control_root);
     Ok(())
+}
+
+/// One readiness assessment for the loaded project, read by every entry point.
+pub(crate) fn readiness_for(loaded: &config::Loaded, check_command: Option<&str>) -> Value {
+    crate::project::readiness::assess(&crate::project::readiness::Facts {
+        root: &loaded.product_root,
+        state_root: &loaded.state_root,
+        check_command,
+        hosts: &crate::project::readiness::configured_hosts(loaded),
+    })
 }
 
 /// The same validation owner supplies both standalone check and applied setup.

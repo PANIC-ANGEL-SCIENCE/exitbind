@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
-  "rootCount": 119,
+  "rootCount": 120,
   "declarations": 921,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
@@ -179,6 +179,13 @@
         "source": "tests/checked_work_ux.rs",
         "module": "checked_work_ux",
         "moduleQualifiedPrefix": "checked_work_ux"
+      },
+      {
+        "oldTarget": "environment_readiness",
+        "newTarget": "project_user_surface",
+        "source": "tests/environment_readiness.rs",
+        "module": "environment_readiness",
+        "moduleQualifiedPrefix": "environment_readiness"
       },
       {
         "oldTarget": "external_selection",
@@ -2189,7 +2196,7 @@
     "tests/release_integrity/release_policy.rs": {
       "baselineSha256": "84411831e7729c36a043366efb640fbd61209cc968517eca26a8935ab9ab140e",
       "currentSha256": "de1165ada9792f2ef35b76e2c4b2f44b0a2fee14dae335e5bc059f60a90f40df",
-      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the installation-pointer readback inventory adds install.sh and install.sh.sha256, with a new missing-installer-asset failure case; no assertion is removed. R54 docver (owner choice A): the separate published stable tag is gone. The pointer readback binds the selected tag through the source candidate line and requires the latest-release README command (a versioned command now fails). The two published-vs-candidate cases become release_policy_declares_no_separate_older_published_tag and current_guides_and_sources_cannot_name_an_older_release; the policy rows test candidate drift, invalid, duplicate and missing lines; README and REFERENCE install-command cases use the latest-release command and reject versioned ones. No other assertion is removed. FR55-18: released_and_candidate_changelog_versions_are_checked becomes the_newest_changelog_entry_names_its_release_tag_and_no_pre_publish_status. The released heading still passes and an empty or other-version heading still fails; the `## Unreleased — X source candidate` heading, which the checker accepted, now fails, as do the old pre-publish status sentence, a missing release-tag line and another version's tag line. The declaration count is unchanged."
+      "reason": "Release policy fixture paths follow repository ownership; the original synthetic historical-maintenance test and narrow historical-reference checker exemption are retained while selected archived originals remain absent. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R54 docver: the installation-pointer readback inventory adds install.sh and install.sh.sha256, with a new missing-installer-asset failure case; no assertion is removed. R54 docver (owner choice A): the separate published stable tag is gone. The pointer readback binds the selected tag through the source candidate line and requires the latest-release README command (a versioned command now fails). The two published-vs-candidate cases become release_policy_declares_no_separate_older_published_tag and current_guides_and_sources_cannot_name_an_older_release; the policy rows test candidate drift, invalid, duplicate and missing lines; README and REFERENCE install-command cases use the latest-release command and reject versioned ones. No other assertion is removed. FR55-18: released_and_candidate_changelog_versions_are_checked becomes the_newest_changelog_entry_names_its_release_tag_and_no_pre_publish_status. The released heading still passes and an empty or other-version heading still fails; the `## Unreleased \u2014 X source candidate` heading, which the checker accepted, now fails, as do the old pre-publish status sentence, a missing release-tag line and another version's tag line. The declaration count is unchanged."
     },
     "tests/release_integrity/source_and_history_integrity.rs": {
       "baselineSha256": "f2ee8d69ccbb2eb4d8015fe91170375040d83d1945909ff926ca698789e019f2",
@@ -2308,8 +2315,8 @@
     },
     "tests/skill_diagnostics.rs": {
       "baselineSha256": "40d1d0b4e75a0add74562628c4739a47e96950a7cbc17f4b6c6d17ce2765c7d3",
-      "currentSha256": "841a144f89953920bd5580e627540cd3c9276df8423dd3441ea8c255f5c2c2e9",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "1337be30808b1f42903b3997d7ac250aaea06200600781a7304f97ee10d2660c",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R56 G6: `check --json` now carries an environment-readiness section beside the stable configuration object; the shared assert_check_json helper removes only that section before the exact expected_json comparison, and check_reports_hashes_and_keeps_json_stdout_stable additionally asserts the readiness checker state and required keys. No original assertion is removed."
     },
     "tests/skill_refresh.rs": {
       "baselineSha256": "582cbfdb098054cb4961b7a8dd308b83cf8355b3d30ff9eeb2e4e4163b7ba0fa",
