@@ -134,6 +134,17 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     assert!(!failed.status.success(), "{}", text(&failed));
     assert!(!text(&failed).contains("Not inside a trusted directory"));
     assert!(!text(&failed).contains("private stderr body"));
+    // The classified state and its one route are printed, not the stderr text.
+    assert!(
+        text(&failed).contains("native assignment did not start (not_started)"),
+        "{}",
+        text(&failed)
+    );
+    assert!(
+        text(&failed).contains(&format!("work act {work}")),
+        "the same assignment's relaunch is printed: {}",
+        text(&failed)
+    );
 
     let journal_path = fixture
         .root
@@ -142,7 +153,10 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
         .join(format!("{assignment}.json"));
     let journal_bytes = fs::read(journal_path).unwrap();
     let journal: Value = serde_json::from_slice(&journal_bytes).unwrap();
-    assert_eq!(journal["status"], "started");
+    assert_eq!(journal["status"], "not_started");
+    assert!(journal["threadId"].is_null());
+    assert_eq!(journal["observation"]["commands"], json!([]));
+    assert_eq!(journal["observation"]["unobservedItemCount"], 0);
     assert_eq!(journal["observation"]["process"]["code"], 1);
     assert_eq!(journal["observation"]["diagnostic"]["stdoutBytes"], 0);
     assert!(journal["observation"]["diagnostic"]["codes"]
@@ -159,7 +173,9 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     let inspected_value: Value = serde_json::from_slice(&inspected.stdout).unwrap();
     assert_eq!(inspected_value["assignment"], assignment);
     assert_eq!(inspected_value["process"]["exitCode"], 1);
-    assert_eq!(inspected_value["nextAction"]["safe"], false);
+    assert_eq!(inspected_value["reconciliation"], "relaunch_ready");
+    assert_eq!(inspected_value["nextAction"]["type"], "execute_current");
+    assert_eq!(inspected_value["nextAction"]["safe"], true);
     assert!(inspected_value["observation"]["diagnostic"]["codes"]
         .as_array()
         .unwrap()
@@ -171,6 +187,60 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
         fixture.value(&["work", "next", &work], b"")["next"]["assignment"],
         assignment
     );
+
+    // The printed relaunch runs unedited: the same assignment starts a
+    // provider thread, and no successor Work is created.
+    let bin = fixture.root.join("relaunch-bin");
+    fs::create_dir(&bin).unwrap();
+    let codex = bin.join("codex");
+    fs::write(
+        &codex,
+        r##"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"thread.started","thread_id":"relaunch-thread"}'
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{\"outcome\":\"completed\",\"summary\":\"relaunched\",\"reason\":\"\"}"}}'
+printf '%s\n' '{"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+"##,
+    )
+    .unwrap();
+    fs::set_permissions(&codex, fs::Permissions::from_mode(0o700)).unwrap();
+    let route: Vec<&str> = inspected_value["nextAction"]["command"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no printed relaunch route: {inspected_value}"))
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect();
+    assert_eq!(route[0], env!("CARGO_BIN_EXE_exitbind"));
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let relaunched = support::git_topology::command(route[0])
+        .current_dir(&fixture.root)
+        .args(&route[1..])
+        .env("EXITBIND_NATIVE_RECOVERY_TEST", "1")
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(relaunched.status.success(), "{}", text(&relaunched));
+    let journal: Value = serde_json::from_slice(
+        &fs::read(
+            fixture
+                .root
+                .join(".exitbind/native-actions")
+                .join(&work)
+                .join(format!("{assignment}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(journal["status"], "completed");
+    assert_eq!(journal["threadId"], "relaunch-thread");
+    // The same Work continues at its check stage: no successor Work was created.
+    let after = fixture.value(&["work", "next", &work], b"");
+    assert_eq!(after["work"], work.as_str());
+    assert_eq!(after["next"]["action"], "check");
 }
 
 #[test]

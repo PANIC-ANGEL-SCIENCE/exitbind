@@ -12,6 +12,8 @@ mod recovery;
 pub(super) mod request;
 #[path = "native_action/result.rs"]
 mod result;
+#[path = "native_action/start_failure.rs"]
+mod start_failure;
 
 use journal::{
     claim_started, journal_result, read_journal, record_error, update_started,
@@ -93,13 +95,20 @@ pub(crate) fn execute(
     };
     let mut retry_thread_id = None;
     let mut prior_failure = None;
+    let mut relaunch_of: Option<String> = None;
 
     if let Some(journal) = existing.clone() {
         verify_journal(&journal, work, &identity, role, agent)?;
-        if options.resume {
+        // A not_started journal never reserved a provider effect to reconcile,
+        // and its only route is the relaunch below.
+        if options.resume && journal["status"] != "not_started" {
             continuation::reconcile_failed(loaded, work, &journal)?;
         }
-        recovery::validate_overrides(&journal, &options)?;
+        // A pre-thread, no-effect start recorded no provider execution, so the
+        // relaunch is the one route allowed to choose another sandbox.
+        if journal["status"] != "not_started" {
+            recovery::validate_overrides(&journal, &options)?;
+        }
         match journal["status"].as_str() {
             Some("completed") => {
                 validate_completed_observation(&journal)?;
@@ -140,6 +149,19 @@ pub(crate) fn execute(
                 let retry = recovery::prepare_provisional_retry(&paths, &journal, role)?;
                 retry_thread_id = retry.thread_id;
                 prior_failure = Some(retry.prior_failure);
+                existing = None;
+            }
+            Some("not_started") if options.resume => {
+                let route = start_failure::route(work, &journal)
+                    .config(&loaded.path)
+                    .shell_text();
+                return Err(format!(
+                    "native assignment did not start; it has no provider thread to resume. Launch the same assignment with {route}"
+                ));
+            }
+            Some("not_started") => {
+                // Pre-thread, no-effect failure: the same assignment relaunches.
+                relaunch_of = Some(recovery::prepare_start_relaunch(&paths, &journal)?);
                 existing = None;
             }
             Some("started") => {}
@@ -250,12 +272,18 @@ pub(crate) fn execute(
             &identity.assignment,
             &request,
             prior_failure.as_ref(),
+            relaunch_of.as_deref(),
         )
         .unwrap_or_else(|| {
             prior_failure
                 .as_ref()
                 .and_then(|failure| failure["operation"].as_str())
                 .map(|operation| format!("native-retry-{operation}-{}", timestamp()))
+                .or_else(|| {
+                    relaunch_of
+                        .as_deref()
+                        .map(|operation| format!("native-relaunch-{operation}-{}", timestamp()))
+                })
                 .unwrap_or_else(|| format!("native-{}-{}", std::process::id(), timestamp()))
         });
         let resumed_from_operation = prior_failure
@@ -290,7 +318,7 @@ pub(crate) fn execute(
         None
     };
 
-    let (observation, ticket) = continuation::execute(
+    let (observation, ticket) = match continuation::execute(
         loaded,
         work,
         &state,
@@ -298,7 +326,18 @@ pub(crate) fn execute(
         &paths,
         &request,
         prepared_journal,
-    )?;
+    ) {
+        Ok(observation) => observation,
+        Err(error) => {
+            let journal = start_failure::settle(&paths.journal)?;
+            return Err(start_failure::message(
+                loaded,
+                work,
+                &error,
+                journal.as_ref(),
+            ));
+        }
+    };
     let mut observation_value = projection(&observation);
     if let Some(evidence) = review_evidence.as_ref() {
         observation_value["verifiedEvidence"] = json!(evidence
@@ -365,13 +404,31 @@ pub(crate) fn execute(
     } else {
         Ok(())
     };
+    // Classify only a retained failure: the journal now holds the complete
+    // observation and process identity, and a pre-thread, no-effect failure
+    // becomes the reconciliation state that may launch the same assignment.
+    let classified = if retained.is_err() {
+        start_failure::settle(&paths.journal)?
+    } else {
+        None
+    };
     let bytes = match (retained, accounted) {
         (Ok(bytes), Ok(())) => bytes,
-        (Err(error), Ok(())) => return Err(error),
+        (Err(error), Ok(())) => {
+            return Err(start_failure::message(
+                loaded,
+                work,
+                &error,
+                classified.as_ref(),
+            ))
+        }
         (Ok(_), Err(error)) => return Err(format!("native accounting recovery pending: {error}")),
         (Err(error), Err(accounting)) => {
-            return Err(format!(
-                "{error}; native accounting recovery pending: {accounting}"
+            return Err(start_failure::message(
+                loaded,
+                work,
+                &format!("{error}; native accounting recovery pending: {accounting}"),
+                classified.as_ref(),
             ));
         }
     };

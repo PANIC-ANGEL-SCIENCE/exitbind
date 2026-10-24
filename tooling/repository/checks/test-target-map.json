@@ -1760,8 +1760,8 @@
     },
     "tests/check_observation_recovery.rs": {
       "baselineSha256": "556ead8b5b2430ae1096d269e877d9367ef2df218ccaa4311853c8b208d9fd83",
-      "currentSha256": "a7085f1170624a329f9ee2e354210018f3fdfb6a08ceb60c3f148037f4452a1f",
-      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F10: the stale observed-reviewer recovery cases move unchanged from quarantine.rs into their own module, check_observation_recovery/stale_reviewer.rs, declared here; no case or assertion changes. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "1bd25efccf4814ef6dcae02fcbba0d09dd0570e7bf4b4985daacc2e11a609319",
+      "reason": "The shared fixture now propagates isolated native-session identity into emitted commands and registers the separate quarantine CLI regression module; all existing source modules and selectors remain. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F10: the stale observed-reviewer recovery cases move unchanged from quarantine.rs into their own module, check_observation_recovery/stale_reviewer.rs, declared here; no case or assertion changes. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R56 W3: the module list declares observer_lifecycle, which holds the moved dead-observer and never-run checker cases; no existing test or declaration changed."
     },
     "tests/check_observation_recovery/process_containment.rs": {
       "baselineSha256": "ecd5ec3058c2f68a24a3790f03f58d3e8a7ee976c9a93920af2bb66a4b705895",
@@ -2265,8 +2265,8 @@
     },
     "tests/save_return_recovery/native_return_inspection.rs": {
       "baselineSha256": "751fbb85de80fe6dcf2496728fa08cecf5602e672543fb988800fd30ad866f34",
-      "currentSha256": "96a960203682719f054ae552942714904e580e47f3572fc0c78541d69c88d7b1",
-      "reason": "R55 F8: the saved return is replayed by running the inspection's printed nextAction route as printed instead of a hand-written argv; the assertions on the replay are unchanged."
+      "currentSha256": "ac21430c629b183b13d5d5703a4650a4adfbec550b64e84609f798307fb271c0",
+      "reason": "R55 F8: the saved return is replayed by running the inspection's printed nextAction route as printed instead of a hand-written argv; the assertions on the replay are unchanged. R56 W3: the Git-precondition case now expects the not_started classification and the printed relaunch route, and two added cases cover a host write-denial relaunch with another sandbox and a started-thread refusal; earlier assertions are unchanged. R56 W3: the Git-precondition case now expects the not_started classification and the printed relaunch route; the two added start-failure cases live in native_start_failure, and earlier assertions are unchanged."
     },
     "tests/save_return_recovery/worker_resume.rs": {
       "baselineSha256": "5ecd0242cdb89a8b94cee919228a6ab4407776bdc16a331a19fba38c72db9d32",
@@ -2455,8 +2455,8 @@
     },
     "tests/work_check_replacement/refusal_and_native_lineage.rs": {
       "baselineSha256": "a0bd62a8f6616008f8a145b394eb4f7cea105e40c6f0605d45586049c20bac18",
-      "currentSha256": "be7c69e315595dff7f58b45454ff851a211b5985d6287440b49d6ede0dc75be7",
-      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R56 W1: the Goal journal may store a revision as a change record against the record before it, so the fixture reads Goal records through support::goal_journal (records, latest, write) instead of parsing raw journal lines; tampering cases rewrite complete records; assertions are unchanged."
+      "currentSha256": "3a962216856d639c31aeca215c09817be75fec35b7d847b9b2de7add5f692108",
+      "reason": "Preserve the original refusal and lineage assertions and the2added regression cases. The prepared-child worker and accepted-predecessor worker, reviewer and Lead semantic reads explicitly request full work-next responses through each fixture's existing executor/session. Begin mutation responses, terminal current/binding snapshots, ledger/artifact assertions and all refusal conditions remain unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R56 W1: the Goal journal may store a revision as a change record against the record before it, so the fixture reads Goal records through support::goal_journal (records, latest, write) instead of parsing raw journal lines; tampering cases rewrite complete records; assertions are unchanged. R56 W3: the blocked case's checker never ran, so its action form is blocked_never_run_check with no choices; the explicit replace-check command and all later assertions are unchanged, and the three replaced assertions are compressed to keep the file under its recorded ceiling. R56 W3: the blocked case's checker never ran, so its action form is blocked_never_run_check with no choices; the explicit replace-check command and all later assertions are unchanged, and the replaced assertions are compressed to keep the file under its recorded ceiling."
     },
     "tests/work_check_replacement/source_and_binding_validation.rs": {
       "baselineSha256": "543160901e3801a37cafb89ecda11de658d7a0757182134b1e7f93ccbf73790d",
@@ -2472,6 +2472,11 @@
       "baselineSha256": "b00aa5743d90da24e09366acab2010905bf91912ae4dd4f7d77af324a4bc2ddd",
       "currentSha256": "dc702d3de104348c41948bdbbe386169c9dc84787fed8fc7c676e052b633e05a",
       "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+    },
+    "tests/save_return_recovery.rs": {
+      "baselineSha256": "43a5aa69cfe6a959742203560e695a718a9aa1630bd1516b6e122a8af48a2afd",
+      "currentSha256": "b2359ae62e73784ed91be822effc9ad58944d62fff335cb310d4660c84b7012f",
+      "reason": "R56 W3: the module list declares native_start_failure, which holds the moved host-denial relaunch and started-thread refusal cases; no existing test or declaration changed."
     }
   },
   "additions": [

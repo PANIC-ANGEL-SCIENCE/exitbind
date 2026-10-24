@@ -216,6 +216,21 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                     }
                 });
             }
+            if super::check::blocked_check_never_ran(loaded, work, next) {
+                // A checker that never produced a result is no evidence of a
+                // defective contract, so no replacement is offered.
+                return json!({
+                    "version": 1, "state": "blocked_never_run_check",
+                    "binding": binding, "leadChoiceRequired": false, "choices": [],
+                    "mechanicalAction": Value::Null,
+                    "meaning": "The frozen check never ran and this blocked Work holds no check result: there is no defective contract to replace. The Work stays blocked with no further route.",
+                    "diagnostic": {
+                        "command": command(loaded, Route::new(["work", "detail", work, "--json"])),
+                        "readOnly": true, "inspectionOnly": true,
+                        "meaning": "Read the blocked Work's evidence; this executes no check and records nothing."
+                    }
+                });
+            }
             let suffix = Route::new([
                 "work",
                 "replace-check",
@@ -329,6 +344,8 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
         "leadChoiceRequired": state != "pending_assignment",
         "choices": [],
     });
+    let observation_never_ran =
+        state == "failed_check_observation" && super::check::observation_never_ran(next);
     let mut choices: Vec<Value> = if state == "unresolved_check_observation" {
         let mut choices: Vec<Value> = outcomes
             .iter()
@@ -458,6 +475,13 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                         return_choice(loaded, work, assignment, binding, outcome, outcome)
                     }),
             );
+            if observation_never_ran {
+                if let Some(form) =
+                    environmental::choice(loaded, work, assignment, binding, next, true)
+                {
+                    choices.push(form);
+                }
+            }
         }
         choices
     } else if state == "failed_check" {
@@ -499,7 +523,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     };
     if state == "failed_check" {
         choices.extend(environmental::choice(
-            loaded, work, assignment, binding, next,
+            loaded, work, assignment, binding, next, false,
         ));
         choices.push(choice(
             loaded,

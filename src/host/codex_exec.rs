@@ -101,6 +101,7 @@ pub(crate) enum DiagnosticCode {
     NoStdout,
     StderrNonempty,
     GitPrecondition,
+    HostPermissionDenied,
     TurnFailed,
     ProviderError,
 }
@@ -111,6 +112,7 @@ impl DiagnosticCode {
             Self::NoStdout => "no_stdout",
             Self::StderrNonempty => "stderr_nonempty",
             Self::GitPrecondition => "git_precondition",
+            Self::HostPermissionDenied => "host_permission_denied",
             Self::TurnFailed => "turn_failed",
             Self::ProviderError => "provider_error",
         }
@@ -477,6 +479,16 @@ fn run_inner(
 /// accidentally launch a duplicate operation.
 pub(crate) fn process_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
     process::liveness(identity)
+}
+
+/// The identity of the process recording a check observation.
+pub(crate) fn observer_identity() -> ProcessIdentity {
+    process::observer_identity()
+}
+
+/// Liveness of an observation's recorder, which owns no process group.
+pub(crate) fn observer_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
+    process::observer_liveness(identity)
 }
 
 pub(crate) fn validate_request(request: &Request) -> Result<(), RunError> {

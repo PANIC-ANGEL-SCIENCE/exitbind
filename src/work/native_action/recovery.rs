@@ -59,6 +59,10 @@ pub(super) fn recover(
             "native recovery refused: assignment {} ended without a committed native result; no provider retry is admitted after Work advanced",
             candidate.assignment
         )),
+        "not_started" => Err(format!(
+            "native recovery refused: assignment {} never started (no provider thread, no observed effect); relaunch it only while it is the current assignment",
+            candidate.assignment
+        )),
         _ => Err("native recovery journal has an invalid status".into()),
     }
 }
@@ -163,6 +167,34 @@ pub(super) fn prepare_provisional_retry(
         thread_id: journal["threadId"].as_str().map(str::to_owned),
         prior_failure,
     })
+}
+
+/// Archive a `not_started` journal so the same assignment can be launched
+/// again as a fresh operation. Nothing started, so no provider retry bound is
+/// consumed and no thread is carried: the relaunch is a new start, not a
+/// resume. Returns the archived operation identity for the new operation ID.
+pub(super) fn prepare_start_relaunch(paths: &Paths, journal: &Value) -> Result<String, String> {
+    if journal["status"] != "not_started" || !super::start_failure::relaunchable(journal) {
+        return Err(
+            "native assignment is not a pre-thread, no-effect start failure; it is not relaunched"
+                .into(),
+        );
+    }
+    let name = paths
+        .journal
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("native assignment journal has an invalid name")?;
+    let archive = paths.journal.with_file_name(format!(
+        ".{name}.not-started.{}.{}",
+        std::process::id(),
+        timestamp()
+    ));
+    archive_journal(&paths.journal, &archive)?;
+    // The durable archive is complete; the live path becomes the fresh
+    // operation. It is published exclusively, so the old file must not remain.
+    fs::remove_file(&paths.journal).map_err(|error| error.to_string())?;
+    Ok(journal["operationId"].as_str().unwrap_or(name).to_owned())
 }
 
 pub(super) fn validate_provisional_observation(journal: &Value) -> Result<(), String> {
@@ -408,7 +440,7 @@ fn find_candidate(
         let Some(status) = journal["status"].as_str() else {
             continue;
         };
-        if !matches!(status, "completed" | "started" | "running") {
+        if !matches!(status, "completed" | "started" | "running" | "not_started") {
             continue;
         }
         let Some(attempt) = journal["attempt"].as_u64() else {

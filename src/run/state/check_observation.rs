@@ -1,23 +1,19 @@
 //! Validate and project non-check observation facts; never mutate check credit.
 use super::*;
 
+/// The admission's observer identity: the process that wrote it and its start
+/// marker, so a later check can tell it ended without trusting PID reuse.
+pub(super) const OBSERVER_FIELD: &str = "observer";
+pub(super) const OBSERVER_PID_FIELD: &str = "pid";
+pub(super) const OBSERVER_START_FIELD: &str = "startTimeTicks";
+
 pub(super) fn validate(event: &Value) -> Result<(), String> {
     if event["version"] != 8 || !event["observation"].is_object() {
         return Err("invalid check observation event".into());
     }
     let value = &event["observation"];
     if event["action"] == "check_observation" {
-        if !exact(
-            value,
-            &[
-                "binding",
-                "timeoutMs",
-                "perStreamBytes",
-                "combinedBytes",
-                "state",
-            ],
-        ) || !binding_shape(&value["binding"])
-        {
+        if !observation_shape(value) || !binding_shape(&value["binding"]) {
             return Err("invalid check observation fields".into());
         }
         if value["state"] != "running"
@@ -62,6 +58,39 @@ pub(super) fn validate(event: &Value) -> Result<(), String> {
         return Err("invalid check observation failure facts".into());
     }
     Ok(())
+}
+
+/// The admission fields. An observer identity is optional so every ledger
+/// written before it existed still validates; a written one must be a real
+/// PID with an optional start marker.
+fn observation_shape(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    const BASE: &[&str] = &[
+        "binding",
+        "timeoutMs",
+        "perStreamBytes",
+        "combinedBytes",
+        "state",
+    ];
+    let has_observer = object.contains_key(OBSERVER_FIELD);
+    object.len()
+        == if has_observer {
+            BASE.len() + 1
+        } else {
+            BASE.len()
+        }
+        && BASE.iter().all(|field| object.contains_key(*field))
+        && (!has_observer || observer(&value[OBSERVER_FIELD]))
+}
+
+fn observer(value: &Value) -> bool {
+    exact(value, &[OBSERVER_PID_FIELD, OBSERVER_START_FIELD])
+        && value[OBSERVER_PID_FIELD]
+            .as_u64()
+            .is_some_and(|pid| (1..=u32::MAX as u64).contains(&pid))
+        && (value[OBSERVER_START_FIELD].is_u64() || value[OBSERVER_START_FIELD].is_null())
 }
 
 fn binding_shape(value: &Value) -> bool {

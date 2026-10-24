@@ -192,11 +192,17 @@ pub(super) fn parse_stream(
     }
     if !stderr.is_empty() {
         push_diagnostic(&mut diagnostic_codes, DiagnosticCode::StderrNonempty);
-        if stderr
-            .windows(GIT_PRECONDITION.len())
-            .any(|window| window == GIT_PRECONDITION)
-        {
+        if contains(stderr, GIT_PRECONDITION) {
             push_diagnostic(&mut diagnostic_codes, DiagnosticCode::GitPrecondition);
+        }
+        // The host reports a sandbox file denial only as errno text. This is
+        // the one place that text is read, and only its errno-specific form is
+        // accepted so ordinary command prose is never classified as a denial.
+        if HOST_PERMISSION_DENIALS
+            .iter()
+            .any(|marker| contains(stderr, marker))
+        {
+            push_diagnostic(&mut diagnostic_codes, DiagnosticCode::HostPermissionDenied);
         }
     }
     Ok(Observation {
@@ -227,6 +233,18 @@ pub(super) fn parse_stream(
 
 const GIT_PRECONDITION: &[u8] =
     b"Not inside a trusted directory and --skip-git-repo-check was not specified.";
+
+/// The host's sandbox file-write denial, with the libc errno that identifies
+/// it. Only these exact forms are classified; a command's own permission
+/// error is otherwise indistinguishable and stays unclassified.
+const HOST_PERMISSION_DENIALS: &[&[u8]] = &[
+    b"Operation not permitted (os error 1)",
+    b"Permission denied (os error 13)",
+];
+
+fn contains(source: &[u8], marker: &[u8]) -> bool {
+    source.windows(marker.len()).any(|window| window == marker)
+}
 
 fn push_diagnostic(codes: &mut Vec<DiagnosticCode>, code: DiagnosticCode) {
     if !codes.contains(&code) {
@@ -264,4 +282,46 @@ fn parse_usage(value: &Value, line: usize) -> Result<Usage, RunError> {
         cached_input_tokens: number("cached_input_tokens")?,
         output_tokens: number("output_tokens")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failed_with(stderr: &[u8]) -> Observation {
+        parse_stream(
+            b"",
+            false,
+            ProcessOutcome {
+                code: Some(1),
+                signal: None,
+                success: false,
+                timed_out: false,
+            },
+            stderr,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn host_sandbox_write_denial_becomes_a_safe_category() {
+        for stderr in [
+            &b"write failed: Operation not permitted (os error 1)\nprivate path"[..],
+            &b"cannot create file: Permission denied (os error 13)\nprivate path"[..],
+        ] {
+            assert!(
+                failed_with(stderr)
+                    .diagnostic
+                    .codes
+                    .contains(&DiagnosticCode::HostPermissionDenied),
+                "{}",
+                String::from_utf8_lossy(stderr)
+            );
+        }
+        // Ordinary prose without the errno suffix is never a host denial.
+        assert!(!failed_with(b"Permission denied by a test fixture\n")
+            .diagnostic
+            .codes
+            .contains(&DiagnosticCode::HostPermissionDenied));
+    }
 }

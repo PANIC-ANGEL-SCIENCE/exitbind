@@ -107,9 +107,14 @@ pub(super) fn admit(
         return Ok(None);
     }
     assert_current(loaded, state)?;
+    // The recorder's identity is durably part of the admission: if this
+    // process ends before recording the outcome, the next check can tell the
+    // observer ended instead of refusing forever.
+    let observer = crate::host::codex_exec::observer_identity();
     let details = json!({"binding": identity, "timeoutMs": timeout_ms,
         "perStreamBytes": crate::run_value::MAX_CAPTURE_BYTES, "combinedBytes": 16 * 1_048_576,
-        "state": "running"});
+        "state": "running",
+        "observer": {"pid": observer.pid, "startTimeTicks": observer.start_time_ticks}});
     if let Some(current) = state.get("checkObservation").filter(|v| v.is_object()) {
         if current["binding"] != details["binding"] || current["timeoutMs"] != timeout_ms {
             return Err("check observation binding or execution limit changed; inspect the current Work decision".into());
@@ -165,6 +170,55 @@ pub(super) fn fail(
         append(path, &failure, false, &source)?;
         Ok(json!({"valid": true, "observationFailure": failure, "checkRecorded": false}))
     })
+}
+
+/// Whether a running admission's recorder is known to have ended. A live or
+/// unverifiable recorder is never closed, and an admission recorded by a
+/// version that stored no observer stays open as it was.
+pub(crate) fn observer_ended(observation: &Value) -> bool {
+    let Some(pid) = observation["observer"]["pid"]
+        .as_u64()
+        .and_then(|pid| u32::try_from(pid).ok())
+    else {
+        return false;
+    };
+    let identity = crate::host::codex_exec::ProcessIdentity {
+        pid,
+        process_group: None,
+        start_time_ticks: observation["observer"]["startTimeTicks"].as_u64(),
+    };
+    crate::host::codex_exec::observer_liveness(&identity)
+        == crate::host::codex_exec::ProcessLiveness::Ended
+}
+
+/// Close an admission whose recorder ended before recording the outcome. The
+/// execution's end is unknown, so the failure facts are the conservative
+/// unknown termination the existing quarantine decision already owns; the
+/// normal failure path records it and raises the Lead's observation decision.
+pub(crate) fn close_dead_admission(
+    loaded: &Loaded,
+    ledger: &str,
+    admission: &Value,
+) -> Result<Value, String> {
+    let (path, _, _) = load(loaded, ledger)?;
+    let facts = json!({
+        "process": Value::Null,
+        "processStarted": true,
+        "groupEnded": false,
+        "captureReadersEnded": false,
+        "captureAvailability": "unavailable",
+        "durationMs": 0,
+        "capture": "disabled",
+        "deadlineExceeded": false,
+        "partialCaptures": [],
+        "storageStage": "capture",
+        "storage": "not_committed",
+        "termination": "unknown",
+        "diagnostic": "the process observing this check ended before recording its result; the execution's end is unknown",
+        "cleanupErrorCount": 0,
+        "remainingOwnedPathCount": 0
+    });
+    fail(loaded, &path, Some(admission), facts)
 }
 
 /// Where an unrecorded observation failure is read: the Work, or the run.

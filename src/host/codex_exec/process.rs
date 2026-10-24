@@ -20,6 +20,52 @@ pub(super) fn identity(pid: u32) -> ProcessIdentity {
     }
 }
 
+/// The process recording a check observation. It is this process, and it owns
+/// no group marker: the admission records the PID and its start marker so a
+/// later command can tell the observer ended without trusting PID reuse.
+pub(super) fn observer_identity() -> ProcessIdentity {
+    let pid = std::process::id();
+    ProcessIdentity {
+        pid,
+        process_group: None,
+        start_time_ticks: start_time_ticks(pid),
+    }
+}
+
+/// PID-only liveness for a process whose group this one did not create. A
+/// live PID with a different start marker was reused; a missing PID is ended
+/// only when its start marker was observed, and an unverifiable one is never
+/// ended.
+pub(super) fn observer_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
+    #[cfg(unix)]
+    {
+        let pid = match libc::pid_t::try_from(identity.pid) {
+            Ok(pid) if pid > 0 => pid,
+            _ => return ProcessLiveness::Uncertain,
+        };
+        if unsafe { libc::kill(pid, 0) } == 0 {
+            return match (identity.start_time_ticks, start_time_ticks(identity.pid)) {
+                (Some(expected), Some(actual)) if expected == actual => ProcessLiveness::Alive,
+                (Some(_), Some(_)) => ProcessLiveness::Ended,
+                _ => ProcessLiveness::Uncertain,
+            };
+        }
+        if std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return if identity.start_time_ticks.is_some() {
+                ProcessLiveness::Ended
+            } else {
+                ProcessLiveness::Uncertain
+            };
+        }
+        ProcessLiveness::Uncertain
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = identity;
+        ProcessLiveness::Uncertain
+    }
+}
+
 pub(super) fn liveness(identity: &ProcessIdentity) -> ProcessLiveness {
     #[cfg(unix)]
     {
@@ -373,6 +419,42 @@ mod tests {
         let mut unverifiable = current;
         unverifiable.start_time_ticks = None;
         assert_eq!(liveness(&unverifiable), ProcessLiveness::Uncertain);
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn observer_liveness_uses_only_the_recorded_start_marker() {
+        let observer = observer_identity();
+        assert_eq!(observer.process_group, None);
+        assert_eq!(
+            observer_liveness(&observer),
+            ProcessLiveness::Alive,
+            "the recording process is alive"
+        );
+
+        let mut reused = observer.clone();
+        reused.start_time_ticks = Some(0);
+        assert_eq!(observer_liveness(&reused), ProcessLiveness::Ended);
+
+        // A vanished observer without a start marker cannot be distinguished
+        // from a reused PID, so it is never closed.
+        let mut ended = Command::new("sh").arg("-c").arg("exit 0").spawn().unwrap();
+        let ended_pid = ended.id();
+        ended.wait().unwrap();
+        let vanished = ProcessIdentity {
+            pid: ended_pid,
+            process_group: None,
+            start_time_ticks: None,
+        };
+        assert_eq!(observer_liveness(&vanished), ProcessLiveness::Uncertain);
+        let vanished_with_marker = ProcessIdentity {
+            start_time_ticks: Some(7),
+            ..vanished
+        };
+        assert_eq!(
+            observer_liveness(&vanished_with_marker),
+            ProcessLiveness::Ended
+        );
     }
 
     #[test]

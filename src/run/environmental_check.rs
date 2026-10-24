@@ -61,9 +61,29 @@ fn named<'a>(records: impl Iterator<Item = &'a Value>) -> BTreeSet<String> {
         .collect()
 }
 
+/// A failed observation whose checker process never started. The failure is
+/// still a pending Lead finding; it is the same class as a failed observed
+/// check for the purpose of this attestation, because the check's own result
+/// exists neither way and the target stays pending.
+pub(crate) fn never_ran(state: &Value) -> bool {
+    state["checkObservation"]["state"] == "failed"
+        && state["checkObservation"]["facts"]["processStarted"] == false
+        && state["checkObservation"]["facts"]["termination"] == "ended"
+        && state["pendingDisposition"]["kind"] == "check_observation_failed"
+}
+
 /// The failed observed checks that are the latest result of a current check
-/// target, in target order: exactly what one attestation names.
+/// target, in target order: exactly what one attestation names. For a
+/// never-ran observation the named finding is its own failure event.
 pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
+    if never_ran(state) {
+        let finding = state["pendingDisposition"]["findingSha256s"]
+            .as_array()
+            .filter(|items| items.len() == 1)
+            .and_then(|items| items[0].as_str())
+            .ok_or("never-ran check observation has no single failure finding")?;
+        return Ok(vec![finding.to_owned()]);
+    }
     Ok(crate::run::gate::exit::assess(state)?
         .targets
         .iter()
@@ -75,10 +95,14 @@ pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
 /// Admit an environmental attestation only for the exact current failed
 /// observed checks, with no other Lead decision or observation pending.
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
-    if state["pendingDisposition"].is_object() {
+    // The one pending finding this decision owns is a never-ran observation;
+    // anything else pending, and any observation not known to have ended
+    // before the checker started, still needs its own disposition first.
+    let never_ran = never_ran(state);
+    if state["pendingDisposition"].is_object() && !never_ran {
         return Err("a pending finding needs its own Lead disposition first".into());
     }
-    if state["checkObservation"].is_object() {
+    if state["checkObservation"].is_object() && !never_ran {
         return Err("a check observation is still pending; inspect it first".into());
     }
     if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str() {

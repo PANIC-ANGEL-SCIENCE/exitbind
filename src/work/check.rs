@@ -8,16 +8,31 @@ pub(crate) fn check_with_timeout(
 ) -> Result<Value, String> {
     crate::run::check_observation::timeout(timeout_ms)?;
     let ledger = resolve(loaded, work)?;
-    let config_path = loaded
-        .path
-        .to_str()
-        .ok_or("configuration path is not valid UTF-8")?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
-    let observation = &snapshot.state()["checkObservation"];
+    let observation = snapshot.state()["checkObservation"].clone();
     if observation["state"] == "running" {
-        let refusal =
-            crate::run::check_observation::admitted_refusal(observation, Some(work), &loaded.path);
-        return Err(refusal);
+        // A live or unverifiable observer keeps the admission as it is. A
+        // recorder known to have ended is closed through the ordinary failure
+        // path, which raises the Lead's observation decision.
+        if !crate::run::check_observation::observer_ended(&observation) {
+            return Err(crate::run::check_observation::admitted_refusal(
+                &observation,
+                Some(work),
+                &loaded.path,
+            ));
+        }
+        let closed =
+            crate::run::check_observation::close_dead_admission(loaded, &ledger, &observation)?;
+        return finish(loaded, work, &ledger, closed);
+    }
+    if observation.is_object() {
+        // A failed observation has no check result; only its Lead decision
+        // re-pends the target, so this check starts nothing.
+        return Err(crate::run::check_observation::admitted_refusal(
+            &observation,
+            Some(work),
+            &loaded.path,
+        ));
     }
     let pending = retry_check_target(&snapshot)?;
     let observed = if let Some(pending) = pending {
@@ -34,6 +49,16 @@ pub(crate) fn check_with_timeout(
             format!("no current worker check is pending; inspect {detail} for a pending observation decision")
         })?
     };
+    finish(loaded, work, &ledger, observed)
+}
+
+/// The bounded response of one check outcome, including the current next
+/// action and the failure shape the caller reports.
+fn finish(loaded: &Loaded, work: &str, ledger: &str, observed: Value) -> Result<Value, String> {
+    let config_path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
     let mut response = json!({"work": work});
     for field in ["event", "observationFailure", "checkRecorded", "recovered"] {
         if let Some(value) = observed.get(field) {
@@ -46,11 +71,11 @@ pub(crate) fn check_with_timeout(
     if let Some(error) = observed.get("cleanupError") {
         response["cleanupError"] = error.clone();
     }
-    match next_for(loaded, work, &ledger) {
+    match next_for(loaded, work, ledger) {
         Ok(next) => response["next"] = next,
         Err(error) => response["projectionError"] = json!(error),
     }
-    let mut bounded = bounded_mutation(&response, work, None, &ledger, config_path);
+    let mut bounded = bounded_mutation(&response, work, None, ledger, config_path);
     super::refreshed_action::attach(loaded, work, &response["next"], &mut bounded);
     if observed.get("observationFailure").is_some()
         || mutation_response::check_result_failed(&bounded["result"])
@@ -67,4 +92,38 @@ pub(super) fn unresolved(next: &Value) -> bool {
     let observation = &next["packet"]["checkObservation"];
     observation.is_object()
         && (observation["state"] == "running" || observation["facts"]["termination"] != "ended")
+}
+
+/// A recorded observation that ended before the checker started. No check
+/// result exists, so the same check is still owed.
+pub(super) fn observation_never_ran(next: &Value) -> bool {
+    let observation = &next["packet"]["checkObservation"];
+    observation["state"] == "failed"
+        && observation["facts"]["processStarted"] == false
+        && observation["facts"]["termination"] == "ended"
+}
+
+/// A terminal blocked Work whose checker never produced a result: its
+/// observation ended before the checker started, or no current check target
+/// holds any result. Replacing such a check would claim a defective contract
+/// from evidence that does not exist.
+pub(super) fn blocked_check_never_ran(loaded: &Loaded, work: &str, next: &Value) -> bool {
+    if next["packet"]["checkObservation"].is_object() {
+        return observation_never_ran(next);
+    }
+    let Ok(ledger) = resolve(loaded, work) else {
+        return false;
+    };
+    let Ok(snapshot) = run::RunSnapshot::capture(loaded, &ledger) else {
+        return false;
+    };
+    let Ok(status) = snapshot.status_view() else {
+        return false;
+    };
+    match status["checks"]["targets"].as_array() {
+        Some(targets) => {
+            targets.is_empty() || targets.iter().all(|target| target["status"] == "missing")
+        }
+        None => true,
+    }
 }

@@ -60,7 +60,7 @@ fn collect(
         || journal["work"] != work
         || !matches!(
             journal["status"].as_str(),
-            Some("started" | "running" | "completed")
+            Some("started" | "running" | "completed" | "not_started")
         )
     {
         return Err("native continuation journal identity or status is invalid".into());
@@ -122,7 +122,10 @@ fn collect(
             }
         }
     }
-    if liveness != ProcessLiveness::Ended {
+    // A not_started journal holds no provider thread and no effect; the
+    // observer recorded the ended process (or that no child was claimed), so
+    // it never keeps an unrelated launch waiting.
+    if journal["status"] != "not_started" && liveness != ProcessLiveness::Ended {
         facts.all_ended = false;
     }
     if current && liveness == ProcessLiveness::Alive {
@@ -268,12 +271,14 @@ pub(super) fn operation_id(
     assignment: &str,
     request: &codex_exec::Request,
     prior: Option<&Value>,
+    relaunch: Option<&str>,
 ) -> Option<String> {
     state.get("projectContinuation")?;
     Some(format!(
         "native-{}",
         hash::value(&json!({"work":work,"assignment":assignment,
-        "request":request_projection(request),"retryOf":prior.map(|value|&value["operation"])}))
+        "request":request_projection(request),"retryOf":prior.map(|value|&value["operation"]),
+        "relaunchOf":relaunch}))
     ))
 }
 

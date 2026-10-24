@@ -57,9 +57,9 @@ fn blocked_worker_has_a_bound_sibling_lead_replacement_without_fake_submission()
         .unwrap()
         .to_owned();
     let action_form = &detail["actionForms"];
-    assert_eq!(action_form["state"], "blocked_lead_check_replacement");
-    assert_eq!(action_form["leadChoiceRequired"], true);
-    assert_eq!(action_form["choices"].as_array().unwrap().len(), 1);
+    assert_eq!(action_form["state"], "blocked_never_run_check");
+    assert_eq!(action_form["leadChoiceRequired"], false);
+    assert_eq!(action_form["choices"].as_array().unwrap().len(), 0);
     let before = fs::read(f.ledger(&work)).unwrap();
 
     let preview_args = [

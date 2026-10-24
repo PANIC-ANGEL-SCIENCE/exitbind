@@ -117,6 +117,19 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         )
     } else {
         match status {
+            "not_started" if start_failure::relaunchable(&journal) => {
+                ("relaunch_ready", relaunch_action(loaded, work, &journal))
+            }
+            "not_started" => (
+                "inspection_required",
+                action(
+                    loaded,
+                    work,
+                    "inspect_effects",
+                    false,
+                    Some("native start failure is not a pre-thread, no-effect failure"),
+                ),
+            ),
             "completed" => match validate_completed_observation(&journal)
                 .and_then(|_| journal_result(&journal).map(|_| ()))
             {
@@ -245,17 +258,18 @@ fn diagnostic_projection(observation: &Value) -> Value {
     let Some(codes) = object.get("codes").and_then(Value::as_array) else {
         return json!({"status": "unknown"});
     };
-    if codes.len() > 5 {
+    if codes.len() > 6 {
         return json!({"status": "unknown"});
     }
     let mut projected_codes = Vec::new();
-    for code in codes.iter().take(5) {
+    for code in codes.iter().take(6) {
         let Some(code) = code.as_str().filter(|code| {
             matches!(
                 *code,
                 "no_stdout"
                     | "stderr_nonempty"
                     | "git_precondition"
+                    | "host_permission_denied"
                     | "turn_failed"
                     | "provider_error"
             )
@@ -285,6 +299,28 @@ fn diagnostic_projection(observation: &Value) -> Value {
         "codes": projected_codes,
         "stdoutBytes": stdout_bytes,
         "stderrBytes": stderr_bytes,
+    })
+}
+
+/// The one route for a pre-thread, no-effect start failure: the same
+/// assignment starts again. Only a host permission denial changes the
+/// sandbox, because no session exists whose sandbox a resume would keep.
+fn relaunch_action(loaded: &Loaded, work: &str, journal: &Value) -> Value {
+    let route = start_failure::route(work, journal)
+        .config(&loaded.path)
+        .within(2048);
+    let reason = if start_failure::permission_denied(journal) {
+        "the host denied the provider's write; no thread or effect exists, so this assignment starts again with another sandbox"
+    } else {
+        "no provider thread and no observed effect exists, so this assignment starts again"
+    };
+    json!({
+        "type": "execute_current",
+        "safe": true,
+        "command": route.argv_value(),
+        "sameConfigRequired": route.needs_config(),
+        "sameExecutableRequired": route.needs_executable(),
+        "reason": reason,
     })
 }
 
@@ -341,7 +377,8 @@ mod tests {
             "diagnostic": {
                 "status": "observed",
                 "codes": [
-                    "no_stdout", "stderr_nonempty", "turn_failed", "provider_error", "no_stdout"
+                    "no_stdout", "stderr_nonempty", "turn_failed", "provider_error", "no_stdout",
+                    "git_precondition", "host_permission_denied"
                 ],
                 "stdoutBytes": 1_048_577,
                 "stderrBytes": 0,

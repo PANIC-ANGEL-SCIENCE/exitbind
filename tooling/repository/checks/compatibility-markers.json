@@ -183,6 +183,42 @@
       "retire": "when every Goal journal a release reads is on a new versioned journal form"
     },
     {
+      "id": "native-journal-not-started",
+      "marker": "not_started",
+      "kind": "record-kind",
+      "writers": ["src/work/native_action/start_failure.rs"],
+      "readers": ["src/work/native_action/reconcile.rs", "src/work/native_action/recovery.rs"],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when no native assignment journal below the relaunch form is read"
+    },
+    {
+      "id": "check-observation-observer",
+      "marker": "observer",
+      "kind": "record-field",
+      "writers": ["src/run/check_observation.rs", "src/run/state/check_observation.rs"],
+      "readers": ["src/run/state/check_observation.rs", "src/run/check_observation.rs"],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "check-observation-observer-pid",
+      "marker": "pid",
+      "kind": "record-field",
+      "writers": ["src/run/state/check_observation.rs"],
+      "readers": ["src/run/state/check_observation.rs"],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
+      "id": "check-observation-observer-start",
+      "marker": "startTimeTicks",
+      "kind": "record-field",
+      "writers": ["src/run/state/check_observation.rs"],
+      "readers": ["src/run/state/check_observation.rs"],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
       "id": "release-checks-env",
       "marker": "EXITBIND_RELEASE_CHECKS",
       "kind": "env",
