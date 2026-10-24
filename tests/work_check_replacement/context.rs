@@ -454,3 +454,110 @@ fn run_entries(f: &Fixture) -> Vec<String> {
     names.sort();
     names
 }
+
+fn full_work_detail_in_session(
+    f: &Fixture,
+    session: &str,
+    store: &std::path::Path,
+    work: &str,
+) -> Value {
+    let output = f.call_in_session(session, store, &["work", "detail", work, "--json"]);
+    assert!(
+        output.status.success(),
+        "full work detail output={output:?}"
+    );
+    serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("{error}: full work detail output={output:?}"))
+}
+
+fn emitted_choice(detail: &Value, label: &str) -> Value {
+    detail["actionForms"]["choices"]
+        .as_array()
+        .unwrap_or_else(|| panic!("detail lacks action choices: {detail:#}"))
+        .iter()
+        .find(|choice| choice["label"] == label)
+        .cloned()
+        .unwrap_or_else(|| panic!("detail lacks `{label}` action choice: {detail:#}"))
+}
+
+fn assert_emitted_choice_context(detail: &Value, choice: &Value, work: &str) {
+    let assignment = detail["recipient"]["assignment"]
+        .as_str()
+        .unwrap_or_else(|| panic!("detail has no current recipient assignment: {detail:#}"));
+    let binding = detail["binding"]
+        .as_str()
+        .or(detail["current"]["binding"].as_str())
+        .unwrap_or_else(|| panic!("detail has no current binding: {detail:#}"));
+    let argv = choice["command"]["argv"]
+        .as_array()
+        .unwrap_or_else(|| panic!("choice has no argv: {choice:#}"));
+    let argv = argv
+        .iter()
+        .map(|argument| argument.as_str().expect("argv values are strings"))
+        .collect::<Vec<_>>();
+    assert!(argv.contains(&work), "work missing from choice: {detail:#}");
+    assert!(
+        argv.contains(&assignment),
+        "current recipient assignment missing from choice: {detail:#} choice={choice:#}"
+    );
+    assert!(
+        argv.contains(&binding),
+        "current binding missing from choice: {detail:#} choice={choice:#}"
+    );
+}
+
+fn emitted_choice_args(choice: &Value, reason: &str) -> Vec<String> {
+    let mut replaced_reason = false;
+    let args = choice["command"]["argv"]
+        .as_array()
+        .unwrap_or_else(|| panic!("choice has no argv: {choice:#}"))
+        .iter()
+        .map(|argument| {
+            let argument = argument.as_str().expect("argv values are strings");
+            if argument == "<REASON>" {
+                replaced_reason = true;
+                reason.to_owned()
+            } else {
+                argument.to_owned()
+            }
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        replaced_reason,
+        "choice did not declare a reason placeholder: {choice:#}"
+    );
+    args
+}
+
+fn call_in_session_with_input(
+    f: &Fixture,
+    session: &str,
+    store: &std::path::Path,
+    args: &[String],
+    input: &[u8],
+) -> Output {
+    let args = refs(args);
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .current_dir(&f.root)
+        .args(command_args(&args))
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("CODEX_THREAD_ID", session)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if !args.contains(&"--config") {
+        command.args(["--config", "exitbind.json"]);
+    }
+    clear_native_selectors(&mut command);
+    command
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("CODEX_THREAD_ID", session);
+    let mut child = command.spawn().unwrap();
+    // A command may refuse and exit before reading stdin; its output is still asserted.
+    if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
+    child.wait_with_output().unwrap()
+}

@@ -47,6 +47,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the edit this permit covers",
     },
     Placeholder {
+        name: "SANDBOX_MODE",
+        fills: &[Fill::Flag("--sandbox-mode")],
+        meaning: "the sandbox the human chooses for a relaunch: read-only, workspace-write or danger-full-access, never the recorded one",
+    },
+    Placeholder {
         name: "NEW_CHECK_COMMAND",
         fills: &[Fill::Flag("--check-command")],
         meaning: "the replacement check command",

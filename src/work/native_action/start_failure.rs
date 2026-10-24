@@ -73,9 +73,102 @@ pub(super) fn settle(path: &Path) -> Result<Option<Value>, String> {
     Ok(Some(journal))
 }
 
+/// The sandbox values the host accepts, in widening order.
+const SANDBOX_MODES: [&str; 3] = ["read-only", "workspace-write", "danger-full-access"];
+
+/// The sandbox recorded for the failed start, when the journal holds one.
+pub(super) fn recorded_sandbox(journal: &Value) -> Option<&str> {
+    journal["request"]["sandbox"].as_str()
+}
+
+/// The sandbox values a relaunch may use: every accepted value except the
+/// recorded one, because "another sandbox" is the reason the route exists.
+pub(super) fn sandbox_choices(journal: &Value) -> Vec<&'static str> {
+    let recorded = recorded_sandbox(journal);
+    SANDBOX_MODES
+        .iter()
+        .copied()
+        .filter(|mode| Some(*mode) != recorded)
+        .collect()
+}
+
+/// The provider executable recorded for the failed start, when one exists.
+fn recorded_binary(journal: &Value) -> Option<&str> {
+    journal["request"]["executable"]
+        .as_str()
+        .filter(|path| !path.is_empty())
+}
+
+/// A recorded launch value that a relaunch must carry unchanged.
+fn recorded_text<'a>(journal: &'a Value, field: &str) -> Option<&'a str> {
+    journal["request"][field]
+        .as_str()
+        .filter(|value| !value.is_empty())
+}
+
+/// The provider timeout recorded for the failed start.
+fn recorded_timeout(journal: &Value) -> Option<u64> {
+    journal["request"]["timeoutMs"].as_u64()
+}
+
+/// A relaunch of the same assignment with every recorded launch value: the
+/// executable, model, effort, timeout and (unless a host permission denial
+/// changed it) the sandbox. Only a denial's sandbox stays a placeholder: the
+/// human chooses another one, the product never picks a wider sandbox.
+fn relaunch_route(work: &str, journal: &Value, sandbox: bool) -> crate::emitted::Route {
+    let mut route = crate::emitted::Route::new(["work", "act", work]);
+    if let Some(executable) = recorded_binary(journal) {
+        route = route.words(["--codex-bin", executable]);
+    }
+    if let Some(model) = recorded_text(journal, "model") {
+        route = route.words(["--model", model]);
+    }
+    if let Some(effort) = recorded_text(journal, "reasoningEffort") {
+        route = route.words(["--reasoning-effort", effort]);
+    }
+    if sandbox {
+        let slot = crate::emitted::slot("SANDBOX_MODE");
+        route = route.words(["--sandbox-mode", slot.as_str()]);
+    } else if let Some(recorded) = recorded_sandbox(journal) {
+        route = route.words(["--sandbox-mode", recorded]);
+    }
+    if let Some(timeout) = recorded_timeout(journal).map(|millis| millis.to_string()) {
+        route = route.words(["--timeout-ms", timeout.as_str()]);
+    }
+    route
+}
+
+/// The note a repeat relaunch carries: the first relaunch of an assignment is
+/// a bounded, product-named route; a second one of the same assignment is a
+/// human decision, not an automatic repetition.
+pub(super) const REPEAT_NOTE: &str = "; this assignment already used its one automatic relaunch and failed the same way, so do not repeat this route automatically";
+
+/// Whether this assignment already used its one automatic relaunch. The
+/// archived not-started journal beside the live one is the durable attempt
+/// record; no separate counter is kept.
+pub(super) fn prior_relaunch(journal: &Path) -> bool {
+    let Some(name) = journal.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let Some(directory) = journal.parent() else {
+        return false;
+    };
+    let prefix = format!(".{name}.not-started.");
+    fs::read_dir(directory)
+        .map(|entries| {
+            entries.flatten().any(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(&prefix))
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// The one route this classified state names. A relaunch reuses the same
 /// assignment; only a host permission denial with no thread and no effect
-/// changes the sandbox, because no session exists whose sandbox a resume
+/// offers a sandbox choice, because no session exists whose sandbox a resume
 /// would keep.
 pub(super) fn route(work: &str, journal: &Value) -> crate::emitted::Route {
     if started(journal) {
@@ -84,20 +177,28 @@ pub(super) fn route(work: &str, journal: &Value) -> crate::emitted::Route {
     if !relaunchable(journal) {
         return crate::emitted::Route::new(["work", "act", work, "--inspect"]);
     }
-    if permission_denied(journal) {
-        return crate::emitted::Route::new([
-            "work",
-            "act",
-            work,
-            "--sandbox-mode",
-            "danger-full-access",
-        ]);
+    relaunch_route(work, journal, permission_denied(journal))
+}
+
+/// The sandbox choice written into the route, for the human who fills it.
+pub(super) fn sandbox_note(journal: &Value) -> String {
+    let choices = sandbox_choices(journal).join(", ");
+    match recorded_sandbox(journal) {
+        Some(recorded) => format!(
+            " (fill SANDBOX_MODE with one of {choices}; {recorded} is the recorded sandbox that failed)"
+        ),
+        None => format!(" (fill SANDBOX_MODE with one of {choices})"),
     }
-    crate::emitted::Route::new(["work", "act", work])
 }
 
 /// A failure message that keeps the typed error and names the one route.
-pub(super) fn message(loaded: &Loaded, work: &str, error: &str, journal: Option<&Value>) -> String {
+pub(super) fn message(
+    loaded: &Loaded,
+    work: &str,
+    error: &str,
+    journal: Option<&Value>,
+    relaunched: bool,
+) -> String {
     let Some(journal) = journal else {
         return error.to_owned();
     };
@@ -108,12 +209,15 @@ pub(super) fn message(loaded: &Loaded, work: &str, error: &str, journal: Option<
         );
     }
     if relaunchable(journal) {
-        let cause = if permission_denied(journal) {
-            "; the host denied the provider's write, and no thread or effect exists"
-        } else {
-            "; no provider thread and no observed effect exists"
-        };
-        return format!("{error}; native assignment did not start (not_started){cause}; launch the same assignment with {route}");
+        if permission_denied(journal) {
+            let note = sandbox_note(journal);
+            return format!("{error}; native assignment did not start (not_started); the host printed a sandbox write denial, and a provider config, auth or session read refusal prints the same errno text, so the two cannot be told apart here; no thread or effect exists; choose a sandbox and launch the same assignment with {route}{note}");
+        }
+        let mut text = format!("{error}; native assignment did not start (not_started); no provider thread and no observed effect exists; launch the same assignment with {route}");
+        if relaunched {
+            text.push_str(REPEAT_NOTE);
+        }
+        return text;
     }
     format!("{error}; native assignment may have changed files; inspect it with {route}")
 }
@@ -124,7 +228,9 @@ mod tests {
 
     fn failed(codes: Value, commands: Value, thread: Value) -> Value {
         json!({
-            "status": "started", "threadId": thread, "request": {"controlledEffects": false},
+            "status": "started", "threadId": thread,
+            "request": {"controlledEffects": false, "sandbox": "workspace-write",
+                "executable": "/fixture/bin/codex"},
             "processIdentity": {"pid": 123, "processGroup": 123, "startTimeTicks": 45},
             "observation": {
                 "commands": commands,
@@ -165,12 +271,43 @@ mod tests {
     }
 
     #[test]
-    fn host_permission_denial_names_the_sandbox_relaunch() {
+    fn host_permission_denial_offers_another_sandbox_and_keeps_the_binary() {
         let journal = failed(json!(["host_permission_denied"]), json!([]), Value::Null);
         assert!(relaunchable(&journal));
-        assert!(route("smw_1", &journal)
-            .shell_text()
-            .ends_with("work act smw_1 --sandbox-mode danger-full-access"));
+        let route = route("smw_1", &journal);
+        assert!(route.shell_text().ends_with(
+            "work act smw_1 --codex-bin /fixture/bin/codex --sandbox-mode <SANDBOX_MODE>"
+        ));
+        assert_eq!(
+            sandbox_choices(&journal),
+            ["read-only", "danger-full-access"]
+        );
+        assert!(sandbox_note(&journal).contains("workspace-write is the recorded sandbox"));
+    }
+
+    #[test]
+    fn a_relaunch_without_a_denial_keeps_every_recorded_launch_value() {
+        let mut journal = failed(json!([]), json!([]), Value::Null);
+        journal["request"]["model"] = json!("gpt-recorded");
+        journal["request"]["reasoningEffort"] = json!("high");
+        journal["request"]["timeoutMs"] = json!(123456_u64);
+        let route = route("smw_1", &journal).shell_text();
+        assert!(route.ends_with(
+            "work act smw_1 --codex-bin /fixture/bin/codex --model gpt-recorded \
+             --reasoning-effort high --sandbox-mode workspace-write --timeout-ms 123456"
+        ));
+    }
+
+    #[test]
+    fn a_denial_relaunch_keeps_recorded_values_but_leaves_the_sandbox_to_the_human() {
+        let mut journal = failed(json!(["host_permission_denied"]), json!([]), Value::Null);
+        journal["request"]["model"] = json!("gpt-recorded");
+        journal["request"]["timeoutMs"] = json!(123456_u64);
+        let route = route("smw_1", &journal).shell_text();
+        assert!(route.ends_with(
+            "work act smw_1 --codex-bin /fixture/bin/codex --model gpt-recorded \
+             --sandbox-mode <SANDBOX_MODE> --timeout-ms 123456"
+        ));
     }
 
     #[test]

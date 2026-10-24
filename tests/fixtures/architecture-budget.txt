@@ -12,4 +12,4 @@
 41702 tests/project_continuation/control.rs
 35372 tests/update.rs
 34072 tests/value_contract.rs
-45178 tests/work_check_replacement/refusal_and_native_lineage.rs
+42168 tests/work_check_replacement/refusal_and_native_lineage.rs

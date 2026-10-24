@@ -166,6 +166,15 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
             result["details"] = json!({"grouped": grouped_route});
         }
         if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
+            // The grouped route is the last path-bearing form in this view.
+            // Reference its executable and configuration through its flags so
+            // a long install or project path cannot push the bounded view over
+            // the limit; the reference itself is unchanged.
+            if let Some(grouped) = result["details"]["grouped"].as_object_mut() {
+                bound_command(loaded, grouped, "command")?;
+            }
+        }
+        if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
             return Err(
                 "action view exceeds 8192 bytes; use current work next section routes".into(),
             );
@@ -214,68 +223,7 @@ fn project_action_view(result: &mut Value) {
 fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), String> {
     match value {
         Value::Object(object) => {
-            let is_command = object.get("argv").is_some_and(Value::is_array)
-                && object
-                    .get("sameConfigRequired")
-                    .is_some_and(Value::is_boolean)
-                && object
-                    .get("sameExecutableRequired")
-                    .is_some_and(Value::is_boolean);
-            if is_command {
-                let argv = object["argv"]
-                    .as_array()
-                    .ok_or("action command argv unavailable")?;
-                let argv = argv
-                    .iter()
-                    .map(|argument| {
-                        argument
-                            .as_str()
-                            .map(str::to_owned)
-                            .ok_or("action command argv is not text")
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let same_executable = object["sameExecutableRequired"]
-                    .as_bool()
-                    .ok_or("action command executable requirement unavailable")?;
-                let same_config = object["sameConfigRequired"]
-                    .as_bool()
-                    .ok_or("action command config requirement unavailable")?;
-                let start = if !same_executable {
-                    let expected = crate::emitted::executable()
-                        .map_err(|_| "action command executable is no longer addressable")?;
-                    if argv.first() != Some(&expected) {
-                        return Err(
-                            "action command executable changed during view construction".into()
-                        );
-                    }
-                    1
-                } else {
-                    0
-                };
-                if argv.len() <= start {
-                    return Err("action command argv is malformed".into());
-                }
-                let mut suffix = argv[start..].to_vec();
-                if !same_config {
-                    if suffix.len() < 2
-                        || suffix[suffix.len() - 2] != "--config"
-                        || Some(suffix[suffix.len() - 1].as_str()) != loaded.path.to_str()
-                    {
-                        return Err("action command config changed during view construction".into());
-                    }
-                    suffix.pop();
-                } else if suffix.last().map(String::as_str) != Some("--config") {
-                    return Err("action command argv is malformed".into());
-                }
-                let command = crate::emitted::Route::reprinted(suffix, &loaded.path)?
-                    .within(ACTION_VIEW_ARGV_BUDGET);
-                object.insert("argv".into(), command.argv_value().clone());
-                object.insert("sameConfigRequired".into(), json!(command.needs_config()));
-                object.insert(
-                    "sameExecutableRequired".into(),
-                    json!(command.needs_executable()),
-                );
-            }
+            bound_command(loaded, object, "argv")?;
             for (key, child) in object.iter_mut() {
                 if key != "argv" {
                     bound_action_view_commands(loaded, child)?;
@@ -289,6 +237,78 @@ fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), 
         }
         _ => {}
     }
+    Ok(())
+}
+
+/// Bound one command object in place, whether its argv sits under `argv` or
+/// under the route's own `command` key. Only an object carrying a command
+/// array and both accessor flags is a command; anything else is left alone.
+fn bound_command(
+    loaded: &Loaded,
+    object: &mut serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<(), String> {
+    if !object.get(key).is_some_and(Value::is_array)
+        || !object
+            .get("sameConfigRequired")
+            .is_some_and(Value::is_boolean)
+        || !object
+            .get("sameExecutableRequired")
+            .is_some_and(Value::is_boolean)
+    {
+        return Ok(());
+    }
+    let argv = object[key]
+        .as_array()
+        .ok_or("action command argv unavailable")?;
+    let argv = argv
+        .iter()
+        .map(|argument| {
+            argument
+                .as_str()
+                .map(str::to_owned)
+                .ok_or("action command argv is not text")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let same_executable = object["sameExecutableRequired"]
+        .as_bool()
+        .ok_or("action command executable requirement unavailable")?;
+    let same_config = object["sameConfigRequired"]
+        .as_bool()
+        .ok_or("action command config requirement unavailable")?;
+    let start = if !same_executable {
+        let expected = crate::emitted::executable()
+            .map_err(|_| "action command executable is no longer addressable")?;
+        if argv.first() != Some(&expected) {
+            return Err("action command executable changed during view construction".into());
+        }
+        1
+    } else {
+        0
+    };
+    if argv.len() <= start {
+        return Err("action command argv is malformed".into());
+    }
+    let mut suffix = argv[start..].to_vec();
+    if !same_config {
+        if suffix.len() < 2
+            || suffix[suffix.len() - 2] != "--config"
+            || Some(suffix[suffix.len() - 1].as_str()) != loaded.path.to_str()
+        {
+            return Err("action command config changed during view construction".into());
+        }
+        suffix.pop();
+    } else if suffix.last().map(String::as_str) != Some("--config") {
+        return Err("action command argv is malformed".into());
+    }
+    let command =
+        crate::emitted::Route::reprinted(suffix, &loaded.path)?.within(ACTION_VIEW_ARGV_BUDGET);
+    object.insert(key.into(), command.argv_value().clone());
+    object.insert("sameConfigRequired".into(), json!(command.needs_config()));
+    object.insert(
+        "sameExecutableRequired".into(),
+        json!(command.needs_executable()),
+    );
     Ok(())
 }
 

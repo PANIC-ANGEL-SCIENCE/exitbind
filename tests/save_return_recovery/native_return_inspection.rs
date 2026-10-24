@@ -116,7 +116,13 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     let executable = fixture.root.join("fake-diagnostic-failure-codex");
     fs::write(
         &executable,
-        "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' 'Not inside a trusted directory and --skip-git-repo-check was not specified.' 'private stderr body' >&2\nexit 1\n",
+        "#!/bin/sh\ncat >/dev/null\nif [ -f \"$0.ran\" ]; then\n\
+         printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"relaunch-thread\"}'\n\
+         printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"relaunched\\\",\\\"reason\\\":\\\"\\\"}\"}}'\n\
+         printf '%s\\n' '{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}'\n\
+         exit 0\nfi\n\
+         : > \"$0.ran\"\n\
+         printf '%s\\n' 'Not inside a trusted directory and --skip-git-repo-check was not specified.' 'private stderr body' >&2\nexit 1\n",
     )
     .unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
@@ -128,6 +134,10 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
             &work,
             "--codex-bin",
             executable.to_str().unwrap(),
+            "--sandbox-mode",
+            "read-only",
+            "--timeout-ms",
+            "123456",
         ],
         b"",
     );
@@ -164,6 +174,11 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
         .unwrap()
         .iter()
         .any(|code| code == "git_precondition"));
+    // Every recorded launch value is what the relaunch must carry; this
+    // retained request is the comparison for the relaunched one.
+    let original_request = journal["request"].clone();
+    assert_eq!(original_request["sandbox"], "read-only");
+    assert_eq!(original_request["timeoutMs"], 123456);
     let journal_text = String::from_utf8_lossy(&journal_bytes);
     assert!(!journal_text.contains("Not inside a trusted directory"));
     assert!(!journal_text.contains("private stderr body"));
@@ -189,21 +204,8 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     );
 
     // The printed relaunch runs unedited: the same assignment starts a
-    // provider thread, and no successor Work is created.
-    let bin = fixture.root.join("relaunch-bin");
-    fs::create_dir(&bin).unwrap();
-    let codex = bin.join("codex");
-    fs::write(
-        &codex,
-        r##"#!/bin/sh
-cat >/dev/null
-printf '%s\n' '{"type":"thread.started","thread_id":"relaunch-thread"}'
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{\"outcome\":\"completed\",\"summary\":\"relaunched\",\"reason\":\"\"}"}}'
-printf '%s\n' '{"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
-"##,
-    )
-    .unwrap();
-    fs::set_permissions(&codex, fs::Permissions::from_mode(0o700)).unwrap();
+    // provider thread with its recorded executable, and no successor Work is
+    // created.
     let route: Vec<&str> = inspected_value["nextAction"]["command"]
         .as_array()
         .unwrap_or_else(|| panic!("no printed relaunch route: {inspected_value}"))
@@ -211,16 +213,29 @@ printf '%s\n' '{"type":"turn.completed","status":"completed","usage":{"input_tok
         .map(|word| word.as_str().unwrap())
         .collect();
     assert_eq!(route[0], env!("CARGO_BIN_EXE_exitbind"));
-    let path = format!(
-        "{}:{}",
-        bin.display(),
-        std::env::var("PATH").unwrap_or_default()
+    assert!(
+        route
+            .iter()
+            .any(|word| *word == executable.to_str().unwrap()),
+        "the recorded executable is kept: {route:?}"
     );
+    // A plain relaunch carries the recorded sandbox and timeout; it never
+    // widens the sandbox to the default.
+    for pair in [["--sandbox-mode", "read-only"], ["--timeout-ms", "123456"]] {
+        let position = route
+            .iter()
+            .position(|word| *word == pair[0])
+            .unwrap_or_else(|| panic!("route lacks {}: {route:?}", pair[0]));
+        assert_eq!(
+            route[position + 1],
+            pair[1],
+            "recorded launch value changed: {route:?}"
+        );
+    }
     let relaunched = support::git_topology::command(route[0])
         .current_dir(&fixture.root)
         .args(&route[1..])
         .env("EXITBIND_NATIVE_RECOVERY_TEST", "1")
-        .env("PATH", path)
         .output()
         .unwrap();
     assert!(relaunched.status.success(), "{}", text(&relaunched));
@@ -237,6 +252,10 @@ printf '%s\n' '{"type":"turn.completed","status":"completed","usage":{"input_tok
     .unwrap();
     assert_eq!(journal["status"], "completed");
     assert_eq!(journal["threadId"], "relaunch-thread");
+    assert_eq!(
+        journal["request"], original_request,
+        "the relaunched request equals the retained original request"
+    );
     // The same Work continues at its check stage: no successor Work was created.
     let after = fixture.value(&["work", "next", &work], b"");
     assert_eq!(after["work"], work.as_str());

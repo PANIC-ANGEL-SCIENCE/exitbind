@@ -8,7 +8,29 @@ use std::{
 #[cfg(target_os = "linux")]
 #[test]
 fn a_never_run_checker_offers_the_environmental_route_and_re_pends_the_same_check() {
-    let f = Fixture::new("printf launched > .exitbind/launched\n");
+    // The action view must hold its 8 KiB bound while the executable,
+    // project and configuration paths are long, not just in a short temp root.
+    let long_parent = support::temp("long-project-path");
+    let mut parent = long_parent.to_path_buf();
+    for index in 0..2 {
+        parent.push(format!(
+            "padded-project-root-component-{index}-{}",
+            "x".repeat(30)
+        ));
+    }
+    fs::create_dir_all(&parent).unwrap();
+    let f = Fixture::new_in(Some(&parent), "printf launched > .exitbind/launched\n");
+    assert!(
+        f.root.to_str().unwrap().len() >= 90,
+        "fixture project path is not long: {}",
+        f.root.display()
+    );
+    let config_path = f.root.join("exitbind.json");
+    assert!(
+        config_path.to_str().unwrap().len() >= 100,
+        "fixture configuration path is not long: {}",
+        config_path.display()
+    );
     let work = f.begin();
     let bin_root = support::temp("capsule-no-shell-environmental");
     let no_shell = support::git_topology::git_only_path(&bin_root);
@@ -25,9 +47,21 @@ fn a_never_run_checker_offers_the_environmental_route_and_re_pends_the_same_chec
 
     // The Lead's form offers the never-ran environmental attestation; a
     // checker that never started is not labelled a defective contract.
-    let view = f.ok(
+    let output = f.call(
         &["work", "detail", &work, "--view", "action", "--json"],
         b"",
+    );
+    assert!(output.status.success(), "{output:?}");
+    let view = value(&output);
+    // The navigation part (delivered guidance keeps its own budget) holds the
+    // compact response bound that this long path would otherwise exceed.
+    let mut navigation = view.clone();
+    navigation.as_object_mut().unwrap().remove("guidance");
+    let navigation_bytes = serde_json::to_vec(&navigation).unwrap().len() + 1;
+    assert!(
+        navigation_bytes <= 8192,
+        "action-view navigation is {navigation_bytes} bytes under {}",
+        f.root.display()
     );
     let choices = view["effectiveAction"]["choices"].as_array().unwrap();
     let environmental = choices

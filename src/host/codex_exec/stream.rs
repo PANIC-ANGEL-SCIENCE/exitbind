@@ -196,12 +196,10 @@ pub(super) fn parse_stream(
             push_diagnostic(&mut diagnostic_codes, DiagnosticCode::GitPrecondition);
         }
         // The host reports a sandbox file denial only as errno text. This is
-        // the one place that text is read, and only its errno-specific form is
-        // accepted so ordinary command prose is never classified as a denial.
-        if HOST_PERMISSION_DENIALS
-            .iter()
-            .any(|marker| contains(stderr, marker))
-        {
+        // the one place that text is read; a line that names a provider
+        // config, auth or session read is a startup failure that a wider
+        // sandbox cannot help, so it is never a sandbox denial.
+        if host_write_denied(stderr) {
             push_diagnostic(&mut diagnostic_codes, DiagnosticCode::HostPermissionDenied);
         }
     }
@@ -241,6 +239,42 @@ const HOST_PERMISSION_DENIALS: &[&[u8]] = &[
     b"Operation not permitted (os error 1)",
     b"Permission denied (os error 13)",
 ];
+
+/// The provider's own state files. A read of one of these fails with the
+/// same errno text but cannot be repaired by a wider sandbox, so its line is
+/// not a sandbox write denial. Matching is confined to these file paths: a
+/// bare word such as `config`, `auth`, `session` or `token` also sits inside
+/// ordinary project paths and prose, and a real sandbox denial there must
+/// stay classified.
+const PROVIDER_READ_PATHS: &[&[u8]] = &[
+    b".codex/config.toml",
+    b".codex/auth.json",
+    b".codex/sessions/",
+    b"codex/sessions/",
+    b".codex/log/",
+    b"codex/log/",
+];
+
+/// Whether a line's denial names one of the provider's own state files.
+fn provider_read_failure(line: &[u8]) -> bool {
+    let lower = line.to_ascii_lowercase();
+    PROVIDER_READ_PATHS
+        .iter()
+        .any(|path| contains(&lower, path))
+}
+
+/// Whether any stderr line carries an errno denial that is not a read of the
+/// provider's own state files. A bare errno line (the sandbox's own report)
+/// is accepted, and so is a denial whose path merely contains a word such as
+/// `config` or `auth`.
+fn host_write_denied(stderr: &[u8]) -> bool {
+    stderr.split(|byte| *byte == b'\n').any(|line| {
+        HOST_PERMISSION_DENIALS
+            .iter()
+            .any(|marker| contains(line, marker))
+            && !provider_read_failure(line)
+    })
+}
 
 fn contains(source: &[u8], marker: &[u8]) -> bool {
     source.windows(marker.len()).any(|window| window == marker)
@@ -323,5 +357,58 @@ mod tests {
             .diagnostic
             .codes
             .contains(&DiagnosticCode::HostPermissionDenied));
+    }
+
+    #[test]
+    fn provider_read_failure_with_the_same_errno_is_not_a_sandbox_denial() {
+        for stderr in [
+            &b"failed to read config file .codex/config.toml: Permission denied (os error 13)\n"[..],
+            &b"failed to read auth file .codex/auth.json: Operation not permitted (os error 1)\n"[..],
+            &b"cannot open session /var/lib/codex/sessions/1.jsonl: Permission denied (os error 13)\n"[..],
+        ] {
+            let observation = failed_with(stderr);
+            assert!(
+                !observation
+                    .diagnostic
+                    .codes
+                    .contains(&DiagnosticCode::HostPermissionDenied),
+                "{}",
+                String::from_utf8_lossy(stderr)
+            );
+            assert!(observation
+                .diagnostic
+                .codes
+                .contains(&DiagnosticCode::StderrNonempty));
+        }
+        // A provider-read line does not hide a separate sandbox denial line.
+        let mixed =
+            b"failed to read config file .codex/config.toml: Permission denied (os error 13)\n\
+                      sandbox write: Operation not permitted (os error 1)\n";
+        assert!(failed_with(mixed)
+            .diagnostic
+            .codes
+            .contains(&DiagnosticCode::HostPermissionDenied));
+    }
+
+    #[test]
+    fn a_sandbox_denial_under_a_project_path_word_is_classified() {
+        // Words that used to exclude a line no longer do when they sit in an
+        // ordinary project path or prose; only the provider's own state files
+        // are excluded.
+        for stderr in [
+            &b"sandbox write denied for /repo/config/app.yaml: Operation not permitted (os error 1)\n"[..],
+            &b"cannot write /repo/tokenizer/output.bin: Permission denied (os error 13)\n"[..],
+            &b"author file write failed: Permission denied (os error 13)\n"[..],
+            &b"cannot write the session store at /repo/session-store/1: Operation not permitted (os error 1)\n"[..],
+        ] {
+            assert!(
+                failed_with(stderr)
+                    .diagnostic
+                    .codes
+                    .contains(&DiagnosticCode::HostPermissionDenied),
+                "{}",
+                String::from_utf8_lossy(stderr)
+            );
+        }
     }
 }

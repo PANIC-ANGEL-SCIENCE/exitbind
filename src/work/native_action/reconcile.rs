@@ -17,6 +17,7 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         &identity.assignment,
         current["packet"]["substitution"].is_object(),
     )?;
+    let journal_path = paths.as_ref().map(|paths| paths.journal.clone());
     let journal = match paths {
         Some(paths) => read_journal(&paths.journal)?,
         None => None,
@@ -118,7 +119,13 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
     } else {
         match status {
             "not_started" if start_failure::relaunchable(&journal) => {
-                ("relaunch_ready", relaunch_action(loaded, work, &journal))
+                let relaunched = journal_path
+                    .as_deref()
+                    .is_some_and(start_failure::prior_relaunch);
+                (
+                    "relaunch_ready",
+                    relaunch_action(loaded, work, &journal, relaunched),
+                )
             }
             "not_started" => (
                 "inspection_required",
@@ -303,25 +310,42 @@ fn diagnostic_projection(observation: &Value) -> Value {
 }
 
 /// The one route for a pre-thread, no-effect start failure: the same
-/// assignment starts again. Only a host permission denial changes the
-/// sandbox, because no session exists whose sandbox a resume would keep.
-fn relaunch_action(loaded: &Loaded, work: &str, journal: &Value) -> Value {
+/// assignment starts again with every recorded launch value. Only a host
+/// permission denial offers another sandbox, as a placeholder the human
+/// fills; the product neither picks a wider sandbox nor runs it unasked. A
+/// second relaunch of the same assignment is not safe to repeat automatically.
+fn relaunch_action(loaded: &Loaded, work: &str, journal: &Value, relaunched: bool) -> Value {
     let route = start_failure::route(work, journal)
         .config(&loaded.path)
         .within(2048);
-    let reason = if start_failure::permission_denied(journal) {
-        "the host denied the provider's write; no thread or effect exists, so this assignment starts again with another sandbox"
-    } else {
-        "no provider thread and no observed effect exists, so this assignment starts again"
-    };
-    json!({
+    let denied = start_failure::permission_denied(journal);
+    let mut action = json!({
         "type": "execute_current",
-        "safe": true,
+        "safe": !denied && !relaunched,
         "command": route.argv_value(),
         "sameConfigRequired": route.needs_config(),
         "sameExecutableRequired": route.needs_executable(),
-        "reason": reason,
-    })
+    });
+    if denied {
+        let choices = start_failure::sandbox_choices(journal);
+        action["placeholders"] = json!(["SANDBOX_MODE"]);
+        action["inputConstraints"] = json!({
+            "SANDBOX_MODE": {
+                "type": "string",
+                "allowedValues": choices,
+                "example": choices.first(),
+                "meaning": "the sandbox the human chooses for this relaunch; the recorded sandbox is not offered because it is the one that failed",
+            }
+        });
+        action["reason"] = json!("the host printed a sandbox write denial; a provider config, auth or session read refusal prints the same errno text, so the two cannot be told apart here; no thread or effect exists, so the human may choose another sandbox and start the same assignment again");
+        return action;
+    }
+    action["reason"] = json!(if relaunched {
+        "no provider thread and no observed effect exists; this assignment already used its one automatic relaunch and failed the same way, so repeating this route automatically is not safe; a human decides whether to launch it again"
+    } else {
+        "no provider thread and no observed effect exists, so this assignment starts again with its recorded launch parameters"
+    });
+    action
 }
 
 fn action(loaded: &Loaded, work: &str, kind: &str, safe: bool, reason: Option<&str>) -> Value {

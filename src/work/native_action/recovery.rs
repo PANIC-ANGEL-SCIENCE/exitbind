@@ -71,6 +71,24 @@ pub(super) fn validate_overrides(
     journal: &Value,
     options: &super::Options<'_>,
 ) -> Result<(), String> {
+    validate_execution(journal, options, false)
+}
+
+/// A not_started journal relaunches the same assignment, so a model, effort,
+/// timeout or provider-binary override is still refused; only the sandbox may
+/// differ, because no provider thread exists whose sandbox a resume keeps.
+pub(super) fn validate_relaunch_overrides(
+    journal: &Value,
+    options: &super::Options<'_>,
+) -> Result<(), String> {
+    validate_execution(journal, options, true)
+}
+
+fn validate_execution(
+    journal: &Value,
+    options: &super::Options<'_>,
+    sandbox_may_differ: bool,
+) -> Result<(), String> {
     if journal["request"]["controlledEffects"] == true && journal["status"] != "completed" {
         return Err("controlled native sessions cannot be resumed; reconcile their file tool receipts separately".into());
     }
@@ -79,9 +97,10 @@ pub(super) fn validate_overrides(
         || options
             .reasoning_effort
             .is_some_and(|value| request["reasoningEffort"] != value)
-        || options
-            .sandbox_mode
-            .is_some_and(|value| request["sandbox"] != value)
+        || (!sandbox_may_differ
+            && options
+                .sandbox_mode
+                .is_some_and(|value| request["sandbox"] != value))
         || options.timeout_ms.is_some_and(|value| {
             value
                 .parse::<u64>()
@@ -96,10 +115,11 @@ pub(super) fn validate_overrides(
         false
     };
     if conflict || executable_conflict {
-        return Err(
-            "native recovery refuses changed execution parameters for the recorded operation"
-                .into(),
-        );
+        return Err(if sandbox_may_differ {
+            "native relaunch refuses changed execution parameters for the recorded operation; only --sandbox-mode may differ because no provider thread exists".into()
+        } else {
+            "native recovery refuses changed execution parameters for the recorded operation".into()
+        });
     }
     Ok(())
 }

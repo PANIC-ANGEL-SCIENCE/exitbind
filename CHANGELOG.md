@@ -22,6 +22,12 @@ outside the owner's native session, keeps no stamped copy, so journey
 members stamped with the replaced bytes stay refused until those bytes are
 supplied with
 `memory revalidate LEAD --from-config PREVIOUS_CONFIG --reason TEXT --apply`.
+The source candidate after this release records every check admission's
+`observer`, with the observer's `pid` and `startTimeTicks`. A 0.31.22 reader
+admits no such field and no ledger version above 8, and it cannot tell a newer
+Exitbind's ledger from a corrupt one: it reports the check ledger as
+unreadable (`corrupt_ledger`) and offers inspection. Prepare the upgrade
+before a candidate writes one.
 
 - The architecture budget covers every file under `src`, `tests` and
   `tests/fixtures`; files already over 32 KiB keep a ceiling that only falls,

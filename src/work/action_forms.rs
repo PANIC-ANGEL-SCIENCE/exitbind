@@ -147,12 +147,67 @@ fn return_choice(
     )
 }
 
+/// The bound Lead replacement forms a blocked Work keeps. Only the configured
+/// Lead creates the successor, by running the form with its own check and
+/// reason; nothing executes automatically. `never_ran` marks a Work whose
+/// checker produced no result, so its label claims no defect.
+fn blocked_replacement_choices(
+    loaded: &Loaded,
+    work: &str,
+    binding: &str,
+    never_ran: bool,
+) -> (Vec<Value>, Option<String>) {
+    let suffix = Route::new([
+        "work",
+        "replace-check",
+        work,
+        "--check-command",
+        crate::emitted::slot("NEW_CHECK_COMMAND").as_str(),
+        "--reason",
+        crate::emitted::slot("REASON").as_str(),
+        "--classification",
+        "defective-contract",
+        "--current-binding",
+        binding,
+        "--apply",
+    ]);
+    let mut choice = json!({
+        "label": "replace an explicitly defective frozen check",
+        "command": command(loaded, suffix),
+        "placeholders": ["NEW_CHECK_COMMAND", "REASON"],
+        "stdin": {"required": false, "kind": "none"},
+        "sideEffect": "creates one immutable successor only after the configured Lead chooses the new check and records a defective-contract reason; the blocked predecessor stays unchanged"
+    });
+    if never_ran {
+        choice["label"] = json!(
+            "replace the frozen check only on the Lead's explicit defective-contract decision"
+        );
+        choice["sideEffect"] = json!("creates one immutable successor only after the Lead chooses the new check and records a defective-contract reason; the checker produced no result, so this form asserts no defect by itself; the blocked predecessor stays unchanged");
+    }
+    let mut choices = vec![choice];
+    let diagnostic_attempt = crate::run::pre_return::replacement_ready(loaded, work)
+        .ok()
+        .flatten();
+    if let Some(attempt_id) = &diagnostic_attempt {
+        choices.push(json!({
+            "label": "replace an explicitly defective frozen pre-return check",
+            "command": command(loaded, Route::new(["work", "replace-check", work, "--pre-return-command", crate::emitted::slot("NEW_PRE_RETURN_COMMAND").as_str(), "--reason", crate::emitted::slot("REASON").as_str(), "--classification", "defective-contract", "--current-binding", binding])),
+            "placeholders": ["NEW_PRE_RETURN_COMMAND", "REASON"],
+            "stdin": {"required": false, "kind": "none"},
+            "source": {"kind":"blocked_worker","diagnosticAttemptId":attempt_id},
+            "sideEffect": "preview only; the blocked report must link this known-ended diagnostic; the predecessor and its grant remain unchanged"
+        }));
+    }
+    (choices, diagnostic_attempt)
+}
+
 pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     let mut result = full(loaded, work, next, binding);
     let replacement_choice = |choice: &Value| {
         choice["label"].as_str().is_some_and(|label| {
             label.contains("replacement of an explicitly defective frozen check")
                 || label.contains("defective frozen pre-return check")
+                || label.contains("only on the Lead's explicit defective-contract decision")
                 || label == "replace an explicitly defective frozen check"
         })
     };
@@ -216,54 +271,31 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                     }
                 });
             }
-            if super::check::blocked_check_never_ran(loaded, work, next) {
-                // A checker that never produced a result is no evidence of a
-                // defective contract, so no replacement is offered.
+            let never_ran = super::check::blocked_check_never_ran(loaded, work, next);
+            let (choices, diagnostic_attempt) =
+                blocked_replacement_choices(loaded, work, binding, never_ran);
+            if never_ran {
+                // No check result exists, so nothing here proves a defective
+                // contract. The forward route is still the Lead's bound
+                // replacement: only the Lead's explicit defective-contract
+                // decision creates a successor, and the form never runs it by
+                // itself. The environmental attestation needs a current
+                // assignment with a pending observation failure, which a
+                // terminal blocked Work does not carry, so it is not offered
+                // here; the failed-observation state offers it.
                 return json!({
                     "version": 1, "state": "blocked_never_run_check",
-                    "binding": binding, "leadChoiceRequired": false, "choices": [],
+                    "binding": binding, "leadChoiceRequired": true,
+                    "choices": choices,
                     "mechanicalAction": Value::Null,
-                    "meaning": "The frozen check never ran and this blocked Work holds no check result: there is no defective contract to replace. The Work stays blocked with no further route.",
+                    "meaning": "The frozen check never ran and this blocked Work holds no check result, so nothing here proves a defective contract. Replacing the check is the Lead's explicit decision; without that decision the Work stays blocked.",
+                    "constraints": {"classification": "defective-contract", "sourceKind": "blocked_worker", "diagnosticAttemptId":diagnostic_attempt,"binding": binding},
                     "diagnostic": {
                         "command": command(loaded, Route::new(["work", "detail", work, "--json"])),
                         "readOnly": true, "inspectionOnly": true,
                         "meaning": "Read the blocked Work's evidence; this executes no check and records nothing."
                     }
                 });
-            }
-            let suffix = Route::new([
-                "work",
-                "replace-check",
-                work,
-                "--check-command",
-                crate::emitted::slot("NEW_CHECK_COMMAND").as_str(),
-                "--reason",
-                crate::emitted::slot("REASON").as_str(),
-                "--classification",
-                "defective-contract",
-                "--current-binding",
-                binding,
-                "--apply",
-            ]);
-            let mut choices = vec![json!({
-                "label": "replace an explicitly defective frozen check",
-                "command": command(loaded, suffix),
-                "placeholders": ["NEW_CHECK_COMMAND", "REASON"],
-                "stdin": {"required": false, "kind": "none"},
-                "sideEffect": "creates one immutable successor only after the configured Lead chooses the new check and records a defective-contract reason; the blocked predecessor stays unchanged"
-            })];
-            let diagnostic_attempt = crate::run::pre_return::replacement_ready(loaded, work)
-                .ok()
-                .flatten();
-            if let Some(attempt_id) = &diagnostic_attempt {
-                choices.push(json!({
-                    "label": "replace an explicitly defective frozen pre-return check",
-                    "command": command(loaded, Route::new(["work", "replace-check", work, "--pre-return-command", crate::emitted::slot("NEW_PRE_RETURN_COMMAND").as_str(), "--reason", crate::emitted::slot("REASON").as_str(), "--classification", "defective-contract", "--current-binding", binding])),
-                    "placeholders": ["NEW_PRE_RETURN_COMMAND", "REASON"],
-                    "stdin": {"required": false, "kind": "none"},
-                    "source": {"kind":"blocked_worker","diagnosticAttemptId":attempt_id},
-                    "sideEffect": "preview only; the blocked report must link this known-ended diagnostic; the predecessor and its grant remain unchanged"
-                }));
             }
             return json!({
                 "version": 1, "state": "blocked_lead_check_replacement",

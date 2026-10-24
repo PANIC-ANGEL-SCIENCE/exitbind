@@ -16,7 +16,12 @@ struct Fixture {
 }
 impl Fixture {
     fn new(script: &str) -> Self {
-        let root = support::temp("check-observation");
+        Self::new_in(None, script)
+    }
+    /// The same fixture under `parent`, so a test can hold the project and
+    /// configuration paths at a chosen length.
+    fn new_in(parent: Option<&std::path::Path>, script: &str) -> Self {
+        let root = support::temp_in(parent, "check-observation");
         support::git_topology::repository(&root);
         let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])

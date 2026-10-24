@@ -104,9 +104,11 @@ pub(crate) fn execute(
         if options.resume && journal["status"] != "not_started" {
             continuation::reconcile_failed(loaded, work, &journal)?;
         }
-        // A pre-thread, no-effect start recorded no provider execution, so the
-        // relaunch is the one route allowed to choose another sandbox.
-        if journal["status"] != "not_started" {
+        // A pre-thread, no-effect start recorded no provider execution, so
+        // only its sandbox may change; every other override stays refused.
+        if journal["status"] == "not_started" {
+            recovery::validate_relaunch_overrides(&journal, &options)?;
+        } else {
             recovery::validate_overrides(&journal, &options)?;
         }
         match journal["status"].as_str() {
@@ -155,8 +157,13 @@ pub(crate) fn execute(
                 let route = start_failure::route(work, &journal)
                     .config(&loaded.path)
                     .shell_text();
+                let repeat = if start_failure::prior_relaunch(&paths.journal) {
+                    start_failure::REPEAT_NOTE
+                } else {
+                    ""
+                };
                 return Err(format!(
-                    "native assignment did not start; it has no provider thread to resume. Launch the same assignment with {route}"
+                    "native assignment did not start; it has no provider thread to resume. Launch the same assignment with {route}{repeat}"
                 ));
             }
             Some("not_started") => {
@@ -335,6 +342,7 @@ pub(crate) fn execute(
                 work,
                 &error,
                 journal.as_ref(),
+                start_failure::prior_relaunch(&paths.journal),
             ));
         }
     };
@@ -420,6 +428,7 @@ pub(crate) fn execute(
                 work,
                 &error,
                 classified.as_ref(),
+                start_failure::prior_relaunch(&paths.journal),
             ))
         }
         (Ok(_), Err(error)) => return Err(format!("native accounting recovery pending: {error}")),
@@ -429,6 +438,7 @@ pub(crate) fn execute(
                 work,
                 &format!("{error}; native accounting recovery pending: {accounting}"),
                 classified.as_ref(),
+                start_failure::prior_relaunch(&paths.journal),
             ));
         }
     };
