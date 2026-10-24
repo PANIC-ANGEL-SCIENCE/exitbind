@@ -201,7 +201,7 @@
       "writers": ["src/project/readiness.rs"],
       "readers": ["tests/environment_readiness.rs", "tests/skill_diagnostics.rs"],
       "introduced": "R56 (0.31.23)",
-      "retire": "when no check, setup or Work consumer reads the environment-readiness facts object"
+      "retire": "when no check or setup consumer reads the environment-readiness facts object"
     },
     {
       "id": "temp-root-not-removed-text",

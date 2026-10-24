@@ -1700,8 +1700,8 @@
     },
     "tests/agent_protocol.rs": {
       "baselineSha256": "d80c10e4e68dc2a4c0b3f7c451b1cff6e884c399f2a4cf5e9168c6a689ecd486",
-      "currentSha256": "98ab621081353b387ac80a30278191fbfd8f4dc8d73f2a8cdd6da749302867d0",
-      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged."
+      "currentSha256": "42c7b93f1f629e02c5ab367c91f2b4ffe17ea850987c53c923bfe6684251802b",
+      "reason": "R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 W2: a stdin write to a command that refuses and exits before reading it tolerates only BrokenPipe; the command's output is still asserted, and the assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R56 W2 attempt 3 (F2): setup's validation block carries no readiness facts key while `check --json` does, so the comparison now asserts the readiness key deliberately (state and root present) and compares the remaining shared validation fields exactly; no other assertion changes."
     },
     "tests/architecture_adoption.rs": {
       "baselineSha256": "d6abc45d409401fb790d43aedd0bd75ae0e2ba3d167a9485066984fbbd0c2f08",

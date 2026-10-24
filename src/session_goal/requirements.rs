@@ -15,8 +15,8 @@ use model::*;
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub(crate) use checker::first_program as checker_program;
 pub(crate) use checker::resolve as resolve_checker;
-pub(crate) use checker::tokens as command_tokens;
 pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};

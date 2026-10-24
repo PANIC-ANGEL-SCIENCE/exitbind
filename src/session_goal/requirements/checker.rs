@@ -42,7 +42,7 @@ pub(crate) fn command_names(loaded: &Loaded, command: &str, checker: &str) -> bo
     }
     let wanted = checker.trim_start_matches("./");
     outside_scripts(loaded, command).iter().any(|(_, text)| {
-        tokens(text).any(|token| project_relative(loaded, &token).as_deref() == Some(wanted))
+        tokens(text).any(|token| project_relative(loaded, token).as_deref() == Some(wanted))
     })
 }
 
@@ -93,7 +93,7 @@ fn ambiguous(what: &str, found: &[String]) -> String {
 fn covered_named(loaded: &Loaded, text: &str) -> Result<Vec<String>, String> {
     let mut found: Vec<String> = Vec::new();
     for token in tokens(text) {
-        let Some(relative) = project_relative(loaded, &token) else {
+        let Some(relative) = project_relative(loaded, token) else {
             continue;
         };
         if found.contains(&relative) {
@@ -113,10 +113,12 @@ fn covered_named(loaded: &Loaded, text: &str) -> Result<Vec<String>, String> {
 fn outside_scripts(loaded: &Loaded, command: &str) -> Vec<(String, String)> {
     let mut scripts: Vec<(String, String)> = Vec::new();
     for token in tokens(command) {
-        let path = Path::new(&token);
+        let path = Path::new(token);
         if !path.is_absolute()
-            || project_relative(loaded, &token).is_some()
-            || scripts.iter().any(|(existing, _)| existing == &token)
+            || project_relative(loaded, token).is_some()
+            || scripts
+                .iter()
+                .any(|(existing, _)| existing.as_str() == token)
         {
             continue;
         }
@@ -127,21 +129,29 @@ fn outside_scripts(loaded: &Loaded, command: &str) -> Vec<(String, String)> {
             continue;
         }
         if let Ok(text) = std::fs::read_to_string(path) {
-            scripts.push((token, text));
+            scripts.push((token.to_owned(), text));
         }
     }
     scripts
 }
 
-/// Shell-ish words: whitespace and shell punctuation separate words, quotes
-/// group one word, and a leading `NAME=value` assignment is not a command
-/// word. A `--flag=path` word also yields its value, so a project path after
-/// `=` stays a candidate for the checker search.
-pub(crate) fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
-    let mut words: Vec<String> = Vec::new();
+/// Shell-ish words: whitespace and shell punctuation separate path candidates.
+/// This is the textual splitter the checker derivation has always used; it is
+/// deliberately not a shell parser, so a comment's apostrophe or an
+/// assignment's `=` neither hides a later path nor offers one.
+fn tokens(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| c.is_whitespace() || ";&|()<>\"'`={}".contains(c))
+        .filter(|token| !token.is_empty())
+}
+
+/// The one program a check command executes: the first word after any leading
+/// `NAME=value` environment assignments, read with quote grouping. Readiness
+/// asks only this question, so quoting and the environment prefix reach the
+/// same executable test; path candidates stay with `tokens`.
+pub(crate) fn first_program(command: &str) -> Option<String> {
     let mut word = String::new();
     let mut quote: Option<char> = None;
-    let mut chars = text.chars();
+    let mut chars = command.chars();
     while let Some(character) = chars.next() {
         match quote {
             Some(delimiter) => {
@@ -164,7 +174,10 @@ pub(crate) fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
                     }
                 } else if character.is_whitespace() || ";&|()<>{}`".contains(character) {
                     if !word.is_empty() {
-                        words.push(std::mem::take(&mut word));
+                        if !is_assignment(&word) {
+                            return Some(word);
+                        }
+                        word.clear();
                     }
                 } else {
                     word.push(character);
@@ -172,23 +185,10 @@ pub(crate) fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
             }
         }
     }
-    if !word.is_empty() {
-        words.push(word);
+    if !word.is_empty() && !is_assignment(&word) {
+        return Some(word);
     }
-    let mut result = Vec::new();
-    for word in words {
-        if is_assignment(&word) {
-            continue;
-        }
-        if let Some((_, value)) = word.split_once('=') {
-            let value = value.trim_matches(|c| c == '\'' || c == '"');
-            if !value.is_empty() {
-                result.push(value.to_owned());
-            }
-        }
-        result.push(word);
-    }
-    result.into_iter()
+    None
 }
 
 /// `NAME=value` before the command word is the shell's environment prefix, not
@@ -210,13 +210,33 @@ fn project_relative(loaded: &Loaded, token: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::tokens;
+    use super::{first_program, tokens};
 
     #[test]
-    fn tokens_split_shell_punctuation() {
+    fn tokens_split_shell_punctuation_as_path_candidates() {
         let words: Vec<_> = tokens("exec ./a.sh --x=\"b/c.sh\"; (sh d)").collect();
-        assert_eq!(words, ["exec", "./a.sh", "b/c.sh", "--x=b/c.sh", "sh", "d"]);
+        assert_eq!(words, ["exec", "./a.sh", "--x", "b/c.sh", "sh", "d"]);
         let assignments: Vec<_> = tokens("X=1 \"/a b/check.sh\"").collect();
-        assert_eq!(assignments, ["/a b/check.sh"]);
+        assert_eq!(assignments, ["X", "1", "/a", "b/check.sh"]);
+    }
+
+    #[test]
+    fn first_program_skips_assignments_and_honours_quotes() {
+        assert_eq!(first_program("./check.sh").as_deref(), Some("./check.sh"));
+        assert_eq!(
+            first_program("X=1 ./check.sh").as_deref(),
+            Some("./check.sh")
+        );
+        assert_eq!(
+            first_program("X=1 Y='a b' ./check.sh").as_deref(),
+            Some("./check.sh")
+        );
+        assert_eq!(
+            first_program("\"/a b/check.sh\"").as_deref(),
+            Some("/a b/check.sh")
+        );
+        assert_eq!(first_program("sh ./check.sh").as_deref(), Some("sh"));
+        assert_eq!(first_program("X=1").as_deref(), None);
+        assert_eq!(first_program("   ").as_deref(), None);
     }
 }

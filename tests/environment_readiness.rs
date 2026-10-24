@@ -376,7 +376,10 @@ fn the_printed_route_runs_edited_in_a_root_with_spaces() {
         !route.contains("/./"),
         "the printed path must be normalised: {route}"
     );
-    let status = Command::new("sh").args(["-c", route]).status().unwrap();
+    let status = support::git_topology::command("sh")
+        .args(["-c", route])
+        .status()
+        .unwrap();
     assert!(status.success(), "the printed route did not run: {route}");
     assert_ne!(
         fs::metadata(&checker).unwrap().permissions().mode() & 0o111,

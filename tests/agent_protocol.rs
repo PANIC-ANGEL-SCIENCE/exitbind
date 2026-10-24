@@ -321,10 +321,27 @@ fn approved_roles_apply_once_preserve_asymmetry_and_return_validated_begin() {
         .output()
         .unwrap();
     assert!(checked.status.success());
-    assert_eq!(
-        report["validation"],
-        serde_json::from_slice::<Value>(&checked.stdout).unwrap()
+    let mut checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    // `check --json` also states the G6 environment-readiness facts; setup's
+    // validation block carries the same shared validation fields without it.
+    assert!(
+        checked.get("readiness").is_some(),
+        "check --json must state environment readiness: {checked}"
     );
+    let mut readiness = checked.as_object_mut().unwrap().remove("readiness");
+    let validation = report["validation"].clone();
+    assert!(
+        validation.get("readiness").is_none(),
+        "setup validation stays the shared validation fields: {validation}"
+    );
+    assert_eq!(validation.get("valid"), Some(&json!(true)));
+    let facts = readiness.take().expect("the readiness facts are an object");
+    assert!(
+        matches!(facts["state"].as_str(), Some("ready" | "attention")),
+        "the readiness facts state the assessed posture: {facts}"
+    );
+    assert!(facts.get("root").is_some());
+    assert_eq!(validation, checked);
     let actions = report["next"]["argv"].as_array().unwrap();
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0][1], "work");

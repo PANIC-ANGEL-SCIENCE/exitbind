@@ -114,6 +114,37 @@ fn prepare_derives_the_checker_through_an_outside_script_without_a_wrapper() {
     }
 }
 
+// F4: a comment's apostrophe must not swallow the outside script's text.
+#[test]
+fn prepare_derives_through_an_outside_script_with_an_apostrophe_comment() {
+    let p = Project::new("goal-checker-derivation-apostrophe");
+    p.setup();
+    let outside = Outside::new(&p);
+    let root = p.root.to_str().unwrap();
+    let script = outside.script(
+        "run-with-comment.sh",
+        &format!("set -eu\ncd '{root}'\n# Don't run this twice.\nexec sh ./check.sh all\n"),
+    );
+
+    let derived = p.value(&prepare_args(&format!("sh {script}"), None), None);
+    assert_eq!(derived["checker"]["path"], "check.sh");
+    assert_eq!(derived["checker"]["derived"], true);
+    assert_eq!(derived["checker"]["via"], script.as_str());
+}
+
+// F4: an environment assignment before the command word is not a path
+// candidate, and its value must not hide the checker the command names.
+#[test]
+fn prepare_derives_past_a_leading_environment_assignment() {
+    let p = Project::new("goal-checker-derivation-assignment");
+    p.setup();
+
+    let derived = p.value(&prepare_args("CHECK=check.sh make check", None), None);
+    assert_eq!(derived["checker"]["path"], "check.sh");
+    assert_eq!(derived["checker"]["derived"], true);
+    assert_eq!(derived["checker"]["via"], Value::Null);
+}
+
 #[test]
 fn named_begin_derives_the_checker_when_artifact_is_omitted() {
     let p = Project::new("goal-checker-begin-derivation");

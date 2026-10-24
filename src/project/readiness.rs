@@ -107,12 +107,9 @@ fn target_directory(root: &Path) -> (PathBuf, bool) {
 /// run. A missing program has no single runnable route, so it stays a stated
 /// fact and the check command's own failure route reports it.
 pub(crate) fn checker_refusal(root: &Path, command: &str) -> Option<String> {
-    let program = crate::session_goal::requirements::command_tokens(command.trim())
-        .next()
-        .unwrap_or_default();
-    if program.is_empty() {
+    let Some(program) = crate::session_goal::requirements::checker_program(command.trim()) else {
         return None;
-    }
+    };
     let outcome = program_state(root, &program);
     if outcome.state != "not-executable" {
         return None;
@@ -514,17 +511,14 @@ fn checker_fact(root: &Path, command: Option<&str>) -> Value {
             "detail": null,
         });
     };
-    let program = crate::session_goal::requirements::command_tokens(command)
-        .next()
-        .unwrap_or_default();
-    if program.is_empty() {
+    let Some(program) = crate::session_goal::requirements::checker_program(command) else {
         return json!({
             "state": "not-stated",
             "program": null,
             "path": null,
             "detail": null,
         });
-    }
+    };
     let outcome = program_state(root, &program);
     json!({
         "state": outcome.state,
