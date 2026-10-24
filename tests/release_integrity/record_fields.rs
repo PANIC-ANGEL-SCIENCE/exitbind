@@ -2,10 +2,13 @@
 //! Every run-ledger and record field the product's allowlists admit now but
 //! did not admit at the previous published release is named, in backticks,
 //! in the mixed-version paragraph of the newest CHANGELOG entry (the text
-//! before its first bullet). The field inventory is the record-field rows of
-//! `tooling/repository/checks/compatibility-markers.json`, the one table
-//! `check_compatibility_markers.py` keeps against `src/`; this test intersects
-//! it with the previous release's fields (the snapshot below). The snapshot
+//! before its first bullet). The added set is read from source here, and the
+//! `record-field` rows of
+//! `tooling/repository/checks/compatibility-markers.json` (the table
+//! `check_compatibility_markers.py` keeps against `src/`) must list every
+//! added field; the table may keep rows after the snapshot holds them, so it
+//! is a superset. The two readers cross-check each other: this test fails
+//! when the Python check passes a field it should have refused. The snapshot
 //! names its release; it must be the first stable entry below the newest
 //! stable CHANGELOG heading (the release before the current one, so each
 //! release commit regenerates it; prerelease headings are skipped), and where
@@ -276,11 +279,17 @@ fn admitted(root: &Path) -> BTreeSet<String> {
     fields
 }
 
-/// The record fields the compatibility table lists, with no release scoping:
-/// `check_compatibility_markers.py` keeps this table equal to the fields
-/// `src/` declares but the previous release's snapshot does not hold.
+/// The record fields the compatibility table lists as `record-field` rows.
+/// The table is a superset of the source-derived additions:
+/// `check_compatibility_markers.py` requires a row for every field `src/`
+/// declares that the previous release's snapshot does not hold, and a row
+/// stays listed once the snapshot holds it.
 fn table_fields() -> BTreeSet<String> {
-    let text = fs::read_to_string(manifest().join(TABLE)).unwrap();
+    table_fields_at(manifest())
+}
+
+fn table_fields_at(root: &Path) -> BTreeSet<String> {
+    let text = fs::read_to_string(root.join(TABLE)).unwrap();
     let table: serde_json::Value = serde_json::from_str(&text).unwrap();
     table["markers"]
         .as_array()
@@ -294,6 +303,11 @@ fn table_fields() -> BTreeSet<String> {
                 .to_owned()
         })
         .collect()
+}
+
+/// Added fields the table lists no `record-field` row for.
+fn unlisted(added: &BTreeSet<String>, listed: &BTreeSet<String>) -> Vec<String> {
+    added.difference(listed).cloned().collect()
 }
 
 /// The snapshot's release and fields.
@@ -376,8 +390,17 @@ fn every_field_admitted_since_the_previous_release_is_named_in_the_mixed_version
         previous_release(&changelog),
         "{SNAPSHOT} must be the fields of the first stable entry below the newest stable CHANGELOG heading; regenerate it in the release commit"
     );
-    let added: BTreeSet<String> = table_fields().difference(&previous).cloned().collect();
-    let missing = unnamed(&added, &changelog);
+    let from_source = admitted(manifest());
+    let listed = table_fields();
+    let added: BTreeSet<String> = from_source.difference(&previous).cloned().collect();
+    let unlisted_fields = unlisted(&added, &listed);
+    assert!(
+        unlisted_fields.is_empty(),
+        "the compatibility table has no record-field row for fields {release} added; add one to {TABLE}: {unlisted_fields:?}"
+    );
+    let mut required = added;
+    required.extend(listed.difference(&previous).cloned());
+    let missing = unnamed(&required, &changelog);
     assert!(
         missing.is_empty(),
         "{release} cannot read these fields; name each in backticks in the newest CHANGELOG entry's mixed-version paragraph: {missing:?}"
@@ -457,6 +480,49 @@ fn the_reader_follows_constants_appended_lists_and_renamed_struct_fields() {
     assert!(
         !fields.contains("start.reason") && !fields.contains("recordedBy"),
         "{fields:?}"
+    );
+}
+
+/// A field the source admits that the table lists no `record-field` row for
+/// fails, and a listed one passes. This is the Rust half of the cross-check;
+/// the Python check must not be the only reader of the table.
+#[test]
+fn a_source_field_the_table_omits_fails() {
+    let root = support::temp("record-fields-cross-check");
+    let write = |path: &str, text: &str| {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    write(
+        LEDGER_ALLOWLIST,
+        "fn reject_unknown(action: &str) {\n    let _allowed: &[&str] = if action == \"start\" {\n        vec![\"seededLedgerField\"]\n    } else {\n        vec![]\n    };\n}\n",
+    );
+    write(
+        "src/hint.rs",
+        "#[derive(Deserialize)]\n#[serde(rename_all = \"camelCase\", deny_unknown_fields)]\nstruct Hint {\n    seeded_record: String,\n}\n",
+    );
+    write(TABLE, "{\"schemaVersion\": 1, \"markers\": []}\n");
+    let from_source = admitted(&root);
+    let listed = table_fields_at(&root);
+    assert!(listed.is_empty(), "the fixture table lists no record field");
+    assert_eq!(
+        unlisted(&from_source, &listed),
+        vec![
+            "seededRecord".to_owned(),
+            "start.seededLedgerField".to_owned()
+        ],
+        "source fields with no record-field row are named"
+    );
+    write(
+        TABLE,
+        "{\"schemaVersion\": 1, \"markers\": [\
+         {\"marker\": \"seededRecord\", \"kind\": \"record-field\"}, \
+         {\"marker\": \"start.seededLedgerField\", \"kind\": \"record-field\"}]}\n",
+    );
+    assert!(
+        unlisted(&from_source, &table_fields_at(&root)).is_empty(),
+        "a source field the table lists passes"
     );
 }
 
