@@ -55,17 +55,13 @@ fn canonical(value: &Value) -> String {
 
 fn reseal_latest_record(project: &Project, mutate: impl FnOnce(&mut Value)) {
     let path = native_journal(project);
-    let raw = fs::read_to_string(&path).unwrap();
-    let mut lines = raw.lines().map(str::to_owned).collect::<Vec<_>>();
-    let latest = lines.last_mut().expect("fixture Goal record");
-    let mut record: Value = serde_json::from_str(latest).unwrap();
-    mutate(&mut record);
-    let object = record.as_object_mut().unwrap();
-    object.remove("eventSha256");
-    let digest = format!("{:x}", Sha256::digest(canonical(&record).as_bytes()));
+    let mut records = support::goal_journal::records(&path);
+    let record = records.last_mut().expect("fixture Goal record");
+    mutate(record);
+    record.as_object_mut().unwrap().remove("eventSha256");
+    let digest = format!("{:x}", Sha256::digest(canonical(record).as_bytes()));
     record["eventSha256"] = json!(digest);
-    *latest = serde_json::to_string(&record).unwrap();
-    fs::write(path, format!("{}\n", lines.join("\n"))).unwrap();
+    support::goal_journal::write(&path, &records);
 }
 
 fn owner_and_source(label: &str) -> (Project, Project) {

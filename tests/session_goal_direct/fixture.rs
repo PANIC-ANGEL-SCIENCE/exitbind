@@ -296,11 +296,7 @@ pub(crate) fn start_intent_sha256(start: &Value) -> String {
 
 pub(crate) fn append_goal_admission(session_root: &std::path::Path, admission: Value) {
     let path = session_root.join(".exitbind/session-goal.jsonl");
-    let raw = fs::read_to_string(&path).unwrap();
-    let mut records = raw
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let mut records = support::goal_journal::records(&path);
     let previous = records.last().unwrap().clone();
     let mut next = previous.clone();
     let revision = previous["revision"].as_u64().unwrap() + 1;
@@ -319,12 +315,7 @@ pub(crate) fn append_goal_admission(session_root: &std::path::Path, admission: V
     next.as_object_mut().unwrap().remove("eventSha256");
     next["eventSha256"] = json!(digest_value(&next));
     records.push(next);
-    let output = records
-        .iter()
-        .map(Value::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(path, format!("{output}\n")).unwrap();
+    support::goal_journal::write(&path, &records);
 }
 
 pub(crate) fn admission_for_start(

@@ -333,11 +333,7 @@ fn start_intent_sha256(start: &Value) -> String {
 
 fn append_goal_admission(session_root: &std::path::Path, admission: Value) {
     let path = session_root.join(".exitbind/session-goal.jsonl");
-    let raw = fs::read_to_string(&path).unwrap();
-    let mut records = raw
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let mut records = support::goal_journal::records(&path);
     let previous = records.last().unwrap().clone();
     let mut next = previous.clone();
     next["revision"] = json!(previous["revision"].as_u64().unwrap() + 1);
@@ -352,18 +348,7 @@ fn append_goal_admission(session_root: &std::path::Path, admission: Value) {
     next.as_object_mut().unwrap().remove("eventSha256");
     next["eventSha256"] = json!(digest_value(&next));
     records.push(next);
-    fs::write(
-        path,
-        format!(
-            "{}\n",
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-        ),
-    )
-    .unwrap();
+    support::goal_journal::write(&path, &records);
 }
 
 fn admission_for_start(member: &Value, work: &str, start: &Value, parent_goal: &Value) -> Value {

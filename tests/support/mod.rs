@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub mod git_topology;
+#[allow(dead_code)]
+pub mod goal_journal;
 mod temp_root;
 
 #[allow(unused_imports)]

@@ -11,6 +11,7 @@ mod closure;
 mod continuity;
 pub(crate) mod display;
 pub(crate) mod goal_summary;
+mod journal_form;
 pub(crate) mod journey;
 pub(crate) mod native;
 pub(crate) mod quarantine;
@@ -100,6 +101,7 @@ fn records_from_raw(raw: Option<&str>) -> Result<Vec<Value>, String> {
         let value: Value = serde_json::from_str(line).map_err(|error| {
             format!("invalid canonical session goal line {}: {error}", index + 1)
         })?;
+        let value = journal_form::resolve(value, parsed.last(), index + 1)?;
         validate_record(&value, parsed.last(), index + 1)?;
         parsed.push(value);
     }
@@ -112,10 +114,13 @@ pub(crate) fn read(root: &Path) -> Result<Option<Value>, String> {
 
 /// Bounded, read-only Goal metadata acquisition for host continuation hooks.
 /// This validates the complete retained hash chain but deliberately does not
-/// reduce currentness, usage, evidence, or acceptance.
+/// reduce currentness, usage, evidence, or acceptance. The time budget is the
+/// latency bound; the byte and record bounds only cap what is read before it
+/// (a journal written before change records, like R55's 22.8 MB in 130
+/// records, validates in well under the budget).
 pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
-    const MAX_BYTES: u64 = 16 * 1024 * 1024;
-    const MAX_EVENTS: usize = 256;
+    const MAX_BYTES: u64 = 64 * 1024 * 1024;
+    const MAX_EVENTS: usize = 4096;
     const BUDGET: Duration = Duration::from_millis(750);
     let started = Instant::now();
     let relative = relative();
@@ -164,7 +169,7 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
     let physical = newline_count.saturating_sub(usize::from(raw.ends_with('\n')))
         + usize::from(!raw.ends_with('\n'));
     if physical > MAX_EVENTS {
-        return Err("native recovery Goal journal exceeds 256 physical records; use the exact Goal read route".into());
+        return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
     }
     let mut previous: Option<Value> = None;
     let mut count = 0usize;
@@ -180,11 +185,12 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         }
         count += 1;
         if count > MAX_EVENTS {
-            return Err("native recovery Goal journal exceeds 256 physical records; use the exact Goal read route".into());
+            return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
         }
         let value: Value = serde_json::from_str(line).map_err(|error| {
             format!("invalid canonical session goal line {}: {error}", index + 1)
         })?;
+        let value = journal_form::resolve(value, previous.as_ref(), index + 1)?;
         validate_record(&value, previous.as_ref(), index + 1)?;
         previous = Some(value);
         if started.elapsed() > BUDGET {
@@ -331,7 +337,7 @@ where
         }
         crate::run::ledger::append(
             &ledger,
-            &record,
+            &journal_form::stored(&record, history.last()),
             raw.is_none(),
             raw.as_deref().unwrap_or_default(),
         )?;
@@ -366,7 +372,7 @@ where
         }
         crate::run::ledger::append(
             &ledger,
-            &record,
+            &journal_form::stored(&record, history.last()),
             raw.is_none(),
             raw.as_deref().unwrap_or_default(),
         )?;

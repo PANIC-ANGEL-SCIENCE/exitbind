@@ -236,11 +236,7 @@ fn a_late_side_work_reopens_a_closed_session_goal_and_suppresses_room_readiness(
 
     let session_root = native_session_root(store, "codex", session);
     let history = session_root.join(".exitbind/session-goal.jsonl");
-    let records = fs::read_to_string(history)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records = crate::support::goal_journal::records(&history);
     assert!(records
         .iter()
         .any(|record| { record["closure"]["closed"] == true && record["goalId"] == "journey" }));
@@ -340,14 +336,9 @@ fn a_prestart_pending_admission_reopens_a_closed_goal_without_a_work_start() {
         .join(format!(".exitbind/runs/work-{}.jsonl", "9".repeat(64)))
         .exists());
 
-    let history = fs::read_to_string(
-        native_session_root(store, "codex", session).join(".exitbind/session-goal.jsonl"),
-    )
-    .unwrap();
-    let records = history
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records = crate::support::goal_journal::records(
+        &native_session_root(store, "codex", session).join(".exitbind/session-goal.jsonl"),
+    );
     assert!(records
         .iter()
         .any(|record| record["closure"]["closed"] == true));
@@ -416,11 +407,7 @@ fn link_session_recovers_only_the_exact_admitted_start_without_mutating_work() {
             .unwrap();
 
     let history_path = session_root.join(".exitbind/session-goal.jsonl");
-    let history = fs::read_to_string(&history_path).unwrap();
-    let records = history
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records = crate::support::goal_journal::records(&history_path);
     let parent = records.last().unwrap().clone();
     let seed_work = seed["work"].as_str().unwrap();
     let member = records
@@ -445,9 +432,7 @@ fn link_session_recovers_only_the_exact_admitted_start_without_mutating_work() {
     );
     assert!(!wrong_session.status.success());
     assert_eq!(fs::read(&ledger).unwrap(), ledger_before);
-    let pending = fs::read_to_string(&history_path).unwrap();
-    let pending_record = pending.lines().last().unwrap();
-    let pending_record: Value = serde_json::from_str(pending_record).unwrap();
+    let pending_record = crate::support::goal_journal::latest(&history_path);
     assert_eq!(
         pending_record["journeyAdmissions"]
             .as_array()
@@ -488,8 +473,7 @@ fn link_session_recovers_only_the_exact_admitted_start_without_mutating_work() {
         &["work", "detail", &work, "--json"],
     );
     assert_eq!(detail["goalAssociation"]["kind"], "journey_member");
-    let final_history = fs::read_to_string(&history_path).unwrap();
-    let final_record: Value = serde_json::from_str(final_history.lines().last().unwrap()).unwrap();
+    let final_record = crate::support::goal_journal::latest(&history_path);
     assert!(final_record["journeyAdmissions"]
         .as_array()
         .unwrap()

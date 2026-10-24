@@ -380,11 +380,7 @@ fn native_goal_replacement_keeps_original_member_and_resolves_successor_lineage_
     let session_root = native_session_root(&store, session);
     let journal_path = session_root.join(".exitbind/session-goal.jsonl");
     let journal_before = fs::read(&journal_path).unwrap();
-    let records_before = journal_before
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records_before = support::goal_journal::records(&journal_path);
     let member_before = records_before
         .iter()
         .rev()
@@ -426,11 +422,7 @@ fn native_goal_replacement_keeps_original_member_and_resolves_successor_lineage_
         journal_before,
         "replacement does not append a successor member or rewrite admissions/obligations"
     );
-    let records_after = fs::read_to_string(&journal_path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records_after = support::goal_journal::records(&journal_path);
     assert_eq!(
         records_after.last().unwrap()["journeyMembers"]
             .as_array()
@@ -498,12 +490,7 @@ fn unrelated_missing_historical_config_does_not_poison_selected_lineage() {
     );
     assert!(f.ledger(&unrelated).is_file());
     let goal_journal = native_session_root(&store, session).join(".exitbind/session-goal.jsonl");
-    let latest: Value = fs::read_to_string(goal_journal)
-        .unwrap()
-        .lines()
-        .last()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .unwrap();
+    let latest = support::goal_journal::latest(&goal_journal);
     assert_eq!(latest["journeyMembers"][0]["work"], unrelated);
     assert_eq!(latest["journeyMembers"][0]["configPath"], historical_path);
     fs::remove_file(&historical_config).unwrap();
@@ -594,12 +581,7 @@ fn missing_selected_ancestor_config_still_refuses_lineage() {
 
     let (work, _) = native_failed_work_with_config(&f, session, &store, &historical_path);
     let goal_journal = native_session_root(&store, session).join(".exitbind/session-goal.jsonl");
-    let latest: Value = fs::read_to_string(goal_journal)
-        .unwrap()
-        .lines()
-        .last()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .unwrap();
+    let latest = support::goal_journal::latest(&goal_journal);
     assert!(latest["journeyMembers"]
         .as_array()
         .unwrap()
@@ -1057,11 +1039,7 @@ fn pending_native_admission_blocks_check_replacement_preview_and_apply() {
         serde_json::from_slice(admitted_ledger.split(|byte| *byte == b'\n').next().unwrap())
             .unwrap();
     let journal_path = session_root.join(".exitbind/session-goal.jsonl");
-    let history = fs::read_to_string(&journal_path).unwrap();
-    let records = history
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records = support::goal_journal::records(&journal_path);
     let parent = records.last().unwrap();
     let member = records
         .iter()
@@ -1078,14 +1056,7 @@ fn pending_native_admission_blocks_check_replacement_preview_and_apply() {
     append_goal_admission(&session_root, admission);
 
     let journal_with_admission = fs::read(&journal_path).unwrap();
-    let latest: Value = serde_json::from_slice(
-        journal_with_admission
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-            .last()
-            .unwrap(),
-    )
-    .unwrap();
+    let latest = support::goal_journal::latest(&journal_path);
     assert_eq!(latest["journeyAdmissions"].as_array().unwrap().len(), 1);
     assert!(latest["obligations"]
         .to_string()
@@ -1122,14 +1093,7 @@ fn pending_native_admission_blocks_check_replacement_preview_and_apply() {
             "refusal creates no claim or successor"
         );
         assert_eq!(fs::read(&journal_path).unwrap(), journal_with_admission);
-        let latest: Value = serde_json::from_str(
-            fs::read_to_string(&journal_path)
-                .unwrap()
-                .lines()
-                .last()
-                .unwrap(),
-        )
-        .unwrap();
+        let latest = support::goal_journal::latest(&journal_path);
         assert!(latest["obligations"]
             .to_string()
             .contains("Keep the original side obligation intact"));

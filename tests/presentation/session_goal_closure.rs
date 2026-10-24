@@ -425,10 +425,7 @@ fn hash_valid_but_broken_goal_chain_links_are_refused() {
     let path = project.root.join(".exitbind/session-goal.jsonl");
     let valid = fs::read_to_string(&path).unwrap();
 
-    let mut lines = valid
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let mut lines = support::goal_journal::records(&path);
     lines[1]["revision"] = Value::from(99);
     reseal(&mut lines[1]);
     fs::write(
@@ -446,10 +443,7 @@ fn hash_valid_but_broken_goal_chain_links_are_refused() {
     assert!(String::from_utf8_lossy(&refused.stderr).contains("revision is not continuous"));
 
     fs::write(&path, &valid).unwrap();
-    let mut lines = valid
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let mut lines = support::goal_journal::records(&path);
     lines[1]["predecessor"]["revision"] = Value::from(99);
     reseal(&mut lines[1]);
     fs::write(
@@ -478,11 +472,7 @@ fn hash_valid_but_broken_goal_chain_links_are_refused() {
         ],
         None,
     );
-    let valid_successor = fs::read_to_string(&path).unwrap();
-    let mut lines = valid_successor
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let mut lines = support::goal_journal::records(&path);
     lines[2]["successorOf"] = Value::Null;
     reseal(&mut lines[2]);
     fs::write(
@@ -556,11 +546,8 @@ fn concurrent_goal_incorporation_preserves_each_successful_revision() {
         !successful.is_empty(),
         "all competing mutations were refused"
     );
-    let history = fs::read_to_string(project.root.join(".exitbind/session-goal.jsonl")).unwrap();
-    let records = history
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let records =
+        support::goal_journal::records(&project.root.join(".exitbind/session-goal.jsonl"));
     assert_eq!(records.len(), successful.len() + 1);
     for (index, record) in records.iter().enumerate() {
         assert_eq!(record["revision"], index as u64 + 1);
