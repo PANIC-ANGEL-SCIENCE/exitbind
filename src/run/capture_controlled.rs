@@ -88,7 +88,8 @@ pub(super) fn capture_to_files(
                     None,
                     &owned,
                     cleanup,
-                ));
+                )
+                .with_owned_group(child.owned_group()));
             }
         };
         let stderr = match child.stderr.take() {
@@ -104,7 +105,8 @@ pub(super) fn capture_to_files(
                     None,
                     &owned,
                     cleanup,
-                ));
+                )
+                .with_owned_group(child.owned_group()));
             }
         };
         let (sender, receiver) = mpsc::channel();
@@ -285,7 +287,8 @@ pub(super) fn capture_to_files(
                 status,
                 &owned,
                 cleanup_errors,
-            );
+            )
+            .with_owned_group(child.owned_group());
             failure.deadline_exceeded = timed_out;
             // An escaped descendant may hold a pipe after the owned group has
             // ended. Detached readers leave that effect uninspectably live.
@@ -303,6 +306,7 @@ pub(super) fn capture_to_files(
                 &owned,
                 cleanup_errors.clone(),
             )
+            .with_owned_group(child.owned_group())
         })?;
         let mut stdout_bytes = None;
         let mut stderr_bytes = None;

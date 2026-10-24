@@ -491,6 +491,13 @@ pub(crate) fn observer_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
     process::observer_liveness(identity)
 }
 
+/// Liveness of a recorded process group, read by its group id alone. It is a
+/// read: it neither claims authority over the group nor proves termination of
+/// anything outside it.
+pub(crate) fn group_liveness(identity: &ProcessIdentity) -> ProcessLiveness {
+    process::group_liveness(identity)
+}
+
 pub(crate) fn validate_request(request: &Request) -> Result<(), RunError> {
     controlled::validate(request)?;
     if !request.executable.is_absolute() {

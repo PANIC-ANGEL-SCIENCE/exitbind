@@ -121,9 +121,14 @@ fn lead_outcome_allowed(
     config: &std::path::Path,
     known: &Known<'_>,
 ) -> Result<(), String> {
+    // A timed-out observation whose recorded owned group has ended is closed
+    // by the one existing Lead decision that re-pends the check; every other
+    // forward outcome still needs a known end.
+    let closed = super::environmental_check::closed_owned_group(state);
     if role == "lead"
         && crate::run::state::check_observation::unresolved(state)
         && !matches!(outcome, "blocked" | "rejected")
+        && !(outcome == "disposition" && closed)
     {
         return Err("unresolved check effects require inspection or stopping; repair, acceptance and retry are refused".into());
     }
@@ -258,7 +263,14 @@ pub(crate) fn lead_view(state: &Value) -> Option<Value> {
         .get("pendingDisposition")
         .filter(|value| value.is_object())?;
     let decisions = if crate::run::state::check_observation::unresolved(state) {
-        json!([])
+        // The one decision an unresolved observation admits is the
+        // environmental re-run, and only once its owned group is observed
+        // ended; the runtime refusal repeats the same condition.
+        if super::environmental_check::closed_owned_group(state) {
+            json!([super::environmental_check::DECISION])
+        } else {
+            json!([])
+        }
     } else if pending["kind"] == "review_rework" {
         json!(["repair", "defer", "reject", "supersede"])
     } else {

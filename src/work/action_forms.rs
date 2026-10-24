@@ -250,6 +250,56 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
     result
 }
 
+/// The recorded owned group of a timed-out observation: its state now and, if
+/// it still has processes, a few of them by pid and command. The form says so
+/// plainly; the recorded group supplies no forward route while it is alive.
+fn attach_owned_group(result: &mut Value, next: &Value) {
+    let Some(view) = crate::run::owned_group::view(&next["packet"]["checkObservation"]["facts"])
+    else {
+        return;
+    };
+    let group = view["ownedProcessGroup"].as_u64().unwrap_or_default();
+    let meaning = match view["ownedProcessState"].as_str() {
+        Some("ended") => format!(
+            "The timed-out check's owned process group {group} has no remaining processes; the environmental re-run route is available."
+        ),
+        Some("alive") => format!(
+            "The timed-out check's owned process group {group} still has processes: {}; wait for them to end, or stop this Work. No forward route is available while they run.",
+            owned_process_names(&view)
+        ),
+        _ => format!(
+            "The timed-out check's owned process group {group} could not be read on this host; wait and read this Work again. No forward route is available until it is observed ended."
+        ),
+    };
+    if let Some(object) = view.as_object() {
+        for (key, value) in object {
+            result[key] = value.clone();
+        }
+    }
+    result["meaning"] = json!(meaning);
+}
+
+fn owned_process_names(view: &Value) -> String {
+    let named = view["ownedProcesses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|process| {
+            Some(format!(
+                "pid {} ({})",
+                process["pid"].as_u64()?,
+                process["command"].as_str()?
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if named.is_empty() {
+        "unnamed processes".to_owned()
+    } else {
+        named
+    }
+}
+
 fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     if next["packet"]["quarantineVerification"].is_object() {
         return quarantine::project(loaded, work, next, binding);
@@ -396,6 +446,20 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             preview["sideEffect"] = json!("no-change; previews an explicit Lead decision for a retained known-ended storage failure; unknown effects remain blocked");
             choices.push(preview);
         }
+        // A timed-out observation whose recorded owned group has ended owes a
+        // check result exactly as a never-run checker does: the same
+        // environmental route re-pends it. While any owned process is alive
+        // this returns None and the form names the processes instead.
+        if let Some(form) = environmental::choice(
+            loaded,
+            work,
+            assignment,
+            binding,
+            next,
+            environmental::Source::ClosedOwnedGroup,
+        ) {
+            choices.push(form);
+        }
         choices
     } else if matches!(state, "pending_review_finding" | "failed_check_observation") {
         let available = next["packet"]["pendingDisposition"]["decisions"]
@@ -508,9 +572,14 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
                     }),
             );
             if observation_never_ran {
-                if let Some(form) =
-                    environmental::choice(loaded, work, assignment, binding, next, true)
-                {
+                if let Some(form) = environmental::choice(
+                    loaded,
+                    work,
+                    assignment,
+                    binding,
+                    next,
+                    environmental::Source::NeverRan,
+                ) {
                     choices.push(form);
                 }
             }
@@ -553,9 +622,17 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             .map(|outcome| return_choice(loaded, work, assignment, binding, outcome, outcome))
             .collect()
     };
+    if state == "unresolved_check_observation" {
+        attach_owned_group(&mut result, next);
+    }
     if state == "failed_check" {
         choices.extend(environmental::choice(
-            loaded, work, assignment, binding, next, false,
+            loaded,
+            work,
+            assignment,
+            binding,
+            next,
+            environmental::Source::FailedCheck,
         ));
         choices.push(choice(
             loaded,

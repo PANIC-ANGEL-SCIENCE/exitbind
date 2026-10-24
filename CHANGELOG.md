@@ -23,7 +23,8 @@ members stamped with the replaced bytes stay refused until those bytes are
 supplied with
 `memory revalidate LEAD --from-config PREVIOUS_CONFIG --reason TEXT --apply`.
 The source candidate after this release records every check admission's
-`observer`, with the observer's `pid` and `startTimeTicks`. A 0.31.22 reader
+`observer`, with the observer's `pid` and `startTimeTicks`, and a failure
+that kept an owned checker group records `ownedProcessGroup`. A 0.31.22 reader
 admits no such field and no ledger version above 8, and it cannot tell a newer
 Exitbind's ledger from a corrupt one: it reports the check ledger as
 unreadable (`corrupt_ledger`) and offers inspection. Prepare the upgrade

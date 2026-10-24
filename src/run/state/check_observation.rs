@@ -7,6 +7,10 @@ pub(super) const OBSERVER_FIELD: &str = "observer";
 pub(super) const OBSERVER_PID_FIELD: &str = "pid";
 pub(super) const OBSERVER_START_FIELD: &str = "startTimeTicks";
 
+/// The optional failure fact naming the checker's owned process group, when
+/// the capsule recorded it before the observation ended without a result.
+pub(crate) const OWNED_GROUP_FIELD: &str = "ownedProcessGroup";
+
 pub(super) fn validate(event: &Value) -> Result<(), String> {
     if event["version"] != 8 || !event["observation"].is_object() {
         return Err("invalid check observation event".into());
@@ -171,26 +175,36 @@ fn partial(value: &Value) -> bool {
 }
 
 pub(crate) fn valid_facts(value: &Value) -> bool {
-    exact(
-        value,
-        &[
-            "process",
-            "processStarted",
-            "groupEnded",
-            "captureReadersEnded",
-            "captureAvailability",
-            "durationMs",
-            "capture",
-            "deadlineExceeded",
-            "partialCaptures",
-            "storageStage",
-            "storage",
-            "termination",
-            "diagnostic",
-            "cleanupErrorCount",
-            "remainingOwnedPathCount",
-        ],
-    ) && process(&value["process"])
+    const BASE: &[&str] = &[
+        "process",
+        "processStarted",
+        "groupEnded",
+        "captureReadersEnded",
+        "captureAvailability",
+        "durationMs",
+        "capture",
+        "deadlineExceeded",
+        "partialCaptures",
+        "storageStage",
+        "storage",
+        "termination",
+        "diagnostic",
+        "cleanupErrorCount",
+        "remainingOwnedPathCount",
+    ];
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    let has_group = object.contains_key(OWNED_GROUP_FIELD);
+    object.len()
+        == if has_group {
+            BASE.len() + 1
+        } else {
+            BASE.len()
+        }
+        && BASE.iter().all(|field| object.contains_key(*field))
+        && (!has_group || owned_group(&value[OWNED_GROUP_FIELD]))
+        && process(&value["process"])
         && value["processStarted"].is_boolean()
         && value["groupEnded"].is_boolean()
         && value["captureReadersEnded"].is_boolean()
@@ -219,6 +233,15 @@ pub(crate) fn valid_facts(value: &Value) -> bool {
             .is_some_and(|v| v.chars().count() <= 1024)
         && value["cleanupErrorCount"].as_u64().is_some()
         && value["remainingOwnedPathCount"].as_u64().is_some()
+}
+
+/// A recorded owned process group: a positive Linux group id. It is the only
+/// identity a failure may carry, and it is observed again, never trusted.
+fn owned_group(value: &Value) -> bool {
+    value.is_null()
+        || value
+            .as_i64()
+            .is_some_and(|group| group > 0 && group <= i32::MAX as i64)
 }
 
 pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {

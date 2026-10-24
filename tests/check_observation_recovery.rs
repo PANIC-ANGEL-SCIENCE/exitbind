@@ -324,6 +324,8 @@ mod admission_and_recovery;
 mod drift_and_retry_limits;
 #[path = "check_observation_recovery/observer_lifecycle.rs"]
 mod observer_lifecycle;
+#[path = "check_observation_recovery/owned_group_recovery.rs"]
+mod owned_group_recovery;
 #[path = "check_observation_recovery/process_containment.rs"]
 mod process_containment;
 #[path = "check_observation_recovery/quarantine.rs"]

@@ -33,6 +33,7 @@ mod lead_reason;
 pub(crate) mod ledger;
 mod lifecycle;
 mod observed_check;
+pub(crate) mod owned_group;
 pub(crate) mod pre_return;
 pub(crate) mod preservation_assignment;
 pub(crate) mod progress;

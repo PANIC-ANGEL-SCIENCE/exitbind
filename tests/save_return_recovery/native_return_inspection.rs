@@ -134,6 +134,10 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
             &work,
             "--codex-bin",
             executable.to_str().unwrap(),
+            "--model",
+            "gpt-recorded",
+            "--reasoning-effort",
+            "low",
             "--sandbox-mode",
             "read-only",
             "--timeout-ms",
@@ -179,6 +183,8 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     let original_request = journal["request"].clone();
     assert_eq!(original_request["sandbox"], "read-only");
     assert_eq!(original_request["timeoutMs"], 123456);
+    assert_eq!(original_request["model"], "gpt-recorded");
+    assert_eq!(original_request["reasoningEffort"], "low");
     let journal_text = String::from_utf8_lossy(&journal_bytes);
     assert!(!journal_text.contains("Not inside a trusted directory"));
     assert!(!journal_text.contains("private stderr body"));
@@ -219,9 +225,14 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
             .any(|word| *word == executable.to_str().unwrap()),
         "the recorded executable is kept: {route:?}"
     );
-    // A plain relaunch carries the recorded sandbox and timeout; it never
-    // widens the sandbox to the default.
-    for pair in [["--sandbox-mode", "read-only"], ["--timeout-ms", "123456"]] {
+    // A plain relaunch carries the recorded model, effort, sandbox and
+    // timeout; it never widens the sandbox to the default or changes runtime.
+    for pair in [
+        ["--model", "gpt-recorded"],
+        ["--reasoning-effort", "low"],
+        ["--sandbox-mode", "read-only"],
+        ["--timeout-ms", "123456"],
+    ] {
         let position = route
             .iter()
             .position(|word| *word == pair[0])

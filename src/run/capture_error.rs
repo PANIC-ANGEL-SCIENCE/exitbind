@@ -1,5 +1,10 @@
 //! Bounded typed observation diagnostics; these are never check results.
+//!
+//! A failure that kept an owned checker group records it as the optional
+//! `ownedProcessGroup` fact, so a later read can observe that group by the
+//! identity recorded here instead of trusting a stale absence claim.
 use super::*;
+use crate::run::state::check_observation::OWNED_GROUP_FIELD;
 
 #[derive(Clone, Debug)]
 pub(crate) enum CaptureDisposition {
@@ -28,6 +33,7 @@ pub(crate) struct ObservationError {
     pub(super) deadline_exceeded: bool,
     pub(super) capture_readers_ended: bool,
     pub(super) partial_captures: Vec<Value>,
+    pub(super) owned_group: Option<i32>,
 }
 
 impl ObservationError {
@@ -40,7 +46,15 @@ impl ObservationError {
             deadline_exceeded: false,
             capture_readers_ended: true,
             partial_captures: Vec::new(),
+            owned_group: None,
         }
+    }
+
+    /// Record the owned checker process group the capsule observed. None means
+    /// no identity is known, never that no process exists.
+    pub(super) fn with_owned_group(mut self, group: Option<i32>) -> Self {
+        self.owned_group = group;
+        self
     }
 
     pub(super) fn with_cleanup(
@@ -107,7 +121,7 @@ impl ObservationError {
             .status
             .as_ref()
             .and_then(|status| observed_result(status).ok());
-        json!({
+        let mut facts = json!({
             "process": result,
             "processStarted": self.outcome.process_started,
             "groupEnded": self.outcome.group_ended,
@@ -123,7 +137,13 @@ impl ObservationError {
             "diagnostic": self.message.chars().filter(|c| !c.is_control()).take(1024).collect::<String>(),
             "cleanupErrorCount": self.cleanup_errors.len(),
             "remainingOwnedPathCount": self.remaining_paths.len(),
-        })
+        });
+        // Written only when known: a failure with no observed group keeps the
+        // exact fifteen-fact shape every earlier reader already validates.
+        if let Some(group) = self.owned_group {
+            facts[OWNED_GROUP_FIELD] = json!(group);
+        }
+        facts
     }
 }
 

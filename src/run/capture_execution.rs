@@ -93,7 +93,8 @@ pub(crate) fn run_observed_command_with_control(
                         group_ended: child.ended(),
                         process_started: child.process_started(),
                     },
-                );
+                )
+                .with_owned_group(child.owned_group());
                 if let Err(cleanup) = cleanup {
                     failure.cleanup_errors.push(cleanup);
                 }
@@ -118,7 +119,8 @@ pub(crate) fn run_observed_command_with_control(
                                 group_ended: child.ended(),
                                 process_started: true,
                             },
-                        );
+                        )
+                        .with_owned_group(child.owned_group());
                         failure.deadline_exceeded = child.timed_out();
                         return Err(failure);
                     }
@@ -144,7 +146,8 @@ pub(crate) fn run_observed_command_with_control(
                             group_ended: child.ended() && cleanup.is_ok(),
                             process_started: child.process_started(),
                         },
-                    );
+                    )
+                    .with_owned_group(child.owned_group());
                     error.deadline_exceeded = true;
                     if let Err(cleanup) = cleanup {
                         error.cleanup_errors.push(cleanup);
@@ -166,7 +169,8 @@ pub(crate) fn run_observed_command_with_control(
                             group_ended: child.ended() && cleanup.is_ok(),
                             process_started: child.process_started(),
                         },
-                    );
+                    )
+                    .with_owned_group(child.owned_group());
                     if let Err(cleanup) = cleanup {
                         result.cleanup_errors.push(cleanup);
                     }

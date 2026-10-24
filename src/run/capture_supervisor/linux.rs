@@ -40,6 +40,15 @@ impl Proof {
         }
     }
 
+    /// The checker's owned process group, recorded when it was launched. It
+    /// stays readable when the capsule could not finish its proof, so a later
+    /// read can observe the group itself; a missing or zero group is None.
+    pub(super) fn owned_group(&self) -> Option<i32> {
+        (self.bytes.len() >= 12 && self.bytes.get(..8) == Some(MAGIC))
+            .then(|| i32::from_le_bytes(self.bytes[8..12].try_into().unwrap()))
+            .filter(|group| *group > 0)
+    }
+
     pub(super) fn status(&self) -> Option<ExitStatus> {
         (self.bytes.len() >= 16
             && self.bytes.get(..8) == Some(MAGIC)

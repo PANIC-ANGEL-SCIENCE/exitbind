@@ -72,16 +72,49 @@ pub(crate) fn never_ran(state: &Value) -> bool {
         && state["pendingDisposition"]["kind"] == "check_observation_failed"
 }
 
+/// A timed-out observation that recorded no end, whose owned process group is
+/// now observed with no process left. The recorded group establishes that the
+/// execution ended, so the check owes a result exactly as a spawned-but-never-
+/// run checker does, and the same environmental re-run route is available.
+pub(crate) fn closed_owned_group(state: &Value) -> bool {
+    crate::run::owned_group::closed(&state["checkObservation"], &state["pendingDisposition"])
+}
+
+/// The live owned processes of a timed-out observation, when the recorded
+/// group still has any: (group, "pid N (command), ..."). None when the group
+/// is absent, ended or unverifiable; the route is closed either way.
+fn live_owned(state: &Value) -> Option<(u64, String)> {
+    let view = crate::run::owned_group::view(&state["checkObservation"]["facts"])?;
+    if view["ownedProcessState"] != "alive" {
+        return None;
+    }
+    let named = view["ownedProcesses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|process| {
+            Some(format!(
+                "pid {} ({})",
+                process["pid"].as_u64()?,
+                process["command"].as_str()?
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some((view["ownedProcessGroup"].as_u64()?, named))
+}
+
 /// The failed observed checks that are the latest result of a current check
 /// target, in target order: exactly what one attestation names. For a
-/// never-ran observation the named finding is its own failure event.
+/// never-ran observation or a timed-out observation whose owned group has
+/// ended, the named finding is its own failure event.
 pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
-    if never_ran(state) {
+    if never_ran(state) || closed_owned_group(state) {
         let finding = state["pendingDisposition"]["findingSha256s"]
             .as_array()
             .filter(|items| items.len() == 1)
             .and_then(|items| items[0].as_str())
-            .ok_or("never-ran check observation has no single failure finding")?;
+            .ok_or("the unresolved check observation has no single failure finding")?;
         return Ok(vec![finding.to_owned()]);
     }
     Ok(crate::run::gate::exit::assess(state)?
@@ -95,14 +128,26 @@ pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
 /// Admit an environmental attestation only for the exact current failed
 /// observed checks, with no other Lead decision or observation pending.
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
-    // The one pending finding this decision owns is a never-ran observation;
-    // anything else pending, and any observation not known to have ended
-    // before the checker started, still needs its own disposition first.
+    // The pending findings this decision owns are a never-ran observation and
+    // a timed-out observation whose recorded owned group has ended; anything
+    // else pending, and any observation not known to have ended, still needs
+    // its own disposition first.
     let never_ran = never_ran(state);
-    if state["pendingDisposition"].is_object() && !never_ran {
+    let closed = closed_owned_group(state);
+    if state["pendingDisposition"].is_object() && !never_ran && !closed {
+        if let Some((group, named)) = live_owned(state) {
+            return Err(format!(
+                "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
+            ));
+        }
         return Err("a pending finding needs its own Lead disposition first".into());
     }
-    if state["checkObservation"].is_object() && !never_ran {
+    if state["checkObservation"].is_object() && !never_ran && !closed {
+        if let Some((group, named)) = live_owned(state) {
+            return Err(format!(
+                "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
+            ));
+        }
         return Err("a check observation is still pending; inspect it first".into());
     }
     if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str() {

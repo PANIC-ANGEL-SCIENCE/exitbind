@@ -555,7 +555,13 @@ fn next_from_base(
     }
     if role == "lead" {
         result["outcomes"] = if check::unresolved(&result) {
-            json!(["blocked", "rejected"])
+            // The timed-out observation's owned group is observed ended, so
+            // the one existing environmental decision re-pends its check.
+            if crate::run::environmental_check::closed_owned_group(&result["packet"]) {
+                json!(["blocked", "rejected", "disposition"])
+            } else {
+                json!(["blocked", "rejected"])
+            }
         } else if value["currentStage"] == 1 {
             json!(["scoped", "blocked"])
         } else if assignment.get("pendingDisposition").is_some() {

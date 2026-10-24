@@ -114,6 +114,12 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
             return no_launch(&mut proof);
         }
     };
+    // Record the owned group as soon as the checker exists, so a capsule that
+    // cannot finish its proof still leaves a re-readable identity behind. The
+    // status half of the frame follows when the leader is reaped.
+    proof.write_all(MAGIC)?;
+    proof.write_all(&(child.id() as i32).to_le_bytes())?;
+    proof.flush()?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
     let mut status = None;
     let mut cleanup_at = None;
@@ -129,8 +135,6 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
             match child.try_wait() {
                 Ok(Some(s)) => {
                     status = Some(s);
-                    proof.write_all(MAGIC)?;
-                    proof.write_all(&(child.id() as i32).to_le_bytes())?;
                     proof.write_all(&s.into_raw().to_le_bytes())?;
                     proof.flush()?;
                 }
@@ -186,8 +190,6 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
     if status.is_none() {
         // No generic wait is permitted until std::Child owns leader status.
         if let Some(s) = child.try_wait()? {
-            proof.write_all(MAGIC)?;
-            proof.write_all(&(child.id() as i32).to_le_bytes())?;
             proof.write_all(&s.into_raw().to_le_bytes())?;
         } else {
             return Err(io::Error::other(format!(

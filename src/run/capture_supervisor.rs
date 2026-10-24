@@ -98,6 +98,20 @@ impl ObservedChild {
         true
     }
 
+    /// The checker's owned process group, when one was recorded.
+    pub(super) fn owned_group(&self) -> Option<i32> {
+        #[cfg(target_os = "linux")]
+        {
+            self.proof.owned_group()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            // The checker was spawned as its own group leader, so its PID is
+            // the group identity here too.
+            i32::try_from(self.child.id()).ok()
+        }
+    }
+
     pub(super) fn ended(&self) -> bool {
         #[cfg(target_os = "linux")]
         {

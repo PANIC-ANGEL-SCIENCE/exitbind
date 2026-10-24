@@ -219,6 +219,21 @@
       "retire": "when no run ledger below version 9 is read"
     },
     {
+      "id": "check-observation-owned-process-group",
+      "marker": "ownedProcessGroup",
+      "kind": "record-field",
+      "writers": [
+        "src/run/state/check_observation.rs",
+        "src/run/capture_error.rs"
+      ],
+      "readers": [
+        "src/run/state/check_observation.rs",
+        "src/run/owned_group.rs"
+      ],
+      "introduced": "R56 (0.31.23)",
+      "retire": "when no run ledger below version 9 is read"
+    },
+    {
       "id": "release-checks-env",
       "marker": "EXITBIND_RELEASE_CHECKS",
       "kind": "env",
