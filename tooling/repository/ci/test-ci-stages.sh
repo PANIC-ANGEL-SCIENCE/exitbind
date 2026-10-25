@@ -31,7 +31,8 @@ expect() {
   }
 }
 
-pre_return_common='history
+pre_return_common='repository-rules
+history
 workflows
 workflow-regression
 ci-stage-contract
@@ -59,7 +60,8 @@ first-impression
 value-contract
 plugin-distribution
 affected-tests"
-full_linux='history
+full_linux='repository-rules
+history
 workflows
 workflow-regression
 ci-stage-contract
@@ -73,7 +75,8 @@ value-proof
 drift-warning
 native-handoff
 release-refs'
-full_macos='history
+full_macos='repository-rules
+history
 workflows
 workflow-regression
 ci-stage-contract
@@ -86,7 +89,7 @@ expect pre-return macos "$pre_return_macos"
 expect full linux "$full_linux"
 expect full macos "$full_macos"
 
-for stage in history workflows workflow-regression ci-stage-contract quiet-command-regression; do
+for stage in repository-rules history workflows workflow-regression ci-stage-contract quiet-command-regression; do
   ci_stage_selected unexpected "$stage" linux || fail "shared stage omitted: $stage"
 done
 # This stage runs the two inventory checks below, so it runs everywhere.
@@ -117,6 +120,32 @@ for stage in $(ci_stage_order); do
   grep -F "    $stage)" "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
     fail "selected stage has no command dispatch: $stage"
 done
+# The no-build guard owns stage 0: it stays first and runs before any cargo
+# stage, so a repository-rule violation fails in seconds, not after a build.
+first_stage=$(ci_stage_order | sed -n '1p')
+test "$first_stage" = repository-rules ||
+  fail 'stage 0 must be the no-build repository-rule guard'
+rules_line=$(grep -n -F 'run repository-rules' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
+cargo_line=$(grep -n -F '"$CARGO"' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
+test -n "$rules_line" && test -n "$cargo_line" && test "$rules_line" -lt "$cargo_line" ||
+  fail 'the no-build guard must run before the first cargo stage'
+python3 - "$root" <<'PY' || fail 'repository-rules must be the first inventory gate with cost light'
+import json, sys
+from pathlib import Path
+gates = json.loads((Path(sys.argv[1]) / "tooling/repository/ci/gate-inventory.json").read_text(encoding="utf-8"))["gates"]
+first = gates[0]
+assert first["id"] == "repository-rules", first
+assert first.get("cost") == "light", first
+PY
+guard="$root/tooling/repository/ci/check-repository-rules.sh"
+for check in check_architecture_budget.py check_commit_identity.py check-path-rendering.sh \
+  check-product-surface.sh check-release-refs.sh check-public-history.sh; do
+  grep -F "$check" "$guard" >/dev/null || fail "the no-build guard no longer runs $check"
+done
+python3 "$root/tooling/repository/checks/check_architecture_budget.py" --self-test ||
+  fail 'architecture budget scan self-test failed'
+python3 "$root/tooling/repository/checks/check_commit_identity.py" --self-test ||
+  fail 'commit identity scan self-test failed'
 grep -F 'plugin-distribution) run plugin-distribution "$CARGO" test --locked --features repository-checks --test plugin_distribution ;;' \
   "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
   fail 'plugin distribution tests must execute behind the repository-checks feature'

@@ -80,7 +80,11 @@ analyzers disabled. For first acquisition, explicitly set
 the matching verified archive in `EXITBIND_WORKFLOW_CACHE`; an absent or corrupt
 archive refuses the gate. No global validator installation is required.
 
-Use the script's absolute path when outside the checkout. On Linux it runs
+Use the script's absolute path when outside the checkout. Every run starts with
+the no-build repository-rule guard
+(`tooling/repository/ci/check-repository-rules.sh`): size budgets, path
+rendering, product surface, release references, public history and commit
+identity fail before any build starts. On Linux it then runs
 `cargo fmt --check`, path and product-surface gates,
 `cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
 drift-warning demo, native tmux handoff, release references, release build,

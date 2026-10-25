@@ -8,6 +8,22 @@
   "rules": "Every ci_stage_order stage (kind stage) and every other ci-local.sh run label (kind trailing) is listed once. cost: light (no cargo build), build (compiles a cargo target), heavy (full suite or release build). Each entry carries exactly one of: ledger (ids of real failures it caught), provisionalUntil (date by which a real failure or a deterrent reason is due), deterrent (why the gate stays without a recorded failure). Record failures with ci-failure.sh --record.",
   "gates": [
     {
+      "id": "repository-rules",
+      "kind": "stage",
+      "cost": "light",
+      "prevents": "a size-budget breach, lossy path rendering, stale test-target, package or skill inventory or an in-band compatibility marker, stale release references, unreviewed public history, or a non-canonical commit identity reaching fmt/clippy/build or a push",
+      "ledger": [
+        "fl-0004",
+        "fl-0005",
+        "fl-0007",
+        "fl-0008",
+        "fl-0009",
+        "fl-0012",
+        "fl-0013",
+        "fl-0015"
+      ]
+    },
+    {
       "id": "history",
       "kind": "stage",
       "cost": "light",

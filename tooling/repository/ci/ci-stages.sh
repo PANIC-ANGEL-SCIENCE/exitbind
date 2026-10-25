@@ -3,6 +3,7 @@
 
 ci_stage_order() {
   printf '%s\n' \
+    repository-rules \
     history \
     workflows \
     workflow-regression \
@@ -33,7 +34,7 @@ ci_stage_selected() {
   platform=$3
 
   case "$stage" in
-    history|workflows|workflow-regression|ci-stage-contract|quiet-command-regression)
+    repository-rules|history|workflows|workflow-regression|ci-stage-contract|quiet-command-regression)
       return 0
       ;;
     fmt|path-rendering|product-surface|clippy)

@@ -82,6 +82,19 @@ for stage in $(ci_stage_order); do
     proof_base_ready=true
   fi
   case "$stage" in
+    repository-rules)
+      # Pre-return passes the declared base unchanged, so an all-zero value is
+      # refuted by the guard's own message; full mode mirrors
+      # prepare_value_proof_base's empty/all-zero sentinel.
+      rules_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
+      if [ "$ci_mode" != pre-return ]; then
+        case $rules_base in
+          ''|0000000000000000000000000000000000000000) rules_base=$(git rev-parse --verify HEAD^) ;;
+        esac
+      fi
+      test -n "$rules_base" || rules_base=origin/main
+      run repository-rules sh ./tooling/repository/ci/check-repository-rules.sh "$rules_base"
+      ;;
     history) run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}" ;;
     workflows) run workflows ./scripts/check-workflows.sh ;;
     workflow-regression) run workflow-regression ./scripts/test-workflow-validation.sh ;;
