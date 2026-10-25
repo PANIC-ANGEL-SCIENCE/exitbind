@@ -130,7 +130,8 @@ check_selected() {
 }
 check_selected architecture-budget linux pre-return yes
 check_selected architecture-budget macos pre-return yes
-check_selected architecture-budget linux full no
+check_selected architecture-budget linux full yes
+check_selected architecture-budget macos full no
 check_selected path-rendering linux full yes
 check_selected path-rendering linux pre-return yes
 check_selected path-rendering macos pre-return no
@@ -190,6 +191,9 @@ for check in check_architecture_budget.py check_commit_identity.py check-path-re
   check-product-surface.sh check-release-refs.sh check-public-history.sh; do
   grep -F "$check" "$guard" >/dev/null || fail "the no-build guard no longer runs $check"
 done
+grep -F 'public-history) step public-history ./scripts/check-public-history.sh HEAD ${CANDIDATE_SHA:+"$CANDIDATE_SHA"} ;;' \
+  "$guard" >/dev/null ||
+  fail 'stage 0 must forward CANDIDATE_SHA to the public history check'
 python3 "$root/tooling/repository/checks/check_architecture_budget.py" --self-test ||
   fail 'architecture budget scan self-test failed'
 python3 "$root/tooling/repository/checks/check_commit_identity.py" --self-test ||
@@ -273,6 +277,46 @@ if resolved=$(prepare_proof_base no-such-ref 2>&1); then
   fail "an unknown ref proof base must fail: $resolved"
 fi
 rm -rf "$proof_work"
+trap - EXIT HUP INT TERM
+
+# A pull-request head can drop published history while the merge keeps it. The
+# retired history stage checked CANDIDATE_SHA; stage 0 must forward it. The
+# clone keeps the fixture off the shared branch, and the macOS selection keeps
+# the guard to its two cheap checks here.
+history_work=$(mktemp -d "${TMPDIR:-/tmp}/ci-candidate-history.XXXXXX")
+trap 'rm -rf "$history_work"' EXIT HUP INT TERM
+git clone -q "$root" "$history_work/repo" || fail 'candidate history fixture clone failed'
+branch=$(git -C "$history_work/repo" rev-parse --abbrev-ref HEAD)
+test "$branch" != HEAD || fail 'candidate history fixture clone is detached'
+git -C "$history_work/repo" config user.name 'CI candidate fixture'
+git -C "$history_work/repo" config user.email 'ci-candidate@example.invalid'
+git -C "$history_work/repo" checkout -q --orphan candidate-orphan
+git -C "$history_work/repo" commit -q -m 'fixture orphan head'
+orphan=$(git -C "$history_work/repo" rev-parse HEAD)
+git -C "$history_work/repo" checkout -q "$branch"
+git -C "$history_work/repo" merge -q -s ours --allow-unrelated-histories \
+  -m 'fixture merge' candidate-orphan
+# The clone carries committed HEAD; overlay the guard under test from the
+# working tree so a local, not-yet-committed edit is what runs here too.
+cp "$root/tooling/repository/ci/check-repository-rules.sh" \
+  "$history_work/repo/tooling/repository/ci/"
+cp "$root/tooling/repository/ci/ci-stages.sh" "$history_work/repo/tooling/repository/ci/"
+if ! (cd "$history_work/repo" &&
+  sh tooling/repository/ci/check-repository-rules.sh HEAD macos full) \
+  > "$history_work/without.out" 2>&1; then
+  fail "a merge that retains public history was refused: $(tail -n 3 "$history_work/without.out")"
+fi
+grep -F 'PASS public-history' "$history_work/without.out" >/dev/null ||
+  fail 'the merge commit itself must retain public history'
+if (cd "$history_work/repo" &&
+  CANDIDATE_SHA=$orphan sh tooling/repository/ci/check-repository-rules.sh HEAD macos full) \
+  > "$history_work/with.out" 2>&1; then
+  fail 'stage 0 accepted a candidate that dropped public history'
+fi
+grep -F 'FAIL public-history' "$history_work/with.out" >/dev/null &&
+  grep -F 'does not retain published checkpoint' "$history_work/with.out" >/dev/null ||
+  fail 'stage 0 did not report the candidate history failure'
+rm -rf "$history_work"
 trap - EXIT HUP INT TERM
 
 "$root/tooling/repository/ci/test-ci-selected-history.sh"

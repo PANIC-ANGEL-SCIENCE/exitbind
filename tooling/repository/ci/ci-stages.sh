@@ -57,16 +57,18 @@ ci_stage_selected() {
 
 # Stage 0 runs the no-build checks that used to be their own stages. Each check
 # keeps the platform and mode applicability its former stage had: the size
-# budget ran in pre-return, path rendering, the product surface and release
-# references only on Linux, and public history everywhere. An unknown check is
-# never selected, so a new check must be added here before the guard runs it.
+# budget runs in pre-return and, on Linux, in full mode so a public-CI push
+# fails before the build; path rendering, the product surface and release
+# references run only on Linux; public history runs everywhere. An unknown
+# check is never selected, so a new check must be added here before the guard
+# runs it.
 ci_repository_rule_check_selected() {
   check=$1
   platform=$2
   mode=$3
   case "$check" in
     architecture-budget)
-      test "$mode" = pre-return
+      test "$mode" = pre-return || test "$platform" = linux
       ;;
     path-rendering|product-surface|release-refs)
       test "$platform" = linux

@@ -8,6 +8,9 @@
 #             headroom warning and commit-identity range
 #   PLATFORM  linux|macos (default: this host)
 #   MODE      pre-return|full (default: pre-return)
+# CANDIDATE_SHA, when set (a CI pull-request head), is checked for public
+# history in addition to HEAD: a merge can retain published ancestry while the
+# contributing head dropped it.
 # Each check keeps the platform and mode applicability its former stage had;
 # ci_repository_rule_check_selected in ci-stages.sh decides and SKIP says why.
 # The build-dependent targets remain the authority for these rules:
@@ -76,7 +79,7 @@ run_check() {
     path-rendering) step path-rendering ./scripts/check-path-rendering.sh ;;
     product-surface) step product-surface ./scripts/check-product-surface.sh ;;
     release-refs) step release-refs ./scripts/check-release-refs.sh ;;
-    public-history) step public-history ./scripts/check-public-history.sh HEAD ;;
+    public-history) step public-history ./scripts/check-public-history.sh HEAD ${CANDIDATE_SHA:+"$CANDIDATE_SHA"} ;;
     commit-identity) step commit-identity python3 tooling/repository/checks/check_commit_identity.py --base "$base" ;;
   esac
 }

@@ -5,7 +5,7 @@
     "tooling/repository/ci/ci-local.sh"
   ],
   "ledger": "tooling/repository/ci/failure-ledger.jsonl",
-  "rules": "Every ci_stage_order stage (kind stage) and every other ci-local.sh run label (kind trailing) is listed once. cost: light (no cargo build), build (compiles a cargo target), heavy (full suite or release build). Each entry carries exactly one of: ledger (ids of real failures it caught), provisionalUntil (date by which a real failure or a deterrent reason is due), deterrent (why the gate stays without a recorded failure). A gate that absorbed a former gate lists its id under absorbed: ledger rows keep the gate that caught them and the absorbing gate may cite them. Record failures with ci-failure.sh --record.",
+  "rules": "Every ci_stage_order stage (kind stage) and every other ci-local.sh run label (kind trailing) is listed once. cost: light (no cargo build), build (compiles a cargo target), heavy (full suite or release build). Each entry carries exactly one of: ledger (ids of real failures it caught), provisionalUntil (date by which a real failure or a deterrent reason is due), deterrent (why the gate stays without a recorded failure). A gate that absorbed a former gate lists its id under absorbed: ledger rows keep the gate where the failure surfaced and the absorbing gate may cite them. Cite only real catches: a row recorded under a gate that was not at fault (an environment cause or a stale binary) stays in the ledger for history but is not cited as a catch. Record failures with ci-failure.sh --record.",
   "gates": [
     {
       "id": "repository-rules",
@@ -71,7 +71,12 @@
       "kind": "stage",
       "cost": "heavy",
       "prevents": "a behaviour regression anywhere in the full test suite",
-      "deterrent": "the only stage that runs every test target"
+      "ledger": [
+        "fl-0011",
+        "fl-0013",
+        "fl-0014",
+        "fl-0015"
+      ]
     },
     {
       "id": "architecture-budget",
@@ -80,8 +85,6 @@
       "prevents": "a source file or module growing past its size or ownership budget",
       "ledger": [
         "fl-0008",
-        "fl-0013",
-        "fl-0015",
         "fl-0022"
       ]
     },
@@ -103,7 +106,6 @@
       "prevents": "version, changelog and release metadata disagreeing",
       "ledger": [
         "fl-0004",
-        "fl-0017",
         "fl-0019"
       ]
     },
