@@ -254,7 +254,11 @@ def append(root: Path, args: List[str]) -> int:
     }
     line = json.dumps(entry, separators=(",", ":"))
     inventory = json.loads((root / INVENTORY).read_text(encoding="utf-8"))
-    gate_ids = {gate["id"] for gate in inventory.get("gates", []) if isinstance(gate, dict) and "id" in gate}
+    gates = [gate for gate in inventory.get("gates", []) if isinstance(gate, dict) and "id" in gate]
+    # Rows recorded under a former gate stay valid, as in the full check.
+    gate_ids = {gate["id"] for gate in gates} | {
+        former for gate in gates for former in gate.get("absorbed") or [] if isinstance(former, str)
+    }
     errors = ledger_errors(root, ledger + [line], gate_ids)
     if errors:
         for error in errors:

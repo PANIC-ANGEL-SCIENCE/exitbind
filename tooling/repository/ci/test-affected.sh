@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run the Cargo test targets a change affects, each with its declared features.
+# Run the Cargo test targets a change affects, each with its declared features,
+# and the binary's unit tests when src/ or the manifest changed.
 # Usage: test-affected.sh --base BASE [--list]
 # Changed files are the diff against BASE plus untracked files; selection and
 # features come from tooling/repository/checks/test-target-map.json.
@@ -24,6 +25,14 @@ cargo=${CARGO:-cargo}
 
 selection=$(python3 -B tooling/repository/checks/test_target_sources.py affected --base "$base") ||
   fail 'target selection failed; fix the test-target map first'
+tab=$(printf '\t')
+# The binary's own unit tests live in src/ and no integration target runs them,
+# so a change to src/ or the manifest also selects them (as bin:exitbind).
+if { git diff --name-only --no-renames "$base" -- &&
+  git ls-files --others --exclude-standard; } | grep -E '^(src/|Cargo\.toml$|Cargo\.lock$)' >/dev/null; then
+  selection="${selection:+$selection
+}bin:exitbind$tab"
+fi
 if [ -z "$selection" ]; then
   printf 'test-affected: base=%s selects no Cargo test target\n' "$base"
   exit 0
@@ -44,9 +53,10 @@ else
   log_dir=$(mktemp -d "${TMPDIR:-/tmp}/test-affected.XXXXXX")
 fi
 failed=
-tab=$(printf '\t')
 while IFS="$tab" read -r target features; do
-  if [ -n "$features" ]; then
+  if [ "${target#bin:}" != "$target" ]; then
+    set -- test --locked --bin "${target#bin:}"
+  elif [ -n "$features" ]; then
     set -- test --locked --features "$features" --test "$target"
   else
     set -- test --locked --test "$target"
@@ -54,7 +64,7 @@ while IFS="$tab" read -r target features; do
   # shellcheck disable=SC2086
   printf '+ env%s %s %s\n' "$unset_args" "$cargo" "$*"
   test "$list_only" = true && continue
-  log="$log_dir/$target.log"
+  log="$log_dir/$(printf '%s' "$target" | tr ':' '-').log"
   # shellcheck disable=SC2086
   if env $unset_args "$cargo" "$@" > "$log" 2>&1; then status=0; else status=$?; fi
   passed=$(sed -n 's/^test result: [A-Za-z]*\. \([0-9][0-9]*\) passed;.*/\1/p' "$log" | awk '{n += $1} END {print n + 0}')

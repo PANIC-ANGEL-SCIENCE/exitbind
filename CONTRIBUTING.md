@@ -167,7 +167,9 @@ Changed files are the diff against the base plus untracked files. A changed
 `tooling/repository/checks/test-target-map.json` match it, a changed test file
 selects its own target, a file the binary embeds (`include_str!`, for example
 a schema or skill body) selects the targets covering its embedding module, and
-`Cargo.toml`, `Cargo.lock` or `tests/support` select all targets. Each target runs with its declared `features` and without
+`Cargo.toml`, `Cargo.lock` or `tests/support` select all targets. A changed
+`src` file, `Cargo.toml` or `Cargo.lock` also selects the binary's own unit
+tests (`cargo test --locked --bin exitbind`), which no integration target runs. Each target runs with its declared `features` and without
 host session variables, prints its exact command, and must run at least one
 test. Pre-return runs it as the `affected-tests` stage against
 `PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`.

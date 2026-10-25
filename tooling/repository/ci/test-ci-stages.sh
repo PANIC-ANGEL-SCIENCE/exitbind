@@ -399,7 +399,7 @@ else
   # file is overlaid as well: the nested run inside the clone must carry the
   # sentinel guard, not the parent commit's copy.
   for file in check-repository-rules.sh ci-stages.sh ci-local.sh \
-    verification-context.sh ci-preflight.sh test-ci-stages.sh; do
+    verification-context.sh ci-preflight.sh test-ci-stages.sh test-affected.sh; do
     cp "$root/tooling/repository/ci/$file" "$history_work/repo/tooling/repository/ci/$file"
   done
   # The merge itself keeps published history; only the contributing head drops it.
@@ -506,6 +506,22 @@ STUB
   grep -F 'FAIL public-history' "$history_work/guard.out" >/dev/null &&
     grep -F "$orphan does not retain published checkpoint" "$history_work/guard.out" >/dev/null ||
     fail 'stage 0 did not forward the pull-request head to public history'
+  # Pre-return's affected-tests stage also runs the binary's unit tests when
+  # src/ changed: no integration target runs them, and a host-dependent unit
+  # test once reached public macOS readiness unrun (fl-0023). Listing needs no
+  # build; a change outside src/ and the manifest must not select them.
+  printf '\n// contract fixture edit\n' >> "$history_work/repo/src/main.rs"
+  (cd "$history_work/repo" && sh tooling/repository/ci/test-affected.sh --base HEAD --list) \
+    > "$history_work/affected-src.out" 2>&1 || fail "affected listing failed: $(tail -n 3 "$history_work/affected-src.out")"
+  grep -E ' test --locked --bin exitbind$' "$history_work/affected-src.out" >/dev/null ||
+    fail 'a src/ change must select the binary unit tests in affected-tests'
+  git -C "$history_work/repo" checkout -q -- src/main.rs
+  printf '\ncontract fixture edit\n' >> "$history_work/repo/README.md"
+  (cd "$history_work/repo" && sh tooling/repository/ci/test-affected.sh --base HEAD --list) \
+    > "$history_work/affected-docs.out" 2>&1 || fail "affected listing failed: $(tail -n 3 "$history_work/affected-docs.out")"
+  if grep -F -- '--bin exitbind' "$history_work/affected-docs.out" >/dev/null; then
+    fail 'a change outside src/ and the manifest must not select the binary unit tests'
+  fi
   rm -rf "$history_work"
   trap - EXIT HUP INT TERM
 fi
