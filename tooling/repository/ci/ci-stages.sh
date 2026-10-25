@@ -4,14 +4,11 @@
 ci_stage_order() {
   printf '%s\n' \
     repository-rules \
-    history \
     workflows \
     workflow-regression \
     ci-stage-contract \
     quiet-command-regression \
     fmt \
-    path-rendering \
-    product-surface \
     clippy \
     tests \
     architecture-budget \
@@ -24,8 +21,7 @@ ci_stage_order() {
     affected-tests \
     value-proof \
     drift-warning \
-    native-handoff \
-    release-refs
+    native-handoff
 }
 
 ci_stage_selected() {
@@ -34,10 +30,10 @@ ci_stage_selected() {
   platform=$3
 
   case "$stage" in
-    repository-rules|history|workflows|workflow-regression|ci-stage-contract|quiet-command-regression)
+    repository-rules|workflows|workflow-regression|ci-stage-contract|quiet-command-regression)
       return 0
       ;;
-    fmt|path-rendering|product-surface|clippy)
+    fmt|clippy)
       test "$platform" = linux
       return
       ;;
@@ -53,9 +49,30 @@ ci_stage_selected() {
       test "$mode" = full && test "$platform" = linux
       return
       ;;
-    release-refs)
-      test "$platform" = linux && { test "$mode" = full || test "$mode" = pre-return; }
-      return
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Stage 0 runs the no-build checks that used to be their own stages. Each check
+# keeps the platform and mode applicability its former stage had: the size
+# budget ran in pre-return, path rendering, the product surface and release
+# references only on Linux, and public history everywhere. An unknown check is
+# never selected, so a new check must be added here before the guard runs it.
+ci_repository_rule_check_selected() {
+  check=$1
+  platform=$2
+  mode=$3
+  case "$check" in
+    architecture-budget)
+      test "$mode" = pre-return
+      ;;
+    path-rendering|product-surface|release-refs)
+      test "$platform" = linux
+      ;;
+    public-history|commit-identity)
+      return 0
       ;;
     *)
       return 1

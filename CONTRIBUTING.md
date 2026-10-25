@@ -82,12 +82,12 @@ archive refuses the gate. No global validator installation is required.
 
 Use the script's absolute path when outside the checkout. Every run starts with
 the no-build repository-rule guard
-(`tooling/repository/ci/check-repository-rules.sh`): size budgets, path
-rendering, product surface, release references, public history and commit
-identity fail before any build starts. On Linux it then runs
-`cargo fmt --check`, path and product-surface gates,
-`cargo clippy --locked --all-targets -- -D warnings`, tests, value proof,
-drift-warning demo, native tmux handoff, release references, release build,
+(`tooling/repository/ci/check-repository-rules.sh`): the size budget in
+pre-return, path rendering, product surface and release references on Linux,
+and public history and commit identity everywhere fail before any build
+starts; full mode fetches the comparison base first. On Linux it then runs
+`cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`,
+tests, value proof, drift-warning demo, native tmux handoff, release build,
 onboarding smoke, packaging, and installer smoke. On macOS it runs the same
 native test/proof/build/package/installer sequence as the stable release jobs.
 Each stage announces its name and log path before it starts. Output stays

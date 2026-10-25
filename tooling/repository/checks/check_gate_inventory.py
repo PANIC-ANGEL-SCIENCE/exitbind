@@ -7,6 +7,12 @@ passes to its run helper. Each gate is listed once with a cost class, the
 failure class it prevents, and exactly one justification: ledger references to
 real failures, a provisional date, or a deterrent reason.
 
+A gate that absorbed another (stage 0 runs the checks that used to be their own
+stages) lists the former gate ids under "absorbed". Ledger rows keep the gate
+that caught them, and the absorbing gate may cite those rows: a ledger ref is
+valid when its row names this gate or a gate this one absorbed. The absorbed
+id is not a gate of its own, so it never appears as an inventory entry.
+
 A provisional date that has passed is reported on every run and refused by
 --release, which the release_integrity target runs at release time: a basis
 ends, but an unrelated pre-return never fails on the calendar.
@@ -162,6 +168,25 @@ def check(root: Path, inventory: dict, stages: List[str], labels: List[str], led
     stage_label_gaps = [stage for stage in stages if stage not in labels]
     for stage in stage_label_gaps:
         errors.append(f"stage has no ci-local.sh run label: {stage}")
+    absorbed: Dict[str, str] = {}
+    for gate_id, gate in listed.items():
+        former_ids = gate.get("absorbed")
+        if former_ids is None:
+            continue
+        if not isinstance(former_ids, list) or not former_ids:
+            errors.append(f"gate {gate_id} absorbed must list former gate ids")
+            continue
+        for former in former_ids:
+            if not isinstance(former, str) or not former.strip():
+                errors.append(f"gate {gate_id} absorbed ids must be non-empty strings")
+            elif former in expected:
+                errors.append(f"gate {gate_id} absorbed {former}, which still runs")
+            elif former in absorbed:
+                errors.append(
+                    f"gate {gate_id} absorbed {former}, already absorbed by {absorbed[former]}"
+                )
+            else:
+                absorbed[former] = gate_id
     ledger_gates: Dict[str, str] = {}
     for line in ledger:
         try:
@@ -186,13 +211,14 @@ def check(root: Path, inventory: dict, stages: List[str], labels: List[str], led
                 errors.append(f"gate {gate_id} ledger must list failure ids")
                 continue
             for ref in value:
-                if ledger_gates.get(ref) != gate_id:
+                row_gate = ledger_gates.get(ref)
+                if row_gate != gate_id and absorbed.get(row_gate) != gate_id:
                     errors.append(f"gate {gate_id} ledger ref {ref} is not a ledger line for this gate")
         elif present[0] == "provisionalUntil" and not valid_date(value):
             errors.append(f"gate {gate_id} provisionalUntil must be YYYY-MM-DD")
         elif present[0] == "deterrent" and (not isinstance(value, str) or not value.strip()):
             errors.append(f"gate {gate_id} deterrent reason is empty")
-    errors.extend(ledger_errors(root, ledger, set(expected)))
+    errors.extend(ledger_errors(root, ledger, set(expected) | set(absorbed)))
     return errors
 
 
@@ -279,7 +305,27 @@ def self_test(root: Path) -> int:
         change(copy["gates"])
         return copy
 
+    absorbed_line = json.dumps(
+        dict(zip(LEDGER_FIELDS, ["fl-0002", "2026-10-21", "old", "c", "s", "m", "r"]))
+    )
+    absorbed_good = variant(lambda g: g[0].update(absorbed=["old"], ledger=["fl-0001", "fl-0002"]))
+    absorbed_errors = check(root, absorbed_good, ["a", "b"], labels, [line, absorbed_line])
+    if absorbed_errors:
+        failures.append(f"an absorbed gate's ledger ref failed: {absorbed_errors}")
+
     cases = {
+        "absorbed gate that still runs": (
+            variant(lambda g: g[0].update(absorbed=["b"])),
+            labels,
+            [line],
+            "still runs",
+        ),
+        "ledger ref to another live gate": (
+            variant(lambda g: g[0].update(ledger=["fl-0002"])),
+            labels,
+            [line, absorbed_line],
+            "not a ledger line",
+        ),
         "unlisted trailing gate": (good, labels + ["tail-three"], [line], "missing from the inventory"),
         "stale gate": (variant(lambda g: g.append(dict(g[1], id="gone"))), labels, [line], "no longer runs"),
         "two justifications": (variant(lambda g: g[1].update(provisionalUntil="2027-01-01")), labels, [line], "exactly one"),

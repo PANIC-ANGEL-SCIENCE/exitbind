@@ -70,39 +70,31 @@ if [ "$ci_mode" = pre-return ]; then
   printf 'ci-local: platform=%s head=%s mode=%s\n' "$platform" "$(git rev-parse HEAD)" "$ci_mode"
 fi
 
-proof_base_ready=false
-if [ -n "${VALUE_PROOF_BASE:-}" ] && { [ "$ci_mode" = pre-return ] || proof_base_is_ref "$VALUE_PROOF_BASE"; }; then
+# Full mode prepares the comparison base before stage 0: the guard reads the
+# base, so a commit the checkout does not have yet (a force-replaced branch tip
+# on public CI) must be fetched by prepare_value_proof_base first. Pre-return
+# passes its declared base unchanged and prepares only when VALUE_PROOF_BASE is
+# set, as before.
+if [ "$ci_mode" = full ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then
   prepare_value_proof_base
-  proof_base_ready=true
 fi
 for stage in $(ci_stage_order); do
   ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
-  if [ "$ci_mode" = full ] && [ "$proof_base_ready" = false ] && { [ "$stage" = fmt ] || [ "$stage" = tests ]; }; then
-    prepare_value_proof_base
-    proof_base_ready=true
-  fi
   case "$stage" in
     repository-rules)
-      # Pre-return passes the declared base unchanged, so an all-zero value is
-      # refuted by the guard's own message; full mode mirrors
-      # prepare_value_proof_base's empty/all-zero sentinel.
-      rules_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
-      if [ "$ci_mode" != pre-return ]; then
-        case $rules_base in
-          ''|0000000000000000000000000000000000000000) rules_base=$(git rev-parse --verify HEAD^) ;;
-        esac
+      if [ "$ci_mode" = pre-return ]; then
+        rules_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
+        test -n "$rules_base" || rules_base=origin/main
+      else
+        rules_base=$VALUE_PROOF_BASE
       fi
-      test -n "$rules_base" || rules_base=origin/main
-      run repository-rules sh ./tooling/repository/ci/check-repository-rules.sh "$rules_base"
+      run repository-rules sh ./tooling/repository/ci/check-repository-rules.sh "$rules_base" "$platform" "$ci_mode"
       ;;
-    history) run history ./scripts/check-public-history.sh "${CANDIDATE_SHA:-HEAD}" ;;
     workflows) run workflows ./scripts/check-workflows.sh ;;
     workflow-regression) run workflow-regression ./scripts/test-workflow-validation.sh ;;
     ci-stage-contract) run ci-stage-contract ./scripts/test-ci-stages.sh ;;
     quiet-command-regression) run quiet-command-regression python3 ./scripts/test-quiet-command.py ;;
     fmt) run fmt "$CARGO" fmt --check ;;
-    path-rendering) run path-rendering ./scripts/check-path-rendering.sh ;;
-    product-surface) run product-surface ./scripts/check-product-surface.sh ;;
     clippy) run clippy "$CARGO" clippy --locked --all-targets --features repository-checks -- -D warnings ;;
     tests) run tests "$CARGO" test --locked --features repository-checks ;;
     architecture-budget) run architecture-budget "$CARGO" test --locked --features repository-checks --test architecture_budget ;;
@@ -123,7 +115,6 @@ for stage in $(ci_stage_order); do
       run native-handoff "$CARGO" test --locked --test away_native real_tmux_child_presents_bound_evidence_without_persisting_the_prompt -- --ignored --exact
       ./scripts/assert-test-ran.sh real_tmux_child_presents_bound_evidence_without_persisting_the_prompt < "$run_dir/native-handoff.log" || fail 'native-handoff target did not execute and pass'
       ;;
-    release-refs) run release-refs ./scripts/check-release-refs.sh ;;
     *) fail "selected stage has no command: $stage" ;;
   esac
 done

@@ -32,15 +32,12 @@ expect() {
 }
 
 pre_return_common='repository-rules
-history
 workflows
 workflow-regression
 ci-stage-contract
 quiet-command-regression'
 pre_return_linux="$pre_return_common
 fmt
-path-rendering
-product-surface
 clippy
 architecture-budget
 privacy-gate
@@ -49,8 +46,7 @@ docs-workflow
 first-impression
 value-contract
 plugin-distribution
-affected-tests
-release-refs"
+affected-tests"
 pre_return_macos="$pre_return_common
 architecture-budget
 privacy-gate
@@ -61,22 +57,17 @@ value-contract
 plugin-distribution
 affected-tests"
 full_linux='repository-rules
-history
 workflows
 workflow-regression
 ci-stage-contract
 quiet-command-regression
 fmt
-path-rendering
-product-surface
 clippy
 tests
 value-proof
 drift-warning
-native-handoff
-release-refs'
+native-handoff'
 full_macos='repository-rules
-history
 workflows
 workflow-regression
 ci-stage-contract
@@ -89,7 +80,7 @@ expect pre-return macos "$pre_return_macos"
 expect full linux "$full_linux"
 expect full macos "$full_macos"
 
-for stage in repository-rules history workflows workflow-regression ci-stage-contract quiet-command-regression; do
+for stage in repository-rules workflows workflow-regression ci-stage-contract quiet-command-regression; do
   ci_stage_selected unexpected "$stage" linux || fail "shared stage omitted: $stage"
 done
 # This stage runs the two inventory checks below, so it runs everywhere.
@@ -110,8 +101,49 @@ for stage in architecture-budget privacy-gate release-integrity docs-workflow fi
     fail "invariant target reruns in full mode: $stage"
   fi
 done
-if ci_stage_selected full release-refs macos; then
-  fail 'release-refs platform applicability changed'
+# The four former stages now run inside stage 0, never as stages of their own.
+for retired in history path-rendering product-surface release-refs; do
+  for mode in full pre-return; do
+    for platform in linux macos; do
+      if ci_stage_selected "$mode" "$retired" "$platform"; then
+        fail "retired stage still selected: $retired $mode $platform"
+      fi
+    done
+  done
+  if grep -F "    $retired)" "$root/tooling/repository/ci/ci-local.sh" >/dev/null; then
+    fail "retired stage still has a command dispatch: $retired"
+  fi
+done
+# Every check stage 0 runs keeps the applicability its former stage had.
+check_selected() {
+  check=$1
+  platform=$2
+  mode=$3
+  want=$4
+  if ci_repository_rule_check_selected "$check" "$platform" "$mode"; then
+    got=yes
+  else
+    got=no
+  fi
+  test "$got" = "$want" ||
+    fail "stage 0 check selection changed: $check $platform $mode expected $want got $got"
+}
+check_selected architecture-budget linux pre-return yes
+check_selected architecture-budget macos pre-return yes
+check_selected architecture-budget linux full no
+check_selected path-rendering linux full yes
+check_selected path-rendering linux pre-return yes
+check_selected path-rendering macos pre-return no
+check_selected product-surface linux full yes
+check_selected product-surface macos full no
+check_selected release-refs linux pre-return yes
+check_selected release-refs macos full no
+check_selected public-history linux full yes
+check_selected public-history macos pre-return yes
+check_selected commit-identity linux pre-return yes
+check_selected commit-identity macos full yes
+if ci_repository_rule_check_selected make-coffee linux pre-return; then
+  fail 'an unknown stage 0 check was selected'
 fi
 if ci_stage_selected pre-return unknown linux; then
   fail 'unknown stage accepted'
@@ -129,6 +161,22 @@ rules_line=$(grep -n -F 'run repository-rules' "$root/tooling/repository/ci/ci-l
 cargo_line=$(grep -n -F '"$CARGO"' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
 test -n "$rules_line" && test -n "$cargo_line" && test "$rules_line" -lt "$cargo_line" ||
   fail 'the no-build guard must run before the first cargo stage'
+# Full mode prepares the comparison base before stage 0: on public CI the push
+# base can be a commit this checkout does not have (a force-replaced branch
+# tip), and prepare_value_proof_base fetches it before the guard reads it.
+prepare_line=$(grep -n '^  prepare_value_proof_base$' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
+loop_line=$(grep -n -F 'for stage in $(ci_stage_order)' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
+test -n "$prepare_line" && test -n "$loop_line" && test "$prepare_line" -lt "$loop_line" ||
+  fail 'the comparison base must be prepared before the stage loop'
+grep -F 'if [ "$ci_mode" = full ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then' \
+  "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
+  fail 'full mode must prepare the comparison base before stage 0'
+grep -F 'run repository-rules sh ./tooling/repository/ci/check-repository-rules.sh "$rules_base" "$platform" "$ci_mode"' \
+  "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
+  fail 'stage 0 must receive the prepared base, platform and mode'
+grep -F 'ci_repository_rule_check_selected' \
+  "$root/tooling/repository/ci/check-repository-rules.sh" >/dev/null ||
+  fail 'stage 0 must keep each former stage platform selection'
 python3 - "$root" <<'PY' || fail 'repository-rules must be the first inventory gate with cost light'
 import json, sys
 from pathlib import Path
@@ -201,6 +249,26 @@ case $resolved in
   *"proof-base=$fork") ;;
   *) fail "a SHA proof base must be used unchanged: $resolved" ;;
 esac
+# A base this checkout does not have yet is fetched before stage 0 reads it:
+# a second clone advances the remote branch, and the first clone cannot see
+# that commit until prepare_value_proof_base fetches it.
+git -C "$proof_work/remote.git" config uploadpack.allowAnySHA1InWant true
+git clone -q -b candidate "$proof_work/remote.git" "$proof_work/second"
+git -C "$proof_work/second" config user.name 'CI proof-base fixture'
+git -C "$proof_work/second" config user.email 'ci-proof-base@example.invalid'
+git -C "$proof_work/second" commit -q --allow-empty -m later
+git -C "$proof_work/second" push -q origin candidate
+later=$(git -C "$proof_work/second" rev-parse HEAD)
+if git -C "$proof_work/source" cat-file -e "${later}^{commit}" 2>/dev/null; then
+  fail 'the fixture base is already present before the fetch case'
+fi
+resolved=$(prepare_proof_base "$later" 2>&1) || fail "an unfetched base must be fetched: $resolved"
+case $resolved in
+  *"proof-base=$later") ;;
+  *) fail "an unfetched base must resolve to itself after the fetch: $resolved" ;;
+esac
+git -C "$proof_work/source" cat-file -e "${later}^{commit}" 2>/dev/null ||
+  fail 'prepare_value_proof_base did not fetch the missing base'
 if resolved=$(prepare_proof_base no-such-ref 2>&1); then
   fail "an unknown ref proof base must fail: $resolved"
 fi

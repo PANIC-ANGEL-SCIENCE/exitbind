@@ -5,30 +5,24 @@
     "tooling/repository/ci/ci-local.sh"
   ],
   "ledger": "tooling/repository/ci/failure-ledger.jsonl",
-  "rules": "Every ci_stage_order stage (kind stage) and every other ci-local.sh run label (kind trailing) is listed once. cost: light (no cargo build), build (compiles a cargo target), heavy (full suite or release build). Each entry carries exactly one of: ledger (ids of real failures it caught), provisionalUntil (date by which a real failure or a deterrent reason is due), deterrent (why the gate stays without a recorded failure). Record failures with ci-failure.sh --record.",
+  "rules": "Every ci_stage_order stage (kind stage) and every other ci-local.sh run label (kind trailing) is listed once. cost: light (no cargo build), build (compiles a cargo target), heavy (full suite or release build). Each entry carries exactly one of: ledger (ids of real failures it caught), provisionalUntil (date by which a real failure or a deterrent reason is due), deterrent (why the gate stays without a recorded failure). A gate that absorbed a former gate lists its id under absorbed: ledger rows keep the gate that caught them and the absorbing gate may cite them. Record failures with ci-failure.sh --record.",
   "gates": [
     {
       "id": "repository-rules",
       "kind": "stage",
       "cost": "light",
       "prevents": "a size-budget breach, lossy path rendering, stale test-target, package or skill inventory or an in-band compatibility marker, stale release references, unreviewed public history, or a non-canonical commit identity reaching fmt/clippy/build or a push",
+      "absorbed": [
+        "history",
+        "path-rendering",
+        "product-surface",
+        "release-refs"
+      ],
       "ledger": [
-        "fl-0004",
-        "fl-0005",
         "fl-0007",
-        "fl-0008",
         "fl-0009",
-        "fl-0012",
-        "fl-0013",
-        "fl-0015"
+        "fl-0012"
       ]
-    },
-    {
-      "id": "history",
-      "kind": "stage",
-      "cost": "light",
-      "prevents": "a candidate whose public history leaks private or rewritten commits",
-      "deterrent": "public-history boundary: a leak cannot be recalled after push"
     },
     {
       "id": "workflows",
@@ -66,20 +60,6 @@
       "deterrent": "formatting drift makes every later diff noisy; costs seconds"
     },
     {
-      "id": "path-rendering",
-      "kind": "stage",
-      "cost": "light",
-      "prevents": "a path converted to text outside the allowlisted renderers",
-      "provisionalUntil": "2027-01-22"
-    },
-    {
-      "id": "product-surface",
-      "kind": "stage",
-      "cost": "light",
-      "prevents": "experimental code, unlisted dependencies, stale test-target, package or skill inventories, or an in-band compatibility marker or record field in src/ without a table row",
-      "provisionalUntil": "2027-01-22"
-    },
-    {
       "id": "clippy",
       "kind": "stage",
       "cost": "build",
@@ -98,21 +78,34 @@
       "kind": "stage",
       "cost": "build",
       "prevents": "a source file or module growing past its size or ownership budget",
-      "provisionalUntil": "2027-01-22"
+      "ledger": [
+        "fl-0008",
+        "fl-0013",
+        "fl-0015",
+        "fl-0022"
+      ]
     },
     {
       "id": "privacy-gate",
       "kind": "stage",
       "cost": "build",
-      "prevents": "operator-private names or terms in tracked content",
-      "deterrent": "a public push cannot be recalled"
+      "prevents": "operator-private names or terms in tracked content, and a non-canonical commit identity in publication history",
+      "ledger": [
+        "fl-0005",
+        "fl-0010",
+        "fl-0020"
+      ]
     },
     {
       "id": "release-integrity",
       "kind": "stage",
       "cost": "build",
       "prevents": "version, changelog and release metadata disagreeing",
-      "deterrent": "a wrong release reference ships to every installer"
+      "ledger": [
+        "fl-0004",
+        "fl-0017",
+        "fl-0019"
+      ]
     },
     {
       "id": "docs-workflow",
@@ -133,7 +126,10 @@
       "kind": "stage",
       "cost": "build",
       "prevents": "the value report contract changing shape",
-      "provisionalUntil": "2027-01-22"
+      "ledger": [
+        "fl-0003",
+        "fl-0016"
+      ]
     },
     {
       "id": "plugin-distribution",
@@ -148,7 +144,9 @@
       "cost": "build",
       "prevents": "a pre-return candidate breaking test targets its diff touches",
       "ledger": [
-        "fl-0001"
+        "fl-0001",
+        "fl-0018",
+        "fl-0021"
       ]
     },
     {
@@ -171,13 +169,6 @@
       "cost": "build",
       "prevents": "the real tmux child handoff losing bound evidence",
       "provisionalUntil": "2027-01-22"
-    },
-    {
-      "id": "release-refs",
-      "kind": "stage",
-      "cost": "light",
-      "prevents": "current guides and manifests naming a stale release",
-      "deterrent": "stale install references reach users at release"
     },
     {
       "id": "release-build",
