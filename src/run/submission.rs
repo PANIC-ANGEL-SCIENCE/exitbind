@@ -442,6 +442,13 @@ where
             event_value["reviewDecisionSha256"] = state["reviewPolicy"]["sha256"].clone();
         }
         if let Some(disposition) = parsed_disposition {
+            // Record the live observation this decision rests on, so a later
+            // ledger read validates the fact instead of the host's state.
+            if disposition.decision == Some(crate::kernel::disposition::Decision::Environmental)
+                && super::environmental_check::closed_owned_group(&state)
+            {
+                event_value[super::owned_group::ENDED_FIELD] = json!(super::owned_group::ENDED);
+            }
             event_value["disposition"] = disposition.value();
         }
         if let Some(fallback) = fallback_provenance(&assignment, outcome, reason, version)? {

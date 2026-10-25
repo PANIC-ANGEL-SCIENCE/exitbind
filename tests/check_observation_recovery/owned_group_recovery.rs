@@ -119,6 +119,14 @@ fn a_timed_out_owned_group_closes_onto_the_environmental_rerun_once_it_ends() {
     assert_eq!(facts["groupEnded"], false, "{failure}");
     assert_eq!(facts["termination"], "unknown", "{failure}");
     assert_eq!(facts["ownedProcessGroup"], json!(group), "{failure}");
+    // The capsule records the owned leader's start marker with the group, so a
+    // reused group id is never mistaken for this one.
+    assert!(
+        facts["ownedProcessStart"]
+            .as_u64()
+            .is_some_and(|ticks| ticks > 0),
+        "{failure}"
+    );
 
     // No automatic retry: the failed observation still owns the check, so the
     // same admitted execution limit is refused rather than launched again.
@@ -242,10 +250,18 @@ fn a_timed_out_owned_group_closes_onto_the_environmental_rerun_once_it_ends() {
     );
     assert!(attested.status.success(), "{attested:?}");
     let events = f.events(&work);
-    assert!(events.iter().any(|event| event["action"] == "submit"
-        && event["role"] == "lead"
-        && event["outcome"] == "disposition"
-        && event["disposition"]["decision"] == "environmental"));
+    let disposition = events
+        .iter()
+        .find(|event| {
+            event["action"] == "submit"
+                && event["role"] == "lead"
+                && event["outcome"] == "disposition"
+                && event["disposition"]["decision"] == "environmental"
+        })
+        .unwrap_or_else(|| panic!("no environmental submit event: {events:?}"));
+    // The decision records the state it observed, so replay validates the
+    // fact instead of the host's process table.
+    assert_eq!(disposition["ownedProcessState"], "ended", "{disposition}");
     assert_eq!(
         events
             .iter()

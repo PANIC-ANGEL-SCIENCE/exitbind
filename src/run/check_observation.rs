@@ -221,6 +221,101 @@ pub(crate) fn close_dead_admission(
     fail(loaded, &path, Some(admission), facts)
 }
 
+/// The operation identity of an admitted observation. A selected verification
+/// preparation records it; an unselected one derives it exactly as the
+/// observation did, from its binding and the ledger source through admission.
+fn operation_id(observation: &Value, events: &[Value], source: &str) -> Result<String, String> {
+    let binding = &observation["binding"];
+    if let Some(operation) = binding.get("verificationOperationId") {
+        return operation
+            .as_str()
+            .filter(|operation| {
+                operation.len() == 64
+                    && operation
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            .map(str::to_owned)
+            .ok_or("selected verification operation identity is invalid".into());
+    }
+    if binding.get("verificationPreparationSha256").is_some() {
+        return Err("incomplete selected verification operation identity".into());
+    }
+    let index = events
+        .iter()
+        .position(|event| event["eventSha256"] == observation["eventSha256"])
+        .ok_or("check admission is missing from its ledger")?;
+    let prefix = source
+        .split('\n')
+        .take(index + 1)
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(hash::value(&json!({
+        "identity": binding,
+        "ledgerSourceSha256": hash::text(&format!("{prefix}\n")),
+    })))
+}
+
+/// Whether the admitted observation may have left an owned effect its
+/// storage-unknown outcome keeps unresolved: a retained partial capture, or a
+/// selected verification operation's owned scratch. A retry neither closes
+/// nor appends over such an effect; only explicit recovery does.
+pub(crate) fn retained_effect(
+    loaded: &Loaded,
+    ledger: &str,
+    observation: &Value,
+) -> Result<bool, String> {
+    let (_, events, source) = load(loaded, ledger)?;
+    let operation = operation_id(observation, &events, &source)?;
+    let state_dir = loaded
+        .state_root
+        .join(crate::project::layout_types::state_namespace());
+    let marker = format!("check-partial-{operation}-");
+    let retained = std::fs::read_dir(state_dir.join("artifacts"))
+        .ok()
+        .is_some_and(|entries| {
+            entries.filter_map(Result::ok).any(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(&marker))
+            })
+        });
+    if retained {
+        return Ok(true);
+    }
+    if observation["binding"]
+        .get("verificationOperationId")
+        .is_none()
+    {
+        return Ok(false);
+    }
+    let run = observation["binding"]["runId"]
+        .as_str()
+        .ok_or("run identity is missing")?;
+    Ok(state_dir
+        .join("verification")
+        .join(run)
+        .join(&operation)
+        .is_dir())
+}
+
+/// The refusal of a retry that would close or append over a retained effect.
+pub(crate) fn retained_refusal(
+    observation: &Value,
+    work: Option<&str>,
+    config: &std::path::Path,
+) -> String {
+    let slot = crate::emitted::slot("WORK");
+    let detail = crate::emitted::command_line(
+        &["work", "recover-check", work.unwrap_or(&slot), "--json"],
+        Some(config),
+    );
+    let event = observation["eventSha256"].as_str().unwrap_or("unknown");
+    let on = work.map_or_else(|| "this Work".to_owned(), |work| format!("Work {work}"));
+    format!("check observation {event} on {on} ended without recording its result and retains a partial capture or an owned verification effect; a retry neither closes nor appends over it. Recover a known-ended storage failure with {detail}, or block this Work")
+}
+
 /// Where an unrecorded observation failure is read: the Work, or the run.
 fn failure_read(work: Option<&str>, ledger: &str) -> crate::emitted::Route {
     match work {

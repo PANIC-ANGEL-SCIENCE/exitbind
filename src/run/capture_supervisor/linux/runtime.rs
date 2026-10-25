@@ -114,11 +114,13 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
             return no_launch(&mut proof);
         }
     };
-    // Record the owned group as soon as the checker exists, so a capsule that
-    // cannot finish its proof still leaves a re-readable identity behind. The
-    // status half of the frame follows when the leader is reaped.
+    // Record the owned group and its leader's start marker as soon as the
+    // checker exists, so a capsule that cannot finish its proof still leaves a
+    // re-readable identity behind. The status half of the frame follows when
+    // the leader is reaped.
     proof.write_all(MAGIC)?;
     proof.write_all(&(child.id() as i32).to_le_bytes())?;
+    proof.write_all(&start_marker(child.id()).unwrap_or(0).to_le_bytes())?;
     proof.flush()?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
     let mut status = None;
@@ -210,8 +212,22 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
 
 fn no_launch(proof: &mut File) -> io::Result<()> {
     proof.write_all(MAGIC)?;
-    proof.write_all(&[0; 8])?;
+    proof.write_all(&[0; 16])?;
     proof.write_all(&[8, 0, 0, 0])
+}
+
+/// The checker leader's start marker in host clock ticks, when readable right
+/// after spawn. Zero means no marker is known; the reader filters it.
+fn start_marker(pid: u32) -> Option<u64> {
+    let stat = std::fs::read(format!("/proc/{pid}/stat")).ok()?;
+    let text = std::str::from_utf8(&stat).ok()?;
+    let (_, fields) = text.rsplit_once(") ")?;
+    fields
+        .split_whitespace()
+        .nth(19)?
+        .parse()
+        .ok()
+        .filter(|ticks| *ticks > 0)
 }
 
 fn drain() -> io::Result<bool> {

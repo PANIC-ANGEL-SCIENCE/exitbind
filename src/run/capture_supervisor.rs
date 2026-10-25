@@ -11,6 +11,13 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::entry;
 
+/// The checker's owned group and, when the capsule could record it, the
+/// leader's start marker: a reused group id is not mistaken for this group.
+pub(super) struct OwnedGroup {
+    pub(super) group: i32,
+    pub(super) start_time_ticks: Option<u64>,
+}
+
 pub(super) struct ObservedChild {
     child: Child,
     #[cfg(target_os = "linux")]
@@ -98,17 +105,25 @@ impl ObservedChild {
         true
     }
 
-    /// The checker's owned process group, when one was recorded.
-    pub(super) fn owned_group(&self) -> Option<i32> {
+    /// The checker's owned process group, when one was recorded. Polling
+    /// first reads the proof bytes the capsule already wrote; it never waits.
+    pub(super) fn owned_group(&mut self) -> Option<OwnedGroup> {
         #[cfg(target_os = "linux")]
         {
-            self.proof.owned_group()
+            let _ = self.proof.poll();
+            self.proof.owned_group().map(|group| OwnedGroup {
+                group,
+                start_time_ticks: self.proof.owned_leader_start(),
+            })
         }
         #[cfg(not(target_os = "linux"))]
         {
             // The checker was spawned as its own group leader, so its PID is
-            // the group identity here too.
-            i32::try_from(self.child.id()).ok()
+            // the group identity here too; no proof frame carries a marker.
+            i32::try_from(self.child.id()).ok().map(|group| OwnedGroup {
+                group,
+                start_time_ticks: None,
+            })
         }
     }
 

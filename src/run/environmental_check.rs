@@ -109,7 +109,11 @@ fn live_owned(state: &Value) -> Option<(u64, String)> {
 /// never-ran observation or a timed-out observation whose owned group has
 /// ended, the named finding is its own failure event.
 pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
-    if never_ran(state) || closed_owned_group(state) {
+    findings_with(state, closed_owned_group(state))
+}
+
+fn findings_with(state: &Value, closed: bool) -> Result<Vec<String>, String> {
+    if never_ran(state) || closed {
         let finding = state["pendingDisposition"]["findingSha256s"]
             .as_array()
             .filter(|items| items.len() == 1)
@@ -128,32 +132,69 @@ pub(crate) fn current_findings(state: &Value) -> Result<Vec<String>, String> {
 /// Admit an environmental attestation only for the exact current failed
 /// observed checks, with no other Lead decision or observation pending.
 pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), String> {
+    validate_with(state, disposition, None)
+}
+
+/// The same admission read from the decision's own recorded facts, for ledger
+/// replay: whether the owned group had ended is the event's statement from the
+/// moment the Lead decided, so replay never consults the host's live state.
+pub(crate) fn validate_recorded(
+    state: &Value,
+    disposition: &Disposition,
+    record: &Value,
+) -> Result<(), String> {
+    if let Some(value) = record.get(crate::run::owned_group::ENDED_FIELD) {
+        if value != crate::run::owned_group::ENDED {
+            return Err("invalid recorded owned process state".into());
+        }
+    }
+    validate_with(state, disposition, Some(record))
+}
+
+fn validate_with(
+    state: &Value,
+    disposition: &Disposition,
+    record: Option<&Value>,
+) -> Result<(), String> {
     // The pending findings this decision owns are a never-ran observation and
     // a timed-out observation whose recorded owned group has ended; anything
     // else pending, and any observation not known to have ended, still needs
     // its own disposition first.
     let never_ran = never_ran(state);
-    let closed = closed_owned_group(state);
+    let closed = match record {
+        Some(record) => crate::run::owned_group::closed_recorded(
+            &state["checkObservation"],
+            &state["pendingDisposition"],
+            record,
+        ),
+        None => closed_owned_group(state),
+    };
     if state["pendingDisposition"].is_object() && !never_ran && !closed {
-        if let Some((group, named)) = live_owned(state) {
-            return Err(format!(
-                "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
-            ));
+        // Naming live members is a command-time aid; a replay has already
+        // recorded everything it may read.
+        if record.is_none() {
+            if let Some((group, named)) = live_owned(state) {
+                return Err(format!(
+                    "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
+                ));
+            }
         }
         return Err("a pending finding needs its own Lead disposition first".into());
     }
     if state["checkObservation"].is_object() && !never_ran && !closed {
-        if let Some((group, named)) = live_owned(state) {
-            return Err(format!(
-                "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
-            ));
+        if record.is_none() {
+            if let Some((group, named)) = live_owned(state) {
+                return Err(format!(
+                    "the timed-out check's owned process group {group} still has live processes: {named}; wait for them to end, or the Lead may stop this Work"
+                ));
+            }
         }
         return Err("a check observation is still pending; inspect it first".into());
     }
     if disposition.basis_sha256.as_deref() != state["basis"]["sha256"].as_str() {
         return Err("environmental attestation does not match the current basis".into());
     }
-    let findings = current_findings(state)?;
+    let findings = findings_with(state, closed)?;
     if findings.is_empty() {
         return Err("no failed observed check is current; an environmental attestation needs a new failed observation".into());
     }

@@ -4,7 +4,8 @@
 //! `ownedProcessGroup` fact, so a later read can observe that group by the
 //! identity recorded here instead of trusting a stale absence claim.
 use super::*;
-use crate::run::state::check_observation::OWNED_GROUP_FIELD;
+use crate::run::capture_supervisor::OwnedGroup;
+use crate::run::state::check_observation::{OWNED_GROUP_FIELD, OWNED_START_FIELD};
 
 #[derive(Clone, Debug)]
 pub(crate) enum CaptureDisposition {
@@ -33,7 +34,7 @@ pub(crate) struct ObservationError {
     pub(super) deadline_exceeded: bool,
     pub(super) capture_readers_ended: bool,
     pub(super) partial_captures: Vec<Value>,
-    pub(super) owned_group: Option<i32>,
+    pub(super) owned_group: Option<OwnedGroup>,
 }
 
 impl ObservationError {
@@ -50,10 +51,11 @@ impl ObservationError {
         }
     }
 
-    /// Record the owned checker process group the capsule observed. None means
-    /// no identity is known, never that no process exists.
-    pub(super) fn with_owned_group(mut self, group: Option<i32>) -> Self {
-        self.owned_group = group;
+    /// Record the owned checker process group the capsule observed, with its
+    /// leader start marker when it could be read. None means no identity is
+    /// known, never that no process exists.
+    pub(super) fn with_owned_group(mut self, owned: Option<OwnedGroup>) -> Self {
+        self.owned_group = owned;
         self
     }
 
@@ -140,8 +142,11 @@ impl ObservationError {
         });
         // Written only when known: a failure with no observed group keeps the
         // exact fifteen-fact shape every earlier reader already validates.
-        if let Some(group) = self.owned_group {
-            facts[OWNED_GROUP_FIELD] = json!(group);
+        if let Some(owned) = &self.owned_group {
+            facts[OWNED_GROUP_FIELD] = json!(owned.group);
+            if let Some(ticks) = owned.start_time_ticks {
+                facts[OWNED_START_FIELD] = json!(ticks);
+            }
         }
         facts
     }

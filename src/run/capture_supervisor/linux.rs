@@ -9,7 +9,10 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 mod runtime;
 const MAGIC: &[u8; 8] = b"EXOBv1\0\0";
 const ENTRY: &str = "--exitbind-observer-capsule-v1";
-const PROOF_BYTES: usize = 20;
+// magic (8) + group (4) + leader start marker (8) + status (4) + flags (4).
+// The first twenty bytes are flushed as soon as the checker exists, so the
+// group and its start marker stay re-readable when the proof cannot finish.
+const PROOF_BYTES: usize = 28;
 
 pub(super) struct Proof {
     reader: File,
@@ -49,12 +52,21 @@ impl Proof {
             .filter(|group| *group > 0)
     }
 
+    /// The owned group leader's start marker, recorded with the group. Zero
+    /// (or a frame without it) means no marker is known, never that the group
+    /// ended.
+    pub(super) fn owned_leader_start(&self) -> Option<u64> {
+        (self.bytes.len() >= 20 && self.bytes.get(..8) == Some(MAGIC))
+            .then(|| u64::from_le_bytes(self.bytes[12..20].try_into().unwrap()))
+            .filter(|ticks| *ticks > 0)
+    }
+
     pub(super) fn status(&self) -> Option<ExitStatus> {
-        (self.bytes.len() >= 16
+        (self.bytes.len() >= 24
             && self.bytes.get(..8) == Some(MAGIC)
             && i32::from_le_bytes(self.bytes[8..12].try_into().unwrap()) > 0)
             .then(|| {
-                ExitStatus::from_raw(i32::from_le_bytes(self.bytes[12..16].try_into().unwrap()))
+                ExitStatus::from_raw(i32::from_le_bytes(self.bytes[20..24].try_into().unwrap()))
             })
     }
 
@@ -64,12 +76,12 @@ impl Proof {
             && self.eof
             && self.bytes.len() == PROOF_BYTES
             && self.bytes.get(..8) == Some(MAGIC)
-            && self.bytes[17..] == [0, 0, 0]
-            && ((self.bytes[8..16] == [0; 8] && self.bytes[16] == 8)
+            && self.bytes[25..] == [0, 0, 0]
+            && ((self.bytes[8..24] == [0; 16] && self.bytes[24] == 8)
                 || (self
                     .status()
                     .is_some_and(|s| s.code().is_some() || s.signal().is_some())
-                    && self.bytes[16] <= 7));
+                    && self.bytes[24] <= 7));
         if self.valid {
             Ok(())
         } else {
@@ -83,7 +95,7 @@ impl Proof {
         if self.launch_failed() {
             return true;
         }
-        if !self.valid || self.bytes[16] & 1 == 0 {
+        if !self.valid || self.bytes[24] & 1 == 0 {
             return false;
         }
         let group = i32::from_le_bytes(self.bytes[8..12].try_into().unwrap());
@@ -91,15 +103,15 @@ impl Proof {
     }
 
     pub(super) fn launch_failed(&self) -> bool {
-        self.valid && self.bytes[16] == 8
+        self.valid && self.bytes[24] == 8
     }
 
     pub(super) fn cancelled(&self) -> bool {
-        self.valid && self.bytes[16] & 4 != 0
+        self.valid && self.bytes[24] & 4 != 0
     }
 
     pub(super) fn timed_out(&self) -> bool {
-        self.valid && self.bytes[16] & 2 != 0
+        self.valid && self.bytes[24] & 2 != 0
     }
 }
 
@@ -331,6 +343,7 @@ pub(super) fn signal_owned(pid: i32, signal: i32) -> io::Result<bool> {
 fn proof_rejects_truncation_duplicates_invalid_status_and_trailing_bytes() {
     let mut frame = MAGIC.to_vec();
     frame.extend_from_slice(&1i32.to_le_bytes());
+    frame.extend_from_slice(&99u64.to_le_bytes());
     frame.extend_from_slice(&0i32.to_le_bytes());
     frame.extend_from_slice(&[1, 0, 0, 0]);
     let make = |bytes| Proof {
@@ -339,12 +352,15 @@ fn proof_rejects_truncation_duplicates_invalid_status_and_trailing_bytes() {
         eof: false,
         valid: false,
     };
+    assert_eq!(frame.len(), PROOF_BYTES);
+    assert_eq!(make(frame.clone()).owned_group(), Some(1));
+    assert_eq!(make(frame.clone()).owned_leader_start(), Some(99));
     assert!(make(frame.clone()).finish(ExitStatus::from_raw(0)).is_ok());
     let mut cases = vec![
-        frame[..19].to_vec(),
+        frame[..27].to_vec(),
         [frame.clone(), frame.clone()].concat(),
     ];
-    for (offset, value) in [(0, b'X'), (16, 8), (17, 1), (12, 127)] {
+    for (offset, value) in [(0, b'X'), (24, 8), (25, 1), (20, 127)] {
         let mut invalid = frame.clone();
         invalid[offset] = value;
         cases.push(invalid);
@@ -356,7 +372,7 @@ fn proof_rejects_truncation_duplicates_invalid_status_and_trailing_bytes() {
     }
     assert!(make(frame).finish(ExitStatus::from_raw(9)).is_err());
     let mut no_launch = MAGIC.to_vec();
-    no_launch.extend_from_slice(&[0; 8]);
+    no_launch.extend_from_slice(&[0; 16]);
     assert!(make(no_launch.clone()).status().is_none());
     no_launch.extend_from_slice(&[8, 0, 0, 0]);
     let mut proof = make(no_launch.clone());
@@ -365,7 +381,7 @@ fn proof_rejects_truncation_duplicates_invalid_status_and_trailing_bytes() {
     assert!(proof.status().is_none());
     for flags in [0, 1, 2, 4, 9, 10, 12, 15] {
         let mut invalid = no_launch.clone();
-        invalid[16] = flags;
+        invalid[24] = flags;
         assert!(make(invalid).finish(ExitStatus::from_raw(0)).is_err());
     }
 }

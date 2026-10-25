@@ -24,7 +24,12 @@ supplied with
 `memory revalidate LEAD --from-config PREVIOUS_CONFIG --reason TEXT --apply`.
 The source candidate after this release records every check admission's
 `observer`, with the observer's `pid` and `startTimeTicks`, and a failure
-that kept an owned checker group records `ownedProcessGroup`. A 0.31.22 reader
+that kept an owned checker group records `ownedProcessGroup` and, when the
+capsule could read it, the leader's `ownedProcessStart`. An environmental
+Lead decision that rests on an owned group already observed ended records
+that fact as `ownedProcessState` on its submit event (the ledger field
+`submit.ownedProcessState`), so a later ledger read validates the decision
+without inspecting host processes. A 0.31.22 reader
 admits no such field and no ledger version above 8, and it cannot tell a newer
 Exitbind's ledger from a corrupt one: it reports the check ledger as
 unreadable (`corrupt_ledger`) and offers inspection. Prepare the upgrade

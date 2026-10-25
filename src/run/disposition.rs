@@ -43,6 +43,23 @@ pub(crate) fn validate(state: &Value, disposition: &Disposition) -> Result<(), S
     if disposition.decision == Some(Decision::Environmental) {
         return super::environmental_check::validate(state, disposition);
     }
+    validate_pending(state, disposition)
+}
+
+/// The admission a ledger replay performs: the environmental decision reads
+/// the facts its submit event recorded at decision time, never the host.
+pub(crate) fn validate_recorded(
+    state: &Value,
+    disposition: &Disposition,
+    record: &Value,
+) -> Result<(), String> {
+    if disposition.decision == Some(Decision::Environmental) {
+        return super::environmental_check::validate_recorded(state, disposition, record);
+    }
+    validate_pending(state, disposition)
+}
+
+fn validate_pending(state: &Value, disposition: &Disposition) -> Result<(), String> {
     let pending = state
         .get("pendingDisposition")
         .filter(|value| value.is_object())
@@ -150,7 +167,7 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
         .ok_or("Lead disposition is missing")?;
     let disposition =
         parse_disposition(disposition, "disposition").map_err(|error| error.to_string())?;
-    validate(state, &disposition)?;
+    validate_recorded(state, &disposition, event)?;
     let mut submission = json!({
         "stage": event["stage"],
         "attempt": event["attempt"],
@@ -330,4 +347,106 @@ pub(crate) fn repair_view(state: &Value) -> Option<Value> {
             }
             view
         })
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::run::owned_group::ENDED_FIELD;
+    use std::os::unix::process::CommandExt;
+
+    const FINDING: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+    const BASIS: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+    const EVENT: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+
+    fn closed_state(group: u64) -> Value {
+        json!({
+            "runId": "run-1",
+            "status": "running",
+            "currentStage": "work",
+            "attempt": 1,
+            "basis": {"sha256": BASIS},
+            "checkObservation": {
+                "state": "failed",
+                "eventSha256": EVENT,
+                "facts": {
+                    "processStarted": true,
+                    "deadlineExceeded": true,
+                    "termination": "unknown",
+                    "ownedProcessGroup": group,
+                },
+            },
+            "pendingDisposition": {
+                "owner": "lead",
+                "kind": "check_observation_failed",
+                "findingSha256s": [FINDING],
+                "basisSha256": BASIS,
+            },
+            "submissions": [],
+            "dispositions": [],
+        })
+    }
+
+    fn event() -> Value {
+        let record = crate::kernel::disposition::decide(
+            &crate::kernel::disposition::Terms {
+                decision: Decision::Environmental,
+                reason: "the build runner was removed under the check",
+                repair_boundary: None,
+                decisive_regression: None,
+                category: None,
+                successor_basis: None,
+            },
+            &[FINDING.to_owned()],
+            Some(BASIS),
+        )
+        .unwrap();
+        json!({
+            "stage": "work",
+            "attempt": 1,
+            "agent": "lead",
+            "role": "lead",
+            "outcome": "disposition",
+            "artifact": {"root": "state", "sha256": EVENT, "bytes": 0},
+            "eventSha256": EVENT,
+            "disposition": record.value(),
+        })
+    }
+
+    /// The decision named this process's own live group, yet replaying the
+    /// recorded fact reduces exactly as when the recorded group had ended. A
+    /// replay never reads the host: without the recorded fact it refuses.
+    #[test]
+    fn replay_reads_the_recorded_end_and_not_a_live_group_id() {
+        let own = u64::try_from(unsafe { libc::getpgrp() }).unwrap();
+        let named = closed_state(own);
+        assert_eq!(
+            crate::run::owned_group::liveness(&named["checkObservation"]["facts"]),
+            Some(crate::host::codex_exec::ProcessLiveness::Alive)
+        );
+        let mut ended = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let gone = u64::from(ended.id());
+        ended.wait().unwrap();
+
+        let mut recorded = event();
+        recorded[ENDED_FIELD] = json!(crate::run::owned_group::ENDED);
+        let mut live_state = closed_state(own);
+        apply(&mut live_state, &recorded).unwrap();
+        assert!(live_state["pendingDisposition"].is_null());
+        assert!(live_state["checkObservation"].is_null());
+        assert_eq!(live_state["currentStage"], "work");
+        let mut gone_state = closed_state(gone);
+        apply(&mut gone_state, &recorded).unwrap();
+        assert_eq!(live_state, gone_state);
+
+        // The same decision without the recorded fact is refused, even though
+        // the named group has ended by now: replay consults no host state.
+        let mut unrecorded = closed_state(gone);
+        assert!(apply(&mut unrecorded, &event()).is_err());
+        assert_eq!(unrecorded, closed_state(gone));
+    }
 }

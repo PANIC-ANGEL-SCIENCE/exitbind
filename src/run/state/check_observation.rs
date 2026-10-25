@@ -10,6 +10,9 @@ pub(super) const OBSERVER_START_FIELD: &str = "startTimeTicks";
 /// The optional failure fact naming the checker's owned process group, when
 /// the capsule recorded it before the observation ended without a result.
 pub(crate) const OWNED_GROUP_FIELD: &str = "ownedProcessGroup";
+/// The optional start marker of that group's leader, recorded with the group
+/// so a reused group id is not mistaken for the owned group.
+pub(crate) const OWNED_START_FIELD: &str = "ownedProcessStart";
 
 pub(super) fn validate(event: &Value) -> Result<(), String> {
     if event["version"] != 8 || !event["observation"].is_object() {
@@ -196,14 +199,11 @@ pub(crate) fn valid_facts(value: &Value) -> bool {
         return false;
     };
     let has_group = object.contains_key(OWNED_GROUP_FIELD);
-    object.len()
-        == if has_group {
-            BASE.len() + 1
-        } else {
-            BASE.len()
-        }
+    let has_start = object.contains_key(OWNED_START_FIELD);
+    object.len() == BASE.len() + usize::from(has_group) + usize::from(has_start)
         && BASE.iter().all(|field| object.contains_key(*field))
         && (!has_group || owned_group(&value[OWNED_GROUP_FIELD]))
+        && (!has_start || has_group && owned_start(&value[OWNED_START_FIELD]))
         && process(&value["process"])
         && value["processStarted"].is_boolean()
         && value["groupEnded"].is_boolean()
@@ -242,6 +242,11 @@ fn owned_group(value: &Value) -> bool {
         || value
             .as_i64()
             .is_some_and(|group| group > 0 && group <= i32::MAX as i64)
+}
+
+/// A recorded leader start marker: a positive host clock tick count.
+fn owned_start(value: &Value) -> bool {
+    value.as_u64().is_some_and(|ticks| ticks > 0)
 }
 
 pub(super) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {

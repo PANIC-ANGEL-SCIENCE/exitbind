@@ -21,6 +21,16 @@ pub(crate) fn check_with_timeout(
                 &loaded.path,
             ));
         }
+        // A retained capture or owned verification effect keeps the
+        // storage-unknown admission open: a retry never closes or appends
+        // over it, and explicit recovery owns the exact known-ended failure.
+        if crate::run::check_observation::retained_effect(loaded, &ledger, &observation)? {
+            return Err(crate::run::check_observation::retained_refusal(
+                &observation,
+                Some(work),
+                &loaded.path,
+            ));
+        }
         let closed =
             crate::run::check_observation::close_dead_admission(loaded, &ledger, &observation)?;
         return finish(loaded, work, &ledger, closed);

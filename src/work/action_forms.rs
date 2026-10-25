@@ -253,9 +253,25 @@ pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> 
 /// The recorded owned group of a timed-out observation: its state now and, if
 /// it still has processes, a few of them by pid and command. The form says so
 /// plainly; the recorded group supplies no forward route while it is alive.
-fn attach_owned_group(result: &mut Value, next: &Value) {
-    let Some(view) = crate::run::owned_group::view(&next["packet"]["checkObservation"]["facts"])
-    else {
+/// A running admission whose recorder ended is closed by a retry only when it
+/// retains no capture or owned verification effect; the form says why.
+fn attach_owned_group(loaded: &Loaded, work: &str, result: &mut Value, next: &Value) {
+    let observation = &next["packet"]["checkObservation"];
+    if observation["state"] == "running" {
+        let retained = crate::run::check_observation::observer_ended(observation)
+            && super::resolve(loaded, work)
+                .and_then(|ledger| {
+                    crate::run::check_observation::retained_effect(loaded, &ledger, observation)
+                })
+                .unwrap_or(false);
+        if retained {
+            result["meaning"] = json!(
+                "The process observing this check ended without recording its result and the admission retains a partial capture or an owned verification effect. A retry neither closes nor appends over it: recover a known-ended storage failure with work recover-check, or block this Work."
+            );
+        }
+        return;
+    }
+    let Some(view) = crate::run::owned_group::view(&observation["facts"]) else {
         return;
     };
     let group = view["ownedProcessGroup"].as_u64().unwrap_or_default();
@@ -623,7 +639,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             .collect()
     };
     if state == "unresolved_check_observation" {
-        attach_owned_group(&mut result, next);
+        attach_owned_group(loaded, work, &mut result, next);
     }
     if state == "failed_check" {
         choices.extend(environmental::choice(

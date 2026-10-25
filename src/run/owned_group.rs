@@ -8,10 +8,16 @@
 //! one. A process list here is a bounded display fact, never signal authority.
 
 use crate::host::codex_exec::{self, ProcessIdentity, ProcessLiveness};
-use crate::run::state::check_observation::OWNED_GROUP_FIELD;
+use crate::run::state::check_observation::{OWNED_GROUP_FIELD, OWNED_START_FIELD};
 use serde_json::{json, Value};
 use std::fs::File;
 use std::io::Read;
+
+/// The environmental decision record's optional fact: the owned group was
+/// observed ended when the decision was recorded. A later ledger read
+/// validates this recorded fact and never reads live process state.
+pub(crate) const ENDED_FIELD: &str = "ownedProcessState";
+pub(crate) const ENDED: &str = "ended";
 
 /// The most members a view names; the rest are summarized by the group state.
 const MAX_NAMED: usize = 3;
@@ -20,7 +26,8 @@ const MAX_COMMAND: usize = 80;
 const MAX_ENTRIES: usize = 4096;
 
 /// The recorded group as a process identity: the group leader's PID is the
-/// group id, and no start marker exists for a group.
+/// group id, and the start marker recorded at failure time (when the capsule
+/// could read it) distinguishes a reused group id from the owned group.
 pub(crate) fn recorded(facts: &Value) -> Option<ProcessIdentity> {
     let group = facts[OWNED_GROUP_FIELD]
         .as_u64()
@@ -29,33 +36,84 @@ pub(crate) fn recorded(facts: &Value) -> Option<ProcessIdentity> {
     Some(ProcessIdentity {
         pid: group,
         process_group: Some(group as i32),
-        start_time_ticks: None,
+        start_time_ticks: facts[OWNED_START_FIELD].as_u64().filter(|ticks| *ticks > 0),
     })
 }
 
 /// The recorded group's liveness read now, if the failure recorded one.
 pub(crate) fn liveness(facts: &Value) -> Option<ProcessLiveness> {
-    recorded(facts).map(|identity| codex_exec::group_liveness(&identity))
+    recorded(facts).map(|identity| liveness_of(&identity))
 }
 
-/// A timed-out observation that itself recorded no end, whose owned group is
-/// now observed with no process left. The timeout class is the one whose
-/// execution end the failure facts could not establish.
-pub(crate) fn closed(observation: &Value, pending: &Value) -> bool {
+/// Group liveness that never reports a group owned by nobody. A live group id
+/// whose leader carries a different start marker than the recorded one was
+/// reused by an unrelated process, so it is unverified rather than owned:
+/// never ended, never named as an owned member.
+fn liveness_of(identity: &ProcessIdentity) -> ProcessLiveness {
+    match codex_exec::group_liveness(identity) {
+        ProcessLiveness::Alive if reused(identity) => ProcessLiveness::Uncertain,
+        other => other,
+    }
+}
+
+fn reused(identity: &ProcessIdentity) -> bool {
+    matches!(
+        (identity.start_time_ticks, leader_start(identity.pid)),
+        (Some(expected), Some(actual)) if expected != actual
+    )
+}
+
+/// The group leader's start marker in the host's clock ticks, when readable.
+#[cfg(target_os = "linux")]
+fn leader_start(pid: u32) -> Option<u64> {
+    let stat = std::fs::read(format!("/proc/{pid}/stat")).ok()?;
+    let text = std::str::from_utf8(&stat).ok()?;
+    let (_, fields) = text.rsplit_once(") ")?;
+    // starttime is field 22; after the command name the state is field 3.
+    fields
+        .split_whitespace()
+        .nth(19)?
+        .parse()
+        .ok()
+        .filter(|ticks| *ticks > 0)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn leader_start(_: u32) -> Option<u64> {
+    None
+}
+
+/// The timeout class whose execution end the failure facts could not
+/// establish: the one class an ended owned group can close.
+fn timed_out(observation: &Value, pending: &Value) -> bool {
     observation["state"] == "failed"
         && observation["facts"]["deadlineExceeded"] == true
         && observation["facts"]["termination"] == "unknown"
         && pending["kind"] == "check_observation_failed"
+}
+
+/// A timed-out observation that itself recorded no end, whose owned group is
+/// now observed with no process left.
+pub(crate) fn closed(observation: &Value, pending: &Value) -> bool {
+    timed_out(observation, pending)
         && liveness(&observation["facts"]) == Some(ProcessLiveness::Ended)
 }
 
+/// The same closure read from the recorded decision, for ledger replay: the
+/// event states that the group was observed ended when the decision was
+/// admitted, so replay never consults the host.
+pub(crate) fn closed_recorded(observation: &Value, pending: &Value, record: &Value) -> bool {
+    timed_out(observation, pending) && record[ENDED_FIELD] == ENDED
+}
+
 /// The Lead-facing state of the recorded group and, while it is alive, at
-/// most a few of its members. `unverified` means liveness could not be read;
-/// it never means the group ended.
+/// most a few of its members. `unverified` means liveness could not be read or
+/// the recorded identity no longer owns the group; it never means the group
+/// ended.
 pub(crate) fn view(facts: &Value) -> Option<Value> {
     let identity = recorded(facts)?;
-    let (state, processes) = match codex_exec::group_liveness(&identity) {
-        ProcessLiveness::Ended => ("ended", Vec::new()),
+    let (state, processes) = match liveness_of(&identity) {
+        ProcessLiveness::Ended => (ENDED, Vec::new()),
         ProcessLiveness::Alive => ("alive", members(identity.pid as i32)),
         ProcessLiveness::Uncertain => ("unverified", Vec::new()),
     };
@@ -172,6 +230,38 @@ mod tests {
         assert_eq!(identity.pid, 4321);
         assert_eq!(identity.process_group, Some(4321));
         assert_eq!(identity.start_time_ticks, None);
+        let mut marked = recorded_facts(4321);
+        marked[OWNED_START_FIELD] = json!(77);
+        assert_eq!(recorded(&marked).unwrap().start_time_ticks, Some(77));
+        marked[OWNED_START_FIELD] = json!(0);
+        assert_eq!(recorded(&marked).unwrap().start_time_ticks, None);
+    }
+
+    #[test]
+    fn a_reused_group_id_is_never_named_as_owned() {
+        // A live group this test owns: its leader start marker is readable.
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 5"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = u64::from(child.id());
+        let actual = leader_start(child.id()).expect("the live leader has a start marker");
+        let mut facts = recorded_facts(group);
+        facts[OWNED_START_FIELD] = json!(actual);
+        assert_eq!(liveness(&facts), Some(ProcessLiveness::Alive));
+        let owned = view(&facts).unwrap();
+        assert_eq!(owned["ownedProcessState"], "alive");
+        assert!(!owned["ownedProcesses"].as_array().unwrap().is_empty());
+        // The same group id carrying another process's start marker was
+        // reused: it is unverified and no unrelated process is named.
+        facts[OWNED_START_FIELD] = json!(actual + 1);
+        assert_eq!(liveness(&facts), Some(ProcessLiveness::Uncertain));
+        let reused_view = view(&facts).unwrap();
+        assert_eq!(reused_view["ownedProcessState"], "unverified");
+        assert!(reused_view["ownedProcesses"].as_array().unwrap().is_empty());
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
@@ -210,6 +300,21 @@ mod tests {
         other["state"] = json!("running");
         assert!(!closed(&other, &pending));
         assert!(!closed(&observation(2), &json!({"kind": "review_rework"})));
+        // The recorded verdict is the only one replay reads: it holds even
+        // while the same recorded group id belongs to a live process.
+        let own = u64::try_from(unsafe { libc::getpgrp() }).unwrap();
+        assert!(!closed(&observation(own), &pending));
+        assert!(closed_recorded(
+            &observation(own),
+            &pending,
+            &json!({ENDED_FIELD: ENDED})
+        ));
+        assert!(!closed_recorded(&observation(own), &pending, &json!({})));
+        assert!(!closed_recorded(
+            &observation(2),
+            &pending,
+            &json!({ENDED_FIELD: "alive"})
+        ));
         // A group that has already ended, read from a child this test owned.
         let mut child = std::process::Command::new("sh")
             .args(["-c", "exit 0"])

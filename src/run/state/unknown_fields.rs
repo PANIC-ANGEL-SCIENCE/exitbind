@@ -118,6 +118,7 @@ pub(super) fn reject_unknown(
             allowed.push("reviewDecisionSha256");
             allowed.push("disposition");
             allowed.push("quarantineVerificationAck");
+            allowed.push(crate::run::owned_group::ENDED_FIELD);
         }
         if version >= crate::run::lead_reason::FIRST_VERSION {
             allowed.push("reason");

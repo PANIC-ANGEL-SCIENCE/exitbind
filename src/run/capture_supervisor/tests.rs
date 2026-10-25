@@ -243,6 +243,43 @@ fn proof_descriptor_does_not_reach_checker_and_stdout_cannot_forge_it() {
     assert!(err.is_empty());
 }
 
+/// The proof identity is written and flushed when the checker exists, so a
+/// read while the capsule still runs must first take the bytes already queued
+/// on the pipe; reading the buffer alone would find nothing.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_running_capsule_reveals_its_owned_group_from_the_proof_frame() {
+    let mut child =
+        ObservedChild::spawn(&request("sleep 30", 5000), Stdio::null(), Stdio::null()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let owned = loop {
+        if let Some(owned) = child.owned_group() {
+            break owned;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a running capsule revealed no owned group"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(owned.group > 0);
+    assert_ne!(owned.group, child.id() as i32);
+    assert!(owned.start_time_ticks.is_some());
+    assert_eq!(unsafe { libc::kill(-owned.group, libc::SIGKILL) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => break,
+            Ok(None) => {}
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the capsule did not end after its group was killed"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn capsule_owns_waitable_disposition_and_restores_prior_subreaper_state() {
     const TEST: &str = "run::capture_supervisor::tests::capsule_owns_waitable_disposition_and_restores_prior_subreaper_state";
