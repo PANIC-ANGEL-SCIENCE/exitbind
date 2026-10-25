@@ -16,6 +16,28 @@ fail() {
   exit 1
 }
 
+# Public CI checks out a commit, not a branch (actions/checkout receives a SHA),
+# so every clone under test is detached with no refs/heads. A helper or fixture
+# that needs a branch then fails here, not on a runner.
+detach_without_branches() {
+  git -C "$1" checkout -q --detach "$(git -C "$1" rev-parse HEAD)" ||
+    fail "fixture clone could not detach: $1"
+  git -C "$1" for-each-ref --format='delete %(refname)' refs/heads |
+    git -C "$1" update-ref --stdin || fail "fixture clone kept its branches: $1"
+  test -z "$(git -C "$1" for-each-ref refs/heads)" ||
+    fail "fixture clone kept local branches: $1"
+  if git -C "$1" symbolic-ref -q HEAD >/dev/null; then
+    fail "fixture HEAD is still symbolic: $1"
+  fi
+}
+
+# A shallow, single-branch clone of one selected commit, then the CI shape.
+fixture_clone() {
+  git clone --depth=1 --branch selected --single-branch "file://$1" "$2" >/dev/null 2>&1 ||
+    fail "fixture clone failed: $2"
+  detach_without_branches "$2"
+}
+
 git -C "$work" init --bare remote.git >/dev/null
 git init "$work/source" >/dev/null
 git -C "$work/source" config user.name 'CI history fixture'
@@ -51,7 +73,7 @@ git -C "$work/source" remote add origin "$work/remote.git"
 git -C "$work/source" push origin candidate selected proof-base archive --tags >/dev/null
 
 git ls-remote --heads --tags "$work/remote.git" | sort > "$work/upstream.before"
-git clone --depth=1 --branch selected --single-branch "file://$work/remote.git" "$work/selected" >/dev/null 2>&1
+fixture_clone "$work/remote.git" "$work/selected"
 
 selected_refs() {
   git -C "$work/selected" for-each-ref --format='%(refname) %(objectname)' | sort
@@ -84,7 +106,7 @@ cmp -s "$work/refs.before" "$work/refs.after" || fail 'helper changed local refs
 git ls-remote --heads --tags "$work/remote.git" | sort > "$work/upstream.after"
 cmp -s "$work/upstream.before" "$work/upstream.after" || fail 'helper changed upstream refs'
 
-git clone --depth=1 --branch selected --single-branch "file://$work/remote.git" "$work/non-private" >/dev/null 2>&1
+fixture_clone "$work/remote.git" "$work/non-private"
 for private_value in false '' unknown; do
   (
     cd "$work/non-private"
@@ -113,7 +135,7 @@ expect_private_failure 'unavailable proof base' env GITHUB_SHA="$head" CANDIDATE
 
 # An absent or all-zero base is valid for events without a declared base; HEAD's
 # full ancestry still supplies ci-local's existing HEAD^ fallback.
-git clone --depth=1 --branch selected --single-branch "file://$work/remote.git" "$work/no-base" >/dev/null 2>&1
+fixture_clone "$work/remote.git" "$work/no-base"
 (
   cd "$work/no-base"
   unset VALUE_PROOF_BASE
@@ -123,7 +145,7 @@ test "$(git -C "$work/no-base" rev-parse --is-shallow-repository)" = false ||
   fail 'omitted proof base did not retain complete HEAD history'
 git -C "$work/no-base" cat-file -e "$checkpoint^{commit}" || fail 'omitted-base flow lacks HEAD ancestry'
 
-git clone --depth=1 --branch selected --single-branch "file://$work/remote.git" "$work/zero-base" >/dev/null 2>&1
+fixture_clone "$work/remote.git" "$work/zero-base"
 (
   cd "$work/zero-base"
   GITHUB_REPOSITORY_PRIVATE=true GITHUB_SHA="$head" CANDIDATE_SHA="$candidate" \
@@ -137,6 +159,8 @@ git -C "$work/zero-base" cat-file -e "$checkpoint^{commit}" || fail 'all-zero-ba
 git clone --depth=1 --branch selected --single-branch "file://$work/remote.git" "$work/shallow-origin" >/dev/null 2>&1
 git clone --depth=1 --branch selected --single-branch "file://$work/shallow-origin" "$work/shallow-selected" >/dev/null 2>&1
 git -C "$work/shallow-selected" remote set-url origin "file://$work/shallow-origin"
+detach_without_branches "$work/shallow-origin"
+detach_without_branches "$work/shallow-selected"
 if (
   cd "$work/shallow-selected"
   GITHUB_REPOSITORY_PRIVATE=true GITHUB_SHA="$head" CANDIDATE_SHA="$candidate" \
