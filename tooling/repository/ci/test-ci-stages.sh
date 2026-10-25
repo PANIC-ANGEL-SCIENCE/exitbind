@@ -9,6 +9,13 @@ fail() {
   exit 1
 }
 
+# Set by the candidate-history fixture for the ci-local runs it starts. Those
+# runs reach this file again through ci-stage-contract, inside a clone whose
+# stage 0 is the fixture stub; the nested copy must not start another fixture
+# (a stage-0 regression would otherwise nest until the job timeout) and cannot
+# compare the product guard against the stub. The outer run owns both checks.
+nested=${EXITBIND_CI_CONTRACT_NESTED:-}
+
 # Public CI checks out a commit, not a branch (actions/checkout receives a SHA),
 # so every fixture repo takes that shape: detached HEAD, no refs/heads. A
 # fixture that needs a branch or a symbolic HEAD then fails here, not on a
@@ -178,12 +185,15 @@ done <<EOF
 $check_matrix
 EOF
 # The guard's dispatch is the inventory of checks that exist: a new check must
-# gain its four rows above before the guard can run it.
-guard_checks=$(sed -n 's/^    \([a-z][a-z-]*\)) step .*/\1/p' \
-  "$root/tooling/repository/ci/check-repository-rules.sh" | sort)
-matrix_checks=$(printf '%s\n' "$check_matrix" | awk '{ print $1 }' | sort -u)
-test -n "$guard_checks" && test "$guard_checks" = "$matrix_checks" ||
-  fail "stage 0 matrix does not cover the guard's dispatch: $matrix_checks"
+# gain its four rows above before the guard can run it. A nested run executes
+# inside the fixture clone, whose guard is the stage-0 stub, so it skips this.
+if [ "$nested" != 1 ]; then
+  guard_checks=$(sed -n 's/^    \([a-z][a-z-]*\)) step .*/\1/p' \
+    "$root/tooling/repository/ci/check-repository-rules.sh" | sort)
+  matrix_checks=$(printf '%s\n' "$check_matrix" | awk '{ print $1 }' | sort -u)
+  test -n "$guard_checks" && test "$guard_checks" = "$matrix_checks" ||
+    fail "stage 0 matrix does not cover the guard's dispatch: $matrix_checks"
+fi
 if ci_repository_rule_check_selected make-coffee linux pre-return; then
   fail 'an unknown stage 0 check was selected'
 fi
@@ -211,9 +221,13 @@ test -n "$rules_line" && test -n "$cargo_line" && test "$rules_line" -lt "$cargo
 grep -F 'run repository-rules sh ./tooling/repository/ci/check-repository-rules.sh "$rules_base" "$platform" "$ci_mode"' \
   "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
   fail 'stage 0 must receive the prepared base, platform and mode'
-grep -F 'ci_repository_rule_check_selected' \
-  "$root/tooling/repository/ci/check-repository-rules.sh" >/dev/null ||
-  fail 'stage 0 must keep each former stage platform selection'
+# The guard's own contents are asserted on the working-tree copy, never on the
+# fixture clone's stub; see the sentinel note above.
+if [ "$nested" != 1 ]; then
+  grep -F 'ci_repository_rule_check_selected' \
+    "$root/tooling/repository/ci/check-repository-rules.sh" >/dev/null ||
+    fail 'stage 0 must keep each former stage platform selection'
+fi
 python3 - "$root" <<'PY' || fail 'repository-rules must be the first inventory gate with cost light'
 import json, sys
 from pathlib import Path
@@ -222,14 +236,16 @@ first = gates[0]
 assert first["id"] == "repository-rules", first
 assert first.get("cost") == "light", first
 PY
-guard="$root/tooling/repository/ci/check-repository-rules.sh"
-for check in check_architecture_budget.py check_commit_identity.py check-path-rendering.sh \
-  check-product-surface.sh check-release-refs.sh check-public-history.sh; do
-  grep -F "$check" "$guard" >/dev/null || fail "the no-build guard no longer runs $check"
-done
-grep -F 'public-history) step public-history ./scripts/check-public-history.sh HEAD ${CANDIDATE_SHA:+"$CANDIDATE_SHA"} ;;' \
-  "$guard" >/dev/null ||
-  fail 'stage 0 must forward CANDIDATE_SHA to the public history check'
+if [ "$nested" != 1 ]; then
+  guard="$root/tooling/repository/ci/check-repository-rules.sh"
+  for check in check_architecture_budget.py check_commit_identity.py check-path-rendering.sh \
+    check-product-surface.sh check-release-refs.sh check-public-history.sh; do
+    grep -F "$check" "$guard" >/dev/null || fail "the no-build guard no longer runs $check"
+  done
+  grep -F 'public-history) step public-history ./scripts/check-public-history.sh HEAD ${CANDIDATE_SHA:+"$CANDIDATE_SHA"} ;;' \
+    "$guard" >/dev/null ||
+    fail 'stage 0 must forward CANDIDATE_SHA to the public history check'
+fi
 python3 "$root/tooling/repository/checks/check_architecture_budget.py" --self-test ||
   fail 'architecture budget scan self-test failed'
 python3 "$root/tooling/repository/checks/check_commit_identity.py" --self-test ||
@@ -334,108 +350,165 @@ trap - EXIT HUP INT TERM
 # A pull-request head can drop published history while the merge keeps it. The
 # retired history stage checked CANDIDATE_SHA; stage 0 must forward it, in both
 # modes, from the checkout shape public CI actually has. The fixture is a
-# detached, branchless clone; it runs the real ci-local twice, so the base the
-# guard receives is prepared by ci-local itself, not by the fixture. Its commits
-# use the canonical identity the guard reads from tests/privacy_gate.rs, so only
-# the candidate's history can fail. Fixture paths stay lowercase: the release
-# macOS runner is case-insensitive, and a case-only difference in a path cannot
-# be proven there.
-identity_name=$(sed -n 's/^const ALLOWED_NAME: &str = "\(.*\)";$/\1/p' "$root/tests/privacy_gate.rs")
-identity_email=$(sed -n 's/^const ALLOWED_EMAIL: &str = "\(.*\)";$/\1/p' "$root/tests/privacy_gate.rs")
-test -n "$identity_name" && test -n "$identity_email" ||
-  fail 'cannot read the canonical commit identity from tests/privacy_gate.rs'
-case "$(uname -s)" in
-  Darwin) host_platform=macos ;;
-  *) host_platform=linux ;;
+# detached, branchless clone; it runs ci-local itself, so the base the guard
+# receives is prepared by ci-local, not by the fixture. Its commits use the
+# canonical identity the guard reads from tests/privacy_gate.rs, so only the
+# candidate's history can fail. Fixture paths stay lowercase: the release macOS
+# runner is case-insensitive, and a case-only difference in a path cannot be
+# proven there.
+#
+# A stage-0 regression (the R2 case this fixture exists to catch) would let the
+# run continue into ci-stage-contract, which executes this file again. The nested
+# runs export EXITBIND_CI_CONTRACT_NESTED=1 so that copy skips this block and the
+# outer assertion prints instead of nesting until the job timeout, and they point
+# CARGO at a stub that only answers --version, so a run that got past stage 0
+# cannot start a build in a fresh target directory.
+if [ "$nested" = 1 ]; then
+  printf 'ci-stage contract: nested run (executed ci-local fixture skipped)\n'
+else
+  identity_name=$(sed -n 's/^const ALLOWED_NAME: &str = "\(.*\)";$/\1/p' "$root/tests/privacy_gate.rs")
+  identity_email=$(sed -n 's/^const ALLOWED_EMAIL: &str = "\(.*\)";$/\1/p' "$root/tests/privacy_gate.rs")
+  test -n "$identity_name" && test -n "$identity_email" ||
+    fail 'cannot read the canonical commit identity from tests/privacy_gate.rs'
+  case "$(uname -s)" in
+    Darwin) host_platform=macos ;;
+    *) host_platform=linux ;;
+  esac
+  history_work=$(mktemp -d "${TMPDIR:-/tmp}/ci-candidate-history.XXXXXX")
+  trap 'rm -rf "$history_work"' EXIT HUP INT TERM
+  git clone -q "$root" "$history_work/repo" || fail 'candidate history fixture clone failed'
+  start=$(git -C "$history_work/repo" rev-parse HEAD)
+  detach_without_branches "$history_work/repo"
+  git -C "$history_work/repo" config user.name "$identity_name"
+  git -C "$history_work/repo" config user.email "$identity_email"
+  git -C "$history_work/repo" checkout -q --orphan candidate-orphan
+  git -C "$history_work/repo" commit -q -m 'fixture orphan head'
+  orphan=$(git -C "$history_work/repo" rev-parse HEAD)
+  git -C "$history_work/repo" checkout -q --detach "$start"
+  git -C "$history_work/repo" update-ref -d refs/heads/candidate-orphan
+  test -z "$(git -C "$history_work/repo" for-each-ref refs/heads)" ||
+    fail 'candidate history fixture kept local branches'
+  git -C "$history_work/repo" merge -q -s ours --allow-unrelated-histories \
+    -m 'fixture merge' "$orphan"
+  merge=$(git -C "$history_work/repo" rev-parse HEAD)
+  if git -C "$history_work/repo" symbolic-ref -q HEAD >/dev/null; then
+    fail 'candidate history fixture HEAD is not detached'
+  fi
+  # The clone carries committed HEAD; overlay the files under test from the
+  # working tree so a local, not-yet-committed edit is what runs here too. This
+  # file is overlaid as well: the nested run inside the clone must carry the
+  # sentinel guard, not the parent commit's copy.
+  for file in check-repository-rules.sh ci-stages.sh ci-local.sh \
+    verification-context.sh ci-preflight.sh test-ci-stages.sh; do
+    cp "$root/tooling/repository/ci/$file" "$history_work/repo/tooling/repository/ci/$file"
+  done
+  # The merge itself keeps published history; only the contributing head drops it.
+  # The control is the one check, not a second guard run.
+  if ! (cd "$history_work/repo" && sh scripts/check-public-history.sh HEAD) \
+    > "$history_work/retained.out" 2>&1; then
+    fail "the merge commit itself must retain public history: $(tail -n 3 "$history_work/retained.out")"
+  fi
+  # Stage 0 costs ~31 s on Linux; the contract needs its order and its stop, not
+  # three full guard runs. The fixture stage 0 is a stub that records exactly
+  # what ci-local passed and runs the one check that decides the candidate
+  # (~0.03 s), so a candidate that dropped history still stops the run at stage
+  # 0. The full guard runs as ci-local's own stage in every pipeline, and the
+  # macOS selection below executes the product guard's forwarding itself.
+  cargo_stub=$history_work/cargo-stub
+  cat > "$cargo_stub" <<'STUB'
+#!/bin/sh
+# ci-local may ask for a version; the contract must never start a build.
+case ${1:-} in
+  --version) printf 'cargo 0.0.0-contract-fixture\n'; exit 0 ;;
 esac
-history_work=$(mktemp -d "${TMPDIR:-/tmp}/ci-candidate-history.XXXXXX")
-trap 'rm -rf "$history_work"' EXIT HUP INT TERM
-git clone -q "$root" "$history_work/repo" || fail 'candidate history fixture clone failed'
-start=$(git -C "$history_work/repo" rev-parse HEAD)
-detach_without_branches "$history_work/repo"
-git -C "$history_work/repo" config user.name "$identity_name"
-git -C "$history_work/repo" config user.email "$identity_email"
-git -C "$history_work/repo" checkout -q --orphan candidate-orphan
-git -C "$history_work/repo" commit -q -m 'fixture orphan head'
-orphan=$(git -C "$history_work/repo" rev-parse HEAD)
-git -C "$history_work/repo" checkout -q --detach "$start"
-git -C "$history_work/repo" update-ref -d refs/heads/candidate-orphan
-test -z "$(git -C "$history_work/repo" for-each-ref refs/heads)" ||
-  fail 'candidate history fixture kept local branches'
-git -C "$history_work/repo" merge -q -s ours --allow-unrelated-histories \
-  -m 'fixture merge' "$orphan"
-merge=$(git -C "$history_work/repo" rev-parse HEAD)
-if git -C "$history_work/repo" symbolic-ref -q HEAD >/dev/null; then
-  fail 'candidate history fixture HEAD is not detached'
-fi
-# The clone carries committed HEAD; overlay the files under test from the
-# working tree so a local, not-yet-committed edit is what runs here too.
-for file in check-repository-rules.sh ci-stages.sh ci-local.sh \
-  verification-context.sh ci-preflight.sh; do
-  cp "$root/tooling/repository/ci/$file" "$history_work/repo/tooling/repository/ci/$file"
-done
-# The merge itself keeps published history; only the contributing head drops it.
-# The control is the one check, not a second guard run: the executed runs below
-# already select and run it in both modes.
-if ! (cd "$history_work/repo" && sh scripts/check-public-history.sh HEAD) \
-  > "$history_work/retained.out" 2>&1; then
-  fail "the merge commit itself must retain public history: $(tail -n 3 "$history_work/retained.out")"
-fi
-# Full mode with an absent base and a pull-request head, executed through
-# ci-local's own ordering: prepare_value_proof_base must run first (HEAD^ is the
-# merge's first parent), stage 0 must receive that base and CANDIDATE_SHA, and
-# the run must stop before any cargo stage.
-if (cd "$history_work/repo" &&
-  unset VALUE_PROOF_BASE PRE_RETURN_BASE &&
-  CARGO_TARGET_DIR="$history_work/target" TMPDIR="$history_work/tmp" \
-    CI_LOG_ROOT="$history_work/logs" CANDIDATE_SHA="$orphan" \
-    sh tooling/repository/ci/ci-local.sh --checks-only) > "$history_work/full.out" 2>&1; then
-  fail 'full mode accepted a candidate that dropped public history'
-fi
-proof_line=$(grep -n -F "proof-base=$start" "$history_work/full.out" | head -n 1 | cut -d: -f1)
-rules_line=$(grep -n -F 'start: repository-rules;' "$history_work/full.out" | head -n 1 | cut -d: -f1)
-test -n "$proof_line" && test -n "$rules_line" && test "$proof_line" -lt "$rules_line" ||
-  fail 'full mode must prepare the comparison base before stage 0 runs'
-grep -F "ci-local: platform=$host_platform head=$merge proof-base=$start" "$history_work/full.out" >/dev/null ||
-  fail 'full mode did not resolve the absent base to HEAD^ (the merge first parent)'
-grep -F 'ci-local: exit=1 stage=repository-rules' "$history_work/full.out" >/dev/null ||
-  fail 'full mode did not stop at stage 0 for a candidate that dropped history'
-if grep -F 'start: fmt;' "$history_work/full.out" >/dev/null; then
-  fail 'full mode reached a cargo stage after stage 0 failed'
-fi
-full_log=$(sed -n 's/^ci-local: exit=1 stage=repository-rules logs=//p' "$history_work/full.out" | head -n 1)
-test -d "$full_log" || fail 'full mode produced no ci-local log directory'
-grep -F "base=$start platform=$host_platform mode=full" "$full_log/repository-rules.log" >/dev/null ||
-  fail 'full mode did not pass the prepared base to stage 0'
-grep -F 'FAIL public-history' "$full_log/repository-rules.log" >/dev/null &&
+printf 'ci contract fixture: cargo was invoked: %s\n' "$*" >&2
+exit 1
+STUB
+  chmod +x "$cargo_stub"
+  stage0=$history_work/repo/tooling/repository/ci/check-repository-rules.sh
+  cat > "$stage0" <<'STUB'
+#!/bin/sh
+# Contract fixture stage 0: record the call, then run the candidate check.
+set -u
+record=${EXITBIND_CI_CONTRACT_RECORD:?contract fixture has no record path}
+printf 'base=%s platform=%s mode=%s candidate=%s\n' \
+  "${1:-}" "${2:-}" "${3:-}" "${CANDIDATE_SHA:-}" >> "$record"
+exec sh scripts/check-public-history.sh HEAD ${CANDIDATE_SHA:+"$CANDIDATE_SHA"}
+STUB
+  # Full mode with an absent base and a pull-request head, executed through
+  # ci-local's own ordering: prepare_value_proof_base must run first (HEAD^ is the
+  # merge's first parent), stage 0 must receive that base and CANDIDATE_SHA, and
+  # the run must stop before any cargo stage.
+  if (cd "$history_work/repo" &&
+    unset VALUE_PROOF_BASE PRE_RETURN_BASE &&
+    EXITBIND_CI_CONTRACT_NESTED=1 EXITBIND_CI_CONTRACT_RECORD="$history_work/stage0.args" \
+      CARGO="$cargo_stub" CARGO_TARGET_DIR="$history_work/target" TMPDIR="$history_work/tmp" \
+      CI_LOG_ROOT="$history_work/logs" CANDIDATE_SHA="$orphan" \
+      sh tooling/repository/ci/ci-local.sh --checks-only) > "$history_work/full.out" 2>&1; then
+    fail 'full mode accepted a candidate that dropped public history'
+  fi
+  proof_line=$(grep -n -F "proof-base=$start" "$history_work/full.out" | head -n 1 | cut -d: -f1)
+  rules_line=$(grep -n -F 'start: repository-rules;' "$history_work/full.out" | head -n 1 | cut -d: -f1)
+  test -n "$proof_line" && test -n "$rules_line" && test "$proof_line" -lt "$rules_line" ||
+    fail 'full mode must prepare the comparison base before stage 0 runs'
+  grep -F "ci-local: platform=$host_platform head=$merge proof-base=$start" "$history_work/full.out" >/dev/null ||
+    fail 'full mode did not resolve the absent base to HEAD^ (the merge first parent)'
+  grep -F 'ci-local: exit=1 stage=repository-rules' "$history_work/full.out" >/dev/null ||
+    fail 'full mode did not stop at stage 0 for a candidate that dropped history'
+  if grep -F 'start: fmt;' "$history_work/full.out" >/dev/null; then
+    fail 'full mode reached a cargo stage after stage 0 failed'
+  fi
+  full_log=$(sed -n 's/^ci-local: exit=1 stage=repository-rules logs=//p' "$history_work/full.out" | head -n 1)
+  test -d "$full_log" || fail 'full mode produced no ci-local log directory'
   grep -F "$orphan does not retain published checkpoint" "$full_log/repository-rules.log" >/dev/null ||
-  fail 'full mode did not check the pull-request head for public history'
-# Pre-return with an absent VALUE_PROOF_BASE must not prepare one: it passes the
-# declared PRE_RETURN_BASE to stage 0 and checks the same candidate.
-if (cd "$history_work/repo" &&
-  unset VALUE_PROOF_BASE &&
-  CARGO_TARGET_DIR="$history_work/target" TMPDIR="$history_work/tmp" \
-    CI_LOG_ROOT="$history_work/logs" CANDIDATE_SHA="$orphan" PRE_RETURN_BASE="$start" \
-    sh tooling/repository/ci/ci-local.sh --pre-return) > "$history_work/pre-return.out" 2>&1; then
-  fail 'pre-return accepted a candidate that dropped public history'
-fi
-if grep -F 'proof-base=' "$history_work/pre-return.out" >/dev/null; then
-  fail 'pre-return must not prepare a base when VALUE_PROOF_BASE is absent'
-fi
-grep -F 'ci-local: exit=1 stage=repository-rules' "$history_work/pre-return.out" >/dev/null ||
-  fail 'pre-return did not stop at stage 0 for a candidate that dropped history'
-if grep -F 'start: fmt;' "$history_work/pre-return.out" >/dev/null; then
-  fail 'pre-return reached a cargo stage after stage 0 failed'
-fi
-pre_log=$(sed -n 's/^ci-local: exit=1 stage=repository-rules logs=//p' "$history_work/pre-return.out" | head -n 1)
-test -d "$pre_log" || fail 'pre-return produced no ci-local log directory'
-grep -F "base=$start platform=$host_platform mode=pre-return" "$pre_log/repository-rules.log" >/dev/null ||
-  fail 'pre-return did not pass its declared base to stage 0'
-grep -F 'FAIL public-history' "$pre_log/repository-rules.log" >/dev/null &&
+    fail 'full mode did not check the pull-request head for public history'
+  # Pre-return with an absent VALUE_PROOF_BASE must not prepare one: it passes the
+  # declared PRE_RETURN_BASE to stage 0 and checks the same candidate.
+  if (cd "$history_work/repo" &&
+    unset VALUE_PROOF_BASE &&
+    EXITBIND_CI_CONTRACT_NESTED=1 EXITBIND_CI_CONTRACT_RECORD="$history_work/stage0.args" \
+      CARGO="$cargo_stub" CARGO_TARGET_DIR="$history_work/target" TMPDIR="$history_work/tmp" \
+      CI_LOG_ROOT="$history_work/logs" CANDIDATE_SHA="$orphan" PRE_RETURN_BASE="$start" \
+      sh tooling/repository/ci/ci-local.sh --pre-return) > "$history_work/pre-return.out" 2>&1; then
+    fail 'pre-return accepted a candidate that dropped public history'
+  fi
+  if grep -F 'proof-base=' "$history_work/pre-return.out" >/dev/null; then
+    fail 'pre-return must not prepare a base when VALUE_PROOF_BASE is absent'
+  fi
+  grep -F 'ci-local: exit=1 stage=repository-rules' "$history_work/pre-return.out" >/dev/null ||
+    fail 'pre-return did not stop at stage 0 for a candidate that dropped history'
+  if grep -F 'start: fmt;' "$history_work/pre-return.out" >/dev/null; then
+    fail 'pre-return reached a cargo stage after stage 0 failed'
+  fi
+  pre_log=$(sed -n 's/^ci-local: exit=1 stage=repository-rules logs=//p' "$history_work/pre-return.out" | head -n 1)
+  test -d "$pre_log" || fail 'pre-return produced no ci-local log directory'
   grep -F "$orphan does not retain published checkpoint" "$pre_log/repository-rules.log" >/dev/null ||
-  fail 'pre-return did not check the pull-request head for public history'
-rm -rf "$history_work"
-trap - EXIT HUP INT TERM
+    fail 'pre-return did not check the pull-request head for public history'
+  # What ci-local passed to stage 0, recorded by the stub: the prepared base in
+  # full mode, the declared one in pre-return, the host platform and the head.
+  test -f "$history_work/stage0.args" || fail 'stage 0 was never reached'
+  test "$(wc -l < "$history_work/stage0.args")" -eq 2 ||
+    fail 'stage 0 must run exactly once in each executed mode'
+  grep -F "base=$start platform=$host_platform mode=full candidate=$orphan" \
+    "$history_work/stage0.args" >/dev/null ||
+    fail 'full mode did not pass the prepared base, host platform and candidate to stage 0'
+  grep -F "base=$start platform=$host_platform mode=pre-return candidate=$orphan" \
+    "$history_work/stage0.args" >/dev/null ||
+    fail 'pre-return did not pass its declared base, host platform and candidate to stage 0'
+  # The product guard itself still forwards the candidate; the macOS selection
+  # runs it here in about 0.1 s instead of paying for the full Linux stage 0.
+  cp "$root/tooling/repository/ci/check-repository-rules.sh" "$stage0"
+  if (cd "$history_work/repo" && CANDIDATE_SHA="$orphan" \
+    sh tooling/repository/ci/check-repository-rules.sh HEAD macos full) \
+    > "$history_work/guard.out" 2>&1; then
+    fail 'stage 0 accepted a candidate that dropped public history'
+  fi
+  grep -F 'FAIL public-history' "$history_work/guard.out" >/dev/null &&
+    grep -F "$orphan does not retain published checkpoint" "$history_work/guard.out" >/dev/null ||
+    fail 'stage 0 did not forward the pull-request head to public history'
+  rm -rf "$history_work"
+  trap - EXIT HUP INT TERM
+fi
 
 "$root/tooling/repository/ci/test-ci-selected-history.sh"
 
