@@ -12,6 +12,7 @@ use crate::run::state::check_observation::{OWNED_GROUP_FIELD, OWNED_START_FIELD}
 use serde_json::{json, Value};
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 /// The environmental decision record's optional fact: the owned group was
 /// observed ended when the decision was recorded. A later ledger read
@@ -50,30 +51,47 @@ pub(crate) fn liveness(facts: &Value) -> Option<ProcessLiveness> {
 /// reused by an unrelated process, so it is unverified rather than owned:
 /// never ended, never named as an owned member.
 fn liveness_of(identity: &ProcessIdentity) -> ProcessLiveness {
-    match codex_exec::group_liveness(identity) {
-        ProcessLiveness::Alive if reused(identity) => ProcessLiveness::Uncertain,
-        // A subreaper that has not drained its orphans keeps the group
-        // identifier reachable through zombie members, and `kill(-group, 0)`
-        // still succeeds for them. A group whose remaining members have all
-        // exited has ended.
-        ProcessLiveness::Alive
-            if i32::try_from(identity.pid).is_ok_and(|group| live_member(group) == Some(false)) =>
-        {
-            ProcessLiveness::Ended
-        }
-        other => other,
+    let host = codex_exec::group_liveness(identity);
+    if host != ProcessLiveness::Alive {
+        return host;
+    }
+    if reused(identity) {
+        return ProcessLiveness::Uncertain;
+    }
+    // A subreaper that has not drained its orphans keeps the group identifier
+    // reachable through zombie members, and `kill(-group, 0)` still succeeds
+    // for them. Only a scan that proves every member exited ends the group; a
+    // scan that cannot show a member proves nothing.
+    from_scan(i32::try_from(identity.pid).ok().and_then(live_member))
+}
+
+/// The group state a `/proc` scan proves: `Some(false)` only from a scan that
+/// observed the group's members and found every one of them exited. A scan
+/// that shows no member at all is unproven, never an end.
+fn from_scan(scan: Option<bool>) -> ProcessLiveness {
+    match scan {
+        Some(true) => ProcessLiveness::Alive,
+        Some(false) => ProcessLiveness::Ended,
+        None => ProcessLiveness::Uncertain,
     }
 }
 
 /// Whether the group still holds a member that is not exiting: `Some(false)`
-/// when every `/proc` entry in the group is a zombie or already dead, `None`
-/// when the scan cannot be trusted (an unreadable `/proc`, or more entries
-/// than the bound), so an unproven end is never claimed.
+/// only when at least one member of the group was observed and every observed
+/// member has exited, `None` when the scan cannot prove anything (an
+/// unreadable `/proc`, more entries than the bound, or no member of the group
+/// seen at all, as a kill from another pid namespace can leave it), so an
+/// unproven end is never claimed.
 fn live_member(group: i32) -> Option<bool> {
+    live_member_at(group, Path::new("/proc"))
+}
+
+fn live_member_at(group: i32, root: &Path) -> Option<bool> {
     if group <= 0 {
         return None;
     }
-    let mut entries = std::fs::read_dir("/proc").ok()?;
+    let mut entries = std::fs::read_dir(root).ok()?;
+    let mut observed = false;
     for entry in entries.by_ref().take(MAX_ENTRIES) {
         let Ok(entry) = entry else {
             continue;
@@ -90,20 +108,24 @@ fn live_member(group: i32) -> Option<bool> {
         if pid == 0 {
             continue;
         }
-        let Ok(stat) = std::fs::read(format!("/proc/{pid}/stat")) else {
+        let Ok(stat) = std::fs::read(root.join(&name).join("stat")) else {
             continue;
         };
         if group_of(&stat) != Some(group) {
             continue;
         }
-        match state_of(&stat) {
-            Some(state) if exiting(state) => {}
-            // A member whose state cannot be read is not proven exited.
-            _ => return Some(true),
+        // A member whose state cannot be read is not proven exited.
+        if !exited(&stat) {
+            return Some(true);
         }
+        observed = true;
     }
     if entries.next().is_some() {
         // More entries than the scan bound: an unproven end is never claimed.
+        return None;
+    }
+    if !observed {
+        // The kill reached a group this scan cannot name: unproven, not ended.
         return None;
     }
     Some(false)
@@ -212,8 +234,8 @@ fn members(group: i32) -> Vec<Value> {
         if !group_of(&stat).is_some_and(|candidate| candidate == group) {
             continue;
         }
-        if state_of(&stat).is_some_and(exiting) {
-            // A zombie or already-dead entry is not a live member to name.
+        if exited(&stat) {
+            // An exited entry is not a live member to name.
             continue;
         }
         named.push(json!({"pid": pid, "command": command(pid)}));
@@ -237,10 +259,24 @@ fn state_of(stat: &[u8]) -> Option<u8> {
     fields.split_whitespace().next()?.bytes().next()
 }
 
-/// Whether a process state names one that has exited: `Z` waits to be reaped
-/// and `X` is already gone.
-fn exiting(state: u8) -> bool {
-    matches!(state, b'Z' | b'X')
+/// Whether a member has exited: `X` is already gone, and `Z` waits to be
+/// reaped. Linux also reports `Z` for a thread-group leader that exited while
+/// its other threads still run, and that process is alive, so a `Z` counts
+/// only when it has at most one thread left.
+fn exited(stat: &[u8]) -> bool {
+    match state_of(stat) {
+        Some(b'X') => true,
+        Some(b'Z') => threads_of(stat).is_some_and(|threads| threads <= 1),
+        _ => false,
+    }
+}
+
+/// The thread count field of `/proc/<pid>/stat`, read after the parenthesized
+/// command name.
+fn threads_of(stat: &[u8]) -> Option<u64> {
+    let text = std::str::from_utf8(stat).ok()?;
+    let (_, fields) = text.rsplit_once(") ")?;
+    fields.split_whitespace().nth(17)?.parse().ok()
 }
 
 /// A short, control-free command line for one process; its kernel command name
@@ -463,6 +499,121 @@ mod tests {
 
         // Reap the adopted zombie so no fixture entry outlives this test.
         let _ = unsafe { libc::waitpid(sleeper, std::ptr::null_mut(), 0) };
+    }
+
+    /// A group the host still reaches but `/proc` cannot show is unproven:
+    /// never an end, and never an unverified live member. This is the scan
+    /// `live_member` performs against a real `/proc`, run on a fixture root.
+    #[test]
+    fn a_kill_that_names_no_group_member_is_not_an_end() {
+        let root =
+            std::env::temp_dir().join(format!("exitbind-owned-group-proc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let write = |pid: u32, state: char, group: i32, threads: u64| {
+            // The fields after the command name: state first, the group at
+            // index 2 and the thread count at index 17.
+            let mut fields = vec!["0".to_owned(); 20];
+            fields[0] = state.to_string();
+            fields[1] = "1".to_owned();
+            fields[2] = group.to_string();
+            fields[3] = group.to_string();
+            fields[5] = "-1".to_owned();
+            fields[17] = threads.to_string();
+            fields[19] = "100".to_owned();
+            let entry = root.join(pid.to_string());
+            std::fs::create_dir_all(&entry).unwrap();
+            std::fs::write(
+                entry.join("stat"),
+                format!("{pid} (fixture) {}", fields.join(" ")),
+            )
+            .unwrap();
+        };
+        // The kill succeeds, yet no entry in the scan belongs to the group.
+        write(11, 'S', 999, 1);
+        assert_eq!(live_member_at(4321, &root), None);
+        assert_eq!(
+            from_scan(live_member_at(4321, &root)),
+            ProcessLiveness::Uncertain
+        );
+        // One member that has genuinely exited proves the group ended.
+        write(4321, 'Z', 4321, 1);
+        assert_eq!(live_member_at(4321, &root), Some(false));
+        assert_eq!(
+            from_scan(live_member_at(4321, &root)),
+            ProcessLiveness::Ended
+        );
+        // A `Z` leader that still has a thread running has not exited: the
+        // group is alive and its leader is a member to name.
+        write(4322, 'Z', 4322, 2);
+        assert_eq!(live_member_at(4322, &root), Some(true));
+        assert_eq!(
+            from_scan(live_member_at(4322, &root)),
+            ProcessLiveness::Alive
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Linux reports `Z` for a thread-group leader that called `pthread_exit`
+    /// while another thread still runs. That group is alive, still able to
+    /// write, and its leader must be named; only a thread-less `Z` has exited.
+    #[test]
+    fn a_zombie_leader_with_a_live_thread_reads_alive_and_is_named() {
+        const SCRIPT: &str = "import ctypes, threading, time\nthreading.Thread(target=time.sleep, args=(60,), daemon=False).start()\ntime.sleep(0.2)\nctypes.CDLL(None).pthread_exit(None)\n";
+        struct GroupGuard {
+            child: std::process::Child,
+            group: i32,
+        }
+        impl Drop for GroupGuard {
+            fn drop(&mut self) {
+                let _ = unsafe { libc::kill(-self.group, libc::SIGKILL) };
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+        }
+        let child = std::process::Command::new("python3")
+            .args(["-c", SCRIPT])
+            .process_group(0)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let group = i32::try_from(pid).unwrap();
+        let _guard = GroupGuard { child, group };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let stat = std::fs::read(format!("/proc/{pid}/stat")).unwrap_or_default();
+            if state_of(&stat) == Some(b'Z') && threads_of(&stat).is_some_and(|threads| threads > 1)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the leader never exited with a live thread: {}",
+                String::from_utf8_lossy(&stat)
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let facts = recorded_facts(u64::from(pid));
+        let identity = recorded(&facts).unwrap();
+        assert_eq!(
+            codex_exec::group_liveness(&identity),
+            ProcessLiveness::Alive,
+            "the sleeping thread keeps the group reachable"
+        );
+        assert_eq!(liveness(&facts), Some(ProcessLiveness::Alive));
+        let live = view(&facts).unwrap();
+        assert_eq!(live["ownedProcessState"], "alive");
+        assert!(
+            live["ownedProcesses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|process| process["pid"] == json!(pid)),
+            "{live}"
+        );
     }
 
     /// Run the named test in a child process that is a child subreaper, as the

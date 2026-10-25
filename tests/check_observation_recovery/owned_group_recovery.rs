@@ -20,7 +20,10 @@ exit 0
 /// Whether any member of `group` is still live. The check runs under the
 /// observation capsule, a subreaper that drains its orphans only after its
 /// leader ends, and the kernel keeps the group identifier reachable through
-/// zombie members, so `kill` alone reports a killed group as alive.
+/// zombie members, so `kill` alone reports a killed group as alive. The kernel
+/// also reports `Z` for a leader that exited while its other threads still
+/// run; such a member is alive. A group the kill still reaches but `/proc`
+/// cannot show is alive until the scan can prove every member exited.
 fn group_present(group: i32) -> bool {
     if (unsafe { libc::kill(-group, 0) }) != 0 {
         return false;
@@ -28,6 +31,7 @@ fn group_present(group: i32) -> bool {
     let Ok(entries) = fs::read_dir("/proc") else {
         return true;
     };
+    let mut observed = false;
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
@@ -42,23 +46,28 @@ fn group_present(group: i32) -> bool {
         let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
             continue;
         };
-        if let Some((candidate, state)) = member_state(&stat) {
-            if candidate == group && !matches!(state, 'Z' | 'X') {
+        if let Some((candidate, state, threads)) = member_state(&stat) {
+            if candidate != group {
+                continue;
+            }
+            observed = true;
+            if !matches!(state, 'Z' | 'X') || (state == 'Z' && threads > 1) {
                 return true;
             }
         }
     }
-    false
+    !observed
 }
 
-/// The process group and state of one `/proc/<pid>/stat` line, read after the
-/// parenthesized command name.
-fn member_state(stat: &str) -> Option<(i32, char)> {
+/// The process group, state and thread count of one `/proc/<pid>/stat` line,
+/// read after the parenthesized command name.
+fn member_state(stat: &str) -> Option<(i32, char, u64)> {
     let (_, fields) = stat.rsplit_once(") ")?;
     let mut fields = fields.split_whitespace();
     let state = fields.next()?.chars().next()?;
     let group = fields.nth(1)?.parse().ok()?;
-    Some((group, state))
+    let threads = fields.nth(14)?.parse().ok()?;
+    Some((group, state, threads))
 }
 
 fn process_group_of(pid: u32) -> Option<i32> {
