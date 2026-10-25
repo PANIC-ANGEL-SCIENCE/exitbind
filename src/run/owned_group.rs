@@ -506,10 +506,7 @@ mod tests {
     /// `live_member` performs against a real `/proc`, run on a fixture root.
     #[test]
     fn a_kill_that_names_no_group_member_is_not_an_end() {
-        let root =
-            std::env::temp_dir().join(format!("exitbind-owned-group-proc-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_root::temp("owned-group-proc");
         let write = |pid: u32, state: char, group: i32, threads: u64| {
             // The fields after the command name: state first, the group at
             // index 2 and the thread count at index 17.
@@ -551,7 +548,6 @@ mod tests {
             from_scan(live_member_at(4322, &root)),
             ProcessLiveness::Alive
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Linux reports `Z` for a thread-group leader that called `pthread_exit`
