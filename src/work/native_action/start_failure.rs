@@ -170,14 +170,14 @@ pub(super) fn prior_relaunch(journal: &Path) -> bool {
 /// assignment; only a host permission denial with no thread and no effect
 /// offers a sandbox choice, because no session exists whose sandbox a resume
 /// would keep.
-pub(super) fn route(work: &str, journal: &Value) -> crate::emitted::Route {
+pub(super) fn route(work: &str, journal: &Value, config: &Path) -> crate::emitted::Route {
     if started(journal) {
-        return crate::emitted::Route::new(["work", "act", work, "--resume"]);
+        return crate::emitted::Route::new(["work", "act", work, "--resume"]).config(config);
     }
     if !relaunchable(journal) {
-        return crate::emitted::Route::new(["work", "act", work, "--inspect"]);
+        return crate::emitted::Route::new(["work", "act", work, "--inspect"]).config(config);
     }
-    relaunch_route(work, journal, permission_denied(journal))
+    relaunch_route(work, journal, permission_denied(journal)).config(config)
 }
 
 /// The sandbox choice written into the route, for the human who fills it.
@@ -202,7 +202,7 @@ pub(super) fn message(
     let Some(journal) = journal else {
         return error.to_owned();
     };
-    let route = route(work, journal).config(&loaded.path).shell_text();
+    let route = route(work, journal, &loaded.path).shell_text();
     if started(journal) {
         return format!(
             "{error}; native assignment started a provider thread; continue it with {route}"
@@ -226,6 +226,10 @@ pub(super) fn message(
 mod tests {
     use super::*;
 
+    fn config() -> &'static Path {
+        Path::new("/fixture/exitbind.json")
+    }
+
     fn failed(codes: Value, commands: Value, thread: Value) -> Value {
         json!({
             "status": "started", "threadId": thread,
@@ -244,9 +248,9 @@ mod tests {
     fn thread_identity_keeps_the_resume_route() {
         let journal = failed(json!(["turn_failed"]), json!([]), json!("thread-1"));
         assert!(!relaunchable(&journal));
-        assert!(route("smw_1", &journal)
+        assert!(route("smw_1", &journal, config())
             .shell_text()
-            .ends_with("work act smw_1 --resume"));
+            .ends_with("work act smw_1 --resume --config /fixture/exitbind.json"));
     }
 
     #[test]
@@ -257,7 +261,9 @@ mod tests {
             Value::Null,
         );
         assert!(!relaunchable(&journal));
-        assert!(route("smw_1", &journal).shell_text().ends_with("--inspect"));
+        assert!(route("smw_1", &journal, config())
+            .shell_text()
+            .ends_with("--inspect --config /fixture/exitbind.json"));
         let mut unobserved = failed(json!([]), json!([]), Value::Null);
         unobserved["observation"]["unobservedItemCount"] = json!(1);
         assert!(!relaunchable(&unobserved));
@@ -274,9 +280,10 @@ mod tests {
     fn host_permission_denial_offers_another_sandbox_and_keeps_the_binary() {
         let journal = failed(json!(["host_permission_denied"]), json!([]), Value::Null);
         assert!(relaunchable(&journal));
-        let route = route("smw_1", &journal);
+        let route = route("smw_1", &journal, config());
         assert!(route.shell_text().ends_with(
-            "work act smw_1 --codex-bin /fixture/bin/codex --sandbox-mode <SANDBOX_MODE>"
+            "work act smw_1 --codex-bin /fixture/bin/codex --sandbox-mode <SANDBOX_MODE> \
+             --config /fixture/exitbind.json"
         ));
         assert_eq!(
             sandbox_choices(&journal),
@@ -291,10 +298,11 @@ mod tests {
         journal["request"]["model"] = json!("gpt-recorded");
         journal["request"]["reasoningEffort"] = json!("high");
         journal["request"]["timeoutMs"] = json!(123456_u64);
-        let route = route("smw_1", &journal).shell_text();
+        let route = route("smw_1", &journal, config()).shell_text();
         assert!(route.ends_with(
             "work act smw_1 --codex-bin /fixture/bin/codex --model gpt-recorded \
-             --reasoning-effort high --sandbox-mode workspace-write --timeout-ms 123456"
+             --reasoning-effort high --sandbox-mode workspace-write --timeout-ms 123456 \
+             --config /fixture/exitbind.json"
         ));
     }
 
@@ -303,10 +311,11 @@ mod tests {
         let mut journal = failed(json!(["host_permission_denied"]), json!([]), Value::Null);
         journal["request"]["model"] = json!("gpt-recorded");
         journal["request"]["timeoutMs"] = json!(123456_u64);
-        let route = route("smw_1", &journal).shell_text();
+        let route = route("smw_1", &journal, config()).shell_text();
         assert!(route.ends_with(
             "work act smw_1 --codex-bin /fixture/bin/codex --model gpt-recorded \
-             --sandbox-mode <SANDBOX_MODE> --timeout-ms 123456"
+             --sandbox-mode <SANDBOX_MODE> --timeout-ms 123456 \
+             --config /fixture/exitbind.json"
         ));
     }
 

@@ -154,9 +154,7 @@ pub(crate) fn execute(
                 existing = None;
             }
             Some("not_started") if options.resume => {
-                let route = start_failure::route(work, &journal)
-                    .config(&loaded.path)
-                    .shell_text();
+                let route = start_failure::route(work, &journal, &loaded.path).shell_text();
                 let repeat = if start_failure::prior_relaunch(&paths.journal) {
                     start_failure::REPEAT_NOTE
                 } else {

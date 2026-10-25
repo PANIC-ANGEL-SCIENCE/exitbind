@@ -17,8 +17,48 @@ while [ ! -f .exitbind/release ] && [ \"$i\" -lt 160 ]; do sleep 0.05; i=$((i + 
 exit 0
 ";
 
+/// Whether any member of `group` is still live. The check runs under the
+/// observation capsule, a subreaper that drains its orphans only after its
+/// leader ends, and the kernel keeps the group identifier reachable through
+/// zombie members, so `kill` alone reports a killed group as alive.
 fn group_present(group: i32) -> bool {
-    (unsafe { libc::kill(-group, 0) }) == 0
+    if (unsafe { libc::kill(-group, 0) }) != 0 {
+        return false;
+    }
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return true;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.bytes().all(|byte| byte.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(pid) = name.parse::<u32>() else {
+            continue;
+        };
+        let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+            continue;
+        };
+        if let Some((candidate, state)) = member_state(&stat) {
+            if candidate == group && !matches!(state, 'Z' | 'X') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The process group and state of one `/proc/<pid>/stat` line, read after the
+/// parenthesized command name.
+fn member_state(stat: &str) -> Option<(i32, char)> {
+    let (_, fields) = stat.rsplit_once(") ")?;
+    let mut fields = fields.split_whitespace();
+    let state = fields.next()?.chars().next()?;
+    let group = fields.nth(1)?.parse().ok()?;
+    Some((group, state))
 }
 
 fn process_group_of(pid: u32) -> Option<i32> {
@@ -93,7 +133,7 @@ fn a_timed_out_owned_group_closes_onto_the_environmental_rerun_once_it_ends() {
         .trim()
         .parse::<i32>()
         .unwrap();
-    let helper = Command::new("sh")
+    let helper = support::git_topology::command("sh")
         .args(["-c", "sleep 60", "owned-group-helper"])
         .process_group(group)
         .spawn()

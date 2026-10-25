@@ -52,8 +52,61 @@ pub(crate) fn liveness(facts: &Value) -> Option<ProcessLiveness> {
 fn liveness_of(identity: &ProcessIdentity) -> ProcessLiveness {
     match codex_exec::group_liveness(identity) {
         ProcessLiveness::Alive if reused(identity) => ProcessLiveness::Uncertain,
+        // A subreaper that has not drained its orphans keeps the group
+        // identifier reachable through zombie members, and `kill(-group, 0)`
+        // still succeeds for them. A group whose remaining members have all
+        // exited has ended.
+        ProcessLiveness::Alive
+            if i32::try_from(identity.pid).is_ok_and(|group| live_member(group) == Some(false)) =>
+        {
+            ProcessLiveness::Ended
+        }
         other => other,
     }
+}
+
+/// Whether the group still holds a member that is not exiting: `Some(false)`
+/// when every `/proc` entry in the group is a zombie or already dead, `None`
+/// when the scan cannot be trusted (an unreadable `/proc`, or more entries
+/// than the bound), so an unproven end is never claimed.
+fn live_member(group: i32) -> Option<bool> {
+    if group <= 0 {
+        return None;
+    }
+    let mut entries = std::fs::read_dir("/proc").ok()?;
+    for entry in entries.by_ref().take(MAX_ENTRIES) {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.bytes().all(|byte| byte.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(pid) = name.parse::<u32>() else {
+            continue;
+        };
+        if pid == 0 {
+            continue;
+        }
+        let Ok(stat) = std::fs::read(format!("/proc/{pid}/stat")) else {
+            continue;
+        };
+        if group_of(&stat) != Some(group) {
+            continue;
+        }
+        match state_of(&stat) {
+            Some(state) if exiting(state) => {}
+            // A member whose state cannot be read is not proven exited.
+            _ => return Some(true),
+        }
+    }
+    if entries.next().is_some() {
+        // More entries than the scan bound: an unproven end is never claimed.
+        return None;
+    }
+    Some(false)
 }
 
 fn reused(identity: &ProcessIdentity) -> bool {
@@ -159,6 +212,10 @@ fn members(group: i32) -> Vec<Value> {
         if !group_of(&stat).is_some_and(|candidate| candidate == group) {
             continue;
         }
+        if state_of(&stat).is_some_and(exiting) {
+            // A zombie or already-dead entry is not a live member to name.
+            continue;
+        }
         named.push(json!({"pid": pid, "command": command(pid)}));
     }
     named
@@ -170,6 +227,20 @@ fn group_of(stat: &[u8]) -> Option<i32> {
     let text = std::str::from_utf8(stat).ok()?;
     let (_, fields) = text.rsplit_once(") ")?;
     fields.split_whitespace().nth(2)?.parse().ok()
+}
+
+/// The state field of `/proc/<pid>/stat`, read from the first field after the
+/// parenthesized command name.
+fn state_of(stat: &[u8]) -> Option<u8> {
+    let text = std::str::from_utf8(stat).ok()?;
+    let (_, fields) = text.rsplit_once(") ")?;
+    fields.split_whitespace().next()?.bytes().next()
+}
+
+/// Whether a process state names one that has exited: `Z` waits to be reaped
+/// and `X` is already gone.
+fn exiting(state: u8) -> bool {
+    matches!(state, b'Z' | b'X')
 }
 
 /// A short, control-free command line for one process; its kernel command name
@@ -204,7 +275,12 @@ fn command(pid: u32) -> String {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
     use std::os::unix::process::CommandExt;
+    use std::time::{Duration, Instant};
+
+    /// The test name libtest runs in the subreaper child.
+    const ZOMBIE_GROUP_TEST: &str = "run::owned_group::tests::a_zombie_only_group_reads_ended";
 
     fn recorded_facts(group: u64) -> Value {
         let mut facts = json!({});
@@ -330,5 +406,86 @@ mod tests {
                 "ended"
             );
         }
+    }
+
+    /// The observation capsule is a child subreaper that drains its orphans
+    /// only after its leader ends, so a killed group can keep its identifier
+    /// through zombie members that `kill(-group, 0)` still reaches. Such a
+    /// group has ended and names no live member.
+    #[test]
+    fn a_zombie_only_group_reads_ended() {
+        if isolated(ZOMBIE_GROUP_TEST) {
+            return;
+        }
+        // A short-lived leader in its own group starts a sleeper and exits.
+        // This subreaper adopts the orphan and never reaps it.
+        let mut leader = std::process::Command::new("sh")
+            .args(["-c", "sleep 60 & echo $!; exit 0"])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let group = u64::from(leader.id());
+        let mut line = String::new();
+        BufReader::new(leader.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let sleeper = line.trim().parse::<i32>().unwrap();
+        leader.wait().unwrap();
+        assert_eq!(unsafe { libc::kill(sleeper, libc::SIGKILL) }, 0);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let stat = std::fs::read(format!("/proc/{sleeper}/stat")).unwrap_or_default();
+            if state_of(&stat) == Some(b'Z') {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the orphan never became a zombie: {}",
+                String::from_utf8_lossy(&stat)
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        let facts = recorded_facts(group);
+        let identity = recorded(&facts).unwrap();
+        assert_eq!(
+            codex_exec::group_liveness(&identity),
+            ProcessLiveness::Alive,
+            "a zombie member keeps the group id reachable"
+        );
+        assert_eq!(liveness(&facts), Some(ProcessLiveness::Ended));
+        let pending = json!({"kind": "check_observation_failed"});
+        assert!(closed(&observation(group), &pending));
+        let ended = view(&facts).unwrap();
+        assert_eq!(ended["ownedProcessState"], ENDED);
+        assert_eq!(ended["ownedProcesses"], json!([]));
+
+        // Reap the adopted zombie so no fixture entry outlives this test.
+        let _ = unsafe { libc::waitpid(sleeper, std::ptr::null_mut(), 0) };
+    }
+
+    /// Run the named test in a child process that is a child subreaper, as the
+    /// observation capsule is. The child runs the body; this process only
+    /// relays its result.
+    fn isolated(test: &str) -> bool {
+        const FIXTURE: &str = "EXITBIND_OWNED_GROUP_SUBREAPER_FIXTURE";
+        if std::env::var(FIXTURE).as_deref() == Ok(test) {
+            assert_eq!(
+                unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) },
+                0
+            );
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture", "--test-threads=1"])
+            .env(FIXTURE, test)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stdout}\n{stderr}");
+        assert!(stdout.contains("1 passed"), "{stdout}\n{stderr}");
+        true
     }
 }

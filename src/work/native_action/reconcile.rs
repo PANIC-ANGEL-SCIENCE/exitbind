@@ -315,9 +315,7 @@ fn diagnostic_projection(observation: &Value) -> Value {
 /// fills; the product neither picks a wider sandbox nor runs it unasked. A
 /// second relaunch of the same assignment is not safe to repeat automatically.
 fn relaunch_action(loaded: &Loaded, work: &str, journal: &Value, relaunched: bool) -> Value {
-    let route = start_failure::route(work, journal)
-        .config(&loaded.path)
-        .within(2048);
+    let route = start_failure::route(work, journal, &loaded.path).within(2048);
     let denied = start_failure::permission_denied(journal);
     let mut action = json!({
         "type": "execute_current",
