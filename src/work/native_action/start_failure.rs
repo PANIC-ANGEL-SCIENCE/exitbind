@@ -230,12 +230,13 @@ mod tests {
         Path::new("/fixture/exitbind.json")
     }
 
+    /// A failed start recorded before any child claim (no `processIdentity`),
+    /// so classification never reads the host process table.
     fn failed(codes: Value, commands: Value, thread: Value) -> Value {
         json!({
             "status": "started", "threadId": thread,
             "request": {"controlledEffects": false, "sandbox": "workspace-write",
                 "executable": "/fixture/bin/codex"},
-            "processIdentity": {"pid": 123, "processGroup": 123, "startTimeTicks": 45},
             "observation": {
                 "commands": commands,
                 "unobservedItemCount": 0,
@@ -321,8 +322,23 @@ mod tests {
 
     #[test]
     fn a_missing_child_claim_is_a_pre_spawn_failure() {
+        let journal = failed(json!([]), json!([]), Value::Null);
+        assert!(journal.get("processIdentity").is_none());
+        assert!(relaunchable(&journal));
+    }
+
+    #[test]
+    fn a_recorded_child_is_relaunchable_only_once_the_host_proves_it_ended() {
         let mut journal = failed(json!([]), json!([]), Value::Null);
-        journal.as_object_mut().unwrap().remove("processIdentity");
+        journal["processIdentity"] = json!({"pid": 123, "processGroup": 123, "startTimeTicks": 45});
+        // Host-independent: a recorded child never relaunches unless the host
+        // reads it as ended; a host that cannot prove it stays conservative.
+        assert_eq!(
+            relaunchable(&journal),
+            recovery::liveness(&journal) == ProcessLiveness::Ended
+        );
+        // Linux reads the process table, where this start time cannot match.
+        #[cfg(target_os = "linux")]
         assert!(relaunchable(&journal));
     }
 }
