@@ -1,7 +1,7 @@
 # Run-ledger (`action.field`) and record fields the allowlists admitted at
 # the release below, read by tests/release_integrity/record_fields.rs.
 # Regenerate it from that test's printed set in the next release commit.
-release 0.31.21
+release 0.31.22
 $schema
 __verifiedContextOnlyWork
 a
@@ -189,12 +189,14 @@ intent
 interface
 interfaces
 itemId
+journalSessionKey
 k
 key
 kind
 l
 label
 lastCheckpoint
+latestCorrectionWorks
 latestCorrections
 ledgerHeadSha256
 ledgerSha256
@@ -215,6 +217,7 @@ mode
 name
 nativeGoalRecovery
 o
+observationNoveltyProtocol
 old
 oldAccounting
 oldMember
@@ -292,6 +295,7 @@ quarantineResiduals
 r
 rationale
 reason
+recordedBySessionKey
 ref
 refusal
 relation
@@ -346,6 +350,7 @@ selectionEventSha256
 selections
 sequence
 session
+sessionAdoptions
 sessionKey
 sha256
 source
@@ -377,6 +382,7 @@ start.guidanceConfigSha256
 start.guidanceContinuityProtocol
 start.harnessReceipt
 start.kind
+start.observationNoveltyProtocol
 start.plan
 start.preReturnPolicy
 start.preservation
@@ -422,6 +428,7 @@ submit.outcome
 submit.previousEventSha256
 submit.producer
 submit.quarantineVerificationAck
+submit.reason
 submit.reviewDecisionSha256
 submit.role
 submit.runId

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.31.23
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.23 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+Install the hook binary and the governor together, and check that
+`exitbind version` on PATH (the hook binary) prints the governor's version.
+There is no rollback to 0.31.22 once 0.31.23 has written these records.
+0.31.23 records every check admission's
+`observer`, with the observer's `pid` and `startTimeTicks`, and a failure
+that kept an owned checker group records `ownedProcessGroup` and, when the
+capsule could read it, the leader's `ownedProcessStart`. An environmental
+Lead decision that rests on an owned group already observed ended records
+that fact as `ownedProcessState` on its submit event (the ledger field
+`submit.ownedProcessState`), so a later ledger read validates the decision
+without inspecting host processes. A 0.31.22 reader
+admits no such field and no ledger version above 8, and it cannot tell a newer
+Exitbind's ledger from a corrupt one: it reports the check ledger as
+unreadable (`corrupt_ledger`) and offers inspection. Once 0.31.23 appends a
+change record (`lead_session_goal_delta`) to a Goal journal, 0.31.22 refuses
+that journal with an event hash mismatch. This is not corruption: do not
+delete or edit the journal; upgrade every binary that reads it, and do not
+downgrade.
+
+- A Goal journal stores each revision as a change record against the record
+  before it, under the same sealed hash chain, and every journal written
+  before still reads unchanged; recovery reads a journal as large as R55's
+  (about 18 MB in 114 records) instead of refusing it.
+- A compatibility-marker table lists every in-band protocol marker and every
+  record field the current release adds, with its writer, reader and
+  retirement condition; a static check without a build fails on an unlisted
+  marker or field, and `release_integrity` cross-checks the table's
+  record-field rows.
+- `check`, `setup --apply`, `goal prepare` and `work begin` state one set of
+  environment readiness facts (tested-input breadth, Git worktree and
+  baseline, whether the frozen checker can run, build target, host write
+  posture) before their first write; only a checker file that exists but
+  cannot run refuses, with one route.
+- A native start that recorded no provider thread and no effect reads
+  `not_started` with a typed cause and one printed route that relaunches the
+  same assignment with its recorded launch values; a host write denial
+  (`HostPermissionDenied`) leaves only the sandbox for the human to choose; a
+  check whose observer died closes as failed onto the existing quarantine
+  route; and a timed-out check whose owned process group has ended reaches
+  the environmental re-run, while live members keep every forward route
+  closed and are named.
+- Every `ci-local` mode starts with a no-build repository-rule guard as
+  stage 0 (size budgets, path rendering, product surface, release
+  references, public history and commit identity) that fails in seconds
+  before any cargo stage; it absorbs the history, path-rendering,
+  product-surface and release-refs stages, and the gate inventory's failure
+  ledger records the failures each gate really caught.
+
 ## 0.31.22
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.22 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
@@ -22,18 +74,6 @@ outside the owner's native session, keeps no stamped copy, so journey
 members stamped with the replaced bytes stay refused until those bytes are
 supplied with
 `memory revalidate LEAD --from-config PREVIOUS_CONFIG --reason TEXT --apply`.
-The source candidate after this release records every check admission's
-`observer`, with the observer's `pid` and `startTimeTicks`, and a failure
-that kept an owned checker group records `ownedProcessGroup` and, when the
-capsule could read it, the leader's `ownedProcessStart`. An environmental
-Lead decision that rests on an owned group already observed ended records
-that fact as `ownedProcessState` on its submit event (the ledger field
-`submit.ownedProcessState`), so a later ledger read validates the decision
-without inspecting host processes. A 0.31.22 reader
-admits no such field and no ledger version above 8, and it cannot tell a newer
-Exitbind's ledger from a corrupt one: it reports the check ledger as
-unreadable (`corrupt_ledger`) and offers inspection. Prepare the upgrade
-before a candidate writes one.
 
 - The architecture budget covers every file under `src`, `tests` and
   `tests/fixtures`; files already over 32 KiB keep a ceiling that only falls,

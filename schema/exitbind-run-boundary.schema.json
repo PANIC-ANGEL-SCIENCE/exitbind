@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.22/schema/exitbind-run-boundary.schema.json",
+  "$id": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.23/schema/exitbind-run-boundary.schema.json",
   "title": "Exitbind run-scoped filesystem boundary",
   "type": "object",
   "required": ["version", "agents"],
