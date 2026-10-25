@@ -72,9 +72,7 @@
       "cost": "heavy",
       "prevents": "a behaviour regression anywhere in the full test suite",
       "ledger": [
-        "fl-0011",
         "fl-0013",
-        "fl-0014",
         "fl-0015"
       ]
     },

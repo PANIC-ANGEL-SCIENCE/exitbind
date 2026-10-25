@@ -280,20 +280,26 @@ rm -rf "$proof_work"
 trap - EXIT HUP INT TERM
 
 # A pull-request head can drop published history while the merge keeps it. The
-# retired history stage checked CANDIDATE_SHA; stage 0 must forward it. The
-# clone keeps the fixture off the shared branch, and the macOS selection keeps
-# the guard to its two cheap checks here.
+# retired history stage checked CANDIDATE_SHA; stage 0 must forward it. Public
+# CI checks out a commit, not a branch (ci.yml passes a SHA, release.yml a tag),
+# so the fixture takes that shape: it detaches and drops refs/heads before the
+# orphan commit, so a local run exercises what CI runs. The macOS selection
+# keeps the guard to its two cheap checks here.
 history_work=$(mktemp -d "${TMPDIR:-/tmp}/ci-candidate-history.XXXXXX")
 trap 'rm -rf "$history_work"' EXIT HUP INT TERM
 git clone -q "$root" "$history_work/repo" || fail 'candidate history fixture clone failed'
-branch=$(git -C "$history_work/repo" rev-parse --abbrev-ref HEAD)
-test "$branch" != HEAD || fail 'candidate history fixture clone is detached'
+start=$(git -C "$history_work/repo" rev-parse HEAD)
+git -C "$history_work/repo" checkout -q --detach "$start"
+git -C "$history_work/repo" for-each-ref --format='delete %(refname)' refs/heads |
+  git -C "$history_work/repo" update-ref --stdin
+test -z "$(git -C "$history_work/repo" for-each-ref refs/heads)" ||
+  fail 'candidate history fixture kept local branches'
 git -C "$history_work/repo" config user.name 'CI candidate fixture'
 git -C "$history_work/repo" config user.email 'ci-candidate@example.invalid'
 git -C "$history_work/repo" checkout -q --orphan candidate-orphan
 git -C "$history_work/repo" commit -q -m 'fixture orphan head'
 orphan=$(git -C "$history_work/repo" rev-parse HEAD)
-git -C "$history_work/repo" checkout -q "$branch"
+git -C "$history_work/repo" checkout -q --detach "$start"
 git -C "$history_work/repo" merge -q -s ours --allow-unrelated-histories \
   -m 'fixture merge' candidate-orphan
 # The clone carries committed HEAD; overlay the guard under test from the
