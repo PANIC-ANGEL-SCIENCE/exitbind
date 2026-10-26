@@ -105,7 +105,7 @@ Preserve the exact user-authorized check command. Run the emitted check action o
 
 When a worker needs governor recovery, follow `actionForms.recovery` and its current choices from fresh detail. Supply the Lead's meaningful re-plan or exact new evidence; recovery keeps spent authority. After recovery, return a selected `recovery.heldResults` entry through its emitted command to preserve retained bytes, then check and review the current result. A blocked governor stays blocked.
 
-A review finding is evidence, not a requirement. Consume the Lead's current disposition forms; repair/supersede retain explicit repair boundaries and regressions, and supersede retains its basis decision. A deferred or rejected finding is not approval. For a clear defect within accepted scope, choose the supported repair without asking the owner again; changed authority, scope, review choice or irreversible decisions need the owner. Architecture detail carries the selected role slice and exact provenance; proposals and previews are not approval, and a contract grants no permission. Custom profiles remain custom.
+A review finding is evidence, not a requirement. Consume the Lead's current disposition forms; repair/supersede retain explicit repair boundaries and regressions, and supersede retains its basis decision. A deferred or rejected finding is not approval. For a clear defect within accepted scope, choose the supported repair under previously granted in-scope authority; changed authority, scope, review choice or irreversible decisions need the owner. Architecture detail carries the selected role slice and exact provenance; proposals and previews are not approval, and a contract grants no permission. Custom profiles remain custom.
 
 ## Completion
 
@@ -179,7 +179,7 @@ explicit human status request still receives the current truth.
 Keep observed, reported, inferred, and proposed facts distinct. Preserve
 reported-versus-observed check provenance. Bind every check, review, and lead
 decision to the current subject; stale or partial evidence must remain refused
-or blocked. Curiosity is non-blocking and cannot expand scope or become proof.
+or blocked. Curiosity is non-blocking and cannot enlarge the accepted mandate or become proof.
 
 If the task is complex but has no material semantic-preservation risk, the Lead
 performs the applicable readiness and does not add a preservation route. Tool
