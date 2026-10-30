@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baseline": "ec1f8912def8d6933188f2eefe4af71d39aa1a82",
   "rootCount": 120,
-  "declarations": 921,
+  "declarations": 923,
   "ordinaryDisabledDeclarations": 2,
   "ordinaryIgnoredDeclarations": 1,
   "selectorRule": "<old target>::<nested modules>::<test> maps to <source module>::<nested modules>::<test>; Cargo target names are not part of libtest names, and source files and declarations remain at original paths.",
@@ -2345,8 +2345,8 @@
     },
     "tests/subject_progress/opaque_discovery.rs": {
       "baselineSha256": "8cd589b8ef1f45d77fb1dd84fdc6c0167006730fcd09d25bae1bf9c3be467d5b",
-      "currentSha256": "12805f8dc2f9bec6a496b926433a90b847d92f73b9b58835184479d93e6efda1",
-      "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged."
+      "currentSha256": "9be42af1d7f84c289185f274e85640b3360d746d77f63985bc3238f25dbd8387",
+      "reason": "Keep the config_drift diagnostic assertion on an unmarked Work and add the marked variant where a byte-only config edit keeps effect no-change and leaves the ledger unchanged. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. Bind the opacity oracle to fixture invocation operands and exercise bounded and forged routes."
     },
     "tests/subject_progress/resume_lineage.rs": {
       "baselineSha256": "53d70bcef545c00149f57ad396e4a30c6b922f4735e343c3632542f40b200c7c",
@@ -2372,6 +2372,11 @@
       "baselineSha256": "3ccbf905625c7923e0f3674d4635c606cb70703709e29e649624b11c14a92705",
       "currentSha256": "900b2944b1c99e55bb9f429152378477c52c60d0fa49a1f89f6ab0f70d6b6816",
       "reason": "Add an unmark-ledger helper that rewrites a start event as a legacy start and recomputes the event hash chain without changing Work or assignment identities. R53: every test process spawn goes through support::git_topology::command, which removes host session variables (R52 leaked 32 test Works into a real Lead session Goal); test assertions are unchanged. R55 F9: every temp directory comes from support::temp, whose guard removes it when the test passes and keeps and names it when the test fails; fixture roots, wrappers and Drop impls hold the guard instead of removing the directory themselves, and files kept beside a root move inside a root; assertions are unchanged. R56 W1: registers the shared support::goal_journal reader, because the Goal journal may store a revision as a change record against the record before it; assertions are unchanged."
+    },
+    "tests/support/opaque_work_surface.rs": {
+      "baselineSha256": "f5a4aab4bc605727458881e09e9e1ff3050c2fb8a9d98ef0dc783031dac324f0",
+      "currentSha256": "b6449872cbd3053496d38d5e80133bb101b2fe6d27f5700f16f9bd17cb4c9c8b",
+      "reason": "Bind public executable and configuration operand exceptions to fixture identities and typed route positions; retain private marker and existing ledger checks."
     },
     "tests/task_local_memory.rs": {
       "baselineSha256": "3c8e0cc55bd394eb4c35f2066a3bac082781bcdef150ebc85581398f2e757840",
