@@ -140,34 +140,67 @@ pub fn run() -> Result<(), String> {
         let lead = crate::project::agent_display::lead(&loaded);
         let mut text = session_summary(&loaded.config, Some(&loaded.path), &lead);
         if crate::producer::exitbind_surface() {
-            let receive = super::receive_text::receive_work(Some(&loaded.path));
-            // The project-facts route the addendum prints first is reserved too.
-            let facts =
-                crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
+            let mut receive = super::receive_text::receive_work(Some(&loaded.path));
+            let mut direct = DIRECT_WORK;
+            let facts = crate::project::context::snapshot(&loaded);
+            let required = crate::project::context::session_required(&loaded, &facts);
             // Every route above prints the exact `--config` path; the fact
             // line says which configuration that is.
             let line = project::routed_fact_line(source);
-            let fixed = DIRECT_WORK.len() + receive.len() + facts.len() + line.len() + 29;
+            let fixed = |receive: &str, direct: &str| {
+                direct.len()
+                    + receive.len()
+                    + line.len()
+                    + required.len()
+                    + crate::project::context::session_reference_reserve(&facts)
+                    + 3
+            };
             // Deep paths: the complete-lists route goes before the core does.
-            if text.len() + fixed + 128 > 3072 {
+            if text.len() + fixed(&receive, direct) > 3072 {
                 text = session_summary(&loaded.config, None, &lead);
             }
-            if text.len() + fixed + 128 > 3072 {
-                text = "Exitbind plan-only project context. Preserve the existing root conversation and current user corrections. No model was selected or launched; declarations are not an OS sandbox.".into();
+            if text.len() + fixed(&receive, direct) > 3072 {
+                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}");
+            }
+            if text.len() + fixed(&receive, direct) > 3072 {
+                receive = super::receive_text::receive_work_compact(Some(&loaded.path));
+            }
+            if text.len() + fixed(&receive, direct) > 3072 {
+                direct = DIRECT_WORK_COMPACT;
+            }
+            if text.len() + fixed(&receive, direct) > 3072 {
+                return Err(
+                    "complete mandatory session context and routes exceed 3072 bytes".into(),
+                );
+            }
+            // Keep the complete update notice when it fits with the required
+            // context and the selected navigation routes.
+            let update_bytes = update_context.as_ref().map_or(0, |update| update.len() + 1);
+            let mut update_reserve = 0;
+            if update_bytes > 0 {
+                if text.len() + fixed(&receive, direct) + update_bytes <= 3072 {
+                    update_reserve = update_bytes;
+                } else {
+                    let minimal =
+                        format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}");
+                    if minimal.len() + fixed(&receive, direct) + update_bytes <= 3072 {
+                        text = minimal;
+                        update_reserve = update_bytes;
+                    }
+                }
             }
             text.push('\n');
-            text.push_str(DIRECT_WORK);
+            text.push_str(direct);
             text.push('\n');
             text.push_str(&receive);
             text.push('\n');
             text.push_str(&line);
-            // The addendum spends what the fixed text and the update notice
-            // leave of the 3072-byte total.
-            let update_bytes = update_context
-                .as_deref()
-                .map_or(0, |update| update.len() + 1);
-            let budget = 3072usize.saturating_sub(text.len() + update_bytes);
-            text.push_str(&crate::project::context::session_addendum(&loaded, budget));
+            // Required facts precede the reserved complete notice; remaining
+            // space may hold optional diagnostics and references.
+            let budget = 3072usize.saturating_sub(text.len() + update_reserve);
+            text.push_str(&crate::project::context::session_addendum(
+                &loaded, &facts, budget,
+            ));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
             text.push_str(&memory);
@@ -194,15 +227,26 @@ pub fn run() -> Result<(), String> {
                 let fallback = format!(
                     "Use `{}` for the exact bounded recovery record.",
                     crate::emitted::Route::new(["session", "recovery", "show", "--json"])
+                        .config(&loaded.path)
                         .shell_text()
                 );
                 let recovery = recovery_context.as_deref().unwrap_or(&fallback);
-                let receive = super::receive_text::receive_work(Some(&loaded.path));
-                text = format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{}\n{recovery}", project::routed_fact_line(source));
-            }
-            if text.len() > 4096 {
-                let receive = super::receive_text::receive_work(Some(&loaded.path));
-                text = format!("Exitbind session context is too large to present without cutting a route. Use the exact read-only recovery route; no saved action is replayed.\n{MANDATORY_SESSION_CORE}\n{DIRECT_WORK}\n{receive}\n{}", project::routed_fact_line(source));
+                let receive = super::receive_text::receive_work_compact(Some(&loaded.path));
+                let facts = crate::project::context::snapshot(&loaded);
+                let required = crate::project::context::session_required(&loaded, &facts);
+                let base = |direct| {
+                    format!("Exitbind plan-only project context.\n{MANDATORY_SESSION_CORE}\n{direct}\n{receive}\n{}{required}", project::routed_fact_line(source))
+                };
+                text = [
+                    format!("{}\n{recovery}", base(DIRECT_WORK)),
+                    format!("{}\n{recovery}", base(DIRECT_WORK_COMPACT)),
+                    format!("{}\n{fallback}", base(DIRECT_WORK_COMPACT)),
+                ]
+                .into_iter()
+                .find(|candidate| candidate.len() <= 4096)
+                .ok_or(
+                    "complete mandatory session context and recovery routes exceed 4096 bytes",
+                )?;
             }
         }
         text
@@ -357,6 +401,7 @@ enum Routing {
 const NATIVE_ABSENCE: &str = "Exitbind is available but not active for this task. Ordinary work may use the native host without initialization. Use Exitbind only when the task or existing project policy requires governed acceptance.";
 const UNRESOLVED: &str = "Exitbind could not verify this target or its configuration. Check the target path and existing project policy before proceeding; no native-only status was established.";
 const DIRECT_WORK: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. An instruction or configuration filename alone does not make a change consequential; assess its actual effects and applicable project requirements. Classification is the lead's job, not a user questionnaire. Reuse existing scoped authorization and review decisions; ask only when a genuinely new decision is needed.";
+const DIRECT_WORK_COMPACT: &str = "For small, low-consequence reversible edits, work directly: do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. Judge actual effects and project requirements, not instruction or configuration filenames; the Lead classifies. Reuse scoped authorization and review decisions; ask only for a genuinely new decision.";
 
 const MANDATORY_SESSION_CORE: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff. Keep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory. When a Work or Goal response carries a non-null `presentation.terminal`, print that value on a line of its own exactly as given. For a Goal `completionEvent`, print once per event ID; consume the normal closure response without status polling. Recover a lost closure reply through its exact read-only route. No model was selected or launched; declarations are not an OS sandbox.";
 

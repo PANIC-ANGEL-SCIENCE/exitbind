@@ -154,22 +154,19 @@ fn files_under(root: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
     out
 }
 
-/// The exact `exitbind work detail ...` command the hook printed, as argv.
-fn printed_detail_command(context: &str, work: &str) -> Vec<String> {
+/// The exact shell command bounded by the hook's `read:` and semicolon.
+fn printed_detail_command<'a>(context: &'a str, work: &str) -> &'a str {
     let start = context
-        .find(&format!("exitbind work detail {work}"))
-        .unwrap_or_else(|| panic!("hook names the detail command: {context}"));
-    let end = context[start..].find(';').unwrap() + start;
-    context[start..end]
-        .split(' ')
-        .skip(1)
-        .map(str::to_owned)
-        .collect()
+        .find(&format!("current Work {work} "))
+        .unwrap_or_else(|| panic!("hook names the Work: {context}"));
+    let start = context[start..].find("; read: ").unwrap() + start + "; read: ".len();
+    let end = context[start..].find(';').unwrap() + start + 1;
+    &context[start..end]
 }
 
 #[test]
 fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
-    let project = Project::new("resume-current-work");
+    let project = Project::new("resume current 'work'");
     let session = "claude-resume-current-work";
     let work = incorporate_and_begin(&project, session, "resume-goal");
     let config = config(&project);
@@ -194,13 +191,6 @@ fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
     let goals_before = files_under(&project.session_store);
     let context = resume_hook(&project, session, &claude(session));
     assert!(
-        context.contains(&format!(
-            "current Work {work} (member of Goal resume-goal); read: {} work detail {work} --view action --config {config}; next action: ",
-            env!("CARGO_BIN_EXE_exitbind")
-        )),
-        "{context}"
-    );
-    assert!(
         context.contains("no saved recovery hint selects a Work"),
         "{context}"
     );
@@ -213,17 +203,22 @@ fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
     assert_eq!(files_under(&project.session_store), goals_before);
 
     // The printed command runs as printed.
-    let argv = printed_detail_command(&context, &work);
-    let argv = argv.iter().map(String::as_str).collect::<Vec<_>>();
-    let detail = exitbind(
-        &project.root,
-        &project.session_store,
-        &claude(session),
-        &argv,
-        b"",
-    );
+    let command = printed_detail_command(&context, &work);
+    let outside = super::support::temp("resume-printed-route-outside");
+    let detail = super::support::git_topology::command("/bin/sh")
+        .args(["-c", command])
+        .current_dir(&outside)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", &project.session_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
     assert!(detail.status.success(), "{detail:?}");
     assert!(String::from_utf8_lossy(&detail.stdout).contains(&work));
+    assert!(String::from_utf8_lossy(&detail.stdout).contains("next action: lead_decision"));
 
     // (c) `session recovery show --json` carries the same derived Work.
     let show = ok_json(exitbind(
@@ -259,6 +254,112 @@ fn resume_hook_names_the_plain_route_member_work_and_its_detail_command() {
         .unwrap();
     assert!(shown_detail.status.success(), "{shown_detail:?}");
     fs::remove_dir_all(project.root).unwrap();
+}
+
+#[test]
+fn resume_refuses_mismatched_session_and_missing_owner_without_writes() {
+    let project = Project::new("resume-unavailable-owner");
+    let session = "claude-resume-unavailable-owner";
+    let work = incorporate_and_begin(&project, session, "protected-goal");
+    let state_before = files_under(&project.root.join(".exitbind"));
+    let goals_before = files_under(&project.session_store);
+    let mismatch = resume_hook(&project, "another-session", &claude(session));
+    assert!(mismatch.contains("session ID disagrees"), "{mismatch}");
+    assert!(mismatch.contains("no Work was selected"), "{mismatch}");
+    assert!(
+        !mismatch.contains(&format!("current Work {work}")),
+        "{mismatch}"
+    );
+    assert_eq!(files_under(&project.root.join(".exitbind")), state_before);
+    assert_eq!(files_under(&project.session_store), goals_before);
+
+    let owner = native_session_root(&project.session_store, "claude", session).join("owner.json");
+    fs::remove_file(owner).unwrap();
+    let state_before = files_under(&project.root.join(".exitbind"));
+    let goals_before = files_under(&project.session_store);
+    let unavailable = resume_hook(&project, session, &claude(session));
+    assert!(
+        unavailable.contains("owner record is absent or unavailable"),
+        "{unavailable}"
+    );
+    assert!(
+        unavailable.contains("no Work was selected"),
+        "{unavailable}"
+    );
+    assert!(
+        !unavailable.contains(&format!("current Work {work}")),
+        "{unavailable}"
+    );
+    assert_eq!(files_under(&project.root.join(".exitbind")), state_before);
+    assert_eq!(files_under(&project.session_store), goals_before);
+}
+
+#[test]
+fn same_session_resume_keeps_goal_and_saved_decisions_reachable() {
+    let project = Project::new("resume-retained-goal");
+    let session = "claude-resume-retained-goal";
+    let work = incorporate_and_begin(&project, session, "retained-goal");
+    let step = "Continue the same Work and preserve the pending requirement";
+    let correction = "Use the corrected output format";
+    let prohibition = "Do not publish the fixture";
+    in_session(
+        &project,
+        session,
+        &["session", "recovery", "record", "--step", step],
+    );
+    for decision in [correction, prohibition] {
+        in_session(
+            &project,
+            session,
+            &["session", "recovery", "record", "--decision", decision],
+        );
+    }
+    let state_before = files_under(&project.root.join(".exitbind"));
+    let goals_before = files_under(&project.session_store);
+    let context = resume_hook(&project, session, &claude(session));
+    let route = context
+        .split('`')
+        .find(|part| part.contains("session recovery show --json"))
+        .unwrap_or_else(|| panic!("recovery route missing: {context}"));
+    let show = super::support::git_topology::command("/bin/sh")
+        .args(["-c", route])
+        .current_dir(&project.root)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", &project.session_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    let show = ok_json(show);
+    assert_eq!(show["goal"]["goalId"], "retained-goal");
+    assert_eq!(show["activeSavedStep"]["step"], step);
+    assert_eq!(
+        show["activeSavedStep"]["leadDecisions"],
+        json!([correction, prohibition])
+    );
+    assert_eq!(show["currentWorks"]["works"][0]["work"], work);
+    let route = show["readRoutes"]["goalStatusArgv"]
+        .as_array()
+        .expect("exact owner Goal route");
+    let mut command = super::support::git_topology::command(route[0].as_str().unwrap());
+    command
+        .args(route[1..].iter().map(|value| value.as_str().unwrap()))
+        .current_dir(&project.root)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", &project.session_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1");
+    let goal = ok_json(command.output().unwrap());
+    assert_eq!(goal["goal"], "Carry this conversation across a host resume");
+    assert!(goal
+        .to_string()
+        .contains("Name the open Work after the resume"));
+    assert_eq!(files_under(&project.root.join(".exitbind")), state_before);
+    assert_eq!(files_under(&project.session_store), goals_before);
 }
 
 #[test]
@@ -533,17 +634,13 @@ fn resume_hook_on_a_closed_goal_states_one_fact_and_no_recovery_route() {
     assert_eq!(closed["closure"]["closed"], true);
     let revision = closed["closure"]["revision"].as_u64().unwrap();
 
-    // After the fixed session core, the recovery text is exactly one plain fact.
+    // The recovery ends with exactly one plain fact after the project context.
     let context = resume_hook(&project, session, &claude(session));
     let fact = format!(
         "Exitbind native Goal closed-goal is closed (revision {revision}); nothing to resume."
     );
-    let (_, recovery) = context.rsplit_once("\nLead profile: ").unwrap();
-    assert_eq!(
-        recovery.split_once('\n').map(|(_, rest)| rest),
-        Some(fact.as_str()),
-        "{context}"
-    );
+    assert_eq!(context.lines().last(), Some(fact.as_str()), "{context}");
+    assert_eq!(context.matches(&fact).count(), 1, "{context}");
     for absent in [
         "hint",
         "Journey:",

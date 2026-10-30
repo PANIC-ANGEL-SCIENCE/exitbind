@@ -88,14 +88,14 @@ fn work_line_forms(
         })
         .collect::<Vec<_>>();
     match assignments.len() {
-        0 => [next.clone(), next, format!("{core}.")],
+        0 => [next.clone(), next, format!("{core};")],
         count => [
             format!("{next} Open assignments: {}.", assignments.join(", ")),
             format!(
                 "{next} {count} open assignment{}.",
                 if count == 1 { "" } else { "s" }
             ),
-            format!("{core}."),
+            format!("{core};"),
         ],
     }
 }
@@ -279,8 +279,28 @@ mod tests {
         assert!(full.contains("Open assignments: sma_"), "{full}");
         let counted = derived_hook_text(&derived, &trees(), 1400, EXE);
         assert!(
-            counted.contains("8 open assignments.") || counted.ends_with(&format!("{config}.")),
+            counted.contains("8 open assignments.") || counted.ends_with(&format!("{config};")),
             "{counted}"
+        );
+    }
+
+    #[test]
+    fn minimal_work_route_executes_without_attaching_prose_to_config() {
+        let config = "/tmp/space and 'quote'/exitbind.json";
+        let item = work(7, config, 8);
+        let forms = work_line_forms(&item, "R54", None, "/bin/echo");
+        let command = forms[2].split_once("; read: ").unwrap().1;
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", command])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{command}: {output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!(
+                "work detail {} --view action --config {config}\n",
+                item.work
+            )
         );
     }
 }

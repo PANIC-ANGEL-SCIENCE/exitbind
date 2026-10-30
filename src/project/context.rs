@@ -194,26 +194,57 @@ pub(crate) fn memory_content_for_recipient(
     Ok(json!({"reference":reference, "content":content}))
 }
 
+/// Facts whose absence would conceal role provenance or unavailable memory.
+pub(crate) fn session_required(loaded: &Loaded, facts: &Value) -> String {
+    let context_route =
+        crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
+    let mut text = format!("\nCurrent project facts: `{context_route}`.");
+    if let Some(lead) = facts["lead"].as_object() {
+        text.push_str(&format!(
+            "\nLead profile: {} -> {} (sha256 {}).",
+            lead["agentId"].as_str().unwrap_or("?"),
+            lead["nativeName"].as_str().unwrap_or("?"),
+            lead["profileSha256"].as_str().unwrap_or("unavailable")
+        ));
+    }
+    if facts["memory"]["state"] == "unavailable" {
+        text.push_str("\nProject memory unavailable; do not assume earlier rules.");
+    }
+    text
+}
+
+fn omitted_line(count: usize) -> String {
+    format!("\n{count} more references; run the current project facts route above.")
+}
+
+/// Reserve the complete pointer before adding optional reference details.
+pub(crate) fn session_reference_reserve(facts: &Value) -> usize {
+    let rules = facts["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|rule| rule["state"] == "current")
+        .count();
+    let memory = facts["memory"]["references"].as_array().map_or(0, Vec::len);
+    if rules + memory == 0 {
+        0
+    } else {
+        omitted_line(rules + memory).len()
+    }
+}
+
 /// Fit complete references only; the host hook never cuts an instruction mid-byte.
-pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
-    let facts = snapshot(loaded);
-    let mut text = String::new();
+pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) -> String {
+    let mut text = session_required(loaded, facts);
+    let reserve = session_reference_reserve(facts);
     let add = |text: &mut String, line: &str| {
-        if text.len() + line.len() <= budget {
+        if text.len() + line.len() + reserve <= budget {
             text.push_str(line);
             true
         } else {
             false
         }
     };
-    let context_route =
-        crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
-    if !add(
-        &mut text,
-        &format!("\nCurrent project facts: `{context_route}`."),
-    ) {
-        return text;
-    }
     let focus = &facts["focus"];
     let focus_line = match focus["state"].as_str() {
         Some("work") => format!(
@@ -247,15 +278,6 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
         observed("filesystemAvailableBytes")
     );
     add(&mut text, &resource_line);
-    if let Some(lead) = facts["lead"].as_object() {
-        let line = format!(
-            "\nLead profile: {} -> {} (sha256 {}).",
-            lead["agentId"].as_str().unwrap_or("?"),
-            lead["nativeName"].as_str().unwrap_or("?"),
-            lead["profileSha256"].as_str().unwrap_or("unavailable")
-        );
-        add(&mut text, &line);
-    }
     let mut omitted = 0usize;
     for rule in facts["rules"].as_array().into_iter().flatten() {
         if rule["state"] != "current" {
@@ -277,18 +299,6 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
     // The pointer to the omitted references always fits: memory lines spend
     // only what is left after reserving it. It names the facts route the
     // first line already prints in full.
-    let omitted_line = |count: usize| {
-        format!("\n{count} more references; run the current project facts route above.")
-    };
-    let reserve = omitted_line(references.len()).len();
-    let add_memory = |text: &mut String, line: &str| {
-        if text.len() + line.len() + reserve <= budget {
-            text.push_str(line);
-            true
-        } else {
-            false
-        }
-    };
     let mut read_route_added = false;
     for reference in &references {
         if !read_route_added {
@@ -302,7 +312,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
                 ],
                 Some(&loaded.path),
             );
-            read_route_added = add_memory(
+            read_route_added = add(
                 &mut text,
                 &format!("\nRead a project memory item: `{route}`."),
             );
@@ -314,24 +324,14 @@ pub(crate) fn session_addendum(loaded: &Loaded, budget: usize) -> String {
             reference["sourcePath"].as_str().unwrap_or("?"),
             reference["sourceSha256"].as_str().unwrap_or("?"),
         );
-        if !read_route_added || !add_memory(&mut text, &line) {
+        if !read_route_added || !add(&mut text, &line) {
             omitted += 1;
         }
     }
-    if facts["memory"]["state"] == "unavailable" {
-        add(
-            &mut text,
-            "\nProject memory unavailable; do not assume earlier rules.",
-        );
-    }
     if omitted > 0 {
         let line = omitted_line(omitted);
-        if !add(&mut text, &line) {
-            // Drop the final optional line to preserve a complete detail route.
-            if let Some(last) = text.rfind('\n') {
-                text.truncate(last);
-            }
-            let _ = add(&mut text, &line);
+        if text.len() + line.len() <= budget {
+            text.push_str(&line);
         }
     }
     text

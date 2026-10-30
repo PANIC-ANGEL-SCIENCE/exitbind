@@ -9,3 +9,9 @@ pub(super) fn receive_work(config: Option<&std::path::Path>) -> String {
         crate::emitted::command_line(&["work", "resume", "--json"], config),
         crate::emitted::command_line(&["work", "continuation", &crate::emitted::slot("WORK")], config))
 }
+
+/// Keep a complete navigation route when the full examples exceed the budget.
+pub(super) fn receive_work_compact(config: Option<&std::path::Path>) -> String {
+    format!("Known Work: read its work detail --json. Otherwise run `{}` then detail. Read profile, rules, assignment, evidence and forms; refresh outdated/incomplete detail. Focus grants no authority. Use continuation only for an initialized same-Work cross-host handoff; preserve foreign Goal sidecars. Never read raw .exitbind state.",
+        crate::emitted::command_line(&["work", "resume", "--json"], config))
+}
