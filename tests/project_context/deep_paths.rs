@@ -41,7 +41,7 @@ fn deep_context(label: &str, depth: usize) -> (String, String) {
     let bin = deep("bin");
     fs::create_dir_all(&bin).unwrap();
     let exe = bin.join("exitbind");
-    fs::copy(env!("CARGO_BIN_EXE_exitbind"), &exe).unwrap();
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &exe);
     let context = session_hook_with(&exe, &root);
     let command = context
         .split_once("Current project facts: `")

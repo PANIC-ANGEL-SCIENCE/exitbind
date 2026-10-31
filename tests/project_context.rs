@@ -115,12 +115,12 @@ fn session_hook(root: &Path) -> String {
 
 fn session_hook_with(executable: &Path, root: &Path) -> String {
     let payload = json!({"hook_event_name":"SessionStart", "cwd":root});
-    let mut process = support::git_topology::command(executable)
+    let mut command = support::git_topology::command(executable);
+    command
         .arg("hook-run")
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stdout(Stdio::piped());
+    let mut process = support::spawn(&mut command).unwrap();
     // A command may refuse and exit before reading stdin; its output is still asserted.
     if let Err(error) = process
         .stdin
@@ -137,6 +137,77 @@ fn session_hook_with(executable: &Path, root: &Path) -> String {
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn executable_busy_retry_stops_at_one_child_and_preserves_failures() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = support::temp("executable-busy");
+    let executable = root.join("busy-script");
+    let executions = root.join("executions");
+    fs::write(
+        &executable,
+        b"#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' \"$line\" >> \"$1\"\nprintf '%s' \"$line\"\nexit 37\n",
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut writer = Some(
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&executable)
+            .unwrap(),
+    );
+    let mut command = support::git_topology::command(&executable);
+    command
+        .arg(&executions)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut attempts = 0;
+    let mut busy_errors = 0;
+    let mut child = support::retry_executable_busy(|| {
+        attempts += 1;
+        let result = command.spawn();
+        if result.as_ref().err().and_then(|error| error.raw_os_error()) == Some(26) {
+            busy_errors += 1;
+            drop(writer.take());
+        }
+        result
+    })
+    .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"piped input\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(busy_errors >= 1, "the held writer must produce ETXTBSY");
+    assert_eq!(attempts, busy_errors + 1);
+    assert_eq!(output.status.code(), Some(37));
+    assert_eq!(output.stdout, b"piped input");
+    assert_eq!(fs::read(&executions).unwrap(), b"piped input\n");
+
+    let mut run = support::git_topology::command("/bin/sh");
+    run.args(["-c", "printf run >> \"$1\"; exit 37", "fixture"])
+        .arg(&executions);
+    let output = support::run(&mut run);
+    assert_eq!(output.status.code(), Some(37));
+    assert_eq!(fs::read(&executions).unwrap(), b"piped input\nrun");
+
+    let mut other_attempts = 0;
+    let error = support::retry_executable_busy(|| {
+        other_attempts += 1;
+        Err::<(), _>(std::io::Error::from_raw_os_error(13))
+    })
+    .unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(13));
+    assert_eq!(other_attempts, 1);
+    eprintln!(
+        "observed {busy_errors} ETXTBSY before one child; {attempts} spawn attempts; piped input and exit 37 preserved; non-busy error attempts={other_attempts}"
+    );
 }
 
 #[test]

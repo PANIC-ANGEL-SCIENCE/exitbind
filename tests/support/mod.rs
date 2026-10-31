@@ -304,25 +304,40 @@ pub fn place_executable(source: &Path, target: &Path) {
     std::fs::rename(&staging, target).expect("place test binary");
 }
 
-/// Run a command that may have just been written to disk.
+/// Retry only the pre-execution busy error for a freshly written executable.
 ///
 /// A concurrently forked child can still hold the write descriptor for the
 /// binary's inode for the moment before it execs, and Linux answers `exec` on
 /// such a file with `ETXTBSY`. That is a property of the harness, not of the
 /// product, so wait briefly for the descriptor to go away instead.
 #[allow(dead_code)]
-pub fn run(command: &mut std::process::Command) -> std::process::Output {
+pub(crate) fn retry_executable_busy<T>(
+    mut launch: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
     const TEXT_FILE_BUSY: i32 = 26;
     for _ in 0..200 {
-        match command.output() {
-            Ok(output) => return output,
+        match launch() {
+            Ok(value) => return Ok(value),
             Err(error) if error.raw_os_error() == Some(TEXT_FILE_BUSY) => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            Err(error) => panic!("run test command: {error}"),
+            Err(error) => return Err(error),
         }
     }
     panic!("test binary stayed busy for two seconds")
+}
+
+/// Run a command that may have just been written to disk.
+#[allow(dead_code)]
+pub fn run(command: &mut std::process::Command) -> std::process::Output {
+    retry_executable_busy(|| command.output())
+        .unwrap_or_else(|error| panic!("run test command: {error}"))
+}
+
+/// Spawn a freshly written executable while retaining its configured pipes.
+#[allow(dead_code)]
+pub fn spawn(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    retry_executable_busy(|| command.spawn())
 }
 
 /// Exact bytes of one `work expand` section page. A UTF-8 page carries them
