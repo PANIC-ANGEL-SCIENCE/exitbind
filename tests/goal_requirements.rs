@@ -569,6 +569,8 @@ mod correction_and_journey;
 mod emitted_routes;
 #[path = "goal_requirements/follow_up_routes.rs"]
 mod follow_up_routes;
+#[path = "../src/cli/goal_action.rs"]
+mod goal_action;
 #[path = "goal_requirements/intake_and_identity.rs"]
 mod intake_and_identity;
 #[path = "goal_requirements/journey_config_change.rs"]

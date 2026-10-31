@@ -14,6 +14,7 @@ use crate::{
 mod activity;
 pub(crate) mod args;
 mod goal;
+mod goal_action;
 mod goal_completion;
 mod help;
 mod memory_cli;

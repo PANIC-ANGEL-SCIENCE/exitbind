@@ -1,5 +1,6 @@
 //! Canonical goal commands and bounded observational routes.
 
+use super::goal_action::{Admission, GoalAction};
 use super::{args, config, option, positional, print_json, status, Arguments};
 use serde_json::{json, Value};
 use std::io::{IsTerminal, Read};
@@ -10,26 +11,54 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         0,
         "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage",
     )?;
+    let action = GoalAction::parse(action).ok_or(
+        "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage",
+    )?;
+    admit_foreign_owner(l, a, action)?;
     match action {
-        "quarantine" => {
+        GoalAction::Quarantine => {
             args::assert_options(
-                "goal quarantine", a,
-                &["config", "json", "source-config", "verification-work", "request-id", "reason", "apply", "current-binding"],
+                "goal quarantine",
+                a,
+                &[
+                    "config",
+                    "json",
+                    "source-config",
+                    "verification-work",
+                    "request-id",
+                    "reason",
+                    "apply",
+                    "current-binding",
+                ],
             )?;
             args::assert_positionals("goal quarantine", a, 2)?;
-            let response = crate::session_goal::quarantine::record(l,
+            let response = crate::session_goal::quarantine::record(
+                l,
                 crate::session_goal::quarantine::Request {
-                    source_config: option(a, "source-config", "goal quarantine requires --source-config PATH")?,
+                    source_config: option(
+                        a,
+                        "source-config",
+                        "goal quarantine requires --source-config PATH",
+                    )?,
                     old_work: positional(a, 1, "goal quarantine requires OLD_WORK")?,
-                    verification_work: option(a, "verification-work", "goal quarantine requires --verification-work WORK")?,
-                    request_id: option(a, "request-id", "goal quarantine requires --request-id ID")?,
+                    verification_work: option(
+                        a,
+                        "verification-work",
+                        "goal quarantine requires --verification-work WORK",
+                    )?,
+                    request_id: option(
+                        a,
+                        "request-id",
+                        "goal quarantine requires --request-id ID",
+                    )?,
                     reason: option(a, "reason", "goal quarantine requires --reason TEXT")?,
                     apply: a.flags.contains_key("apply"),
                     current_binding: a.options.get("current-binding").map(String::as_str),
-                })?;
+                },
+            )?;
             print_json(&response)
         }
-        "recover" => {
+        GoalAction::Recover => {
             args::assert_options(
                 "goal recover",
                 a,
@@ -48,7 +77,10 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             args::assert_positionals("goal recover", a, 1)?;
             if a.flags.contains_key("project") {
-                return Err("goal recover is available only in the original native Goal owner context".into());
+                return Err(
+                    "goal recover is available only in the original native Goal owner context"
+                        .into(),
+                );
             }
             let scope = journal_scope(l, a, false)?;
             scope.require_owner()?;
@@ -56,8 +88,16 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 &scope.root,
                 l,
                 crate::session_goal::recovery::Request {
-                    source_config: option(a, "source-config", "goal recover requires --source-config PATH")?,
-                    historical_fixtures: a.options.get("historical-fixtures").map(String::as_str).unwrap_or(""),
+                    source_config: option(
+                        a,
+                        "source-config",
+                        "goal recover requires --source-config PATH",
+                    )?,
+                    historical_fixtures: a
+                        .options
+                        .get("historical-fixtures")
+                        .map(String::as_str)
+                        .unwrap_or(""),
                     endpoint_configs: a.options.get("endpoint-configs").map(String::as_str),
                     request_id: option(a, "request-id", "goal recover requires --request-id ID")?,
                     reason: option(a, "reason", "goal recover requires --reason TEXT")?,
@@ -67,7 +107,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )
             .and_then(|value| print_json(&value))
         }
-        "prepare" => {
+        GoalAction::Prepare => {
             args::assert_options(
                 "goal prepare",
                 a,
@@ -99,7 +139,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 command,
             )?;
             let checker = derived.path.as_str();
-            if let Some(refusal) = crate::project::readiness::checker_refusal(&l.product_root, command)
+            if let Some(refusal) =
+                crate::project::readiness::checker_refusal(&l.product_root, command)
             {
                 return Err(format!(
                     "goal prepare refused before preparing the contract: {refusal}"
@@ -187,7 +228,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
                 "effect":"no Work is started or frozen until beginRoute is executed"}))
         }
-        "require" => {
+        GoalAction::Require => {
             args::assert_options(
                 "goal require",
                 a,
@@ -221,7 +262,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 )?,
             )?)
         }
-        "cover" => {
+        GoalAction::Cover => {
             args::assert_options("goal cover", a, &["config", "project", "goal-id", "json"])?;
             args::assert_positionals("goal cover", a, 1)?;
             let scope = journal_scope(l, a, false)?;
@@ -232,7 +273,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "goal-id", "goal cover requires --goal-id ID")?,
             )?)
         }
-        "assign" => {
+        GoalAction::Assign => {
             args::assert_options(
                 "goal assign",
                 a,
@@ -266,7 +307,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 disposition == "replace",
             )?)
         }
-        "incorporate" => {
+        GoalAction::Incorporate => {
             args::assert_options(
                 "goal incorporate",
                 a,
@@ -342,7 +383,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             };
             print_json(&value)
         }
-        "close" => {
+        GoalAction::Close => {
             args::assert_options(
                 "goal close",
                 a,
@@ -408,7 +449,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             }
             print_json(&value)
         }
-        "usage" => {
+        GoalAction::Usage => {
             args::assert_options(
                 "goal usage",
                 a,
@@ -433,7 +474,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             };
             print_json(&value)
         }
-        "adopt" => {
+        GoalAction::Adopt => {
             args::assert_options("goal adopt", a, &["config", "session-key", "json"])?;
             args::assert_positionals("goal adopt", a, 1)?;
             print_json(&crate::session_goal::adoption::adopt(
@@ -441,12 +482,35 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 option(a, "session-key", "goal adopt requires --session-key KEY")?,
             )?)
         }
-        "status" => status::goal_status(l, a),
-        _ => Err(
-            "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage"
-                .into(),
-        ),
+        GoalAction::Status => status::goal_status(l, a),
     }
+}
+
+/// Refuse a known foreign owner before dispatch. Unowned sessions are left to
+/// the action's existing admission, including the explicit adoption path.
+fn admit_foreign_owner(
+    loaded: &config::Loaded,
+    args: &Arguments,
+    action: GoalAction,
+) -> Result<(), String> {
+    let admission = action.admission();
+    let scope = match admission {
+        Admission::ProjectOrOwner => journal_scope(loaded, args, false)?,
+        // Recover rejects --project itself with its existing diagnostic.
+        Admission::Owner if action == GoalAction::Recover && args.flags.contains_key("project") => {
+            return Ok(())
+        }
+        Admission::Owner => crate::session_goal::native::scope(loaded, false)?,
+        Admission::Adoption | Admission::ReadOnly => return Ok(()),
+    };
+    if scope.owner.is_some() {
+        match admission {
+            Admission::ProjectOrOwner => scope.require_owner_or_project()?,
+            Admission::Owner => scope.require_owner()?,
+            Admission::Adoption | Admission::ReadOnly => unreachable!(),
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn journal_scope(

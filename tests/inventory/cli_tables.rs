@@ -1,9 +1,7 @@
 //! The CLI's own tables, read from `src/` with the shared scanner (R55 F11):
 //! the top-level commands the dispatcher matches, each family's subcommands
-//! from the handler it dispatches to, every applying command (one whose
-//! option check accepts `--apply`) and the values each `--view` accepts
-//! beside the values its refusal names. Inventories read these instead of a
-//! hand list or a refusal string, so a new arm is a new member.
+//! from the handler it dispatches to, option-bearing command forms and the
+//! values each `--view` accepts beside the values its refusal names.
 #![allow(dead_code)]
 use super::rust_source::{
     blank, block, call_arguments, code_words, function, literals, matches, production, string_list,
@@ -437,11 +435,6 @@ pub fn option_commands(sources: &[(String, String)], option: &str) -> Vec<(Strin
         }
     }
     found.into_iter().collect()
-}
-
-/// Every applying command: one whose option check accepts `--apply`.
-pub fn applying_in(sources: &[(String, String)]) -> Vec<(String, String)> {
-    option_commands(sources, "apply")
 }
 
 /// One function that reads `--view`: the values it accepts and the values

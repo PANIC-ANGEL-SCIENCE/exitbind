@@ -1,171 +1,11 @@
-//! R55 S2 (pattern P4, FR54-09): every applying command resolves its Goal
-//! scope and refusable inputs before its first write. Under a native session
-//! Goal another configured project owns, each one leaves the project tree
-//! and the session store byte-unchanged and names its route, or (setup)
-//! selects the project journal and says so.
-use super::cli_tables::{applying_in, families};
-use super::rust_source::production;
+//! Goal ownership is enforced for each public action before a foreign
+//! project's files or its session Goal store can be changed.
+use super::goal_action::{Admission, GoalAction};
 use super::setup_first_work::{fresh, setup, tree};
 use super::*;
 
-/// How an applying command meets a foreign-owned session Goal.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Route {
-    /// Refuses before writing and names `--project`.
-    Project,
-    /// Owner-context only by design: refuses before writing.
-    OwnerContext,
-    /// Reads only.
-    ReadOnly,
-}
-
-/// Every `goal` subcommand; a new one fails the inventory until listed.
-const GOAL_COMMANDS: &[(&str, Route)] = &[
-    ("prepare", Route::Project),
-    ("require", Route::Project),
-    ("cover", Route::Project),
-    ("assign", Route::Project),
-    ("incorporate", Route::Project),
-    ("close", Route::Project),
-    ("usage", Route::Project),
-    ("recover", Route::OwnerContext),
-    ("quarantine", Route::OwnerContext),
-    ("adopt", Route::OwnerContext),
-    ("status", Route::ReadOnly),
-];
-
-/// How an applying command outside `goal` meets a foreign-owned session
-/// Goal. The commands are read from the CLI (every option check that accepts
-/// `--apply`); each one is classified here.
-enum Applying {
-    /// Driven under a foreign-owned session Goal by this test (file, fn).
-    Driven(&'static str, &'static str),
-    /// Dispatched to the same admission as another applying command.
-    Shares(&'static str, &'static str),
-    /// Never writes a native session Goal: what it writes instead.
-    NoSessionGoal(&'static str),
-}
-
-const APPLYING: &[(&str, Applying)] = &[
-    (
-        "setup",
-        Applying::Driven(
-            "tests/goal_requirements/refuse_before_write.rs",
-            "fn setup_task_card_under_a_foreign_session_goal_uses_the_project_journal_and_says_so",
-        ),
-    ),
-    (
-        "work quarantine",
-        Applying::Driven(
-            "tests/check_observation_recovery/quarantine/foreign_session_goal.rs",
-            "fn quarantine_apply_under_a_foreign_session_goal_writes_nothing",
-        ),
-    ),
-    (
-        "work quarantine-followup",
-        Applying::Shares(
-            "work quarantine",
-            "one dispatcher arm and one admission (work::quarantine::start)",
-        ),
-    ),
-    (
-        "work replace-check",
-        Applying::NoSessionGoal(
-            "a successor Work ledger; it reads the Work's Goal association and refuses a foreign one",
-        ),
-    ),
-    (
-        "work recover-check",
-        Applying::NoSessionGoal("the Work's own check-observation ledger"),
-    ),
-    (
-        "work recover-pre-return",
-        Applying::NoSessionGoal("the Work's own pre-return reconciliation ledger"),
-    ),
-    (
-        "work usage",
-        Applying::NoSessionGoal("usage records under this project's state root"),
-    ),
-    (
-        "memory choose",
-        Applying::NoSessionGoal("task memory choices under the state root"),
-    ),
-    (
-        "memory correct-policy",
-        Applying::NoSessionGoal("a memory ledger's policy correction"),
-    ),
-    (
-        "memory revalidate",
-        Applying::NoSessionGoal("lesson ledgers under the state root"),
-    ),
-    (
-        "migrate",
-        Applying::NoSessionGoal("this project's own layout"),
-    ),
-    (
-        "project agents",
-        Applying::NoSessionGoal("native agent profile projections"),
-    ),
-    (
-        "project architecture select",
-        Applying::NoSessionGoal("this project's configuration"),
-    ),
-    (
-        "project capabilities select",
-        Applying::NoSessionGoal("this project's configuration"),
-    ),
-    (
-        "project advance admit",
-        Applying::NoSessionGoal("the project continuation journal; Work admission uses this project's Goal journal (ContractScope::Project)"),
-    ),
-    (
-        "project advance amend",
-        Applying::NoSessionGoal("the project continuation journal"),
-    ),
-    (
-        "project advance recover",
-        Applying::NoSessionGoal("the project continuation journal"),
-    ),
-    (
-        "project advance select",
-        Applying::NoSessionGoal("the project continuation journal"),
-    ),
-];
-
-/// Every applying command outside `goal` that `APPLYING` does not classify,
-/// and every classified one the CLI no longer has.
-fn unclassified(applying: &[(String, String)], classified: &[(&str, Applying)]) -> Vec<String> {
-    let names: Vec<&str> = applying
-        .iter()
-        .map(|(_, name)| name.as_str())
-        .filter(|name| !name.starts_with("goal "))
-        .collect();
-    let mut failures: Vec<String> = names
-        .iter()
-        .filter(|name| !classified.iter().any(|(listed, _)| listed == *name))
-        .map(|name| format!("applying command `{name}` is not in the P4 inventory"))
-        .collect();
-    for (listed, class) in classified {
-        if !names.contains(listed) {
-            failures.push(format!(
-                "P4 inventory lists `{listed}`, which no option check accepts --apply for"
-            ));
-        }
-        if let Applying::Shares(other, _) = class {
-            if !classified
-                .iter()
-                .any(|(name, class)| name == other && matches!(class, Applying::Driven(..)))
-            {
-                failures.push(format!("`{listed}` shares `{other}`, which is not driven"));
-            }
-        }
-    }
-    failures
-}
-
 const FOREIGN: &str = "native session Goal is owned by another configured project";
 
-/// A session whose Goal is owned by `owner`'s configuration.
 fn foreign_session(label: &str) -> (Project, (String, PathBuf)) {
     let owner = Project::new(label).with_native_session(&format!("{label}-session"));
     incorporate_native_generic_goal(&owner, "owner-goal", "The owner project's Goal");
@@ -173,34 +13,12 @@ fn foreign_session(label: &str) -> (Project, (String, PathBuf)) {
     (owner, session)
 }
 
+/// The action type is also the production dispatcher. Adding an action forces
+/// a fixture and admission decision here; no CLI source parsing is involved.
 #[test]
-fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
-    let families = families();
-    let mut arms = families
-        .iter()
-        .find(|(name, _)| name == "goal")
-        .map(|(_, subs)| subs.clone())
-        .expect("goal family");
-    let mut listed: Vec<String> = GOAL_COMMANDS
-        .iter()
-        .map(|(name, _)| (*name).to_owned())
-        .collect();
-    arms.sort_unstable();
-    listed.sort_unstable();
-    assert_eq!(arms, listed, "every goal subcommand is in the P4 inventory");
-    let applying = applying_in(&production());
-    assert!(applying.len() >= 15, "{applying:?}");
-    let failures = unclassified(&applying, APPLYING);
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for (command, class) in APPLYING {
-        if let Applying::Driven(file, test) = class {
-            let text = fs::read_to_string(root.join(file)).unwrap();
-            assert!(text.contains(test), "{command}: {file} lacks {test}");
-        }
-    }
-
-    let (_owner, session) = foreign_session("p4-goal-owner");
+fn goal_actions_refuse_a_foreign_owner_before_writing() {
+    let (owner, session) = foreign_session("p4-goal-owner");
+    let store = session.1.clone();
     let mut project = Project::new("p4-goal-mutations");
     project.file("request.txt", "Reject invalid input before persistence.\n");
     project.native_session = Some(session);
@@ -209,12 +27,11 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
     let work = format!("smw_{}", "1".repeat(64));
     let other = format!("smw_{}", "2".repeat(64));
     let journal = "3".repeat(64);
-    let cases: Vec<(&str, Vec<&str>, Option<&str>)> = vec![
-        (
-            "prepare",
-            vec![
-                "goal",
-                "prepare",
+    let binding = "4".repeat(64);
+    for &action in GoalAction::ALL {
+        assert_eq!(GoalAction::parse(action.name()), Some(action));
+        let tail = match action {
+            GoalAction::Prepare => vec![
                 "--goal-id",
                 "g",
                 "--requirement",
@@ -222,13 +39,7 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "--check-command",
                 "sh check.sh R1",
             ],
-            None,
-        ),
-        (
-            "require",
-            vec![
-                "goal",
-                "require",
+            GoalAction::Require => vec![
                 "--goal-id",
                 "g",
                 "--requirement",
@@ -238,14 +49,8 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "--artifact",
                 "request.txt",
             ],
-            None,
-        ),
-        ("cover", vec!["goal", "cover", "--goal-id", "g"], None),
-        (
-            "assign",
-            vec![
-                "goal",
-                "assign",
+            GoalAction::Cover => vec!["--goal-id", "g"],
+            GoalAction::Assign => vec![
                 "--goal-id",
                 "g",
                 "--requirement",
@@ -253,13 +58,7 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "--result-ref",
                 &work,
             ],
-            None,
-        ),
-        (
-            "incorporate",
-            vec![
-                "goal",
-                "incorporate",
+            GoalAction::Incorporate => vec![
                 "--goal-id",
                 "g",
                 "--goal",
@@ -267,42 +66,21 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "--none-applicable",
                 "obligations,findings,blockers,decisions,externalActions",
             ],
-            None,
-        ),
-        (
-            "close",
-            vec!["goal", "close", "--goal-id", "g", "--result-ref", &work],
-            None,
-        ),
-        (
-            "usage",
-            vec!["goal", "usage", "--goal-id", "g", "--apply"],
-            Some("{\"version\":1,\"goalId\":\"g\"}"),
-        ),
-        (
-            "recover",
-            vec![
-                "goal",
-                "recover",
+            GoalAction::Close => vec!["--goal-id", "g", "--result-ref", &work],
+            GoalAction::Usage => vec!["--goal-id", "g", "--apply"],
+            GoalAction::Recover => vec![
                 "--source-config",
                 config,
                 "--request-id",
                 "r1",
                 "--reason",
                 "recover",
+                "--current-binding",
+                &binding,
+                "--apply",
             ],
-            None,
-        ),
-        (
-            "adopt",
-            vec!["goal", "adopt", "--session-key", &journal],
-            None,
-        ),
-        (
-            "quarantine",
-            vec![
-                "goal",
-                "quarantine",
+            GoalAction::Adopt => vec!["--session-key", &journal],
+            GoalAction::Quarantine => vec![
                 &work,
                 "--source-config",
                 config,
@@ -312,155 +90,223 @@ fn every_goal_mutation_refuses_a_foreign_session_goal_before_writing() {
                 "r1",
                 "--reason",
                 "quarantine",
+                "--current-binding",
+                &binding,
+                "--apply",
             ],
-            None,
-        ),
-    ];
-    for (name, args, input) in cases {
-        let route = GOAL_COMMANDS
-            .iter()
-            .find(|(listed, _)| *listed == name)
-            .unwrap()
-            .1;
-        let before = (tree(&project.root), project.native_store_snapshot());
+            GoalAction::Status => vec!["--json"],
+        };
+        let mut args = vec!["goal", action.name()];
+        args.extend(tail);
+        let input = if action == GoalAction::Usage {
+            Some(
+                r#"{"id":"foreign-usage","source":"host_reported","scope":"setup","phase":"setup","status":"observed","semantics":"delta","lifetime":"invocation","values":{"inputTokens":4}}"#,
+            )
+        } else {
+            None
+        };
+        let before = (tree(&owner.root), tree(&project.root), tree(&store));
         let output = project.call(&args, input);
         let message = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(!output.status.success(), "{name}: {message}");
-        assert!(message.contains(FOREIGN), "{name}: {message}");
-        if route == Route::Project {
-            assert!(
-                message.contains("rerun with --project"),
-                "{name}: {message}"
-            );
+        if action == GoalAction::Status {
+            assert!(output.status.success(), "{action:?}: {message}");
+            let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(status["contextOnly"], true);
+            assert_eq!(status["authority"], "none");
+        } else {
+            assert!(!output.status.success(), "{action:?}: {message}");
+            assert!(message.contains(FOREIGN), "{action:?}: {message}");
+            if action.admission() == Admission::ProjectOrOwner {
+                assert!(
+                    message.contains("rerun with --project"),
+                    "{action:?}: {message}"
+                );
+            }
         }
         assert_eq!(
-            (tree(&project.root), project.native_store_snapshot()),
+            (tree(&owner.root), tree(&project.root), tree(&store)),
             before,
-            "{name} wrote before refusing"
+            "{action:?} wrote before refusing or reading"
         );
     }
 }
 
-/// The P4 inventory is read from the CLI: an applying command added to a
-/// dispatcher, with its option list inline, bound by `let` or under a
-/// command name bound by `let`, is a member until it is classified.
+/// Positive actions and independent persisted state assertions prevent a
+/// dispatcher that simply refuses every Goal operation from passing.
 #[test]
-fn an_applying_command_added_to_the_dispatcher_is_a_p4_member() {
-    let seeded = concat!(
-        "pub(super) fn work_command(l: &Loaded, a: &Arguments) -> Result<(), String> {\n",
-        "    match action {\n",
-        "        \"frobnicate\" => {\n",
-        "            args::assert_options(\n                \"work frobnicate\",\n                a,\n                &[\"config\", \"apply\"],\n            )?;\n",
-        "            Ok(())\n",
-        "        }\n",
-        "        \"look\" => args::assert_options(\"work look\", a, &[\"config\", \"json\"]),\n",
-        "        _ => Ok(()),\n",
-        "    }\n",
-        "}\n",
-        "fn grow(a: &Arguments) -> Result<(), String> {\n",
-        "    let mut allowed = vec![\"root\", \"apply\"];\n",
-        "    allowed.push(\"json\");\n",
-        "    let command = if a.flags.contains_key(\"x\") { \"grow fast\" } else { \"grow\" };\n",
-        "    args::assert_options(command, a, &allowed)\n",
-        "}\n",
-        "// args::assert_options(\"work commented\", a, &[\"apply\"]);\n",
+fn owner_actions_succeed_and_wrong_session_and_goal_leave_no_writes() {
+    let mut project = Project::new("p4-owner-positive").with_native_session("p4-owner-session");
+    project.setup();
+    let store = project.native_session.as_ref().unwrap().1.clone();
+    let prepared = project.value(
+        &[
+            "goal",
+            "prepare",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--check-command",
+            "sh check.sh R1",
+        ],
+        None,
     );
-    let applying = applying_in(&[("src/cli/seeded.rs".to_owned(), seeded.to_owned())]);
-    let names: Vec<&str> = applying.iter().map(|(_, name)| name.as_str()).collect();
-    assert_eq!(names, ["grow", "grow fast", "work frobnicate"]);
-    let failures = unclassified(&applying, &[("grow", Applying::NoSessionGoal("x"))]);
+    assert_eq!(prepared["selectedRequirementIds"], json!(["R1"]));
+    assert_eq!(prepared["readOnly"], true);
+
+    let work = project.begin("R1", "sh check.sh R1");
+    let assigned = project.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--result-ref",
+            &work,
+        ],
+        None,
+    );
+    assert_eq!(assigned["goalId"], "import");
+    let require = [
+        "goal",
+        "require",
+        "--goal-id",
+        "import",
+        "--requirement",
+        "R4",
+        "--obligation",
+        REQUIREMENTS[0].1,
+        "--artifact",
+        "request.txt",
+    ];
+    project.value(&require, None);
+    project.value(&["goal", "cover", "--goal-id", "import"], None);
     assert_eq!(
-        failures,
-        [
-            "applying command `grow fast` is not in the P4 inventory",
-            "applying command `work frobnicate` is not in the P4 inventory",
-        ]
+        project.status()["requirements"]["requirements"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
     );
-    let stale = unclassified(&[], &[("gone", Applying::Shares("work quarantine", "x"))]);
-    assert_eq!(stale.len(), 2, "{stale:?}");
+
+    let event = r#"{"id":"owner-usage","source":"host_reported","scope":"setup","phase":"setup","status":"observed","semantics":"delta","lifetime":"invocation","values":{"inputTokens":4,"cachedInputTokens":1,"outputTokens":3}}"#;
+    let usage = project.value(
+        &["goal", "usage", "--goal-id", "import", "--apply"],
+        Some(event),
+    );
+    assert_eq!(usage["status"], "recorded");
+    let observed = project.value(&["goal", "usage", "--goal-id", "import"], None);
+    assert_eq!(observed["totals"]["inputTokens"], 4);
+    assert_eq!(observed["totals"]["outputTokens"], 3);
+
+    project.set_native_session("p4-wrong-session");
+    let before = (tree(&project.root), tree(&store));
+    let wrong = project.call(&require, None);
+    assert!(!wrong.status.success(), "{wrong:?}");
+    assert!(
+        String::from_utf8_lossy(&wrong.stderr)
+            .contains("no native session Goal owner is established"),
+        "{wrong:?}"
+    );
+    assert_eq!((tree(&project.root), tree(&store)), before);
+
+    project.set_native_session("p4-owner-session");
+    let stale = [
+        "goal",
+        "require",
+        "--goal-id",
+        "stale",
+        "--requirement",
+        "R5",
+        "--obligation",
+        REQUIREMENTS[0].1,
+        "--artifact",
+        "request.txt",
+    ];
+    let before = (tree(&project.root), tree(&store));
+    let output = project.call(&stale, None);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("canonical goal identity does not match"),
+        "{output:?}"
+    );
+    assert_eq!((tree(&project.root), tree(&store)), before);
 }
 
-/// Tuple-bound names belong to the selected field, never an error message or
-/// pattern; each new applying command still needs an explicit classification.
+/// A recovery binding becomes stale when the Goal changes. The same public
+/// apply succeeds with a fresh preview and writes only after that comparison.
 #[test]
-fn applying_inventory_reads_the_selected_tuple_field_and_keeps_unclassified_commands() {
-    let seeded = concat!(
-        "fn recovery(a: &Arguments, action: &str) {\n",
-        "    let usage = \"work obsolete\";\n",
-        "    let (usage, missing) = match action {\n",
-        "        \"recover-check\" => (\"work recover-check\", \"decoy check message\"),\n",
-        "        \"recover-pre-return\" => (\"work recover-pre-return\", \"decoy pre-return message\"),\n",
-        "        _ => return Err(\"decoy unknown\".into()),\n",
-        "    };\n",
-        "    args::assert_options(usage, a, &[\"config\", \"apply\"])?;\n",
-        "}\n",
-        "fn reversed(a: &Arguments, action: &str) {\n",
-        "    let (missing, usage) = match action {\n",
-        "        \"fresh\" => (\"decoy missing\", \"work fresh\"),\n",
-        "        _ => return Err(\"decoy unknown\".into()),\n",
-        "    };\n",
-        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
-        "}\n",
-        "fn readonly(a: &Arguments, action: &str) {\n",
-        "    let (usage, missing) = match action {\n",
-        "        \"look\" => (\"work look\", \"decoy look message\"),\n",
-        "        _ => return Err(\"decoy unknown\".into()),\n",
-        "    };\n",
-        "    args::assert_options(usage, a, &[\"json\"])?;\n",
-        "}\n",
-        "fn later_binding(a: &Arguments, action: &str) {\n",
-        "    let (usage, missing) = match action { \"old\" => (\"work old\", \"decoy old\"), _ => return Err(\"decoy unknown\".into()) };\n",
-        "    let usage = \"work current\";\n",
-        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
-        "}\n",
-        "fn unrelated(action: &str) {\n",
-        "    let (usage, missing) = match action { \"x\" => (\"work phantom\", \"decoy phantom\"), _ => return };\n",
-        "}\n",
-        "fn parameter(a: &Arguments, usage: &str) {\n",
-        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
-        "}\n",
-        "fn closed_block(a: &Arguments, usage: &str, action: &str) {\n",
-        "    { let (usage, missing) = match action { \"x\" => (\"work closed\", \"decoy closed\"), _ => return }; }\n",
-        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
-        "}\n",
-        "fn outer_binding(a: &Arguments, action: &str) {\n",
-        "    let (usage, missing) = match action { \"x\" => (\"work outer\", \"decoy outer\"), _ => return };\n",
-        "    if ready() { args::assert_options(usage, a, &[\"apply\"])?; }\n",
-        "}\n",
-    );
-    let applying = applying_in(&[("src/cli/seeded.rs".to_owned(), seeded.to_owned())]);
-    let names: Vec<&str> = applying.iter().map(|(_, name)| name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "work current",
-            "work fresh",
-            "work outer",
-            "work recover-check",
-            "work recover-pre-return"
-        ]
-    );
-    let mut classified = vec![
-        ("work current", Applying::NoSessionGoal("x")),
-        ("work fresh", Applying::NoSessionGoal("x")),
-        ("work outer", Applying::NoSessionGoal("x")),
-        ("work recover-check", Applying::NoSessionGoal("x")),
+fn stale_recovery_apply_writes_nothing_and_fresh_apply_succeeds() {
+    let owner = Project::new("p4-recovery-owner").with_native_session("p4-recovery-session");
+    let goal = "Complete the original conversation work with current accepted evidence";
+    incorporate_native_generic_goal(&owner, "original-conversation", goal);
+    let mut source = Project::new("p4-recovery-source");
+    source.native_session = owner.native_session.clone();
+    source.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    source.file("source-input.txt", "original source evidence\n");
+    let work = source.begin_ordinary("Validate source evidence", "sh check.sh", &[]);
+    source.drive(&work, true);
+    let config = source.root.join("exitbind.json");
+    let config = config.to_str().unwrap();
+    let preview_args = [
+        "goal",
+        "recover",
+        "--source-config",
+        config,
+        "--request-id",
+        "p4-recovery",
+        "--reason",
+        "Retain the verified source evidence",
     ];
-    assert_eq!(
-        unclassified(&applying, &classified),
-        ["applying command `work recover-pre-return` is not in the P4 inventory"]
+    let stale = owner.value(&preview_args, None);
+    owner.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "original-conversation",
+            "--goal",
+            goal,
+            "--finding",
+            "Concurrent Goal change",
+            "--disposition",
+            "open",
+        ],
+        None,
     );
-    classified.push(("work recover-pre-return", Applying::NoSessionGoal("x")));
-    assert!(unclassified(&applying, &classified).is_empty());
-    let stale = unclassified(&[], &[("work recover-check", Applying::NoSessionGoal("x"))]);
-    assert_eq!(
-        stale,
-        ["P4 inventory lists `work recover-check`, which no option check accepts --apply for"]
+    let store = &owner.native_session.as_ref().unwrap().1;
+    let before = (tree(&owner.root), tree(&source.root), tree(store));
+    let mut args = preview_args.to_vec();
+    args.extend([
+        "--current-binding",
+        stale["currentBinding"].as_str().unwrap(),
+        "--apply",
+    ]);
+    let refused = owner.call(&args, None);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr)
+            .contains("--current-binding does not match the exact current recovery preview"),
+        "{refused:?}"
     );
+    assert_eq!((tree(&owner.root), tree(&source.root), tree(store)), before);
+
+    let fresh = owner.value(&preview_args, None);
+    let mut args = preview_args.to_vec();
+    args.extend([
+        "--current-binding",
+        fresh["currentBinding"].as_str().unwrap(),
+        "--apply",
+    ]);
+    let applied = owner.value(&args, None);
+    assert_eq!(applied["kind"], "native_goal_recovery_applied");
+    assert_ne!(tree(store), before.2);
 }
 
 /// The R54 case: setup used to apply the configuration, then fail on the

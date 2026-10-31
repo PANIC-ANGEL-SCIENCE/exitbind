@@ -254,7 +254,16 @@ fn argv_templates(text: &str, commands: &[(String, Vec<String>)]) -> Vec<String>
 /// Every command family with the subcommands its dispatcher accepts, read
 /// from the CLI's own tables; an option-only command has none.
 pub(super) fn dispatched() -> Vec<(String, Vec<String>)> {
-    families()
+    let mut commands = families();
+    let goal = commands
+        .iter_mut()
+        .find(|(name, _)| name == "goal")
+        .expect("goal dispatcher");
+    goal.1 = super::goal_action::GoalAction::ALL
+        .iter()
+        .map(|action| action.name().to_owned())
+        .collect();
+    commands
 }
 
 /// A refusal or hint that names a follow-up command prints the full route:
