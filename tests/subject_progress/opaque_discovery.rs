@@ -152,10 +152,44 @@ fn opaque_oracle_binds_public_operands_to_the_fixture_and_their_roles() {
 
 #[test]
 fn opaque_oracle_accepts_real_bounded_producer_routes() {
+    const ROUTE_BUDGET: usize = 1024;
+    const MAC_PATH_LIMIT: usize = 1024;
+    const STATE_PATH_HEADROOM: usize = 256;
+    const STATE_FILENAME_HEADROOM: usize = 64;
     let base = support::temp("opaque-route-fallback");
-    let root = (0..19).fold(base.join("state"), |path, index| {
-        path.join(format!("segment-{index}-{}", "p".repeat(52)))
-    });
+    let mut root = base.join("state");
+    // Quotes cost one filesystem byte and two JSON bytes. Pad only as much as
+    // this actual config operand needs to exceed the serialized route budget.
+    let config_json_bytes = loop {
+        let config = root.join("exitbind.json");
+        let bytes = serde_json::to_vec(config.to_str().expect("UTF-8 config path"))
+            .unwrap()
+            .len();
+        if bytes > ROUTE_BUDGET {
+            break bytes;
+        }
+        let quotes = ((ROUTE_BUDGET + 2 - bytes) / 2).min(200);
+        assert!(
+            (1..255).contains(&quotes),
+            "invalid component size: {quotes}"
+        );
+        root.push("\"".repeat(quotes));
+    };
+    let config = root.join("exitbind.json");
+    let root_bytes = root.as_os_str().len();
+    let config_bytes = config.as_os_str().len();
+    assert!(
+        config_json_bytes > ROUTE_BUDGET,
+        "config JSON: {config_json_bytes} B"
+    );
+    assert!(
+        root_bytes + STATE_PATH_HEADROOM < MAC_PATH_LIMIT && config_bytes < MAC_PATH_LIMIT,
+        "fixture paths leave insufficient Mac PATH_MAX headroom: root={root_bytes} B, \
+         config={config_bytes} B, config JSON={config_json_bytes} B, \
+         state reserve={STATE_PATH_HEADROOM} B, base={}",
+        base.display()
+    );
+    eprintln!("route fixture: root={root_bytes} B, config={config_bytes} B, config JSON={config_json_bytes} B");
     fs::create_dir_all(&root).unwrap();
     let executable = env!("CARGO_BIN_EXE_exitbind");
     let init = support::git_topology::command(executable)
@@ -164,7 +198,6 @@ fn opaque_oracle_accepts_real_bounded_producer_routes() {
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
-    let config = root.join("exitbind.json");
     let call = |args: &[&str], input: Option<&[u8]>| {
         let mut command = support::git_topology::command(executable);
         command
@@ -208,8 +241,26 @@ fn opaque_oracle_accepts_real_bounded_producer_routes() {
     );
     assert_opaque_envelope(&scoped, &root);
     assert_eq!(scoped["continuation"]["sameConfigRequired"], true,
-        "fixture must exercise the producer's bounded continuation route; config {} bytes; scoped={scoped}", config.as_os_str().len());
+        "fixture must exercise the producer's bounded continuation route; config {config_bytes} filesystem bytes, {config_json_bytes} JSON bytes; scoped={scoped}");
     assert!(scoped["continuation"]["command"].is_array(), "{scoped}");
+
+    let mut state_paths = vec![root.join(".exitbind")];
+    let mut longest_state_path = 0;
+    while let Some(path) = state_paths.pop() {
+        let bytes = path.as_os_str().len();
+        longest_state_path = longest_state_path.max(bytes);
+        assert!(
+            bytes + STATE_FILENAME_HEADROOM < MAC_PATH_LIMIT,
+            "generated state path is {bytes} B with {STATE_FILENAME_HEADROOM} B reserved: {}",
+            path.display()
+        );
+        if fs::symlink_metadata(&path).unwrap().is_dir() {
+            for entry in fs::read_dir(path).unwrap() {
+                state_paths.push(entry.unwrap().path());
+            }
+        }
+    }
+    eprintln!("longest generated state path: {longest_state_path} B");
 }
 
 #[test]

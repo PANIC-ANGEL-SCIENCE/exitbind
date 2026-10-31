@@ -334,12 +334,23 @@ fn recovery_reads_a_complete_journal_past_the_former_16_mib_bound() {
     std::fs::create_dir_all(&path).unwrap();
     std::fs::write(path.join("session-goal.jsonl"), &raw).unwrap();
     let started = std::time::Instant::now();
-    let read = read_for_recovery(&root).unwrap().unwrap();
+    let first = read_for_recovery(&root);
     eprintln!(
-        "complete-record journal of {} records, {} B: read_for_recovery {:?}",
+        "complete-record journal of {} records, {} B: first read_for_recovery {:?}, result {:?}",
         records.len(),
         raw.len(),
-        started.elapsed()
+        started.elapsed(),
+        first.as_ref().map(|record| record.is_some())
     );
+    if !matches!(&first, Ok(Some(_))) {
+        let started = std::time::Instant::now();
+        let diagnostic = read_for_recovery(&root);
+        eprintln!(
+            "diagnostic second read_for_recovery {:?}, result {:?}",
+            started.elapsed(),
+            diagnostic.as_ref().map(|record| record.is_some())
+        );
+    }
+    let read = first.unwrap().unwrap();
     assert_eq!(&read, records.last().unwrap());
 }
