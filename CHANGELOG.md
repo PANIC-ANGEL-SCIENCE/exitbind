@@ -23,6 +23,15 @@ that journal with an event hash mismatch. This is not corruption: do not
 delete or edit the journal; upgrade every binary that reads it, and do not
 downgrade.
 
+This source also records an interrupted pre-return reconciliation as
+`pre_return_reconciled`. Its ledger fields are
+`pre_return_reconciled.action`, `pre_return_reconciled.eventSha256`,
+`pre_return_reconciled.kind`, `pre_return_reconciled.previousEventSha256`,
+`pre_return_reconciled.producer`, `pre_return_reconciled.recovery`,
+`pre_return_reconciled.runId`, `pre_return_reconciled.timestamp`, and
+`pre_return_reconciled.version`. Earlier readers refuse that new action;
+use a compatible reader for the Work rather than editing its ledger.
+
 - A Goal journal stores each revision as a change record against the record
   before it, under the same sealed hash chain, and every journal written
   before still reads unchanged; recovery reads a journal as large as R55's

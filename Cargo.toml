@@ -93,6 +93,10 @@ name = "away_native"
 path = "tests/away_native.rs"
 
 [[test]]
+name = "pre_return_recovery"
+path = "tests/pre_return_recovery.rs"
+
+[[test]]
 name = "privacy_gate"
 required-features = ["repository-checks"]
 path = "tests/privacy_gate.rs"

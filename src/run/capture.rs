@@ -28,6 +28,8 @@ pub(crate) struct ObservationRequest {
     pub(crate) operation_id: String,
     pub(crate) capture: CapturePolicy,
     pub(crate) retain_partial: bool,
+    /// Optional exclusively owned proof for an interrupted pre-return.
+    pub(crate) durable_proof: Option<PathBuf>,
     pub(crate) preparation: Option<super::verification_preparation::RuntimePreparation>,
 }
 

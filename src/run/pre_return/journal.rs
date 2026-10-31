@@ -91,6 +91,11 @@ pub(super) fn record_path(
     Ok(directory.join(format!("pre-return-{attempt_id}.{suffix}.json")))
 }
 
+pub(super) fn observer_path(loaded: &Loaded, attempt_id: &str) -> Result<PathBuf, String> {
+    record_path(loaded, attempt_id, "attempt")?;
+    Ok(directory_path(loaded).join(format!("pre-return-{attempt_id}.observer.raw")))
+}
+
 pub(super) fn read_record(path: &Path) -> Result<Value, String> {
     let directory = path
         .parent()

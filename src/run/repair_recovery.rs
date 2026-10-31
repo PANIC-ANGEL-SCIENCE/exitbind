@@ -23,6 +23,14 @@ pub(super) fn before_worker_completion(
         }
         let (_, events, source) = load_at(loaded, path)?;
         let state = reduce_live(loaded, &events)?;
+        super::pre_return::guard_worker_before_effect(
+            loaded,
+            path,
+            &events,
+            &state,
+            expected,
+            assignment_handle,
+        )?;
         if state["checkObservationProtocol"] == crate::run::check_observation::PROTOCOL {
             if let Err(error) =
                 crate::run::guidance_continuity::assert_config_current(loaded, &state)

@@ -10,6 +10,11 @@ relabels its evidence as new evidence. Active Soulmate distribution ended in
 Original releases and unmodified records are retained in the private archive.
 The current release also retires its old executable profile and updater route.
 
+This source reads earlier pre-return admissions without rewriting them. A
+`pre_return_reconciled` event is a new v8 action: older readers refuse that
+ledger rather than treating its earlier unknown result as a pass. Use a
+compatible reader after such a decision; the admission stays available.
+
 ## Rename history
 
 The rename kept the existing version and repository history rather than
@@ -182,4 +187,7 @@ mixes versions; that is the "append" write below.
 | `src/run/error.rs` | `SOULMATE_DRIFT:` in-process drift channel | never: no code writes it | none: never persisted | `src/run/error.rs` unit test | retired |
 | `src/main.rs`, `src/cli/mod.rs` | `SOULMATE_JSON:` in-process machine channel | Soulmate surface branch only | none: never persisted | `src/cli/mod.rs` unit test | retired |
 | `src/evidence/receipt.rs`, `src/memory/choices.rs`, `src/memory/contextual.rs`, `src/memory/revalidation.rs` | receipt, memory choice and contextual policy versions 1 and 2 | both versions written today | written | `tests/task_local_memory.rs`, `tests/harness_receipt.rs` | keep: current forms, not historical |
+| `src/run/pre_return/predecessor.rs` | pre-return admission v1 and its result binding | current admission v1 | current admission records | `tests/pre_return_recovery.rs` | keep: unfinished admissions remain guarded across producer changes |
+| `src/run/pre_return/recovery.rs` | admission v1 and reconciliation/decision v1 in a v8 `pre_return_reconciled` event | current admission v1 and reconciliation event v8 | current forms | `tests/pre_return_recovery.rs` | keep: preserve the original admission and unknown outcome; older readers refuse the new event |
+| `src/work/pre_return_recovery.rs` | configured-Lead recovery decision v1, bound to the previewed snapshot | current decision template v1 | current form | `tests/pre_return_recovery.rs` | keep: require the current decision and preserve replay without another check |
 | `src/config/boundary.rs`, `src/config/mod.rs`, `src/evidence/harness.rs`, `src/memory/lessons/input.rs`, `src/memory/policy_correction.rs`, `src/project/architecture/validation.rs`, `src/project/capabilities.rs`, `src/project/continuation/amendment.rs`, `src/project/continuation/journal.rs`, `src/project/continuation/model.rs`, `src/project/specialists.rs`, `src/run/check_recovery.rs`, `src/run/governor_recovery.rs`, `src/run/guidance_continuity.rs`, `src/run/ledger/claim.rs`, `src/run/pre_return/execution.rs`, `src/run/state.rs`, `src/run/verification_preparation.rs`, `src/session_goal/display.rs`, `src/session_goal/requirements/model.rs`, `src/session_goal/usage/ingest.rs`, `src/work/file_effect_recovery.rs`, `src/work/managed_edit.rs`, `src/work/managed_edit/state.rs`, `src/work/native_action/continuation.rs`, `src/work/native_action/continuation/failure.rs`, `src/work/native_action/journal.rs`, `src/work/native_action/recovery.rs` | single-version formats checked for an exact version | current | written | each format's own tests | keep: exact match, no older form read |

@@ -3,6 +3,136 @@
   "rules": "Every compatibility marker the product recognises: `*Protocol` keys (a string literal matching the pattern, or a serde field whose snake_case name ends in `_protocol`), `FIELD`/`*_FIELD` extension constants, `deny_unknown_fields` struct fields and run-ledger allowlist fields, with one writer, one reader, the change that introduced it and the condition under which it may be retired; plus the stored-line kinds, environment controls and exact text values listed below. check_compatibility_markers.py reads src/ against this table: every recognised marker or record field must have a row of its kind, a row must be present in src/, and every row must carry a retirement condition. A key that is both a protocol key and a record field has one row per kind. Rows of kind record-kind, env and text are presence-checked only: the check fails when the value is absent from a named file, but a new stored line kind, environment control or message is not discovered. A record-field row names a field the release introduced after the previous release's snapshot (tests/fixtures/release-record-fields.txt); rows stay listed once the snapshot holds them, so the table is a superset of the source-derived additions, and they are the record fields tests/release_integrity/record_fields.rs requires in the CHANGELOG's mixed-version paragraph.",
   "markers": [
     {
+      "id": "pre-return-reconciled-record-kind",
+      "marker": "pre_return_reconciled",
+      "kind": "record-kind",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/apply.rs"
+      ],
+      "introduced": "unreleased source",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-action",
+      "marker": "pre_return_reconciled.action",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-event-sha256",
+      "marker": "pre_return_reconciled.eventSha256",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-kind",
+      "marker": "pre_return_reconciled.kind",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-previous-event-sha256",
+      "marker": "pre_return_reconciled.previousEventSha256",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-producer",
+      "marker": "pre_return_reconciled.producer",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-recovery",
+      "marker": "pre_return_reconciled.recovery",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-run-id",
+      "marker": "pre_return_reconciled.runId",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-timestamp",
+      "marker": "pre_return_reconciled.timestamp",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
+      "id": "pre-return-reconciled-version",
+      "marker": "pre_return_reconciled.version",
+      "kind": "record-field",
+      "writers": [
+        "src/run/pre_return/recovery.rs"
+      ],
+      "readers": [
+        "src/run/state/unknown_fields.rs"
+      ],
+      "introduced": "unreleased source (run-event v8)",
+      "retire": "when no reconciled v8 run ledger is read"
+    },
+    {
       "id": "basis-protocol",
       "marker": "basisProtocol",
       "kind": "protocol",

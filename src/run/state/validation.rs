@@ -42,6 +42,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             | "check_observation"
             | "check_observation_failed"
             | "check_observation_recovered"
+            | "pre_return_reconciled"
     ) {
         return Err(format!("invalid run ledger line {line}: invalid action"));
     }
@@ -95,6 +96,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         validate_start_version(event, line, version.unwrap_or_default())
     } else if action == "check_observation_recovered" {
         crate::run::check_recovery::validate(event)
+    } else if action == "pre_return_reconciled" {
+        crate::run::pre_return::recovery::validate(event)
     } else if matches!(
         event["action"].as_str(),
         Some("check_observation" | "check_observation_failed")

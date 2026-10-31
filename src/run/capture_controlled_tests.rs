@@ -19,6 +19,7 @@ impl Fixture {
             operation_id: identity.into(),
             capture: CapturePolicy::FINITE,
             retain_partial: true,
+            durable_proof: None,
             preparation: None,
         }
     }

@@ -92,6 +92,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the evidence the re-plan asks for",
     },
     Placeholder {
+        name: "EFFECTS_REASON",
+        fills: &[Fill::Field("effectsReason")],
+        meaning: "the configured Lead's assessment of residual effects",
+    },
+    Placeholder {
         name: "ARTIFACT_ROOT",
         fills: &[Fill::Flag("--artifact-root")],
         meaning: "product or state",

@@ -65,6 +65,22 @@ pub(super) fn reject_unknown(
                     "invalid run ledger line {line}: unknown field '{key}'"
                 ))
             });
+    } else if action == "pre_return_reconciled" {
+        return reject_unknown_fields(
+            object,
+            &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "recovery",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            line,
+        );
     } else if matches!(
         action,
         "check_observation" | "check_observation_failed" | "check_observation_recovered"

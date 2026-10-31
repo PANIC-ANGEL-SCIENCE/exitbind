@@ -43,6 +43,12 @@ pub(crate) enum Class {
     PreReturnConfiguration,
     /// A pre-return check needs the tested product inputs.
     PreReturnInputs,
+    /// A pre-return recovery no longer matches its bound predecessor.
+    PreReturnRecoveryPredecessor,
+    /// A pre-return recovery no longer matches its retained evidence.
+    PreReturnRecoveryEvidence,
+    /// A pre-return recovery decision no longer matches its preview or replay.
+    PreReturnRecoveryDecision,
     /// A forward repair needs the frozen configuration.
     RepairConfiguration,
     /// The selected architecture contract bytes differ.
@@ -144,6 +150,24 @@ pub(crate) const MEMBERS: &[Member] = &[
         meaning: "restore the tested inputs, or bind the changed inputs in a successor run",
     },
     Member {
+        class: Class::PreReturnRecoveryPredecessor,
+        classification: "pre_return_recovery_predecessor_changed",
+        message: "pre-return recovery requires its exact bound predecessor and subject",
+        meaning: "inspect the current Work and preserve the retained admission; do not retry the interrupted execution",
+    },
+    Member {
+        class: Class::PreReturnRecoveryEvidence,
+        classification: "pre_return_recovery_evidence_changed",
+        message: "pre-return recovery requires its exact retained evidence",
+        meaning: "inspect the current Work and preserve the bound evidence before any reconciliation or retry",
+    },
+    Member {
+        class: Class::PreReturnRecoveryDecision,
+        classification: "pre_return_recovery_decision_changed",
+        message: "pre-return recovery decision does not match its bound state",
+        meaning: "inspect the current Work and follow its current recovery action; do not repeat the interrupted execution",
+    },
+    Member {
         class: Class::RepairConfiguration,
         classification: "repair_configuration_changed",
         message: "forward repair refuses changed configuration; use authorized supersession",
@@ -214,6 +238,11 @@ pub(crate) enum Route<'a> {
     },
     /// `session recovery show`: read the current recovery record.
     RecoveryShow,
+    /// `work detail`: inspect the current action without changing it.
+    WorkDetail {
+        work: &'a str,
+        config: &'a std::path::Path,
+    },
     /// `run supersede`: bind the changed input in a successor run.
     Supersede {
         ledger: Option<&'a str>,
@@ -263,6 +292,10 @@ impl Route<'_> {
             ),
             Route::RecoveryShow => (
                 Emitted::new(["session", "recovery", "show", "--json"]),
+                true,
+            ),
+            Route::WorkDetail { work, config } => (
+                Emitted::new(["work", "detail", *work, "--json"]).config(config),
                 true,
             ),
             Route::Supersede { ledger, config } => {

@@ -56,6 +56,11 @@ pub(super) fn run_or_recover(
             combined_bytes: policy.capture_limit_bytes.saturating_mul(2),
         },
         retain_partial: true,
+        durable_proof: if cfg!(target_os = "linux") && preparation.is_some() {
+            Some(journal::observer_path(loaded, attempt_id)?)
+        } else {
+            None
+        },
         preparation,
     };
     let result_path = record_path(loaded, attempt_id, "result")?;

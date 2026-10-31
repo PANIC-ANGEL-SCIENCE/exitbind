@@ -2,6 +2,8 @@
 mod binding_diagnostic;
 mod execution;
 mod journal;
+mod predecessor;
+pub(crate) mod recovery;
 mod response;
 
 use self::execution::run_or_recover;
@@ -26,10 +28,8 @@ fn current_binding(
 ) -> Result<Value, String> {
     let input_sha = live_inputs(state)?;
     let work = canonical_work_for_ledger(path).ok();
-    let ledger = path
-        .path
-        .strip_prefix(&path.root)
-        .map_err(|_| "ledger is outside the canonical state root")?
+    let ledger = crate::project::path::inputs::within(&path.root, &path.path)
+        .ok_or("ledger is outside the canonical state root")?
         .to_str()
         .ok_or("ledger path is not valid UTF-8")?
         .replace('\\', "/");
@@ -39,7 +39,7 @@ fn current_binding(
     } else {
         Vec::new()
     };
-    let operation_id = crate::evidence::hash::value(&json!({
+    let mut operation_id = crate::evidence::hash::value(&json!({
         "runId": state["runId"],
         "stage": assignment["stage"],
         "attempt": assignment["attempt"],
@@ -49,6 +49,13 @@ fn current_binding(
         "policySha256": crate::evidence::hash::value(&policy.value()),
         "operation": "pre-return"
     }));
+    let recovery = recovery::for_assignment(state, assignment)?;
+    if let Some(recovery) = recovery {
+        operation_id = crate::evidence::hash::value(&json!({
+            "operation": "pre-return-recovery", "previousOperationId": operation_id,
+            "reconciliationEventSha256": recovery["eventSha256"]
+        }));
+    }
     let preparation = crate::run::verification_preparation::planned(
         loaded,
         state,
@@ -69,6 +76,9 @@ fn current_binding(
         "checkerExecutableSha256": crate::producer::build_identity()["executableSha256"],
         "producer": crate::producer::evidence_for_version(8)
     });
+    if let Some(recovery) = recovery {
+        binding["preReturnReconciliationSha256"] = recovery["eventSha256"].clone();
+    }
     if let Some(preparation) = preparation {
         binding["verificationPreparation"] = preparation.identity()?;
         binding["verificationPreparationSha256"] = json!(preparation.sha256()?);
@@ -123,6 +133,7 @@ fn latest_or_create(
 ) -> Result<(String, Value, bool, super::continuation_effect::Ticket), String> {
     let attempt_id =
         crate::evidence::hash::value(&json!({"binding": binding, "limits": policy.value()}));
+    predecessor::assert_no_unresolved(loaded, &binding, &attempt_id, state)?;
     let attempt_path = record_path(loaded, &attempt_id, "attempt")?;
     if attempt_path.exists() {
         let attempt = read_record(&attempt_path)?;
@@ -228,6 +239,73 @@ pub(super) fn enabled(loaded: &Loaded, ledger: &str) -> Result<bool, String> {
     Ok(reduce_live(loaded, &events)?
         .get("preReturnPolicy")
         .is_some())
+}
+
+/// Called under the same ledger lock as the possible forward-repair event.
+/// An interrupted check must be resolved before that event can be appended.
+pub(super) fn guard_worker_before_effect(
+    loaded: &Loaded,
+    path: &run_ledger::LedgerPath,
+    events: &[Value],
+    state: &Value,
+    expected: &AssignmentIdentity,
+    assignment_handle: &str,
+) -> Result<(), String> {
+    let Some(policy_value) = state.get("preReturnPolicy") else {
+        return Ok(());
+    };
+    let assignment = crate::run::assignment::pending(state)
+        .into_iter()
+        .find(|item| expected.matches(item))
+        .ok_or("worker assignment changed before the pre-return guard")?;
+    let work = canonical_work_for_ledger(path)?;
+    if crate::run::assignment::handle(&work, &assignment)? != assignment_handle {
+        return Err("worker assignment handle changed before the pre-return guard".into());
+    }
+    let ledger = path
+        .path
+        .strip_prefix(&path.root)
+        .map_err(|_| "ledger is outside the canonical state root")?
+        .to_str()
+        .ok_or("ledger path is not valid UTF-8")?
+        .replace('\\', "/");
+    let identity = json!({"runId":state["runId"],"ledger":ledger,"stage":assignment["stage"],
+        "attempt":assignment["attempt"],"agent":assignment["agent"],"role":assignment["role"]});
+    let pending = predecessor::unresolved(loaded, &identity)?;
+    let Some(reconciled) = recovery::for_assignment(state, &assignment)? else {
+        if let Some(attempt) = pending.first() {
+            return Err(format!(
+                "pre-return attempt {} has an uncertain outcome; inspect it and do not replay",
+                attempt["attemptId"]
+            ));
+        }
+        return Ok(());
+    };
+    let snapshot = &reconciled["recovery"]["snapshot"];
+    let predecessor = &snapshot["predecessor"]["attemptId"];
+    if pending
+        .iter()
+        .any(|attempt| attempt["attemptId"] != *predecessor)
+    {
+        return Err(
+            "the one reconciled pre-return retry is unfinished; no further effect is admitted"
+                .into(),
+        );
+    }
+    let policy = crate::run_value::pre_return_policy_from_value(policy_value, 1)?;
+    let binding = current_binding(
+        loaded,
+        path,
+        events,
+        state,
+        &assignment,
+        Some(&crate::evidence::hash::text(assignment_handle)),
+        &json!({"sha256":snapshot["held"]["sha256"]}),
+        &policy,
+    )?;
+    let current_id =
+        crate::evidence::hash::value(&json!({"binding":binding,"limits":policy.value()}));
+    predecessor::assert_no_unresolved(loaded, &binding, &current_id, state)
 }
 
 pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
@@ -386,6 +464,7 @@ pub(super) fn assert_pass_current(
         &policy,
     )?;
     let id = crate::evidence::hash::value(&json!({"binding":binding,"limits":policy.value()}));
+    predecessor::assert_no_unresolved(loaded, &binding, &id, state)?;
     if let Some(expected) = attempt_id.filter(|expected| *expected != id) {
         let saved = read_record(&record_path(loaded, expected, "attempt")?)?;
         return Err(binding_diagnostic::mismatch(

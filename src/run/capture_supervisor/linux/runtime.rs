@@ -121,7 +121,7 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
     proof.write_all(MAGIC)?;
     proof.write_all(&(child.id() as i32).to_le_bytes())?;
     proof.write_all(&start_marker(child.id()).unwrap_or(0).to_le_bytes())?;
-    proof.flush()?;
+    flush_proof(&mut proof)?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
     let mut status = None;
     let mut cleanup_at = None;
@@ -138,7 +138,7 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
                 Ok(Some(s)) => {
                     status = Some(s);
                     proof.write_all(&s.into_raw().to_le_bytes())?;
-                    proof.flush()?;
+                    flush_proof(&mut proof)?;
                 }
                 Ok(None) => {}
                 Err(_) => {
@@ -206,6 +206,7 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
         | (u8::from(cancelled) << 2);
     if !fault("proof") {
         proof.write_all(&[flags, 0, 0, 0])?;
+        flush_proof(&mut proof)?;
     }
     Ok(())
 }
@@ -213,7 +214,16 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
 fn no_launch(proof: &mut File) -> io::Result<()> {
     proof.write_all(MAGIC)?;
     proof.write_all(&[0; 16])?;
-    proof.write_all(&[8, 0, 0, 0])
+    proof.write_all(&[8, 0, 0, 0])?;
+    flush_proof(proof)
+}
+
+fn flush_proof(proof: &mut File) -> io::Result<()> {
+    proof.flush()?;
+    if proof.metadata()?.is_file() {
+        proof.sync_all()?;
+    }
+    Ok(())
 }
 
 /// The checker leader's start marker in host clock ticks, when readable right

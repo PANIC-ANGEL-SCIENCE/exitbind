@@ -2489,10 +2489,24 @@
       "newTarget": "project_continuation",
       "source": "tests/project_continuation.rs",
       "reason": "new explicit product integration target for DOT05 continuation coverage"
+    },
+    {
+      "newTarget": "pre_return_recovery",
+      "source": "tests/pre_return_recovery.rs",
+      "reason": "interrupted pre-return admission and owned-observer recovery coverage"
     }
   ],
   "targetsRule": "features: every feature the target must run with (Cargo required-features plus features gating test code it compiles); covers: src path prefixes whose change selects the target for affected-test runs; every top-level src module needs a product (non repository-only) cover.",
   "targets": {
+    "pre_return_recovery": {
+      "features": [],
+      "covers": [
+        "src/run/",
+        "src/work/",
+        "src/cli/",
+        "src/emitted.rs"
+      ]
+    },
     "architecture_budget": {
       "features": [
         "repository-checks"

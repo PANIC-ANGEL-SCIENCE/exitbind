@@ -123,6 +123,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
         }
         ["work", "check"] => "work check WORK [--timeout-ms MS] (1..86400000; default1800000)",
         ["work", "recover-check"] => "work recover-check WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (read-only preview or blocked unknown-termination diagnostic; configured Lead attests exact known-ended storage failure only; never reruns a check)",
+        ["work", "recover-pre-return"] => "work recover-pre-return WORK [--apply --current-binding BINDING < APPROVED_JSON] [--json] (read-only preview or exact configured-Lead reconciliation of an unfinished pre-return; no check credit is granted)",
         ["work", "quarantine"] => "work quarantine OLD_WORK --feature-config CONFIG --feature-work WORK --artifact PATH [--artifact-root state|product] [--owner-config OWNER_CONFIG] --request-id ID --reason TEXT --current-binding SHA [--apply] [--json] (Lead-owned preview; accepted current isolation plan authorizes one separate verification with no mutation, replan, replacement or old credit)",
         ["work", "quarantine-followup"] => "work quarantine-followup FIRST_WORK --feature-config CONFIG --feature-work WORK --artifact PATH [--artifact-root state|product] [--owner-config OWNER_CONFIG] --request-id ID --reason TEXT --current-binding SHA [--apply] [--json] (one strict follow-up only after the first quarantine Work records one observed nonzero check with retained known-ended result; unknown or repeated failures refuse)",
         ["work", "replace-check"] => "work replace-check WORK (--check-command COMMAND | --pre-return-command COMMAND [--pre-return-timeout-ms MS] [--pre-return-capture-bytes BYTES]) --reason TEXT --classification defective-contract --current-binding BINDING [--apply] (previews by default; Lead-owned continuation preserves predecessor, final-check policy for a diagnostic replacement, and spent accounting)",
@@ -200,57 +201,5 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
 }
 
 #[cfg(test)]
-mod tests {
-    use super::scoped_help;
-
-    #[test]
-    fn scoped_work_help_keeps_the_subcommand_syntax() {
-        let help = scoped_help("work", &["next".to_owned()]).unwrap();
-        assert!(help.contains("Usage: "));
-        assert!(help.contains("work next WORK"));
-        let begin = scoped_help("work", &["begin".to_owned()]).unwrap();
-        assert!(begin.contains("conversation Goal"));
-        assert!(begin.contains("--project-goal"));
-        assert!(begin.contains("--standalone"));
-        assert!(begin.contains("--journey-integration"));
-        let recovery = scoped_help("work", &["return".to_owned()]).unwrap();
-        assert!(recovery.contains("--result-ref HELD_REFERENCE"));
-    }
-
-    #[test]
-    fn goal_help_explains_explicit_legacy_project_selection() {
-        let help = scoped_help("goal", &["incorporate".to_owned()]).unwrap();
-        assert!(help.contains("--project"));
-        assert!(help.contains("conversation Goal"));
-    }
-
-    #[test]
-    fn scoped_read_help_exposes_redundant_json_routes() {
-        let continuation = scoped_help("work", &["continuation".to_owned()]).unwrap();
-        assert!(continuation.contains("--json"));
-        let validate = scoped_help("work", &["validate".to_owned()]).unwrap();
-        assert!(validate.contains("--json"));
-        let expand = scoped_help("work", &["expand".to_owned()]).unwrap();
-        assert!(expand.contains("--json"));
-        let supersede = scoped_help("run", &["supersede".to_owned()]).unwrap();
-        assert!(supersede.contains("--owner-recovery STATE_ARTIFACT_PATH"));
-    }
-
-    #[test]
-    fn init_and_update_help_are_scoped_and_non_mutating() {
-        let init = scoped_help("init", &[]).unwrap();
-        assert!(init.contains("Usage: "));
-        assert!(init.contains("--mode local|portable|auto"));
-        assert!(init.contains("review placement and boundaries"));
-
-        let update = scoped_help("update", &[]).unwrap();
-        assert!(update.contains("Usage: "));
-        assert!(update.contains("checks for a stable release"));
-        assert!(update.contains("may replace the current executable"));
-    }
-
-    #[test]
-    fn unknown_scoped_help_falls_back_to_global_help() {
-        assert!(scoped_help("work", &["unknown".to_owned()]).is_none());
-    }
-}
+#[path = "help/tests.rs"]
+mod tests;

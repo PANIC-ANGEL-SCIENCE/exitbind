@@ -101,6 +101,13 @@ pub(crate) fn load_at_unchecked(
             if event["action"] == "check_observation_recovered" {
                 super::check_recovery::validate_prefix(&event, &lines[..index].join("\n"), ledger)?;
             }
+            if event["action"] == "pre_return_reconciled" {
+                super::pre_return::recovery::validate_prefix(
+                    &event,
+                    &lines[..index].join("\n"),
+                    ledger,
+                )?;
+            }
             events.push(event);
         }
         run_state::reduce(&events)?;

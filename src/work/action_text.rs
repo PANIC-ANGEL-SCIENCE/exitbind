@@ -51,6 +51,26 @@ fn render_with(view: &Value, context: &Context) -> String {
             None => "next action: unknown".to_owned(),
         },
     });
+    if matches!(
+        action["formState"].as_str(),
+        Some(
+            "interrupted_pre_return"
+                | "pre_return_retry_interrupted"
+                | "pre_return_uncertain_result"
+                | "pre_return_ambiguous"
+                | "pre_return_evidence_unavailable"
+        )
+    ) {
+        if let Some(meaning) = action["meaning"].as_str() {
+            lines.push(format!("Status: {meaning}"));
+        }
+        if action["diagnostic"]["command"]["argv"].is_array() {
+            lines.push(format!(
+                "Inspect: {}",
+                argv(context, &action["diagnostic"]["command"])
+            ));
+        }
+    }
     if let Some(actor) = action["actor"].as_str() {
         lines.push(format!("Actor: {actor}"));
     }

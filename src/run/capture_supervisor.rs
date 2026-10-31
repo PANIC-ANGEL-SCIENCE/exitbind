@@ -11,6 +11,21 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub(crate) use linux::entry;
 
+pub(crate) fn durable_evidence(
+    path: &std::path::Path,
+    attempt_id: &str,
+) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::durable_evidence(path, attempt_id)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, attempt_id);
+        Err("durable pre-return observer evidence is unavailable on this host".into())
+    }
+}
+
 /// The checker's owned group and, when the capsule could record it, the
 /// leader's start marker: a reused group id is not mistaken for this group.
 pub(super) struct OwnedGroup {

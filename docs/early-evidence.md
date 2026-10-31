@@ -99,6 +99,19 @@ uncovered services, environment or external effects. Older readers refuse an
 opted-in policy they cannot enforce; historical unselected Works keep their
 existing behavior.
 
+If a pre-return was admitted but its result was not recorded, the current Work
+action offers inspection and a configured Lead's read-only recovery preview.
+Recovery requires a complete product-owned Linux observer proof and previously
+selected owned verification preparation. Incomplete or unavailable proof stays
+unresolved; the worker can report a blocker without a passing check. The Lead
+must explicitly report that the execution domain ended and its effects were
+reconciled. That decision records no check result: it preserves the original
+unknown outcome and permits one fresh attempt of the unchanged pre-return with
+fresh owned scratch. Completion still needs its captured pass and the exact
+retained result. Continuation-managed Works do not use this recovery route.
+The observer proof is local product-owned state; it is not authenticated against
+another process with write access under the same operating-system account.
+
 For Exitbind contributors, `scripts/ci-local.sh --pre-return` shares its stage
 definition with full CI. It includes static checks and selected invariant
 tests without release builds or live asset verification. Other projects choose

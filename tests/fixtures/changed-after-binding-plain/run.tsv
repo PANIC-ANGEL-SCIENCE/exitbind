@@ -55,6 +55,10 @@ Integrity	src/run/pre_return/binding_diagnostic.rs	pre-return attempt no longer 
 Transient	src/run/pre_return/execution.rs	pre-return preparation recipe changed after attempt admission; no check was launched
 Integrity	src/run/pre_return/execution.rs	saved pre-return result producer or outcome differs from its exact binding
 Integrity	src/run/pre_return/journal.rs	pre-return record digest does not match its contents
+# Internal replay integrity: a result must identify its paired admission; a recorded event must bind the actual ledger prefix and reconstruct against its prior frozen state.
+Identity	src/run/pre_return/predecessor.rs	pre-return result identity mismatch
+Integrity	src/run/pre_return/recovery.rs	pre-return reconciliation does not bind the exact Work and ledger prefix
+Integrity	src/run/pre_return/recovery.rs	pre-return reconciliation is not current for the frozen worker and governor
 Identity	src/run/quarantine/admission.rs	configured Lead owner differs from the reviewed quarantine owner
 Transient	src/run/quarantine/admission.rs	first failed verification changed after follow-up admission
 LeadPreparation	src/run/quarantine/admission.rs	follow-up custody evidence differs from the separately accepted verification plan

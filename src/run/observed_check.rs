@@ -221,6 +221,7 @@ pub fn observe_check_for_requirement(
         operation_id,
         capture: CapturePolicy::FINITE,
         retain_partial: admission.is_some(),
+        durable_proof: None,
         preparation,
     };
     let associated = admitted_state.get("projectContinuation").is_some();

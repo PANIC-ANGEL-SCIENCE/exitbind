@@ -26,6 +26,7 @@ mod mutation_response;
 mod next_snapshot;
 pub(crate) mod packet;
 mod permit_response;
+pub(crate) mod pre_return_recovery;
 pub(crate) mod quarantine;
 pub(crate) mod readable;
 mod recovery;

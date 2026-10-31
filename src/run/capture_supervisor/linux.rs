@@ -1,7 +1,7 @@
 //! Fresh-exec capsule transport; no shared caller becomes a subreaper.
 use super::*;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 
@@ -13,6 +13,8 @@ const ENTRY: &str = "--exitbind-observer-capsule-v1";
 // The first twenty bytes are flushed as soon as the checker exists, so the
 // group and its start marker stay re-readable when the proof cannot finish.
 const PROOF_BYTES: usize = 28;
+const DURABLE_MAGIC: &[u8; 8] = b"EXPRv1\0\0";
+const DURABLE_HEADER_BYTES: usize = 8 + 64;
 
 pub(super) struct Proof {
     reader: File,
@@ -72,16 +74,7 @@ impl Proof {
 
     pub(super) fn finish(&mut self, capsule: ExitStatus) -> io::Result<()> {
         self.poll()?;
-        self.valid = capsule.success()
-            && self.eof
-            && self.bytes.len() == PROOF_BYTES
-            && self.bytes.get(..8) == Some(MAGIC)
-            && self.bytes[25..] == [0, 0, 0]
-            && ((self.bytes[8..24] == [0; 16] && self.bytes[24] == 8)
-                || (self
-                    .status()
-                    .is_some_and(|s| s.code().is_some() || s.signal().is_some())
-                    && self.bytes[24] <= 7));
+        self.valid = capsule.success() && self.eof && valid_frame(&self.bytes);
         if self.valid {
             Ok(())
         } else {
@@ -115,6 +108,65 @@ impl Proof {
     }
 }
 
+fn valid_frame(bytes: &[u8]) -> bool {
+    if bytes.len() != PROOF_BYTES || bytes.get(..8) != Some(MAGIC) || bytes[25..] != [0, 0, 0] {
+        return false;
+    }
+    if bytes[8..24] == [0; 16] && bytes[24] == 8 {
+        return true;
+    }
+    let group = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    let status = ExitStatus::from_raw(i32::from_le_bytes(bytes[20..24].try_into().unwrap()));
+    group > 0 && (status.code().is_some() || status.signal().is_some()) && bytes[24] <= 7
+}
+
+/// A complete, synced capsule frame says its owned children were drained.
+/// It does not prove the recorder's exit status or grant passing-check credit.
+pub(super) fn durable_evidence(
+    path: &std::path::Path,
+    attempt_id: &str,
+) -> Result<serde_json::Value, String> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|e| format!("observer proof unavailable: {e}"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.permissions().mode() & 0o777 != 0o600
+    {
+        return Err("observer proof is not a private regular file".into());
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take((DURABLE_HEADER_BYTES + PROOF_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if attempt_id.len() != 64
+        || bytes.len() != DURABLE_HEADER_BYTES + PROOF_BYTES
+        || bytes.get(..8) != Some(DURABLE_MAGIC)
+        || bytes.get(8..DURABLE_HEADER_BYTES) != Some(attempt_id.as_bytes())
+    {
+        return Err("observer proof does not bind the admitted attempt".into());
+    }
+    let frame = &bytes[DURABLE_HEADER_BYTES..];
+    if !valid_frame(frame) || frame[24] & 1 == 0 {
+        return Err("observer proof is incomplete; execution remains unknown".into());
+    }
+    let group = i32::from_le_bytes(frame[8..12].try_into().unwrap());
+    let start = u64::from_le_bytes(frame[12..20].try_into().unwrap());
+    if start == 0 || process_group_exists(group).map_err(|e| e.to_string())? {
+        return Err("observer group identity is unavailable or still present".into());
+    }
+    Ok(
+        serde_json::json!({"proofSha256":crate::evidence::hash::bytes(&bytes),
+        "ownedGroup":group,"ownedLeaderStartTicks":start,"ownedChildrenDrained":true,
+        "nativeExit":"unknown","checkCredit":false}),
+    )
+}
+
 pub(super) fn spawn(
     request: &ObservationRequest,
     stdout: Stdio,
@@ -129,15 +181,39 @@ pub(super) fn spawn(
             "observer requires waitable capsule children",
         ));
     }
-    let mut fds = [-1; 2];
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-    if unsafe { libc::fcntl(read.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    let (read, write): (File, OwnedFd) = if let Some(path) = &request.durable_proof {
+        if request.operation_id.len() != 64
+            || !request
+                .operation_id
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(io::Error::other(
+                "durable observer attempt identity is invalid",
+            ));
+        }
+        let mut write = crate::project::managed_files::open_state_file(path)?;
+        write.write_all(DURABLE_MAGIC)?;
+        write.write_all(request.operation_id.as_bytes())?;
+        write.sync_all()?;
+        if let Some(parent) = path.parent() {
+            File::open(parent)?.sync_all()?;
+        }
+        let mut read = File::open(path)?;
+        read.seek(SeekFrom::Start(DURABLE_HEADER_BYTES as u64))?;
+        (read, write.into())
+    } else {
+        let mut fds = [-1; 2];
+        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        if unsafe { libc::fcntl(read.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        (File::from(read), write)
+    };
     let fd = write.as_raw_fd();
     #[cfg(test)]
     let test_streams = test_streams(fd)?;
@@ -200,7 +276,7 @@ pub(super) fn spawn(
     Ok(ObservedChild {
         child,
         proof: Proof {
-            reader: File::from(read),
+            reader: read,
             bytes: Vec::new(),
             eof: false,
             valid: false,
