@@ -271,12 +271,11 @@ fn numeric_version_fixture_literals_do_not_allow_other_stale_references() {
 }
 
 #[test]
-fn packaged_plugin_mirrors_and_validator_cannot_drift_from_the_release() {
+fn packaged_plugin_mirrors_cannot_drift_from_the_release() {
     for file in [
         "plugins/exitbind/plugin.json",
         "plugins/exitbind/.codex-plugin/plugin.json",
         "plugins/exitbind/.claude-plugin/plugin.json",
-        "tooling/repository/release/check-plugin-distribution.py",
     ] {
         let fixture = Fixture::release();
         fixture.replace(file, VERSION, "99.98.97");

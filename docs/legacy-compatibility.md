@@ -15,6 +15,15 @@ This source reads earlier pre-return admissions without rewriting them. A
 ledger rather than treating its earlier unknown result as a pass. Use a
 compatible reader after such a decision; the admission stays available.
 
+New runs selecting pre-return carry `preReturnAdmissionProtocol: 1` at start
+and append a `pre_return_admitted` event before the checker starts. A reader
+that rejects unknown start fields refuses the marked ledger; use a compatible
+reader for that run. The admission advances the ledger and current binding head,
+but is not a submission, a check, a permit, acceptance, governor credit or a
+process result. Markerless historical starts and current successor starts retain
+the conservative flat admission scan: an unreadable admission whose owner
+cannot be proved may still block them.
+
 ## Rename history
 
 The rename kept the existing version and repository history rather than
@@ -123,71 +132,19 @@ managed guidance bytes for their supported history; it does not downgrade the
 ledger or transfer acceptance to changed inputs. Preserve custom profiles and
 settings.
 
-## Compatibility-marker inventory
+## Checking reader compatibility
 
-Every compatibility marker the check recognises is listed in one table,
-[`tooling/repository/checks/compatibility-markers.json`](../tooling/repository/checks/compatibility-markers.json),
-with its kind, writer and reader files, the change that introduced it, and the
-condition under which it may be retired. The recognised kinds are a
-`*Protocol` key (a string literal matching the pattern, or a serde field whose
-snake_case name ends in `_protocol`), a `FIELD`/`*_FIELD` extension constant, a
-`deny_unknown_fields` struct field, and a run-ledger allowlist field.
-`check_compatibility_markers.py` in the same directory reads `src/` without a
-build and fails when a recognised marker or field has no row of its kind, when
-a row no longer exists in `src/`, and when a row carries no retirement
-condition.
+New starts use run-event version 8. When the current binary appends to a
+supported open historical ledger, the new event keeps that ledger's version;
+a ledger never mixes versions.
 
-The stored-line kinds, environment controls and exact text values listed are
-presence-checked only: the check fails when the value is absent from a named
-writer or reader, but a new stored line kind, environment control or message
-is not discovered automatically. The record-field rows are the field inventory
-`tests/release_integrity/record_fields.rs` requires in the CHANGELOG's
-mixed-version paragraph: the table must cover every field `src/` declares that
-the previous release's snapshot does not hold, and rows stay listed once the
-snapshot holds them, so the table is a superset of the source-derived
-additions.
+Reader tests use saved v1–v3 run and memory records, plus a synthetic v7 run
+with a fallback binding. They check that supported records remain readable
+without rewriting their bytes and that malformed or incompatible records are
+refused. Keep the original producer, version and hash on historical records.
 
-## Reader inventory
-
-Every source file that reads a historical form appears below exactly as
-`tooling/repository/checks/check_legacy_inventory.py` finds it: each file whose
-code names the old product, and each file whose code compares a recorded format
-version with a number from 1 to 7. The check fails when a found file is missing
-from this table, when a listed file no longer exists, or when a form marked
-`retired` is read again anywhere in the source.
-
-"Live" means a file of that form exists on the owner-provided Linux runner, found
-by a full scan of its home and data volume; "fixture" means a frozen file under
-`tests/fixtures/`. A reader is retired only when its form has neither and no
-current code writes it.
-
-New starts write run-event version 8 only. The current binary still appends to
-an open historical ledger in that ledger's own version, because a ledger never
-mixes versions; that is the "append" write below.
-
-| Reader | Old form | Last write | Live file or fixture | Pinning test | Decision |
-| --- | --- | --- | --- | --- | --- |
-| `src/run/state/validation.rs`, `src/run/reducer.rs`, `src/run/state/unknown_fields.rs` | run-event v1 (no producer, or `soulmate` producer) | new start: superseded by v2 and v3; append: current binary | live (7 ledgers); three v1 run fixtures | `tests/rust_parity.rs`, `tests/value_replay.rs` | keep: live and fixture |
-| `src/run/reducer.rs`, `src/run/state/unknown_fields.rs`, `src/run/state/validation.rs` | run-event v2 (receipt-referenced run) | new start: superseded by v3; append: current binary | one v2 run fixture | `tests/rust_parity.rs`, `tests/fresh_user_surface.rs` | keep: fixture |
-| `src/run/mod.rs`, `src/run/gate/value/validation.rs`, `src/run/state/validation.rs`, `src/run/state/unknown_fields.rs` | run-event v3 (checked run, caller-reported check) | new start: superseded by v4; append: current binary writes the v3 check shape | live (10 ledgers); fixture `run-v3.jsonl` | `tests/value_replay.rs`, `tests/compatibility_matrix/projection_compatibility.rs`, `tests/exit_transition_conformance/historical_compatibility.rs` | keep: live and fixture |
-| `src/run/human.rs`, `src/run/gate/value/human.rs`, `src/run/gate/value/validation.rs`, `src/run/observed_check.rs`, `src/run/mod.rs` | run-event v4 (observed or reported check; last `soulmate` producer) | new start: superseded by v5; append: current binary | live (11 ledgers) | `tests/value_reconstruction/bundle_helpers.rs`, `tests/value_reconstruction/context.rs` | keep: live |
-| `src/producer.rs`, `src/run/gate/exit.rs`, `src/run/lifecycle.rs`, `src/run/submission.rs`, `src/run/view.rs`, `src/run/state/apply.rs`, `src/run/observed_check.rs` | run-event v5 (Accepted Subject bindings; first `exitbind` producer) | new start: superseded by v6; append: current binary | live (58 ledgers) | `tests/value_reconstruction/context.rs`, `tests/context_v022/context_projection.rs` | keep: live |
-| `src/run/disposition.rs`, `src/run/result_reference.rs`, `src/run/state/governor_validation.rs`, `src/run/gate/exit.rs`, `src/run/gate/value/validation.rs`, `src/run/lifecycle.rs`, `src/run/submission.rs`, `src/run/view.rs` | run-event v6 (tested-input bindings) | new start: superseded by v7; append: current binary | live (33 ledgers) | `tests/compatibility_matrix.rs` (`producer-current-v6-write`) | keep: live |
-| `src/run/state/validation.rs`, `src/run/reducer.rs`, `src/run/state/unknown_fields.rs` | run-event v7 (fallback-provenance submit shape) | new start: superseded by v8; append: current binary | live (1 ledger); no fixture | `tests/docs_workflow.rs` (reader range text) | keep: live |
-| `src/producer.rs`, `src/run/state/validation.rs` | producer `soulmate` on v1–v4 events | append to an open v1–v4 ledger | live (v1, v3, v4 ledgers); fixtures above | `tests/compatibility_matrix.rs`, `tests/rust_parity.rs` | keep: live and fixture |
-| `src/project/layout_types.rs`, `src/evidence/harness.rs` | `soulmate.json`, `soulmate/` control tree, `.soulmate/` state tree | never by a current install | live (298 paths) | `tests/layout_migration.rs`, `tests/project_capabilities.rs`, `tests/path_compatibility.rs` | keep: live |
-| `src/memory/contextual.rs` | `.soulmate/artifacts/memory-choices` contextual source | never by a current install | live `.soulmate/` trees | `tests/task_local_memory.rs` | keep: live |
-| `src/run/inputs.rs`, `src/run/verification_preparation.rs`, `src/project/continuation/model.rs`, `src/work/file_effect.rs` | `.soulmate/` as a protected, never-hashed directory | never by a current install | live `.soulmate/` trees | `tests/harness_receipt.rs`, `tests/project_capabilities.rs` | keep: live (protection, not a reader) |
-| `src/host/hooks.rs`, `src/host/settings.rs`, `src/compatibility/mod.rs` | hook token `soulmate-hook-v1`; `soulmate hook-run` host record | token: emitted today; record: never by a current install | emitted | `tests/rust_parity.rs`, `tests/host_bridge.rs` | keep: still written; criterion in [the hook protocol token](#the-hook-protocol-token) |
-| `src/main.rs`, `src/compatibility/mod.rs` | invocation as `soulmate` | never | not a file | `tests/build_identity.rs` | keep: refusal guard, not a reader |
-| `src/project/binding_location.rs`, `src/host/assignment_evidence.rs`, `src/distribution/update.rs`, `src/host/away.rs` | `SOULMATE_*` environment inputs and the `soulmate` bindings directory | never by a current install | environment, not a file | `tests/portability.rs`, `tests/host_bridge.rs`, `tests/legacy_installer_bridge.rs` | keep: outside the on-disk slice |
-| `src/project/onboarding.rs` | `schema/soulmate.schema.json` | historical schema bytes | schema file | `tests/setup.rs`, `tests/release_integrity/release_policy.rs` | keep: published schema |
-| `src/session_goal/continuity/capture/same_host.rs` | the `your.soulmate/lenses/` directory of the user-owned agent convention | current: the owner's lens files | lens files under the ControlRoot | `tests/native_continuity/same_host_lens.rs` | keep: a current directory name, not a historical form |
-| `src/cli/help.rs`, `src/cli/mod.rs`, `src/envelope.rs`, `src/host/runtime.rs`, `src/host/runtime/context.rs`, `src/host/runtime/project.rs`, `src/presentation/run.rs`, `src/project/commands.rs`, `src/project/skills.rs`, `src/value_benchmark.rs`, `src/value_benchmark/invocation.rs`, `src/value_benchmark/result.rs` | branches for the retired Soulmate surface, selected only when the profile is not Exitbind | never: the profile has one surface | some read live forms (`soulmate.json` in hook routing) | `src/compatibility/mod.rs` unit tests | keep in this slice: unreachable; retire as one class with every `exitbind_surface()` branch |
-| `src/run/error.rs` | `SOULMATE_DRIFT:` in-process drift channel | never: no code writes it | none: never persisted | `src/run/error.rs` unit test | retired |
-| `src/main.rs`, `src/cli/mod.rs` | `SOULMATE_JSON:` in-process machine channel | Soulmate surface branch only | none: never persisted | `src/cli/mod.rs` unit test | retired |
-| `src/evidence/receipt.rs`, `src/memory/choices.rs`, `src/memory/contextual.rs`, `src/memory/revalidation.rs` | receipt, memory choice and contextual policy versions 1 and 2 | both versions written today | written | `tests/task_local_memory.rs`, `tests/harness_receipt.rs` | keep: current forms, not historical |
-| `src/run/pre_return/predecessor.rs` | pre-return admission v1 and its result binding | current admission v1 | current admission records | `tests/pre_return_recovery.rs` | keep: unfinished admissions remain guarded across producer changes |
-| `src/run/pre_return/recovery.rs` | admission v1 and reconciliation/decision v1 in a v8 `pre_return_reconciled` event | current admission v1 and reconciliation event v8 | current forms | `tests/pre_return_recovery.rs` | keep: preserve the original admission and unknown outcome; older readers refuse the new event |
-| `src/work/pre_return_recovery.rs` | configured-Lead recovery decision v1, bound to the previewed snapshot | current decision template v1 | current form | `tests/pre_return_recovery.rs` | keep: require the current decision and preserve replay without another check |
-| `src/config/boundary.rs`, `src/config/mod.rs`, `src/evidence/harness.rs`, `src/memory/lessons/input.rs`, `src/memory/policy_correction.rs`, `src/project/architecture/validation.rs`, `src/project/capabilities.rs`, `src/project/continuation/amendment.rs`, `src/project/continuation/journal.rs`, `src/project/continuation/model.rs`, `src/project/specialists.rs`, `src/run/check_recovery.rs`, `src/run/governor_recovery.rs`, `src/run/guidance_continuity.rs`, `src/run/ledger/claim.rs`, `src/run/pre_return/execution.rs`, `src/run/state.rs`, `src/run/verification_preparation.rs`, `src/session_goal/display.rs`, `src/session_goal/requirements/model.rs`, `src/session_goal/usage/ingest.rs`, `src/work/file_effect_recovery.rs`, `src/work/managed_edit.rs`, `src/work/managed_edit/state.rs`, `src/work/native_action/continuation.rs`, `src/work/native_action/continuation/failure.rs`, `src/work/native_action/journal.rs`, `src/work/native_action/recovery.rs` | single-version formats checked for an exact version | current | written | each format's own tests | keep: exact match, no older form read |
+When changing persisted formats, exercise the supported readers against saved
+records, test incompatible-reader refusal where the older reader is available,
+and document rollback and mixed-version limits in the release notes. These
+checks do not reconstruct historical evidence or make an old reader support a
+new record.

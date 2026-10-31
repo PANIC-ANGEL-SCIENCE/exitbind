@@ -41,7 +41,7 @@ new install.
 
 ## Quick start
 
-Install the published `v0.31.23` release as a single Rust binary. Node.js,
+Install the published `v0.31.24` release as a single Rust binary. Node.js,
 npm, Python, and Cargo are not required after installation:
 
 ```sh
@@ -55,11 +55,11 @@ exitbind check --config exitbind.json
 Replace `YOUR_TEST_COMMAND` with your actual project check. These commands
 prepare the run; the [complete first checked run](docs/first-checked-run.md)
 continues through real result documents, check execution, review, and acceptance.
-`v0.31.23` includes the `--event-id`/`--text` forms below. Older
+`v0.31.24` includes the `--event-id`/`--text` forms below. Older
 0.12.0 binaries retain the JSON workflow but do not recognize these flags.
 A skill refresh alone does not upgrade the binary.
 
-v0.31.23 targets Linux x86_64 and native macOS on
+v0.31.24 targets Linux x86_64 and native macOS on
 Apple Silicon and Intel. Windows uses the Linux artifact through Ubuntu on WSL 2,
 with the agent, Exitbind, and project inside that distribution. The
 [platform matrix](docs/platform-support.md) names the native build and
@@ -304,7 +304,7 @@ exitbind run record-check .exitbind/runs/checked.jsonl \
 exitbind run status .exitbind/runs/checked.jsonl --config exitbind.json
 ```
 
-New checked runs in `v0.31.23` use run-event format 8. The
+New checked runs in `v0.31.24` use run-event format 8. The
 reader retains historical v1–v7 ledgers, including their original producer
 values and guarantees. Current v8 records bind an Accepted Subject, tested-input
 identity, and the v0.24 basis/review-policy extension to each applicable result
@@ -319,6 +319,15 @@ acceptance recomputes the identity. Ignored files, files outside the product
 root, the environment, and remote or time-dependent conditions are not covered.
 Binaries that read only v1–v7 refuse v8 ledgers as an invalid header instead of
 reading them partially; historical ledgers gain no v8 basis/review-policy extension.
+New Works that select pre-return also record an admission ownership protocol
+and append an audit event before starting the checker. Admission advances the
+Work head but grants no submission, check, permit or acceptance credit. It
+lets a separate new Work ignore unrelated damaged journals while still
+refusing a missing or forged owned record. Older readers refuse that extension;
+retain each active Work's original binary. Markerless historical and successor
+runs keep their conservative lookup, including refusal when corrupt ownership
+cannot be established. No historical state is rewritten.
+
 After the worker submission, the
 frozen command can instead be run and recorded by Exitbind without accepting a
 caller command or result override:
@@ -467,7 +476,7 @@ For a project outside the current directory, pass `--root PATH` to `init` and
 use the printed `--config` path with later commands. A checkout can also be run
 directly with a release binary from GitHub.
 
-After installing `v0.31.23`, update project skill copies after upgrading the
+After installing `v0.31.24`, update project skill copies after upgrading the
 CLI with the explicit refresh path. It requires an existing valid `exitbind.json` and only updates
 files carrying Exitbind's ownership marker; unowned or conflicting files cause
 the command to refuse the update:
@@ -737,14 +746,14 @@ must be declared separately when you manage their projections with dotagents.
 For an existing project with `agents.toml`:
 
 ```text
-dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v0.31.23
+dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v0.31.24
 ```
 
 For a new dotagents-managed project:
 
 ```text
 dotagents --project init
-dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v0.31.23
+dotagents --project add PANIC-ANGEL-SCIENCE/exitbind --ref v0.31.24
 ```
 
 During `dotagents --project init`, select the hosts you use. `dotagents add`
@@ -1057,7 +1066,7 @@ ControlRoot and pass it only when creating an existing brief or plan receipt:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.23/schema/exitbind-harness-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/PANIC-ANGEL-SCIENCE/exitbind/v0.31.24/schema/exitbind-harness-manifest.schema.json",
   "version": 1,
   "project": { "id": "my-project", "session": "codex-2026-08-30" },
   "harness": { "name": "my-harness", "version": "2026.08.30" },
@@ -1175,7 +1184,7 @@ that returns only that agent's own declared item. Declarations grant nothing.
 `exitbind memory form --scope project-lessons.v1 --json` reports the complete
 proposal shape, 2048-byte source and 512-byte UTF-8 fact bounds, and immutable
 correction identity. See [release series](docs/release-version-policy.md) for
-the 0.31.23 release series and publication gates.
+the 0.31.24 release series and publication gates.
 
 ### Optional CodeGraph impact queries
 

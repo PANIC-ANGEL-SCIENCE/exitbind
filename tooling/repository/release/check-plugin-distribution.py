@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import sys
 import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-VERSION = "0.31.23"
 NAME = "exitbind"
 REPOSITORY = "https://github.com/PANIC-ANGEL-SCIENCE/exitbind"
 AUTHOR_URL = "https://github.com/envy404"
@@ -87,12 +88,12 @@ def exact(value: Any, expected: Any, label: str, errors: list[str]) -> None:
         fail(errors, f"{label}: expected {expected!r}, got {value!r}")
 
 
-def common_manifest(manifest: dict[str, Any], label: str, errors: list[str]) -> None:
+def common_manifest(manifest: dict[str, Any], label: str, version: str, errors: list[str]) -> None:
     for key in FORBIDDEN_MANIFEST_KEYS:
         if key in manifest:
             fail(errors, f"{label}: forbidden manifest component {key!r}")
     exact(manifest.get("name"), NAME, f"{label}.name", errors)
-    exact(manifest.get("version"), VERSION, f"{label}.version", errors)
+    exact(manifest.get("version"), version, f"{label}.version", errors)
     exact(manifest.get("description"), DESCRIPTION, f"{label}.description", errors)
     exact(manifest.get("repository"), REPOSITORY, f"{label}.repository", errors)
     author = manifest.get("author")
@@ -122,12 +123,12 @@ def interface(errors: list[str]) -> dict[str, Any]:
     }
 
 
-def check_manifests(package: Path, errors: list[str]) -> None:
+def check_manifests(package: Path, version: str, errors: list[str]) -> None:
     root = read_json(package / "plugin.json", errors)
     codex = read_json(package / ".codex-plugin/plugin.json", errors)
     claude = read_json(package / ".claude-plugin/plugin.json", errors)
     if root is not None:
-        common_manifest(root, "plugin.json", errors)
+        common_manifest(root, "plugin.json", version, errors)
         exact(
             set(root),
             {
@@ -157,7 +158,7 @@ def check_manifests(package: Path, errors: list[str]) -> None:
             errors,
         )
     if codex is not None:
-        common_manifest(codex, ".codex-plugin/plugin.json", errors)
+        common_manifest(codex, ".codex-plugin/plugin.json", version, errors)
         exact(
             set(codex),
             {
@@ -177,7 +178,7 @@ def check_manifests(package: Path, errors: list[str]) -> None:
         exact(codex.get("skills"), "./skills/", ".codex-plugin/plugin.json.skills", errors)
         exact(codex.get("interface"), interface(errors), ".codex-plugin/plugin.json.interface", errors)
     if claude is not None:
-        common_manifest(claude, ".claude-plugin/plugin.json", errors)
+        common_manifest(claude, ".claude-plugin/plugin.json", version, errors)
         exact(
             set(claude),
             {
@@ -297,13 +298,30 @@ def check_archive(package: Path, archive: Path, errors: list[str]) -> None:
         fail(errors, f"invalid archive {archive}: {error}")
 
 
+def package_version(repo_root: Path) -> str:
+    # Execute only the trusted sibling; --repo-root supplies data, never code.
+    sys.dont_write_bytecode = True
+    source = Path(__file__).with_name("sync-doc-versions.py")
+    spec = importlib.util.spec_from_file_location("sync_doc_versions", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("cannot load the package version reader")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.package_version(repo_root)
+
+
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
     package = repo_root / "plugins/exitbind"
     errors: list[str] = []
+    try:
+        version = package_version(repo_root)
+    except (OSError, UnicodeError, ValueError) as error:
+        print(f"Plugin distribution check failed:\n- invalid package version: {error}")
+        return 1
     package_files(package, errors)
-    check_manifests(package, errors)
+    check_manifests(package, version, errors)
     check_skill(repo_root, package, errors)
     check_catalogs(repo_root, errors)
     if args.archive is not None:

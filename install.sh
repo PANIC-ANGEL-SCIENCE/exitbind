@@ -20,7 +20,7 @@ fi
 if test "$legacy_bridge" = 1; then
   repo=PANIC-ANGEL-SCIENCE/exitbind
 fi
-version="${EXITBIND_VERSION:-v0.31.23}"
+version="${EXITBIND_VERSION:-v0.31.24}"
 if test -z "${EXITBIND_VERSION:-}" && test -n "${SOULMATE_VERSION:-}"; then
   version="$SOULMATE_VERSION"
 fi

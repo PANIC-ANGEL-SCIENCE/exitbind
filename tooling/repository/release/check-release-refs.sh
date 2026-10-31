@@ -13,6 +13,7 @@ equal_version() {
 
 for source in Cargo.toml Cargo.lock README.md REFERENCE.md SECURITY.md CHANGELOG.md install.sh \
   docs/release-version-policy.md tooling/repository/release/check-installation-pointer.py \
+  tooling/repository/release/check-plugin-distribution.py \
   plugin.json systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json tooling/repository/ci/ci-wsl.sh \
   docs examples schema scripts src
@@ -111,8 +112,6 @@ for manifest in plugin.json plugins/exitbind/plugin.json \
   version=$(sed -n 's/^[[:space:]]*"version": "\([0-9][^"]*\)",*$/\1/p' "$manifest")
   equal_version "$manifest" "$version" "$plain"
 done
-plugin_validator_version=$(sed -n 's/^VERSION = "\([^"]*\)"$/\1/p' tooling/repository/release/check-plugin-distribution.py)
-equal_version tooling/repository/release/check-plugin-distribution.py "$plugin_validator_version" "$plain"
 for manifest in \
   systems.soulmate/.codex-plugin/plugin.json \
   systems.soulmate/.claude-plugin/plugin.json

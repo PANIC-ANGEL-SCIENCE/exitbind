@@ -18,7 +18,7 @@ import sys
 INVENTORY = "tooling/repository/release/doc-versions.json"
 PLACEHOLDER = "{version}"
 SEMVER = (r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
-          r"(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?")
+          r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 MENTION = re.compile(r"(?<![\d.])v?[0-9]+\.[0-9]+\.[0-9]+")
 APPLY_HINT = "python3 tooling/repository/release/sync-doc-versions.py --apply"
 
@@ -34,6 +34,10 @@ def package_version(root):
             versions.append(line[len('version = "'):-1])
     if len(versions) != 1 or not re.fullmatch(SEMVER, versions[0]):
         raise ValueError("Cargo.toml must declare one valid package version")
+    prerelease = versions[0].split("+", 1)[0].partition("-")[2]
+    if any(part.isdigit() and len(part) > 1 and part.startswith("0")
+           for part in prerelease.split(".")):
+        raise ValueError("numeric prerelease identifiers cannot have leading zeroes")
     return versions[0]
 
 

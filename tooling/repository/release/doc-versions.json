@@ -396,12 +396,6 @@
         "current": "test \"$(exitbind version)\" = \"{version}\"",
         "count": 1
       }
-    ],
-    "tooling/repository/release/check-plugin-distribution.py": [
-      {
-        "current": "VERSION = \"{version}\"",
-        "count": 1
-      }
     ]
   }
 }
