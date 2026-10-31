@@ -400,7 +400,7 @@ fn saved_native_result_resume_reuses_failed_diagnostic_attempt_after_lost_reply(
     assert_eq!(fs::read(&ledger).unwrap(), expected_ledger);
 
     let foreign_artifact = fixture.root.join(".exitbind/artifacts/foreign-evidence");
-    fs::write(&foreign_artifact, b"a different recorded event").unwrap();
+    fs::write(foreign_artifact, b"a different recorded event").unwrap();
     let foreign = fixture.call(
         &[
             "work",
