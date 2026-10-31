@@ -60,5 +60,7 @@ done
 for script in "$crate_root"/scripts/*; do
   test ! -e "$script" || test "${script##*/}" = demo-checked-work.sh || { printf 'repository script shipped: %s\n' "$script" >&2; exit 1; }
 done
+CARGO_TARGET_DIR=$target CARGO_BUILD_JOBS=1 sh "$(dirname -- "$0")/../ci/isolated-recovery.sh" run cargo '' \
+  --no-default-features --manifest-path "$crate_root/Cargo.toml"
 CARGO_TARGET_DIR=$target CARGO_BUILD_JOBS=1 cargo test --locked --no-default-features --no-fail-fast --manifest-path "$crate_root/Cargo.toml"
 printf 'Extracted product archive default tests passed without repository tooling: %s\n' "$crate_root"

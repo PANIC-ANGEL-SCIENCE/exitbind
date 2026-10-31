@@ -60,8 +60,29 @@ while IFS="$tab" read -r target features; do
       ;;
   esac
   executed=$((executed + 1))
+  if [ "$target" = bin:exitbind ]; then
+    if [ "$list_only" = true ]; then
+      # shellcheck disable=SC2086
+      env $unset_args sh "$root/tooling/repository/ci/isolated-recovery.sh" list "$cargo" "$features"
+    else
+      isolated_log="$log_dir/bin-exitbind-isolated.log"
+      # shellcheck disable=SC2086
+      if env $unset_args sh "$root/tooling/repository/ci/isolated-recovery.sh" run "$cargo" "$features" > "$isolated_log" 2>&1; then
+        cat "$isolated_log"
+        rm -f "$isolated_log"
+      else
+        status=$?
+        printf '  %s isolated recovery: exit=%s log=%s\n' "$target" "$status" "$isolated_log"
+        cat "$isolated_log"
+        failed="$failed $target"
+        continue
+      fi
+    fi
+  fi
   if [ "${target#bin:}" != "$target" ]; then
-    set -- test --locked --bin "${target#bin:}"
+    set -- test --locked
+    test -z "$features" || set -- "$@" --features "$features"
+    set -- "$@" --bin "${target#bin:}"
   elif [ -n "$features" ]; then
     set -- test --locked --features "$features" --test "$target"
   else

@@ -321,6 +321,7 @@ fn a_change_record_must_name_its_previous_record_and_rebuild_the_sealed_record()
 }
 
 #[test]
+#[ignore = "run alone by the native and affected verification recipes"]
 fn recovery_reads_a_complete_journal_past_the_former_16_mib_bound() {
     let root = crate::test_root::temp("journal-form-recovery");
     let mut records = vec![r55_shaped()];

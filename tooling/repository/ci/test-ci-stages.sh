@@ -180,7 +180,7 @@ else
   # file is overlaid as well: the nested run inside the clone must carry the
   # sentinel guard, not the parent commit's copy.
   for file in check-repository-rules.sh ci-stages.sh ci-local.sh \
-    verification-context.sh ci-preflight.sh test-ci-stages.sh test-affected.sh; do
+    verification-context.sh ci-preflight.sh test-ci-stages.sh test-affected.sh isolated-recovery.sh; do
     cp "$root/tooling/repository/ci/$file" "$history_work/repo/tooling/repository/ci/$file"
   done
   # The merge itself keeps published history; only the contributing head drops it.

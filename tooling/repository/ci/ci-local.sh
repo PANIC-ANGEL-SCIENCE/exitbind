@@ -125,7 +125,10 @@ CLIPPY_TARGETS
       else
         run clippy "$CARGO" clippy --locked --all-targets --features repository-checks -- -D warnings
       fi ;;
-    tests) run tests "$CARGO" test --locked --features repository-checks ;;
+    tests)
+      run isolated-recovery sh "$root/tooling/repository/ci/isolated-recovery.sh" run "$CARGO" repository-checks
+      sed -n '/^test .* \.\.\. ok$/p; /^test result:/p' "$run_dir/isolated-recovery.log"
+      run tests "$CARGO" test --locked --features repository-checks ;;
     affected-tests)
       run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"
       ;;
