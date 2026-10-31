@@ -62,8 +62,8 @@ fn seeded_failing_test() {
 #[test]
 fn a_failing_test_keeps_and_names_its_directory() {
     let outer = temp("seeded-failure-parent");
-    // raw-spawn: this test binary re-runs one of its own tests; no exitbind process or session state.
     let module = module_path!().split_once("::").unwrap().1;
+    // raw-spawn: this test binary re-runs one of its own tests; no exitbind process or session state.
     let output = Command::new(std::env::current_exe().unwrap())
         .arg(format!("{module}::seeded_failing_test"))
         .args(["--exact", "--test-threads=1"])
@@ -139,8 +139,8 @@ fn seeded_unremovable_root() {
 fn a_root_that_cannot_be_removed_is_named() {
     use std::os::unix::fs::PermissionsExt;
     let outer = temp("unremovable-parent");
-    // raw-spawn: this test binary re-runs one of its own tests; no exitbind process or session state.
     let module = module_path!().split_once("::").unwrap().1;
+    // raw-spawn: this test binary re-runs one of its own tests; no exitbind process or session state.
     let output = Command::new(std::env::current_exe().unwrap())
         .arg(format!("{module}::seeded_unremovable_root"))
         .args(["--exact", "--test-threads=1"])
