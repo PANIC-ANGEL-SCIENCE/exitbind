@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -86,6 +87,90 @@ def target_declaration_self_test(root: Path, mapping: dict, manifest: dict) -> O
     return None
 
 
+def selection_self_test(root: Path, mapping: dict, manifest: dict) -> Optional[str]:
+    """Check the relation's observable behavior, including missing covers."""
+    expected = {
+        "tests/temp_root_contract/temp_root_guard.rs": {"repository_contracts", "privacy_gate"},
+        "tests/memory_recall.rs": {"memory", "repository_contracts", "privacy_gate"},
+        "src/memory/policy.rs": {"memory", "privacy_gate", "repository_contracts"},
+        "src/kernel/result_contract.rs": {"goal_basis_requirements"},
+        "src/cli/work/detail.rs": {"host_runtime", "repository_contracts"},
+        "src/work/readable.rs": {"host_runtime", "repository_contracts"},
+    }
+    for path, required in expected.items():
+        selected, _ = test_target_sources.select(root, mapping, manifest, [path])
+        if not required <= set(selected):
+            return f"{path} did not select required owners {sorted(required - set(selected))}"
+        if path == "src/memory/policy.rs" and set(selected) != required:
+            return f"{path} unexpectedly selected unrelated targets {sorted(set(selected) - required)}"
+    sources = test_target_sources.target_sources(root, manifest["repository_contracts"][0])
+    if not {"tests/temp_root_contract/temp_root_guard.rs", "tests/fixture_host_isolation.rs",
+            "tests/repository_source_contract/readme_only_gates.rs"} <= sources:
+        return "repository_contracts must compile the temp-root owner, fixture scanner and README gate check"
+    selected, _ = test_target_sources.select(root, mapping, manifest, ["tests/support/mod.rs"])
+    if set(selected) != set(manifest):
+        return "shared test support did not select every target"
+
+    # Verify the live expectation would reject the absence of each broad
+    # scanner cover, independently of what the map happens to declare.
+    for owner, prefix, path in [
+        ("repository_contracts", "src/", "src/memory/policy.rs"),
+        ("repository_contracts", "tests/", "tests/memory_recall.rs"),
+        ("privacy_gate", "tests/", "tests/memory_recall.rs"),
+    ]:
+        missing = copy.deepcopy(mapping)
+        missing["targets"][owner]["covers"] = [
+            cover for cover in missing["targets"][owner]["covers"] if cover != prefix
+        ]
+        selected, _ = test_target_sources.select(root, missing, manifest, [path])
+        if owner in selected:
+            return f"missing {owner} {prefix} scanner cover is not detected by {path}"
+
+    # This small independent relation proves that an explicit reader joins a
+    # compiled owner, and a generic scanner does not suppress unknown fallback.
+    with tempfile.TemporaryDirectory(prefix="target-relation.") as temp:
+        fixture = Path(temp)
+        for path, text in {
+            "src/main.rs": "", "src/reader.rs": "", "src/unrelated.rs": "",
+            "tests/owned.rs": "", "tests/global.rs": "", "tests/unrelated.rs": "",
+            "tests/reader.rs": 'const INPUT: &str = "tests/owned.rs";\n',
+        }.items():
+            file = fixture / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(text, encoding="utf-8")
+        targets = {
+            "owner": ("tests/owned.rs", []), "reader": ("tests/reader.rs", []),
+            "global": ("tests/global.rs", ["repository-checks"]),
+            "unrelated": ("tests/unrelated.rs", []),
+        }
+        relation = {
+            "repositoryOnlyTargets": ["global"],
+            "targets": {
+                "owner": {"features": [], "covers": ["src/main.rs"]},
+                "reader": {"features": [], "covers": ["src/reader.rs"]},
+                "global": {"features": ["repository-checks"], "covers": ["src/", "tests/"]},
+                "unrelated": {"features": [], "covers": ["src/unrelated.rs"]},
+            },
+        }
+        errors = test_target_sources.declaration_errors(fixture, relation, targets)
+        if errors:
+            return f"valid independent relation was refused: {errors}"
+        selected, _ = test_target_sources.select(fixture, relation, targets, ["tests/owned.rs"])
+        if set(selected) != {"owner", "reader", "global"}:
+            return f"compiled owner, explicit reader and scanner were not united: {selected}"
+        for path in ["tests/unowned.rs", "src/unowned.rs"]:
+            selected, _ = test_target_sources.select(fixture, relation, targets, [path])
+            if set(selected) != set(targets):
+                return f"generic scanner prevented conservative fallback for {path}: {selected}"
+        for invalid in ["", "src/..", "tests/../src/", "src//main", "src/./main", "other/", "tests/missing"]:
+            mutated = copy.deepcopy(relation)
+            mutated["targets"]["global"]["covers"] = [invalid]
+            errors = test_target_sources.declaration_errors(fixture, mutated, targets)
+            if not any("global cover is invalid" in error for error in errors):
+                return f"invalid cover was accepted: {invalid!r}"
+    return None
+
+
 
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
@@ -105,6 +190,9 @@ def main() -> int:
             if name not in manifest or "repository-checks" not in manifest[name][1]:
                 return fail(f"repository-only target lacks its package feature gate: {name}")
         error = target_declaration_self_test(root, mapping, manifest)
+        if error:
+            return fail(error)
+        error = selection_self_test(root, mapping, manifest)
         if error:
             return fail(error)
     except (OSError, ValueError, KeyError, TypeError) as error:

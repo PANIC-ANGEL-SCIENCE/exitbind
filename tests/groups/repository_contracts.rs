@@ -28,11 +28,21 @@ mod compatibility_matrix;
 #[path = "../exit_transition_conformance.rs"]
 mod exit_transition_conformance;
 #[cfg(feature = "repository-checks")]
+#[path = "../fixture_host_isolation.rs"]
+mod fixture_host_isolation;
+#[cfg(feature = "repository-checks")]
 #[path = "../public_positioning.rs"]
 mod public_positioning;
 #[cfg(feature = "repository-checks")]
 #[path = "../r13_check.rs"]
 mod r13_check;
+// README gate names are checked on every platform.
+#[cfg(feature = "repository-checks")]
+#[path = "../repository_source_contract/readme_only_gates.rs"]
+mod readme_only_gates;
+#[cfg(feature = "repository-checks")]
+#[path = "../repository_source_contract.rs"]
+mod repository_source_contract;
 #[cfg(feature = "repository-checks")]
 #[path = "../rust_contract.rs"]
 mod rust_contract;

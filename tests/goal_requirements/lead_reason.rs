@@ -7,35 +7,12 @@
 //! the state's submission item (`run inspect`), byte-identical. The second
 //! fixture saves two decisions while W is the current Work and one with no
 //! current Work, and the Lead's act on W records and removes only W's.
-use super::cli_tables::option_commands;
+use super::lead_reason_forms::{LEAD_ACTS, NOT_LEAD_ACTS};
 use super::pause_record::{filled, ok_json};
-use super::rust_source::production;
 use super::session_adoption::session_start;
 use super::*;
 
 const ARTIFACT: &str = "Deterministic Lead fixture result; not a semantic decision.\n";
-
-/// Commands whose option list takes `--reason` and whose act is the Lead's
-/// `submit` on a Work: each must record the text.
-const LEAD_ACTS: [&str; 4] = ["work return", "work act", "work disposition", "run submit"];
-/// Commands that take `--reason` but write no `submit` event: not a Lead act
-/// on a Work, each keeps its text in its own record.
-const NOT_LEAD_ACTS: [&str; 14] = [
-    "goal quarantine",
-    "goal recover",
-    "memory choose",
-    "memory correct-policy",
-    "memory revalidate",
-    "project advance amend",
-    "project advance select",
-    "project advance stop",
-    "project architecture select",
-    "project capabilities select",
-    "run review-policy",
-    "work quarantine",
-    "work quarantine-followup",
-    "work replace-check",
-];
 
 fn source(path: &str) -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap()
@@ -54,18 +31,6 @@ fn lead_outcomes() -> Vec<String> {
         .skip(1)
         .map(|item| item.split(',').next().unwrap().trim().to_lowercase())
         .collect()
-}
-
-/// Every CLI command whose option check accepts `--reason`, read from the
-/// CLI with the shared scanner (`cli_tables::option_commands`).
-fn reason_forms() -> Vec<String> {
-    let mut forms: Vec<String> = option_commands(&production(), "reason")
-        .into_iter()
-        .map(|(_, command)| command)
-        .collect();
-    forms.sort();
-    forms.dedup();
-    forms
 }
 
 fn ledger(work: &str) -> String {
@@ -303,17 +268,7 @@ fn every_lead_form_that_takes_a_reason_records_it_on_the_event_and_the_submissio
             "disposition"
         ]
     );
-    let mut classified: Vec<String> = LEAD_ACTS
-        .iter()
-        .chain(NOT_LEAD_ACTS.iter())
-        .map(|form| (*form).to_owned())
-        .collect();
-    classified.sort();
-    assert_eq!(
-        reason_forms(),
-        classified,
-        "a command that takes --reason must be classified here"
-    );
+    assert!(LEAD_ACTS.iter().all(|form| !NOT_LEAD_ACTS.contains(form)));
 
     let p = Project::new("f15-lead-forms");
     let begin = |goal: &str| p.begin_ordinary(goal, "true", &[]);

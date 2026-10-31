@@ -2,7 +2,7 @@
 """Resolve Cargo test targets to their sources, features and affected selection.
 
 The test-target map declares, per Cargo test target, the features it must run
-with and the `src/` path prefixes it exercises. This module derives the facts
+with and the repository input prefixes it exercises (`src/` and `tests/`). This module derives the facts
 those declarations must agree with (manifest `required-features`, feature-gated
 test code reached by each target) and selects the targets a change affects.
 
@@ -138,7 +138,8 @@ def declaration_errors(root: Path, mapping: dict, manifest: Dict[str, Tuple[str,
         missing = sorted(set(manifest) - set(declared))
         extra = sorted(set(declared) - set(manifest))
         errors.append(f"targets differ from Cargo test targets: missing {missing}, unknown {extra}")
-    src_files = [p.relative_to(root).as_posix() for p in (root / "src").rglob("*.rs")]
+    input_files = [p.relative_to(root).as_posix() for directory in ("src", "tests")
+                   for p in (root / directory).rglob("*") if p.is_file()]
     repository_only = set(mapping.get("repositoryOnlyTargets", []))
     product_covers: List[str] = []
     for name in sorted(set(declared) & set(manifest)):
@@ -152,7 +153,7 @@ def declaration_errors(root: Path, mapping: dict, manifest: Dict[str, Tuple[str,
             errors.append(f"features must be a list of feature names: {name}")
             continue
         if not isinstance(covers, list) or not covers or not all(isinstance(c, str) for c in covers):
-            errors.append(f"covers must be a non-empty list of src path prefixes: {name}")
+            errors.append(f"covers must be a non-empty list of src/ or tests/ path prefixes: {name}")
             continue
         path, required = manifest[name]
         gated = gated_features(root, target_sources(root, path))
@@ -163,8 +164,12 @@ def declaration_errors(root: Path, mapping: dict, manifest: Dict[str, Tuple[str,
                 f"and feature-gated test code {sorted(gated)}; expected {expected}"
             )
         for cover in covers:
-            if not cover.startswith("src/") or not any(f.startswith(cover) for f in src_files):
-                errors.append(f"{name} cover matches no src file: {cover}")
+            parts = cover.split("/")
+            valid = (cover.startswith(("src/", "tests/")) and "\\" not in cover
+                     and all(part not in ("", ".", "..") for part in parts[1:-1])
+                     and parts[-1] not in (".", ".."))
+            if not valid or not any(f.startswith(cover) for f in input_files):
+                errors.append(f"{name} cover is invalid or matches no repository input: {cover}")
         if name not in repository_only:
             product_covers.extend(covers)
     for module, files in top_level_modules(root).items():
@@ -189,6 +194,7 @@ def select(root: Path, mapping: dict, manifest: Dict[str, Tuple[str, List[str]]]
            changed: List[str]) -> Tuple[List[str], List[str]]:
     """Return (selected targets, reasons) for the changed repository paths."""
     declared = mapping["targets"]
+    repository_only = set(mapping.get("repositoryOnlyTargets", []))
     names = sorted(manifest)
     sources = {name: target_sources(root, manifest[name][0]) for name in names}
     texts: Dict[str, str] = {}
@@ -204,16 +210,16 @@ def select(root: Path, mapping: dict, manifest: Dict[str, Tuple[str, List[str]]]
         if path in SELECT_ALL_FILES or path.startswith(SELECT_ALL_PREFIXES):
             hits = set(names)
             why = "shared build or test support"
-        elif path.startswith("src/"):
-            hits = {n for n in names if any(path.startswith(c) for c in declared[n]["covers"])}
-            why = "covers"
-        elif path.startswith("tests/"):
-            hits = {n for n in names if path in sources[n]}
-            why = "test source"
-            if not hits:
-                hits, why = _mentioning(path, texts), "referenced by test source"
-            if not hits:
-                hits, why = set(names), "test file referenced by no target"
+        elif path.startswith(("src/", "tests/")):
+            covers = {n for n in names if any(path.startswith(c) for c in declared[n]["covers"])}
+            owners = {n for n in names if path in sources[n]}
+            readers = _mentioning(path, texts)
+            hits = covers | owners | readers
+            why = "covers, compiled sources and explicit references"
+            # A generic repository policy scan cannot establish that a new
+            # product or test input has behavioral coverage of its own.
+            if not (owners or readers or (covers - repository_only)):
+                hits, why = set(names), "unowned input; conservative target selection"
         else:
             hits = _mentioning(path, texts)
             why = "referenced by test source"

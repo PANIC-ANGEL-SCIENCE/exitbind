@@ -11,9 +11,6 @@ mod agent_protocol;
 mod child_capture;
 #[path = "../controlled_effects.rs"]
 mod controlled_effects;
-#[cfg(feature = "repository-checks")]
-#[path = "../fixture_host_isolation.rs"]
-mod fixture_host_isolation;
 #[path = "../harness_receipt.rs"]
 mod harness_receipt;
 #[path = "../harness_run.rs"]

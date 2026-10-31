@@ -2,7 +2,10 @@
 //! A renamed or removed test would make that path run nothing and fail only on
 //! the next README-only change, so every listed test must exist where it is named.
 
-use super::*;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[test]
 fn readme_only_gate_list_names_existing_tests_and_matches_its_count() {

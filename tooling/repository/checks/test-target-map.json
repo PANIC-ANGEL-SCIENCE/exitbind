@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "targetsRule": "features: every feature the target must run with (Cargo required-features plus features gating test code it compiles); covers: src path prefixes whose change selects the target for affected-test runs; every top-level src module needs a product (non repository-only) cover.",
+  "targetsRule": "features: every feature the target must run with (Cargo required-features plus features gating test code it compiles); covers: src/ or tests/ input prefixes whose change selects the target for affected-test runs; every top-level src module needs a product (non repository-only) cover.",
   "repositoryOnlyTargets": [
     "docs_workflow",
     "plugin_distribution",
@@ -84,13 +84,13 @@
       ]
     },
     "host_runtime": {
-      "features": [
-        "repository-checks"
-      ],
+      "features": [],
       "covers": [
         "src/host/",
         "src/context",
         "src/kernel/",
+        "src/cli/work/detail.rs",
+        "src/work/readable.rs",
         "src/project/agent_context/",
         "src/envelope.rs",
         "src/producer.rs"
@@ -117,7 +117,8 @@
         "repository-checks"
       ],
       "covers": [
-        "src/"
+        "src/",
+        "tests/"
       ]
     },
     "project_continuation": {
@@ -165,7 +166,8 @@
         "repository-checks"
       ],
       "covers": [
-        "src/"
+        "src/",
+        "tests/"
       ]
     },
     "run_evidence_lifecycle": {

@@ -81,8 +81,8 @@ fn configured() -> (Fixture, String) {
     (fixture, work)
 }
 
-fn action_text(fixture: &Fixture, work: &str) -> String {
-    let output = fixture.call(&["work", "detail", work, "--view", "action"], b"");
+fn view_text(fixture: &Fixture, work: &str, view: &str) -> String {
+    let output = fixture.call(&["work", "detail", work, "--view", view], b"");
     assert!(output.status.success(), "{}", text(&output));
     String::from_utf8(output.stdout).unwrap()
 }
@@ -109,7 +109,7 @@ fn assert_route_follows(readable: &str, header: &str, route: &Value) {
 #[test]
 fn worker_action_view_text_carries_phase_body_and_lesson_with_read_routes() {
     let (fixture, work) = configured();
-    let readable = action_text(&fixture, &work);
+    let readable = view_text(&fixture, &work, "action");
 
     assert!(
         readable.contains(TRIAGE),
@@ -156,7 +156,7 @@ fn worker_action_view_text_carries_phase_body_and_lesson_with_read_routes() {
 #[test]
 fn action_view_text_and_json_name_the_same_guidance_items_and_routes() {
     let (fixture, work) = configured();
-    let readable = action_text(&fixture, &work);
+    let readable = view_text(&fixture, &work, "action");
     let view = fixture.value(
         &["work", "detail", &work, "--view", "action", "--json"],
         b"",
@@ -222,7 +222,7 @@ fn action_view_text_and_json_name_the_same_guidance_items_and_routes() {
     }
 }
 
-/// The views `work detail --view` accepts that the inventory below covers.
+/// The views `work detail --view` accepts that this runtime test covers.
 const COVERED_VIEWS: &[&str] = &["action"];
 
 /// Run an emitted route, restoring an executable or config it left out.
@@ -280,7 +280,8 @@ fn subagent_start(fixture: &Fixture, native: &str) -> String {
 
 /// FR54-05 as a pattern: every surface a recipient reads its assignment from
 /// carries the delivered phase body and lesson, or the exact route that
-/// returns them. A new `work detail --view` fails here until it is covered.
+/// returns them. The repository source contract checks that new views join
+/// the runtime test's covered list.
 #[test]
 fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
     let (fixture, work) = configured();
@@ -299,18 +300,20 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
         .map(|item| item["reference"]["itemId"].as_str().unwrap().to_owned())
         .expect("lesson delivered");
 
-    // work detail --view action, text and --json: carries.
-    let readable = action_text(&fixture, &work);
-    assert!(readable.contains(TRIAGE) && readable.contains(FACT));
-    let view = fixture.value(
-        &["work", "detail", &work, "--view", "action", "--json"],
-        b"",
-    );
-    let carried = serde_json::to_string(&view["guidance"]["items"]).unwrap();
-    assert!(
-        carried.contains(escaped) && carried.contains(FACT),
-        "{carried}"
-    );
+    // Each covered work detail view carries guidance in text and JSON.
+    let mut views = COVERED_VIEWS.to_vec();
+    views.sort_unstable();
+    assert!(!views.is_empty(), "no detail views are exercised");
+    for &name in &views {
+        let readable = view_text(&fixture, &work, name);
+        assert!(readable.contains(TRIAGE) && readable.contains(FACT));
+        let view = fixture.value(&["work", "detail", &work, "--view", name, "--json"], b"");
+        let carried = serde_json::to_string(&view["guidance"]["items"]).unwrap();
+        assert!(
+            carried.contains(escaped) && carried.contains(FACT),
+            "{name}: {carried}"
+        );
+    }
 
     // work next: the exact grouped detail route returns the same items.
     let next = fixture.value(&["work", "next", &work, "--json"], b"");
@@ -373,28 +376,7 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
         "{prompt}"
     );
 
-    // Every `work detail --view` value is covered above: the set is the one
-    // the CLI's dispatch accepts, read from its own code (a view arm added
-    // there is a member; its refusal must name it, see view_refusals).
-    let sources = super::super::rust_source::production();
-    let detail: Vec<(String, String)> = sources
-        .iter()
-        .filter(|(path, _)| path == "src/cli/work/detail.rs")
-        .cloned()
-        .collect();
-    let readers = super::super::cli_tables::views_in(&sources, &detail);
-    let accepted: Vec<String> = readers
-        .iter()
-        .flat_map(|reader| reader.accepted.iter().cloned())
-        .collect();
-    assert!(!accepted.is_empty(), "work detail reads no --view");
-    for name in &accepted {
-        assert!(
-            COVERED_VIEWS.contains(&name.as_str()),
-            "work detail --view {name} is not in the recipient surface inventory"
-        );
-    }
-    let views: Vec<&str> = accepted.iter().map(String::as_str).collect();
+    // The refusal names the same views exercised above.
     let refused = fixture.call(&["work", "detail", &work, "--view", "uncovered"], b"");
     assert!(!refused.status.success());
     assert!(text(&refused).contains(&format!("--view accepts {}", views.join(", "))));

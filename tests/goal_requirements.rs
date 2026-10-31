@@ -547,28 +547,16 @@ fn incorporate_native_generic_goal(project: &Project, goal_id: &str, goal: &str)
     )
 }
 
-#[path = "goal_requirements/attested_check_consumers.rs"]
-mod attested_check_consumers;
 #[path = "goal_requirements/changed_after_acceptance.rs"]
 mod changed_after_acceptance;
-#[path = "goal_requirements/changed_after_binding_inventory.rs"]
-mod changed_after_binding_inventory;
 #[path = "goal_requirements/checker_derivation.rs"]
 mod checker_derivation;
-#[path = "goal_requirements/child_block_refusals.rs"]
-mod child_block_refusals;
-#[path = "inventory/cli_tables.rs"]
-mod cli_tables;
 #[path = "goal_requirements/closure_flows.rs"]
 mod closure_flows;
-#[path = "goal_requirements/config_writer_keep.rs"]
-mod config_writer_keep;
 #[path = "goal_requirements/correction_and_journey.rs"]
 mod correction_and_journey;
 #[path = "goal_requirements/emitted_routes.rs"]
 mod emitted_routes;
-#[path = "goal_requirements/follow_up_routes.rs"]
-mod follow_up_routes;
 #[path = "../src/cli/goal_action.rs"]
 mod goal_action;
 #[path = "goal_requirements/intake_and_identity.rs"]
@@ -577,6 +565,8 @@ mod intake_and_identity;
 mod journey_config_change;
 #[path = "goal_requirements/lead_reason.rs"]
 mod lead_reason;
+#[path = "goal_requirements/lead_reason_forms.rs"]
+mod lead_reason_forms;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
 #[path = "goal_requirements/pause_record.rs"]
@@ -585,23 +575,11 @@ mod pause_record;
 mod refuse_before_write;
 #[path = "goal_requirements/root_inputs.rs"]
 mod root_inputs;
-#[path = "goal_requirements/route_values.rs"]
-mod route_values;
-#[path = "inventory/rust_source.rs"]
-mod rust_source;
 #[path = "goal_requirements/session_adoption.rs"]
 mod session_adoption;
-#[path = "goal_requirements/session_record_lock.rs"]
-mod session_record_lock;
 #[path = "goal_requirements/setup_first_work.rs"]
 mod setup_first_work;
 #[path = "goal_requirements/setup_start_path.rs"]
 mod setup_start_path;
-#[path = "goal_requirements/source_scanner.rs"]
-mod source_scanner;
 #[path = "goal_requirements/successor_timing.rs"]
 mod successor_timing;
-#[path = "goal_requirements/typed_routes.rs"]
-mod typed_routes;
-#[path = "goal_requirements/view_refusals.rs"]
-mod view_refusals;
