@@ -41,7 +41,7 @@ fn unrelated_corrupt_admission_does_not_block_a_separate_work() {
 
     assert!(!f.finish(b"failed foreign result").status.success());
     let directory = f.root.join(".exitbind/pre-return");
-    let records = fs::read_dir(&directory)
+    let records = fs::read_dir(directory)
         .unwrap()
         .map(Result::unwrap)
         .map(|entry| entry.path())
@@ -136,10 +136,11 @@ fn forged_ledger_ownership_refuses_even_when_the_event_is_rehashed() {
         }
         event.as_object_mut().unwrap().remove("eventSha256");
         event["eventSha256"] = json!(digest(&serde_json::to_vec(event).unwrap()));
-        let source = events
-            .iter()
-            .map(|event| format!("{}\n", serde_json::to_string(event).unwrap()))
-            .collect::<String>();
+        let mut source = String::new();
+        for event in &events {
+            source.push_str(&serde_json::to_string(event).unwrap());
+            source.push('\n');
+        }
         fs::write(&path, source).unwrap();
         let output = f.call(&["run", "inspect", &f.ledger_path(), "--json"], None);
         assert!(!output.status.success(), "{field}: {output:?}");
