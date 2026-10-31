@@ -1,6 +1,8 @@
 // Current Exitbind and preserved historical-reader contracts run in the default suite.
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[path = "value_replay/saved_reader_fixtures.rs"]
+mod saved_reader_fixtures;
 mod support;
 use std::{
     fs,

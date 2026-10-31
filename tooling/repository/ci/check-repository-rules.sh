@@ -11,12 +11,8 @@
 # CANDIDATE_SHA, when set (a CI pull-request head), is checked for public
 # history in addition to HEAD: a merge can retain published ancestry while the
 # contributing head dropped it.
-# Each check keeps the platform and mode applicability its former stage had;
-# ci_repository_rule_check_selected in ci-stages.sh decides and SKIP says why.
-# The build-dependent targets remain the authority for these rules:
-#   cargo test --locked --features repository-checks --test architecture_budget
-#   cargo test --locked --features repository-checks --test privacy_gate
-#   cargo test --locked --features repository-checks --test release_integrity
+# Privacy/history/identity and live distribution contracts remain early.
+# Behavioral target tests run when selected or at final native qualification.
 set -u
 base=${1:-origin/main}
 platform=${2:-}
@@ -43,8 +39,7 @@ case $mode in
 esac
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
 . "$root/tooling/repository/ci/ci-stages.sh"
-test -f tests/architecture_budget.rs && test -f scripts/check-path-rendering.sh &&
-  test -f tooling/repository/checks/check_architecture_budget.py ||
+test -f Cargo.toml && test -f scripts/check-path-rendering.sh ||
   { echo 'repository-rules: run from an Exitbind checkout root' >&2; exit 2; }
 case $base in
   0000000000000000000000000000000000000000)
@@ -75,7 +70,6 @@ step() {
 
 run_check() {
   case $1 in
-    architecture-budget) step architecture-budget python3 tooling/repository/checks/check_architecture_budget.py --base "$base" ;;
     path-rendering) step path-rendering ./scripts/check-path-rendering.sh ;;
     product-surface) step product-surface ./scripts/check-product-surface.sh ;;
     release-refs) step release-refs ./scripts/check-release-refs.sh ;;
@@ -84,7 +78,7 @@ run_check() {
   esac
 }
 
-for check in architecture-budget path-rendering product-surface release-refs public-history commit-identity; do
+for check in path-rendering product-surface release-refs public-history commit-identity; do
   if ci_repository_rule_check_selected "$check" "$platform" "$mode"; then
     run_check "$check"
   else

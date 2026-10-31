@@ -1,26 +1,8 @@
 #!/bin/sh
-# Show the failed steps and a bounded excerpt of their logs, or record one
-# failure in the gate failure ledger with --record.
+# Show the failed steps and a bounded excerpt of their logs.
 set -eu
 
-if [ "${1:-}" = --record ]; then
-  # --run RUN_ID is shorthand for --source "github-actions run RUN_ID".
-  shift
-  root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
-  for argument do
-    shift
-    if [ "${previous:-}" = --run ]; then
-      case "$argument" in ''|*[!0-9]*) echo 'RUN_ID must be numeric' >&2; exit 2 ;; esac
-      set -- "$@" --source "github-actions run $argument"
-    elif [ "$argument" != --run ]; then
-      set -- "$@" "$argument"
-    fi
-    previous=$argument
-  done
-  exec python3 "$root/tooling/repository/checks/check_gate_inventory.py" --append "$@"
-fi
-
-test "$#" -eq 1 || { echo 'usage: ci-failure.sh RUN_ID | ci-failure.sh --record --gate G --class C --summary S --resolution R (--run RUN_ID | --source S) [--date YYYY-MM-DD]' >&2; exit 2; }
+test "$#" -eq 1 || { echo 'usage: ci-failure.sh RUN_ID' >&2; exit 2; }
 case "$1" in ''|*[!0-9]*) echo 'RUN_ID must be numeric' >&2; exit 2 ;; esac
 command -v gh >/dev/null 2>&1 || { echo 'gh is required' >&2; exit 1; }
 run=$1

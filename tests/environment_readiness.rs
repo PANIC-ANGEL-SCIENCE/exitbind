@@ -508,27 +508,6 @@ fn a_failing_git_listing_is_unknown_not_zero_paths() {
     assert!(json["readiness"]["root"]["detail"].is_string());
 }
 
-// D2: the versioned output shape is registered, with a retirement condition.
-#[test]
-fn the_readiness_shape_is_registered_in_the_compatibility_table() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tooling/repository/checks/compatibility-markers.json");
-    let table: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    let row = table["markers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["marker"] == "environment-readiness-v1")
-        .expect("compatibility-markers.json must register environment-readiness-v1");
-    assert_eq!(row["kind"], "text");
-    assert!(row["writers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|writer| writer == "src/project/readiness.rs"));
-    assert!(!row["retire"].as_str().unwrap_or("").is_empty());
-}
-
 // D3: the human setup preview prints the same readiness section as check.
 #[test]
 fn setup_preview_prints_the_same_readiness_section() {

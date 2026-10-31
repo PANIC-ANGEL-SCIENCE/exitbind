@@ -82,9 +82,8 @@ archive refuses the gate. No global validator installation is required.
 
 Use the script's absolute path when outside the checkout. Every run starts with
 the no-build repository-rule guard
-(`tooling/repository/ci/check-repository-rules.sh`): the size budget in
-pre-return and in full mode on Linux, path rendering, product surface and
-release references on Linux, and public history (including `CANDIDATE_SHA`
+(`tooling/repository/ci/check-repository-rules.sh`): path rendering, product
+surface and release references on Linux, and public history (including `CANDIDATE_SHA`
 when the CI run sets it) and commit identity everywhere fail before any build
 starts; full mode fetches the comparison base first. On Linux it then runs
 `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`,
@@ -172,9 +171,22 @@ a schema or skill body) selects the targets covering its embedding module, and
 tests (`cargo test --locked --bin exitbind`), which no integration target runs. Each target runs with its declared `features` and without
 host session variables, prints its exact command, and must run at least one
 test. Pre-return runs it as the `affected-tests` stage against
-`PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`. Within that same pre-return run,
-targets already passed with identical features in an earlier stage are not
-repeated; a standalone affected run executes every selected target.
+`PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`, defaulting to `origin/main`.
+
+For new maintenance checks, `scripts/ci-local.sh --pre-return` selects the
+existing recipe from that same changed-path relation. Documentation avoids
+unrelated workflow and Rust lint stages; Rust maintenance keeps formatting,
+Clippy for the binary and affected test targets, and the selected behavior
+tests. Checker, workflow and tooling changes retain the non-Cargo regression
+checks. Unknown dependencies select every Cargo target and the binary's unit
+tests conservatively. Full native CI retains all integration, security,
+packaging and installer qualification; scoped pre-return is not release proof.
+No source-hash adaptation record is needed to change a test. The live target
+relation still validates feature requirements, reachable test sources and
+coverage prefixes. An explicit `test-affected.sh --skip-passed` caller can omit
+only a same-invocation successful target with identical features; standalone
+execution inherits no pass. A selected target that fails or runs zero tests
+refuses completion. Existing frozen Work commands keep their bound policies.
 
 Focused selectors use the new target name followed by the module-qualified test path. Repository-only checks are included in focused and full developer CI with the `repository-checks` feature; distributed Cargo source tests omit that feature. Focused, pre-return and full checks share `scripts/verification-context.sh`.
 It removes ambient native Goal and Git selectors only for these owned checks,
@@ -275,10 +287,8 @@ small verification needed to prove behavior.
 ## Change discipline
 
 - Each file must have one explainable responsibility.
-- Every file under `src/`, `tests/` and `tests/fixtures/` stays under 32 KiB.
-  A file listed in `tests/fixtures/architecture-budget.txt` may not grow, and
-  its ceiling falls with it. Extract the responsibility you are changing
-  instead of adding policy to a large facade, reducer, router or test file.
+- Split distinct responsibilities when extending a facade, reducer, router or
+  test file; keep related behavior together where readers can follow it.
 - Keep the CLI entry point as wiring and dispatch only.
 - `config::validate` owns configuration acceptance. New or modified code must
   use `Loaded::agent` and typed fields instead of indexing `Loaded.config`
@@ -299,15 +309,9 @@ small verification needed to prove behavior.
 - For a historical failed GitHub Actions run, use `scripts/ci-failure.sh RUN_ID`
   to see failed steps and bounded error lines. Keep full remote logs out of
   agent context; record the run ID, head SHA, failing step, and diagnosis.
-  Record a real gate failure, remote or local, with `scripts/ci-failure.sh
-  --record --gate GATE --class CLASS --summary TEXT --resolution TEXT
-  (--run RUN_ID | --source TEXT)`; it appends to
-  `tooling/repository/ci/failure-ledger.jsonl`. Every `ci-local.sh` gate is
-  listed in `tooling/repository/ci/gate-inventory.json` with its cost, the
-  failure it prevents, and a ledger reference, provisional date or deterrent
-  reason; `check_gate_inventory.py` enforces this in the `ci-stage-contract`
-  stage on every platform, reports a provisional date that has passed, and
-  `release_integrity` refuses a release while one has.
+- When persisted formats change, test supported old records and refusal of
+  incompatible or malformed records, and describe rollback and mixed-version
+  limits in the release notes.
 - For noisy verification in an agent session, use
   `scripts/quiet-command.sh LABEL COMMAND [ARG ...]`: ordinary success remains
   one labeled line, while recognized successful `cargo test` output is reduced

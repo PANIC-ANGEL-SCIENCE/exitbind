@@ -79,27 +79,13 @@ if [ "$ci_mode" = full ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then
   prepare_value_proof_base
 fi
 
-# Track only successful invariant targets in this invocation. The affected
-# selector can omit an exact target/features pair already run here; nothing is
-# persisted or reused from another CI run.
-passed_targets=
-remember_passed_target() {
-  # Match the affected selector's requirement that at least one test passed.
-  # A successful command with zero tests must still reach that selector.
-  passed_count=$(sed -n 's/^test result: [A-Za-z]*\. \([0-9][0-9]*\) passed;.*/\1/p' \
-    "$run_dir/$current_stage.log" | awk '{n += $1} END {print n + 0}') || return 0
-  test "$passed_count" -gt 0 || return 0
-  # Unknown argument shapes are not reusable and therefore get rerun.
-  if [ "$#" -eq 6 ] && [ "$1" = test ] && [ "$2" = --locked ] &&
-    [ "$3" = --features ] && [ "$5" = --test ]; then
-    passed_pair="$6=$4"
-  elif [ "$#" -eq 4 ] && [ "$1" = test ] && [ "$2" = --locked ] && [ "$3" = --test ]; then
-    passed_pair="$4="
-  else
-    return 0
-  fi
-  passed_targets="${passed_targets:+$passed_targets }$passed_pair"
-}
+# New calls use proportional selection; an explicitly bound old checker keeps
+# its own immutable policy. Changed checker/tooling inputs select broad checks.
+if [ "$ci_mode" = pre-return ]; then
+  affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-origin/main}}
+  CI_PRE_RETURN_SCOPE=$(python3 -B tooling/repository/checks/test_target_sources.py scope --base "$affected_base")
+  export CI_PRE_RETURN_SCOPE
+fi
 
 for stage in $(ci_stage_order); do
   ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
@@ -118,40 +104,30 @@ for stage in $(ci_stage_order); do
     ci-stage-contract) run ci-stage-contract ./scripts/test-ci-stages.sh ;;
     quiet-command-regression) run quiet-command-regression python3 ./scripts/test-quiet-command.py ;;
     fmt) run fmt "$CARGO" fmt --check ;;
-    clippy) run clippy "$CARGO" clippy --locked --all-targets --features repository-checks -- -D warnings ;;
+    clippy)
+      if [ "$ci_mode" = pre-return ]; then
+        selected_targets=$(python3 -B tooling/repository/checks/test_target_sources.py affected --base "$affected_base")
+        set -- clippy --locked --bin exitbind
+        clippy_features=
+        tab=$(printf '\t')
+        while IFS="$tab" read -r selected_target selected_features; do
+          test -n "$selected_target" || continue
+          case "$selected_target" in bin:*) continue ;; esac
+          set -- "$@" --test "$selected_target"
+          if [ -n "$selected_features" ]; then
+            clippy_features="${clippy_features:+$clippy_features,}$selected_features"
+          fi
+        done <<CLIPPY_TARGETS
+$selected_targets
+CLIPPY_TARGETS
+        test -z "$clippy_features" || set -- "$@" --features "$clippy_features"
+        run clippy "$CARGO" "$@" -- -D warnings
+      else
+        run clippy "$CARGO" clippy --locked --all-targets --features repository-checks -- -D warnings
+      fi ;;
     tests) run tests "$CARGO" test --locked --features repository-checks ;;
-    architecture-budget)
-      set -- test --locked --features repository-checks --test architecture_budget
-      run architecture-budget "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    privacy-gate)
-      set -- test --locked --features repository-checks --test privacy_gate
-      run privacy-gate "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    release-integrity)
-      set -- test --locked --features repository-checks --test release_integrity
-      run release-integrity "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    docs-workflow)
-      set -- test --locked --features repository-checks --test docs_workflow
-      run docs-workflow "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    first-impression)
-      set -- test --locked --test first_impression
-      run first-impression "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    value-contract)
-      set -- test --locked --test value_contract
-      run value-contract "$CARGO" "$@"
-      remember_passed_target "$@" ;;
-    plugin-distribution)
-      set -- test --locked --features repository-checks --test plugin_distribution
-      run plugin-distribution "$CARGO" "$@"
-      remember_passed_target "$@" ;;
     affected-tests)
-      affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
-      test -n "$affected_base" || fail 'affected-tests needs PRE_RETURN_BASE or VALUE_PROOF_BASE'
-      run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base" --skip-passed "$passed_targets"
+      run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"
       ;;
     value-proof) run value-proof ./scripts/run-value-proof-suite.sh ;;
     drift-warning) run drift-warning ./scripts/demo-drift-warning.sh ;;

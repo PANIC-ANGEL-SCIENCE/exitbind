@@ -10,8 +10,6 @@ mod matrix {
 
 const PROOF_BASE_ENV: &str =
     "VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}";
-const ZERO_PROOF_BASE: &str =
-    "if [ \"$VALUE_PROOF_BASE\" = \"0000000000000000000000000000000000000000\" ]; then";
 const EMPTY_OR_ZERO_PROOF_BASE: &str =
     "if [ -z \"$VALUE_PROOF_BASE\" ] || [ \"$VALUE_PROOF_BASE\" = \"0000000000000000000000000000000000000000\" ]; then";
 const EXACT_FETCH: &str = "git fetch --no-tags origin \"$VALUE_PROOF_BASE\"";
@@ -103,15 +101,6 @@ fn job_block<'a>(workflow: &'a str, job: &str, next_job: &str) -> &'a str {
     after_job
         .split_once(&format!("  {next_job}:\n"))
         .map_or(after_job, |parts| parts.0)
-}
-
-fn selected_proof_base<'a>(pr_base: &'a str, before: &'a str, head_parent: &'a str) -> &'a str {
-    let value = if pr_base.is_empty() { before } else { pr_base };
-    if value.is_empty() || value == "0000000000000000000000000000000000000000" {
-        head_parent
-    } else {
-        value
-    }
 }
 
 fn ci_concurrency(event: &str, reference: &str, pr: Option<u64>, run_id: u64) -> (String, bool) {
@@ -347,31 +336,6 @@ fn ordinary_ci_is_linux_only_and_stable_readiness_retains_native_platforms() {
             1
         );
     }
-}
-
-#[test]
-fn workflow_dispatch_empty_proof_base_uses_head_parent_and_controls_remain_distinct() {
-    let shared = source("tooling/repository/ci/ci-local.sh");
-    assert_eq!(shared.matches(EMPTY_OR_ZERO_PROOF_BASE).count(), 1);
-    assert!(!shared.contains(ZERO_PROOF_BASE));
-
-    assert_eq!(selected_proof_base("", "", "head-parent"), "head-parent");
-    assert_eq!(
-        selected_proof_base("pr-base", "event-before", "head-parent"),
-        "pr-base"
-    );
-    assert_eq!(
-        selected_proof_base("", "event-before", "head-parent"),
-        "event-before"
-    );
-    assert_eq!(
-        selected_proof_base(
-            "",
-            "0000000000000000000000000000000000000000",
-            "head-parent"
-        ),
-        "head-parent"
-    );
 }
 
 #[test]

@@ -217,6 +217,8 @@ def select(root: Path, mapping: dict, manifest: Dict[str, Tuple[str, List[str]]]
         else:
             hits = _mentioning(path, texts)
             why = "referenced by test source"
+            if not hits and not path.endswith((".md", ".png", ".svg", ".jpg", ".gif")):
+                hits, why = set(names), "unknown dependency; conservative target selection"
         if path in embedded and not path.startswith("src/"):
             # The binary embeds this file, so the embedding module's covers apply.
             embedding = embedded[path]
@@ -243,22 +245,50 @@ def _mentioning(path: str, texts: Dict[str, str]) -> Set[str]:
     return {name for name, text in texts.items() if any(needle in text for needle in needles)}
 
 
+def pre_return_scope(changed: List[str]) -> Set[str]:
+    """Classify changed inputs; ci-stages.sh remains the stage policy owner.
+
+    This relation supplies no second stage registry. Unknown build/check
+    inputs keep the broad recipe; Cargo target ownership stays in select().
+    """
+    kinds: Set[str] = set()
+    for path in changed:
+        if path.startswith(("src/", "tests/")) and path.endswith(".rs"):
+            kinds.add("rust")
+        elif path in SELECT_ALL_FILES or path.startswith(("rust-toolchain", ".github/", "scripts/", "tooling/")):
+            kinds.add("broad")
+        elif path.startswith(("schema/", "skills/", "plugins/", "compatibility/")):
+            kinds.add("build")
+        elif not path.endswith((".md", ".png", ".svg", ".jpg", ".gif")):
+            kinds.add("broad")
+    return kinds
+
+
 def main(argv: List[str]) -> int:
-    if len(argv) != 3 or argv[0] != "affected" or argv[1] != "--base":
-        print("usage: test_target_sources.py affected --base BASE", file=sys.stderr)
+    if len(argv) != 3 or argv[0] not in ("affected", "scope") or argv[1] != "--base":
+        print("usage: test_target_sources.py affected|scope --base BASE", file=sys.stderr)
         return 2
     root = Path(__file__).resolve().parents[3]
+    changed = changed_files(root, argv[2])
+    if argv[0] == "scope":
+        print(" ".join(sorted(pre_return_scope(changed))) or "docs")
+        return 0
     mapping, manifest = load(root)
     errors = declaration_errors(root, mapping, manifest)
     if errors:
         for error in errors:
             print(f"test-affected: {error}", file=sys.stderr)
         return 1
-    selected, reasons = select(root, mapping, manifest, changed_files(root, argv[2]))
+    selected, reasons = select(root, mapping, manifest, changed)
     for reason in reasons:
         print(f"# {reason}", file=sys.stderr)
     for name in selected:
         print(f"{name}\t{','.join(mapping['targets'][name]['features'])}")
+    # The binary's unit tests have no integration-test owner. Unknown/shared
+    # dependencies select them too, alongside all integration targets.
+    if (selected == sorted(manifest) or any(
+            path.startswith("src/") or path in SELECT_ALL_FILES for path in changed)):
+        print("bin:exitbind\t")
     return 0
 
 

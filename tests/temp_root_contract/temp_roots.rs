@@ -28,7 +28,7 @@ use std::path::Path;
 const OWNERS: &[&str] = &[
     "tests/support/temp_root.rs",
     "src/test_root.rs",
-    "tests/architecture_budget/temp_roots.rs",
+    "tests/temp_root_contract/temp_roots.rs",
 ];
 
 /// Identifiers that acquire a temp location, with what must follow them

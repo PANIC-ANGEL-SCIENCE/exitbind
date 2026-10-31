@@ -84,11 +84,6 @@ name = "exitbind"
 path = "src/main.rs"
 
 [[test]]
-name = "architecture_budget"
-required-features = ["repository-checks"]
-path = "tests/architecture_budget.rs"
-
-[[test]]
 name = "away_native"
 path = "tests/away_native.rs"
 

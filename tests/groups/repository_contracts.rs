@@ -39,3 +39,6 @@ mod rust_contract;
 #[cfg(feature = "repository-checks")]
 #[path = "../rust_parity.rs"]
 mod rust_parity;
+#[cfg(feature = "repository-checks")]
+#[path = "../temp_root_contract.rs"]
+mod temp_root_contract;

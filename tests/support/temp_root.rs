@@ -5,7 +5,7 @@
 //! it on the test's output, which libtest shows for the failing test.
 //!
 //! A test that needs a temp directory takes it from here; the temp-root scan in
-//! `tests/architecture_budget/temp_roots.rs` fails on any other acquisition.
+//! `tests/temp_root_contract/temp_roots.rs` fails on any other acquisition.
 
 #![allow(dead_code)]
 

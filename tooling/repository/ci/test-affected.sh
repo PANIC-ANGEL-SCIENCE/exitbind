@@ -29,13 +29,6 @@ cargo=${CARGO:-cargo}
 selection=$(python3 -B tooling/repository/checks/test_target_sources.py affected --base "$base") ||
   fail 'target selection failed; fix the test-target map first'
 tab=$(printf '\t')
-# The binary's own unit tests live in src/ and no integration target runs them,
-# so a change to src/ or the manifest also selects them (as bin:exitbind).
-if { git diff --name-only --no-renames "$base" -- &&
-  git ls-files --others --exclude-standard; } | grep -E '^(src/|Cargo\.toml$|Cargo\.lock$)' >/dev/null; then
-  selection="${selection:+$selection
-}bin:exitbind$tab"
-fi
 if [ -z "$selection" ]; then
   printf 'test-affected: base=%s selects no Cargo test target\n' "$base"
   exit 0
