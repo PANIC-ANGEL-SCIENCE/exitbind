@@ -5,11 +5,13 @@
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.24 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
 
 Install compatible hook and governor binaries together. New Works that select
-pre-return carry `preReturnAdmissionProtocol` and record `pre_return_admitted`
-before their checker starts. Earlier readers refuse this extension and the
-`pre_return_reconciled` recovery action. Keep each existing Work's original
-binary; never edit a ledger or downgrade a newly marked Work to bypass a
-refusal. Markerless historical and successor runs retain conservative lookup,
+pre-return carry `preReturnAdmissionProtocol: 2`: the owning ledger event is
+synchronized before the attempt record or checker is created. Attempt filenames
+carry the owning run identity, so surviving eventless or damaged records remain
+attributable across changed results. Earlier readers refuse this extension and
+the `pre_return_reconciled` recovery action. Keep each existing Work's original
+binary; never edit a ledger or downgrade a marked Work to bypass a refusal.
+Protocol-1, markerless historical and successor runs retain conservative lookup,
 including refusal when a damaged record's ownership cannot be established.
 Admission advances the audit head without worker-result, final-check, grant or
 acceptance credit. Saved native results and bound returns validate that exact
@@ -20,11 +22,16 @@ owned audit suffix without ignoring changed inputs or foreign events.
 - New maintenance pre-return checks use the existing affected-target relation
   and scoped lint. Unknown dependencies retain conservative coverage; full
   integration, security, packaging and installer checks stay at qualification.
+  The public recipe defaults to native CI's runtime profile and honors explicit
+  caller overrides.
 - Owned interrupted pre-return recovery preserves unknown outcomes, exact held
   results, process ownership and the single explicitly reconciled retry. A
   failed linked retry offers inspection or a truthful blocked report.
 - Separate newly marked Works isolate unrelated damaged admissions. Relevant
   missing, moved or forged evidence and unresolved cross-producer effects refuse.
+- Linux supervised checks reap adopted exited children while their checker is
+  still running. The checker leader keeps its own wait status, and incomplete
+  cleanup, live descendants and restoration failures remain nonpassing.
 - Configured native recipients agree across full, current and action views.
   Preparation failures identify preparation as the blocker.
 - Runtime historical-reader fixtures replace repository compatibility/source

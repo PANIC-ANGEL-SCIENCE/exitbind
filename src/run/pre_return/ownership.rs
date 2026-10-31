@@ -4,7 +4,8 @@ use super::*;
 
 pub(crate) const FIELD: &str = "preReturnAdmissionProtocol";
 pub(crate) const ACTION: &str = "pre_return_admitted";
-const PROTOCOL: u64 = 1;
+pub(super) const LEGACY_PROTOCOL: u64 = 1;
+pub(super) const PROTOCOL: u64 = 2;
 const ASSIGNMENT_FIELDS: &[&str] = &["runId", "ledger", "stage", "attempt", "agent", "role"];
 
 fn sha(value: &Value) -> bool {
@@ -40,7 +41,10 @@ pub(crate) fn add_start_marker(start: &mut Value) {
 
 pub(crate) fn validate_start(start: &Value, line: usize) -> Result<(), String> {
     if let Some(marker) = start.get(FIELD) {
-        if start["version"] != 8 || marker != PROTOCOL || start.get("preReturnPolicy").is_none() {
+        if start["version"] != 8
+            || !matches!(marker.as_u64(), Some(LEGACY_PROTOCOL | PROTOCOL))
+            || start.get("preReturnPolicy").is_none()
+        {
             return Err(format!(
                 "invalid run ledger line {line}: pre-return admission protocol requires a supported checked start"
             ));
@@ -154,7 +158,7 @@ pub(crate) fn apply(state: &mut Value, event: &Value) -> Result<(), String> {
                 })
         })
     };
-    if state[FIELD] != PROTOCOL
+    if !matches!(state[FIELD].as_u64(), Some(LEGACY_PROTOCOL | PROTOCOL))
         || state["status"] != "running"
         || state.get("preReturnPolicy").is_none()
         || identity["runId"] != state["runId"]
@@ -196,6 +200,22 @@ pub(super) fn admit(
     projected.push(event.clone());
     run_state::reduce(&projected)?;
     append(path, &event, false, &source)?;
+    // The event must survive a crash before an attempt file or process exists.
+    let parent = path
+        .path
+        .parent()
+        .ok_or("run ledger has no parent directory")?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| {
+            unavailable_refusal(
+                loaded,
+                state,
+                &event["admission"]["assignment"],
+                attempt["attemptId"].as_str().unwrap_or("unknown"),
+                &format!("admission directory sync failed: {error}"),
+            )
+        })?;
     Ok(event["eventSha256"].as_str().map(str::to_owned))
 }
 
@@ -213,19 +233,28 @@ pub(super) fn events<'a>(state: &'a Value, identity: Option<&Value>) -> Vec<&'a 
         .collect()
 }
 
-pub(super) fn read_owned(loaded: &Loaded, event: &Value) -> Result<Value, String> {
+pub(super) fn read_owned(loaded: &Loaded, state: &Value, event: &Value) -> Result<Value, String> {
     let admission = &event["admission"];
     let id = admission["attemptId"]
         .as_str()
         .ok_or("missing pre-return admission identity")?;
-    let record = read_record(&record_path(loaded, id, "attempt")?)?;
+    let record = read_record(&attempt_path(loaded, state, id)?)?;
+    verify_owned(&record, event)?;
+    Ok(record)
+}
+
+pub(super) fn verify_owned(record: &Value, event: &Value) -> Result<(), String> {
+    let admission = &event["admission"];
+    let id = admission["attemptId"]
+        .as_str()
+        .ok_or("missing pre-return admission identity")?;
     if record["attemptId"] != id
         || record["recordSha256"] != admission["recordSha256"]
         || assignment(&record["binding"]) != admission["assignment"]
     {
         return Err("pre-return admission differs from its owning ledger".into());
     }
-    Ok(record)
+    Ok(())
 }
 
 /// Return the exact pre-admission ledger prefix for an already saved result.
@@ -304,6 +333,20 @@ pub(crate) fn saved_result_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_start_accepts_both_owned_protocols_and_refuses_unknown_versions() {
+        for version in [LEGACY_PROTOCOL, PROTOCOL] {
+            let start =
+                json!({"version":8,"preReturnPolicy":{},"preReturnAdmissionProtocol":version});
+            assert!(validate_start(&start, 1).is_ok(), "{version}");
+        }
+        for version in [json!(0), json!(3), Value::Null, json!("2")] {
+            let start =
+                json!({"version":8,"preReturnPolicy":{},"preReturnAdmissionProtocol":version});
+            assert!(validate_start(&start, 1).is_err(), "{version}");
+        }
+    }
 
     #[test]
     fn linked_repair_requires_the_exact_adjacent_assignment() {

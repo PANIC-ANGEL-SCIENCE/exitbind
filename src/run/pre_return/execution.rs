@@ -157,7 +157,7 @@ pub(super) fn run_or_recover(
     // Preserve exact owning evidence before observing aggregate metadata.
     observe_result(loaded, ticket, &mut result, known_ended);
     if result["state"] != "passed" {
-        return Err(failure_response(loaded, attempt_id, &result));
+        return Err(current_failure_response(loaded, attempt_id, attempt)?);
     }
     Ok(result)
 }
@@ -202,7 +202,7 @@ fn prelaunch_refusal(
     write_durable(&result_path, &record_bytes(&result)?)
         .map_err(|store| format!("pre-return preparation refusal could not be recorded; attempt remains unresolved: {store}"))?;
     observe_result(loaded, ticket, &mut result, true);
-    Err(failure_response(loaded, attempt_id, &result))
+    Err(current_failure_response(loaded, attempt_id, attempt)?)
 }
 
 /// A saved known-ended outcome can reconcile its debit after interruption;

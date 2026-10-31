@@ -34,6 +34,14 @@ prepare_verification_context() {
   prepare_execution_roots
   CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-1}
   export CARGO_BUILD_JOBS
+  # Match native CI's practical runtime profile for the ordinary public recipe.
+  # Explicit caller profiles still win (for example an intentional debug run).
+  CARGO_PROFILE_DEV_OPT_LEVEL=${CARGO_PROFILE_DEV_OPT_LEVEL:-1}
+  CARGO_PROFILE_TEST_OPT_LEVEL=${CARGO_PROFILE_TEST_OPT_LEVEL:-1}
+  CARGO_PROFILE_DEV_DEBUG=${CARGO_PROFILE_DEV_DEBUG:-0}
+  CARGO_PROFILE_TEST_DEBUG=${CARGO_PROFILE_TEST_DEBUG:-0}
+  export CARGO_PROFILE_DEV_OPT_LEVEL CARGO_PROFILE_TEST_OPT_LEVEL
+  export CARGO_PROFILE_DEV_DEBUG CARGO_PROFILE_TEST_DEBUG
 }
 
 begin_verification_run() {

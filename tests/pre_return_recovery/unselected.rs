@@ -52,14 +52,19 @@ fn unselected_preparation_does_not_create_a_durable_observer() {
     assert!(!entries
         .iter()
         .any(|name| name.to_string_lossy().ends_with(".observer.raw")));
-    let id = entries
-        .iter()
-        .filter_map(|name| name.to_str())
-        .find_map(|name| {
-            name.strip_prefix("pre-return-")
-                .and_then(|name| name.strip_suffix(".attempt.json"))
-        })
+    let ledger =
+        fs::read_to_string(root.join(format!(".exitbind/runs/work-{}.jsonl", &work[4..]))).unwrap();
+    let event = ledger
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|event| event["action"] == "pre_return_admitted")
         .unwrap();
+    let run_id = event["runId"].as_str().unwrap();
+    let id = event["admission"]["attemptId"].as_str().unwrap();
+    assert!(root
+        .join(".exitbind/pre-return")
+        .join(format!("pre-return-{run_id}-{id}.attempt.json"))
+        .is_file());
     let saved = successful(command(
         &root,
         &["run", "pre-return", "read", work, id, "--json"],

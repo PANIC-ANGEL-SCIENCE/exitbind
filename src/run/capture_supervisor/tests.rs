@@ -67,6 +67,79 @@ fn observe(command: &str, timeout: u64) -> (ExitStatus, bool, bool, Vec<u8>, Vec
 }
 
 #[test]
+fn nested_bounded_process_finishes_with_adopted_writers() {
+    const TEST: &str =
+        "run::capture_supervisor::tests::nested_bounded_process_finishes_with_adopted_writers";
+    if isolated(TEST, "nested-bounded") {
+        return;
+    }
+    let _owner = FixtureOwner::new();
+    let root = crate::test_root::temp("nested-capsule");
+    let executable = root.join("test executable '\";$\n");
+    std::os::unix::fs::symlink(std::env::current_exe().unwrap(), &executable).unwrap();
+    std::env::set_var("EXITBIND_TEST_NESTED_EXECUTABLE", executable);
+    let (status, ended, timed, out, err) = observe(
+        "exec \"$EXITBIND_TEST_NESTED_EXECUTABLE\" --exact kernel::bounded_process::tests::bounds_both_output_streams --nocapture --test-threads=1",
+        3000,
+    );
+    std::env::remove_var("EXITBIND_TEST_NESTED_EXECUTABLE");
+    assert!(
+        status.success(),
+        "nested bounded test: status={status:?}, stdout={}, stderr={}",
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&err)
+    );
+    assert!(ended);
+    assert!(!timed);
+    assert!(
+        String::from_utf8_lossy(&out).contains("test result: ok. 1 passed; 0 failed"),
+        "nested test did not execute: {}",
+        String::from_utf8_lossy(&out)
+    );
+}
+
+#[test]
+fn active_reap_failure_keeps_incomplete_proof_and_cleans_up() {
+    const TEST: &str =
+        "run::capture_supervisor::tests::active_reap_failure_keeps_incomplete_proof_and_cleans_up";
+    if isolated(TEST, "active-reap") {
+        return;
+    }
+    let _owner = FixtureOwner::new();
+    std::env::set_var("EXITBIND_TEST_CAPSULE_FAULT", "active-reap");
+    let (status, ended, timed, _, _) = observe("exec sleep 2", 1000);
+    std::env::remove_var("EXITBIND_TEST_CAPSULE_FAULT");
+    assert!(!status.success());
+    assert!(!ended, "a failed drain must not prove complete cleanup");
+    assert!(!timed, "a drain failure is not a deadline expiry");
+}
+
+#[test]
+fn running_checker_keeps_ownership_of_its_live_child() {
+    const TEST: &str =
+        "run::capture_supervisor::tests::running_checker_keeps_ownership_of_its_live_child";
+    if isolated(TEST, "live-checker-child") {
+        return;
+    }
+    let _owner = FixtureOwner::new();
+    let (status, ended, timed, out, err) = observe(
+        "sleep 0.1 & child=$!; printf '%s\\n' \"$child\"; wait \"$child\" || exit 72; printf 'completed\\n'; exit 41",
+        2000,
+    );
+    assert_eq!(status.code(), Some(41));
+    assert!(ended);
+    assert!(!timed);
+    assert!(err.is_empty(), "{}", String::from_utf8_lossy(&err));
+    let text = std::str::from_utf8(&out).unwrap();
+    let mut lines = text.lines();
+    let pid: i32 = lines.next().unwrap().parse().unwrap();
+    assert_eq!(lines.next(), Some("completed"));
+    assert_eq!(lines.next(), None);
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "child still exists");
+    assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+}
+
+#[test]
 fn orphan_generations_preserve_exact_nonzero_signal_and_streams() {
     use std::os::unix::process::ExitStatusExt;
     for (tail, code, signal) in [
@@ -132,7 +205,7 @@ fn natural_background_completion_is_reaped_without_signals() {
     assert!(started.elapsed() < Duration::from_secs(1));
 }
 
-fn isolated(test: &str, mode: &str) -> bool {
+pub(super) fn isolated(test: &str, mode: &str) -> bool {
     if std::env::var("EXITBIND_SUPERVISOR_TEST_MODE").as_deref() == Ok(mode) {
         return false;
     }
@@ -480,9 +553,9 @@ fn unsolicited_capsule_cancellation_cannot_become_a_passing_check() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-struct FixtureOwner;
+pub(super) struct FixtureOwner;
 impl FixtureOwner {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         assert_eq!(
             unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) },
             0

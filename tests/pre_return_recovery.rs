@@ -206,10 +206,29 @@ impl Fixture {
             .collect::<Vec<_>>();
         assert_eq!(attempts.len(), 1);
         let admission = fs::read(&attempts[0]).unwrap();
-        let attempt = serde_json::from_slice::<Value>(&admission).unwrap()["attemptId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let ledger =
+            fs::read_to_string(root.join(format!(".exitbind/runs/work-{}.jsonl", &work[4..])))
+                .unwrap();
+        let events = ledger
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        let event = events
+            .iter()
+            .find(|event| event["action"] == "pre_return_admitted")
+            .unwrap();
+        let run_id = events[0]["runId"].as_str().unwrap();
+        let attempt = event["admission"]["attemptId"].as_str().unwrap().to_owned();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&admission).unwrap()["attemptId"],
+            attempt
+        );
+        assert_eq!(
+            attempts[0],
+            root.join(format!(
+                ".exitbind/pre-return/pre-return-{run_id}-{attempt}.attempt.json"
+            ))
+        );
         assert_eq!(
             fs::read(root.join(".exitbind/held").join(format!("{held}.bin"))).unwrap(),
             body
@@ -276,9 +295,13 @@ impl Fixture {
             .join(format!("{}.bin", self.held))
     }
     fn admission_path(&self) -> PathBuf {
+        let ledger = self.ledger();
+        let start: Value =
+            serde_json::from_slice(ledger.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
+        let run_id = start["runId"].as_str().unwrap();
         self.root
             .join(".exitbind/pre-return")
-            .join(format!("pre-return-{}.attempt.json", self.attempt))
+            .join(format!("pre-return-{run_id}-{}.attempt.json", self.attempt))
     }
     fn result_path(&self) -> PathBuf {
         self.root

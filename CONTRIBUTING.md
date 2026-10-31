@@ -106,8 +106,12 @@ inspect them before sharing. Do not delete a running run's logs or cache.
 
 Cargo is resolved from `CARGO`, then `PATH`, then the usual Cargo home. The
 script adds that executable's directory to its own PATH; it does not change
-shell settings. Install the repository Rust toolchain and, on Linux, tmux
-before running. It never installs system packages. `CARGO_TARGET_DIR` defaults
+shell settings. The shared recipe defaults to native CI's development/test
+opt-level 1 and debug level 0 so runtime-budget tests use the same profile in a
+clean checkout. Explicit `CARGO_PROFILE_DEV_*` and `CARGO_PROFILE_TEST_*` values
+remain supported overrides; an unoptimized debug run can exceed runtime budgets
+on a small host. The first optimized build costs more than a cached run.
+Install the repository Rust toolchain and, on Linux, tmux before running. It never installs system packages. `CARGO_TARGET_DIR` defaults
 to a checkout-specific directory under the temporary root; relative overrides
 are relative to the checkout and must resolve outside it. Target, temporary
 fixtures and `CI_LOG_ROOT` are validated before a build or log is created.

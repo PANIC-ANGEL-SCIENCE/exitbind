@@ -188,7 +188,7 @@ pub(super) fn assert_predecessor_unchanged(
     let id = predecessor["attemptId"]
         .as_str()
         .ok_or("missing predecessor identity")?;
-    let current = read_record(&record_path(loaded, id, "attempt")?)?;
+    let current = super::predecessor::read_attempt(loaded, state, id)?;
     if current != *predecessor {
         return Err(predecessor_refusal(loaded, work, predecessor, &current));
     }

@@ -91,6 +91,38 @@ pub(super) fn record_path(
     Ok(directory.join(format!("pre-return-{attempt_id}.{suffix}.json")))
 }
 
+/// Protocol 2 records its run identity in the attempt filename so an eventless
+/// record remains attributable without reading another run's journal.
+pub(super) fn attempt_prefix(state: &Value) -> Result<String, String> {
+    let run_id = state["runId"]
+        .as_str()
+        .ok_or("missing pre-return run identity")?;
+    if run_id.len() != 64
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err("pre-return run identity is invalid".into());
+    }
+    Ok(format!("pre-return-{run_id}-"))
+}
+
+pub(super) fn attempt_path(
+    loaded: &Loaded,
+    state: &Value,
+    attempt_id: &str,
+) -> Result<PathBuf, String> {
+    let flat = record_path(loaded, attempt_id, "attempt")?;
+    if state[super::ownership::FIELD] == super::ownership::PROTOCOL {
+        Ok(flat.with_file_name(format!(
+            "{}{attempt_id}.attempt.json",
+            attempt_prefix(state)?
+        )))
+    } else {
+        Ok(flat)
+    }
+}
+
 pub(super) fn observer_path(loaded: &Loaded, attempt_id: &str) -> Result<PathBuf, String> {
     record_path(loaded, attempt_id, "attempt")?;
     Ok(directory_path(loaded).join(format!("pre-return-{attempt_id}.observer.raw")))

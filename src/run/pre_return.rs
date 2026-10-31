@@ -9,10 +9,10 @@ mod response;
 
 use self::execution::run_or_recover;
 use self::journal::{
-    directory_path, ensure_directory, install_captured_logs, read_record, record_bytes,
-    record_path, write_durable,
+    attempt_path, directory_path, ensure_directory, install_captured_logs, read_record,
+    record_bytes, record_path, write_durable,
 };
-use self::response::{failure_response, read_route};
+use self::response::{current_failure_response, failure_response, read_route, unavailable_refusal};
 use super::submission::matching_mutation_grants;
 use super::*;
 
@@ -145,8 +145,21 @@ fn latest_or_create(
     let attempt_id =
         crate::evidence::hash::value(&json!({"binding": binding, "limits": policy.value()}));
     predecessor::assert_no_unresolved(loaded, &binding, &attempt_id, state)?;
-    let attempt_path = record_path(loaded, &attempt_id, "attempt")?;
+    let attempt_path = attempt_path(loaded, state, &attempt_id)?;
     if attempt_path.exists() {
+        if state.get(ownership::FIELD).is_some()
+            && !ownership::events(state, None)
+                .iter()
+                .any(|event| event["admission"]["attemptId"] == attempt_id)
+        {
+            return Err(unavailable_refusal(
+                loaded,
+                state,
+                &binding,
+                &attempt_id,
+                "admission is not recorded in its owning ledger",
+            ));
+        }
         let attempt = predecessor::read_attempt(loaded, state, &attempt_id)?;
         if attempt["binding"] != binding || attempt["policy"] != policy.value() {
             return Err("pre-return attempt identity collision".into());
@@ -168,7 +181,7 @@ fn latest_or_create(
             }
             let mut replay = result;
             replay["replayed"] = json!(true);
-            return Err(failure_response(loaded, &attempt_id, &replay));
+            return Err(failure_response(loaded, &attempt_id, &replay, &attempt));
         }
         return Err(format!("pre-return attempt {attempt_id} has an uncertain outcome; inspect it and do not replay"));
     }
@@ -185,10 +198,23 @@ fn latest_or_create(
         binding["agent"].as_str(),
     )?;
     ensure_directory(loaded)?;
-    write_durable(&attempt_path, &bytes)?;
     let recorded: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    predecessor::validate_admission(&recorded, &attempt_id)?;
     let admission_event = ownership::admit(loaded, path, state, &recorded, own_repair)?;
-    Ok((attempt_id, attempt, false, ticket, admission_event))
+    if let Err(error) = write_durable(&attempt_path, &bytes) {
+        return if admission_event.is_some() {
+            Err(unavailable_refusal(
+                loaded,
+                state,
+                &binding,
+                &attempt_id,
+                &format!("owning admission record could not be stored: {error}"),
+            ))
+        } else {
+            Err(error)
+        };
+    }
+    Ok((attempt_id, recorded, false, ticket, admission_event))
 }
 
 fn prepare_locked(
@@ -496,7 +522,7 @@ pub(super) fn assert_pass_current(
     let id = crate::evidence::hash::value(&json!({"binding":binding,"limits":policy.value()}));
     predecessor::assert_no_unresolved(loaded, &binding, &id, state)?;
     if let Some(expected) = attempt_id.filter(|expected| *expected != id) {
-        let saved = read_record(&record_path(loaded, expected, "attempt")?)?;
+        let saved = predecessor::read_attempt(loaded, state, expected)?;
         return Err(binding_diagnostic::mismatch(
             loaded, &saved, &binding, state, expected,
         ));
@@ -537,24 +563,15 @@ pub(crate) fn projection(loaded: &Loaded, work: &str) -> Result<Value, String> {
     };
     let mut latest: Option<Value> = None;
     let attempts = if state.get(ownership::FIELD).is_some() {
-        match ownership::events(&state, None).last() {
-            Some(event) => {
-                let id = event["admission"]["attemptId"]
-                    .as_str()
-                    .ok_or("missing pre-return admission identity")?;
-                match ownership::read_owned(loaded, event).and_then(|attempt| {
-                    predecessor::validate_admission(&attempt, id)?;
-                    Ok(attempt)
-                }) {
-                    Ok(attempt) => vec![attempt],
-                    Err(error) => {
-                        return Ok(json!({"enabled":true,"policy":policy,"attempt":null,
-                        "unavailable":{"reason":error,"attemptId":id},
-                        "readRoute":read_route(loaded,work,id,None)}))
-                    }
-                }
+        match predecessor::attempts(loaded, &state, None) {
+            Ok(attempts) if state[ownership::FIELD] == ownership::PROTOCOL => {
+                attempts.into_iter().last().into_iter().collect()
             }
-            None => Vec::new(),
+            Ok(attempts) => attempts,
+            Err(error) => {
+                return Ok(json!({"enabled":true,"policy":policy,"attempt":null,
+                    "unavailable":{"reason":error},"readRoute":null}));
+            }
         }
     } else {
         predecessor::attempts(loaded, &state, None)?
@@ -701,7 +718,7 @@ pub(crate) fn replacement_source_attempt(
                     .is_some_and(|id| report.contains(id))
             })
             .map(|event| {
-                let attempt = ownership::read_owned(loaded, event)?;
+                let attempt = ownership::read_owned(loaded, &state, event)?;
                 let id = event["admission"]["attemptId"]
                     .as_str()
                     .ok_or("missing pre-return admission identity")?;

@@ -3,7 +3,9 @@
 //! The caller holds the run ledger lock. An interrupted attempt must not be
 //! bypassed by changing the executable, the result, or other binding inputs.
 
-use super::{directory_path, read_record, record_path};
+use super::{
+    directory_path, journal::attempt_prefix, read_record, record_path, unavailable_refusal,
+};
 use crate::config::Loaded;
 use serde_json::Value;
 use std::fs;
@@ -39,51 +41,161 @@ pub(super) fn attempts(
     state: &Value,
     binding: Option<&Value>,
 ) -> Result<Vec<Value>, String> {
-    if state.get(super::ownership::FIELD).is_some() {
-        return super::ownership::events(state, binding)
-            .into_iter()
-            .map(|event| {
-                let attempt = super::ownership::read_owned(loaded, event)?;
-                let id = event["admission"]["attemptId"]
-                    .as_str()
-                    .ok_or("missing pre-return admission identity")?;
-                validate_admission(&attempt, id)?;
-                Ok(attempt)
-            })
-            .collect();
+    let protocol = state[super::ownership::FIELD].as_u64();
+    let owned_events = super::ownership::events(state, binding);
+    let mut owned = Vec::new();
+    for event in &owned_events {
+        let id = event["admission"]["attemptId"]
+            .as_str()
+            .ok_or("missing pre-return admission identity")?;
+        let attempt = super::ownership::read_owned(loaded, state, event).map_err(|error| {
+            unavailable_refusal(
+                loaded,
+                state,
+                &event["admission"]["assignment"],
+                id,
+                &format!("owning admission record is unavailable: {error}"),
+            )
+        })?;
+        validate_admission(&attempt, id).map_err(|error| {
+            unavailable_refusal(loaded, state, &event["admission"]["assignment"], id, &error)
+        })?;
+        owned.push(attempt);
     }
+    let scoped_prefix = (protocol == Some(super::ownership::PROTOCOL))
+        .then(|| attempt_prefix(state))
+        .transpose()?;
+    let all_owned = super::ownership::events(state, None);
 
-    // Earlier runs have no durable ownership list. An unreadable flat record
-    // cannot safely be attributed elsewhere and therefore still refuses.
+    // Protocol 2 scans only this run's physical namespace to catch an orphan
+    // even if its owning ledger event was lost. Earlier starts scan the flat
+    // namespace because an unreadable record cannot be attributed elsewhere.
     let mut attempts = Vec::new();
     let directory = directory_path(loaded);
     match fs::symlink_metadata(&directory) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
         Ok(_) => return Err("pre-return journal directory is not a regular directory".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(attempts),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(owned),
         Err(error) => return Err(format!("pre-return admissions are unavailable: {error}")),
     }
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error) => return Err(format!("pre-return admissions are unavailable: {error}")),
     };
-    for (index, entry) in entries.enumerate() {
-        if index >= 65_536 {
-            return Err("pre-return journal exceeds the bounded admission scan".into());
-        }
+    let mut examined = 0usize;
+    for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let name = entry.file_name();
+        if scoped_prefix
+            .as_ref()
+            .is_some_and(|prefix| !name.as_encoded_bytes().starts_with(prefix.as_bytes()))
+        {
+            continue;
+        }
+        if examined >= 65_536 {
+            return Err("pre-return journal exceeds the bounded admission scan".into());
+        }
+        examined += 1;
         let name = name
             .to_str()
             .ok_or("pre-return journal filename is not valid UTF-8")?;
-        let Some(id) = name
-            .strip_prefix("pre-return-")
-            .and_then(|name| name.strip_suffix(".attempt.json"))
-        else {
-            continue;
+        let id = if let Some(prefix) = &scoped_prefix {
+            let Some(suffix) = name.strip_prefix(prefix.as_str()) else {
+                continue;
+            };
+            match suffix.strip_suffix(".attempt.json") {
+                Some(id)
+                    if id.len() == 64
+                        && id
+                            .bytes()
+                            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) =>
+                {
+                    id
+                }
+                _ => {
+                    let problem = "owned admission filename is invalid";
+                    return Err(binding.map_or_else(
+                        || format!("pre-return {problem}; execution is unknown; do not replay"),
+                        |identity| unavailable_refusal(loaded, state, identity, "unknown", problem),
+                    ));
+                }
+            }
+        } else {
+            let Some(id) = name
+                .strip_prefix("pre-return-")
+                .and_then(|name| name.strip_suffix(".attempt.json"))
+            else {
+                continue;
+            };
+            // Protocol-2 names have their own physical run owner; do not
+            // interpret them as protocol-1's flat attempt identity.
+            if let Some((run, attempt)) = id.split_once('-') {
+                if [run, attempt].iter().all(|value| {
+                    value.len() == 64
+                        && value
+                            .bytes()
+                            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                }) {
+                    if state["runId"] == run {
+                        return Err("pre-return admission has an unexpected owner filename".into());
+                    }
+                    continue;
+                }
+            }
+            id
         };
-        let attempt = read_record(&entry.path())?;
-        validate_admission(&attempt, id)?;
+        let attempt = read_record(&entry.path()).map_err(|error| {
+            if scoped_prefix.is_some() {
+                if let Some(identity) = binding {
+                    return unavailable_refusal(
+                        loaded,
+                        state,
+                        identity,
+                        id,
+                        &format!("owned admission record is unavailable: {error}"),
+                    );
+                }
+            }
+            error
+        })?;
+        validate_admission(&attempt, id).map_err(|error| {
+            if scoped_prefix.is_some() {
+                if let Some(identity) = binding {
+                    return unavailable_refusal(loaded, state, identity, id, &error);
+                }
+            }
+            error
+        })?;
+        if scoped_prefix.is_some() {
+            let event = all_owned
+                .iter()
+                .find(|event| event["admission"]["attemptId"] == id);
+            let Some(event) = event else {
+                if let Some(identity) = binding {
+                    return Err(unavailable_refusal(
+                        loaded,
+                        state,
+                        identity,
+                        id,
+                        "admission is not recorded in its owning ledger",
+                    ));
+                }
+                return Err(format!("pre-return attempt {id}: admission is not recorded in its owning ledger; execution is unknown; preserve the record and do not replay"));
+            };
+            super::ownership::verify_owned(&attempt, event).map_err(|error| {
+                binding.map_or_else(
+                    || error.clone(),
+                    |identity| unavailable_refusal(loaded, state, identity, id, &error),
+                )
+            })?;
+            continue;
+        }
+        if protocol == Some(super::ownership::LEGACY_PROTOCOL)
+            && binding.is_none()
+            && attempt["binding"]["runId"] != state["runId"]
+        {
+            continue;
+        }
         // A changed artifact, policy, assignment packet, or producer must not
         // make an unfinished execution disappear. A new run or role is a
         // different operation and does not inherit this admission.
@@ -97,9 +209,29 @@ pub(super) fn attempts(
         }) {
             continue;
         }
+        if protocol == Some(super::ownership::LEGACY_PROTOCOL)
+            && !owned_events
+                .iter()
+                .any(|event| event["admission"]["attemptId"] == id)
+        {
+            if binding.is_none() {
+                return Err(format!("pre-return attempt {id}: admission is not recorded in its owning ledger; execution is unknown; preserve the record and do not replay"));
+            }
+            return Err(unavailable_refusal(
+                loaded,
+                state,
+                &attempt["binding"],
+                id,
+                "admission is not recorded in its owning ledger",
+            ));
+        }
         attempts.push(attempt);
     }
-    Ok(attempts)
+    if scoped_prefix.is_some() {
+        Ok(owned)
+    } else {
+        Ok(attempts)
+    }
 }
 
 pub(super) fn validate_admission(attempt: &Value, id: &str) -> Result<(), String> {
@@ -135,7 +267,7 @@ pub(super) fn read_attempt(loaded: &Loaded, state: &Value, id: &str) -> Result<V
             .into_iter()
             .find(|event| event["admission"]["attemptId"] == id)
             .ok_or("pre-return admission is not recorded in its owning ledger")?;
-        super::ownership::read_owned(loaded, event)?
+        super::ownership::read_owned(loaded, state, event)?
     } else {
         read_record(&record_path(loaded, id, "attempt")?)?
     };

@@ -199,10 +199,10 @@ impl Fixture {
                 Sha256::digest(serde_json::to_vec(&unsigned).unwrap())
             )
         );
-        let attempt_path = self
-            .root
-            .join(".exitbind/pre-return")
-            .join(format!("pre-return-{attempt_id}.attempt.json"));
+        let attempt_path = self.root.join(".exitbind/pre-return").join(format!(
+            "pre-return-{}-{attempt_id}.attempt.json",
+            event["runId"].as_str().unwrap()
+        ));
         let mut attempt: Value = serde_json::from_slice(&fs::read(attempt_path).unwrap()).unwrap();
         let record_hash = attempt
             .as_object_mut()
@@ -237,13 +237,12 @@ impl Fixture {
             });
         let entry = attempts.next().expect("one pre-return attempt");
         assert!(attempts.next().is_none(), "expected exactly one attempt");
-        entry
-            .file_name()
-            .to_string_lossy()
-            .strip_prefix("pre-return-")
+        let name = entry.file_name().to_string_lossy().into_owned();
+        name.strip_suffix(".attempt.json")
             .unwrap()
-            .strip_suffix(".attempt.json")
+            .rsplit_once('-')
             .unwrap()
+            .1
             .to_owned()
     }
     fn read_stream(&self, selector: &str, attempt_id: &str, stream: &str) -> Vec<u8> {
@@ -317,9 +316,13 @@ fn lower_level_passing_check_allows_the_result_to_enter_the_run_ledger() {
         .iter()
         .any(|event| event["action"] == "submit" && event["agent"] == "worker"));
     let attempt = f.only_attempt_id();
+    let run_id = f.events(&f.ledger())[0]["runId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let attempt_value: Value = serde_json::from_slice(
         &fs::read(f.root.join(format!(
-            ".exitbind/pre-return/pre-return-{attempt}.attempt.json"
+            ".exitbind/pre-return/pre-return-{run_id}-{attempt}.attempt.json"
         )))
         .unwrap(),
     )
@@ -359,6 +362,57 @@ fn public_lower_level_submission_keeps_blocked_return_available_without_running_
     assert!(events.iter().any(|event| {
         event["action"] == "submit" && event["role"] == "worker" && event["outcome"] == "blocked"
     }));
+}
+
+#[test]
+fn missing_owned_direct_admission_offers_a_blocked_report_route() {
+    let f = Fixture::new("pre-return-direct-missing-owned");
+    f.start_run("printf x >> .exitbind/direct-count; exit 9");
+    let first = f.submit("worker", "completed", "first-result");
+    assert!(!first.status.success(), "{first:?}");
+    let attempt = f.only_attempt_id();
+    let ledger = f.ledger();
+    let before = fs::read(f.root.join(&ledger)).unwrap();
+    let start: Value =
+        serde_json::from_slice(before.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
+    let run_id = start["runId"].as_str().unwrap();
+    fs::remove_file(f.root.join(format!(
+        ".exitbind/pre-return/pre-return-{run_id}-{attempt}.attempt.json"
+    )))
+    .unwrap();
+
+    let refused = f.submit("worker", "completed", "different-result");
+    assert!(!refused.status.success(), "{refused:?}");
+    let error = String::from_utf8_lossy(&refused.stderr);
+    assert!(error.contains("execution is unknown"), "{error}");
+    let route = error
+        .split("and run ")
+        .nth(1)
+        .expect("a blocked report route")
+        .trim();
+    assert!(route.contains("<ARTIFACT_PATH>"), "{route}");
+    let report = ".exitbind/artifacts/direct-blocked.md";
+    fs::write(
+        f.root.join(report),
+        b"Admission unavailable; execution unknown.",
+    )
+    .unwrap();
+    let command = route.replace("<ARTIFACT_PATH>", report);
+    let blocked = support::git_topology::command("sh")
+        .current_dir(&f.root)
+        .args(["-c", command.as_str()])
+        .output()
+        .unwrap();
+    assert!(blocked.status.success(), "{blocked:?}");
+    assert_eq!(
+        fs::read(f.root.join(".exitbind/direct-count")).unwrap(),
+        b"x"
+    );
+    let after = fs::read(f.root.join(&ledger)).unwrap();
+    assert!(after.starts_with(&before));
+    let event: Value = serde_json::from_slice(&after[before.len()..]).unwrap();
+    assert_eq!(event["action"], "submit");
+    assert_eq!(event["outcome"], "blocked");
 }
 
 #[test]

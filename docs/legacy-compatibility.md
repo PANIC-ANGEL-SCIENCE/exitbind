@@ -15,14 +15,27 @@ This source reads earlier pre-return admissions without rewriting them. A
 ledger rather than treating its earlier unknown result as a pass. Use a
 compatible reader after such a decision; the admission stays available.
 
-New runs selecting pre-return carry `preReturnAdmissionProtocol: 1` at start
-and append a `pre_return_admitted` event before the checker starts. A reader
-that rejects unknown start fields refuses the marked ledger; use a compatible
-reader for that run. The admission advances the ledger and current binding head,
-but is not a submission, a check, a permit, acceptance, governor credit or a
-process result. Markerless historical starts and current successor starts retain
-the conservative flat admission scan: an unreadable admission whose owner
-cannot be proved may still block them.
+New runs selecting pre-return carry `preReturnAdmissionProtocol: 2` at start.
+They append and synchronize a `pre_return_admitted` event before writing the
+attempt record and starting the checker. The attempt filename also contains
+the run identity, so an eventless or damaged record stays attributable to its
+own run without reading other runs' records. A missing or damaged owned record
+refuses another execution; it does not establish whether a checker started. The
+refusal offers a blocked report when the assignment is available. A reader that
+does not understand protocol 2 refuses the marked ledger; use a compatible
+reader for that run.
+
+The admission advances the ledger and current binding head, but is not a
+submission, a check, a permit, acceptance, governor credit or a process result.
+Protocol 1 remains readable but retains the conservative flat admission scan:
+it could write an attempt before its ownership event, and an unowned record
+cannot authorize another execution. Markerless historical starts and current
+successor starts also retain the conservative scan. An unreadable admission
+whose owner cannot be proved may still block these older runs. A protocol 1
+orphan that was removed or renamed beyond the admission filename pattern has
+no remaining ownership relation for the reader to reconstruct.
+For protocol 2, a rollback that removes both the owning ledger event and its
+owner-named attempt record likewise leaves no evidence to attribute.
 
 ## Rename history
 

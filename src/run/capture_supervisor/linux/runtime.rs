@@ -6,6 +6,7 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 #[path = "inventory.rs"]
 mod inventory;
 const POLL: Duration = Duration::from_millis(5);
+const DRAIN_BATCH: usize = 4096;
 // Leave scheduling/transport room in the parent's total 500 ms cleanup bound.
 const CLEANUP_GRACE: Duration = Duration::from_millis(200);
 
@@ -152,6 +153,17 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
             cancelled = CANCELLED.load(Ordering::Relaxed);
             cleanup_at = Some(now);
         }
+        if status.is_none() && !failed {
+            let end = cleanup_at
+                .map(|started| started + CLEANUP_GRACE + CLEANUP_GRACE)
+                .unwrap_or(deadline)
+                .min(Instant::now() + POLL);
+            if let Err(error) = reap_exited_adoptees(child.id() as i32, end) {
+                failed = true;
+                cleanup_error = Some(error.to_string());
+                cleanup_at.get_or_insert(now);
+            }
+        }
         if let Some(started) = cleanup_at {
             let signal = if now.duration_since(started) < CLEANUP_GRACE {
                 libc::SIGTERM
@@ -190,7 +202,7 @@ fn execute(fd: i32, timeout: u64, shell: &str) -> io::Result<()> {
         std::thread::sleep(POLL);
     }
     if status.is_none() {
-        // No generic wait is permitted until std::Child owns leader status.
+        // No generic reap is permitted until std::Child owns leader status.
         if let Some(s) = child.try_wait()? {
             proof.write_all(&s.into_raw().to_le_bytes())?;
         } else {
@@ -240,9 +252,64 @@ fn start_marker(pid: u32) -> Option<u64> {
         .filter(|ticks| *ticks > 0)
 }
 
+/// Reap only waitable adoptees while the checker leader still has a Child
+/// owner. Peeking first prevents a concurrent leader exit from being reaped
+/// by a generic wait, which would lose the checker's exact status.
+fn reap_exited_adoptees(leader: i32, deadline: Instant) -> io::Result<()> {
+    if fault("active-reap") {
+        return Err(io::Error::other("observer active child drain failed"));
+    }
+    for _ in 0..DRAIN_BATCH {
+        if Instant::now() >= deadline {
+            // Yield to deadline/cancellation handling; this proves no cleanup.
+            return Ok(());
+        }
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_ALL,
+                0,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result != 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        let pid = unsafe { info.si_pid() };
+        if pid == 0 || pid == leader {
+            return Ok(());
+        }
+        if pid < 0 {
+            return Err(io::Error::other(
+                "observer waitable child identity is invalid",
+            ));
+        }
+        let waited = unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) };
+        if waited == pid {
+            continue;
+        }
+        if waited < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        return Err(io::Error::other("observer waitable child was not reaped"));
+    }
+    Err(io::Error::other(
+        "observer active child drain exceeded its bounded batch",
+    ))
+}
+
 fn drain() -> io::Result<bool> {
     // A finite batch prevents a hostile churn loop from defeating deadlines.
-    for _ in 0..4096 {
+    for _ in 0..DRAIN_BATCH {
         let result = unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) };
         if result > 0 {
             continue;
@@ -304,4 +371,55 @@ pub(super) fn fixture_cleanup() -> bool {
         std::thread::sleep(POLL);
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    #[test]
+    fn waitable_leader_keeps_exact_child_status() {
+        const TEST: &str = "run::capture_supervisor::linux::runtime::tests::waitable_leader_keeps_exact_child_status";
+        if super::super::super::tests::isolated(TEST, "leader-peek-race") {
+            return;
+        }
+        let _owner = super::super::super::tests::FixtureOwner::new();
+        for (script, code, signal) in [
+            ("exit 37", Some(37), None),
+            ("kill -TERM $$", None, Some(libc::SIGTERM)),
+        ] {
+            let mut leader = Command::new("sh")
+                .args(["-c", script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+                let result = unsafe {
+                    libc::waitid(
+                        libc::P_PID,
+                        leader.id(),
+                        &mut info,
+                        libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                    )
+                };
+                assert_eq!(result, 0, "{}", io::Error::last_os_error());
+                if unsafe { info.si_pid() } == leader.id() as i32 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "leader did not become waitable");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            // Force the race: the previous try_wait could have returned None,
+            // but the leader is now waitable before the adoptee scan.
+            reap_exited_adoptees(leader.id() as i32, deadline).unwrap();
+            let status = leader.wait().expect("the Child still owns leader status");
+            assert_eq!(status.code(), code);
+            assert_eq!(status.signal(), signal);
+        }
+    }
 }

@@ -34,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix="affected-scope.", dir=os.environ.get("T
     base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     cargo = fixture / "cargo"
     cargo.write_text('''#!/bin/sh
+printf '%s|%s|%s|%s\\n' "${CARGO_PROFILE_DEV_OPT_LEVEL:-missing}" "${CARGO_PROFILE_TEST_OPT_LEVEL:-missing}" "${CARGO_PROFILE_DEV_DEBUG:-missing}" "${CARGO_PROFILE_TEST_DEBUG:-missing}" >> "$PROFILE_RECORD"
 case ${1:-} in
   --version) printf 'cargo scope-fixture\\n'; exit 0 ;;
   fmt|clippy) printf '%s\\n' "$*" >> "$CARGO_RECORD" ;;
@@ -58,15 +59,19 @@ esac
         (fixture / name).mkdir()
     calls = fixture / "cargo.calls"
     other = fixture / "other.calls"
+    profiles = fixture / "profile.calls"
     env = dict(os.environ, CARGO=str(cargo), CARGO_TARGET_DIR=str(fixture / "target"),
                TMPDIR=str(fixture / "tmp"), CI_LOG_ROOT=str(fixture / "logs"),
-               CARGO_RECORD=str(calls), OTHER_RECORD=str(other), VALUE_PROOF_BASE=base,
+               CARGO_RECORD=str(calls), OTHER_RECORD=str(other), PROFILE_RECORD=str(profiles), VALUE_PROOF_BASE=base,
                PYTHONDONTWRITEBYTECODE="1")
-    for name in ["PRE_RETURN_BASE", "FAIL_TARGET", "ZERO_TARGET", "CI_PRE_RETURN_SCOPE"]:
+    for name in ["PRE_RETURN_BASE", "FAIL_TARGET", "ZERO_TARGET", "CI_PRE_RETURN_SCOPE",
+                 "CARGO_PROFILE_DEV_OPT_LEVEL", "CARGO_PROFILE_TEST_OPT_LEVEL",
+                 "CARGO_PROFILE_DEV_DEBUG", "CARGO_PROFILE_TEST_DEBUG"]:
         env.pop(name, None)
     def run(args, success=True, **extra):
         calls.write_text("")
         other.write_text("")
+        profiles.write_text("")
         result = subprocess.run(args, cwd=repo, env=dict(env, **extra), capture_output=True, text=True)
         if (result.returncode == 0) != success:
             raise AssertionError(f"{args}: exit {result.returncode}\n{result.stdout}\n{result.stderr}")
@@ -82,6 +87,11 @@ esac
     log, tools, _ = run(ci)
     assert "clippy" not in log and "fmt" not in log and not tools, (log, tools)
     assert "--test privacy_gate" not in log, log
+    assert set(profiles.read_text().splitlines()) == {"1|1|0|0"}, profiles.read_text()
+    run(ci, CARGO_PROFILE_DEV_OPT_LEVEL="0", CARGO_PROFILE_TEST_OPT_LEVEL="0",
+        CARGO_PROFILE_DEV_DEBUG="2", CARGO_PROFILE_TEST_DEBUG="2")
+    assert set(profiles.read_text().splitlines()) == {"0|0|2|2"}, profiles.read_text()
+    print("public recipe: CI runtime profiles by default; explicit overrides retained")
     print("docs-only: unrelated lint/workflow/privacy targets omitted")
     restore()
     edit("tests/first_impression.rs")
