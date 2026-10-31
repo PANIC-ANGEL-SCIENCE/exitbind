@@ -210,7 +210,7 @@ first_stage=$(ci_stage_order | sed -n '1p')
 test "$first_stage" = repository-rules ||
   fail 'stage 0 must be the no-build repository-rule guard'
 rules_line=$(grep -n -F 'run repository-rules' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
-cargo_line=$(grep -n -F '"$CARGO"' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
+cargo_line=$(grep -n -F '    fmt) run fmt "$CARGO"' "$root/tooling/repository/ci/ci-local.sh" | head -n 1 | cut -d: -f1)
 test -n "$rules_line" && test -n "$cargo_line" && test "$rules_line" -lt "$cargo_line" ||
   fail 'the no-build guard must run before the first cargo stage'
 # Full mode prepares the comparison base before stage 0: on public CI the push
@@ -250,10 +250,10 @@ python3 "$root/tooling/repository/checks/check_architecture_budget.py" --self-te
   fail 'architecture budget scan self-test failed'
 python3 "$root/tooling/repository/checks/check_commit_identity.py" --self-test ||
   fail 'commit identity scan self-test failed'
-grep -F 'plugin-distribution) run plugin-distribution "$CARGO" test --locked --features repository-checks --test plugin_distribution ;;' \
+grep -F 'set -- test --locked --features repository-checks --test plugin_distribution' \
   "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
   fail 'plugin distribution tests must execute behind the repository-checks feature'
-grep -F 'run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"' \
+grep -F 'run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base" --skip-passed "$passed_targets"' \
   "$root/tooling/repository/ci/ci-local.sh" >/dev/null ||
   fail 'pre-return must run the affected test targets with their declared features'
 grep -F 'affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}' \
@@ -524,6 +524,10 @@ STUB
   fi
   rm -rf "$history_work"
   trap - EXIT HUP INT TERM
+fi
+
+if [ "$nested" != 1 ]; then
+  sh "$root/tooling/repository/ci/test-affected-once.sh" || fail 'affected target execution contract failed'
 fi
 
 "$root/tooling/repository/ci/test-ci-selected-history.sh"

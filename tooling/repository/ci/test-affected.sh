@@ -1,18 +1,21 @@
 #!/bin/sh
 # Run the Cargo test targets a change affects, each with its declared features,
 # and the binary's unit tests when src/ or the manifest changed.
-# Usage: test-affected.sh --base BASE [--list]
+# Usage: test-affected.sh --base BASE [--list] [--skip-passed 'TARGET=FEATURES ...']
 # Changed files are the diff against BASE plus untracked files; selection and
-# features come from tooling/repository/checks/test-target-map.json.
+# features come from tooling/repository/checks/test-target-map.json. The CI
+# caller may omit exact pairs it has already run successfully in this run.
 set -eu
 fail() { printf 'test-affected: %s\n' "$*" >&2; exit 1; }
-usage='usage: test-affected.sh --base BASE [--list]'
+usage="usage: test-affected.sh --base BASE [--list] [--skip-passed 'TARGET=FEATURES ...']"
 base=
 list_only=false
+passed_targets=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --base) test "$#" -ge 2 && test -n "$2" || fail "$usage"; base=$2; shift 2 ;;
     --list) list_only=true; shift ;;
+    --skip-passed) test "$#" -ge 2 || fail "$usage"; passed_targets=$2; shift 2 ;;
     *) fail "$usage" ;;
   esac
 done
@@ -53,7 +56,17 @@ else
   log_dir=$(mktemp -d "${TMPDIR:-/tmp}/test-affected.XXXXXX")
 fi
 failed=
+executed=0
+omitted=0
 while IFS="$tab" read -r target features; do
+  case " $passed_targets " in
+    *" $target=$features "*)
+      printf '  %s: omitted (caller reports an earlier pass with matching features)\n' "$target"
+      omitted=$((omitted + 1))
+      continue
+      ;;
+  esac
+  executed=$((executed + 1))
   if [ "${target#bin:}" != "$target" ]; then
     set -- test --locked --bin "${target#bin:}"
   elif [ -n "$features" ]; then
@@ -89,4 +102,4 @@ SELECTION
 test "$list_only" = true && exit 0
 test -z "$failed" || fail "failing target(s):$failed; logs kept in $log_dir"
 rmdir "$log_dir"
-printf 'test-affected: %s target(s) passed\n' "$count"
+printf 'test-affected: %s target(s) selected; %s executed; %s omitted after caller-reported passes\n' "$count" "$executed" "$omitted"

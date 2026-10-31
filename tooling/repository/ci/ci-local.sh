@@ -78,6 +78,29 @@ fi
 if [ "$ci_mode" = full ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then
   prepare_value_proof_base
 fi
+
+# Track only successful invariant targets in this invocation. The affected
+# selector can omit an exact target/features pair already run here; nothing is
+# persisted or reused from another CI run.
+passed_targets=
+remember_passed_target() {
+  # Match the affected selector's requirement that at least one test passed.
+  # A successful command with zero tests must still reach that selector.
+  passed_count=$(sed -n 's/^test result: [A-Za-z]*\. \([0-9][0-9]*\) passed;.*/\1/p' \
+    "$run_dir/$current_stage.log" | awk '{n += $1} END {print n + 0}') || return 0
+  test "$passed_count" -gt 0 || return 0
+  # Unknown argument shapes are not reusable and therefore get rerun.
+  if [ "$#" -eq 6 ] && [ "$1" = test ] && [ "$2" = --locked ] &&
+    [ "$3" = --features ] && [ "$5" = --test ]; then
+    passed_pair="$6=$4"
+  elif [ "$#" -eq 4 ] && [ "$1" = test ] && [ "$2" = --locked ] && [ "$3" = --test ]; then
+    passed_pair="$4="
+  else
+    return 0
+  fi
+  passed_targets="${passed_targets:+$passed_targets }$passed_pair"
+}
+
 for stage in $(ci_stage_order); do
   ci_stage_selected "$ci_mode" "$stage" "$platform" || continue
   case "$stage" in
@@ -97,17 +120,38 @@ for stage in $(ci_stage_order); do
     fmt) run fmt "$CARGO" fmt --check ;;
     clippy) run clippy "$CARGO" clippy --locked --all-targets --features repository-checks -- -D warnings ;;
     tests) run tests "$CARGO" test --locked --features repository-checks ;;
-    architecture-budget) run architecture-budget "$CARGO" test --locked --features repository-checks --test architecture_budget ;;
-    privacy-gate) run privacy-gate "$CARGO" test --locked --features repository-checks --test privacy_gate ;;
-    release-integrity) run release-integrity "$CARGO" test --locked --features repository-checks --test release_integrity ;;
-    docs-workflow) run docs-workflow "$CARGO" test --locked --features repository-checks --test docs_workflow ;;
-    first-impression) run first-impression "$CARGO" test --locked --test first_impression ;;
-    value-contract) run value-contract "$CARGO" test --locked --test value_contract ;;
-    plugin-distribution) run plugin-distribution "$CARGO" test --locked --features repository-checks --test plugin_distribution ;;
+    architecture-budget)
+      set -- test --locked --features repository-checks --test architecture_budget
+      run architecture-budget "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    privacy-gate)
+      set -- test --locked --features repository-checks --test privacy_gate
+      run privacy-gate "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    release-integrity)
+      set -- test --locked --features repository-checks --test release_integrity
+      run release-integrity "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    docs-workflow)
+      set -- test --locked --features repository-checks --test docs_workflow
+      run docs-workflow "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    first-impression)
+      set -- test --locked --test first_impression
+      run first-impression "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    value-contract)
+      set -- test --locked --test value_contract
+      run value-contract "$CARGO" "$@"
+      remember_passed_target "$@" ;;
+    plugin-distribution)
+      set -- test --locked --features repository-checks --test plugin_distribution
+      run plugin-distribution "$CARGO" "$@"
+      remember_passed_target "$@" ;;
     affected-tests)
       affected_base=${PRE_RETURN_BASE:-${VALUE_PROOF_BASE:-}}
       test -n "$affected_base" || fail 'affected-tests needs PRE_RETURN_BASE or VALUE_PROOF_BASE'
-      run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"
+      run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base" --skip-passed "$passed_targets"
       ;;
     value-proof) run value-proof ./scripts/run-value-proof-suite.sh ;;
     drift-warning) run drift-warning ./scripts/demo-drift-warning.sh ;;

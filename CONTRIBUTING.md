@@ -172,7 +172,9 @@ a schema or skill body) selects the targets covering its embedding module, and
 tests (`cargo test --locked --bin exitbind`), which no integration target runs. Each target runs with its declared `features` and without
 host session variables, prints its exact command, and must run at least one
 test. Pre-return runs it as the `affected-tests` stage against
-`PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`.
+`PRE_RETURN_BASE`, else `VALUE_PROOF_BASE`. Within that same pre-return run,
+targets already passed with identical features in an earlier stage are not
+repeated; a standalone affected run executes every selected target.
 
 Focused selectors use the new target name followed by the module-qualified test path. Repository-only checks are included in focused and full developer CI with the `repository-checks` feature; distributed Cargo source tests omit that feature. Focused, pre-return and full checks share `scripts/verification-context.sh`.
 It removes ambient native Goal and Git selectors only for these owned checks,
