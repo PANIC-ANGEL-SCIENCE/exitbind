@@ -114,10 +114,9 @@ pub(crate) fn read(root: &Path) -> Result<Option<Value>, String> {
 
 /// Bounded, read-only Goal metadata acquisition for host continuation hooks.
 /// This validates the complete retained hash chain but deliberately does not
-/// reduce currentness, usage, evidence, or acceptance. The time budget is the
-/// latency bound; the byte and record bounds only cap what is read before it
-/// (a journal written before change records, like R55's 22.8 MB in 130
-/// records, validates in well under the budget).
+/// reduce currentness, usage, evidence, or acceptance. It checks a cooperative
+/// time budget while validating; byte and record limits separately cap input.
+/// Exhausting the budget refuses recovery without returning partial metadata.
 pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
     const MAX_BYTES: u64 = 64 * 1024 * 1024;
     const MAX_EVENTS: usize = 4096;

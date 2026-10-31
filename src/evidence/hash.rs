@@ -22,28 +22,40 @@ pub fn value(input: &Value) -> String {
 }
 
 pub fn canonical(input: &Value) -> String {
+    let mut output = Vec::new();
+    append_canonical(input, &mut output);
+    String::from_utf8(output).expect("canonical JSON is valid UTF-8")
+}
+
+fn append_canonical(input: &Value, output: &mut Vec<u8>) {
     match input {
         Value::Object(map) => {
             let mut keys: Vec<_> = map.keys().collect();
             keys.sort();
-            let fields = keys
-                .into_iter()
-                .map(|key| {
-                    format!(
-                        "{}:{}",
-                        serde_json::to_string(key).expect("JSON object key serializes"),
-                        canonical(&map[key])
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("{{{fields}}}")
+            output.push(b'{');
+            for (index, key) in keys.into_iter().enumerate() {
+                if index != 0 {
+                    output.push(b',');
+                }
+                serde_json::to_writer(&mut *output, key).expect("JSON object key serializes");
+                output.push(b':');
+                append_canonical(&map[key], output);
+            }
+            output.push(b'}');
         }
         Value::Array(values) => {
-            let values = values.iter().map(canonical).collect::<Vec<_>>().join(",");
-            format!("[{values}]")
+            output.push(b'[');
+            for (index, value) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(b',');
+                }
+                append_canonical(value, output);
+            }
+            output.push(b']');
         }
-        _ => serde_json::to_string(input).expect("JSON value serializes"),
+        _ => {
+            serde_json::to_writer(&mut *output, input).expect("JSON value serializes");
+        }
     }
 }
 
@@ -55,3 +67,6 @@ fn hex(bytes: &[u8]) -> String {
     }
     output
 }
+
+#[cfg(test)]
+mod tests;
