@@ -219,14 +219,7 @@ pub(super) fn recover_saved_attempt(
         return Ok(());
     }
     let successful = result["state"] == "passed";
-    let known_ended = matches!(result["state"].as_str(), Some("passed" | "failed"))
-        || result["execution"]["knownEnded"] == true
-        || (result["execution"]["started"] == false
-            && result["execution"]["certainty"] == "known_not_started")
-        || (result["diagnostic"]["termination"] == "ended"
-            && result["diagnostic"]["groupEnded"] == true
-            && result["diagnostic"]["captureReadersEnded"] == true);
-    if !known_ended {
+    if !known_ended(result) {
         return Ok(());
     }
     if result["version"] != 1
@@ -260,4 +253,77 @@ pub(super) fn recover_saved_attempt(
         &json!({"attemptId":attempt_id,"binding":binding,"policy":policy.value()}),
         successful,
     )
+}
+
+/// Classify only explicit, mutually consistent facts, never a failure label.
+pub(super) fn known_ended(result: &Value) -> bool {
+    match result["state"].as_str() {
+        Some("passed" | "failed") => return true,
+        Some("uncertain") => {}
+        _ => return false,
+    }
+    let mut established = false;
+    let mut started = None;
+    if let Some(execution) = result.get("execution") {
+        let Some(execution) = execution.as_object() else {
+            return false;
+        };
+        let Some(was_started) = execution.get("started").and_then(Value::as_bool) else {
+            return false;
+        };
+        started = Some(was_started);
+        if let Some(ended) = execution.get("knownEnded") {
+            if ended.as_bool() != Some(true) {
+                return false;
+            }
+            established = true;
+        }
+        if let Some(certainty) = execution.get("certainty") {
+            if certainty.as_str() != Some("known_not_started") || was_started {
+                return false;
+            }
+            established = true;
+        }
+        if !established {
+            return false;
+        }
+    }
+    if let Some(diagnostic) = result.get("diagnostic") {
+        let Some(diagnostic) = diagnostic.as_object() else {
+            return false;
+        };
+        if [
+            "termination",
+            "groupEnded",
+            "captureReadersEnded",
+            "processStarted",
+        ]
+        .iter()
+        .any(|field| diagnostic.contains_key(*field))
+        {
+            let Some(was_started) = diagnostic.get("processStarted").and_then(Value::as_bool)
+            else {
+                return false;
+            };
+            if diagnostic.get("termination").and_then(Value::as_str) != Some("ended")
+                || diagnostic.get("groupEnded").and_then(Value::as_bool) != Some(true)
+                || diagnostic
+                    .get("captureReadersEnded")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+                || started.is_some_and(|value| value != was_started)
+                || (!was_started
+                    && diagnostic
+                        .get("process")
+                        .is_some_and(|value| !value.is_null()))
+                || diagnostic
+                    .get("cleanupErrorCount")
+                    .is_some_and(|value| value.as_u64() != Some(0))
+            {
+                return false;
+            }
+            established = true;
+        }
+    }
+    established
 }

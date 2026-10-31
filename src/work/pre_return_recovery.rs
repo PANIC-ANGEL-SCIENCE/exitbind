@@ -15,6 +15,17 @@ fn blocked_option(
     let binding = next["current"]["binding"]
         .as_str()
         .ok_or("current Work binding is unavailable")?;
+    Ok(blocked_option_for_binding(
+        loaded, work, assignment, binding,
+    ))
+}
+
+fn blocked_option_for_binding(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    binding: &str,
+) -> Value {
     let reason = crate::emitted::slot("REASON");
     let rendered_command = super::action_forms::command(
         loaded,
@@ -32,12 +43,10 @@ fn blocked_option(
             "--json",
         ]),
     );
-    Ok(
-        json!({"command":rendered_command,"actor":"worker","placeholders":["REASON"],
+    json!({"command":rendered_command,"actor":"worker","placeholders":["REASON"],
         "stdin":{"required":true,"kind":"result_artifact",
             "description":"Supply the complete truthful blocked report on stdin."},
-        "meaning":"Report a blocker without retrying the checker or granting check credit; retained completion evidence remains available."}),
-    )
+        "meaning":"Report a blocker without retrying the checker or granting check credit; retained completion evidence remains available."})
 }
 
 fn decision_refusal(loaded: &Loaded, work: &str, bound: &str, current: &str) -> String {
@@ -178,10 +187,16 @@ pub(super) fn action(
             loaded,
             crate::emitted::Route::new(["run", "pre-return", "read", work, id, "--json"]),
         );
+        let assignment = next["assignment"]
+            .as_str()
+            .ok_or("current worker assignment is unavailable")?;
+        let mut blocked = blocked_option_for_binding(loaded, work, assignment, binding);
+        blocked["label"] = json!("blocked");
+        blocked["sideEffect"] = json!("records only the truthful blocked report after the worker supplies its reason and result");
         return Ok(Some(
             json!({"version":1,"state":"pre_return_uncertain_result",
-            "binding":binding,"leadChoiceRequired":true,"choices":[],"mechanicalAction":Value::Null,
-            "meaning":"The retained pre-return result is uncertain. Inspect it; missing-result reconciliation does not apply.",
+            "binding":binding,"actor":"worker","assignment":assignment,"leadChoiceRequired":false,"choices":[blocked],"mechanicalAction":Value::Null,
+            "meaning":"The retained pre-return result is uncertain. Inspect it or report blocked; missing-result reconciliation does not apply.",
             "diagnostic":{"command":rendered_command,"readOnly":true}}),
         ));
     }

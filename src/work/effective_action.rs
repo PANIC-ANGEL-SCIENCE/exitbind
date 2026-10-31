@@ -17,12 +17,13 @@ pub(crate) fn project(response: &Value) -> Value {
     let kind = current["action"]
         .as_str()
         .or_else(|| response["next"]["action"].as_str());
-    let kind = if matches!(
+    let kind = if forms["state"] == "pre_return_uncertain_result" {
+        Some("spawn")
+    } else if matches!(
         forms["state"].as_str(),
         Some(
             "interrupted_pre_return"
                 | "pre_return_retry_interrupted"
-                | "pre_return_uncertain_result"
                 | "pre_return_ambiguous"
                 | "pre_return_evidence_unavailable"
         )

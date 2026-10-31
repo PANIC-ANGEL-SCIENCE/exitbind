@@ -10,9 +10,20 @@ pub(super) fn failure_response(loaded: &Loaded, attempt_id: &str, result: &Value
         "stdoutBytes": read_route(loaded, &work, attempt_id, Some("stdout")),
         "stderrBytes": read_route(loaded, &work, attempt_id, Some("stderr")),
     });
+    let next_actions = if super::execution::known_ended(result) {
+        json!([
+            "repair within the current assignment and valid grant",
+            "report blocked to the Lead if repair is unavailable"
+        ])
+    } else {
+        json!([
+            "inspect the retained attempt; do not replay while its outcome is unknown",
+            "report blocked to the Lead"
+        ])
+    };
     let mut response = json!({"effect":"no_change","preReturn":"refused","attemptId":attempt_id,
         "failureKind":result["failureKind"],"exitCode":result["exitCode"],"stdout":result["stdout"],"stderr":result["stderr"],
-        "readRoutes":read,"nextActions":["repair within the current assignment and valid grant","report blocked to the Lead if repair is unavailable"],
+        "readRoutes":read,"nextActions":next_actions,
         "finalCheckCredited":false,"automaticRework":false,"replayed":result["replayed"]==true});
     for field in ["execution", "diagnostic"] {
         if let Some(value) = result.get(field) {

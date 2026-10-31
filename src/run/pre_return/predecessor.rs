@@ -107,10 +107,23 @@ pub(super) fn unresolved(loaded: &Loaded, binding: &Value) -> Result<Vec<Value>,
         {
             return Err("pre-return result identity mismatch".into());
         }
-        if matches!(result["state"].as_str(), Some("passed" | "failed")) {
-            validate_terminal(loaded, saved, &result)?;
-        } else {
-            unresolved.push(attempt);
+        match result["state"].as_str() {
+            Some("passed" | "failed") => validate_terminal(loaded, saved, &result)?,
+            Some("uncertain") => {
+                validate_producer(saved, &result)?;
+                if !result["failureKind"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty())
+                {
+                    return Err("pre-return result identity mismatch".into());
+                }
+                if super::execution::known_ended(&result) {
+                    validate_captures(loaded, &result, false)?;
+                } else {
+                    unresolved.push(attempt);
+                }
+            }
+            _ => unresolved.push(attempt),
         }
     }
     unresolved.sort_by(|a, b| a["attemptId"].as_str().cmp(&b["attemptId"].as_str()));
@@ -119,6 +132,7 @@ pub(super) fn unresolved(loaded: &Loaded, binding: &Value) -> Result<Vec<Value>,
 
 /// A terminal spelling alone is not evidence that this admission ended.
 fn validate_terminal(loaded: &Loaded, binding: &Value, result: &Value) -> Result<(), String> {
+    validate_producer(binding, result)?;
     let outcome_valid = match result["state"].as_str() {
         Some("passed") => result["exitCode"] == 0 && result["failureKind"].is_null(),
         Some("failed") => match result["exitCode"].as_i64() {
@@ -127,6 +141,13 @@ fn validate_terminal(loaded: &Loaded, binding: &Value, result: &Value) -> Result
         },
         _ => false,
     };
+    if result.get("exitCode").is_none() || result.get("failureKind").is_none() || !outcome_valid {
+        return Err("pre-return result identity mismatch".into());
+    }
+    validate_captures(loaded, result, true)
+}
+
+fn validate_producer(binding: &Value, result: &Value) -> Result<(), String> {
     if result["version"] != 1
         || result["kind"] != "pre_return_result"
         || !binding["checkerExecutableSha256"]
@@ -137,16 +158,20 @@ fn validate_terminal(loaded: &Loaded, binding: &Value, result: &Value) -> Result
         || !crate::producer::valid(&binding["producer"])
         || result["producer"]["executableSha256"] != binding["checkerExecutableSha256"]
         || result["producer"]["producer"] != binding["producer"]
-        || result.get("exitCode").is_none()
-        || result.get("failureKind").is_none()
-        || !outcome_valid
     {
         return Err("pre-return result identity mismatch".into());
     }
+    Ok(())
+}
+
+fn validate_captures(loaded: &Loaded, result: &Value, required: bool) -> Result<(), String> {
     for stream in ["stdout", "stderr"] {
-        let artifact = result
-            .get(stream)
-            .ok_or("pre-return result has an incomplete capture")?;
+        let Some(artifact) = result.get(stream) else {
+            if required {
+                return Err("pre-return result has an incomplete capture".into());
+            }
+            continue;
+        };
         crate::run::artifact::read_exact(
             loaded,
             artifact,

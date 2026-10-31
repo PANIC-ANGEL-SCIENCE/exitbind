@@ -1,6 +1,8 @@
 //! Public-seam interruption and exact recovery of an owned pre-return.
 #![cfg(target_os = "linux")]
 
+#[path = "pre_return_recovery/known_outcomes.rs"]
+mod known_outcomes;
 mod support;
 #[path = "pre_return_recovery/unselected.rs"]
 mod unselected;
