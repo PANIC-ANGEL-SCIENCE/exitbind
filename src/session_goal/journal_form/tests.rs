@@ -333,14 +333,19 @@ fn recovery_reads_a_complete_journal_past_the_former_16_mib_bound() {
     let path = root.join(crate::project::layout_types::state_namespace());
     std::fs::create_dir_all(&path).unwrap();
     std::fs::write(path.join("session-goal.jsonl"), &raw).unwrap();
+    let diagnostic = crate::session_goal::recovery_diagnostic::start();
     let started = std::time::Instant::now();
     let first = read_for_recovery(&root);
+    let elapsed = started.elapsed();
+    let snapshot = diagnostic.finish();
     eprintln!(
-        "complete-record journal of {} records, {} B: first read_for_recovery {:?}, result {:?}",
+        "recovery_diagnostic call=first fixture_records={} fixture_bytes={} reader_elapsed={:?} result={:?} top_level_residual={:?} nested_totals_not_additive=true snapshot={:?}",
         records.len(),
         raw.len(),
-        started.elapsed(),
-        first.as_ref().map(|record| record.is_some())
+        elapsed,
+        first.as_ref().map(|record| record.is_some()),
+        elapsed.saturating_sub(snapshot.top_level()),
+        snapshot
     );
     if !matches!(&first, Ok(Some(_))) {
         let started = std::time::Instant::now();
@@ -353,4 +358,25 @@ fn recovery_reads_a_complete_journal_past_the_former_16_mib_bound() {
     }
     let read = first.unwrap().unwrap();
     assert_eq!(&read, records.last().unwrap());
+}
+
+#[test]
+fn failed_first_recovery_remains_decisive_after_a_successful_second_read() {
+    let root = crate::test_root::temp("journal-form-first-failure");
+    let directory = root.join(crate::project::layout_types::state_namespace());
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("session-goal.jsonl");
+    std::fs::write(&path, b"{invalid\n").unwrap();
+    let diagnostic = crate::session_goal::recovery_diagnostic::start();
+    let first = read_for_recovery(&root);
+    let snapshot = diagnostic.finish();
+    assert!(first.is_err());
+    assert_eq!(snapshot.input_bytes, 9);
+    assert_eq!(snapshot.attempted_records, 1);
+    assert_eq!(snapshot.completed_records, 0);
+
+    std::fs::write(&path, COMPLETE_FIXTURE).unwrap();
+    assert!(matches!(read_for_recovery(&root), Ok(Some(_))));
+    let failed_as_before = std::panic::catch_unwind(|| first.unwrap().unwrap());
+    assert!(failed_as_before.is_err());
 }

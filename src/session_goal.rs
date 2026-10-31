@@ -16,6 +16,8 @@ pub(crate) mod journey;
 pub(crate) mod native;
 pub(crate) mod quarantine;
 pub(crate) mod recovery;
+#[cfg(test)]
+pub(crate) mod recovery_diagnostic;
 pub(crate) mod requirements;
 use closure::{category_resolved, direct_completion_inputs, unresolved};
 pub(crate) use closure::{
@@ -122,6 +124,8 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
     const MAX_EVENTS: usize = 4096;
     const BUDGET: Duration = Duration::from_millis(750);
     let started = Instant::now();
+    #[cfg(test)]
+    let acquire_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Acquire);
     let relative = relative();
     let raw = match crate::project::path::secure_bytes_observation_bounded(
         root,
@@ -129,10 +133,14 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         "native recovery Goal journal",
         MAX_BYTES,
     ) {
-        crate::project::path::SecureBytesResult::Bytes(bytes) => Some(
-            String::from_utf8(bytes)
-                .map_err(|_| "native recovery Goal journal is not valid UTF-8")?,
-        ),
+        crate::project::path::SecureBytesResult::Bytes(bytes) => {
+            #[cfg(test)]
+            recovery_diagnostic::input_bytes(bytes.len());
+            Some(
+                String::from_utf8(bytes)
+                    .map_err(|_| "native recovery Goal journal is not valid UTF-8")?,
+            )
+        }
         crate::project::path::SecureBytesResult::Absent(_) => {
             let legacy = root.join(format!(
                 "{}/session-goal.json",
@@ -155,9 +163,13 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
             return Err(format!("native recovery Goal lookup unsupported: {error}"))
         }
     };
+    #[cfg(test)]
+    drop(acquire_timer);
     let Some(raw) = raw else {
         return Ok(None);
     };
+    #[cfg(test)]
+    let newline_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Newlines);
     // Count physical records before allocating per-line storage. Blank lines
     // are corruption (including interior blank lines); one final newline is
     // merely the normal ledger terminator.
@@ -167,6 +179,11 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
     let newline_count = raw.as_bytes().iter().filter(|byte| **byte == b'\n').count();
     let physical = newline_count.saturating_sub(usize::from(raw.ends_with('\n')))
         + usize::from(!raw.ends_with('\n'));
+    #[cfg(test)]
+    {
+        drop(newline_timer);
+        recovery_diagnostic::newline_counts(newline_count, physical);
+    }
     if physical > MAX_EVENTS {
         return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
     }
@@ -174,6 +191,8 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
     let mut count = 0usize;
     for (index, line) in raw.split_terminator('\n').enumerate() {
         if started.elapsed() > BUDGET {
+            #[cfg(test)]
+            recovery_diagnostic::budget_refusal("beforeRecord");
             return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
         }
         if line.trim().is_empty() {
@@ -186,13 +205,28 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         if count > MAX_EVENTS {
             return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
         }
+        #[cfg(test)]
+        recovery_diagnostic::attempt(line.len());
+        #[cfg(test)]
+        let parse_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::ParseResolve);
         let value: Value = serde_json::from_str(line).map_err(|error| {
             format!("invalid canonical session goal line {}: {error}", index + 1)
         })?;
         let value = journal_form::resolve(value, previous.as_ref(), index + 1)?;
+        #[cfg(test)]
+        drop(parse_timer);
+        #[cfg(test)]
+        let validate_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Validate);
         validate_record(&value, previous.as_ref(), index + 1)?;
+        #[cfg(test)]
+        {
+            drop(validate_timer);
+            recovery_diagnostic::completed();
+        }
         previous = Some(value);
         if started.elapsed() > BUDGET {
+            #[cfg(test)]
+            recovery_diagnostic::budget_refusal("afterValidation");
             return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
         }
     }
@@ -202,6 +236,8 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         );
     }
     if started.elapsed() > BUDGET {
+        #[cfg(test)]
+        recovery_diagnostic::budget_refusal("final");
         return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
     }
     Ok(previous)
@@ -212,6 +248,8 @@ fn valid_hash(value: &str) -> bool {
 }
 
 fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Result<(), String> {
+    #[cfg(test)]
+    let header_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::SemanticLink);
     let object = value.as_object().ok_or_else(|| {
         format!("invalid canonical session goal line {line}: record is not an object")
     })?;
@@ -222,16 +260,28 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
         .ok_or_else(|| {
             format!("invalid canonical session goal line {line}: missing or invalid event hash")
         })?;
+    #[cfg(test)]
+    drop(header_timer);
+    #[cfg(test)]
+    let clone_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::CloneRemove);
     let mut without_hash = value.clone();
     without_hash
         .as_object_mut()
         .expect("validated object")
         .remove("eventSha256");
+    #[cfg(test)]
+    drop(clone_timer);
+    #[cfg(test)]
+    let hash_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::HashValue);
     if crate::evidence::hash::value(&without_hash) != hash {
         return Err(format!(
             "invalid canonical session goal line {line}: event hash mismatch"
         ));
     }
+    #[cfg(test)]
+    drop(hash_timer);
+    #[cfg(test)]
+    let semantic_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::SemanticLink);
     association::validate_record(value, line)?;
     journey::validate_record(value, line)?;
     recovery::validate_record(value, line)?;
@@ -297,6 +347,8 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
             "invalid canonical session goal line {line}: initial linkage is invalid"
         ));
     }
+    #[cfg(test)]
+    drop(semantic_timer);
     Ok(())
 }
 

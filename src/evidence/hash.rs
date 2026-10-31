@@ -4,6 +4,10 @@ use std::fs;
 use std::path::Path;
 
 pub fn bytes(input: &[u8]) -> String {
+    #[cfg(test)]
+    let _timer = crate::session_goal::recovery_diagnostic::timer(
+        crate::session_goal::recovery_diagnostic::Phase::Digest,
+    );
     hex(&Sha256::digest(input))
 }
 
@@ -22,6 +26,10 @@ pub fn value(input: &Value) -> String {
 }
 
 pub fn canonical(input: &Value) -> String {
+    #[cfg(test)]
+    let _timer = crate::session_goal::recovery_diagnostic::timer(
+        crate::session_goal::recovery_diagnostic::Phase::Canonical,
+    );
     let mut output = Vec::new();
     append_canonical(input, &mut output);
     String::from_utf8(output).expect("canonical JSON is valid UTF-8")

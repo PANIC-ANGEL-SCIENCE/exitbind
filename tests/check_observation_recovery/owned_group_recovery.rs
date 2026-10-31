@@ -143,22 +143,22 @@ fn a_timed_out_owned_group_closes_onto_the_environmental_rerun_once_it_ends() {
         .parse::<i32>()
         .unwrap();
     let helper = support::git_topology::command("sh")
-        .args(["-c", "sleep 60", "owned-group-helper"])
+        .args(["-c", "read owned_line", "owned-group-helper"])
+        .stdin(Stdio::piped())
         .process_group(group)
         .spawn()
         .unwrap();
     let helper_pid = helper.id();
-    let joined = Instant::now() + Duration::from_secs(2);
-    while process_group_of(helper_pid) != Some(group) {
-        assert!(Instant::now() < joined, "the helper never joined the group");
-        std::thread::sleep(Duration::from_millis(5));
-    }
     let mut owned = JoinedGroup {
         root: f.root.to_path_buf(),
         group,
         helper: Some(helper),
     };
-
+    let joined = Instant::now() + Duration::from_secs(2);
+    while process_group_of(helper_pid) != Some(group) {
+        assert!(Instant::now() < joined, "the helper never joined the group");
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let failed = check.wait_with_output().unwrap();
     assert!(!failed.status.success(), "{failed:?}");
     let failure = value(&failed);
@@ -255,7 +255,14 @@ fn a_timed_out_owned_group_closes_onto_the_environmental_rerun_once_it_ends() {
     // The owned group is observed ended; the same read now offers the existing
     // environmental re-run route on this Work.
     owned.stop();
-    assert!(!group_present(group), "the owned group is still alive");
+    assert!(
+        !group_present(group),
+        "the owned group is still alive; current action: {}",
+        f.ok(
+            &["work", "detail", &work, "--view", "action", "--json"],
+            b""
+        )
+    );
     let view = f.ok(
         &["work", "detail", &work, "--view", "action", "--json"],
         b"",
