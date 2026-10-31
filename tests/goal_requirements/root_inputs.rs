@@ -145,6 +145,11 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         "a ledger the ledger judge confined, made relative",
     ),
     (
+        "src/run/pre_return/ownership.rs",
+        1,
+        "the canonical ledger made relative to bind its persisted admission",
+    ),
+    (
         "src/session_goal/journey/integration/lineage.rs",
         1,
         "a ledger the ledger judge confined, made relative",

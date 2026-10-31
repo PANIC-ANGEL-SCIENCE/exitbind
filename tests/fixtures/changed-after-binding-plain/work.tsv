@@ -44,6 +44,7 @@ NotCurrentState	src/work/quarantine.rs	old Work is not the current unresolved un
 LeadPreparation	src/work/quarantine.rs	requested quarantine Work changed or has stale configuration
 Transient	src/work/quarantine.rs	verification artifact changed while reading
 RoutedInText	src/work/readable.rs	work detail reference is stale, revoked or belongs to another project/Work/recipient; {route}
+RoutedInText	src/work/return_result_impl.rs	current action form binding is stale; {route} and follow current.details.grouped
 Transient	src/work/recipient_context.rs	recipient profile changed or exceeds the complete section bound
 NotARefusal	src/work/start_delivery.rs	configuration changed
 Transient	src/work/start_delivery.rs	configuration changed during delivery

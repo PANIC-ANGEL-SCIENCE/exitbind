@@ -49,16 +49,17 @@ Integrity	src/run/mod.rs	check command does not match the configured run policy
 Transient	src/run/observed_check.rs	verification preparation changed after observation admission; no check was launched
 NotCurrentState	src/run/pre_return.rs	agent '{agent}' is not currently pending
 Integrity	src/run/pre_return.rs	pre-return architecture binding is stale: {e}
-Identity	src/run/pre_return.rs	pre-return result identity mismatch
-Integrity	src/run/pre_return.rs	pre-return result metadata does not match the current binding or producer
+Integrity	src/run/pre_return.rs	blocked pre-return source differs from its owning ledger
 Integrity	src/run/pre_return/binding_diagnostic.rs	pre-return attempt no longer matches the current result binding; changed components: {}; inspect the saved attempt with {}; no return was recorded
 Transient	src/run/pre_return/execution.rs	pre-return preparation recipe changed after attempt admission; no check was launched
-Integrity	src/run/pre_return/execution.rs	saved pre-return result producer or outcome differs from its exact binding
 Integrity	src/run/pre_return/journal.rs	pre-return record digest does not match its contents
 # Internal replay integrity: a result must identify its paired admission; a recorded event must bind the actual ledger prefix and reconstruct against its prior frozen state.
+Integrity	src/run/pre_return/ownership.rs	pre-return admission differs from its owning ledger
+NotCurrentState	src/run/pre_return/ownership.rs	pre-return admission suffix is not current
 Identity	src/run/pre_return/predecessor.rs	pre-return result identity mismatch
 Integrity	src/run/pre_return/recovery.rs	pre-return reconciliation does not bind the exact Work and ledger prefix
 Integrity	src/run/pre_return/recovery.rs	pre-return reconciliation is not current for the frozen worker and governor
+Integrity	src/run/pre_return/response.rs	pre-return admission changed after execution; do not replay
 Identity	src/run/quarantine/admission.rs	configured Lead owner differs from the reviewed quarantine owner
 Transient	src/run/quarantine/admission.rs	first failed verification changed after follow-up admission
 LeadPreparation	src/run/quarantine/admission.rs	follow-up custody evidence differs from the separately accepted verification plan
