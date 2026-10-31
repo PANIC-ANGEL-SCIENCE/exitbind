@@ -54,9 +54,10 @@ case ${1:-} in
 esac
 ''')
     cargo.chmod(0o700)
+    system = os.uname().sysname
     host = {("Linux", "x86_64"): "x86_64-unknown-linux-gnu",
             ("Darwin", "arm64"): "aarch64-apple-darwin",
-            ("Darwin", "x86_64"): "x86_64-apple-darwin"}[(os.uname().sysname, os.uname().machine)]
+            ("Darwin", "x86_64"): "x86_64-apple-darwin"}[(system, os.uname().machine)]
     rustc = fixture / "rustc"
     rustc.write_text(f"#!/bin/sh\nprintf 'host: {host}\\n'\n")
     rustc.chmod(0o700)
@@ -101,7 +102,11 @@ esac
     restore()
     edit("tests/first_impression.rs")
     log, tools, _ = run(ci)
-    assert "--test first_impression" in log and "clippy --locked --bin exitbind --test first_impression" in log, log
+    assert "test --locked --test first_impression\n" in log, log
+    if system == "Linux":
+        assert "clippy --locked --bin exitbind --test first_impression" in log, log
+    else:
+        assert "clippy" not in log, log
     assert "--all-targets" not in log and not tools, (log, tools)
     for name in ["FAIL_TARGET", "ZERO_TARGET"]:
         log, _, result = run(ci, success=False, **{name: "first_impression"})
@@ -135,7 +140,7 @@ esac
     assert "test --locked --features repository-checks --test repository_contracts\n" in log, log
     assert "test --locked --features repository-checks --test privacy_gate\n" in log, log
     assert "--test goal_basis_requirements" not in log and "--test host_runtime" not in log, log
-    print("Rust maintenance: affected targets, unit tests and scoped lint retained")
+    print("Rust maintenance: affected targets, unit tests and platform lint policy retained")
     restore()
     edit("src/kernel/result_contract.rs")
     log, _, _ = run(affected)
