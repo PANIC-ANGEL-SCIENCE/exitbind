@@ -246,27 +246,106 @@ pub fn families() -> Vec<(String, Vec<String>)> {
 
 /// The value text of the last `let name = VALUE;` before `at` in `text`:
 /// a `match` with its whole block, or up to the `;` at depth 0.
-fn bound_value<'a>(text: &'a str, at: usize, name: &str) -> Option<&'a str> {
+fn bound_value<'a>(text: &'a str, at: usize, name: &str) -> Option<(usize, &'a str)> {
     let code = blank(text);
-    let start = code[..at]
-        .rfind(&format!("let {name} = "))
-        .or_else(|| code[..at].rfind(&format!("let mut {name} = ")))?;
+    let function = code[..at].rfind("fn ").unwrap_or(0);
+    let plain = format!("let {name} = ");
+    let mutable = format!("let mut {name} = ");
+    let start = code_words(text, "let")
+        .into_iter()
+        .filter(|start| *start > function && *start < at && binding_visible(&code, *start, at))
+        .filter(|start| code[*start..].starts_with(&plain) || code[*start..].starts_with(&mutable))
+        .last()?;
     let value = start + code[start..].find("= ")? + 2;
     if code[value..].starts_with("match ") {
         let open = value + code[value..].find('{')?;
         let end = open + block(text, open).len();
-        return Some(&text[value..end]);
+        return Some((start, &text[value..end]));
     }
     let mut depth = 0i32;
     for (offset, byte) in code.as_bytes()[value..].iter().enumerate() {
         match byte {
             b'(' | b'[' | b'{' => depth += 1,
             b')' | b']' | b'}' => depth -= 1,
-            b';' if depth == 0 => return Some(&text[value..value + offset]),
+            b';' if depth == 0 => return Some((start, &text[value..value + offset])),
             _ => {}
         }
     }
     None
+}
+
+/// A binding inside a closed block cannot supply a later option check.
+fn binding_visible(code: &str, start: usize, at: usize) -> bool {
+    let mut depth = 0usize;
+    for byte in code.as_bytes()[start..at].iter().copied() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' if depth == 0 => return false,
+            b'}' => depth -= 1,
+            _ => {}
+        }
+    }
+    true
+}
+
+/// Literal values assigned to `name` by one component of a tuple-valued match.
+/// Other tuple components and match patterns are not command names.
+fn tuple_bound_names(text: &str, at: usize, name: &str) -> Option<(usize, Vec<String>)> {
+    let code = blank(text);
+    let function = code[..at].rfind("fn ").unwrap_or(0);
+    let mut found = None;
+    for start in code_words(text, "let")
+        .into_iter()
+        .filter(|start| *start > function && *start < at && binding_visible(&code, *start, at))
+    {
+        let rest = &code[start + 3..at];
+        let open = start + 3 + rest.len() - rest.trim_start().len();
+        if code.as_bytes().get(open) != Some(&b'(') {
+            continue;
+        }
+        let bindings = call_arguments(text, open);
+        let Some(index) = bindings.iter().position(|binding| {
+            let binding = binding.trim();
+            binding.strip_prefix("mut ").unwrap_or(binding) == name
+        }) else {
+            continue;
+        };
+        let end = open + block(text, open).len();
+        if end >= at {
+            continue;
+        }
+        let rest = code[end..at].trim_start();
+        let Some(value) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let value = value.trim_start();
+        if !value.starts_with("match ") {
+            continue;
+        }
+        let value_start = at - value.len();
+        let Some((_, arms)) = matches(&text[value_start..at]).into_iter().next() else {
+            continue;
+        };
+        let mut names = Vec::new();
+        for arm in arms {
+            let body = arm.body.trim();
+            if !body.starts_with('(') {
+                continue;
+            }
+            let fields = call_arguments(body, 0);
+            let Some(field) = fields.get(index) else {
+                continue;
+            };
+            let values = literals(field);
+            if let [literal] = values.as_slice() {
+                if literal.start == 0 && literal.end == field.len() {
+                    names.push(literal.text.clone());
+                }
+            }
+        }
+        found = Some((start, names));
+    }
+    found
 }
 
 /// The literal values of `value`: each literal after `=`, `[`, `,`, `{` or
@@ -305,9 +384,15 @@ pub fn option_commands(sources: &[(String, String)], option: &str) -> Vec<(Strin
             let names: Vec<String> = if name.starts_with('"') {
                 literals(name).into_iter().map(|lit| lit.text).collect()
             } else {
-                bound_value(text, at, name)
-                    .map(value_literals)
-                    .unwrap_or_default()
+                let scalar = bound_value(text, at, name)
+                    .map(|(start, value)| (start, value_literals(value)));
+                let tuple = tuple_bound_names(text, at, name);
+                match (scalar, tuple) {
+                    (Some(scalar), Some(tuple)) if scalar.0 > tuple.0 => scalar.1,
+                    (_, Some(tuple)) => tuple.1,
+                    (Some(scalar), None) => scalar.1,
+                    (None, None) => Vec::new(),
+                }
             };
             let options = options.trim_start_matches('&');
             // (suffix, options) pairs: one per arm of a table, else one.
@@ -317,7 +402,7 @@ pub fn option_commands(sources: &[(String, String)], option: &str) -> Vec<(Strin
                     None,
                     literals(options).into_iter().map(|lit| lit.text).collect(),
                 ));
-            } else if let Some(value) = bound_value(text, at, options) {
+            } else if let Some((_, value)) = bound_value(text, at, options) {
                 if value.starts_with("match ") {
                     for (_, arms) in matches(value).into_iter().take(1) {
                         for arm in arms {

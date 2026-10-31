@@ -79,6 +79,10 @@ const APPLYING: &[(&str, Applying)] = &[
         Applying::NoSessionGoal("the Work's own check-observation ledger"),
     ),
     (
+        "work recover-pre-return",
+        Applying::NoSessionGoal("the Work's own pre-return reconciliation ledger"),
+    ),
+    (
         "work usage",
         Applying::NoSessionGoal("usage records under this project's state root"),
     ),
@@ -378,6 +382,85 @@ fn an_applying_command_added_to_the_dispatcher_is_a_p4_member() {
     );
     let stale = unclassified(&[], &[("gone", Applying::Shares("work quarantine", "x"))]);
     assert_eq!(stale.len(), 2, "{stale:?}");
+}
+
+/// Tuple-bound names belong to the selected field, never an error message or
+/// pattern; each new applying command still needs an explicit classification.
+#[test]
+fn applying_inventory_reads_the_selected_tuple_field_and_keeps_unclassified_commands() {
+    let seeded = concat!(
+        "fn recovery(a: &Arguments, action: &str) {\n",
+        "    let usage = \"work obsolete\";\n",
+        "    let (usage, missing) = match action {\n",
+        "        \"recover-check\" => (\"work recover-check\", \"decoy check message\"),\n",
+        "        \"recover-pre-return\" => (\"work recover-pre-return\", \"decoy pre-return message\"),\n",
+        "        _ => return Err(\"decoy unknown\".into()),\n",
+        "    };\n",
+        "    args::assert_options(usage, a, &[\"config\", \"apply\"])?;\n",
+        "}\n",
+        "fn reversed(a: &Arguments, action: &str) {\n",
+        "    let (missing, usage) = match action {\n",
+        "        \"fresh\" => (\"decoy missing\", \"work fresh\"),\n",
+        "        _ => return Err(\"decoy unknown\".into()),\n",
+        "    };\n",
+        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
+        "}\n",
+        "fn readonly(a: &Arguments, action: &str) {\n",
+        "    let (usage, missing) = match action {\n",
+        "        \"look\" => (\"work look\", \"decoy look message\"),\n",
+        "        _ => return Err(\"decoy unknown\".into()),\n",
+        "    };\n",
+        "    args::assert_options(usage, a, &[\"json\"])?;\n",
+        "}\n",
+        "fn later_binding(a: &Arguments, action: &str) {\n",
+        "    let (usage, missing) = match action { \"old\" => (\"work old\", \"decoy old\"), _ => return Err(\"decoy unknown\".into()) };\n",
+        "    let usage = \"work current\";\n",
+        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
+        "}\n",
+        "fn unrelated(action: &str) {\n",
+        "    let (usage, missing) = match action { \"x\" => (\"work phantom\", \"decoy phantom\"), _ => return };\n",
+        "}\n",
+        "fn parameter(a: &Arguments, usage: &str) {\n",
+        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
+        "}\n",
+        "fn closed_block(a: &Arguments, usage: &str, action: &str) {\n",
+        "    { let (usage, missing) = match action { \"x\" => (\"work closed\", \"decoy closed\"), _ => return }; }\n",
+        "    args::assert_options(usage, a, &[\"apply\"])?;\n",
+        "}\n",
+        "fn outer_binding(a: &Arguments, action: &str) {\n",
+        "    let (usage, missing) = match action { \"x\" => (\"work outer\", \"decoy outer\"), _ => return };\n",
+        "    if ready() { args::assert_options(usage, a, &[\"apply\"])?; }\n",
+        "}\n",
+    );
+    let applying = applying_in(&[("src/cli/seeded.rs".to_owned(), seeded.to_owned())]);
+    let names: Vec<&str> = applying.iter().map(|(_, name)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "work current",
+            "work fresh",
+            "work outer",
+            "work recover-check",
+            "work recover-pre-return"
+        ]
+    );
+    let mut classified = vec![
+        ("work current", Applying::NoSessionGoal("x")),
+        ("work fresh", Applying::NoSessionGoal("x")),
+        ("work outer", Applying::NoSessionGoal("x")),
+        ("work recover-check", Applying::NoSessionGoal("x")),
+    ];
+    assert_eq!(
+        unclassified(&applying, &classified),
+        ["applying command `work recover-pre-return` is not in the P4 inventory"]
+    );
+    classified.push(("work recover-pre-return", Applying::NoSessionGoal("x")));
+    assert!(unclassified(&applying, &classified).is_empty());
+    let stale = unclassified(&[], &[("work recover-check", Applying::NoSessionGoal("x"))]);
+    assert_eq!(
+        stale,
+        ["P4 inventory lists `work recover-check`, which no option check accepts --apply for"]
+    );
 }
 
 /// The R54 case: setup used to apply the configuration, then fail on the
