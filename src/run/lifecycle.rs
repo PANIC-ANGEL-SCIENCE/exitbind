@@ -344,6 +344,7 @@ fn start_with_association(
         }
         if let Some(policy) = &pre_return_policy {
             value["preReturnPolicy"] = policy.value();
+            crate::run::pre_return::ownership::add_start_marker(&mut value);
         }
         if let Some(preservation) = &preservation {
             value["preservation"] = preservation.value();
@@ -588,6 +589,7 @@ fn start_intent_with_association(
     }
     if let Some(policy) = &pre_return_policy {
         value["preReturnPolicy"] = policy.value();
+        crate::run::pre_return::ownership::add_start_marker(&mut value);
     }
     if let Some(preservation) = &preservation {
         value["preservation"] = preservation.value();
@@ -634,6 +636,7 @@ pub(crate) fn start_event_intent_sha256(event: &Value) -> Result<String, String>
         "harnessReceipt",
         "checkPolicy",
         "preReturnPolicy",
+        crate::run::pre_return::ownership::FIELD,
         "preservation",
         "basisProtocol",
         "recoveryProtocol",

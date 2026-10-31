@@ -3,6 +3,7 @@
 mod support;
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{fs, process::Output};
 
 const CHECK: &str = "test -f actual-product-check";
@@ -167,6 +168,63 @@ impl Fixture {
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()
     }
+    fn inspect(&self, ledger: &str) -> Value {
+        let output = self.call(&["run", "inspect", ledger, "--json"]);
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+    fn admitted_suffix(&self, ledger: &str, before: &[u8], attempt_id: &str) -> Vec<u8> {
+        let after = fs::read(self.root.join(ledger)).unwrap();
+        assert!(after.starts_with(before));
+        let suffix = std::str::from_utf8(&after[before.len()..]).unwrap();
+        let lines = suffix.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 1, "{suffix}");
+        let event: Value = serde_json::from_str(lines[0]).unwrap();
+        let previous: Value =
+            serde_json::from_str(std::str::from_utf8(before).unwrap().lines().last().unwrap())
+                .unwrap();
+        assert_eq!(event["action"], "pre_return_admitted");
+        assert_eq!(event["admission"]["attemptId"], attempt_id);
+        assert_eq!(event["previousEventSha256"], previous["eventSha256"]);
+        let mut unsigned = event.clone();
+        let hash = unsigned
+            .as_object_mut()
+            .unwrap()
+            .remove("eventSha256")
+            .unwrap();
+        assert_eq!(
+            hash,
+            format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&unsigned).unwrap())
+            )
+        );
+        let attempt_path = self
+            .root
+            .join(".exitbind/pre-return")
+            .join(format!("pre-return-{attempt_id}.attempt.json"));
+        let mut attempt: Value = serde_json::from_slice(&fs::read(attempt_path).unwrap()).unwrap();
+        let record_hash = attempt
+            .as_object_mut()
+            .unwrap()
+            .remove("recordSha256")
+            .unwrap();
+        assert_eq!(record_hash, event["admission"]["recordSha256"]);
+        assert_eq!(
+            record_hash,
+            format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&attempt).unwrap())
+            )
+        );
+        for field in ["runId", "ledger", "stage", "attempt", "agent", "role"] {
+            assert_eq!(
+                event["admission"]["assignment"][field],
+                attempt["binding"][field]
+            );
+        }
+        after
+    }
     fn only_attempt_id(&self) -> String {
         let mut attempts = fs::read_dir(self.root.join(".exitbind/pre-return"))
             .unwrap()
@@ -207,18 +265,20 @@ impl Fixture {
 }
 
 #[test]
-fn lower_level_manual_failure_keeps_the_run_ledger_and_same_attempt_is_not_replayed() {
+fn lower_level_failure_records_only_admission_and_same_attempt_is_not_replayed() {
     let f = Fixture::new("pre-return-lower-failure");
     f.start_run("printf failed-out; printf failed-err >&2; printf x >> .exitbind/pre-return/invocations; exit 7");
     let ledger = f.ledger();
     let before = fs::read(f.root.join(&ledger)).unwrap();
+    let governor = f.inspect(&ledger)["governor"].clone();
     let failed = f.submit("worker", "completed", "failed");
     assert!(!failed.status.success(), "{failed:?}");
-    assert_eq!(fs::read(f.root.join(&ledger)).unwrap(), before);
     let diagnostic = String::from_utf8_lossy(&failed.stdout);
     assert!(diagnostic.contains("attemptId"), "{diagnostic}");
     assert!(diagnostic.contains("nonzero_exit"), "{diagnostic}");
     let attempt = f.only_attempt_id();
+    let after = f.admitted_suffix(&ledger, &before, &attempt);
+    assert_eq!(f.inspect(&ledger)["governor"], governor);
     assert_eq!(f.read_stream(&ledger, &attempt, "stdout"), b"failed-out");
     assert_eq!(f.read_stream(&ledger, &attempt, "stderr"), b"failed-err");
     let attempt_dir = f.root.join(".exitbind/pre-return");
@@ -243,7 +303,7 @@ fn lower_level_manual_failure_keeps_the_run_ledger_and_same_attempt_is_not_repla
         attempts, 1,
         "known failure must return its durable result without re-execution"
     );
-    assert_eq!(fs::read(f.root.join(&ledger)).unwrap(), before);
+    assert_eq!(fs::read(f.root.join(&ledger)).unwrap(), after);
 }
 
 #[test]
@@ -470,16 +530,14 @@ fn valid_grant_survives_failure_and_lead_can_replace_only_the_defective_pre_retu
     let run_id = work.strip_prefix("smw_").unwrap();
     let ledger = format!(".exitbind/runs/work-{run_id}.jsonl");
     let after_grant = fs::read(f.root.join(&ledger)).unwrap();
+    let governor = f.inspect(&ledger)["governor"].clone();
     let failed = f.work_return(&work, &worker, "completed", "worker result before repair");
     assert!(!failed.status.success(), "{failed:?}");
     let diagnostic: Value = serde_json::from_slice(&failed.stdout).unwrap();
     assert_eq!(diagnostic["preReturn"], "refused");
     let attempt_id = diagnostic["attemptId"].as_str().unwrap();
-    assert_eq!(
-        fs::read(f.root.join(&ledger)).unwrap(),
-        after_grant,
-        "failed pre-return diagnostic must preserve the valid permit and ledger head"
-    );
+    f.admitted_suffix(&ledger, &after_grant, attempt_id);
+    assert_eq!(f.inspect(&ledger)["governor"], governor);
 
     let blocked_body = format!(
         "Blocked: pre-return attemptId {attempt_id} exited nonzero; Lead diagnosis requested."
@@ -809,7 +867,7 @@ fn drift_created_during_checker_execution_blocks_the_append() {
         stderr.contains("inspect the saved attempt with"),
         "{stderr}"
     );
-    assert_eq!(fs::read(source.root.join(source.ledger())).unwrap(), before);
+    source.admitted_suffix(&source.ledger(), &before, &source.only_attempt_id());
 
     let config = Fixture::new("pre-return-config-drift-during-check");
     config.start_run("printf '\\n' >> exitbind.json; exit 0");
@@ -825,7 +883,7 @@ fn drift_created_during_checker_execution_blocks_the_append() {
         stderr.contains("inspect the saved attempt with"),
         "{stderr}"
     );
-    assert_eq!(fs::read(config.root.join(config.ledger())).unwrap(), before);
+    config.admitted_suffix(&config.ledger(), &before, &config.only_attempt_id());
 
     let artifact = Fixture::new("pre-return-artifact-drift-during-check");
     artifact.start_run("printf changed > .exitbind/artifacts/scope.md; exit 0");
@@ -833,10 +891,7 @@ fn drift_created_during_checker_execution_blocks_the_append() {
     let refused = artifact.submit("worker", "completed", "artifact-changed");
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("artifact drift detected"));
-    assert_eq!(
-        fs::read(artifact.root.join(artifact.ledger())).unwrap(),
-        before
-    );
+    artifact.admitted_suffix(&artifact.ledger(), &before, &artifact.only_attempt_id());
 
     let input = Fixture::new("pre-return-input-drift-during-check");
     fs::write(input.root.join("product-input.txt"), "before\n").unwrap();
@@ -853,5 +908,5 @@ fn drift_created_during_checker_execution_blocks_the_append() {
             && stderr.contains("run\",\"pre-return\",\"read\""),
         "{stderr}"
     );
-    assert_eq!(fs::read(input.root.join(input.ledger())).unwrap(), before);
+    input.admitted_suffix(&input.ledger(), &before, &input.only_attempt_id());
 }

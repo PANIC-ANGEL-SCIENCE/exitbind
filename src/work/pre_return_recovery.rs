@@ -125,6 +125,30 @@ pub(super) fn action(
         return Ok(None);
     }
     if let Some(event) = protocol::for_assignment(&state, assignment)? {
+        let projection = run::pre_return::projection(loaded, work)?;
+        let latest = &projection["attempt"];
+        if latest["attempt"]["binding"]["preReturnReconciliationSha256"] == event["eventSha256"]
+            && latest["result"].is_object()
+            && latest["result"]["state"] != "passed"
+        {
+            let id = latest["attempt"]["attemptId"]
+                .as_str()
+                .ok_or("retry admission identity is unavailable")?;
+            let inspect = super::action_forms::command(
+                loaded,
+                crate::emitted::Route::new(["run", "pre-return", "read", work, id, "--json"]),
+            );
+            let handle = next["assignment"]
+                .as_str()
+                .ok_or("current worker assignment is unavailable")?;
+            let mut blocked = blocked_option_for_binding(loaded, work, handle, binding);
+            blocked["label"] = json!("blocked");
+            return Ok(Some(json!({"version":1,"state":"pre_return_retry_failed",
+                "binding":binding,"actor":"worker","assignment":handle,
+                "leadChoiceRequired":false,"choices":[blocked],"mechanicalAction":Value::Null,
+                "meaning":"The one linked retry did not pass. Inspect its saved result or report blocked; changing the result cannot inherit the exact-held reconciliation, and another retry is not admitted.",
+                "diagnostic":{"command":inspect,"readOnly":true}})));
+        }
         let predecessor = &event["recovery"]["snapshot"]["predecessor"]["attemptId"];
         if pending
             .iter()

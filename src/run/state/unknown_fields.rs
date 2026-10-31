@@ -32,6 +32,7 @@ pub(super) fn reject_unknown(
         if version == 8 {
             allowed.push("preReturnPolicy");
             allowed.push("projectContinuation");
+            allowed.push(crate::run::pre_return::ownership::FIELD);
         }
         if version >= 5 {
             allowed.push("subject");
@@ -65,6 +66,22 @@ pub(super) fn reject_unknown(
                     "invalid run ledger line {line}: unknown field '{key}'"
                 ))
             });
+    } else if action == crate::run::pre_return::ownership::ACTION {
+        return reject_unknown_fields(
+            object,
+            &[
+                "version",
+                "kind",
+                "producer",
+                "action",
+                "runId",
+                "admission",
+                "previousEventSha256",
+                "timestamp",
+                "eventSha256",
+            ],
+            line,
+        );
     } else if action == "pre_return_reconciled" {
         return reject_unknown_fields(
             object,

@@ -1,8 +1,12 @@
 //! Public-seam interruption and exact recovery of an owned pre-return.
 #![cfg(target_os = "linux")]
 
+#[path = "pre_return_recovery/guidance.rs"]
+mod guidance;
 #[path = "pre_return_recovery/known_outcomes.rs"]
 mod known_outcomes;
+#[path = "pre_return_recovery/ownership.rs"]
+mod ownership;
 mod support;
 #[path = "pre_return_recovery/unselected.rs"]
 mod unselected;
@@ -738,6 +742,14 @@ fn interrupted_fresh_retry_remains_unknown_and_never_authorizes_a_third_attempt(
         .find(|record| record["attemptId"] != f.attempt)
         .unwrap();
     let retry_id = retry["attemptId"].as_str().unwrap();
+    let after = f.ledger();
+    assert!(after.starts_with(&before));
+    let suffix = std::str::from_utf8(&after[before.len()..]).unwrap();
+    let lines = suffix.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1, "{suffix}");
+    let admission: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(admission["action"], "pre_return_admitted");
+    assert_eq!(admission["admission"]["attemptId"], retry_id);
     assert!(f.read_attempt(retry_id)["result"].is_null());
     let detail = f.detail();
     assert_eq!(
@@ -758,7 +770,7 @@ fn interrupted_fresh_retry_remains_unknown_and_never_authorizes_a_third_attempt(
         None,
     );
     assert!(!again.status.success(), "{again:?}");
-    assert_eq!(f.ledger(), before);
+    assert_eq!(f.ledger(), after);
     assert_eq!(f.count(), b"xx");
     assert_eq!(fs::read(f.held_path()).unwrap(), f.body);
     fs::write(f.root.join(".exitbind/release-check"), b"finish").unwrap();

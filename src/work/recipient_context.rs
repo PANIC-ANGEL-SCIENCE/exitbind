@@ -8,6 +8,16 @@ use serde_json::{json, Value};
 
 const MAX_PROFILE_BYTES: usize = 16 * 1024;
 
+/// All recipient surfaces use configured native names; a packet's task name
+/// identifies a task and is not a configured host-agent selector.
+pub(crate) fn identity(loaded: &Loaded, next: &Value) -> Value {
+    let native = next["agent"]
+        .as_str()
+        .and_then(|name| loaded.agent(name).map(|agent| agent.native_name(name)));
+    json!({"role":next["role"],"agent":next["agent"],"nativeName":native,
+        "assignment":next["assignment"],"actor":next["resolvedActor"]})
+}
+
 /// The current public section pages the complete instructions independently
 /// of the grouped response and its inline profile limit.
 pub(crate) fn section(loaded: &Loaded, next: &Value) -> Result<Value, String> {

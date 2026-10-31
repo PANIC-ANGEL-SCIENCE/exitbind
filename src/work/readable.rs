@@ -80,16 +80,11 @@ fn read_after_reads(
     super::details::ensure_current_config(loaded)?;
     let fresh_snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
     let fresh = super::next_from(loaded, work, &fresh_snapshot)?;
-    let mut fresh_canonical = fresh.clone();
-    fresh_canonical
-        .as_object_mut()
-        .ok_or("current action unavailable")?
-        .remove("current");
-    if super::details::binding(loaded, work, &fresh_snapshot, &fresh_canonical)? != binding {
+    if super::details::binding(loaded, work, &fresh_snapshot, &fresh)? != binding {
         let route = crate::emitted::refresh(work, &loaded.path);
         return Err(format!("work detail changed during expansion; {route}"));
     }
-    if recipient_context::read(loaded, &fresh_canonical)? != recipient {
+    if recipient_context::read(loaded, &fresh)? != recipient {
         return Err(
             "recipient instructions changed during work detail; refresh the current assignment"
                 .into(),
@@ -433,7 +428,7 @@ fn response(
         "reference": token(binding),
         "work": work,
         "binding": binding,
-        "recipient": {"role": next["role"], "agent": next["agent"], "nativeName": next["packet"]["nativeTaskName"], "assignment": next["assignment"], "actor": next["resolvedActor"]},
+        "recipient": recipient_context::identity(loaded, next),
         "complete": readable_complete,
         "sections": sections,
         "recipientContext": recipient,
@@ -465,7 +460,8 @@ fn response(
         value["acceptedAtBinding"] = accepted;
     }
     let canonical = json!({
-        "current":{"action":next["action"], "binding":binding, "readiness":next["progress"]["state"]},
+        "current":{"action":next["action"], "binding":binding, "readiness":next["progress"]["state"],
+            "recipient":value["recipient"]},
         "actionForms":value["actionForms"], "warnings":next["warnings"],
     });
     super::effective_action::insert(&mut value, &canonical);

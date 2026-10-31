@@ -108,6 +108,9 @@ pub(crate) fn load_at_unchecked(
                     ledger,
                 )?;
             }
+            if event["action"] == super::pre_return::ownership::ACTION {
+                super::pre_return::ownership::validate_location(&event, ledger)?;
+            }
             events.push(event);
         }
         run_state::reduce(&events)?;

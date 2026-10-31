@@ -145,6 +145,25 @@ fn text(output: &Output) -> String {
     )
 }
 
+fn assert_native_resume_rejected(
+    fixture: &Fixture,
+    output: &Output,
+    ledger: &std::path::Path,
+    expected_ledger: &[u8],
+    expected_error: &str,
+) -> Value {
+    assert!(!output.status.success(), "{}", text(output));
+    let value: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("expected a machine refusal: {}", text(output)));
+    assert_eq!(value["error"], expected_error, "{}", text(output));
+    assert!(value["preReturn"].is_null(), "{}", text(output));
+    assert!(value["replayed"].is_null(), "{}", text(output));
+    assert_eq!(fs::read(ledger).unwrap(), expected_ledger);
+    assert_eq!(fixture.provider_counter(), b"x");
+    assert_eq!(fixture.pre_return_counter(), b"x");
+    value
+}
+
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
@@ -238,6 +257,8 @@ fn native_worker_submission_runs_diagnostic_but_does_not_credit_the_final_check(
 #[test]
 fn saved_native_result_resume_reuses_failed_diagnostic_attempt_after_lost_reply() {
     let fixture = Fixture::new("native-pre-return-lost-reply");
+    let input_path = fixture.root.join("native-input.txt");
+    fs::write(&input_path, b"original input").unwrap();
     let checker = write_checker(&fixture.root, true);
     let executable = fake_codex(&fixture.root);
     let (work, worker) = fixture.pending_worker(&checker);
@@ -255,7 +276,8 @@ fn saved_native_result_resume_reuses_failed_diagnostic_attempt_after_lost_reply(
         .join(".exitbind/native-actions")
         .join(&work)
         .join(format!("{}.json", worker["assignment"].as_str().unwrap()));
-    let native: Value = serde_json::from_slice(&fs::read(journal).unwrap()).unwrap();
+    let journal_bytes = fs::read(&journal).unwrap();
+    let native: Value = serde_json::from_slice(&journal_bytes).unwrap();
     assert_eq!(native["status"], "completed");
     assert!(native["result"].is_string());
 
@@ -282,18 +304,126 @@ fn saved_native_result_resume_reuses_failed_diagnostic_attempt_after_lost_reply(
     assert!(exact_stdout.status.success(), "{}", text(&exact_stdout));
     assert_eq!(exact_stdout.stdout, b"diagnostic failure evidence\n");
 
+    let ledger = fixture.root.join(format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    ));
+    let expected_ledger = fs::read(&ledger).unwrap();
     let pending = fixture.value(&["work", "next", &work, "--full"]);
     assert_eq!(pending["next"]["action"], "spawn");
     assert_eq!(pending["next"]["assignment"], worker["assignment"]);
     let resumed = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
     assert!(!resumed.status.success());
     let refused: Value = serde_json::from_slice(&resumed.stdout).unwrap();
-    assert_eq!(refused["preReturn"], "refused");
+    assert_eq!(refused["preReturn"], "refused", "{refused}: {resumed:?}");
     assert_eq!(refused["attemptId"], attempt_id);
     assert_eq!(refused["replayed"], true);
     assert_eq!(refused["finalCheckCredited"], false);
     assert_eq!(fixture.provider_counter(), b"x");
     assert_eq!(fixture.pre_return_counter(), b"x");
+    assert_eq!(fs::read(&ledger).unwrap(), expected_ledger);
+
+    let mut changed_native = native.clone();
+    let mut changed_result = changed_native["result"].as_str().unwrap().to_owned();
+    changed_result.replace_range(..2, "00");
+    changed_native["result"] = json!(changed_result);
+    fs::write(&journal, serde_json::to_vec(&changed_native).unwrap()).unwrap();
+    let forged = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    assert_native_resume_rejected(
+        &fixture,
+        &forged,
+        &ledger,
+        &expected_ledger,
+        "native assignment journal does not match the current assignment",
+    );
+    fs::write(&journal, journal_bytes).unwrap();
+
+    fs::write(&input_path, b"changed input").unwrap();
+    let changed_input = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    assert_native_resume_rejected(
+        &fixture,
+        &changed_input,
+        &ledger,
+        &expected_ledger,
+        "native assignment journal does not match the current assignment",
+    );
+    fs::write(&input_path, b"original input").unwrap();
+
+    let checker_path = checker_path(&fixture.root);
+    let checker_bytes = fs::read(&checker_path).unwrap();
+    fs::write(&checker_path, b"#!/bin/sh\nexit 0\n").unwrap();
+    let changed_checker = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    let changed_checker = assert_native_resume_rejected(
+        &fixture,
+        &changed_checker,
+        &ledger,
+        &expected_ledger,
+        "pre-return checker source changed; use authorized supersession to bind the changed checker",
+    );
+    assert_eq!(
+        changed_checker["classification"],
+        "pre_return_checker_changed"
+    );
+    fs::write(&checker_path, checker_bytes).unwrap();
+
+    let scope = fixture
+        .ledger_events(&work)
+        .into_iter()
+        .find(|event| event["action"] == "submit" && event["role"] == "lead")
+        .unwrap();
+    let scope_path = fixture
+        .root
+        .join(scope["artifact"]["path"].as_str().unwrap());
+    let scope_bytes = fs::read(&scope_path).unwrap();
+    fs::write(&scope_path, b"changed scope artifact").unwrap();
+    let changed_artifact = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    assert_native_resume_rejected(
+        &fixture,
+        &changed_artifact,
+        &ledger,
+        &expected_ledger,
+        &format!(
+            "artifact drift detected: {}",
+            scope["artifact"]["path"].as_str().unwrap()
+        ),
+    );
+    fs::write(scope_path, scope_bytes).unwrap();
+
+    let restored = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    assert!(!restored.status.success());
+    let restored: Value = serde_json::from_slice(&restored.stdout).unwrap();
+    assert_eq!(restored["preReturn"], "refused");
+    assert_eq!(restored["attemptId"], attempt_id);
+    assert_eq!(restored["replayed"], true);
+    assert_eq!(fixture.provider_counter(), b"x");
+    assert_eq!(fixture.pre_return_counter(), b"x");
+    assert_eq!(fs::read(&ledger).unwrap(), expected_ledger);
+
+    let foreign_artifact = fixture.root.join(".exitbind/artifacts/foreign-evidence");
+    fs::write(&foreign_artifact, b"a different recorded event").unwrap();
+    let foreign = fixture.call(
+        &[
+            "work",
+            "evidence",
+            &work,
+            worker["assignment"].as_str().unwrap(),
+            "--artifact-root",
+            "state",
+            "--artifact",
+            ".exitbind/artifacts/foreign-evidence",
+        ],
+        None,
+    );
+    assert!(foreign.status.success(), "{}", text(&foreign));
+    let foreign_ledger = fs::read(&ledger).unwrap();
+    let stale = fixture.call(&["work", "act", &work, "--resume", "--json"], None);
+    assert_native_resume_rejected(
+        &fixture,
+        &stale,
+        &ledger,
+        &foreign_ledger,
+        "native assignment journal does not match the current assignment",
+    );
 
     let events = fixture.ledger_events(&work);
     assert_eq!(

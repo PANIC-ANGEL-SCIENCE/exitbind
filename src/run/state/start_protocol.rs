@@ -13,6 +13,7 @@ const START_PROTOCOL_FIELDS: &[&str] = &[
     "guidanceContinuityProtocol",
     "guidanceConfigSha256",
     "verificationInputContract",
+    crate::run::pre_return::ownership::FIELD,
 ];
 
 pub(super) fn copy_fields(start: &Value, state: &mut Value) {

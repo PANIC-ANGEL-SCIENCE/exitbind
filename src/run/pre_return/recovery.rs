@@ -221,6 +221,7 @@ pub(crate) fn pending(
         &json!({"runId":state["runId"],"ledger":ledger,
         "stage":assignment["stage"],"attempt":assignment["attempt"],
         "agent":assignment["agent"],"role":assignment["role"]}),
+        state,
     )
 }
 
@@ -257,7 +258,7 @@ pub(crate) fn candidate(
         &json!({"sha256":result_sha256}),
         &policy,
     )?;
-    let candidates = super::predecessor::unresolved(loaded, &binding)?;
+    let candidates = super::predecessor::unresolved(loaded, &binding, state)?;
     let [attempt] = candidates.as_slice() else {
         return Err(
             "pre-return recovery requires one unique unfinished admission for this assignment"

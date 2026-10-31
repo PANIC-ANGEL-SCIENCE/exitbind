@@ -39,6 +39,31 @@ pub(super) fn verify_journal(
     Ok(())
 }
 
+/// Reconstruct the exact packet before this saved result's owned pre-return
+/// admission. All other suffixes and changed external context remain stale.
+pub(super) fn pre_return_replay_identity(
+    loaded: &Loaded,
+    work: &str,
+    journal: &Value,
+    assignment: &str,
+) -> Result<Option<Identity>, String> {
+    validate_completed_observation(journal)?;
+    let bytes = journal_result(journal)?;
+    let Some((events, source)) =
+        crate::run::pre_return::ownership::saved_result_prefix(loaded, work, assignment, &bytes)?
+    else {
+        return Ok(None);
+    };
+    crate::work::details::ensure_current_config(loaded)?;
+    let snapshot = crate::run::RunSnapshot::from_events(loaded, &events, &source)?;
+    let current = crate::work::next_from(loaded, work, &snapshot)?;
+    let identity = assignment_identity(&current)?;
+    if identity.assignment != assignment {
+        return Ok(None);
+    }
+    Ok(Some(identity))
+}
+
 pub(super) fn journal_result(journal: &Value) -> Result<Vec<u8>, String> {
     let encoded = journal["result"]
         .as_str()

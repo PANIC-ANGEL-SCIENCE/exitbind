@@ -868,3 +868,76 @@ fn native_corrupt_or_missing_scope_never_launches_provider() {
         assert!(!capture.exists());
     }
 }
+
+#[test]
+fn configured_native_recipient_agrees_across_current_full_and_action_views() {
+    let fixture = Fixture::new("configured-recipient-projections");
+    let config_path = fixture.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["agents"]["lead"]["nativeName"] = json!("coordinator");
+    config["agents"]["worker"]["nativeName"] = json!("sonic");
+    config["agents"]["reviewer"]["nativeName"] = json!("meow");
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let begun = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "consistent recipient",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+            "--proof-origin",
+            "synthetic",
+        ],
+        b"",
+    );
+    let work = begun["work"].as_str().unwrap();
+    let assert_views = |expected: &str| {
+        let next = fixture.value(&["work", "next", work, "--json"], b"");
+        let full = fixture.value(&["work", "detail", work, "--json"], b"");
+        let action = fixture.value(&["work", "detail", work, "--view", "action", "--json"], b"");
+        assert_eq!(
+            next["current"]["recipient"]["nativeName"], expected,
+            "{next}"
+        );
+        assert_eq!(full["recipient"]["nativeName"], expected, "{full}");
+        assert_eq!(full["recipientContext"]["nativeName"], expected, "{full}");
+        assert_eq!(action["recipient"]["nativeName"], expected, "{action}");
+        if full["effectiveAction"]["delegation"].is_object() {
+            assert_eq!(
+                full["effectiveAction"]["delegation"]["nativeName"], expected,
+                "{full}"
+            );
+        }
+    };
+    assert_views("coordinator");
+    fixture.value(
+        &[
+            "work",
+            "return",
+            work,
+            begun["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        b"Preserve the selected goal, correction and prohibition.",
+    );
+    assert_views("sonic");
+    let worker = fixture.value(&["work", "detail", work, "--json"], b"");
+    fixture.value(
+        &[
+            "work",
+            "return",
+            work,
+            worker["recipient"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        b"Complete result ready for the independent check.",
+    );
+    fixture.value(&["work", "check", work, "--json"], b"");
+    assert_views("meow");
+}

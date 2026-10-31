@@ -133,22 +133,43 @@ pub(super) fn before_worker_completion(
     })
 }
 
-/// Whether the only event after the caller's checked view is this call's own
-/// repair: `events` ends with the submission being preflighted, directly
-/// preceded by the repair event appended under the earlier lock.
-pub(super) fn only_own_repair(events: &[Value], own_repair: Option<&str>) -> bool {
-    own_repair.is_some_and(|sha| {
-        events.len() >= 2 && events[events.len() - 2]["eventSha256"].as_str() == Some(sha)
-    })
+/// Return the exact prefix before this call's contiguous, recorded effects.
+pub(super) fn own_event_prefix(
+    events: &[Value],
+    own_repair: Option<&str>,
+    own_admission: Option<&str>,
+) -> Option<usize> {
+    if own_repair.is_none() && own_admission.is_none() {
+        return None;
+    }
+    let mut prefix = events.len();
+    for expected in [own_admission, own_repair].into_iter().flatten() {
+        prefix = prefix.checked_sub(1)?;
+        if events[prefix]["eventSha256"].as_str() != Some(expected) {
+            return None;
+        }
+    }
+    Some(prefix)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::only_own_repair;
     use serde_json::{json, Value};
 
     fn events(shas: &[&str]) -> Vec<Value> {
         shas.iter().map(|sha| json!({"eventSha256": sha})).collect()
+    }
+
+    fn own_event_prefix(
+        events: &[Value],
+        own_repair: Option<&str>,
+        own_admission: Option<&str>,
+    ) -> Option<usize> {
+        super::own_event_prefix(
+            events.get(..events.len().checked_sub(1)?)?,
+            own_repair,
+            own_admission,
+        )
     }
 
     /// W3 D3: only the repair this call appended, directly before its own
@@ -156,22 +177,53 @@ mod tests {
     /// (the pre-F7 count-based reading accepted it) or any later event does not.
     #[test]
     fn only_this_calls_repair_directly_before_the_submission_is_its_own() {
-        assert!(only_own_repair(
-            &events(&["view", "own", "submission"]),
-            Some("own")
-        ));
-        assert!(!only_own_repair(
-            &events(&["view", "other", "submission"]),
+        assert_eq!(
+            own_event_prefix(&events(&["view", "own", "submission"]), Some("own"), None),
+            Some(1)
+        );
+        assert_eq!(
+            own_event_prefix(&events(&["view", "other", "submission"]), None, None),
             None
-        ));
-        assert!(!only_own_repair(
-            &events(&["view", "other", "submission"]),
-            Some("own")
-        ));
-        assert!(!only_own_repair(
-            &events(&["view", "own", "foreign", "submission"]),
-            Some("own")
-        ));
-        assert!(!only_own_repair(&events(&["submission"]), Some("own")));
+        );
+        assert_eq!(
+            own_event_prefix(&events(&["view", "other", "submission"]), Some("own"), None),
+            None
+        );
+        assert_eq!(
+            own_event_prefix(
+                &events(&["view", "own", "foreign", "submission"]),
+                Some("own"),
+                None
+            ),
+            None
+        );
+        assert_eq!(
+            own_event_prefix(&events(&["submission"]), Some("own"), None),
+            None
+        );
+        assert_eq!(
+            own_event_prefix(
+                &events(&["view", "repair", "admission", "submission"]),
+                Some("repair"),
+                Some("admission")
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            own_event_prefix(
+                &events(&["view", "repair", "foreign", "admission", "submission"]),
+                Some("repair"),
+                Some("admission")
+            ),
+            None
+        );
+        assert_eq!(
+            own_event_prefix(
+                &events(&["view", "admission", "foreign", "submission"]),
+                None,
+                Some("admission")
+            ),
+            None
+        );
     }
 }

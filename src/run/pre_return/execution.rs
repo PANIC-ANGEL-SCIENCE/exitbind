@@ -222,30 +222,8 @@ pub(super) fn recover_saved_attempt(
     if !known_ended(result) {
         return Ok(());
     }
-    if result["version"] != 1
-        || result["kind"] != "pre_return_result"
-        || result["producer"]["executableSha256"] != binding["checkerExecutableSha256"]
-        || result["producer"]["producer"] != binding["producer"]
-        || (successful && result["exitCode"] != 0)
-    {
-        return Err(
-            "saved pre-return result producer or outcome differs from its exact binding".into(),
-        );
-    }
-    for stream in ["stdout", "stderr"] {
-        let Some(artifact) = result.get(stream) else {
-            if matches!(result["state"].as_str(), Some("passed" | "failed")) {
-                return Err("saved pre-return capture is missing".into());
-            }
-            continue;
-        };
-        crate::run::artifact::read_exact(
-            loaded,
-            artifact,
-            "pre-return capture",
-            crate::run_value::PRE_RETURN_CAPTURE_MAX_BYTES,
-        )?;
-    }
+    // The predecessor owner validated this exact saved result and its captures
+    // immediately before this continuation debit is reconciled.
     crate::run::continuation_effect::recover_check(
         loaded,
         state,

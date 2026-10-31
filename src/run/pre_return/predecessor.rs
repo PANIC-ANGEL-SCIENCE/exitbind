@@ -15,7 +15,7 @@ pub(super) fn assert_no_unresolved(
     state: &Value,
 ) -> Result<(), String> {
     super::recovery::assert_predecessor_unchanged(loaded, state, binding)?;
-    for attempt in unresolved(loaded, binding)? {
+    for attempt in unresolved(loaded, binding, state)? {
         let id = attempt["attemptId"]
             .as_str()
             .ok_or("missing attempt identity")?;
@@ -34,13 +34,33 @@ pub(super) fn assert_no_unresolved(
 
 /// Unresolved attempts for the same stable assignment. Exact-attempt replay
 /// still belongs to `latest_or_create`, not to this classifier.
-pub(super) fn unresolved(loaded: &Loaded, binding: &Value) -> Result<Vec<Value>, String> {
-    let mut unresolved = Vec::new();
+pub(super) fn attempts(
+    loaded: &Loaded,
+    state: &Value,
+    binding: Option<&Value>,
+) -> Result<Vec<Value>, String> {
+    if state.get(super::ownership::FIELD).is_some() {
+        return super::ownership::events(state, binding)
+            .into_iter()
+            .map(|event| {
+                let attempt = super::ownership::read_owned(loaded, event)?;
+                let id = event["admission"]["attemptId"]
+                    .as_str()
+                    .ok_or("missing pre-return admission identity")?;
+                validate_admission(&attempt, id)?;
+                Ok(attempt)
+            })
+            .collect();
+    }
+
+    // Earlier runs have no durable ownership list. An unreadable flat record
+    // cannot safely be attributed elsewhere and therefore still refuses.
+    let mut attempts = Vec::new();
     let directory = directory_path(loaded);
     match fs::symlink_metadata(&directory) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
         Ok(_) => return Err("pre-return journal directory is not a regular directory".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(unresolved),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(attempts),
         Err(error) => return Err(format!("pre-return admissions are unavailable: {error}")),
     }
     let entries = match fs::read_dir(&directory) {
@@ -63,71 +83,125 @@ pub(super) fn unresolved(loaded: &Loaded, binding: &Value) -> Result<Vec<Value>,
             continue;
         };
         let attempt = read_record(&entry.path())?;
-        if attempt["version"] != 1
-            || attempt["kind"] != "pre_return_attempt"
-            || attempt["state"] != "admitted"
-            || attempt["attemptId"] != id
-            || !attempt["binding"].is_object()
-            || !attempt["policy"].is_object()
-            || crate::evidence::hash::value(&serde_json::json!({
-                "binding": attempt["binding"], "limits": attempt["policy"]
-            })) != id
-        {
-            return Err("pre-return admission identity is invalid".into());
-        }
-        let saved = &attempt["binding"];
-        if ["runId", "ledger", "agent", "role"].iter().any(|field| {
-            !saved[*field]
-                .as_str()
-                .is_some_and(|value| !value.is_empty())
-        }) || ["stage", "attempt"]
-            .iter()
-            .any(|field| saved[*field].as_u64().is_none())
-        {
-            return Err("pre-return admission assignment identity is invalid".into());
-        }
+        validate_admission(&attempt, id)?;
         // A changed artifact, policy, assignment packet, or producer must not
         // make an unfinished execution disappear. A new run or role is a
         // different operation and does not inherit this admission.
-        if ["runId", "ledger", "stage", "attempt", "agent", "role"]
-            .iter()
-            .any(|field| saved.get(*field).is_none() || saved[*field] != binding[*field])
-        {
+        if binding.is_some_and(|binding| {
+            ["runId", "ledger", "stage", "attempt", "agent", "role"]
+                .iter()
+                .any(|field| {
+                    attempt["binding"].get(*field).is_none()
+                        || attempt["binding"][*field] != binding[*field]
+                })
+        }) {
             continue;
         }
+        attempts.push(attempt);
+    }
+    Ok(attempts)
+}
+
+pub(super) fn validate_admission(attempt: &Value, id: &str) -> Result<(), String> {
+    if attempt["version"] != 1
+        || attempt["kind"] != "pre_return_attempt"
+        || attempt["state"] != "admitted"
+        || attempt["attemptId"] != id
+        || !attempt["binding"].is_object()
+        || !attempt["policy"].is_object()
+        || crate::evidence::hash::value(&serde_json::json!({
+            "binding": attempt["binding"], "limits": attempt["policy"]
+        })) != id
+    {
+        return Err("pre-return admission identity is invalid".into());
+    }
+    let saved = &attempt["binding"];
+    if ["runId", "ledger", "agent", "role"].iter().any(|field| {
+        !saved[*field]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    }) || ["stage", "attempt"]
+        .iter()
+        .any(|field| saved[*field].as_u64().is_none())
+    {
+        return Err("pre-return admission assignment identity is invalid".into());
+    }
+    Ok(())
+}
+
+pub(super) fn read_attempt(loaded: &Loaded, state: &Value, id: &str) -> Result<Value, String> {
+    let attempt = if state.get(super::ownership::FIELD).is_some() {
+        let event = super::ownership::events(state, None)
+            .into_iter()
+            .find(|event| event["admission"]["attemptId"] == id)
+            .ok_or("pre-return admission is not recorded in its owning ledger")?;
+        super::ownership::read_owned(loaded, event)?
+    } else {
+        read_record(&record_path(loaded, id, "attempt")?)?
+    };
+    validate_admission(&attempt, id)?;
+    Ok(attempt)
+}
+
+pub(super) fn unresolved(
+    loaded: &Loaded,
+    binding: &Value,
+    state: &Value,
+) -> Result<Vec<Value>, String> {
+    let mut unresolved = Vec::new();
+    for attempt in attempts(loaded, state, Some(binding))? {
+        let id = attempt["attemptId"]
+            .as_str()
+            .ok_or("missing attempt identity")?;
         let result_path = record_path(loaded, id, "result")?;
         if !result_path.exists() {
             unresolved.push(attempt);
             continue;
         }
         let result = read_record(&result_path)?;
-        if result["attemptId"] != id
-            || result["bindingSha256"] != crate::evidence::hash::value(saved)
-            || result["policySha256"] != crate::evidence::hash::value(&attempt["policy"])
-        {
-            return Err("pre-return result identity mismatch".into());
-        }
-        match result["state"].as_str() {
-            Some("passed" | "failed") => validate_terminal(loaded, saved, &result)?,
-            Some("uncertain") => {
-                validate_producer(saved, &result)?;
-                if !result["failureKind"]
-                    .as_str()
-                    .is_some_and(|value| !value.is_empty())
-                {
-                    return Err("pre-return result identity mismatch".into());
-                }
-                if super::execution::known_ended(&result) {
-                    validate_captures(loaded, &result, false)?;
-                } else {
-                    unresolved.push(attempt);
-                }
-            }
-            _ => unresolved.push(attempt),
+        if !validate_saved(loaded, &attempt, &result)? {
+            unresolved.push(attempt);
         }
     }
     unresolved.sort_by(|a, b| a["attemptId"].as_str().cmp(&b["attemptId"].as_str()));
     Ok(unresolved)
+}
+
+/// The same saved-result validation serves predecessor classification and
+/// exact-result reuse, including the record that will actually be reused.
+pub(super) fn validate_saved(
+    loaded: &Loaded,
+    attempt: &Value,
+    result: &Value,
+) -> Result<bool, String> {
+    let binding = &attempt["binding"];
+    if result["attemptId"] != attempt["attemptId"]
+        || result["bindingSha256"] != crate::evidence::hash::value(binding)
+        || result["policySha256"] != crate::evidence::hash::value(&attempt["policy"])
+    {
+        return Err("pre-return result identity mismatch".into());
+    }
+    match result["state"].as_str() {
+        Some("passed" | "failed") => {
+            validate_terminal(loaded, binding, result)?;
+            Ok(true)
+        }
+        Some("uncertain") => {
+            validate_producer(binding, result)?;
+            if !result["failureKind"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+            {
+                return Err("pre-return result identity mismatch".into());
+            }
+            let ended = super::execution::known_ended(result);
+            if ended {
+                validate_captures(loaded, result, false)?;
+            }
+            Ok(ended)
+        }
+        _ => Ok(false),
+    }
 }
 
 /// A terminal spelling alone is not evidence that this admission ended.

@@ -96,9 +96,23 @@ pub(crate) fn execute(
     let mut retry_thread_id = None;
     let mut prior_failure = None;
     let mut relaunch_of: Option<String> = None;
+    let mut replay_binding = None;
 
     if let Some(journal) = existing.clone() {
-        verify_journal(&journal, work, &identity, role, agent)?;
+        if let Err(error) = verify_journal(&journal, work, &identity, role, agent) {
+            if !options.resume || journal["status"] != "completed" {
+                return Err(error);
+            }
+            let previous =
+                journal::pre_return_replay_identity(loaded, work, &journal, &identity.assignment)?
+                    .ok_or(error)?;
+            verify_journal(&journal, work, &previous, role, agent)?;
+            replay_binding = Some(
+                current["current"]["binding"]
+                    .as_str()
+                    .ok_or("current native replay binding is unavailable")?,
+            );
+        }
         // A not_started journal never reserved a provider effect to reconcile,
         // and its only route is the relaunch below.
         if options.resume && journal["status"] != "not_started" {
@@ -116,7 +130,8 @@ pub(crate) fn execute(
                 validate_completed_observation(&journal)?;
                 let bytes = journal_result(&journal)?;
                 continuation::reconcile_saved(loaded, work, &journal)?;
-                let response = submit_saved(loaded, work, &identity.assignment, bytes)?;
+                let response =
+                    submit_saved(loaded, work, &identity.assignment, bytes, replay_binding)?;
                 return Ok(recovery::mark_same_work_return(
                     response,
                     work,
@@ -440,7 +455,7 @@ pub(crate) fn execute(
             ));
         }
     };
-    submit_saved(loaded, work, &identity.assignment, bytes)
+    submit_saved(loaded, work, &identity.assignment, bytes, None)
 }
 
 struct Paths {
@@ -740,6 +755,7 @@ fn submit_saved(
     work: &str,
     assignment: &str,
     bytes: Vec<u8>,
+    current_binding: Option<&str>,
 ) -> Result<Value, String> {
     let (outcome, reason) = outcome_from_bytes(&bytes)?;
     super::super::return_result_impl::return_result_with(
@@ -751,7 +767,7 @@ fn submit_saved(
         None,
         None,
         Some(bytes),
-        None,
+        current_binding,
     )
 }
 

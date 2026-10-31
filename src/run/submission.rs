@@ -81,7 +81,7 @@ pub(crate) fn submit_for_assignment<F, B, P>(
 ) -> Result<Value, String>
 where
     F: FnOnce() -> Result<String, String>,
-    B: Fn() -> Result<(), String>,
+    B: Fn(Option<(&[Value], &str)>) -> Result<(), String>,
     P: FnOnce(&[Value], &str) -> Result<(), String>,
 {
     let path = ledger_path(&loaded.state_root, ledger, false)?;
@@ -102,26 +102,37 @@ where
             &path,
             assignment_handle,
             &expected,
-            &binding,
+            &|| binding(None),
         )?;
     }
     let selected_pre_return = outcome == "completed"
         && expected.role == "worker"
         && super::pre_return::enabled(loaded, ledger)?;
-    let (subject_artifact, pre_return_attempt): (ArtifactProducer<'_>, Option<String>) =
-        if selected_pre_return {
-            let (artifact_path, attempt_id) = super::pre_return::prepare_for_assignment(
-                loaded,
-                ledger,
-                &agent,
-                &expected,
-                &assignment_sha256,
-                artifact,
-            )?;
-            (Box::new(move || Ok(artifact_path)), Some(attempt_id))
-        } else {
-            (Box::new(artifact), None)
-        };
+    let (subject_artifact, pre_return_attempt, own_admission): (
+        ArtifactProducer<'_>,
+        Option<String>,
+        Option<String>,
+    ) = if selected_pre_return {
+        let (artifact_path, attempt_id, admission) = super::pre_return::prepare_for_assignment(
+            loaded,
+            ledger,
+            &agent,
+            &expected,
+            &assignment_sha256,
+            artifact,
+            super::pre_return::CallerBinding {
+                check: &|| binding(None),
+                own_repair: own_repair.as_deref(),
+            },
+        )?;
+        (
+            Box::new(move || Ok(artifact_path)),
+            Some(attempt_id),
+            admission,
+        )
+    } else {
+        (Box::new(artifact), None, None)
+    };
     let work = canonical_work_for_ledger(&path).ok();
     crate::host::session_recovery::with_saved_decisions(work.as_deref(), |decisions| {
         let result = submit_locked(
@@ -139,8 +150,18 @@ where
                 artifact: subject_artifact,
             },
             |events, source| {
-                if !super::repair_recovery::only_own_repair(events, own_repair.as_deref()) {
-                    binding()?;
+                if let Some(prefix) = super::repair_recovery::own_event_prefix(
+                    &events[..events.len().saturating_sub(1)],
+                    own_repair.as_deref(),
+                    own_admission.as_deref(),
+                ) {
+                    let prefix_source = source
+                        .split_inclusive('\n')
+                        .take(prefix)
+                        .collect::<String>();
+                    binding(Some((&events[..prefix], &prefix_source)))?;
+                } else {
+                    binding(None)?;
                 }
                 preflight(events, source)
             },

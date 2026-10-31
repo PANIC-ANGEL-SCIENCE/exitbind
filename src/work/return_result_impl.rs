@@ -218,7 +218,24 @@ pub(crate) fn return_result_with(
             }
             Ok(path)
         },
-        || details::ensure_action_binding(loaded, work, current_binding),
+        |prefix| match prefix {
+            None => details::ensure_action_binding(loaded, work, current_binding),
+            Some((events, source)) => {
+                let Some(expected) = current_binding else {
+                    return Ok(());
+                };
+                details::ensure_current_config(loaded)?;
+                let snapshot = run::RunSnapshot::from_events(loaded, events, source)?;
+                let next = next_from(loaded, work, &snapshot)?;
+                if next["current"]["binding"] != expected {
+                    let route = crate::emitted::refresh(work, &loaded.path);
+                    return Err(format!(
+                        "current action form binding is stale; {route} and follow current.details.grouped"
+                    ));
+                }
+                Ok(())
+            }
+        },
         |events, source| submission_preflight::preflight(loaded, work, events, source, &bytes),
         &mut recorded_protection,
     );

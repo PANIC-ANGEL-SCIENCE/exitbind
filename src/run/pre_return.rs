@@ -2,6 +2,7 @@
 mod binding_diagnostic;
 mod execution;
 mod journal;
+pub(crate) mod ownership;
 mod predecessor;
 pub(crate) mod recovery;
 mod response;
@@ -125,30 +126,35 @@ fn assert_current_configuration(loaded: &Loaded, state: &Value) -> Result<(), St
     Ok(())
 }
 
+type PreparedAdmission = (
+    String,
+    Value,
+    bool,
+    super::continuation_effect::Ticket,
+    Option<String>,
+);
+
 fn latest_or_create(
     loaded: &Loaded,
+    path: &run_ledger::LedgerPath,
     binding: Value,
     policy: &crate::run_value::PreReturnPolicy,
     state: &Value,
-) -> Result<(String, Value, bool, super::continuation_effect::Ticket), String> {
+    own_repair: Option<&str>,
+) -> Result<PreparedAdmission, String> {
     let attempt_id =
         crate::evidence::hash::value(&json!({"binding": binding, "limits": policy.value()}));
     predecessor::assert_no_unresolved(loaded, &binding, &attempt_id, state)?;
     let attempt_path = record_path(loaded, &attempt_id, "attempt")?;
     if attempt_path.exists() {
-        let attempt = read_record(&attempt_path)?;
+        let attempt = predecessor::read_attempt(loaded, state, &attempt_id)?;
         if attempt["binding"] != binding || attempt["policy"] != policy.value() {
             return Err("pre-return attempt identity collision".into());
         }
         let result_path = record_path(loaded, &attempt_id, "result")?;
         if result_path.exists() {
             let result = read_record(&result_path)?;
-            if result["attemptId"] != attempt_id
-                || result["bindingSha256"] != crate::evidence::hash::value(&binding)
-                || result["policySha256"] != crate::evidence::hash::value(&policy.value())
-            {
-                return Err("pre-return result identity mismatch".into());
-            }
+            predecessor::validate_saved(loaded, &attempt, &result)?;
             execution::recover_saved_attempt(
                 loaded,
                 state,
@@ -158,7 +164,7 @@ fn latest_or_create(
                 &result,
             )?;
             if result["state"] == "passed" {
-                return Ok((attempt_id, result, true, None));
+                return Ok((attempt_id, result, true, None, None));
             }
             let mut replay = result;
             replay["replayed"] = json!(true);
@@ -180,7 +186,9 @@ fn latest_or_create(
     )?;
     ensure_directory(loaded)?;
     write_durable(&attempt_path, &bytes)?;
-    Ok((attempt_id, attempt, false, ticket))
+    let recorded: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let admission_event = ownership::admit(loaded, path, state, &recorded, own_repair)?;
+    Ok((attempt_id, attempt, false, ticket, admission_event))
 }
 
 fn prepare_locked(
@@ -271,7 +279,7 @@ pub(super) fn guard_worker_before_effect(
         .replace('\\', "/");
     let identity = json!({"runId":state["runId"],"ledger":ledger,"stage":assignment["stage"],
         "attempt":assignment["attempt"],"agent":assignment["agent"],"role":assignment["role"]});
-    let pending = predecessor::unresolved(loaded, &identity)?;
+    let pending = predecessor::unresolved(loaded, &identity, state)?;
     let Some(reconciled) = recovery::for_assignment(state, &assignment)? else {
         if let Some(attempt) = pending.first() {
             return Err(format!(
@@ -308,6 +316,11 @@ pub(super) fn guard_worker_before_effect(
     predecessor::assert_no_unresolved(loaded, &binding, &current_id, state)
 }
 
+pub(super) struct CallerBinding<'a> {
+    pub(super) check: &'a dyn Fn() -> Result<(), String>,
+    pub(super) own_repair: Option<&'a str>,
+}
+
 pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
     loaded: &Loaded,
     ledger: &str,
@@ -315,7 +328,8 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
     expected: &AssignmentIdentity,
     assignment_handle_sha256: &str,
     artifact: F,
-) -> Result<(String, String), String> {
+    caller: CallerBinding<'_>,
+) -> Result<(String, String, Option<String>), String> {
     let path = ledger_path(&loaded.state_root, ledger, false)?;
     let targets = [path.path.as_path(), path.lock.as_path()];
     let mut artifact = Some(artifact);
@@ -323,6 +337,14 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
         crate::project::git_preflight::refuse_tracked_targets(&loaded.state_root, &targets)?;
         let (_, events, _) = load_at(loaded, &path)?;
         let state = reduce_live(loaded, &events)?;
+        if !caller.own_repair.is_some_and(|sha| {
+            events
+                .last()
+                .and_then(|event| event["eventSha256"].as_str())
+                == Some(sha)
+        }) {
+            (caller.check)()?;
+        }
         let produce = artifact
             .take()
             .ok_or("artifact producer was already consumed")?;
@@ -356,8 +378,14 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
                 Some(assignment_handle_sha256),
             )?;
         }
-        let (attempt_id, attempt, replayed, ticket) =
-            latest_or_create(loaded, binding.clone(), &policy, &state)?;
+        let (attempt_id, attempt, replayed, ticket, admission_event) = latest_or_create(
+            loaded,
+            &path,
+            binding.clone(),
+            &policy,
+            &state,
+            caller.own_repair,
+        )?;
         Ok((
             artifact_path,
             attempt_id,
@@ -366,9 +394,11 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
             policy,
             state,
             ticket,
+            admission_event,
         ))
     })?;
-    let (artifact_path, attempt_id, attempt, replayed, policy, state, ticket) = prepared;
+    let (artifact_path, attempt_id, attempt, replayed, policy, state, ticket, admission_event) =
+        prepared;
     run_or_recover(
         loaded,
         &attempt_id,
@@ -378,7 +408,7 @@ pub(super) fn prepare_for_assignment<F: FnOnce() -> Result<String, String>>(
         replayed,
         &ticket,
     )?;
-    Ok((artifact_path, attempt_id))
+    Ok((artifact_path, attempt_id, admission_event))
 }
 
 pub(super) fn prepare_direct(
@@ -418,8 +448,8 @@ pub(super) fn prepare_direct(
                 );
             }
         }
-        let (attempt_id, attempt, replayed, ticket) =
-            latest_or_create(loaded, binding, &policy, &state)?;
+        let (attempt_id, attempt, replayed, ticket, _) =
+            latest_or_create(loaded, &path, binding, &policy, &state, None)?;
         Ok(Some((attempt_id, attempt, replayed, policy, state, ticket)))
     })?;
     let Some((attempt_id, attempt, replayed, policy, state, ticket)) = prepared else {
@@ -472,22 +502,14 @@ pub(super) fn assert_pass_current(
         ));
     }
     let result = read_record(&record_path(loaded, &id, "result")?)?;
-    let attempt = read_record(&record_path(loaded, &id, "attempt")?)?;
+    let attempt = predecessor::read_attempt(loaded, state, &id)?;
+    predecessor::validate_saved(loaded, &attempt, &result)?;
     if attempt["binding"] != binding || attempt["policy"] != policy.value() {
         return Err("pre-return attempt evidence does not match the current result binding".into());
     }
     if result["state"] != "passed" || result["attemptId"] != id {
         return Err(
             "a current passing pre-return attempt is required before completed submission".into(),
-        );
-    }
-    if result["bindingSha256"] != crate::evidence::hash::value(&binding)
-        || result["policySha256"] != crate::evidence::hash::value(&policy.value())
-        || result["producer"]["executableSha256"]
-            != crate::producer::build_identity()["executableSha256"]
-    {
-        return Err(
-            "pre-return result metadata does not match the current binding or producer".into(),
         );
     }
     if let Err(error) = assert_current_configuration(loaded, state) {
@@ -503,17 +525,6 @@ pub(super) fn assert_pass_current(
             binding_diagnostic::readback(loaded, attempt_id, &attempt)
         ));
     }
-    for stream in ["stdout", "stderr"] {
-        let reference = result
-            .get(stream)
-            .ok_or("passing pre-return result has an incomplete capture")?;
-        crate::run::artifact::read_exact(
-            loaded,
-            reference,
-            "pre-return capture",
-            crate::run_value::PRE_RETURN_CAPTURE_MAX_BYTES,
-        )?;
-    }
     Ok(())
 }
 
@@ -525,20 +536,30 @@ pub(crate) fn projection(loaded: &Loaded, work: &str) -> Result<Value, String> {
         return Ok(json!({"enabled":false,"policy":null,"attempt":null}));
     };
     let mut latest: Option<Value> = None;
-    let dir = directory_path(loaded);
-    if !dir.exists() {
-        return Ok(json!({"enabled":true,"policy":policy,"attempt":null}));
-    }
-    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let name = entry.file_name();
-        let name = name
-            .to_str()
-            .ok_or("pre-return journal filename is not valid UTF-8")?;
-        if !name.starts_with("pre-return-") || !name.ends_with(".attempt.json") {
-            continue;
+    let attempts = if state.get(ownership::FIELD).is_some() {
+        match ownership::events(&state, None).last() {
+            Some(event) => {
+                let id = event["admission"]["attemptId"]
+                    .as_str()
+                    .ok_or("missing pre-return admission identity")?;
+                match ownership::read_owned(loaded, event).and_then(|attempt| {
+                    predecessor::validate_admission(&attempt, id)?;
+                    Ok(attempt)
+                }) {
+                    Ok(attempt) => vec![attempt],
+                    Err(error) => {
+                        return Ok(json!({"enabled":true,"policy":policy,"attempt":null,
+                        "unavailable":{"reason":error,"attemptId":id},
+                        "readRoute":read_route(loaded,work,id,None)}))
+                    }
+                }
+            }
+            None => Vec::new(),
         }
-        let attempt = read_record(&entry.path())?;
+    } else {
+        predecessor::attempts(loaded, &state, None)?
+    };
+    for attempt in attempts {
         if attempt["binding"]["runId"] != state["runId"] || attempt["binding"]["ledger"] != ledger {
             continue;
         }
@@ -582,7 +603,7 @@ pub(crate) fn read(loaded: &Loaded, work: &str, attempt_id: &str) -> Result<Valu
     if state.get("preReturnPolicy").is_none() {
         return Err("Work has no pre-return policy".into());
     }
-    let attempt = read_record(&record_path(loaded, attempt_id, "attempt")?)?;
+    let attempt = predecessor::read_attempt(loaded, &state, attempt_id)?;
     let result_path = record_path(loaded, attempt_id, "result")?;
     let result = if result_path.exists() {
         Some(read_record(&result_path)?)
@@ -666,21 +687,33 @@ pub(crate) fn replacement_source_attempt(
         .to_str()
         .ok_or("ledger path is not valid UTF-8")?
         .replace('\\', "/");
-    let directory = directory_path(loaded);
-    if !directory.exists() {
-        return Err("no retained pre-return diagnostic exists for this blocked report".into());
+    let (_, events, _) = run_ledger::load_at_unchecked(loaded, ledger)?;
+    if events.first() != Some(start) || !events.iter().any(|event| event == blocked_event) {
+        return Err("blocked pre-return source differs from its owning ledger".into());
     }
+    let state = run_state::reduce(&events)?;
+    let attempts = if state.get(ownership::FIELD).is_some() {
+        ownership::events(&state, None)
+            .into_iter()
+            .filter(|event| {
+                event["admission"]["attemptId"]
+                    .as_str()
+                    .is_some_and(|id| report.contains(id))
+            })
+            .map(|event| {
+                let attempt = ownership::read_owned(loaded, event)?;
+                let id = event["admission"]["attemptId"]
+                    .as_str()
+                    .ok_or("missing pre-return admission identity")?;
+                predecessor::validate_admission(&attempt, id)?;
+                Ok(attempt)
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    } else {
+        predecessor::attempts(loaded, &state, None)?
+    };
     let mut matching = Vec::new();
-    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let name = entry.file_name();
-        let name = name
-            .to_str()
-            .ok_or("pre-return journal filename is not valid UTF-8")?;
-        if !name.starts_with("pre-return-") || !name.ends_with(".attempt.json") {
-            continue;
-        }
-        let attempt = read_record(&entry.path())?;
+    for attempt in attempts {
         let Some(attempt_id) = attempt["attemptId"].as_str() else {
             return Err("retained pre-return attempt has no identity".into());
         };

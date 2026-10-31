@@ -97,8 +97,8 @@ fn delegation(response: &Value, current: &Value, forms: &Value) -> Value {
     let role = recipient["role"].as_str().unwrap_or(agent);
     let native = recipient["nativeName"]
         .as_str()
-        .or(response["next"]["packet"]["nativeTaskName"].as_str())
         .or(response["recipientContext"]["nativeName"].as_str())
+        .or(response["next"]["packet"]["nativeTaskName"].as_str())
         .unwrap_or(agent);
     let assignment = recipient["assignment"]
         .as_str()

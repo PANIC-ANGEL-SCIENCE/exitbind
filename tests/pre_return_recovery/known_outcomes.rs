@@ -1,14 +1,14 @@
 //! Real retry controls and explicitly synthetic malformed-result negatives.
 use super::*;
 
-struct Active {
-    root: support::TempRoot,
-    work: String,
-    assignment: String,
+pub(super) struct Active {
+    pub(super) root: support::TempRoot,
+    pub(super) work: String,
+    pub(super) assignment: String,
 }
 
 impl Active {
-    fn new(label: &str, checker: &str, timeout_ms: &str, alias: bool) -> Self {
+    pub(super) fn new(label: &str, checker: &str, timeout_ms: &str, alias: bool) -> Self {
         let root = support::temp(label);
         let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
@@ -64,7 +64,7 @@ impl Active {
         }
     }
 
-    fn finish(&self, body: &[u8]) -> Output {
+    pub(super) fn finish(&self, body: &[u8]) -> Output {
         command(
             &self.root,
             &[
@@ -187,6 +187,10 @@ fn changed_result_rechecks_the_preparation_and_still_refuses_the_alias() {
     );
     let first = failure(&f.finish(b"first result"));
     assert_eq!(first["failureKind"], "preparation_refused");
+    let guidance = first["nextActions"].to_string();
+    assert!(guidance.contains("preparation"), "{first}");
+    assert!(!guidance.contains("repair within"), "{first}");
+    assert!(first["effectMeaning"].as_str().unwrap().contains("audit"));
     assert_eq!(first["execution"]["started"], false);
     assert_eq!(first["execution"]["certainty"], "known_not_started");
     let second = failure(&f.finish(b"different result"));

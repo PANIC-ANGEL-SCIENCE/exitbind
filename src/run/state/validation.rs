@@ -42,6 +42,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             | "check_observation"
             | "check_observation_failed"
             | "check_observation_recovered"
+            | "pre_return_admitted"
             | "pre_return_reconciled"
     ) {
         return Err(format!("invalid run ledger line {line}: invalid action"));
@@ -96,6 +97,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         validate_start_version(event, line, version.unwrap_or_default())
     } else if action == "check_observation_recovered" {
         crate::run::check_recovery::validate(event)
+    } else if action == crate::run::pre_return::ownership::ACTION {
+        crate::run::pre_return::ownership::validate(event)
     } else if action == "pre_return_reconciled" {
         crate::run::pre_return::recovery::validate(event)
     } else if matches!(
@@ -135,6 +138,7 @@ fn validate_start_version(event: &Value, line: usize, version: u64) -> Result<()
         .ok_or_else(|| format!("invalid run ledger line {line}: start must be an object"))?;
     reject_unknown(object, "start", version, line)?;
     crate::run::continuation_protocol::validate_start(event, line)?;
+    crate::run::pre_return::ownership::validate_start(event, line)?;
     if event["previousEventSha256"] != Value::Null {
         return Err(format!(
             "invalid run ledger line {line}: start must begin the chain"
