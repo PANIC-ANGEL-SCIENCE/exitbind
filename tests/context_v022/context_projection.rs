@@ -602,11 +602,11 @@ fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
     let fixture = Fixture::new();
     let marker = "DECISIVE ERROR: validator rejected the final entry";
     let mut original = "x".repeat(65_535);
-    original.push_str("🙂"); // The legacy first chunk ends inside this character.
+    original.push('🙂'); // The legacy first chunk ends inside this character.
     original.push_str(&"y".repeat(7_500));
-    original.push_str("\n");
+    original.push('\n');
     original.push_str(marker);
-    original.push_str("\n");
+    original.push('\n');
     fs::write(fixture.root.join("large-check.log"), original.as_bytes()).unwrap();
     let mut binary = vec![0xff; 9_000];
     binary.extend_from_slice(b" BINARY END\n");
@@ -731,7 +731,7 @@ fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
         };
         if first {
             assert_eq!(page["offset"], 65_535);
-            assert!(page["contentText"].as_str().unwrap().starts_with("🙂"));
+            assert!(page["contentText"].as_str().unwrap().starts_with('🙂'));
             first = false;
         }
         let start = page["offset"].as_u64().unwrap() as usize;
