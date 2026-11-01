@@ -185,3 +185,5 @@ mod current_delivery;
 mod managed_reads_and_writes;
 #[path = "managed_edits/recovery_and_native_launch.rs"]
 mod recovery_and_native_launch;
+#[path = "managed_edits/retained_inspection.rs"]
+mod retained_inspection;

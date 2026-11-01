@@ -149,20 +149,16 @@ fn saved_identity_matches(
     Ok(false)
 }
 
-pub(super) fn submit_saved_checked(
+/// Validate a pending result without submitting it, so inspection and the
+/// actual return boundary use the same eligibility decision.
+pub(super) fn validate_saved(
     loaded: &Loaded,
     work_id: &str,
     assignment: &str,
-    bytes: Vec<u8>,
+    current: &Value,
     expected_binding: Option<&str>,
     journal: &Value,
-) -> Result<Value, String> {
-    // Already admitted exact bytes can be recovered without any new credit.
-    if let Ok(replayed) = work::replay_recorded_native(loaded, work_id, assignment, journal, &bytes)
-    {
-        return Ok(replayed);
-    }
-    let current = work::current_action(loaded, work_id)?;
+) -> Result<(), String> {
     let binding = current["current"]["binding"]
         .as_str()
         .ok_or("current native result binding is unavailable")?;
@@ -180,7 +176,7 @@ pub(super) fn submit_saved_checked(
                 .into(),
         );
     }
-    let identity = super::assignment_identity(&current)?;
+    let identity = super::assignment_identity(current)?;
     if journal.get("recipientProofVersion").is_some() {
         if journal["recipientProofVersion"] != 1 {
             return Err("native recipient delivery proof version is unsupported".into());
@@ -188,7 +184,7 @@ pub(super) fn submit_saved_checked(
         let recipient = journal["recipientSha256"].as_str().ok_or(
             "native recipient delivery proof is unavailable; retained result has no automatic credit",
         )?;
-        if work::details::managed_recipient_fingerprint(loaded, &current)? != recipient {
+        if work::details::managed_recipient_fingerprint(loaded, current)? != recipient {
             return Err("native recipient rules, rights or guidance changed; retained result has no automatic credit".into());
         }
     }
@@ -212,11 +208,11 @@ pub(super) fn submit_saved_checked(
                     false
                 } else {
                     let selected =
-                        work::details::managed_required_assignment(loaded, work_id, &current)?;
+                        work::details::managed_required_assignment(loaded, work_id, current)?;
                     delivery["recipientViewSha256"] == selected["recipientSha256"]
                         && (delivery["requiredFactsSha256"] == hash::value(&selected["sections"])
                             || facts_match_after_current_grant(
-                                loaded, work_id, &current, &selected, delivery,
+                                loaded, work_id, current, &selected, delivery,
                             )?)
                 }
             } else {
@@ -246,5 +242,33 @@ pub(super) fn submit_saved_checked(
     if !allowed {
         return Err("native delivered binding or complete facts changed; retained result has no automatic credit".into());
     }
+    Ok(())
+}
+
+pub(super) fn submit_saved_checked(
+    loaded: &Loaded,
+    work_id: &str,
+    assignment: &str,
+    bytes: Vec<u8>,
+    expected_binding: Option<&str>,
+    journal: &Value,
+) -> Result<Value, String> {
+    // Already admitted exact bytes can be recovered without any new credit.
+    if let Ok(replayed) = work::replay_recorded_native(loaded, work_id, assignment, journal, &bytes)
+    {
+        return Ok(replayed);
+    }
+    let current = work::current_action(loaded, work_id)?;
+    validate_saved(
+        loaded,
+        work_id,
+        assignment,
+        &current,
+        expected_binding,
+        journal,
+    )?;
+    let binding = current["current"]["binding"]
+        .as_str()
+        .ok_or("current native result binding is unavailable")?;
     super::submit_saved(loaded, work_id, assignment, bytes, Some(binding))
 }

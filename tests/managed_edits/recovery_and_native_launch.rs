@@ -376,15 +376,41 @@ print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_t
             "fixture must own the submission lock: {first:?}"
         );
         fs::remove_file(&lock).unwrap();
-        refused(first, "busy");
+        if mode == "matching" {
+            refused(first, "busy");
+        } else {
+            refused(first, "retained result has no automatic credit");
+        }
         assert_eq!(fs::read_to_string(&marker).unwrap(), "x");
         assert_eq!(
             fs::read_to_string(f.root.join("src/native.txt")).unwrap(),
             "one managed edit\n"
         );
         if mode != "matching" {
+            let journal_dir = f.root.join(".exitbind/native-actions").join(&f.work);
+            let (path, saved) = fs::read_dir(journal_dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter_map(|entry| {
+                    let path = entry.path();
+                    let bytes = fs::read(&path).ok()?;
+                    let value: Value = serde_json::from_slice(&bytes).ok()?;
+                    (value["status"] == "completed" && value["assignment"] == f.assignment)
+                        .then_some((path, bytes))
+                })
+                .next()
+                .expect("no-credit native result remains in its completed journal");
+            let journal: Value = serde_json::from_slice(&saved).unwrap();
+            assert!(journal["result"].is_string(), "{mode}: {journal}");
+            let next = f.ok(&["work", "next", &f.work], b"");
+            assert_eq!(next["next"]["assignment"], f.assignment, "{mode}");
             let denied = f.call(&["work", "act", &f.work, "--resume"], b"");
             assert!(!denied.status.success(), "{mode}: {denied:?}");
+            assert_eq!(
+                fs::read(path).unwrap(),
+                saved,
+                "{mode}: saved bytes changed"
+            );
             assert_eq!(fs::read_to_string(&marker).unwrap(), "x");
             continue;
         }

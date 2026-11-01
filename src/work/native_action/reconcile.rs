@@ -32,10 +32,32 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
             "nextAction": {"type": "execute_current", "safe": true},
         }));
     };
-    verify_journal(&journal, work, &identity, role, agent)?;
     let status = journal["status"]
         .as_str()
         .ok_or("native journal has no status")?;
+    let exact = verify_journal(&journal, work, &identity, role, agent);
+    let eligible = super::delivery::validate_saved(
+        loaded,
+        work,
+        &identity.assignment,
+        current,
+        None,
+        &journal,
+    );
+    if matches!(status, "completed" | "started" | "running") && eligible.is_err() {
+        return match super::retained::uncredited(loaded, work, current, &journal) {
+            Ok(value) => Ok(value),
+            Err(_) => Ok(json!({"work":work,"assignment":identity.assignment,
+                "effect":"no-change","status":status,"credit":"none",
+                "reconciliation":"retained_unavailable",
+                "result":{"state":"unavailable"},
+                "nextAction":{"type":"none","readOnly":true},
+                "meaning":"current read authority or intact retained source proof is unavailable"})),
+        };
+    }
+    if status != "completed" {
+        exact?;
+    }
     let liveness = match recovery::liveness(&journal) {
         ProcessLiveness::Alive => "alive",
         ProcessLiveness::Ended => "ended",
@@ -72,7 +94,12 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         "none"
     };
     let result_bytes = if status == "completed" {
-        journal_result(&journal).ok()
+        journal_result(&journal)
+            .and_then(|bytes| {
+                super::journal::verify_result_integrity(&journal, &bytes, false)?;
+                Ok(bytes)
+            })
+            .ok()
     } else {
         journal
             .get("provisionalFinalResult")
@@ -137,9 +164,10 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
                     Some("native start failure is not a pre-thread, no-effect failure"),
                 ),
             ),
-            "completed" => match validate_completed_observation(&journal)
-                .and_then(|_| journal_result(&journal).map(|_| ()))
-            {
+            "completed" => match validate_completed_observation(&journal).and_then(|_| {
+                let bytes = journal_result(&journal)?;
+                super::journal::verify_result_integrity(&journal, &bytes, false)
+            }) {
                 Ok(()) => (
                     "replay_ready",
                     action(loaded, work, "replay_saved", true, None),
@@ -202,7 +230,7 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
             _ => return Err("native assignment journal has an invalid status".into()),
         }
     };
-    Ok(json!({
+    let mut response = json!({
         "work": work,
         "assignment": identity.assignment,
         "effect": "no-change",
@@ -231,7 +259,13 @@ pub(super) fn inspect(loaded: &Loaded, work: &str, current: &Value) -> Result<Va
         },
         "reconciliation": reconciliation,
         "nextAction": next_action,
-    }))
+    });
+    if result_state == "provisional" {
+        if let Ok(value) = super::retained::uncredited(loaded, work, current, &journal) {
+            response["result"]["uncreditedSource"] = value["nextAction"]["source"].clone();
+        }
+    }
+    Ok(response)
 }
 
 fn turn_projection(observation: &Value) -> &'static str {

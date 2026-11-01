@@ -559,6 +559,7 @@ pub(super) fn persist_stream(path: &Path, stream: &StreamObservation) -> Result<
         }
         journal["provisionalFinalResult"] = result.clone();
         journal["provisionalFinalResultBytes"] = json!(super::hex_encode(&bytes));
+        journal["provisionalFinalResultSha256"] = json!(crate::evidence::hash::bytes(&bytes));
     }
     super::write_journal(path, &journal, false)
 }

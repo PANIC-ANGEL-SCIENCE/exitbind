@@ -20,6 +20,21 @@ pub(crate) fn text(bytes: &[u8]) -> Value {
     std::str::from_utf8(bytes).map_or(Value::Null, |text| json!(text))
 }
 
+/// End a bounded text page on a UTF-8 boundary without splitting a codepoint.
+pub(crate) fn utf8_end(source: &str, start: usize, max_bytes: usize) -> Result<usize, String> {
+    if start > source.len() || !source.is_char_boundary(start) {
+        return Err("text page offset is unavailable".into());
+    }
+    let mut end = start.saturating_add(max_bytes).min(source.len());
+    while end > start && !source.is_char_boundary(end) {
+        end -= 1;
+    }
+    if end == start && start < source.len() {
+        return Err("text page budget cannot hold the next codepoint".into());
+    }
+    Ok(end)
+}
+
 /// A work-section page whose bytes are UTF-8 carries them as `contentText`
 /// with `encoding: "utf-8"` instead of hex; other pages keep `contentHex`.
 /// Either way the page bytes are exact, so the section hash still verifies

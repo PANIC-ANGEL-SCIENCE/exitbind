@@ -16,6 +16,8 @@ mod recovery;
 pub(super) mod request;
 #[path = "native_action/result.rs"]
 mod result;
+#[path = "native_action/retained.rs"]
+mod retained;
 #[path = "native_action/start_failure.rs"]
 mod start_failure;
 
@@ -28,6 +30,7 @@ use result::{
     bounded_json, projected_result, projection, request_projection, role_schema,
     validate_final_result,
 };
+pub(crate) use retained::{expand as expand_retained_result, is_reference as is_retained_result};
 
 use crate::config::Loaded;
 use crate::evidence::hash;
@@ -350,6 +353,7 @@ pub(crate) fn execute(
                 "assignmentSha256": identity.packet_sha256,
                 "recipientProofVersion": 1,
                 "recipientSha256": recipient_sha256,
+                "readSubjectSha256": current["packet"]["context"]["subject"]["sha256"],
                 "deliveryProofVersion": 1,
                 "requiredDeliveryProof": required_delivery_proof,
                 "permitDeliveryProof": permit_delivery_proof,

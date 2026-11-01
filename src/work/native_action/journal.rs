@@ -116,6 +116,26 @@ pub(super) fn journal_result(journal: &Value) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// New journals bind their exact result bytes; historical journals remain
+/// readable only through their established exact-match behavior.
+pub(super) fn verify_result_integrity(
+    journal: &Value,
+    bytes: &[u8],
+    require_proof: bool,
+) -> Result<(), String> {
+    let actual = hash::bytes(bytes);
+    match (journal.get("resultSha256"), journal.get("resultBytes")) {
+        (None, None) if !require_proof => Ok(()),
+        (Some(sha), Some(length))
+            if sha.as_str() == Some(actual.as_str())
+                && length.as_u64() == Some(bytes.len() as u64) =>
+        {
+            Ok(())
+        }
+        _ => Err("retained native result bytes changed or lack an integrity proof".into()),
+    }
+}
+
 /// A completed journal is replayable only when the durable observation proves
 /// that the provider turn completed successfully. Older journals may not have
 /// an observation, so they retain the historical replay behavior.
@@ -236,6 +256,7 @@ pub(super) fn update_started(
         }
         journal["provisionalFinalResult"] = result.clone();
         journal["provisionalFinalResultBytes"] = json!(hex_encode(&bytes));
+        journal["provisionalFinalResultSha256"] = json!(hash::bytes(&bytes));
     }
     write_journal(path, &journal, false)
 }
@@ -251,6 +272,8 @@ pub(super) fn write_completed(
     journal["observation"] = observation.clone();
     journal["threadId"] = observation["threadId"].clone();
     journal["result"] = json!(hex_encode(result));
+    journal["resultSha256"] = json!(hash::bytes(result));
+    journal["resultBytes"] = json!(result.len());
     write_journal(path, &journal, false)
 }
 

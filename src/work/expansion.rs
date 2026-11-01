@@ -24,6 +24,9 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
     let ledger = resolve(loaded, work)?;
     let snapshot = run::RunSnapshot::capture(loaded, &ledger)?;
     let next = next_from(loaded, work, &snapshot)?;
+    if super::action::is_retained_result(reference) {
+        return super::action::expand_retained_result(loaded, work, &next, reference);
+    }
     if readable::is_grouped(reference) {
         return readable::expand(loaded, work, &snapshot, &next, reference);
     }

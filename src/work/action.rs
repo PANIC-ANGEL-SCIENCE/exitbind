@@ -6,7 +6,10 @@ use super::*;
 mod native_action;
 pub(crate) use native_action::continuation::NativeControlFacts;
 pub(crate) use native_action::request::validate_adviser_candidate;
-pub(crate) use native_action::{host_result_contract, return_host_result, validate_host_result};
+pub(crate) use native_action::{
+    expand_retained_result, host_result_contract, is_retained_result, return_host_result,
+    validate_host_result,
+};
 
 pub(crate) fn continuation_native_facts(
     loaded: &Loaded,
