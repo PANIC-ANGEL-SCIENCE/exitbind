@@ -2,8 +2,9 @@
 
 use crate::{config::Loaded, run::ledger};
 
-/// The existing Run lock protects only the admission and durable launch
-/// observation, never the native process lifetime or a host callback.
+/// The Run lock protects admission and durable launch observation. During
+/// SubagentStart, claim validation and its intent save run under this fence;
+/// provider execution and later post-claim presentation run outside it.
 pub(crate) fn with_live_work<T>(
     loaded: &Loaded,
     work: &str,
