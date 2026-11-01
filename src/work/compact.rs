@@ -11,6 +11,7 @@ use std::path::Path;
 use super::response_recovery::recovery_command;
 use crate::emitted::Route;
 mod candidates;
+mod log_tail;
 mod next;
 use candidates::retain_small_candidates;
 use next::{assignment_summary, compact_next, minimal_next, preserve_next_omission_markers};
@@ -313,6 +314,7 @@ pub(crate) fn project(
         result["truncated"] = json!(true);
     }
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
+        let log_reference = log_tail::preferred(response, config_path);
         let mut emergency_next = minimal_next(&result["next"]);
         preserve_next_omission_markers(&result["next"], &mut emergency_next);
         let mut emergency = json!({
@@ -359,6 +361,7 @@ pub(crate) fn project(
         }
         omit_false_recovery_requirements(&mut emergency);
         emergency = super::effective_action::attach(&emergency);
+        log_tail::retain_if_fits(&mut emergency, log_reference.as_ref(), config_path)?;
         if serialized_len(&emergency)? < MAX_RESPONSE_BYTES {
             return Ok(emergency);
         }
@@ -395,6 +398,7 @@ pub(crate) fn project(
         omit_false_recovery_requirements(&mut minimal);
         super::effective_action::insert(&mut minimal, response);
         retain_small_candidates(response, &mut minimal)?;
+        log_tail::retain_if_fits(&mut minimal, log_reference.as_ref(), config_path)?;
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
             // The build identity is kept only while it still fits the bound.
             let mut identified = minimal.clone();
@@ -444,6 +448,7 @@ pub(crate) fn project(
         omit_false_recovery_requirements(&mut fallback);
         super::effective_action::insert(&mut fallback, response);
         retain_small_candidates(response, &mut fallback)?;
+        log_tail::retain_if_fits(&mut fallback, log_reference.as_ref(), config_path)?;
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
             return Err("bounded recovery response exceeds the output budget".into());
         }

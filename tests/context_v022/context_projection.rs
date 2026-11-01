@@ -663,13 +663,20 @@ fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
     let base = log_ref["id"].as_str().unwrap().to_owned();
     let tail = log_ref["boundedTail"]["stdout"].clone();
     let invoke = |route: &Value| {
-        assert_eq!(route["sameConfigRequired"], false, "{route}");
-        assert_eq!(route["sameExecutableRequired"], false, "{route}");
-        let command = route["command"].as_array().unwrap();
-        let mut child = support::git_topology::command(command[0].as_str().unwrap());
-        child
-            .current_dir(&fixture.root)
-            .args(command[1..].iter().map(|word| word.as_str().unwrap()));
+        let mut command = route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        if route["sameExecutableRequired"] == true {
+            command.insert(0, env!("CARGO_BIN_EXE_exitbind").to_owned());
+        }
+        if route["sameConfigRequired"] == true {
+            command.push(fixture.config.to_str().unwrap().to_owned());
+        }
+        let mut child = support::git_topology::command(&command[0]);
+        child.current_dir(&fixture.root).args(&command[1..]);
         child.output().unwrap()
     };
     let tail_output = invoke(&tail);
