@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[path = "readiness_command.rs"]
+mod command;
+
 /// The shape of the facts object. Additive changes keep this name; a breaking
 /// shape change takes a new name so a reader can tell the forms apart.
 pub(crate) const FACTS: &str = "environment-readiness-v1";
@@ -52,11 +55,19 @@ pub(crate) fn assess(facts: &Facts<'_>) -> Value {
         Some("worktree") => git_breadth(facts.root, facts.state_root, deadline),
         _ => walk_breadth(facts.root, facts.state_root, deadline),
     };
-    let checker = checker_fact(facts.root, facts.check_command);
+    let checker = checker_preparation(facts.root, facts.check_command);
     let target = target_directory(facts.root);
     let ready = breadth["withinLimit"] == json!(true)
         && git["state"] == json!("worktree")
-        && git["baseline"].as_str().is_some();
+        && git["baseline"].as_str().is_some()
+        && !matches!(
+            checker["state"].as_str(),
+            Some("missing" | "not-executable")
+        )
+        && !matches!(
+            checker["input"]["state"].as_str(),
+            Some("missing" | "unreadable" | "not-file" | "unavailable")
+        );
     json!({
         "facts": FACTS,
         "state": if ready { "ready" } else { "attention" },
@@ -165,6 +176,17 @@ pub(crate) fn text_lines(readiness: &Value) -> Vec<String> {
     ));
     lines.push(format!("  Git: {}", git_sentence(git)));
     lines.push(format!("  checker: {}", checker_sentence(checker)));
+    if let Some(state) = checker["input"]["state"].as_str() {
+        if !matches!(state, "not-stated" | "not-applicable") {
+            let input = checker["input"]["argument"]
+                .as_str()
+                .unwrap_or("interpreter input");
+            lines.push(format!(
+                "  checker input: {} ({state}); resolve it before running the check",
+                crate::presentation::escaped(input)
+            ));
+        }
+    }
     // State the build directory only when a check would inherit one. Its
     // ownership stays unstated: a stale foreign target can be reused silently.
     if environment["cargoTargetDir"].is_string() || environment["targetPresent"] == json!(true) {
@@ -502,6 +524,14 @@ struct ProgramState {
     detail: Option<String>,
 }
 
+/// Shared by setup and the current recipient; it makes no execution claim.
+pub(crate) fn checker_preparation(root: &Path, check: Option<&str>) -> Value {
+    let mut fact = checker_fact(root, check);
+    fact["workingDirectory"] = root.to_str().map_or(Value::Null, |path| json!(path));
+    fact["input"] = command::input(root, check);
+    fact
+}
+
 fn checker_fact(root: &Path, command: Option<&str>) -> Value {
     let Some(command) = command.map(str::trim).filter(|command| !command.is_empty()) else {
         return json!({
@@ -558,7 +588,7 @@ fn program_state(root: &Path, program: &str) -> ProgramState {
             },
         };
     }
-    if let Some(path) = find_on_path(program) {
+    if let Some(path) = find_on_path(root, program) {
         return ProgramState {
             state: "runnable",
             path: Some(path),
@@ -575,10 +605,20 @@ fn program_state(root: &Path, program: &str) -> ProgramState {
     }
 }
 
-fn find_on_path(program: &str) -> Option<PathBuf> {
+fn find_on_path(root: &Path, program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|directory| directory.join(program))
+    find_in_path(root, program, &path)
+}
+
+fn find_in_path(root: &Path, program: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path)
+        .map(|directory| {
+            if directory.is_absolute() {
+                directory.join(program)
+            } else {
+                root.join(directory).join(program)
+            }
+        })
         .find(|candidate| crate::host::settings::executable_file(candidate))
 }
 
@@ -633,6 +673,22 @@ mod tests {
 
     fn fixture(label: &str) -> crate::test_root::TempRoot {
         crate::test_root::temp(label)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_path_entries_resolve_against_the_check_working_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = fixture("readiness-relative-path");
+        let bin = root.join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let program = bin.join("fixture-checker");
+        std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            find_in_path(&root, "fixture-checker", std::ffi::OsStr::new("bin")),
+            Some(program)
+        );
     }
 
     #[test]

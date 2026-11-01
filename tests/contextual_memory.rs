@@ -9,6 +9,114 @@ use sha2::{Digest, Sha256};
 use std::fs;
 
 #[test]
+fn recipient_search_finds_an_authorized_source_detail_omitted_from_its_lesson() {
+    let f = Fixture::new(false);
+    let mut config = f.config();
+    let scope = "project-source.v1";
+    config["memory"]["protocolScopes"] = json!(["project-lessons.v1", scope]);
+    config["agents"]["worker"]["memoryRead"] = json!(["project-lessons.v1", scope]);
+    for right in [
+        "memoryWrite",
+        "memoryReview",
+        "memoryPromote",
+        "memoryRevoke",
+    ] {
+        config["agents"]["lead"][right] = json!(["project-lessons.v1", scope]);
+    }
+    f.save(&config);
+    let mut lesson = f.lesson();
+    lesson["appliesTo"]["taskTerms"] = json!([]);
+    f.write("lesson.json", &lesson);
+    f.accept("lead", "lesson.json", "project-lessons.v1", LEDGER, "lead");
+    let rare = "A coupled exceptional option must remain disabled.";
+    fs::write(f.root.join("source.txt"), format!("{FACT}\n{rare}\n")).unwrap();
+    let source_ledger = ".exitbind/memory/source.jsonl";
+    f.accept("lead", "source.txt", scope, source_ledger, "lead");
+    let work = f.worker(TASK);
+    let search = |kind: &str| {
+        f.ok(&[
+            "memory", "query", &work, "--query", "coupled", "--scope", kind, "--json",
+        ])
+    };
+    let source = search("source");
+    let derived = search("derived");
+    let combined = search("combined");
+    assert!(source.to_string().contains(rare));
+    assert!(!derived.to_string().contains(rare));
+    assert!(combined.to_string().contains(rare));
+    assert_eq!(source["resultByteBudget"], derived["resultByteBudget"]);
+    assert_eq!(derived["resultByteBudget"], combined["resultByteBudget"]);
+    let duplicate = combined["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["text"] == FACT)
+        .unwrap();
+    assert_eq!(duplicate["provenance"].as_array().unwrap().len(), 2);
+    assert_eq!(combined["omittedMatches"], 0);
+    let found = combined["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["text"] == rare)
+        .unwrap();
+    let original = found["provenance"][0]["readRoute"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let read = || {
+        support::git_topology::command(&original[0])
+            .current_dir(&f.root)
+            .args(&original[1..])
+            .env("EXITBIND_BINDINGS_DIR", f.root.join("fixture-bindings"))
+            .output()
+            .unwrap()
+    };
+    let expanded = read();
+    assert!(expanded.status.success(), "{expanded:?}");
+    let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert!(expanded["content"].as_str().unwrap().contains(rare));
+    f.ok(&["memory", "revoke", "lead", source_ledger]);
+    let revoked = search("combined");
+    assert!(!revoked.to_string().contains(rare));
+    assert!(!read().status.success(), "revoked source must not expand");
+}
+
+#[test]
+fn recipient_search_does_not_promote_a_later_right_into_a_frozen_assignment() {
+    let f = Fixture::new(false);
+    let scope = "project-source.v1";
+    let mut config = f.config();
+    config["memory"]["protocolScopes"] = json!(["project-lessons.v1", scope]);
+    for right in ["memoryWrite", "memoryReview", "memoryPromote"] {
+        config["agents"]["lead"][right] = json!(["project-lessons.v1", scope]);
+    }
+    f.save(&config);
+    fs::write(
+        f.root.join("later-source.txt"),
+        "rare historical permission\n",
+    )
+    .unwrap();
+    f.accept(
+        "lead",
+        "later-source.txt",
+        scope,
+        ".exitbind/memory/later.jsonl",
+        "lead",
+    );
+    let work = f.worker(TASK);
+    config["agents"]["worker"]["memoryRead"] = json!(["project-lessons.v1", scope]);
+    f.save(&config);
+    let result = f.ok(&[
+        "memory", "query", &work, "--query", "rare", "--scope", "source", "--json",
+    ]);
+    assert_eq!(result["matches"], json!([]));
+    assert!(!result.to_string().contains("historical permission"));
+}
+
+#[test]
 fn lesson_source_preparation_is_exact_read_only_and_rejects_invalid_boundaries() {
     let f = Fixture::new(true);
     let lesson = f.lesson();

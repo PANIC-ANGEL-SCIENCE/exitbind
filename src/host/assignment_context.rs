@@ -28,6 +28,7 @@ pub(crate) enum Selection {
         evidence: Vec<String>,
         architecture: Option<serde_json::Value>,
         guidance: serde_json::Value,
+        check_preparation: serde_json::Value,
     },
     Mismatch(String),
     Unavailable(String),
@@ -134,6 +135,11 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
         Ok(guidance) => guidance,
         Err(reason) => return Selection::Unavailable(reason),
     };
+    let check_preparation =
+        match crate::work::details::current_check_preparation(loaded, &work, next) {
+            Ok(value) => value,
+            Err(reason) => return Selection::Unavailable(reason),
+        };
     Selection::Bound {
         work,
         assignment: assignment.to_owned(),
@@ -142,6 +148,7 @@ pub(crate) fn selection(loaded: &Loaded, agent_id: &str, profile_sha: &str) -> S
         evidence,
         architecture,
         guidance,
+        check_preparation,
     }
 }
 

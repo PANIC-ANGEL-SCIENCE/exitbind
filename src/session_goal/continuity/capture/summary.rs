@@ -29,7 +29,7 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
             .filter(|intent| intent["work"] == work)
             .map(|intent| {
                 let pending = intent["pendingResult"].as_str().map(str::len);
-                json!({
+                let mut value = json!({
                     "intent": intent["id"],
                     "assignment": intent["assignment"],
                     "state": intent["state"],
@@ -43,7 +43,29 @@ pub(crate) fn summary(loaded: &Loaded, work: &str) -> Value {
                     "resultSha256": intent["resultSha256"],
                     "retainedResultBytes": pending,
                     "recover": pending.map(|_| recover_route(loaded, work, intent)),
-                })
+                });
+                if intent["directAssignment"] == true {
+                    value["workReturn"] = json!({
+                        "state": if intent["returnEventSha256"].is_string() { "recorded" }
+                            else if intent["pendingReturn"] == true { "retained" }
+                            else if intent["rawObservation"].is_object() { "uncredited" }
+                            else if intent["state"] == "recorded" { "unavailable" }
+                            else { "pending" },
+                        "eventSha256":intent["returnEventSha256"],
+                        "meaning":"only a validated typed host message can be submitted; native host output delivery is separate"
+                    });
+                }
+                if let Some(raw) = intent.get("rawObservation").filter(|item| item.is_object()) {
+                    let id = intent["id"].as_str().unwrap_or_default();
+                    let command = crate::emitted::Route::new(["work", "child", "context", work, id,
+                        "--view", "result"]);
+                    let mut route = crate::work::compact::continuation_route(&loaded.path, command);
+                    route["readOnly"] = json!(true);
+                    value["rawObservation"] = json!({"bytes":raw["bytes"],
+                        "sha256":raw["sha256"],"reason":raw["reason"],"credit":"none",
+                        "storageWarning":raw["storageWarning"],"readRoute":route});
+                }
+                value
             })
             .collect(),
     )

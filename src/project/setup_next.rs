@@ -108,7 +108,14 @@ fn card_start(
     if let Ok(derived) = &checker {
         named.extend(["--artifact".into(), derived.path.clone()]);
     }
-    let mut cover = Route::new(["goal", "cover", "--goal-id", card.goal_id.as_str()]);
+    let mut cover = Route::new([
+        "goal",
+        "cover",
+        "--goal-id",
+        card.goal_id.as_str(),
+        "--view",
+        "summary",
+    ]);
     let mut prepare = Route::new(["goal", "prepare"])
         .words(named.iter().cloned())
         .words(["--check-command", check]);

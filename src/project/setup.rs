@@ -8,7 +8,7 @@ use crate::{
     cli::args::{self, Arguments},
     config,
     host::settings,
-    project::{layout_types::Mode, native_profiles, onboarding, skills as project_skills},
+    project::{layout_types::Mode, native_profiles, onboarding},
 };
 use serde_json::{json, Value};
 use std::{
@@ -20,6 +20,8 @@ use std::{
 #[path = "setup_card.rs"]
 mod setup_card;
 pub(crate) use setup_card::step_rows;
+#[path = "setup_guidance.rs"]
+mod setup_guidance;
 #[path = "setup_lessons.rs"]
 mod setup_lessons;
 #[path = "setup_next.rs"]
@@ -34,6 +36,9 @@ mod setup_roles;
 mod setup_statusline;
 #[path = "setup_verification.rs"]
 mod setup_verification;
+use setup_guidance::{
+    diagnostics as guidance_diagnostics, ensure_compatible as ensure_guidance_compatible,
+};
 use setup_projection::{
     has_projection_conflict, preflight_new_projections, projection_needs_write,
 };
@@ -180,6 +185,10 @@ pub(crate) fn command(arguments: &Arguments) -> Result<(), String> {
 
 pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
     validate_facts(facts)?;
+    if facts.apply {
+        crate::session_goal::native::current_identity()
+            .map_err(|error| format!("setup session preflight; no files changed: {error}"))?;
+    }
     let root = ordinary_directory(Path::new(&facts.root), "project root")?;
     root.to_str().ok_or("project root is not valid UTF-8")?;
     let mode = if facts.mode == "local" {
@@ -277,7 +286,7 @@ pub(crate) fn run(facts: &SetupFacts) -> Result<Value, String> {
             .map_err(|error| format!("setup refused unsafe or missing profile: {error}"))?;
     }
     let profiles = profile_diagnostics(&loaded)?;
-    ensure_guidance_compatible(&guidance)?;
+    ensure_guidance_compatible(&guidance, &loaded.control_root)?;
     let projection_before = if hosts.is_empty() {
         None
     } else {
@@ -664,22 +673,6 @@ fn validate_destination(
     ))
 }
 
-fn guidance_diagnostics(control: &Path) -> Vec<Value> {
-    project_skills::diagnose(control)
-        .into_iter()
-        .map(|item| {
-            json!({
-                "skill": item.skill,
-                "path": item.path,
-                "state": skill_state_label(item.state),
-                "embeddedSha256": item.embedded_sha256,
-                "observedSha256": item.observed_sha256,
-                "customPreserved": matches!(item.state, project_skills::SkillObservationState::Unmanaged),
-            })
-        })
-        .collect()
-}
-
 fn profile_diagnostics(loaded: &config::Loaded) -> Result<Vec<Value>, String> {
     loaded
         .agents
@@ -689,41 +682,6 @@ fn profile_diagnostics(loaded: &config::Loaded) -> Result<Vec<Value>, String> {
             Ok(json!({"agent": name, "profile": profile}))
         })
         .collect()
-}
-
-fn ensure_guidance_compatible(items: &[Value]) -> Result<(), String> {
-    for item in items {
-        let state = item["state"].as_str().unwrap_or("unknown");
-        if matches!(
-            state,
-            "absent"
-                | "managed different"
-                | "unsafe path or nonregular"
-                | "unreadable"
-                | "unsupported inspection"
-        ) {
-            return Err(format!(
-                "setup refused managed guidance state for {} ({}; embedded SHA256 {}; observed SHA256 {}). Preserve the file and recover it with the intended binary before applying setup",
-                item["path"].as_str().unwrap_or("unknown"),
-                state,
-                item["embeddedSha256"].as_str().unwrap_or("unknown"),
-                item["observedSha256"].as_str().unwrap_or("unknown")
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn skill_state_label(state: project_skills::SkillObservationState) -> &'static str {
-    match state {
-        project_skills::SkillObservationState::Absent => "absent",
-        project_skills::SkillObservationState::EmbeddedMatch => "embedded match",
-        project_skills::SkillObservationState::ManagedDifferent => "managed different",
-        project_skills::SkillObservationState::Unmanaged => "custom",
-        project_skills::SkillObservationState::Unsafe => "unsafe path or nonregular",
-        project_skills::SkillObservationState::Unreadable => "unreadable",
-        project_skills::SkillObservationState::Unsupported => "unsupported inspection",
-    }
 }
 
 /// A setup refusal says "partially applied" only when something was written.

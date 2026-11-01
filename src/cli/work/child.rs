@@ -7,7 +7,14 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             args::assert_options(
                 "work child prepare",
                 a,
-                &["config", "context", "agent-type", "perspectives", "replace"],
+                &[
+                    "config",
+                    "context",
+                    "agent-type",
+                    "perspectives",
+                    "replace",
+                    "current-binding",
+                ],
             )?;
             args::assert_positionals("work child prepare", a, 4)?;
             let work = positional(a, 2, "work child prepare requires WORK SHORT_ASSIGNMENT")?;
@@ -18,7 +25,10 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             print_work_json(&crate::session_goal::prepare_child(
                 l,
                 work,
-                fence,
+                crate::session_goal::PrepareFence {
+                    continuation: fence,
+                    action: a.options.get("current-binding").map(String::as_str),
+                },
                 assignment,
                 a.options.get("agent-type").map(String::as_str),
                 a.options.get("perspectives").map(String::as_str),
@@ -26,11 +36,32 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         Some("context") => {
-            args::assert_options("work child context", a, &["config"])?;
-            args::assert_positionals("work child context", a, 4)?;
+            args::assert_options("work child context", a, &["config", "view", "index"])?;
             let work = positional(a, 2, "work child context requires WORK INTENT")?;
-            let intent = positional(a, 3, "work child context requires WORK INTENT")?;
-            print_work_json(&crate::session_goal::child_context(l, work, intent)?)
+            match a.options.get("view").map(String::as_str) {
+                Some("results") => {
+                    args::assert_positionals("work child context --view results", a, 3)?;
+                    let index = a.options.get("index").map_or(Ok(0), |value| {
+                        value
+                            .parse::<usize>()
+                            .map_err(|_| "raw observation index must be an integer".to_owned())
+                    })?;
+                    print_work_json(&crate::session_goal::raw_child_results(l, work, index)?)
+                }
+                view @ (None | Some("result")) => {
+                    args::assert_positionals("work child context", a, 4)?;
+                    if a.options.contains_key("index") {
+                        return Err("--index requires --view results".into());
+                    }
+                    let intent = positional(a, 3, "work child context requires WORK INTENT")?;
+                    if view.is_some() {
+                        print_work_json(&crate::session_goal::raw_child_result(l, work, intent)?)
+                    } else {
+                        print_work_json(&crate::session_goal::child_context(l, work, intent)?)
+                    }
+                }
+                Some(_) => Err("work child context --view accepts result or results".into()),
+            }
         }
         Some("recover") => {
             args::assert_options("work child recover", a, &["config", "context"])?;

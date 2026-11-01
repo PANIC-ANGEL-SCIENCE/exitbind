@@ -263,15 +263,31 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?)
         }
         GoalAction::Cover => {
-            args::assert_options("goal cover", a, &["config", "project", "goal-id", "json"])?;
+            args::assert_options(
+                "goal cover",
+                a,
+                &["config", "project", "goal-id", "json", "view"],
+            )?;
             args::assert_positionals("goal cover", a, 1)?;
+            if a.options.get("view").is_some_and(|view| view != "summary") {
+                return Err("goal cover --view accepts only summary".into());
+            }
             let scope = journal_scope(l, a, false)?;
             scope.require_owner_or_project()?;
-            print_json(&crate::session_goal::requirements::cover(
+            let record = crate::session_goal::requirements::cover(
                 &scope.root,
                 l,
                 option(a, "goal-id", "goal cover requires --goal-id ID")?,
-            )?)
+            )?;
+            if a.options.contains_key("view") {
+                print_json(&crate::session_goal::requirements::cover_summary(
+                    l,
+                    &record,
+                    a.flags.contains_key("project"),
+                )?)
+            } else {
+                print_json(&record)
+            }
         }
         GoalAction::Assign => {
             args::assert_options(

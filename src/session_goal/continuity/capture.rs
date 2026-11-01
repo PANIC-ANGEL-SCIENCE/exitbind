@@ -17,11 +17,19 @@ use super::perspective::{self, Frozen};
 mod adviser;
 #[path = "capture/context.rs"]
 mod context;
+#[path = "capture/raw.rs"]
+mod raw;
+#[path = "capture/recovery.rs"]
+mod recovery;
+#[path = "capture/return_result.rs"]
+mod return_result;
 #[path = "capture/same_host.rs"]
 mod same_host;
 #[path = "capture/summary.rs"]
 mod summary;
 pub(crate) use context::context;
+pub(crate) use raw::{latest as latest_raw_result, list as raw_results, read as raw_result};
+pub(crate) use recovery::recover;
 pub(crate) use same_host::route as same_host_route;
 pub(crate) use summary::{blocking, summary};
 
@@ -85,10 +93,11 @@ fn with_intents<T>(
         let mut intents = load(loaded)?;
         let result = action(&mut intents)?;
         while intents.len() > MAX_KEPT {
-            let Some(index) = intents
-                .iter()
-                .position(|intent| TERMINAL.iter().any(|state| intent["state"] == *state))
-            else {
+            let Some(index) = intents.iter().position(|intent| {
+                TERMINAL.iter().any(|state| intent["state"] == *state)
+                    && intent["rawObservation"].is_null()
+                    && intent["pendingResult"].is_null()
+            }) else {
                 break;
             };
             intents.remove(index);
@@ -108,7 +117,7 @@ fn bounded<'a>(value: &'a str, field: &str, max: usize) -> Result<&'a str, Strin
 }
 
 fn current_binding(loaded: &Loaded, work: &str) -> Result<(Value, Value), String> {
-    let view = super::continuation_view(loaded, work)?;
+    let view = super::continuation_view_for_work(loaded, work)?;
     Ok((view["goalRevision"].clone(), view["binding"].clone()))
 }
 
@@ -160,6 +169,20 @@ fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
         && next["packet"]["profileSha256"] == selected["profileSha256"]
 }
 
+fn direct_started(intents: &[Value], work: &str, assignment: &str) -> bool {
+    intents.iter().any(|intent| {
+        intent["work"] == work
+            && intent["assignment"] == assignment
+            && intent["directAssignment"] == true
+            && intent["nativeChild"].is_string()
+            && intent["state"] != "prepared"
+    })
+}
+
+pub(crate) fn can_prepare(loaded: &Loaded, work: &str, assignment: &str) -> bool {
+    load(loaded).is_ok_and(|intents| !direct_started(&intents, work, assignment))
+}
+
 /// The read route that returns a fresh context token for `work`.
 fn continuation(loaded: &Loaded, work: &str) -> String {
     crate::emitted::command_line(&["work", "continuation", work], Some(&loaded.path))
@@ -169,10 +192,15 @@ fn continuation(loaded: &Loaded, work: &str) -> String {
 /// `--context` fence `(goal revision, binding revision)` of a continuation
 /// binding, or `None` for the native session that holds the Work.
 // This is the CLI boundary: keep the work fence, native identity, and overlay explicit.
+pub(crate) struct PrepareFence<'a> {
+    pub(crate) continuation: Option<(u64, u64)>,
+    pub(crate) action: Option<&'a str>,
+}
+
 pub(crate) fn prepare(
     loaded: &Loaded,
     work: &str,
-    fence: Option<(u64, u64)>,
+    fence: PrepareFence<'_>,
     assignment: &str,
     agent_type: Option<&str>,
     perspectives: Option<&str>,
@@ -184,7 +212,7 @@ pub(crate) fn prepare(
         .transpose()?;
     let perspectives = perspective::freeze(loaded, perspectives)?;
     with_intents(loaded, |intents| {
-        let (binding, binding_revision) = match fence {
+        let (binding, binding_revision) = match fence.continuation {
             Some((expected_revision, binding_revision)) => {
                 let (goal, binding) = current_binding(loaded, work)?;
                 if goal.as_u64() != Some(expected_revision)
@@ -219,26 +247,42 @@ pub(crate) fn prepare(
         let specialist_enabled = view["next"]["agent"]
             .as_str()
             .is_some_and(|name| crate::project::specialists::enabled(loaded, name));
-        let selected =
-            if perspectives.is_empty() && loaded.capabilities.is_empty() && !specialist_enabled {
-                Value::Null
-            } else {
-                let view = crate::work::next(loaded, work)?;
-                let next = &view["next"];
-                if next["action"] != "spawn"
-                    || agent_type != next["packet"]["nativeTaskName"].as_str()
-                    || !next["assignment"].is_string()
-                    || !next["packet"]["profileSha256"].is_string()
-                {
-                    return Err(
-                        "selected perspectives require the current named native assignment".into(),
-                    );
-                }
-                json!({"assignment":next["assignment"],
+        let direct_assignment = view["next"]["action"] == "spawn"
+            && view["next"]["assignment"].as_str() == Some(assignment)
+            && agent_type.is_some()
+            && view["next"]["packet"]["nativeTaskName"].as_str() == agent_type;
+        if direct_assignment && direct_started(intents, work, assignment) {
+            return Err("this named assignment already started a native child; inspect its captured result or follow the current Work instead of launching it again".into());
+        }
+        if let Some(expected) = fence.action {
+            crate::work::details::ensure_action_binding(loaded, work, Some(expected))?;
+            if !direct_assignment || view["next"]["current"]["binding"] != expected {
+                return Err("current child assignment changed; refresh the prepared route".into());
+            }
+        }
+        let selected = if perspectives.is_empty()
+            && loaded.capabilities.is_empty()
+            && !specialist_enabled
+            && !direct_assignment
+        {
+            Value::Null
+        } else {
+            let view = crate::work::next(loaded, work)?;
+            let next = &view["next"];
+            if next["action"] != "spawn"
+                || agent_type != next["packet"]["nativeTaskName"].as_str()
+                || !next["assignment"].is_string()
+                || !next["packet"]["profileSha256"].is_string()
+            {
+                return Err(
+                    "selected perspectives require the current named native assignment".into(),
+                );
+            }
+            json!({"assignment":next["assignment"],
                 "agent":next["packet"]["agent"],
                 "nativeTaskName":next["packet"]["nativeTaskName"],
                 "profileSha256":next["packet"]["profileSha256"]})
-            };
+        };
         let capability_binding = if selected.is_null() {
             Value::Null
         } else {
@@ -274,10 +318,16 @@ pub(crate) fn prepare(
             "perspectives": perspectives,
             "capabilityBinding": capability_binding,
         });
+        if direct_assignment {
+            intent["directAssignment"] = json!(true);
+            intent["directResultIdentity"] = json!({"role":view["next"]["role"],
+                "agent":view["next"]["agent"],"stage":view["next"]["packet"]["stage"],
+                "attempt":view["next"]["packet"]["attempt"]});
+        }
         if !specialist_binding.is_null() {
             intent["specialistBinding"] = specialist_binding;
         }
-        if fence.is_none() {
+        if fence.continuation.is_none() {
             intent["receiving"] = json!(same_host::RECEIVING);
         }
         let id = hash::value(&intent);
@@ -469,6 +519,46 @@ pub(crate) fn claimed_context(
     context(loaded, work, id).map(Some)
 }
 
+/// Record only the product's completed host presentation; this does not
+/// assert that a model read or followed the delivered bytes.
+pub(crate) fn note_delivery(
+    loaded: &Loaded,
+    payload: &serde_json::Map<String, Value>,
+    binding: Option<&str>,
+) -> Result<(), String> {
+    let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
+    else {
+        return Ok(());
+    };
+    if !load(loaded)?.iter().any(|intent| {
+        intent["state"] == "claimed"
+            && intent["session"] == session
+            && intent["nativeChild"] == child
+            && intent["directAssignment"] == true
+    }) {
+        return Ok(());
+    }
+    with_intents(loaded, |intents| {
+        let Some(intent) = intents.iter_mut().find(|intent| {
+            intent["state"] == "claimed"
+                && intent["session"] == session
+                && intent["nativeChild"] == child
+                && intent["directAssignment"] == true
+        }) else {
+            return Ok(());
+        };
+        let work = intent["work"].as_str().ok_or("child work unavailable")?;
+        let presented = binding.is_some_and(|expected| {
+            crate::work::details::ensure_action_binding(loaded, work, Some(expected)).is_ok()
+                && selected_is_current(loaded, work, &intent["selected"])
+        });
+        intent["assignmentDelivery"] = json!({"state": if presented { "presented" } else { "unavailable" },
+            "binding":if presented { binding } else { None },
+            "meaning":"complete product presentation only; native model use is not inferred"});
+        Ok(())
+    })
+}
+
 fn is_busy(error: &str) -> bool {
     error.contains("busy")
 }
@@ -493,6 +583,7 @@ pub(crate) fn finalize(
         return Ok(());
     }
     let message = text(payload, "last_assistant_message");
+    let mut direct_return = None;
     with_intents(loaded, |intents| {
         let Some(intent) = intents.iter_mut().find(|intent| owned(intent)) else {
             return Ok(());
@@ -504,6 +595,8 @@ pub(crate) fn finalize(
             if let (Some(message), Some(digest)) = (message, &digest) {
                 if intent["resultSha256"] != digest.as_str() {
                     intent["conflict"] = json!({"resultSha256": digest, "bytes": message.len()});
+                } else if intent["pendingReturn"] == true && !intent["held"].is_object() {
+                    direct_return = intent["id"].as_str().map(str::to_owned);
                 }
             }
             return Ok(());
@@ -523,15 +616,40 @@ pub(crate) fn finalize(
             return Ok(());
         }
         let work = intent["work"].as_str().unwrap_or_default().to_owned();
-        let (goal, binding) = observed_binding(loaded, &work, intent)?;
+        let (goal, binding) = match observed_binding(loaded, &work, intent) {
+            Ok(observed) => observed,
+            Err(error) if intent["directAssignment"] == true => {
+                return_result::retain_raw(loaded, &work, intent, message, &error);
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         if binding["session"] != session || binding["revision"] != intent["bindingRevision"] {
-            intent["state"] = json!("failed");
             let reason = changed(
                 "the receiving binding changed before the child finished",
                 &binding,
             );
+            if intent["directAssignment"] == true {
+                return_result::retain_raw(loaded, &work, intent, message, &reason);
+                return Ok(());
+            }
+            intent["state"] = json!("failed");
             intent["failure"] = json!(reason);
             intent["pendingResult"] = json!(message);
+            return Ok(());
+        }
+        if intent["directAssignment"] == true {
+            if let Err(reason) = return_result::validate_capture(loaded, &work, intent, message) {
+                return_result::retain_raw(loaded, &work, intent, message, &reason);
+                return Ok(());
+            }
+            // A named assignment's existing Work return owns its artifact.
+            // Recording a separate free-text continuation child here would
+            // advance the Goal revision and stale the presented binding.
+            intent["state"] = json!("recorded");
+            intent["pendingResult"] = json!(message);
+            intent["pendingReturn"] = json!(true);
+            direct_return = intent["id"].as_str().map(str::to_owned);
             return Ok(());
         }
         if intent["receiving"] == same_host::RECEIVING {
@@ -550,7 +668,11 @@ pub(crate) fn finalize(
             }
             Ok(()) => Ok(()),
         }
-    })
+    })?;
+    if let Some(id) = direct_return {
+        return_result::process(loaded, &id)?;
+    }
+    Ok(())
 }
 
 fn record(
@@ -582,63 +704,6 @@ fn record(
         object.remove("failure");
     }
     Ok(())
-}
-
-/// Record a retained child result that failed to attach, under the same
-/// receiving session, without re-running the child: with the `--context`
-/// fence of a continuation binding, or `None` for a child prepared by the
-/// native session that holds the Work, which records the hash and state only.
-pub(crate) fn recover(
-    loaded: &Loaded,
-    work: &str,
-    intent_id: &str,
-    fence: Option<(u64, u64)>,
-) -> Result<Value, String> {
-    with_intents(loaded, |intents| {
-        let Some(intent) = intents.iter_mut().find(|intent| {
-            intent["work"] == work
-                && intent["id"]
-                    .as_str()
-                    .is_some_and(|id| id.starts_with(intent_id))
-        }) else {
-            return Err("no prepared child with that intent for this work".into());
-        };
-        let Some(message) = intent["pendingResult"].as_str().map(str::to_owned) else {
-            return Err("this child has no retained result to recover".into());
-        };
-        let Some((expected_revision, binding_revision)) = fence else {
-            if intent["receiving"] != same_host::RECEIVING {
-                let route = continuation(loaded, work);
-                return Err(format!("this child was received from another host; recover it with --context and a fresh token from {route}"));
-            }
-            same_host::attributable(loaded, work, intent)?;
-            // As a same-host stop records: no continuation record exists; the
-            // hash identifies the final message, and the Work's own return
-            // carries the result.
-            intent["state"] = json!("recorded");
-            intent["resultSha256"] = json!(hash::text(&message));
-            if let Some(object) = intent.as_object_mut() {
-                object.remove("pendingResult");
-                object.remove("failure");
-            }
-            return Ok(json!({"work": work, "intent": intent["id"], "effect": "recorded"}));
-        };
-        let (goal, binding) = current_binding(loaded, work)?;
-        if goal.as_u64() != Some(expected_revision)
-            || binding["revision"].as_u64() != Some(binding_revision)
-        {
-            let route = continuation(loaded, work);
-            return Err(format!(
-                "work context is stale; read {route} for a fresh token"
-            ));
-        }
-        if binding["session"] != intent["session"] {
-            return Err("the child ran under another receiving session; its result cannot be attributed to the current binding".into());
-        }
-        intent["bindingRevision"] = json!(binding_revision);
-        record(loaded, work, &goal, intent, &message)?;
-        Ok(json!({"work": work, "intent": intent["id"], "effect": "recorded"}))
-    })
 }
 
 #[cfg(test)]

@@ -140,6 +140,9 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         );
     }
     let mut result = result;
+    if next["current"]["uncreditedChild"].is_object() {
+        result["decision"]["uncreditedChild"] = next["current"]["uncreditedChild"].clone();
+    }
     if next["goalProgress"]["workAssociation"].is_object() {
         result["goalAssociation"] = next["goalProgress"]["workAssociation"].clone();
     }

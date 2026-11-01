@@ -243,3 +243,114 @@ fn setup_task_card_preview_then_project_journal_start_path() {
         "no native session uses the project journal"
     );
 }
+
+#[test]
+fn prepared_cover_is_bounded_and_original_expansion_refuses_a_changed_goal() {
+    let (project, _outside, check) = fresh("setup-card-compact-cover", None);
+    let report = setup(&project, &check, true);
+    let route = printed(&report).remove(0);
+    assert_eq!(option(&route, "--view"), Some("summary"));
+    let covered = project.call_exact_argv(&route);
+    assert!(covered.status.success(), "{covered:?}");
+    let covered: Value = serde_json::from_slice(&covered.stdout).unwrap();
+    assert_eq!(covered["kind"], "goal_coverage_summary");
+    assert!(!covered
+        .to_string()
+        .contains("Intro table that is not the step table"));
+    let original = covered["original"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let expanded = project.call_exact_argv(&original);
+    assert!(expanded.status.success(), "{expanded:?}");
+    let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert_eq!(expanded["continuation"]["source"]["text"], CARD);
+    let legacy = project.call(
+        &["goal", "cover", "--goal-id", "r9", "--project", "--json"],
+        None,
+    );
+    assert!(legacy.status.success(), "{legacy:?}");
+    let legacy: Value = serde_json::from_slice(&legacy.stdout).unwrap();
+    assert_eq!(legacy["continuation"]["source"]["text"], CARD);
+    let changed = project.call(
+        &[
+            "goal",
+            "require",
+            "--goal-id",
+            "r9",
+            "--project",
+            "--requirement",
+            "S4",
+            "--obligation",
+            "Limits: none.",
+            "--artifact",
+            "work/r9/00_TASK.md",
+        ],
+        None,
+    );
+    assert!(changed.status.success(), "{changed:?}");
+    let stale = project.call_exact_argv(&original);
+    assert!(
+        !stale.status.success(),
+        "old event expansion must not return a different record"
+    );
+}
+
+#[test]
+fn setup_registers_unit_card_obligations_before_the_first_work() {
+    let (project, _outside, check) = fresh("setup-unit-card", None);
+    let card = "# Card\n\n| Unit | Proposed change | Observable completion |\n| --- | --- | --- |\n| A — Setup | Connect the start. | Prepare the first action. |\n| B — Return | Capture evidence. | Keep exact originals available. |\n";
+    fs::write(project.root.join("work/r9/00_TASK.md"), card).unwrap();
+    let report = setup(&project, &check, true);
+    assert_eq!(report["next"]["taskCard"]["requirements"][0]["id"], "A");
+    assert_eq!(
+        report["next"]["taskCard"]["requirements"][1]["obligation"],
+        "Keep exact originals available."
+    );
+    for route in printed(&report) {
+        let output = project.call_exact_argv(&route);
+        assert!(output.status.success(), "{route:?}: {output:?}");
+    }
+    let status = project.status();
+    assert_eq!(row(&status, "A")["text"], "Prepare the first action.");
+    assert_eq!(row(&status, "B")["mapped"], true);
+}
+
+#[test]
+fn prepared_cover_uses_existing_response_budget_and_reports_omitted_rows() {
+    let (project, _outside, check) = fresh("setup-large-card-summary", None);
+    let mut card = String::from(
+        "# Card\n\n| Unit | Proposed change | Observable completion |\n| --- | --- | --- |\n",
+    );
+    for n in 1..=16 {
+        card.push_str(&format!(
+            "| U{n} — Change | Implement | Fact {n}: {} |\n",
+            "x".repeat(900)
+        ));
+    }
+    fs::write(project.root.join("work/r9/00_TASK.md"), &card).unwrap();
+    let report = setup(&project, &check, true);
+    let route = printed(&report).remove(0);
+    let covered = project.call_exact_argv(&route);
+    assert!(covered.status.success(), "{covered:?}");
+    assert!(
+        covered.stdout.len() <= 8 * 1024,
+        "{} bytes",
+        covered.stdout.len()
+    );
+    let covered: Value = serde_json::from_slice(&covered.stdout).unwrap();
+    assert_eq!(covered["requirementCount"], 16);
+    assert!(covered["omittedRequirements"].as_u64().unwrap() > 0);
+    let original = covered["original"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let expanded = project.call_exact_argv(&original);
+    assert!(expanded.status.success(), "{expanded:?}");
+    let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert_eq!(expanded["continuation"]["source"]["text"], card);
+}

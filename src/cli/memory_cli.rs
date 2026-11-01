@@ -169,6 +169,16 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 crate::session_goal::journey::stamps,
             )?)
         }
+        "query" => {
+            args::assert_options("memory query", a, &["config", "query", "scope", "json"])?;
+            args::assert_positionals("memory query", a, 2)?;
+            print_json(&memory::query::search(
+                l,
+                positional(a, 1, "memory query requires WORK")?,
+                option(a, "query", "memory query requires --query TEXT")?,
+                a.options.get("scope").map_or("combined", String::as_str),
+            )?)
+        }
         "resolve" => {
             args::assert_options("memory resolve", a, &["config", "json", "task"])?;
             args::assert_positionals("memory resolve", a, 2)?;

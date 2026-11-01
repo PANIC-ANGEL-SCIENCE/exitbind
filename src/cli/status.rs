@@ -6,7 +6,14 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     args::assert_options(
         "goal status",
         a,
-        &["config", "project", "json", "themed", "view"],
+        &[
+            "config",
+            "project",
+            "json",
+            "themed",
+            "view",
+            "expected-sha256",
+        ],
     )?;
     args::assert_positionals("goal status", a, 1)?;
     if a.options.get("view").is_some_and(|view| view != "event") {
@@ -15,11 +22,26 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     let scope = super::goal::journal_scope(l, a, false)?;
     let record = crate::session_goal::read(&scope.root)?;
     if scope.is_session() && !scope.owner_matches {
+        if a.options.contains_key("expected-sha256") {
+            return Err("goal expansion is unavailable outside the owning session".into());
+        }
         let value = crate::session_goal::context_summary(l, record.as_ref(), scope.owner.as_ref());
         print_json(&crate::producer::observed(value))?;
         return Ok(());
     }
+    if let Some(expected) = a.options.get("expected-sha256") {
+        if record
+            .as_ref()
+            .and_then(|item| item["eventSha256"].as_str())
+            != Some(expected.as_str())
+        {
+            return Err("goal record changed; refresh the current Goal before expansion".into());
+        }
+    }
     if a.options.get("view").is_some() {
+        if a.options.contains_key("expected-sha256") {
+            return Err("goal status --expected-sha256 requires the complete view".into());
+        }
         return print_json(&crate::producer::observed(
             super::goal_completion::read_response(
                 l,
@@ -69,6 +91,12 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                 println!("{terminal}");
                 return Ok(());
             }
+        }
+    }
+    if let Some(expected) = a.options.get("expected-sha256") {
+        let fresh = crate::session_goal::read(&scope.root)?;
+        if fresh.as_ref().and_then(|item| item["eventSha256"].as_str()) != Some(expected.as_str()) {
+            return Err("goal record changed during expansion".into());
         }
     }
     print_json(&crate::producer::observed(value))?;

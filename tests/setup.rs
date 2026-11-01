@@ -212,6 +212,56 @@ fn setup_previews_then_applies_and_repeats_without_changing_managed_bytes() {
 }
 
 #[test]
+fn conflicting_native_session_selectors_are_refused_before_setup_writes() {
+    let root = fixture("setup-conflicting-session");
+    let path = root.to_str().unwrap();
+    let args = [
+        "setup",
+        "--json",
+        "--apply",
+        "--mode",
+        "portable",
+        "--root",
+        path,
+        "--scope",
+        "worker",
+        "--observe",
+        "README.md",
+        "--write",
+        "src",
+        "--commands",
+        "true",
+        "--check-command",
+        "true",
+        "--goal",
+        "fixture",
+        "--review-policy",
+        "required",
+        "--skip-skills",
+    ];
+    let output = invoke_env(
+        &args,
+        &[
+            ("CODEX_THREAD_ID", Path::new("thread-one")),
+            ("CODEX_SESSION_ID", Path::new("thread-two")),
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(
+        text(&output).contains("Codex session selectors disagree"),
+        "{}",
+        text(&output)
+    );
+    assert!(
+        text(&output).contains("no files changed"),
+        "{}",
+        text(&output)
+    );
+    assert!(!root.join("exitbind.json").exists());
+    assert!(!root.join(".exitbind").exists());
+}
+
+#[test]
 fn setup_refuses_external_projection_before_fresh_init() {
     let root = fixture("setup-conflict");
     fs::create_dir_all(root.join(".codex/agents")).unwrap();
@@ -551,5 +601,39 @@ fn setup_supports_local_mode_and_non_ascii_preview_without_host_path() {
     assert!(output.status.success(), "{}", text(&output));
     assert!(control.join("exitbind.json").is_file());
     assert!(state.join(".exitbind/runs").is_dir());
+    let with_guidance = args
+        .iter()
+        .copied()
+        .filter(|arg| *arg != "--skip-skills")
+        .collect::<Vec<_>>();
+    let refused = invoke_env(
+        &with_guidance,
+        &[
+            ("PATH", &bin),
+            ("EXITBIND_BINDINGS_DIR", Path::new(bindings_text)),
+        ],
+    );
+    assert!(!refused.status.success(), "{}", text(&refused));
+    assert!(
+        text(&refused).contains(&format!("--root {control_text}")),
+        "{}",
+        text(&refused)
+    );
+    let refresh = invoke_env(
+        &["init", "--refresh-skills", "--root", control_text],
+        &[
+            ("PATH", &bin),
+            ("EXITBIND_BINDINGS_DIR", Path::new(bindings_text)),
+        ],
+    );
+    assert!(refresh.status.success(), "{}", text(&refresh));
+    let retried = invoke_env(
+        &with_guidance,
+        &[
+            ("PATH", &bin),
+            ("EXITBIND_BINDINGS_DIR", Path::new(bindings_text)),
+        ],
+    );
+    assert!(retried.status.success(), "{}", text(&retried));
     fs::remove_dir_all(base).unwrap();
 }

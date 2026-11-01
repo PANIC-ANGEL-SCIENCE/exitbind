@@ -21,7 +21,7 @@ pub(crate) use model::CheckerInput;
 
 pub(crate) use mutation::{assign, cover, require};
 pub(crate) use successor::{assign_successor, ensure_linked_for_retirement};
-pub(crate) use view::{all_current, projection_selected};
+pub(crate) use view::{all_current, cover_summary, projection_selected};
 pub(crate) use work::{
     prepare, prepare_successor_replay, project_progress_for_work, write_scope_companion,
     ContractScope, PrepareRequest,

@@ -198,7 +198,7 @@ fn read_card(path: &Path, given: &str) -> Result<Vec<u8>, String> {
 fn first_rows(rows: &[(String, String)], ids: &str) -> Result<Vec<String>, String> {
     let named: Vec<&str> = ids.split(',').map(str::trim).collect();
     if named.iter().any(|id| id.is_empty()) {
-        return Err("--first-work must name card rows as S<step>[,S<step>...]".into());
+        return Err("--first-work must name card row IDs separated by commas".into());
     }
     if let Some(unknown) = named
         .iter()
@@ -298,17 +298,27 @@ pub(super) fn register(
     Ok(())
 }
 
-/// Rows of the first markdown table whose header has a `Done when` column:
-/// `S<first cell>` with the exact `Done when` cell text.
+/// Parse either a step/`Done when` table or a unit/`Observable completion`
+/// table. Obligation text remains an exact excerpt of the approved card.
 pub(crate) fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
     let mut lines = text.lines().map(str::trim).peekable();
     while let Some(line) = lines.next() {
         let Some(header) = cells(line) else {
             continue;
         };
-        let Some(column) = header.iter().position(|cell| *cell == "Done when") else {
-            continue;
-        };
+        let (id_column, column, units) =
+            if let Some(column) = header.iter().position(|cell| *cell == "Done when") {
+                (0, column, false)
+            } else if let (Some(id_column), Some(column)) = (
+                header.iter().position(|cell| *cell == "Unit"),
+                header
+                    .iter()
+                    .position(|cell| *cell == "Observable completion"),
+            ) {
+                (id_column, column, true)
+            } else {
+                continue;
+            };
         let mut rows = Vec::new();
         while let Some(row) = lines.peek().and_then(|line| cells(line)) {
             lines.next();
@@ -318,7 +328,12 @@ pub(crate) fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
             {
                 continue;
             }
-            let step = row.first().copied().unwrap_or_default();
+            let raw = row.get(id_column).copied().unwrap_or_default();
+            let step = if units {
+                raw.split_once('—').map_or(raw, |(id, _)| id).trim()
+            } else {
+                raw
+            };
             let done = row.get(column).copied().unwrap_or_default();
             if !valid_id(step) || done.is_empty() {
                 return Err(format!(
@@ -326,7 +341,11 @@ pub(crate) fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
                     row.join(" | ")
                 ));
             }
-            let id = format!("S{step}");
+            let id = if units {
+                step.to_owned()
+            } else {
+                format!("S{step}")
+            };
             if rows.iter().any(|(existing, _)| *existing == id) {
                 return Err(format!("task card repeats step {step}"));
             }
@@ -337,7 +356,7 @@ pub(crate) fn step_rows(text: &str) -> Result<Vec<(String, String)>, String> {
         }
         return Ok(rows);
     }
-    Err("task card has no step table with a `Done when` column".into())
+    Err("task card has no `Done when` step table or `Unit`/`Observable completion` table".into())
 }
 
 /// Cells of a markdown table line, split on unescaped pipes and trimmed.
@@ -385,5 +404,19 @@ mod tests {
         );
         assert!(rows.iter().all(|(_, text)| card.contains(text.as_str())));
         assert!(step_rows("| Step | Done |\n| - | - |\n| 1 | x |\n").is_err());
+    }
+
+    #[test]
+    fn unit_rows_keep_exact_completion_text_and_reject_duplicate_ids() {
+        let card = "| Unit | Proposed change | Observable completion |\n| --- | --- | --- |\n| A — Prepare | Do work | First action is ready. |\n| B — Return | Keep evidence | Exact result is available. |\n";
+        assert_eq!(
+            step_rows(card).unwrap(),
+            [
+                ("A".into(), "First action is ready.".into()),
+                ("B".into(), "Exact result is available.".into())
+            ]
+        );
+        let duplicate = "| Unit | Observable completion |\n| --- | --- |\n| A — First | one |\n| A — Second | two |\n";
+        assert!(step_rows(duplicate).unwrap_err().contains("repeats"));
     }
 }

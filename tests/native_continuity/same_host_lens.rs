@@ -76,6 +76,10 @@ fn text(output: &Output) -> String {
 
 impl Fixture {
     fn new(name: &str) -> Self {
+        Self::new_with_check(name, "true")
+    }
+
+    fn new_with_check(name: &str, check: &str) -> Self {
         let base = super::support::temp(name);
         let product = base.join("product");
         let store = base.join("session-goals");
@@ -137,7 +141,7 @@ impl Fixture {
                 "--goal",
                 "Spawn sonic with its lenses from the Lead session",
                 "--check-command",
-                "true",
+                check,
                 "--proof-origin",
                 "synthetic",
                 "--review-policy",

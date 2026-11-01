@@ -157,6 +157,100 @@ fn receiver_binds_and_records_a_child_from_the_continuation_view_alone() {
 }
 
 #[test]
+fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture() {
+    let (root, work) = project(
+        "receiving-named",
+        json!([{"id":"docs","text":"Document the flag."}]),
+        "Document the flag.",
+    );
+    let lead = exitbind(&root, &["work", "next", &work, "--full"], b"");
+    let lead_assignment = lead["next"]["assignment"].as_str().unwrap();
+    exitbind(
+        &root,
+        &[
+            "work",
+            "return",
+            &work,
+            lead_assignment,
+            "--outcome",
+            "scoped",
+        ],
+        b"Scoped work",
+    );
+    let view = exitbind(&root, &["work", "continuation", &work], b"");
+    let bind = fill(
+        &view["receive"]["bind"],
+        &[
+            ("<HOST>", "claude"),
+            ("<NATIVE_SESSION>", "session-a"),
+            ("<HOST_VERSION>", "fixture"),
+        ],
+    );
+    let bound = run(&root, &bind, b"");
+    assert!(bound.status.success(), "{bound:?}");
+    let view = exitbind(&root, &["work", "continuation", &work], b"");
+    let named = &view["receive"]["currentAssignmentPrepare"];
+    assert_eq!(named["preferred"], true, "{view}");
+    assert!(view["receive"]["prepareChild"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|arg| arg == "<SHORT_ASSIGNMENT>"));
+    let route = fill(&named["command"], &[]);
+    assert!(
+        route.iter().any(|arg| arg == "--current-binding"),
+        "{route:?}"
+    );
+    assert!(route.iter().any(|arg| arg == "--agent-type"), "{route:?}");
+    let prepared = run(&root, &route, b"");
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(prepared["selected"]["assignment"], named["assignment"]);
+    assert_eq!(
+        prepared["selected"]["nativeTaskName"],
+        named["nativeTaskName"]
+    );
+    let hook = |payload: Value| {
+        run(
+            &root,
+            &[
+                env!("CARGO_BIN_EXE_exitbind").to_owned(),
+                "hook-run".to_owned(),
+            ],
+            payload.to_string().as_bytes(),
+        )
+    };
+    let native = named["nativeTaskName"].as_str().unwrap();
+    let start = hook(json!({"hook_event_name":"SubagentStart", "cwd":root.path(),
+        "session_id":"session-a", "agent_id":"named-child", "agent_type":native}));
+    assert!(start.status.success(), "{start:?}");
+    assert!(
+        String::from_utf8_lossy(&start.stdout).contains("automatic Work return"),
+        "{start:?}"
+    );
+    let stop = hook(json!({"hook_event_name":"SubagentStop", "cwd":root.path(),
+        "session_id":"session-a", "agent_id":"named-child", "agent_type":native,
+        "last_assistant_message":r#"{"outcome":"blocked","summary":"Fixture blocked","reason":""}"#}));
+    assert!(stop.status.success(), "{stop:?}");
+    let captured: Value =
+        serde_json::from_slice(&std::fs::read(root.join(".exitbind/child-intents.json")).unwrap())
+            .unwrap();
+    assert!(
+        captured["intents"][0]["returnEventSha256"].is_string(),
+        "{captured}"
+    );
+    assert!(
+        captured["intents"][0].get("pendingReturn").is_none(),
+        "{captured}"
+    );
+    let after = exitbind(&root, &["work", "continuation", &work], b"");
+    assert_eq!(
+        after["preparedChildren"][0]["workReturn"]["state"], "recorded",
+        "{after}"
+    );
+}
+
+#[test]
 fn expanded_view_keeps_the_token_and_receive_routes() {
     let (root, work) = project(
         "receiving-expanded",

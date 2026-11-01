@@ -36,7 +36,9 @@ pub(crate) mod usage;
 pub(crate) use continuity::{
     blocking_child, child_context, claim_child, claimed_child_context, continuation_bind,
     continuation_child, continuation_record, continuation_section, continuation_view,
-    finalize_child, prepare_child, recover_child, same_host_child_route,
+    continuation_view_for_work, finalize_child, latest_raw_result, note_child_delivery,
+    prepare_child, raw_child_result, raw_child_results, recover_child, same_host_child_route,
+    PrepareFence,
 };
 
 const FILE: &str = "session-goal.jsonl";

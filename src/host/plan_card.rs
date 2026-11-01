@@ -47,19 +47,29 @@ pub(crate) fn on_approval(loaded: &Loaded, payload: &Map<String, Value>) -> Opti
         "plan card",
     )
     .ok()?;
-    let setup = crate::emitted::command_line(
-        &[
-            "setup",
-            "--apply",
-            "--root",
-            root.to_str()?,
-            "--task-card",
-            &relative,
-        ],
-        None,
-    );
+    let mut setup = crate::emitted::Route::new([
+        "setup",
+        "--apply",
+        "--root",
+        root.to_str()?,
+        "--task-card",
+        &relative,
+    ]);
+    if loaded.mode == crate::project::layout_types::Mode::Local {
+        setup = setup.words([
+            "--mode",
+            "local",
+            "--project-id",
+            loaded.project_id.as_deref()?,
+            "--control-root",
+            loaded.control_root.to_str()?,
+            "--state-root",
+            loaded.state_root.to_str()?,
+        ]);
+    }
+    let setup = setup.shell_text();
     Some(format!(
-        "The approved plan has a Done when table and is saved as a private task card. To make it this Goal's start path, run `{setup}` with this project's usual setup options (--goal, --check-command, --review-policy)."
+        "The approved plan has a requirements table and is saved as a private task card. To make it this Goal's start path, run `{setup}` with this project's usual setup options (--goal, --check-command, --review-policy)."
     ))
 }
 

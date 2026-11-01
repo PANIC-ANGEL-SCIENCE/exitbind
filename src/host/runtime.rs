@@ -136,6 +136,7 @@ pub fn run() -> Result<(), String> {
         let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object));
         return Ok(());
     }
+    let mut presented_assignment_binding = None;
     let text = if event == "SessionStart" {
         let lead = crate::project::agent_display::lead(&loaded);
         let mut text = session_summary(&loaded.config, Some(&loaded.path), &lead);
@@ -354,6 +355,42 @@ pub fn run() -> Result<(), String> {
                             perspective["content"].as_str().unwrap_or("")
                         ));
                     }
+                    if let Some(contract) = child.get("hostResultContract") {
+                        context.push_str("\nFor automatic Work return, finish with one JSON object matching this role contract. Cite every listed evidence reference in order; a host return is a report, not proof of model behavior:\n");
+                        context
+                            .push_str(&serde_json::to_string(contract).map_err(|e| e.to_string())?);
+                    }
+                    if let Some(assignment) = child.get("requiredAssignment") {
+                        let mut complete = context.clone();
+                        complete.push_str("\nComplete current assignment, evidence and task conditions (verified for this recipient):\n");
+                        complete.push_str(
+                            &serde_json::to_string(assignment).map_err(|e| e.to_string())?,
+                        );
+                        let envelope = serde_json::to_vec(&json!({"hookSpecificOutput":{
+                            "hookEventName":event,"additionalContext":complete}}))
+                        .map_err(|e| e.to_string())?;
+                        let routes = match &selected {
+                            super::assignment_context::Selection::Bound { evidence, .. } => {
+                                evidence.as_slice()
+                            }
+                            _ => &[],
+                        };
+                        if envelope.len() <= MAX_OUTPUT
+                            && super::assignment_evidence::append_within_budget(
+                                &complete, event, routes,
+                            )
+                            .is_some()
+                        {
+                            context = complete;
+                            presented_assignment_binding = child["requiredAssignmentBinding"]
+                                .as_str()
+                                .map(str::to_owned);
+                        } else {
+                            context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
+                        }
+                    } else if child["requiredAssignmentUnavailable"].is_string() {
+                        context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
+                    }
                 }
                 Err(_) => {
                     return emit(event, "Exitbind could not verify the selected child context; assignment context is unavailable.");
@@ -386,7 +423,17 @@ pub fn run() -> Result<(), String> {
             }
         }
     };
-    emit(event, &text)
+    emit(event, &text)?;
+    if event == "SubagentStart" {
+        let _ = retry_busy(|| {
+            crate::session_goal::note_child_delivery(
+                &loaded,
+                object,
+                presented_assignment_binding.as_deref(),
+            )
+        });
+    }
+    Ok(())
 }
 
 /// A session in a repository Exitbind does not govern yet still needs to know

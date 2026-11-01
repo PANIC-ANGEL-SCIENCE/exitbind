@@ -797,7 +797,7 @@ pub(super) fn attach_continuation(
     if goal["continuation"]["work"] == work {
         // Receiving routes belong to `work continuation`; the Lead's views keep
         // their bounded continuation copy without them.
-        let mut view = crate::session_goal::continuation_view(loaded, work)?;
+        let mut view = crate::session_goal::continuation_view_for_work(loaded, work)?;
         if let Some(view) = view.as_object_mut() {
             view.remove("receive");
         }

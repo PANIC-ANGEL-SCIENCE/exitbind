@@ -2,9 +2,305 @@
 //! recovered without a cross-host context, from the session that prepared it,
 //! and the existing refusals a retained child causes name it with the
 //! recover line, which runs unedited and clears them.
-use super::{run, sha, text, Fixture, CHILD, OTHER, RESULT, SESSION};
+use super::{argv, run, sha, text, Fixture, CHILD, OTHER, RESULT, SESSION};
 use serde_json::{json, Value};
 use std::{fs, process::Output};
+
+#[test]
+fn worker_receives_the_frozen_check_input_observation_before_work() {
+    let fixture = Fixture::new_with_check("r60-check-preparation", "sh ./missing-check.sh");
+    let detail = fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+    assert_eq!(
+        detail["sections"]["assignment"]["checkPreparation"]["input"]["state"], "missing",
+        "{detail}"
+    );
+    assert_eq!(
+        detail["sections"]["assignment"]["checkPreparation"]["input"]["argument"],
+        "./missing-check.sh"
+    );
+    fixture.prepare_sonic();
+    let start = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(start.contains("missing-check.sh"), "{start}");
+    assert!(start.contains("\"state\":\"missing\""), "{start}");
+}
+
+#[test]
+fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_invalid_results() {
+    let fixture = Fixture::new("r60-host-return");
+    fixture.prepare_sonic();
+    let start = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(start.contains("automatic Work return"), "{start}");
+    assert_eq!(
+        fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
+        "presented"
+    );
+    let valid = r#"{"outcome":"blocked","summary":"Blocked on the fixture","reason":""}"#;
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":"foreign-child","agent_type":"sonic","last_assistant_message":valid}),
+    );
+    assert_eq!(fixture.intents().unwrap()[0]["state"], "claimed");
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    let recorded = fixture.intents().unwrap()[0].clone();
+    assert!(recorded["returnEventSha256"].is_string(), "{recorded}");
+    assert!(recorded.get("pendingResult").is_none(), "{recorded}");
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    assert_eq!(
+        fixture.intents().unwrap()[0],
+        recorded,
+        "a duplicate hook must not resubmit"
+    );
+    let ledger = fixture.product.join(".exitbind/runs").join(format!(
+        "work-{}.jsonl",
+        fixture.work.strip_prefix("smw_").unwrap()
+    ));
+    let before_replay = fs::read(&ledger).unwrap();
+    let state = fixture.product.join(".exitbind/child-intents.json");
+    let mut interrupted: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    interrupted["intents"][0]["pendingResult"] = json!(valid);
+    interrupted["intents"][0]["pendingReturn"] = json!(true);
+    interrupted["intents"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("returnEventSha256");
+    fs::write(&state, serde_json::to_vec(&interrupted).unwrap()).unwrap();
+    let replay = fixture.recover(Some(SESSION), recorded["id"].as_str().unwrap(), &[]);
+    assert!(replay.status.success(), "{}", text(&replay));
+    let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["idempotent"], true, "{replay}");
+    assert_eq!(
+        fs::read(&ledger).unwrap(),
+        before_replay,
+        "replay must not append or execute"
+    );
+    let mut held: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    held["intents"][0]["pendingResult"] = json!(valid);
+    held["intents"][0]["pendingReturn"] = json!(true);
+    held["intents"][0]["held"] = json!({"reference":"existing-held-observation"});
+    held["intents"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("returnEventSha256");
+    fs::write(&state, serde_json::to_vec(&held).unwrap()).unwrap();
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    assert_eq!(
+        fixture.intents().unwrap()[0],
+        held["intents"][0],
+        "a duplicate stop must not resubmit an admitted held result"
+    );
+    assert_eq!(fs::read(&ledger).unwrap(), before_replay);
+
+    let invalid = Fixture::new("r60-host-return-invalid");
+    let duplicate_route = argv(&invalid.next(Some(SESSION))["prepareChild"]);
+    invalid.prepare_sonic();
+    invalid.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let bad = r#"{"outcome":"approved","summary":"Wrong role","reason":""}"#;
+    invalid.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":bad}),
+    );
+    let retained = invalid.intents().unwrap()[0].clone();
+    assert_eq!(retained["rawObservation"]["bytes"], bad.len());
+    assert!(retained["rawObservation"].get("text").is_none());
+    assert!(retained["rawObservation"]["reason"].as_str().is_some());
+    assert!(retained.get("pendingResult").is_none());
+    assert!(retained.get("pendingReturn").is_none());
+    assert!(retained["returnEventSha256"].is_null(), "{retained}");
+    let notice = invalid.value(Some(SESSION), &["work", "next", &invalid.work]);
+    assert_eq!(
+        notice["next"]["current"]["uncreditedChild"]["count"], 1,
+        "{notice}"
+    );
+    assert!(notice["next"].get("prepareChild").is_none(), "{notice}");
+    let duplicate = run(
+        &duplicate_route,
+        &invalid.product,
+        &invalid.store,
+        Some(SESSION),
+        b"",
+    );
+    assert!(
+        !duplicate.status.success(),
+        "a started assignment must not be relaunched"
+    );
+    let read_route = notice["next"]["current"]["uncreditedChild"]["latest"]["readRoute"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let manual = invalid.next(Some(SESSION));
+    assert_eq!(manual["action"], "spawn");
+    let manual_return = invalid.call(
+        Some(SESSION),
+        &[
+            "work",
+            "return",
+            &invalid.work,
+            manual["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        b"A separate governed manual report",
+        true,
+    );
+    assert!(manual_return.status.success(), "{}", text(&manual_return));
+    let raw = run(
+        &read_route,
+        &invalid.product,
+        &invalid.store,
+        Some(SESSION),
+        b"",
+    );
+    assert!(raw.status.success(), "{}", text(&raw));
+    let raw: Value = serde_json::from_slice(&raw.stdout).unwrap();
+    assert_eq!(raw["resultText"], bad);
+    assert_eq!(raw["credit"], "none");
+
+    let unavailable = Fixture::new("r60-host-return-undelivered");
+    unavailable.prepare_sonic();
+    unavailable.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let state = unavailable.product.join(".exitbind/child-intents.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    saved["intents"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("assignmentDelivery");
+    fs::write(&state, serde_json::to_vec(&saved).unwrap()).unwrap();
+    unavailable.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    let retained = unavailable.intents().unwrap()[0].clone();
+    assert_eq!(retained["rawObservation"]["bytes"], valid.len());
+    assert!(retained["rawObservation"].get("text").is_none());
+    assert!(
+        retained["rawObservation"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("presentation is unavailable"),
+        "{retained}"
+    );
+    assert!(retained.get("pendingResult").is_none());
+    assert!(retained.get("pendingReturn").is_none());
+    assert!(retained["returnEventSha256"].is_null(), "{retained}");
+    assert_eq!(unavailable.next(Some(SESSION))["action"], "spawn");
+
+    let changed_binding = Fixture::new("r60-host-return-binding-changed");
+    changed_binding.prepare_sonic();
+    changed_binding.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let state = changed_binding.product.join(".exitbind/child-intents.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    saved["intents"][0]["bindingRevision"] = json!(1);
+    fs::write(&state, serde_json::to_vec(&saved).unwrap()).unwrap();
+    changed_binding.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    let retained = changed_binding.intents().unwrap()[0].clone();
+    assert!(
+        retained["rawObservation"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("binding changed"),
+        "{retained}"
+    );
+    assert!(retained.get("pendingResult").is_none());
+    assert!(retained.get("pendingReturn").is_none());
+    assert_eq!(changed_binding.next(Some(SESSION))["action"], "spawn");
+
+    let stale_delivery = Fixture::new("r60-host-return-delivery-changed");
+    stale_delivery.prepare_sonic();
+    stale_delivery.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let state = stale_delivery.product.join(".exitbind/child-intents.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    saved["intents"][0]["assignmentDelivery"]["binding"] = json!("stale-delivery-binding");
+    fs::write(&state, serde_json::to_vec(&saved).unwrap()).unwrap();
+    stale_delivery.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    let retained = stale_delivery.intents().unwrap()[0].clone();
+    assert!(
+        retained["rawObservation"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("presented Work binding changed"),
+        "{retained}"
+    );
+    assert!(retained.get("pendingResult").is_none());
+    assert!(retained.get("pendingReturn").is_none());
+    assert_eq!(stale_delivery.next(Some(SESSION))["action"], "spawn");
+
+    let stale = Fixture::new("r60-host-return-stale");
+    stale.prepare_sonic();
+    stale.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let pending = stale.next(Some(SESSION));
+    let prior = stale.call(
+        Some(SESSION),
+        &[
+            "work",
+            "return",
+            &stale.work,
+            pending["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        b"Prior report",
+        true,
+    );
+    assert!(prior.status.success(), "{}", text(&prior));
+    stale.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":valid}),
+    );
+    let retained = stale.intents().unwrap()[0].clone();
+    assert_eq!(retained["rawObservation"]["bytes"], valid.len());
+    assert!(retained["rawObservation"].get("text").is_none());
+    assert!(retained.get("pendingResult").is_none());
+    assert!(retained["returnEventSha256"].is_null(), "{retained}");
+    assert!(
+        retained["rawObservation"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("assignment changed"),
+        "{retained}"
+    );
+}
 
 impl Fixture {
     /// `work child recover WORK INTENT` with `extra`, from `session`.

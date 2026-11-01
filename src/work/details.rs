@@ -78,6 +78,29 @@ pub(crate) fn ensure_action_binding(
     Ok(())
 }
 
+fn check_preparation(loaded: &Loaded, snapshot: &RunSnapshot) -> Value {
+    crate::project::readiness::checker_preparation(
+        &loaded.product_root,
+        snapshot.state()["checkPolicy"]["command"].as_str(),
+    )
+}
+
+/// Host delivery reads the frozen policy from its validated Work snapshot;
+/// the recipient packet intentionally omits this internal policy object.
+pub(crate) fn current_check_preparation(
+    loaded: &Loaded,
+    work: &str,
+    current: &Value,
+) -> Result<Value, String> {
+    let snapshot = RunSnapshot::capture(loaded, &super::resolve(loaded, work)?)?;
+    let fresh = super::next_from(loaded, work, &snapshot)?;
+    if current["current"]["binding"] != fresh["current"]["binding"] {
+        return Err("check preparation changed with the current assignment".into());
+    }
+    ensure_current_config(loaded)?;
+    Ok(check_preparation(loaded, &snapshot))
+}
+
 fn token(identity: &str, section: &str, page: usize) -> String {
     format!("{SMALL_PREFIX}{identity}:{section}:{page}")
 }
@@ -193,6 +216,9 @@ pub(super) fn attach(
             "evidence": "requires_detail", "tasks": "requires_detail"},
         "details": routes,
     });
+    if let Some(raw) = crate::session_goal::latest_raw_result(loaded, work) {
+        next["current"]["uncreditedChild"] = raw;
+    }
     crate::work::readable::attach(loaded, work, &binding, &mut next["current"]);
     if let Some(relation) = super::replacement_relation::relation(loaded, work, &events)? {
         next["current"]["checkReplacement"] = relation;
@@ -215,6 +241,10 @@ pub(crate) fn section_value(
     match name {
         "assignment" => Ok(json!({"available": next["packet"].is_object(),
             "assignment": next["packet"], "outcomes": next["outcomes"],
+            "memoryQuery": if crate::memory::policy::get(&loaded.config).is_some() {
+                crate::memory::query::route(loaded, work)
+            } else { Value::Null },
+            "checkPreparation": check_preparation(loaded, snapshot),
             "residual": super::packet::project(work, snapshot, next, &loaded.path)?})),
         "tasks" => crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"]),
         "evidence" => evidence(loaded, snapshot, next, false),

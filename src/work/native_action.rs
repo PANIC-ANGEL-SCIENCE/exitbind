@@ -1,5 +1,7 @@
 #[path = "native_action/continuation.rs"]
 pub(super) mod continuation;
+#[path = "native_action/host_return.rs"]
+mod host_return;
 #[path = "native_action/journal.rs"]
 mod journal;
 #[path = "native_action/prompt.rs"]
@@ -15,6 +17,7 @@ mod result;
 #[path = "native_action/start_failure.rs"]
 mod start_failure;
 
+pub(crate) use host_return::{host_result_contract, return_host_result, validate_host_result};
 use journal::{
     claim_started, journal_result, read_journal, record_error, update_started,
     validate_completed_observation, verify_journal, write_completed, write_journal,

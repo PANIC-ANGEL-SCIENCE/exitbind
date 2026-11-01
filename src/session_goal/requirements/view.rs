@@ -8,6 +8,61 @@ fn route(loaded: &Loaded, route: Route) -> Value {
     crate::work::compact::continuation_route(&loaded.path, route)
 }
 
+/// A prepared-action response; the sealed record and its source stay intact.
+pub(crate) fn cover_summary(
+    loaded: &Loaded,
+    record: &Value,
+    project: bool,
+) -> Result<Value, String> {
+    let goal = Goal::read(record)?;
+    if goal.project_identity != identity(loaded)? {
+        return Err("named goal belongs to another project".into());
+    }
+    let event = record["eventSha256"]
+        .as_str()
+        .ok_or("goal event identity unavailable")?;
+    let mut original = Route::new(["goal", "status", "--json", "--expected-sha256", event]);
+    if project {
+        original = original.words(["--project"]);
+    }
+    let mut original = route(loaded, original);
+    original["readOnly"] = json!(true);
+    original["expectedEventSha256"] = json!(event);
+    original["meaning"] = json!("complete current Goal record; a changed event is refused");
+    let mut summary = json!({"kind":"goal_coverage_summary", "goalId":record["goalId"],
+        "eventSha256":event, "coverageConfirmed":goal.source.coverage_confirmed,
+        "requirementCount":goal.requirements.len(),"omittedRequirements":goal.requirements.len(),
+        "requirements":[], "original":original});
+    for item in &goal.requirements {
+        summary["requirements"]
+            .as_array_mut()
+            .expect("requirements array")
+            .push(json!({
+            "id":item.id, "revision":item.revision,"text":item.text,
+            "source":{"ref":item.source.reference,"sha256":item.source.sha256}}));
+        if serde_json::to_vec(&summary)
+            .map_err(|e| e.to_string())?
+            .len()
+            + 1
+            > crate::work::compact::MAX_RESPONSE_BYTES
+        {
+            summary["requirements"]
+                .as_array_mut()
+                .expect("requirements array")
+                .pop();
+            break;
+        }
+    }
+    summary["omittedRequirements"] = json!(
+        goal.requirements.len()
+            - summary["requirements"]
+                .as_array()
+                .expect("requirements array")
+                .len()
+    );
+    Ok(summary)
+}
+
 fn begin_route(
     loaded: &Loaded,
     record: &Value,
@@ -174,6 +229,8 @@ pub(crate) fn projection_selected(
             "cover",
             "--goal-id",
             record["goalId"].as_str().unwrap_or_default(),
+            "--view",
+            "summary",
         ]);
         if project_selected {
             args = args.words(["--project"]);

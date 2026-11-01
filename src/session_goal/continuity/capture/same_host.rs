@@ -116,7 +116,10 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
     let next = &next["next"];
     let assignment = next["assignment"].as_str()?;
     let native = next["packet"]["nativeTaskName"].as_str()?;
-    if next["action"] != "spawn" || current(loaded, work).is_err() {
+    if next["action"] != "spawn"
+        || current(loaded, work).is_err()
+        || !super::can_prepare(loaded, work, assignment)
+    {
         return None;
     }
     let mut suffix = crate::emitted::Route::new([
@@ -128,6 +131,9 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
         "--agent-type",
         native,
     ]);
+    if let Some(binding) = next["current"]["binding"].as_str() {
+        suffix = suffix.words(["--current-binding", binding]);
+    }
     let (lenses, mut omitted) = lenses(loaded);
     let ids = lenses.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
     let selected = (1..=MAX_LENSES).contains(&lenses.len());

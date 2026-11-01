@@ -54,6 +54,7 @@ pub(crate) use expansion::expand;
 pub(crate) use focus::valid_work_handle;
 pub(crate) use permit_response::permit;
 pub(crate) use resume::resume;
+pub(crate) use return_result_impl::replay_recorded_native;
 pub(crate) use return_result_impl::return_result;
 
 use locator::{runs_dir, valid_token, WORK_PREFIX};
@@ -174,6 +175,12 @@ pub(crate) fn next(loaded: &Loaded, work: &str) -> Result<Value, String> {
     add_identity(&mut response, &work_identity(loaded, Some(&ledger))?);
     attach_continuation(loaded, work, &mut response)?;
     Ok(response)
+}
+
+/// Resolve only the current action, without recursively projecting the
+/// continuation view that requested it.
+pub(crate) fn current_action(loaded: &Loaded, work: &str) -> Result<Value, String> {
+    next_for(loaded, work, &resolve(loaded, work)?)
 }
 
 pub(crate) fn replan(
@@ -717,6 +724,18 @@ fn write_artifact(
     }
     crate::project::managed_files::write_state_exclusive(&path, bytes)?;
     Ok((relative, true))
+}
+
+/// Reuse the Work artifact owner for captured host bytes without creating a
+/// submission or granting an outcome.
+pub(crate) fn retain_observation(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    bytes: &[u8],
+) -> Result<Value, String> {
+    let (path, _) = write_artifact(loaded, work, assignment, bytes)?;
+    Ok(json!({"root":"state","path":path,"sha256":hash::bytes(bytes),"bytes":bytes.len()}))
 }
 
 fn assignment_handle(work: &str, assignment: &Value) -> Result<String, String> {

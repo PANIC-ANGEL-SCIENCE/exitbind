@@ -250,8 +250,12 @@ mod reuse;
 mod view;
 pub(crate) use capture::{
     claim as claim_child, claimed_context as claimed_child_context, context as child_context,
-    finalize as finalize_child, prepare as prepare_child, recover as recover_child,
-    same_host_route as same_host_child_route,
+    finalize as finalize_child, latest_raw_result, note_delivery as note_child_delivery,
+    prepare as prepare_child, raw_result as raw_child_result, raw_results as raw_child_results,
+    recover as recover_child, same_host_route as same_host_child_route, PrepareFence,
 };
 pub(crate) use record::{continuation_bind, continuation_child, continuation_record};
-pub(crate) use view::{continuation_section, continuation_view, has_unresolved, support_current};
+pub(crate) use view::{
+    continuation_section, continuation_view, continuation_view_for_work, has_unresolved,
+    support_current,
+};

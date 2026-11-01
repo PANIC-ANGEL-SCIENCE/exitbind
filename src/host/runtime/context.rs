@@ -74,6 +74,7 @@ pub(super) fn format_agent_context(
             provenance,
             architecture,
             guidance,
+            check_preparation,
             ..
         } => {
             lines.push(format!(
@@ -101,6 +102,8 @@ pub(super) fn format_agent_context(
             lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
             lines.push("Current eligible memory and lessons (complete items, ordered; omitted items have scoped read routes):".into());
             lines.push(serde_json::to_string(guidance).ok()?);
+            lines.push("Current check preparation (observation, not a check result):".into());
+            lines.push(serde_json::to_string(check_preparation).ok()?);
         }
         _ => lines.push("No current governed assignment was acquired for this profile.".into()),
     }

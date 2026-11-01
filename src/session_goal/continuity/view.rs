@@ -202,7 +202,7 @@ fn bounded(value: &Value) -> Result<bool, String> {
 
 /// The supported receiving sequence, so a receiving host binds and records a
 /// native child from this read-only view without studying help or state.
-fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
+fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value, binding: &Value) -> Value {
     let bound_context = token
         .as_str()
         .map_or_else(|| crate::emitted::slot("FRESH_TOKEN"), str::to_owned);
@@ -241,7 +241,7 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
     let bind = crate::work::compact::continuation_route(&loaded.path, bind);
     let prepare = crate::work::compact::continuation_route(&loaded.path, prepare);
     let child = crate::work::compact::continuation_route(&loaded.path, child);
-    json!({
+    let mut result = json!({
         "bind": bind["command"],
         "prepareChild": prepare["command"],
         "child": child["command"],
@@ -252,18 +252,81 @@ fn receive_routes(loaded: &Loaded, work_id: &str, token: &Value) -> Value {
             "HOST_VERSION": "the host's reported version",
             "NATIVE_SESSION": "$EXITBIND_NATIVE_SESSION_ID; if unset, report that limit instead of inventing one",
             "FRESH_TOKEN": "mutationContext.token from the bind reply's nextAction.command",
-            "PREPARE": "run prepareChild before launching the native child; hosts with Exitbind's subagent hooks then record its ID and final message, and `child` is only for hosts without them",
+            "PREPARE": "when currentAssignmentPrepare is present, run its command before launching the named child; otherwise prepareChild records a free-text child without Work-result credit",
             "SHORT_ASSIGNMENT": "a short description of the child's task",
             "CHILD_ID": "the host-reported native child ID; Claude Code shows a subagent's agentId when the subagent runs in the background, not in a foreground result. If none is visible, report that limit instead of inventing one",
         },
         "childResult": "the child's final message exactly as the host delivered it, on standard input: no summary, translation, or added notes; at most 8 KiB",
-    })
+    });
+    if binding["session"].is_string() {
+        if let Ok(action) = crate::work::current_action(loaded, work_id) {
+            if action["action"] == "spawn"
+                && !action["warnings"]
+                    .as_array()
+                    .is_some_and(|warnings| !warnings.is_empty())
+            {
+                if let (Some(assignment), Some(native), Some(current_binding)) = (
+                    action["assignment"].as_str(),
+                    action["packet"]["nativeTaskName"].as_str(),
+                    action["current"]["binding"].as_str(),
+                ) {
+                    if !super::capture::can_prepare(loaded, work_id, assignment) {
+                        return result;
+                    }
+                    let route = crate::emitted::Route::new([
+                        "work",
+                        "child",
+                        "prepare",
+                        work_id,
+                        assignment,
+                        "--context",
+                        bound_context.as_str(),
+                        "--agent-type",
+                        native,
+                        "--current-binding",
+                        current_binding,
+                    ]);
+                    let mut prepared =
+                        crate::work::compact::continuation_route(&loaded.path, route);
+                    prepared["assignment"] = json!(assignment);
+                    prepared["nativeTaskName"] = json!(native);
+                    prepared["preferred"] = json!(true);
+                    prepared["meaning"] = json!("prepare the current named assignment before the host launches it; changed Work or receiving bindings are refused");
+                    result["currentAssignmentPrepare"] = prepared;
+                }
+            }
+        }
+    }
+    result
 }
 
 pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
+    continuation_view_inner(loaded, work_id, true)
+}
+
+/// Work's own next view does not need receiving routes; avoiding them also
+/// avoids resolving the same action a second time for the Lead projection.
+pub(crate) fn continuation_view_for_work(loaded: &Loaded, work_id: &str) -> Result<Value, String> {
+    continuation_view_inner(loaded, work_id, false)
+}
+
+fn continuation_view_inner(
+    loaded: &Loaded,
+    work_id: &str,
+    receiving: bool,
+) -> Result<Value, String> {
     let mut full = complete_view(loaded, work_id)?;
-    let receive = receive_routes(loaded, work_id, &full["mutationContext"]["token"]);
-    full["receive"] = receive.clone();
+    let receive = receiving.then(|| {
+        receive_routes(
+            loaded,
+            work_id,
+            &full["mutationContext"]["token"],
+            &full["binding"],
+        )
+    });
+    if let Some(receive) = &receive {
+        full["receive"] = receive.clone();
+    }
     let prepared = super::capture::summary(loaded, work_id);
     if prepared.as_array().map_or(true, |items| !items.is_empty()) {
         full["preparedChildren"] = prepared.clone();
@@ -280,12 +343,16 @@ pub(crate) fn continuation_view(loaded: &Loaded, work_id: &str) -> Result<Value,
                 "sameExecutableRequired":route["sameExecutableRequired"]})
         })
         .collect::<Vec<_>>();
-    Ok(json!({"work":work_id,"goalRevision":full["goalRevision"],
+    let mut compact = json!({"work":work_id,"goalRevision":full["goalRevision"],
         "mutationContext":full["mutationContext"],"binding":full["binding"],
         "sourceSha256":full["source"]["sha256"],"currentInputsSha256":full["currentInputsSha256"],
         "currentConditionsSha256":full["currentConditionsSha256"],
         "wholeGoalReady":full["wholeGoalReady"],"readOnly":true,"requiresExpansion":true,
-        "sections":sections,"receive":receive,"preparedChildren":full["preparedChildren"]}))
+        "sections":sections,"preparedChildren":full["preparedChildren"]});
+    if let Some(receive) = receive {
+        compact["receive"] = receive;
+    }
+    Ok(compact)
 }
 
 pub(crate) fn continuation_section(

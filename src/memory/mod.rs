@@ -11,6 +11,7 @@ pub(crate) mod lesson_authority;
 pub(crate) mod lessons;
 pub(crate) mod policy;
 pub(crate) mod policy_correction;
+pub(crate) mod query;
 pub(crate) mod revalidation;
 pub(crate) mod selection;
 pub(crate) mod stamped_config;

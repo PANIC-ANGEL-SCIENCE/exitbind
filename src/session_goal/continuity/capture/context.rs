@@ -113,10 +113,32 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         result["specialistExperience"] = specialist.clone();
     }
     result["guidance"] = guidance;
+    let mut assignment_binding = None;
+    if intent["directAssignment"] == true {
+        let delivery = crate::work::details::required_assignment(loaded, work, &current["next"])?;
+        result["hostResultContract"] =
+            crate::work::action::host_result_contract(loaded, work, &current["next"])?;
+        assignment_binding = Some(delivery["binding"].clone());
+        let mut complete = result.clone();
+        complete["requiredAssignment"] = delivery["sections"].clone();
+        complete["requiredAssignmentBinding"] = delivery["binding"].clone();
+        if serde_json::to_vec(&complete)
+            .map_err(|_| "child context serialization failed")?
+            .len()
+            <= 16 * 1024
+        {
+            result = complete;
+        } else {
+            result["requiredAssignmentUnavailable"] = json!("complete assignment exceeds the host context envelope; use the current scoped Work detail route");
+        }
+    }
     let fresh = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &fresh["next"]["packet"])?;
     let (_, fresh_binding) = binding_of(loaded, work, &intent)?;
     if fresh["next"]["assignment"] != selected["assignment"]
+        || assignment_binding
+            .as_ref()
+            .is_some_and(|binding| fresh["next"]["current"]["binding"] != *binding)
         || fresh_binding != binding
         || crate::project::architecture::delivery(loaded, &fresh["next"]["packet"])? != architecture
         || crate::project::capabilities::delivery(
