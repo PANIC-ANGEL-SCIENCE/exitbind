@@ -1,5 +1,8 @@
 //! Native-only successor admission, compatibility, and interrupted recovery.
 
+#[path = "native_supersede/reason.rs"]
+mod reason;
+
 use crate::fixture::*;
 use serde_json::{json, Value};
 use std::{
@@ -428,41 +431,6 @@ fn already_started_successor_without_strong_prior_admission_is_not_backfilled() 
         before_start
     );
     assert!(!case.companion().exists());
-}
-
-#[test]
-fn recovery_route_keeps_shell_metacharacters_inside_the_exact_reason_argument() {
-    let case = Case::new("native-successor-literal-reason");
-    let reason = "--reason=literal>fixture-redirection";
-    let result = case.project.value_in_session(
-        "codex",
-        ADOPTER,
-        &case.project.session_store,
-        &["work", "supersede", &case.predecessor, reason, "--json"],
-    );
-    let route = result["recovery"]["command"]["argv"].as_array().unwrap();
-    let argv = route
-        .iter()
-        .map(|word| word.as_str().unwrap())
-        .collect::<Vec<_>>();
-    assert!(argv.contains(&reason));
-    let mut command = super::support::git_topology::command(argv[0]);
-    command
-        .current_dir(&case.project.root)
-        .args(&argv[1..])
-        .env_remove("CODEX_SESSION_ID")
-        .env_remove("CLAUDE_CODE_SESSION_ID")
-        .env_remove("EXITBIND_NATIVE_SESSION_ID")
-        .env("CODEX_THREAD_ID", ADOPTER)
-        .env("EXITBIND_SESSION_GOALS_DIR", &case.project.session_store);
-    let replay = command.output().unwrap();
-    assert!(
-        replay.status.success(),
-        "the structured exact request must replay: {replay:?}"
-    );
-    let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["work"], result["work"]);
-    assert!(!case.project.root.join("fixture-redirection").exists());
 }
 
 #[test]

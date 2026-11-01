@@ -1,6 +1,6 @@
 //! Source classification of command forms taking a reason.
 use super::cli_tables::option_commands;
-use super::lead_reason_forms::{LEAD_ACTS, NOT_LEAD_ACTS};
+use super::lead_reason_forms::{COMMITTED_REASON_FORMS, LEAD_ACTS, NOT_LEAD_ACTS};
 use super::rust_source::production;
 
 /// Every CLI command whose option check accepts `--reason`, read from the
@@ -20,6 +20,7 @@ fn every_reason_form_is_classified_as_a_lead_act_or_other_command() {
     let mut classified: Vec<String> = LEAD_ACTS
         .iter()
         .chain(NOT_LEAD_ACTS.iter())
+        .chain(COMMITTED_REASON_FORMS.iter())
         .map(|form| (*form).to_owned())
         .collect();
     classified.sort();

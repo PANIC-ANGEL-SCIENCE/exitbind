@@ -19,7 +19,7 @@ Integrity	src/run/carry.rs	verification preparation differs from its persisted p
 Integrity	src/run/check_recovery.rs	recovered failure differs from its retained response or admission
 Integrity	src/run/check_recovery.rs	recovery does not bind the exact retained ledger prefix and Work
 Integrity	src/run/check_recovery.rs	retained recovery response bytes changed or exceed the bound
-Integrity	src/run/check_replacement.rs	check replacement architecture provenance differs from the frozen predecessor
+Integrity	src/run/check_replacement.rs	{owner} architecture provenance differs from the frozen predecessor
 NotCurrentState	src/run/disposition.rs	Lead disposition is not currently pending
 TypedRunDrift	src/run/error.rs	configuration drift detected after run start
 TypedRunDrift	src/run/error.rs	configuration drift detected after run start: expected config hash {}; current config hash {}
@@ -91,5 +91,6 @@ Transient	src/run/view/check_replacement.rs	blocked report diagnostic attempt ch
 Transient	src/run/view.rs	configuration changed while superseding; reload configuration
 Transient	src/run/view.rs	configuration changed while superseding; reload configuration
 RoutedInText	src/run/view.rs	predecessor changed after replacement preview; refresh current Work detail
+Identity	src/run/view.rs	successor start differs from its native admission; repeat the exact request
 LeadPreparation	src/run/view.rs	successor check policy differs from predecessor; choose an explicit new checked run
 LeadPreparation	src/run/view.rs	successor preservation policy differs from predecessor; choose an explicit new checked run

@@ -22,3 +22,8 @@ pub(super) const NOT_LEAD_ACTS: [&str; 14] = [
     "work quarantine-followup",
     "work replace-check",
 ];
+
+/// Native successor creation is not a Lead submission. It commits to the
+/// reason in the successor identity instead of storing its text; the caller
+/// must retain the exact reason for admission recovery.
+pub(super) const COMMITTED_REASON_FORMS: [&str; 1] = ["work supersede"];

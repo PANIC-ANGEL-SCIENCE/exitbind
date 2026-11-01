@@ -7,7 +7,7 @@
 //! the state's submission item (`run inspect`), byte-identical. The second
 //! fixture saves two decisions while W is the current Work and one with no
 //! current Work, and the Lead's act on W records and removes only W's.
-use super::lead_reason_forms::{LEAD_ACTS, NOT_LEAD_ACTS};
+use super::lead_reason_forms::{COMMITTED_REASON_FORMS, LEAD_ACTS, NOT_LEAD_ACTS};
 use super::pause_record::{filled, ok_json};
 use super::session_adoption::session_start;
 use super::*;
@@ -269,6 +269,10 @@ fn every_lead_form_that_takes_a_reason_records_it_on_the_event_and_the_submissio
         ]
     );
     assert!(LEAD_ACTS.iter().all(|form| !NOT_LEAD_ACTS.contains(form)));
+    assert!(LEAD_ACTS
+        .iter()
+        .chain(NOT_LEAD_ACTS.iter())
+        .all(|form| !COMMITTED_REASON_FORMS.contains(form)));
 
     let p = Project::new("f15-lead-forms");
     let begin = |goal: &str| p.begin_ordinary(goal, "true", &[]);

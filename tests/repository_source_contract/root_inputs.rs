@@ -163,9 +163,9 @@ const INTERNAL_ROOT_CHECKS: &[(&str, usize, &str)] = &[
         "edit state the product wrote under the state root",
     ),
     (
-        "src/work/native_action.rs",
+        "src/work/native_action/storage.rs",
         1,
-        "native action files under the state root",
+        "the product-built native action journal path under the state root",
     ),
     (
         "src/work/native_action/continuation.rs",
