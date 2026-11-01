@@ -59,6 +59,12 @@ impl Case {
             config["agents"]["worker"]["write"] = json!(["src/**"]);
             fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
         }
+        if host == "claude" {
+            let path = project.root.join("exitbind.json");
+            let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            config["agents"]["worker"]["nativeName"] = json!("sonic");
+            fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        }
         let store = &project.session_store;
         project.value_in_session(
             host,

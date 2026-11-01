@@ -22,7 +22,9 @@ fn scope_successor(case: &Case) -> Value {
             "scoped",
         ],
     );
-    owner_value(case, &["work", "next", &case.successor, "--json", "--full"])
+    let worker = owner_value(case, &["work", "next", &case.successor, "--json", "--full"]);
+    assert_eq!(worker["next"]["packet"]["nativeTaskName"], "sonic");
+    worker
 }
 
 fn owner_command(case: &Case, argv: &[String]) -> Output {
@@ -78,7 +80,16 @@ fn start_hook(case: &Case, child: &str) -> Value {
         "{} bytes",
         output.stdout.len()
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "invalid hook JSON ({error}); status={}; stdout bytes={} {:?}; stderr bytes={} {:?}",
+            output.status,
+            output.stdout.len(),
+            String::from_utf8_lossy(&output.stdout),
+            output.stderr.len(),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
 }
 
 fn begin_unrelated(case: &Case) -> String {
@@ -345,7 +356,14 @@ fn absent_focus_and_held_focus_lock_do_not_overwrite_navigation() {
         !refused.status.success(),
         "a held focus lock must refuse before start"
     );
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("no native supersession was started"));
+    let refusal: Value = serde_json::from_slice(&refused.stdout)
+        .unwrap_or_else(|error| panic!("invalid JSON refusal ({error}): {refused:?}"));
+    assert!(
+        refusal["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("no native supersession was started")),
+        "{refused:?}"
+    );
     assert_eq!(fs::read(held.journal()).unwrap(), before_goal);
     assert_eq!(
         fs::read(held.ledger(&held.predecessor)).unwrap(),
