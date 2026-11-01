@@ -122,6 +122,11 @@ pub(crate) fn project(
 ) -> Result<Value, String> {
     let mut references = BTreeMap::new();
     collect_references(response, &mut references);
+    if let Some(work) = response["work"].as_str() {
+        for reference in references.values_mut() {
+            super::expansion::attach_compact_log_routes(config_path, work, reference);
+        }
+    }
     let recovery = recovery_command(response, config_path, invoked, MAX_RESPONSE_BYTES - 2048);
 
     let mut result = Map::new();

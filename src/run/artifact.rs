@@ -168,6 +168,17 @@ pub(crate) fn read(
     artifact: &Value,
     label: &str,
 ) -> Result<VerifiedArtifact, String> {
+    let real = state_artifact_path(loaded, artifact, label)?;
+    let verified = verify_file(&real, 64 * 1024).map_err(|error| error.to_string())?;
+    validate_verified(artifact, &verified, label)?;
+    Ok(verified)
+}
+
+fn state_artifact_path(
+    loaded: &Loaded,
+    artifact: &Value,
+    label: &str,
+) -> Result<std::path::PathBuf, String> {
     if artifact["root"] != "state" {
         return Err(format!("{label} artifact root is invalid"));
     }
@@ -186,12 +197,38 @@ pub(crate) fn read(
     if config::rel(&loaded.state_root, &real)? != requested {
         return Err(format!("{label} artifact path changed"));
     }
-    let verified = verify_file(&real, 64 * 1024).map_err(|error| error.to_string())?;
+    Ok(real)
+}
+
+fn validate_verified(
+    artifact: &Value,
+    verified: &VerifiedArtifact,
+    label: &str,
+) -> Result<(), String> {
     let bytes_match = artifact_bytes_match(artifact, verified.bytes)?;
     if !bytes_match || artifact["sha256"] != verified.sha256 {
         return Err(format!("{label} artifact bytes changed"));
     }
-    Ok(verified)
+    Ok(())
+}
+
+/// Capture one bounded byte window while hashing the complete same stream.
+/// The selected bytes are exposed only after the original digest is verified.
+pub(crate) fn read_window(
+    loaded: &Loaded,
+    artifact: &Value,
+    label: &str,
+    offset: u64,
+    length: usize,
+) -> Result<(VerifiedArtifact, Vec<u8>), String> {
+    let real = state_artifact_path(loaded, artifact, label)?;
+    let (verified, window) =
+        verify_file_window(&real, 0, offset, length).map_err(|error| error.to_string())?;
+    validate_verified(artifact, &verified, label)?;
+    if offset > verified.bytes {
+        return Err(format!("{label} window offset exceeds the artifact"));
+    }
+    Ok((verified, window))
 }
 
 pub(crate) fn read_exact(
@@ -218,10 +255,21 @@ pub(crate) fn read_exact(
 }
 
 fn verify_file(path: &Path, preview_limit: usize) -> std::io::Result<VerifiedArtifact> {
+    verify_file_window(path, preview_limit, 0, 0).map(|(verified, _)| verified)
+}
+
+fn verify_file_window(
+    path: &Path,
+    preview_limit: usize,
+    offset: u64,
+    window_limit: usize,
+) -> std::io::Result<(VerifiedArtifact, Vec<u8>)> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut bytes = 0u64;
     let mut preview = Vec::with_capacity(preview_limit.min(VERIFY_BUFFER_BYTES));
+    let mut window = Vec::with_capacity(window_limit.min(VERIFY_BUFFER_BYTES));
+    let window_end = offset.saturating_add(window_limit as u64);
     let mut buffer = [0u8; VERIFY_BUFFER_BYTES];
     loop {
         let count = file.read(&mut buffer)?;
@@ -229,17 +277,26 @@ fn verify_file(path: &Path, preview_limit: usize) -> std::io::Result<VerifiedArt
             break;
         }
         hasher.update(&buffer[..count]);
-        bytes = bytes
+        let end = bytes
             .checked_add(count as u64)
             .ok_or_else(|| std::io::Error::other("artifact byte count overflowed"))?;
+        let from = offset.max(bytes);
+        let to = window_end.min(end);
+        if from < to {
+            window.extend_from_slice(&buffer[(from - bytes) as usize..(to - bytes) as usize]);
+        }
+        bytes = end;
         let remaining = preview_limit.saturating_sub(preview.len());
         preview.extend_from_slice(&buffer[..count.min(remaining)]);
     }
-    Ok(VerifiedArtifact {
-        bytes,
-        sha256: format!("{:x}", hasher.finalize()),
-        preview,
-    })
+    Ok((
+        VerifiedArtifact {
+            bytes,
+            sha256: format!("{:x}", hasher.finalize()),
+            preview,
+        },
+        window,
+    ))
 }
 
 fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> {
@@ -275,7 +332,7 @@ fn confined(root: &Path, requested: &str) -> Result<std::path::PathBuf, String> 
 
 #[cfg(test)]
 mod tests {
-    use super::artifact_bytes_match;
+    use super::{artifact_bytes_match, verify_file, verify_file_window};
     use serde_json::json;
 
     #[test]
@@ -284,5 +341,24 @@ mod tests {
         assert!(artifact_bytes_match(&json!({"bytes": 4}), 4).unwrap());
         assert!(!artifact_bytes_match(&json!({"bytes": 3}), 4).unwrap());
         assert!(artifact_bytes_match(&json!({"bytes": "4"}), 4).is_err());
+    }
+
+    #[test]
+    fn bounded_window_crosses_read_buffers_without_changing_whole_artifact_identity() {
+        let root = crate::test_root::temp("artifact-window");
+        let path = root.join("source");
+        let mut original = vec![b'a'; 65_534];
+        original.extend_from_slice(b"late evidence across a buffer");
+        std::fs::write(&path, &original).unwrap();
+        let complete = verify_file(&path, 64 * 1024).unwrap();
+        let (windowed, window) = verify_file_window(&path, 0, 65_532, 12).unwrap();
+        assert_eq!(window, original[65_532..65_544]);
+        assert_eq!(windowed.bytes, complete.bytes);
+        assert_eq!(windowed.sha256, complete.sha256);
+        original.push(b'!');
+        std::fs::write(&path, &original).unwrap();
+        let (changed, same_window) = verify_file_window(&path, 0, 65_532, 12).unwrap();
+        assert_eq!(same_window, window);
+        assert_ne!(changed.sha256, complete.sha256);
     }
 }

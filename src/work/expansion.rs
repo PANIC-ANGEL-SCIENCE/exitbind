@@ -6,6 +6,17 @@ use super::{details, next_from, readable, resolve, text_page, text_page::hex};
 use crate::{config::Loaded, evidence::hash, run};
 use serde_json::{json, Value};
 
+#[path = "check_log_page.rs"]
+mod check_log_page;
+
+pub(super) fn attach_compact_log_routes(
+    config: &std::path::Path,
+    work: &str,
+    reference: &mut Value,
+) {
+    check_log_page::attach_compact_routes(config, work, reference);
+}
+
 /// Expand one opaque reference emitted by the current context projection.
 /// Paths and hashes supplied by a caller are never accepted as a substitute
 /// for the packet-bound reference.
@@ -23,7 +34,9 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
     let context = packet
         .get("context")
         .ok_or("current packet has no context projection")?;
-    let canonical = find_reference(context, reference)
+    let page = check_log_page::parse(reference)?;
+    let canonical_id = page.as_ref().map_or(reference, |page| page.base);
+    let canonical = find_reference(context, canonical_id)
         .ok_or("reference is not an opaque reference from the current context")?;
     if canonical["exact"] != true || canonical["id"].as_str().is_none() {
         return Err("reference is malformed".into());
@@ -39,6 +52,25 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
         || canonical["eventCount"].as_u64() != Some(events.len() as u64)
     {
         return Err("reference is stale or ledger bytes changed".into());
+    }
+    if let Some(page) = page {
+        if canonical["kind"] != "check_log" {
+            return Err("page reference does not name an observed check log".into());
+        }
+        let event = check_event(&canonical, &events)?;
+        let value = check_log_page::read(loaded, work, &canonical, event, &page)?;
+        let (_, fresh_events, fresh_source) = crate::run::ledger::load(loaded, &ledger)?;
+        if hash::bytes(fresh_source.as_bytes()) != raw_sha
+            || fresh_events
+                .last()
+                .and_then(|event| event["eventSha256"].as_str())
+                != events
+                    .last()
+                    .and_then(|event| event["eventSha256"].as_str())
+        {
+            return Err("reference changed while reading the check log".into());
+        }
+        return Ok(value);
     }
     let kind = canonical["kind"].as_str().unwrap_or_default();
     match kind {
@@ -69,7 +101,7 @@ pub(crate) fn expand(loaded: &Loaded, work: &str, reference: &str) -> Result<Val
                 json!({"event": event, "eventIndex": index}),
             ))
         }
-        "check_log" => expand_check_log(loaded, &canonical, &events),
+        "check_log" => expand_check_log(loaded, work, &canonical, &events),
         _ => Err("reference kind is unsupported".into()),
     }
 }
@@ -123,7 +155,7 @@ fn expansion_response(reference: &Value, kind: &str, bytes: &[u8], metadata: Val
     response
 }
 
-fn expand_check_log(loaded: &Loaded, reference: &Value, events: &[Value]) -> Result<Value, String> {
+fn check_event<'a>(reference: &Value, events: &'a [Value]) -> Result<&'a Value, String> {
     let wanted = reference["checkEventSha256"]
         .as_str()
         .ok_or("check-log reference has no check event")?;
@@ -134,20 +166,48 @@ fn expand_check_log(loaded: &Loaded, reference: &Value, events: &[Value]) -> Res
     if event["action"] != "check" || event["acquisition"] != "observed" {
         return Err("check-log reference does not name an observed check".into());
     }
-    let stdout = crate::run::artifact::read(loaded, &event["stdout"], "stdout")?;
-    let stderr = crate::run::artifact::read(loaded, &event["stderr"], "stderr")?;
     if reference["stdout"] != crate::context::artifact_reference(&event["stdout"], "stdout")
         || reference["stderr"] != crate::context::artifact_reference(&event["stderr"], "stderr")
     {
         return Err("check-log artifact reference is stale or tampered".into());
     }
+    Ok(event)
+}
+
+fn expand_check_log(
+    loaded: &Loaded,
+    work: &str,
+    reference: &Value,
+    events: &[Value],
+) -> Result<Value, String> {
+    let event = check_event(reference, events)?;
+    let stdout = crate::run::artifact::read(loaded, &event["stdout"], "stdout")?;
+    let stderr = crate::run::artifact::read(loaded, &event["stderr"], "stderr")?;
+    let mut stdout_value = bounded_log_value(&stdout);
+    let mut stderr_value = bounded_log_value(&stderr);
+    check_log_page::attach_routes(
+        loaded,
+        work,
+        reference,
+        "stdout",
+        &stdout,
+        &mut stdout_value,
+    )?;
+    check_log_page::attach_routes(
+        loaded,
+        work,
+        reference,
+        "stderr",
+        &stderr,
+        &mut stderr_value,
+    )?;
     Ok(json!({
         "valid": true,
         "kind": "check_log",
         "reference": reference,
         "event": event,
-        "stdout": bounded_log_value(&stdout),
-        "stderr": bounded_log_value(&stderr),
+        "stdout": stdout_value,
+        "stderr": stderr_value,
     }))
 }
 

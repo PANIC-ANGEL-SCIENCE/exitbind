@@ -2,6 +2,8 @@
 #![cfg(unix)]
 #[path = "contextual_memory/fixture.rs"]
 mod fixture;
+#[path = "contextual_memory/query_controls.rs"]
+mod query_controls;
 mod support;
 use fixture::{digest, Fixture, FACT, LEDGER, SPECIALIST_GUIDANCE, SPECIALIST_TASK, TASK};
 use serde_json::{json, Value};

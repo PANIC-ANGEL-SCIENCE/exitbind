@@ -596,3 +596,177 @@ fn opaque_history_and_observed_check_log_expansions_are_exact_and_stale_bound() 
     assert_eq!(expanded_log["stdout"]["contentHex"], "6f7574");
     assert_eq!(expanded_log["stderr"]["contentHex"], "657272");
 }
+
+#[test]
+fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
+    let fixture = Fixture::new();
+    let marker = "DECISIVE ERROR: validator rejected the final entry";
+    let mut original = "x".repeat(65_535);
+    original.push_str("🙂"); // The legacy first chunk ends inside this character.
+    original.push_str(&"y".repeat(7_500));
+    original.push_str("\n");
+    original.push_str(marker);
+    original.push_str("\n");
+    fs::write(fixture.root.join("large-check.log"), original.as_bytes()).unwrap();
+    let mut binary = vec![0xff; 9_000];
+    binary.extend_from_slice(b" BINARY END\n");
+    fs::write(fixture.root.join("binary-check.log"), &binary).unwrap();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "late check error",
+        "--check-command",
+        "cat large-check.log; cat binary-check.log >&2; exit 1",
+    ]);
+    let work = started["work"].as_str().unwrap().to_owned();
+    assert!(fixture
+        .return_body(
+            &work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "scoped",
+            b"scope\n"
+        )
+        .status
+        .success());
+    let worker = fixture.json(&["work", "next", &work]);
+    assert!(fixture
+        .return_body(
+            &work,
+            worker["next"]["assignment"].as_str().unwrap(),
+            "completed",
+            b"worker\n"
+        )
+        .status
+        .success());
+    let failed = fixture.call(&["work", "check", &work]);
+    assert!(!failed.status.success(), "{failed:?}");
+
+    // Root sees bounded navigation without receiving the large original.
+    let compact = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&fixture.root)
+        .args(["work", "next", &work, "--json", "--config"])
+        .arg(&fixture.config)
+        .output()
+        .unwrap();
+    assert!(compact.status.success(), "{compact:?}");
+    assert!(compact.stdout.len() <= 8 * 1024, "{}", compact.stdout.len());
+    assert!(!String::from_utf8_lossy(&compact.stdout).contains(marker));
+    let compact: Value = serde_json::from_slice(&compact.stdout).unwrap();
+    let log_ref = compact["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "check_log")
+        .expect("current check-log reference");
+    let base = log_ref["id"].as_str().unwrap().to_owned();
+    let tail = log_ref["boundedTail"]["stdout"].clone();
+    let invoke = |route: &Value| {
+        assert_eq!(route["sameConfigRequired"], false, "{route}");
+        assert_eq!(route["sameExecutableRequired"], false, "{route}");
+        let command = route["command"].as_array().unwrap();
+        let mut child = support::git_topology::command(command[0].as_str().unwrap());
+        child
+            .current_dir(&fixture.root)
+            .args(command[1..].iter().map(|word| word.as_str().unwrap()));
+        child.output().unwrap()
+    };
+    let tail_output = invoke(&tail);
+    assert!(tail_output.status.success(), "{tail_output:?}");
+    assert!(
+        tail_output.stdout.len() <= 8 * 1024,
+        "{}",
+        tail_output.stdout.len()
+    );
+    let tail_value: Value = serde_json::from_slice(&tail_output.stdout).unwrap();
+    assert_eq!(tail_value["encoding"], "utf-8");
+    assert!(tail_value["contentText"].as_str().unwrap().contains(marker));
+    assert_eq!(tail_value["next"], Value::Null);
+
+    let legacy = fixture.call(&["work", "expand", &work, &base]);
+    assert!(legacy.status.success(), "{legacy:?}");
+    let legacy: Value = serde_json::from_slice(&legacy.stdout).unwrap();
+    assert_eq!(legacy["stdout"]["displayedBytes"], 65_536);
+    assert_eq!(legacy["stdout"]["truncated"], true);
+    assert!(legacy["stdout"]["contentText"].is_null());
+    let decode_hex = |text: &str| -> Vec<u8> {
+        text.as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    };
+    let binary_tail = invoke(&log_ref["boundedTail"]["stderr"]);
+    assert!(binary_tail.status.success(), "{binary_tail:?}");
+    assert!(
+        binary_tail.stdout.len() <= 8 * 1024,
+        "{}",
+        binary_tail.stdout.len()
+    );
+    let binary_tail: Value = serde_json::from_slice(&binary_tail.stdout).unwrap();
+    assert_eq!(binary_tail["encoding"], "hex");
+    let binary_page = decode_hex(binary_tail["contentHex"].as_str().unwrap());
+    assert!(binary_page.ends_with(b" BINARY END\n"));
+    let binary_offset = binary_tail["offset"].as_u64().unwrap() as usize;
+    assert_eq!(binary_page, binary[binary_offset..]);
+    let mut rebuilt = decode_hex(legacy["stdout"]["contentHex"].as_str().unwrap());
+    let mut route = legacy["stdout"]["continuation"]["next"].clone();
+    let mut first = true;
+    while !route.is_null() {
+        let output = invoke(&route);
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stdout.len() <= 8 * 1024, "{}", output.stdout.len());
+        let page: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let bytes = if page["encoding"] == "utf-8" {
+            page["contentText"].as_str().unwrap().as_bytes().to_vec()
+        } else {
+            decode_hex(page["contentHex"].as_str().unwrap())
+        };
+        if first {
+            assert_eq!(page["offset"], 65_535);
+            assert!(page["contentText"].as_str().unwrap().starts_with("🙂"));
+            first = false;
+        }
+        let start = page["offset"].as_u64().unwrap() as usize;
+        assert!(start <= rebuilt.len());
+        let overlap = rebuilt.len() - start;
+        assert!(overlap <= bytes.len());
+        assert_eq!(&rebuilt[start..], &bytes[..overlap]);
+        rebuilt.extend_from_slice(&bytes[overlap..]);
+        route = page["next"].clone();
+    }
+    assert_eq!(rebuilt, original.as_bytes());
+
+    let tail_ref = tail["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|word| word.as_str().filter(|word| word.contains(":log:")))
+        .unwrap();
+    let suffix = tail_ref.split_once(":log:").unwrap().1;
+    let wrong = format!("ref:{}:log:{suffix}", "0".repeat(64));
+    assert!(!fixture
+        .call(&["work", "expand", &work, &wrong])
+        .status
+        .success());
+    let bad_stream = format!("{base}:log:unknown:offset:0");
+    assert!(!fixture
+        .call(&["work", "expand", &work, &bad_stream])
+        .status
+        .success());
+    let artifact = fixture
+        .root
+        .join(legacy["event"]["stdout"]["path"].as_str().unwrap());
+    fs::write(&artifact, b"changed after capture").unwrap();
+    assert!(
+        !invoke(&tail).status.success(),
+        "modified evidence must not expand"
+    );
+    fs::write(&artifact, original.as_bytes()).unwrap();
+    let second = fixture.call(&["work", "check", &work]);
+    assert!(!second.status.success(), "the fixture checker still fails");
+    assert!(
+        !invoke(&tail).status.success(),
+        "old ledger reference must be stale"
+    );
+}
