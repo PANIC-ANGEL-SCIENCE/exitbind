@@ -122,6 +122,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         meaning: "the unresolved question",
     },
     Placeholder {
+        name: "LITERAL_QUERY",
+        fills: &[Fill::Flag("--query")],
+        meaning: "the single-line literal to search",
+    },
+    Placeholder {
         name: "REQUEST_ID",
         fills: &[Fill::Flag("--request-id")],
         meaning: "a new request identity",
@@ -331,6 +336,11 @@ pub(crate) fn slot(name: &str) -> String {
 
 /// The registered placeholder a printed token stands for, if any.
 pub(crate) fn placeholder_in(token: &str) -> Option<&'static Placeholder> {
+    bare_placeholder(token)
+        .or_else(|| inline_placeholder(token).map(|(_, placeholder)| placeholder))
+}
+
+fn bare_placeholder(token: &str) -> Option<&'static Placeholder> {
     let name = token.strip_prefix('<')?.strip_suffix('>')?;
     (!name.is_empty()
         && name
@@ -338,6 +348,14 @@ pub(crate) fn placeholder_in(token: &str) -> Option<&'static Placeholder> {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_'))
     .then(|| lookup(name))
     .flatten()
+}
+
+fn inline_placeholder(token: &str) -> Option<(&str, &'static Placeholder)> {
+    let (option, value) = token.split_once('=')?;
+    if !option.starts_with("--") {
+        return None;
+    }
+    Some((option, bare_placeholder(value)?))
 }
 
 /// The raw path of the executable this process runs as, for routes printed
@@ -429,10 +447,15 @@ pub(crate) fn fill_flags(argv: &[String]) -> Value {
     let mut map = serde_json::Map::new();
     for (index, token) in argv.iter().enumerate() {
         if let Some(placeholder) = placeholder_in(token) {
-            let option = index
-                .checked_sub(1)
-                .and_then(|before| argv.get(before))
-                .filter(|before| placeholder.filled_by(before));
+            let option = inline_placeholder(token)
+                .map(|(option, _)| option)
+                .or_else(|| {
+                    index
+                        .checked_sub(1)
+                        .and_then(|before| argv.get(before))
+                        .map(String::as_str)
+                })
+                .filter(|option| placeholder.filled_by(option));
             if let Some(option) = option {
                 map.insert(placeholder.name.into(), json!(option));
             }
@@ -453,9 +476,10 @@ pub(crate) fn fill(printed: &Route, values: &BTreeMap<String, String>) -> Result
             filled.push(token.clone());
             continue;
         };
-        let option = index
-            .checked_sub(1)
-            .map(|before| argv[before].as_str())
+        let inline = inline_placeholder(token);
+        let option = inline
+            .map(|(option, _)| option)
+            .or_else(|| index.checked_sub(1).map(|before| argv[before].as_str()))
             .filter(|before| placeholder.filled_by(before))
             .ok_or_else(|| {
                 format!(
@@ -470,7 +494,11 @@ pub(crate) fn fill(printed: &Route, values: &BTreeMap<String, String>) -> Result
             )
         })?;
         used.insert(option.to_owned());
-        filled.push(value.clone());
+        filled.push(if inline.is_some() {
+            format!("{option}={value}")
+        } else {
+            value.clone()
+        });
     }
     if let Some(unused) = values.keys().find(|option| !used.contains(option.as_str())) {
         return Err(format!("{unused} fills no placeholder of this route"));
@@ -535,5 +563,26 @@ mod tests {
                 Some(placeholder.name)
             );
         }
+    }
+
+    #[test]
+    fn inline_query_slot_fills_as_one_argument_without_consuming_a_flag_value() {
+        let query = format!("--query={}", slot("LITERAL_QUERY"));
+        let printed = argv(&["x", "memory", "query", "work", &query, "--json"]);
+        assert_eq!(fill_flags(&printed), json!({"LITERAL_QUERY":"--query"}));
+        let route = Route::printed(&printed).unwrap();
+        let values = BTreeMap::from([("--query".to_owned(), "--scope".to_owned())]);
+        assert_eq!(
+            fill(&route, &values).unwrap().full_argv().unwrap(),
+            argv(&["x", "memory", "query", "work", "--query=--scope", "--json"])
+        );
+        assert!(fill(&route, &BTreeMap::new())
+            .unwrap_err()
+            .contains("--query"));
+        let wrong = format!("--reason={}", slot("LITERAL_QUERY"));
+        let wrong = Route::printed(&argv(&["x", "memory", "query", "work", &wrong])).unwrap();
+        assert!(fill(&wrong, &values)
+            .unwrap_err()
+            .contains("no fill option"));
     }
 }
