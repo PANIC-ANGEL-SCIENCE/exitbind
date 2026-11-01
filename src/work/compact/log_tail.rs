@@ -51,7 +51,7 @@ pub(super) fn retain_if_fits(
                 object.remove("producer");
             }
         }
-        if super::serialized_len(&candidate)? + 1 <= super::MAX_RESPONSE_BYTES {
+        if super::serialized_len(&candidate)? < super::MAX_RESPONSE_BYTES {
             *output = candidate;
             return Ok(());
         }
@@ -60,7 +60,7 @@ pub(super) fn retain_if_fits(
     // also carry a log route; never overflow or hide that omission.
     let mut candidate = output.clone();
     candidate["logTailUnavailable"] = json!({"reason":"response_budget","detail":"fullCommand"});
-    if super::serialized_len(&candidate)? + 1 <= super::MAX_RESPONSE_BYTES {
+    if super::serialized_len(&candidate)? < super::MAX_RESPONSE_BYTES {
         *output = candidate;
     }
     Ok(())

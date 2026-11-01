@@ -216,8 +216,7 @@ pub(super) fn read(
         if serde_json::to_vec(&rendered)
             .map_err(|error| error.to_string())?
             .len()
-            + 1
-            <= super::super::compact::MAX_RESPONSE_BYTES
+            < super::super::compact::MAX_RESPONSE_BYTES
         {
             return Ok(value);
         }
