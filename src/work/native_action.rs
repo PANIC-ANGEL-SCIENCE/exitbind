@@ -231,11 +231,9 @@ pub(crate) fn execute(
         return Err("--resume requires a started native assignment journal".into());
     }
 
-    let mut selected = crate::work::details::required_assignment(loaded, work, current)?;
+    let selected = crate::work::details::managed_required_assignment(loaded, work, current)?;
     let recipient_sha256 = crate::work::details::managed_recipient_fingerprint(loaded, current)?;
-    if let Some(delivery) = crate::project::continuation::runtime::delivery(loaded, work)? {
-        selected["sections"]["projectContinuation"] = delivery;
-    }
+    let required_delivery_proof = delivery::proof(loaded, work, current, &selected)?;
     let form = &selected["sections"]["currentAction"]["beforeEditing"];
     let permit_delivery_proof =
         crate::work::action_forms::permit_request_id(form).map(|request_id| {
@@ -309,6 +307,7 @@ pub(crate) fn execute(
     if crate::work::details::managed_recipient_fingerprint(loaded, current)? != recipient_sha256 {
         return Err("native recipient instructions changed before launch".into());
     }
+    delivery::validate_before_launch(loaded, work, &required_delivery_proof)?;
     if resuming {
         if let Some(recorded) = recorded_request.as_ref() {
             recovery::validate_rebuilt_request(&json!({"request": recorded}), &request)?;
@@ -351,6 +350,8 @@ pub(crate) fn execute(
                 "assignmentSha256": identity.packet_sha256,
                 "recipientProofVersion": 1,
                 "recipientSha256": recipient_sha256,
+                "deliveryProofVersion": 1,
+                "requiredDeliveryProof": required_delivery_proof,
                 "permitDeliveryProof": permit_delivery_proof,
                 "role": role,
                 "agent": agent,

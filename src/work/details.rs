@@ -538,6 +538,21 @@ pub(crate) fn required_assignment(
     }))
 }
 
+/// Managed launch and saved-result validation consume the same complete
+/// recipient packet, including the existing project continuation when any.
+pub(crate) fn managed_required_assignment(
+    loaded: &Loaded,
+    work: &str,
+    current: &Value,
+) -> Result<Value, String> {
+    let mut selected = required_assignment(loaded, work, current)?;
+    if let Some(delivery) = crate::project::continuation::runtime::delivery(loaded, work)? {
+        selected["sections"]["projectContinuation"] = delivery;
+    }
+    selected["requiredFactsSha256"] = json!(hash::value(&selected["sections"]));
+    Ok(selected)
+}
+
 fn native_sections(mut sections: Value, forms: &Value, binding: &Value) -> Value {
     if let Some(tasks) = sections["tasks"].as_object_mut() {
         tasks.remove("systemText");

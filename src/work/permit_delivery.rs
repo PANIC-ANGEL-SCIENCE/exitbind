@@ -11,6 +11,37 @@ pub(crate) struct VerifiedPermit {
     pub event: Value,
 }
 
+/// Find the unique currently authorized worker grant using the existing
+/// validated ledger and grant owner. This does not itself admit a result.
+pub(crate) fn current_worker_grant(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    current: &Value,
+) -> Result<Option<Value>, String> {
+    if current["role"] != "worker" || current["assignment"] != assignment {
+        return Ok(None);
+    }
+    super::details::ensure_current_config(loaded)?;
+    let ledger = super::resolve(loaded, work)?;
+    let (_, events, _) = run::ledger::load(loaded, &ledger)?;
+    let grants = events
+        .iter()
+        .filter(|event| super::permit_response::is_current_grant_event(event, current, assignment))
+        .collect::<Vec<_>>();
+    let [event] = grants[..] else {
+        return Ok(None);
+    };
+    if !event["requestId"].is_string()
+        || event["requestId"] != event["governorEvent"]["requestId"]
+        || !event["eventSha256"].is_string()
+        || !event["governorEvent"]["eventSha256"].is_string()
+    {
+        return Ok(None);
+    }
+    Ok(Some((*event).clone()))
+}
+
 /// A permit is already recorded when this runs. Failure never changes its
 /// authority; it leaves the host capture ineligible for automatic return.
 pub(super) fn carry(

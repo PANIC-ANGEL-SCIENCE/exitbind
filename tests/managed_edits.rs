@@ -179,6 +179,8 @@ fn refused(output: Output, expected: &str) {
     );
 }
 
+#[path = "managed_edits/current_delivery.rs"]
+mod current_delivery;
 #[path = "managed_edits/managed_reads_and_writes.rs"]
 mod managed_reads_and_writes;
 #[path = "managed_edits/recovery_and_native_launch.rs"]
