@@ -226,6 +226,15 @@ pub(crate) fn prepare(
                 "nativeTaskName":next["packet"]["nativeTaskName"],
                 "profileSha256":next["packet"]["profileSha256"]})
             };
+            if !selected_is_current(loaded, work, &selected) {
+                let detail = crate::emitted::command_line(
+                    &["work", "detail", work, "--json"],
+                    Some(&loaded.path),
+                );
+                let focus =
+                    crate::emitted::command_line(&["work", "focus", work], Some(&loaded.path));
+                return Err(format!("the current named child assignment is unavailable; read `{detail}` and, if intended, select its Work with `{focus}` before preparing"));
+            }
             let capability_binding = if selected.is_null() {
                 Value::Null
             } else {
@@ -301,6 +310,14 @@ pub(crate) fn prepare(
                 record["state"] = json!("prepared");
                 intents.push(record);
             }
+            let next = if fence.continuation.is_none() {
+                crate::emitted::command_line(
+                    &["work", "detail", work, "--json"],
+                    Some(&loaded.path),
+                )
+            } else {
+                continuation(loaded, work)
+            };
             Ok(json!({
                 "work": work,
                 "intent": id,
@@ -309,7 +326,7 @@ pub(crate) fn prepare(
                 "superseded": superseded,
                 "selected": selected,
                 "perspectives": perspectives,
-                "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{}`.", continuation(loaded, work)),
+                "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{next}`."),
             }))
         })
     })

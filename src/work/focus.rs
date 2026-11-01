@@ -73,9 +73,27 @@ fn invalid(loaded: &Loaded, detail: &str) -> String {
     )
 }
 
+/// Serialize all product focus writers with the existing ephemeral lock owner.
+/// The anchor names a lock only; it is not a new focus or ledger record.
+fn with_focus_lock<T>(
+    loaded: &Loaded,
+    action: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let anchor = format!(
+        "{}/current-work-focus",
+        crate::project::layout_types::state_namespace()
+    );
+    let lock = crate::run::ledger::ledger_path(&loaded.state_root, &anchor, true)?;
+    crate::run::ledger::with_lock(&lock, action)
+}
+
 /// Replace the focus atomically: a failed write leaves the previous pointer
 /// and every work ledger untouched.
 pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
+    with_focus_lock(loaded, || write_locked(loaded, work))
+}
+
+fn write_locked(loaded: &Loaded, work: &str) -> Result<(), String> {
     let target = path(loaded);
     if fs::symlink_metadata(&target).is_ok_and(|metadata| !metadata.is_file()) {
         let focus = crate::emitted::command_line(&["work", "focus", work], Some(&loaded.path));
@@ -107,6 +125,84 @@ pub(crate) fn write(loaded: &Loaded, work: &str) -> Result<(), String> {
     result
 }
 
+/// Whether the start and native session link were completed by this call.
+pub(crate) enum SuccessorState {
+    FreshLinked,
+    Recovery,
+    LinkPending,
+}
+
+/// Hold the focus lock from observation through native start and link. If the
+/// lock cannot be taken, refuse before attempting a native start.
+pub(crate) fn successor<T>(
+    loaded: &Loaded,
+    predecessor: &str,
+    work: &str,
+    action: impl FnOnce() -> Result<(T, SuccessorState), String>,
+) -> Result<(T, Value), String> {
+    let mut action = Some(action);
+    let locked = with_focus_lock(loaded, || {
+        let observed = read(loaded);
+        let run = action
+            .take()
+            .ok_or("focus transaction was already executed")?;
+        let (result, state) = run()?;
+        Ok((
+            result,
+            successor_locked(loaded, predecessor, work, observed, state),
+        ))
+    });
+    match locked {
+        Err(error) if action.is_some() => {
+            let detail = crate::emitted::command_line(
+                &["work", "detail", work, "--json"],
+                Some(&loaded.path),
+            );
+            Err(format!("focus transaction unavailable ({error}); no native supersession was started by this attempt. If the successor already exists, inspect `{detail}` before recovery"))
+        }
+        other => other,
+    }
+}
+
+fn successor_locked(
+    loaded: &Loaded,
+    predecessor: &str,
+    work: &str,
+    observed: Result<Focus, String>,
+    state: SuccessorState,
+) -> Value {
+    let moved = match observed {
+        Ok(Focus::Work(current)) if current == work => Ok(false),
+        Ok(Focus::Work(current)) if current == predecessor => match state {
+            SuccessorState::FreshLinked => write_locked(loaded, work).map(|()| true),
+            SuccessorState::Recovery => Err(
+                "successor admission already exists; select its Work explicitly before continuing"
+                    .into(),
+            ),
+            SuccessorState::LinkPending => {
+                Err("native session link is pending; successor focus was not selected".into())
+            }
+        },
+        Ok(Focus::Work(_)) => {
+            Err("current-work focus names another Work; successor focus was not selected".into())
+        }
+        Ok(Focus::Absent) => {
+            Err("current-work focus is absent; successor focus was not selected".into())
+        }
+        Ok(Focus::Unusable(error)) | Err(error) => Err(error),
+    };
+    match moved {
+        Ok(updated) => json!({"updated": updated, "current": true, "authority": "none"}),
+        Err(error) => pending(loaded, work, &error),
+    }
+}
+
+fn pending(loaded: &Loaded, work: &str, error: &str) -> Value {
+    let mut result = recovery(loaded, work, error);
+    result["current"] = json!(false);
+    result
+}
+
 /// Recovery route when `work begin` committed a work but could not point the
 /// focus at it.
 pub(crate) fn recovery(loaded: &Loaded, work: &str, error: &str) -> Value {
@@ -117,3 +213,7 @@ pub(crate) fn recovery(loaded: &Loaded, work: &str, error: &str) -> Value {
         "sameConfigRequired": route.needs_config(),
         "sameExecutableRequired": route.needs_executable()})
 }
+
+#[cfg(test)]
+#[path = "focus/tests.rs"]
+mod tests;

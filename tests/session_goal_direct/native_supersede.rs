@@ -1,5 +1,7 @@
 //! Native-only successor admission, compatibility, and interrupted recovery.
 
+#[path = "native_supersede/focus.rs"]
+mod focus;
 #[path = "native_supersede/reason.rs"]
 mod reason;
 
@@ -25,6 +27,7 @@ struct Case {
     project: Project,
     predecessor: String,
     successor: String,
+    host: &'static str,
 }
 
 impl Case {
@@ -33,6 +36,10 @@ impl Case {
     }
 
     fn new_with_boundary(label: &str, narrowed: bool) -> Self {
+        Self::new_for_host(label, narrowed, "codex")
+    }
+
+    fn new_for_host(label: &str, narrowed: bool, host: &'static str) -> Self {
         let project = Project::new(label);
         if narrowed {
             fs::create_dir_all(project.root.join("src")).unwrap();
@@ -54,7 +61,7 @@ impl Case {
         }
         let store = &project.session_store;
         project.value_in_session(
-            "codex",
+            host,
             PARENT,
             store,
             &[
@@ -82,24 +89,24 @@ impl Case {
         if narrowed {
             args.extend(["--boundary", ".agents/boundaries/task.json"]);
         }
-        let begin = project.value_in_session("codex", PARENT, store, &args);
+        let begin = project.value_in_session(host, PARENT, store, &args);
         let predecessor = begin["work"].as_str().unwrap().to_owned();
         let lead = begin["next"]["assignment"].as_str().unwrap();
         project.value_in_session(
-            "codex",
+            host,
             PARENT,
             store,
             &["work", "return", &predecessor, lead, "--outcome", "scoped"],
         );
         let next = project.value_in_session(
-            "codex",
+            host,
             PARENT,
             store,
             &["work", "next", &predecessor, "--json", "--full"],
         );
         let worker = next["next"]["assignment"].as_str().unwrap();
         project.value_in_session(
-            "codex",
+            host,
             PARENT,
             store,
             &[
@@ -111,9 +118,9 @@ impl Case {
                 "Perform the scoped edit",
             ],
         );
-        let parent_key = digest_value(&json!({"host":"codex", "identity":PARENT}));
+        let parent_key = digest_value(&json!({"host":host, "identity":PARENT}));
         project.value_in_session(
-            "codex",
+            host,
             ADOPTER,
             store,
             &["goal", "adopt", "--session-key", &parent_key, "--json"],
@@ -123,17 +130,18 @@ impl Case {
             project,
             predecessor,
             successor,
+            host,
         }
     }
 
     fn call(&self, args: &[&str]) -> std::process::Output {
         self.project
-            .call_in_session("codex", ADOPTER, &self.project.session_store, args)
+            .call_in_session(self.host, ADOPTER, &self.project.session_store, args)
     }
 
     fn supersede(&mut self) -> Value {
         let value = self.project.value_in_session(
-            "codex",
+            self.host,
             ADOPTER,
             &self.project.session_store,
             &[
@@ -162,7 +170,8 @@ impl Case {
     }
 
     fn journal(&self) -> PathBuf {
-        native_goal_journal(&self.project, PARENT)
+        native_session_root(&self.project.session_store, self.host, PARENT)
+            .join(".exitbind/session-goal.jsonl")
     }
 
     fn rewind_to_pending(&self, keep_claim: bool, keep_start: bool) {

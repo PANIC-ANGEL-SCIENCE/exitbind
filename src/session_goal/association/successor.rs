@@ -12,7 +12,7 @@ pub(crate) fn admit_successor(
     start: &Value,
     claimed: bool,
     started: bool,
-) -> Result<String, String> {
+) -> Result<(String, bool), String> {
     let scope = session_goal::native::scope(loaded, false)?;
     scope.require_owner()?;
     let session = scope
@@ -51,7 +51,7 @@ pub(crate) fn admit_successor(
         }
         admission::validate_admission_for_loaded(loaded, &admission, session, owner)?;
         validate_pending_goal_history(&scope.root, &current, &admission)?;
-        return Ok(intent);
+        return Ok((intent, false));
     }
     if !admissions.is_empty() {
         return Err("native Work supersession is blocked by unresolved Goal admissions".into());
@@ -81,14 +81,14 @@ pub(crate) fn admit_successor(
             return Err("started successor has no matching prior strong native admission".into());
         }
         verify_owner_session(loaded, work, session.clone())?;
-        return Ok(intent);
+        return Ok((intent, false));
     }
     let candidate = prepare(&scope)?.ok_or("native Goal cannot admit a successor")?;
     if current["goalId"] != candidate.goal_id || current["eventSha256"] != candidate.event_sha256 {
         return Err("native Goal changed while preparing successor admission".into());
     }
     admit(&scope.root, loaded, &candidate, work, &intent, goal)?;
-    Ok(intent)
+    Ok((intent, true))
 }
 
 /// A pending admission is valid only across its own append and same-owner

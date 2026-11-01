@@ -47,28 +47,43 @@ pub(crate) fn supersede(loaded: &Loaded, work: &str, reason: &str) -> Result<Val
         .config(&loaded.path)
         .within(4096)
         .argv_json();
-    let mut admit = |event: &Value, claim: &Value, claimed: bool, started: bool| {
-        if claim["oldHeadEventSha256"] != head || claim["oldLedgerPath"] != ledger {
-            return Err("predecessor changed after the native supersession request; no admission was recorded".into());
-        }
-        details::ensure_current_config(loaded)?;
-        run::assert_no_drift(loaded, &state)?;
-        refuse_pending(loaded, work, &state, assignment.as_deref())?;
-        association::admit_successor(loaded, work, &successor, event, claimed, started)
-    };
-    run::supersede_with_native_admission(
-        loaded, &ledger, workflow, goal, &new_ledger, &mut admit,
-    ).map_err(|error| format!("{error}; if a native admission was recorded, retain and repeat the exact original work supersede request, including its reason"))?;
-    let link = association::link_session(loaded, &successor);
-    let detail = action_forms::current_detail_command(loaded, &successor);
+    let ((link, detail), focus) = focus::successor(loaded, work, &successor, || {
+        let mut admitted_here = false;
+        let mut admit = |event: &Value, claim: &Value, claimed: bool, started: bool| {
+            if claim["oldHeadEventSha256"] != head || claim["oldLedgerPath"] != ledger {
+                return Err("predecessor changed after the native supersession request; no admission was recorded".into());
+            }
+            details::ensure_current_config(loaded)?;
+            run::assert_no_drift(loaded, &state)?;
+            refuse_pending(loaded, work, &state, assignment.as_deref())?;
+            let (intent, created) =
+                association::admit_successor(loaded, work, &successor, event, claimed, started)?;
+            admitted_here = created;
+            Ok(intent)
+        };
+        run::supersede_with_native_admission(
+            loaded, &ledger, workflow, goal, &new_ledger, &mut admit,
+        ).map_err(|error| format!("{error}; if a native admission was recorded, retain and repeat the exact original work supersede request, including its reason"))?;
+        let link = association::link_session(loaded, &successor);
+        let detail = action_forms::current_detail_command(loaded, &successor);
+        let state = if link.is_err() {
+            focus::SuccessorState::LinkPending
+        } else if admitted_here {
+            focus::SuccessorState::FreshLinked
+        } else {
+            focus::SuccessorState::Recovery
+        };
+        Ok(((link, detail), state))
+    })?;
     Ok(match link {
         Ok(link) => json!({"work":successor,"predecessor":work,
-            "sessionLink":link,"effect":"started","currentDetail":detail,
+            "sessionLink":link,"effect":if focus["current"] == true {"started"} else {"started-focus-pending"},
+            "focus":focus,"currentDetail":detail,
             "recovery":{"command":retry,"requiresExactOriginalReason":true}}),
         Err(error) => json!({"work":successor,"predecessor":work,
             "sessionLink":{"error":error,"recovery":crate::emitted::Route::new(
                 ["work", "link-session", &successor, "--json"]).config(&loaded.path).within(4096).argv_json()},
-            "effect":"started-link-pending","currentDetail":detail,
+            "effect":"started-link-pending","focus":focus,"currentDetail":detail,
             "recovery":{"command":retry,"requiresExactOriginalReason":true}}),
     })
 }
