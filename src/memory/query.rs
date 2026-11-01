@@ -136,7 +136,7 @@ fn diagnostics(
     } else {
         "no_match"
     };
-    let access = |requested, allowed| {
+    let access = |requested: bool, allowed: bool| {
         if !requested {
             "not_requested"
         } else if !observation.enabled {
