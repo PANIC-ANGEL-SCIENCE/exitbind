@@ -42,7 +42,7 @@ pub(crate) fn section(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     Ok(value)
 }
 
-pub(super) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
+pub(in crate::work) fn read(loaded: &Loaded, next: &Value) -> Result<Value, String> {
     if let Err(reason) = crate::memory::contextual::assert_assignment(loaded, &next["packet"]) {
         return Ok(json!({"available":false,"complete":true,
             "reason":"contextual_memory_selection_changed","detail":reason}));
