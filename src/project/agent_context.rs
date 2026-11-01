@@ -23,6 +23,7 @@ pub(crate) fn contextual_host_is_pinned(
 }
 
 const MAX_CONTEXT_BYTES: usize = 64 * 1024;
+pub(crate) const NATIVE_GUIDANCE_BYTES: usize = MAX_CONTEXT_BYTES / 2;
 
 /// The provider binding requested for this particular native launch.  It is
 /// deliberately separate from the configured role and the Work identity.
@@ -102,7 +103,7 @@ fn project_parts_after_reads(
         agent_name,
         packet["goal"].as_str(),
         binding.host,
-        MAX_CONTEXT_BYTES / 2,
+        NATIVE_GUIDANCE_BYTES,
         packet,
     )?;
     let specialist = super::specialists::delivery(

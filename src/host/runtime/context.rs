@@ -2,14 +2,7 @@
 use serde_json::{json, Value};
 use std::path::Path;
 
-pub(super) fn format_agent_context(
-    project: &Path,
-    agent: &str,
-    config: &crate::config::types::AgentConfig,
-    path: &Path,
-    source: &str,
-    selection: &crate::host::assignment_context::Selection,
-) -> Option<String> {
+fn boundary_lines(config: &crate::config::types::AgentConfig) -> Vec<String> {
     let list = |items: &[String]| {
         if items.is_empty() {
             "none".into()
@@ -21,28 +14,7 @@ pub(super) fn format_agent_context(
                 .join(", ")
         }
     };
-    let relative = path
-        .strip_prefix(project)
-        .ok()?
-        .to_str()?
-        .replace('\\', "/");
-    let native = config.native_name(agent);
-    let product = if crate::producer::exitbind_surface() {
-        "Exitbind"
-    } else {
-        "Soulmate"
-    };
-    let presented = crate::host::runtime::redact(source);
-    let mut lines = vec![
-        format!("{product} plan-only context for {agent} (native event reported this agent)."),
-        format!("Agent ID: {}", super::safe_inline(agent)),
-        format!("Native task name: {}", super::safe_inline(&native)),
-        format!("Profile selected/presented: {}", super::safe_inline(&relative)),
-        format!("Profile SHA-256: {}", crate::evidence::hash::text(source)),
-        format!("Presented profile SHA-256: {} (after path redaction).", crate::evidence::hash::text(&presented)),
-        "Evidence is selected/presented bytes; it does not prove a model read or followed the profile.".into(),
-        "Declared boundary:".into(),
-    ];
+    let mut lines = vec!["Declared boundary:".to_owned()];
     for (key, values) in [
         ("observe", &config.observe),
         ("write", &config.write),
@@ -67,6 +39,71 @@ pub(super) fn format_agent_context(
         "  crossContext: {}",
         super::safe_inline(&config.cross_context)
     ));
+    lines
+}
+
+fn provenance_line(provenance: &crate::host::assignment_context::Provenance) -> String {
+    format!(
+        "Assignment provenance: project {}, work {}, assignment {}, role {}, configured agent {}, native task {}, profile source SHA-256 {}, packet context SHA-256 {}, project rules projection SHA-256 {}, root scope {}.",
+        super::safe_inline(&provenance.project), super::safe_inline(&provenance.work),
+        super::safe_inline(&provenance.assignment), super::safe_inline(&provenance.role),
+        super::safe_inline(&provenance.agent), super::safe_inline(&provenance.native),
+        super::safe_inline(&provenance.profile_sha256), super::safe_inline(&provenance.packet_digest),
+        super::safe_inline(&provenance.rules_sha256), super::safe_inline(&provenance.root_scope),
+    )
+}
+
+pub(super) fn note_delivery(
+    loaded: &crate::config::Loaded,
+    payload: &serde_json::Map<String, Value>,
+    child: Option<&Value>,
+) -> Result<(), String> {
+    let binding = child.and_then(|value| value["requiredAssignmentBinding"].as_str());
+    let permit = child.and_then(|value| {
+        value["requiredAssignment"]["currentAction"]
+            .get("beforeEditing")
+            .filter(|form| form.is_object())
+    });
+    let facts = child.and_then(|value| {
+        Some((
+            value["requiredFactsSha256"].as_str()?,
+            value["requiredRecipientSha256"].as_str()?,
+            value["requiredInstructionsSha256"].as_str()?,
+        ))
+    });
+    crate::session_goal::note_child_delivery(loaded, payload, binding, permit, facts)
+}
+
+pub(super) fn format_agent_context(
+    project: &Path,
+    agent: &str,
+    config: &crate::config::types::AgentConfig,
+    path: &Path,
+    source: &str,
+    selection: &crate::host::assignment_context::Selection,
+) -> Option<String> {
+    let relative = path
+        .strip_prefix(project)
+        .ok()?
+        .to_str()?
+        .replace('\\', "/");
+    let native = config.native_name(agent);
+    let product = if crate::producer::exitbind_surface() {
+        "Exitbind"
+    } else {
+        "Soulmate"
+    };
+    let presented = crate::host::runtime::redact(source);
+    let mut lines = vec![
+        format!("{product} plan-only context for {agent} (native event reported this agent)."),
+        format!("Agent ID: {}", super::safe_inline(agent)),
+        format!("Native task name: {}", super::safe_inline(&native)),
+        format!("Profile selected/presented: {}", super::safe_inline(&relative)),
+        format!("Profile SHA-256: {}", crate::evidence::hash::text(source)),
+        format!("Presented profile SHA-256: {} (after path redaction).", crate::evidence::hash::text(&presented)),
+        "Evidence is selected/presented bytes; it does not prove a model read or followed the profile.".into(),
+    ];
+    lines.extend(boundary_lines(config));
     match selection {
         crate::host::assignment_context::Selection::Bound {
             work,
@@ -87,19 +124,7 @@ pub(super) fn format_agent_context(
                     "Current architecture contract slice: {architecture}"
                 ));
             }
-            lines.push(format!(
-                "Assignment provenance: project {}, work {}, assignment {}, role {}, configured agent {}, native task {}, profile source SHA-256 {}, packet context SHA-256 {}, project rules projection SHA-256 {}, root scope {}.",
-                super::safe_inline(&provenance.project),
-                super::safe_inline(&provenance.work),
-                super::safe_inline(&provenance.assignment),
-                super::safe_inline(&provenance.role),
-                super::safe_inline(&provenance.agent),
-                super::safe_inline(&provenance.native),
-                super::safe_inline(&provenance.profile_sha256),
-                super::safe_inline(&provenance.packet_digest),
-                super::safe_inline(&provenance.rules_sha256),
-                super::safe_inline(&provenance.root_scope),
-            ));
+            lines.push(provenance_line(provenance));
             lines.push("Inherited global contract source identity: host-provided and unavailable to this product hook. Forbidden or superseded task scope: unobservable at this host boundary.".into());
             lines.push("Current eligible memory and lessons (complete items, ordered; omitted items have scoped read routes):".into());
             lines.push(serde_json::to_string(guidance).ok()?);
@@ -140,7 +165,18 @@ pub(super) fn complete_assignment(
         || assignment.clone(),
         |route| recipient_assignment(assignment, route),
     );
-    let mut complete = without_duplicate_assignment_summary(context, selected, assignment);
+    let config = child["configuredAgent"]
+        .as_str()
+        .and_then(|agent| loaded.agent(agent));
+    let mut complete = without_duplicate_assignment_summary(context, selected, assignment, config);
+    if child["requiredRules"]
+        .as_array()
+        .is_some_and(|rules| !rules.is_empty())
+    {
+        complete.push_str("\nCurrent project rules (complete verified bytes):\n");
+        complete
+            .push_str(&serde_json::to_string(&child["requiredRules"]).map_err(|e| e.to_string())?);
+    }
     complete.push_str("\nComplete current assignment, evidence and task conditions (verified for this recipient):\n");
     complete.push_str(&serde_json::to_string(&recipient).map_err(|e| e.to_string())?);
     Ok(complete)
@@ -195,6 +231,32 @@ pub(super) fn recipient_assignment(assignment: &Value, detail: &[String]) -> Val
                 }
             }
         }
+        // The same empty/status category can appear several times. Preserve
+        // the complete value once and use an explicit alias only for an
+        // identical serialized value.
+        let mut seen: Vec<(String, Vec<u8>)> = Vec::new();
+        for name in [
+            "obligations",
+            "findings",
+            "blockers",
+            "decisions",
+            "externalActions",
+        ] {
+            let Some(value) = categories.get(name) else {
+                continue;
+            };
+            let Ok(bytes) = serde_json::to_vec(value) else {
+                continue;
+            };
+            if let Some((first, _)) = seen.iter().find(|(_, original)| *original == bytes) {
+                categories.insert(
+                    name.into(),
+                    json!({"sameAs":format!("tasks.categoryDispositions.{first}")}),
+                );
+            } else {
+                seen.push((name.into(), bytes));
+            }
+        }
     }
     let first = result.pointer("/assignment/assignment/preservationAssignment");
     let second = result.pointer("/assignment/residual/humanHelp/preservationAssignment");
@@ -223,11 +285,13 @@ pub(super) fn without_duplicate_assignment_summary(
     context: &str,
     selection: &crate::host::assignment_context::Selection,
     assignment: &Value,
+    config: Option<&crate::config::types::AgentConfig>,
 ) -> String {
     let crate::host::assignment_context::Selection::Bound {
         work,
         assignment: assignment_id,
         packet_digest,
+        provenance,
         check_preparation,
         ..
     } = selection
@@ -242,6 +306,43 @@ pub(super) fn without_duplicate_assignment_summary(
     {
         let duplicate = format!("Current assignment: work {work}, assignment {assignment_id}, packet digest {packet_digest}.\n");
         result = result.replacen(&duplicate, "", 1);
+    }
+    if let Some(config) = config {
+        let boundary = json!({"observe":config.observe,"write":config.write,
+            "commands":config.commands,"skills":config.skills,
+            "memoryRead":config.memory_read,"memoryWrite":config.memory_write,
+            "memoryReview":config.memory_review,"memoryPromote":config.memory_promote,
+            "memoryReject":config.memory_reject,"memoryRevoke":config.memory_revoke,
+            "memoryExpire":config.memory_expire,"memoryForget":config.memory_forget,
+            "retention":config.retention,"crossContext":config.cross_context});
+        if packet["declaredBoundary"] == boundary {
+            result = result.replacen(&format!("{}\n", boundary_lines(config).join("\n")), "", 1);
+        }
+    }
+    let root_scope = packet["context"]["run"]["id"]
+        .as_str()
+        .or_else(|| packet["context"]["scope"]["planSha256"].as_str())
+        .unwrap_or("unavailable");
+    if assignment["assignment"]["residual"]["work"] == provenance.work.as_str()
+        && packet["context"]["next"]["assignment"] == provenance.assignment.as_str()
+        && packet["role"] == provenance.role.as_str()
+        && packet["agent"] == provenance.agent.as_str()
+        && packet["nativeTaskName"] == provenance.native.as_str()
+        && packet["profileSha256"] == provenance.profile_sha256.as_str()
+        && packet["context"]["digest"] == provenance.packet_digest.as_str()
+        && root_scope == provenance.root_scope.as_str()
+    {
+        let compact = format!(
+            "Project {}. Rules SHA-256 {}. Identity is in the assignment.",
+            super::safe_inline(&provenance.project),
+            super::safe_inline(&provenance.rules_sha256)
+        );
+        result = result.replacen(&provenance_line(provenance), &compact, 1);
+        result = result.replacen(
+            "Base profile is associated with this current assignment; model use is not inferred.\n",
+            "",
+            1,
+        );
     }
     if !check_preparation.is_null()
         && *check_preparation == assignment["assignment"]["checkPreparation"]

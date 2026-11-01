@@ -20,6 +20,22 @@ pub(crate) fn current_detail_command(loaded: &Loaded, work: &str) -> Value {
     command(loaded, Route::new(["work", "detail", work, "--json"]))
 }
 
+/// The request ID from the actual emitted pre-edit form, never a reconstructed
+/// request. A malformed or ambiguous form cannot establish delivery proof.
+pub(crate) fn permit_request_id(form: &Value) -> Option<&str> {
+    if form["required"] != true {
+        return None;
+    }
+    let argv = form["command"]["argv"].as_array()?;
+    let mut matches = argv.windows(2).filter(|pair| pair[0] == "--request-id");
+    let id = matches.next()?[1].as_str()?;
+    if id.is_empty() || matches.next().is_some() {
+        None
+    } else {
+        Some(id)
+    }
+}
+
 /// Forward the held-result admission check to its existing owner. Recovery
 /// must not create a successor while bytes for this exact assignment await
 /// return, and an unreadable held directory is also a refusal.

@@ -30,6 +30,205 @@ fn worker_receives_the_frozen_check_input_observation_before_work() {
 }
 
 #[test]
+fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
+    for change in [
+        "request",
+        "pre-input",
+        "ledger",
+        "goal",
+        "profile",
+        "rights",
+        "rules",
+        "old-proof",
+    ] {
+        let fixture = Fixture::new(&format!("r60-permit-{change}"));
+        if change == "rules" {
+            fs::write(
+                fixture.product.join("AGENTS.md"),
+                "Original required rule.\n",
+            )
+            .unwrap();
+        }
+        fixture.prepare_sonic();
+        let start = fixture
+            .hook(
+                json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+            )
+            .unwrap();
+        assert_eq!(
+            fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
+            "presented",
+            "{change}: {start}"
+        );
+        if change == "rules" {
+            assert!(start.contains("Original required rule."), "{start}");
+        }
+        let assignment = start
+            .split_once("Complete current assignment, evidence and task conditions (verified for this recipient):\n")
+            .and_then(|(_, rest)| rest.lines().next()).unwrap();
+        let assignment: Value = serde_json::from_str(assignment).unwrap();
+        let form = &assignment["currentAction"]["beforeEditing"];
+        assert_eq!(form["required"], true, "{change}: {start}");
+        let mut permit = form["command"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        for word in &mut permit {
+            if word == "<OPERATION>" {
+                *word = "Update fixture".into();
+            }
+        }
+        if change == "request" {
+            let index = permit
+                .iter()
+                .position(|word| word == "--request-id")
+                .unwrap();
+            permit[index + 1] = "unmatched-request".into();
+        }
+        if change == "old-proof" {
+            let path = fixture.product.join(".exitbind/child-intents.json");
+            let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            saved["intents"][0]["assignmentDelivery"]
+                .as_object_mut()
+                .unwrap()
+                .remove("permitForm");
+            fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        }
+        if change == "pre-input" {
+            fs::write(
+                fixture.product.join("changed-before-permit.txt"),
+                "unpermitted change\n",
+            )
+            .unwrap();
+        }
+        let result = run(
+            &permit,
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"",
+        );
+        assert!(result.status.success(), "{change}: {}", text(&result));
+        let result: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(result["allowed"], true, "{change}: {result}");
+        if !matches!(change, "request" | "pre-input" | "old-proof") {
+            assert_eq!(
+                result["childDeliveryContinuity"]["state"], "current",
+                "{change}: {result}"
+            );
+        }
+        match change {
+            "ledger" => {
+                let before =
+                    fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+                let index = permit
+                    .iter()
+                    .position(|word| word == "--request-id")
+                    .unwrap();
+                permit[index + 1] = "second-unrelated-request".into();
+                let _second = run(
+                    &permit,
+                    &fixture.product,
+                    &fixture.store,
+                    Some(SESSION),
+                    b"",
+                );
+                let after =
+                    fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+                assert_ne!(
+                    before["binding"], after["binding"],
+                    "the second event must actually advance the ledger"
+                );
+            }
+            "goal" => {
+                fixture.value(
+                    Some(SESSION),
+                    &[
+                        "goal",
+                        "incorporate",
+                        "--goal-id",
+                        "f5b-goal",
+                        "--goal",
+                        "A same-host lens needs no cross-host protocol",
+                        "--obligation",
+                        "A later independent obligation",
+                    ],
+                );
+            }
+            "profile" => fs::write(
+                fixture.product.join(super::PROFILE),
+                "Changed role instruction.\n",
+            )
+            .unwrap(),
+            "rights" => {
+                let path = fixture.product.join("exitbind.json");
+                let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                config["agents"]["worker"]["write"] = json!(["changed-scope"]);
+                fs::write(path, serde_json::to_vec(&config).unwrap()).unwrap();
+            }
+            "rules" => {
+                let before =
+                    fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+                fs::write(
+                    fixture.product.join("AGENTS.md"),
+                    "Changed required rule.\n",
+                )
+                .unwrap();
+                let after =
+                    fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+                assert_eq!(
+                    before["binding"], after["binding"],
+                    "recipient proof must catch rule drift when Work binding is unchanged"
+                );
+            }
+            _ => {}
+        }
+        fixture.hook(
+            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic",
+            "last_assistant_message":r#"{"outcome":"completed","summary":"Fixture","reason":""}"#}),
+        );
+        let intent = &fixture.intents().unwrap()[0];
+        assert!(intent["returnEventSha256"].is_null(), "{change}: {intent}");
+        assert!(intent["rawObservation"].is_object(), "{change}: {intent}");
+        assert!(intent.get("pendingReturn").is_none(), "{change}: {intent}");
+    }
+}
+
+#[test]
+fn oversized_host_rules_remain_uncredited_and_preserve_the_observation() {
+    let fixture = Fixture::new("r60-oversized-host-rules");
+    fs::write(fixture.product.join("AGENTS.md"), "r".repeat(20_000)).unwrap();
+    fixture.prepare_sonic();
+    let start = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(
+        start.contains("Complete assignment exceeds the host context envelope"),
+        "{start}"
+    );
+    assert_eq!(
+        fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
+        "unavailable"
+    );
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic",
+        "last_assistant_message":r#"{"outcome":"blocked","summary":"Fixture","reason":""}"#}),
+    );
+    let intent = &fixture.intents().unwrap()[0];
+    assert!(intent["returnEventSha256"].is_null());
+    assert!(intent["rawObservation"].is_object(), "{intent}");
+    assert!(intent.get("pendingReturn").is_none());
+}
+
+#[test]
 fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_invalid_results() {
     let fixture = Fixture::new("r60-host-return");
     fixture.prepare_sonic();

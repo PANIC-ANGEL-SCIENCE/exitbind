@@ -232,6 +232,7 @@ fn preparation_registry_loss_corruption_or_mismatch_refuses_intact_session() {
 #[test]
 fn supported_native_launch_delivers_and_uses_real_managed_tool() {
     let f = Fixture::new(false, false);
+    fs::write(f.root.join("AGENTS.md"), "Keep this fixture instruction.\n").unwrap();
     f.permit();
     let fake = f.root.join("fake-codex");
     let capture = f.root.join("prompt");
@@ -267,6 +268,18 @@ printf '%s\n' '{{"type":"thread.started","thread_id":"managed-native-fixture"}}'
         "native replacement"
     );
     let prompt = fs::read_to_string(capture).unwrap();
+    assert!(prompt.contains("Keep this fixture instruction."));
+    let packet = prompt
+        .lines()
+        .skip_while(|line| !line.starts_with("CURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS"))
+        .nth(1)
+        .expect("managed prompt includes the current assignment packet");
+    let packet: serde_json::Value = serde_json::from_str(packet).unwrap();
+    assert_eq!(
+        packet["currentAction"]["currentGrant"]["state"],
+        "current_for_this_worker_assignment"
+    );
+    assert!(packet["currentAction"]["beforeEditing"].is_null());
     assert!(prompt.contains("MANAGED FILE TOOL:"));
     let tool = prompt
         .lines()
@@ -279,4 +292,140 @@ printf '%s\n' '{{"type":"thread.started","thread_id":"managed-native-fixture"}}'
     assert!(!prompt.contains("--expected-sha256"));
     assert!(!prompt.contains("--operation STABLE_ID"));
     f.ok(&["work", "check", &f.work], b"");
+}
+
+#[test]
+fn managed_native_retains_result_when_recipient_rules_change_during_execution() {
+    let f = Fixture::new(false, false);
+    f.permit();
+    let fake = f.root.join("fake-codex-rules");
+    let script = r##"#!/bin/sh
+/bin/cat >/dev/null
+printf '%s\n' 'New project rule after launch.' > AGENTS.md
+printf '%s\n' '{"type":"thread.started","thread_id":"rules-change"}' '{"type":"item.completed","item":{"type":"agent_message","text":"{\"outcome\":\"completed\",\"summary\":\"fixture\",\"reason\":\"\"}"}}' '{"type":"turn.completed","status":"completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+"##;
+    fs::write(&fake, script).unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = f.call(
+        &[
+            "work",
+            "act",
+            &f.work,
+            "--codex-bin",
+            fake.to_str().unwrap(),
+        ],
+        b"",
+    );
+    refused(output, "recipient rules, rights or guidance changed");
+    let current = f.ok(&["work", "next", &f.work, "--full"], b"");
+    assert_eq!(current["next"]["assignment"], f.assignment);
+    assert_eq!(current["next"]["action"], "spawn");
+}
+
+#[test]
+fn managed_permit_edit_and_lost_reply_recover_one_saved_result_without_reexecution() {
+    use sha2::{Digest, Sha256};
+    for mode in ["matching", "unmatched", "pre-input"] {
+        let f = Fixture::new(false, false);
+        let relative = format!(".exitbind/runs/work-{}.jsonl", &f.work[4..]);
+        let lock_id = format!("{:x}", Sha256::digest(relative.as_bytes()));
+        let lock = f
+            .root
+            .join(format!(".exitbind/locks/run-v1-{lock_id}.lock"));
+        let marker = f.root.join("provider-attempts");
+        let fake = f.root.join("fake-codex-permit");
+        let script = r##"#!/usr/bin/env python3
+import json, subprocess, sys
+prompt = sys.stdin.read().splitlines()
+index = next(i for i, line in enumerate(prompt) if line.startswith('CURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS'))
+packet = json.loads(prompt[index + 1])
+form = packet['currentAction']['beforeEditing']
+assert form['required'] is True
+argv = ['Update managed fixture' if word == '<OPERATION>' else word for word in form['command']['argv']]
+if __MODE__ == 'pre-input':
+    open('src/preexisting.txt', 'w').write('changed before permit\n')
+if __MODE__ == 'unmatched':
+    argv[argv.index('--request-id') + 1] = 'unmatched-managed-request'
+reply = subprocess.run(argv, capture_output=True, check=True)
+assert json.loads(reply.stdout)['allowed'] is True
+open('src/native.txt', 'w').write('one managed edit\n')
+open(__MARKER__, 'a').write('x')
+with open(__LOCK__, 'x') as lock:
+    json.dump({'pid': __PID__, 'createdAt': '2026-11-01T00:00:00Z'}, lock)
+print(json.dumps({'type':'thread.started','thread_id':'permit-recovery'}))
+print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'outcome':'completed','summary':'managed edit','reason':''})}}))
+print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_tokens':1,'cached_input_tokens':0,'output_tokens':1}}))
+"##.replace("__MARKER__", &serde_json::to_string(marker.to_str().unwrap()).unwrap())
+        .replace("__LOCK__", &serde_json::to_string(lock.to_str().unwrap()).unwrap())
+        .replace("__MODE__", &serde_json::to_string(mode).unwrap())
+        .replace("__PID__", &std::process::id().to_string());
+        fs::write(&fake, script).unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+        let first = f.call(
+            &[
+                "work",
+                "act",
+                &f.work,
+                "--codex-bin",
+                fake.to_str().unwrap(),
+            ],
+            b"",
+        );
+        assert!(
+            lock.is_file(),
+            "fixture must own the submission lock: {first:?}"
+        );
+        fs::remove_file(&lock).unwrap();
+        refused(first, "busy");
+        assert_eq!(fs::read_to_string(&marker).unwrap(), "x");
+        assert_eq!(
+            fs::read_to_string(f.root.join("src/native.txt")).unwrap(),
+            "one managed edit\n"
+        );
+        if mode != "matching" {
+            let denied = f.call(&["work", "act", &f.work, "--resume"], b"");
+            assert!(!denied.status.success(), "{mode}: {denied:?}");
+            assert_eq!(fs::read_to_string(&marker).unwrap(), "x");
+            continue;
+        }
+        let rule = f.root.join("AGENTS.md");
+        fs::write(&rule, "A changed instruction.\n").unwrap();
+        let changed_rule = f.call(&["work", "act", &f.work, "--resume"], b"");
+        assert!(
+            !changed_rule.status.success(),
+            "changed rule: {changed_rule:?}"
+        );
+        fs::remove_file(rule).unwrap();
+        let config_path = f.root.join("exitbind.json");
+        let original_config = fs::read(&config_path).unwrap();
+        let mut config: Value = serde_json::from_slice(&original_config).unwrap();
+        config["agents"]["worker"]["write"] = json!(["different/**"]);
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let changed_rights = f.call(&["work", "act", &f.work, "--resume"], b"");
+        assert!(
+            !changed_rights.status.success(),
+            "changed rights: {changed_rights:?}"
+        );
+        fs::write(config_path, original_config).unwrap();
+        let resumed = f.call(&["work", "act", &f.work, "--resume"], b"");
+        assert!(resumed.status.success(), "{resumed:?}");
+        // Treat the successful reply as lost. Recovery must read the same saved
+        // result and must not start the provider or append the Work return again.
+        let ledger = f.root.join(&relative);
+        let before = fs::read(&ledger).unwrap();
+        let replay = f.call(
+            &[
+                "work",
+                "act",
+                &f.work,
+                "--resume",
+                "--operation",
+                &f.assignment,
+            ],
+            b"",
+        );
+        assert!(replay.status.success(), "{replay:?}");
+        assert_eq!(fs::read(&ledger).unwrap(), before);
+        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
+    }
 }

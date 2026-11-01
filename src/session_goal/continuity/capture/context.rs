@@ -8,11 +8,31 @@ use serde_json::{json, Value};
 /// Current, complete, bounded bytes for one prepared named child. A saved
 /// selector is never enough: binding, assignment and source hashes are rechecked.
 pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
+    context_inner(loaded, work, intent_id, false)
+}
+
+/// Internal host assembly is checked against the actual serialized host
+/// envelope after duplicate fields are removed. The public context reader
+/// keeps its existing independent 16 KiB result bound.
+pub(super) fn host_context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
+    context_inner(loaded, work, intent_id, true)
+}
+
+fn context_inner(
+    loaded: &Loaded,
+    work: &str,
+    intent_id: &str,
+    host_delivery: bool,
+) -> Result<Value, String> {
     let intent = load(loaded)?
         .into_iter()
         .find(|item| item["id"] == intent_id && item["work"] == work)
         .ok_or("prepared child intent is unknown")?;
-    if !matches!(intent["state"].as_str(), Some("prepared" | "claimed")) {
+    let pending_host_return = host_delivery
+        && intent["state"] == "recorded"
+        && intent["directAssignment"] == true
+        && intent["pendingReturn"] == true;
+    if !matches!(intent["state"].as_str(), Some("prepared" | "claimed")) && !pending_host_return {
         return Err("child context expired with its prepared assignment".into());
     }
     let (_, binding) = binding_of(loaded, work, &intent)?;
@@ -122,10 +142,22 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
         let mut complete = result.clone();
         complete["requiredAssignment"] = delivery["sections"].clone();
         complete["requiredAssignmentBinding"] = delivery["binding"].clone();
-        if serde_json::to_vec(&complete)
-            .map_err(|_| "child context serialization failed")?
-            .len()
-            <= 16 * 1024
+        if host_delivery {
+            complete["requiredFactsSha256"] = delivery["requiredFactsSha256"].clone();
+            complete["requiredRecipientSha256"] = delivery["recipientSha256"].clone();
+            complete["requiredRules"] = delivery["recipientRules"].clone();
+            complete["requiredInstructionsSha256"] = json!(hash::value(&json!({
+                "profile":result["profile"], "perspectives":result["perspectives"],
+                "guidance":result["guidance"], "architectureContract":result["architectureContract"],
+                "capabilities":result["capabilities"], "specialistExperience":result["specialistExperience"],
+                "rules":delivery["recipientRules"],
+            })));
+        }
+        if host_delivery
+            || serde_json::to_vec(&complete)
+                .map_err(|_| "child context serialization failed")?
+                .len()
+                <= 16 * 1024
         {
             result = complete;
         } else {
@@ -156,10 +188,11 @@ pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Va
     {
         return Err("child context changed during delivery; refresh the current assignment".into());
     }
-    if serde_json::to_vec(&result)
-        .map_err(|_| "child context serialization failed")?
-        .len()
-        > 16 * 1024
+    if !host_delivery
+        && serde_json::to_vec(&result)
+            .map_err(|_| "child context serialization failed")?
+            .len()
+            > 16 * 1024
     {
         return Err("child context exceeds the complete 16 KiB envelope".into());
     }

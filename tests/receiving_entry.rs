@@ -49,6 +49,15 @@ fn fill(template: &Value, values: &[(&str, &str)]) -> Vec<String> {
 }
 
 fn project(label: &str, requirements: Value, source: &str) -> (support::TempRoot, String) {
+    project_with_write(label, requirements, source, None)
+}
+
+fn project_with_write(
+    label: &str,
+    requirements: Value,
+    source: &str,
+    write: Option<&str>,
+) -> (support::TempRoot, String) {
     let root = support::temp(label);
     let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--root"])
@@ -56,6 +65,13 @@ fn project(label: &str, requirements: Value, source: &str) -> (support::TempRoot
         .output()
         .unwrap();
     assert!(init.status.success(), "{init:?}");
+    if let Some(path) = write {
+        let config_path = root.join("exitbind.json");
+        let mut config: Value =
+            serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+        config["agents"]["worker"]["write"] = json!([path]);
+        std::fs::write(config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    }
     let requirement = requirements.as_array().unwrap().first().unwrap();
     let preserve_requirement = format!(
         "{}:{}",
@@ -158,10 +174,11 @@ fn receiver_binds_and_records_a_child_from_the_continuation_view_alone() {
 
 #[test]
 fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture() {
-    let (root, work) = project(
+    let (root, work) = project_with_write(
         "receiving-named",
         json!([{"id":"docs","text":"Document the flag."}]),
         "Document the flag.",
+        Some("fixture.txt"),
     );
     let lead = exitbind(&root, &["work", "next", &work, "--full"], b"");
     let lead_assignment = lead["next"]["assignment"].as_str().unwrap();
@@ -270,9 +287,38 @@ fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture()
         delivered["intents"][0]["assignmentDelivery"]["state"], "presented",
         "{context}"
     );
+    let form = &assignment["currentAction"]["beforeEditing"];
+    assert_eq!(form["required"], true, "{context}");
+    assert_eq!(*form, expanded["actionForms"]["beforeEditing"]);
+    let permit = run(
+        &root,
+        &fill(
+            &form["command"]["argv"],
+            &[("<OPERATION>", "Update fixture text")],
+        ),
+        b"",
+    );
+    assert!(permit.status.success(), "{permit:?}");
+    let permit: Value = serde_json::from_slice(&permit.stdout).unwrap();
+    assert_eq!(permit["allowed"], true, "{permit}");
+    assert_eq!(
+        permit["childDeliveryContinuity"]["state"], "current",
+        "{permit}"
+    );
+    let stale = run(&root, &fill(&assignment["ownerActionDetail"], &[]), b"");
+    assert!(
+        !stale.status.success(),
+        "old detail must not survive the grant"
+    );
+    std::fs::write(root.join("fixture.txt"), "updated fixture\n").unwrap();
+    let current = exitbind(&root, &["work", "detail", &work, "--json"], b"");
+    assert_eq!(
+        current["effectiveAction"]["currentGrant"]["state"],
+        "current_for_this_worker_assignment"
+    );
     let stop = hook(json!({"hook_event_name":"SubagentStop", "cwd":root.path(),
         "session_id":"session-a", "agent_id":"named-child", "agent_type":native,
-        "last_assistant_message":r#"{"outcome":"blocked","summary":"Fixture blocked","reason":""}"#}));
+        "last_assistant_message":r#"{"outcome":"completed","summary":"Updated fixture text","reason":""}"#}));
     assert!(stop.status.success(), "{stop:?}");
     let captured: Value =
         serde_json::from_slice(&std::fs::read(root.join(".exitbind/child-intents.json")).unwrap())
@@ -284,6 +330,17 @@ fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture()
     assert!(
         captured["intents"][0].get("pendingReturn").is_none(),
         "{captured}"
+    );
+    let replay = hook(json!({"hook_event_name":"SubagentStop", "cwd":root.path(),
+        "session_id":"session-a", "agent_id":"named-child", "agent_type":native,
+        "last_assistant_message":r#"{"outcome":"completed","summary":"Updated fixture text","reason":""}"#}));
+    assert!(replay.status.success(), "{replay:?}");
+    let repeated: Value =
+        serde_json::from_slice(&std::fs::read(root.join(".exitbind/child-intents.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        repeated, captured,
+        "the same result must not be returned twice"
     );
     let after = exitbind(&root, &["work", "continuation", &work], b"");
     assert_eq!(

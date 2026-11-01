@@ -27,9 +27,40 @@ pub(super) fn validate_capture(
         return Err("receiving binding changed before host result return".into());
     }
     let current = work::current_action(loaded, work_id)?;
-    if !intent["assignmentDelivery"]["binding"].is_string()
-        || current["current"]["binding"] != intent["assignmentDelivery"]["binding"]
+    let delivery = &intent["assignmentDelivery"];
+    let recipient = delivery["recipientSha256"]
+        .as_str()
+        .ok_or("complete delivered recipient proof is unavailable")?;
+    if work::details::recipient_fingerprint(loaded, &current)? != recipient {
+        return Err(
+            "delivered recipient rules, rights or guidance changed before host result return"
+                .into(),
+        );
+    }
+    let expected = delivery["instructionsSha256"]
+        .as_str()
+        .ok_or("complete delivered instruction proof is unavailable")?;
+    let id = intent["id"]
+        .as_str()
+        .ok_or("child intent identity unavailable")?;
+    if super::context::host_context(loaded, work_id, id)?["requiredInstructionsSha256"] != expected
     {
+        return Err("delivered host instructions changed before host result return".into());
+    }
+    let exact =
+        delivery["binding"].is_string() && current["current"]["binding"] == delivery["binding"];
+    let authorized = if exact {
+        false
+    } else {
+        work::validate_child_delivery_successor(
+            loaded,
+            work_id,
+            intent["assignment"].as_str().unwrap_or_default(),
+            &current,
+            delivery,
+        )?
+    };
+    if !exact && !authorized {
         return Err("the presented Work binding changed before host result return".into());
     }
     let identity = &intent["directResultIdentity"];

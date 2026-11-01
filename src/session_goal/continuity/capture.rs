@@ -17,6 +17,8 @@ use super::perspective::{self, Frozen};
 mod adviser;
 #[path = "capture/context.rs"]
 mod context;
+#[path = "capture/delivery.rs"]
+mod delivery;
 #[path = "capture/raw.rs"]
 mod raw;
 #[path = "capture/recovery.rs"]
@@ -28,6 +30,7 @@ mod same_host;
 #[path = "capture/summary.rs"]
 mod summary;
 pub(crate) use context::context;
+pub(crate) use delivery::{advance as advance_child_delivery, has_presented, PermitTransition};
 pub(crate) use raw::{latest as latest_raw_result, list as raw_results, read as raw_result};
 pub(crate) use recovery::recover;
 pub(crate) use same_host::route as same_host_route;
@@ -485,7 +488,7 @@ pub(crate) fn claim(
         }
         if !intents[index]["selected"].is_null() {
             let intent = intents[index]["id"].as_str().unwrap_or_default();
-            if let Err(error) = context(loaded, &work, intent) {
+            if let Err(error) = context::host_context(loaded, &work, intent) {
                 intents[index]["state"] = json!("abandoned");
                 let reason = format!("child context unavailable: {error}");
                 intents[index]["failure"] = json!(&reason);
@@ -516,7 +519,7 @@ pub(crate) fn claimed_context(
     let (Some(work), Some(id)) = (intent["work"].as_str(), intent["id"].as_str()) else {
         return Err("claimed child identity is malformed".into());
     };
-    context(loaded, work, id).map(Some)
+    context::host_context(loaded, work, id).map(Some)
 }
 
 /// Record only the product's completed host presentation; this does not
@@ -525,6 +528,8 @@ pub(crate) fn note_delivery(
     loaded: &Loaded,
     payload: &serde_json::Map<String, Value>,
     binding: Option<&str>,
+    permit_form: Option<&Value>,
+    facts: Option<(&str, &str, &str)>,
 ) -> Result<(), String> {
     let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
     else {
@@ -551,10 +556,49 @@ pub(crate) fn note_delivery(
         let presented = binding.is_some_and(|expected| {
             crate::work::details::ensure_action_binding(loaded, work, Some(expected)).is_ok()
                 && selected_is_current(loaded, work, &intent["selected"])
+                && facts.is_some_and(|(required, recipient, instructions)| {
+                    required.len() == 64
+                        && recipient.len() == 64
+                        && instructions.len() == 64
+                        && crate::work::current_action(loaded, work)
+                            .and_then(|current| {
+                                crate::work::details::recipient_fingerprint(loaded, &current)
+                            })
+                            .is_ok_and(|current| current == recipient)
+                        && intent["id"]
+                            .as_str()
+                            .and_then(|id| context::host_context(loaded, work, id).ok())
+                            .is_some_and(|current| {
+                                current["requiredInstructionsSha256"] == instructions
+                            })
+                })
         });
+        let proof = if presented {
+            permit_form.and_then(|form| {
+                let current = crate::work::current_action(loaded, work).ok()?;
+                let current_binding = binding?;
+                let canonical =
+                    crate::work::action_forms::full(loaded, work, &current, current_binding);
+                if canonical["beforeEditing"] != *form {
+                    return None;
+                }
+                let request_id = crate::work::action_forms::permit_request_id(form)?;
+                Some(json!({"sha256":hash::value(form),"requestId":request_id}))
+            })
+        } else {
+            None
+        };
         intent["assignmentDelivery"] = json!({"state": if presented { "presented" } else { "unavailable" },
             "binding":if presented { binding } else { None },
             "meaning":"complete product presentation only; native model use is not inferred"});
+        if let Some((required, recipient, instructions)) = facts.filter(|_| presented) {
+            intent["assignmentDelivery"]["requiredFactsSha256"] = json!(required);
+            intent["assignmentDelivery"]["recipientSha256"] = json!(recipient);
+            intent["assignmentDelivery"]["instructionsSha256"] = json!(instructions);
+        }
+        if let Some(proof) = proof {
+            intent["assignmentDelivery"]["permitForm"] = proof;
+        }
         Ok(())
     })
 }

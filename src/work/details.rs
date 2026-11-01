@@ -519,15 +519,160 @@ pub(crate) fn required_assignment(
             crate::emitted::command_line(&["work", "detail", work, "--json"], Some(&loaded.path));
         return Err(format!("native required evidence {item} is not completely readable; use {route} before provider launch"));
     }
-    let mut sections = detail["sections"].clone();
-    if let Some(tasks) = sections["tasks"].as_object_mut() {
-        tasks.remove("systemText");
+    let recipient = &detail["recipientContext"];
+    if recipient["available"] != true || !recipient["rules"].is_array() {
+        return Err("current recipient instructions are unavailable for native delivery".into());
     }
+    let sections = native_sections(
+        detail["sections"].clone(),
+        &detail["actionForms"],
+        &detail["binding"],
+    );
     Ok(json!({
         "canonicalAssignment": fresh["packet"],
+        "requiredFactsSha256": hash::value(&sections),
+        "recipientSha256": hash::value(recipient),
+        "recipientRules": recipient["rules"],
         "sections": sections,
         "binding": detail["binding"],
     }))
+}
+
+fn native_sections(mut sections: Value, forms: &Value, binding: &Value) -> Value {
+    if let Some(tasks) = sections["tasks"].as_object_mut() {
+        tasks.remove("systemText");
+    }
+    let choices = if forms["leadChoiceRequired"] == true {
+        Vec::new()
+    } else {
+        forms["choices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|choice| choice["label"].as_str())
+            .collect::<Vec<_>>()
+    };
+    // The actor receives the actual form, not a newly constructed permit.
+    // Complete return forms remain at the same bound grouped-detail route;
+    // host and managed execution already supply the typed result contract.
+    let mut actor_action = json!({
+        "binding": binding,
+        "returnChoices": choices,
+    });
+    if !forms["beforeEditing"].is_null() {
+        actor_action["beforeEditing"] = forms["beforeEditing"].clone();
+    }
+    if !forms["currentGrant"].is_null() {
+        actor_action["currentGrant"] = forms["currentGrant"].clone();
+    }
+    if !forms["nextRequest"].is_null() {
+        actor_action["nextRequest"] = forms["nextRequest"].clone();
+    }
+    if forms["leadChoiceRequired"] == true {
+        actor_action["leadChoiceRequired"] = json!(true);
+    }
+    sections["currentAction"] = actor_action;
+    sections
+}
+
+/// Reproduce the required facts from a validated predecessor snapshot. This
+/// proves the one governor transition without treating that old view as a
+/// current read route or changing the ledger.
+pub(super) fn native_snapshot_facts(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &RunSnapshot,
+    next: &Value,
+    pre_edit_inputs: &str,
+    managed: bool,
+) -> Result<Value, String> {
+    ensure_current_config(loaded)?;
+    let mut canonical = next.clone();
+    canonical
+        .as_object_mut()
+        .ok_or("predecessor action unavailable")?
+        .remove("current");
+    if let Some(assignment) = canonical["assignment"].as_str().map(str::to_owned) {
+        super::attach_held(loaded, work, &assignment, &mut canonical)?;
+    }
+    let binding = binding(loaded, work, snapshot, &canonical)?;
+    let recipient = super::readable::recipient_context::read(loaded, &canonical)?;
+    if recipient["available"] != true || !recipient["rules"].is_array() {
+        return Err("predecessor recipient instructions are unavailable".into());
+    }
+    let mut sections = Value::Object(super::readable::grouped_sections(
+        loaded, work, snapshot, &canonical, &binding,
+    )?);
+    if !super::readable::evidence_complete(&sections["evidence"]) {
+        return Err("predecessor required evidence is unavailable".into());
+    }
+    let observed = sections
+        .pointer_mut("/assignment/residual/snapshot/inputsSha256")
+        .filter(|value| value.is_string())
+        .ok_or("predecessor input observation is unavailable")?;
+    if pre_edit_inputs.len() != 64 || !pre_edit_inputs.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("grant pre-edit input identity is malformed".into());
+    }
+    // Only this historical observation comes from the exact validated grant.
+    // Current result/check inputs remain untouched.
+    *observed = json!(pre_edit_inputs);
+    let forms = super::action_forms::full(loaded, work, &canonical, &binding);
+    let mut sections = native_sections(sections, &forms, &json!(binding));
+    let continuation = if managed {
+        crate::project::continuation::runtime::delivery(loaded, work)?
+    } else {
+        None
+    };
+    if let Some(delivery) = continuation {
+        sections["projectContinuation"] = delivery;
+    }
+    Ok(
+        json!({"binding":binding,"requiredFactsSha256":hash::value(&sections),
+        "recipientSha256":hash::value(&recipient)}),
+    )
+}
+
+/// The same recipient owner rechecks rules, profile, rights and guidance at
+/// return; the hash is evidence of currentness, not an authority grant.
+pub(crate) fn recipient_fingerprint(loaded: &Loaded, current: &Value) -> Result<String, String> {
+    ensure_current_config(loaded)?;
+    let recipient = super::readable::recipient_context::read(loaded, current)?;
+    if recipient["available"] != true || !recipient["rules"].is_array() {
+        return Err("current recipient instructions are unavailable".into());
+    }
+    Ok(hash::value(&recipient))
+}
+
+/// Managed execution uses the same host-specific guidance and specialist
+/// owners as its request builder, in addition to the shared recipient view.
+pub(crate) fn managed_recipient_fingerprint(
+    loaded: &Loaded,
+    current: &Value,
+) -> Result<String, String> {
+    let recipient = recipient_fingerprint(loaded, current)?;
+    let packet = &current["packet"];
+    let agent = current["agent"]
+        .as_str()
+        .ok_or("native agent unavailable")?;
+    let role = current["role"].as_str().ok_or("native role unavailable")?;
+    let goal = packet["goal"].as_str();
+    let guidance = crate::project::agent_context::guidance_for_assignment(
+        loaded,
+        agent,
+        goal,
+        "codex",
+        crate::project::agent_context::NATIVE_GUIDANCE_BYTES,
+        packet,
+    )?;
+    let architecture = crate::project::architecture::delivery(loaded, packet)?;
+    let capabilities = crate::project::capabilities::delivery(loaded, packet, "codex")?;
+    let specialist =
+        crate::project::specialists::delivery(loaded, agent, role, goal.unwrap_or(""), "codex")?;
+    Ok(hash::value(
+        &json!({"recipient":recipient,"guidance":guidance,
+        "architecture":architecture,"capabilities":capabilities,"specialist":specialist}),
+    ))
 }
 
 fn hex(bytes: &[u8]) -> String {

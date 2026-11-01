@@ -49,6 +49,16 @@ pub(crate) fn permit(
         &permission,
         &next,
     );
+    match super::permit_delivery::carry(loaded, work, assignment, &ledger, &permission) {
+        Ok(Some(true)) => response["childDeliveryContinuity"] = json!({"state":"current"}),
+        Ok(Some(false)) | Err(_) => {
+            response["childDeliveryContinuity"] = json!({
+                "state":"unavailable",
+                "meaning":"the permit is unchanged; a host result cannot receive automatic credit without a current delivered assignment"
+            })
+        }
+        Ok(None) => {}
+    }
     super::refreshed_action::attach(loaded, work, &next, &mut response);
     Ok(agent_response(response))
 }
@@ -153,8 +163,11 @@ pub(super) fn compact(
     response
 }
 
-fn is_current_grant(permission: &Value, next: &Value, assignment: &str) -> bool {
-    let event = &permission["event"];
+pub(super) fn is_current_grant(permission: &Value, next: &Value, assignment: &str) -> bool {
+    is_current_grant_event(&permission["event"], next, assignment)
+}
+
+pub(super) fn is_current_grant_event(event: &Value, next: &Value, assignment: &str) -> bool {
     let nested = &event["governorEvent"];
     let loop_state = &next["packet"]["context"]["loop"];
     let grant = &loop_state["currentMutation"];

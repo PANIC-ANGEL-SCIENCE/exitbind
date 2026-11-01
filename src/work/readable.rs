@@ -338,7 +338,7 @@ pub(crate) fn expand(
     read(loaded, work, snapshot, next)
 }
 
-fn grouped_sections(
+pub(super) fn grouped_sections(
     loaded: &Loaded,
     work: &str,
     snapshot: &RunSnapshot,

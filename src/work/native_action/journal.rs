@@ -64,6 +64,44 @@ pub(super) fn pre_return_replay_identity(
     Ok(Some(identity))
 }
 
+/// Only a new journal that recorded the delivered canonical form and facts
+/// may use the shared, exact single-grant predecessor proof.
+pub(super) fn permit_replay_identity(
+    loaded: &Loaded,
+    work: &str,
+    journal: &Value,
+    assignment: &str,
+) -> Result<Option<Identity>, String> {
+    if journal["recipientProofVersion"] != 1 || !journal["permitDeliveryProof"].is_object() {
+        return Ok(None);
+    }
+    validate_completed_observation(journal)?;
+    let ledger = crate::work::resolve(loaded, work)?;
+    let Some(verified) = crate::work::permit_delivery::verified_transition(
+        loaded, work, assignment, &ledger, None, true,
+    )?
+    else {
+        return Ok(None);
+    };
+    let proof = &journal["permitDeliveryProof"];
+    if proof["binding"] != verified.before["current"]["binding"]
+        || proof["formSha256"] != hash::value(&verified.form)
+        || proof["requestId"].as_str()
+            != crate::work::action_forms::permit_request_id(&verified.form)
+        || proof["requiredFactsSha256"] != verified.facts["requiredFactsSha256"]
+        || proof["recipientViewSha256"] != verified.facts["recipientSha256"]
+        || journal["recipientSha256"]
+            != crate::work::details::managed_recipient_fingerprint(loaded, &verified.current)?
+    {
+        return Ok(None);
+    }
+    let identity = assignment_identity(&verified.before)?;
+    if identity.assignment != assignment {
+        return Ok(None);
+    }
+    Ok(Some(identity))
+}
+
 pub(super) fn journal_result(journal: &Value) -> Result<Vec<u8>, String> {
     let encoded = journal["result"]
         .as_str()

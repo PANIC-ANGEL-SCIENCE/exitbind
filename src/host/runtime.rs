@@ -136,7 +136,7 @@ pub fn run() -> Result<(), String> {
         let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object));
         return Ok(());
     }
-    let mut presented_assignment_binding = None;
+    let mut presented_child = None;
     let text = if event == "SessionStart" {
         let lead = crate::project::agent_display::lead(&loaded);
         let mut text = session_summary(&loaded.config, Some(&loaded.path), &lead);
@@ -361,7 +361,6 @@ pub fn run() -> Result<(), String> {
                             .push_str(&serde_json::to_string(contract).map_err(|e| e.to_string())?);
                     }
                     if let Some(assignment) = child.get("requiredAssignment") {
-                        let binding = child["requiredAssignmentBinding"].as_str();
                         let complete = context::complete_assignment(
                             &loaded, &child, &selected, assignment, &context,
                         )?;
@@ -381,7 +380,7 @@ pub fn run() -> Result<(), String> {
                             .is_some()
                         {
                             context = complete;
-                            presented_assignment_binding = binding.map(str::to_owned);
+                            presented_child = Some(child.clone());
                         } else {
                             context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
                         }
@@ -422,13 +421,7 @@ pub fn run() -> Result<(), String> {
     };
     emit(event, &text)?;
     if event == "SubagentStart" {
-        let _ = retry_busy(|| {
-            crate::session_goal::note_child_delivery(
-                &loaded,
-                object,
-                presented_assignment_binding.as_deref(),
-            )
-        });
+        let _ = retry_busy(|| context::note_delivery(&loaded, object, presented_child.as_ref()));
     }
     Ok(())
 }

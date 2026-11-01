@@ -1,5 +1,7 @@
 #[path = "native_action/continuation.rs"]
 pub(super) mod continuation;
+#[path = "native_action/delivery.rs"]
+mod delivery;
 #[path = "native_action/host_return.rs"]
 mod host_return;
 #[path = "native_action/journal.rs"]
@@ -106,9 +108,18 @@ pub(crate) fn execute(
             if !options.resume || journal["status"] != "completed" {
                 return Err(error);
             }
-            let previous =
-                journal::pre_return_replay_identity(loaded, work, &journal, &identity.assignment)?
-                    .ok_or(error)?;
+            let previous = match journal::pre_return_replay_identity(
+                loaded,
+                work,
+                &journal,
+                &identity.assignment,
+            )? {
+                Some(previous) => Some(previous),
+                None => {
+                    journal::permit_replay_identity(loaded, work, &journal, &identity.assignment)?
+                }
+            }
+            .ok_or(error)?;
             verify_journal(&journal, work, &previous, role, agent)?;
             replay_binding = Some(
                 current["current"]["binding"]
@@ -133,8 +144,14 @@ pub(crate) fn execute(
                 validate_completed_observation(&journal)?;
                 let bytes = journal_result(&journal)?;
                 continuation::reconcile_saved(loaded, work, &journal)?;
-                let response =
-                    submit_saved(loaded, work, &identity.assignment, bytes, replay_binding)?;
+                let response = delivery::submit_saved_checked(
+                    loaded,
+                    work,
+                    &identity.assignment,
+                    bytes,
+                    replay_binding,
+                    &journal,
+                )?;
                 return Ok(recovery::mark_same_work_return(
                     response,
                     work,
@@ -215,9 +232,17 @@ pub(crate) fn execute(
     }
 
     let mut selected = crate::work::details::required_assignment(loaded, work, current)?;
+    let recipient_sha256 = crate::work::details::managed_recipient_fingerprint(loaded, current)?;
     if let Some(delivery) = crate::project::continuation::runtime::delivery(loaded, work)? {
         selected["sections"]["projectContinuation"] = delivery;
     }
+    let form = &selected["sections"]["currentAction"]["beforeEditing"];
+    let permit_delivery_proof =
+        crate::work::action_forms::permit_request_id(form).map(|request_id| {
+            json!({"binding":selected["binding"], "formSha256":hash::value(form),
+            "requestId":request_id, "requiredFactsSha256":hash::value(&selected["sections"]),
+            "recipientViewSha256":selected["recipientSha256"]})
+        });
     let assignment = &selected["canonicalAssignment"];
     let _canonical_packet = bounded_json(assignment, MAX_PACKET_BYTES, "assignment packet")?;
     let packet = bounded_json(
@@ -281,6 +306,9 @@ pub(crate) fn execute(
         &schema_path,
         thread_id,
     )?;
+    if crate::work::details::managed_recipient_fingerprint(loaded, current)? != recipient_sha256 {
+        return Err("native recipient instructions changed before launch".into());
+    }
     if resuming {
         if let Some(recorded) = recorded_request.as_ref() {
             recovery::validate_rebuilt_request(&json!({"request": recorded}), &request)?;
@@ -321,6 +349,9 @@ pub(crate) fn execute(
                 "work": work,
                 "assignment": identity.assignment,
                 "assignmentSha256": identity.packet_sha256,
+                "recipientProofVersion": 1,
+                "recipientSha256": recipient_sha256,
+                "permitDeliveryProof": permit_delivery_proof,
                 "role": role,
                 "agent": agent,
                 "stage": current["packet"]["stage"],
@@ -458,7 +489,8 @@ pub(crate) fn execute(
             ));
         }
     };
-    submit_saved(loaded, work, &identity.assignment, bytes, None)
+    let journal = read_journal(&paths.journal)?.ok_or("native result journal disappeared")?;
+    delivery::submit_saved_checked(loaded, work, &identity.assignment, bytes, None, &journal)
 }
 
 struct Paths {
