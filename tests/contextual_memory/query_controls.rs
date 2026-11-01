@@ -271,7 +271,7 @@ fn source_observations_distinguish_no_match_stale_missing_and_revoked() {
         use std::os::unix::fs::PermissionsExt;
         let path = f.root.join("original.txt");
         let permissions = fs::metadata(&path).unwrap().permissions();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
         if fs::File::open(&path).is_err() {
             let unreadable = query("source", "known original");
             assert_eq!(unreadable["diagnostics"]["status"], "incomplete");
