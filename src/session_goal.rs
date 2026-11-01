@@ -34,11 +34,11 @@ pub(crate) use presentation::{
 };
 pub(crate) mod usage;
 pub(crate) use continuity::{
-    advance_child_delivery, blocking_child, child_context, claim_child, claimed_child_context,
-    continuation_bind, continuation_child, continuation_record, continuation_section,
-    continuation_view, continuation_view_for_work, finalize_child, has_presented_child,
-    latest_raw_result, note_child_delivery, prepare_child, raw_child_result, raw_child_results,
-    recover_child, same_host_child_route, PermitTransition, PrepareFence,
+    advance_child_delivery, blocking_child, child_callback_scope, child_context, claim_child,
+    claimed_child_context, continuation_bind, continuation_child, continuation_record,
+    continuation_section, continuation_view, continuation_view_for_work, finalize_child,
+    has_presented_child, latest_raw_result, note_child_delivery, prepare_child, raw_child_result,
+    raw_child_results, recover_child, same_host_child_route, PermitTransition, PrepareFence,
 };
 
 const FILE: &str = "session-goal.jsonl";

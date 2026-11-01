@@ -30,6 +30,8 @@ const LENSES: [(&str, &str); 2] = [
 ];
 const RESULT: &str = "Implemented; evidence attached.\n";
 
+#[path = "same_host_delivery.rs"]
+mod delivery;
 #[path = "same_host_recover.rs"]
 mod recover;
 
@@ -80,6 +82,10 @@ impl Fixture {
     }
 
     fn new_with_check(name: &str, check: &str) -> Self {
+        Self::new_with_check_and_write(name, check, None)
+    }
+
+    fn new_with_check_and_write(name: &str, check: &str, write: Option<&str>) -> Self {
         let base = super::support::temp(name);
         let product = base.join("product");
         let store = base.join("session-goals");
@@ -104,6 +110,9 @@ impl Fixture {
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
         config["agents"]["worker"]["profile"] = json!(PROFILE);
         config["agents"]["worker"]["nativeName"] = json!("sonic");
+        if let Some(path) = write {
+            config["agents"]["worker"]["write"] = json!([path]);
+        }
         fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
         let mut files = vec![(PROFILE.to_owned(), PROFILE_BODY)];
         for (id, body) in LENSES {

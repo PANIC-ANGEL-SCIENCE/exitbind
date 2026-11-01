@@ -249,11 +249,12 @@ mod requirements;
 mod reuse;
 mod view;
 pub(crate) use capture::{
-    advance_child_delivery, claim as claim_child, claimed_context as claimed_child_context,
-    context as child_context, finalize as finalize_child, has_presented as has_presented_child,
-    latest_raw_result, note_delivery as note_child_delivery, prepare as prepare_child,
-    raw_result as raw_child_result, raw_results as raw_child_results, recover as recover_child,
-    same_host_route as same_host_child_route, PermitTransition, PrepareFence,
+    advance_child_delivery, callback_scope as child_callback_scope, claim as claim_child,
+    claimed_context as claimed_child_context, context as child_context, finalize as finalize_child,
+    has_presented as has_presented_child, latest_raw_result, note_delivery as note_child_delivery,
+    prepare as prepare_child, raw_result as raw_child_result, raw_results as raw_child_results,
+    recover as recover_child, same_host_route as same_host_child_route, PermitTransition,
+    PrepareFence,
 };
 pub(crate) use record::{continuation_bind, continuation_child, continuation_record};
 pub(crate) use view::{

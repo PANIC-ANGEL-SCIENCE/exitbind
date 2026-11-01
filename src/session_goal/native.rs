@@ -6,8 +6,11 @@
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
 use std::{
+    cell::RefCell,
     env, fs,
+    marker::PhantomData,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 const OWNER_FILE: &str = "owner.json";
@@ -15,6 +18,12 @@ const OWNER_MAX_BYTES: u64 = 4096;
 /// The owner-record field of a session that adopted another session's
 /// journal: that journal's session key.
 const ADOPTED_FIELD: &str = "journalSessionKey";
+
+thread_local! {
+    // Only a callback whose existing child intent and Work owner were
+    // verified may install this temporary, thread-local projection context.
+    static CALLBACK_SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+}
 
 #[derive(Clone)]
 pub(crate) struct Session {
@@ -26,6 +35,49 @@ pub(crate) struct Session {
     /// `session_id` is matched against this key, never against `key`.
     pub(crate) selector_key: String,
     pub(crate) root: PathBuf,
+}
+
+/// Restore the preceding projection context on every exit, including unwind.
+/// The guard cannot move to another thread where a different slot would be
+/// restored.
+pub(crate) struct CallbackSessionGuard {
+    previous: Option<Session>,
+    _same_thread: PhantomData<Rc<()>>,
+}
+
+impl Drop for CallbackSessionGuard {
+    fn drop(&mut self) {
+        CALLBACK_SESSION.with(|slot| *slot.borrow_mut() = self.previous.take());
+    }
+}
+
+/// Use only an already owner-verified child session for one callback. An
+/// ambient selector remains authoritative and must agree with that session.
+pub(crate) fn scoped_callback_session(session: Session) -> Result<CallbackSessionGuard, String> {
+    if let Some((host, identity)) = current_identity()? {
+        if host != session.host || !session.reports(&identity) {
+            return Err(
+                "native selector conflicts with the verified child receiving session".into(),
+            );
+        }
+    }
+    install_callback_session(session)
+}
+
+fn install_callback_session(session: Session) -> Result<CallbackSessionGuard, String> {
+    let previous = CALLBACK_SESSION.with(|slot| {
+        let mut current = slot.borrow_mut();
+        if current.as_ref().is_some_and(|existing| {
+            existing.host != session.host || existing.selector_key != session.selector_key
+        }) {
+            return Err("nested child receiving sessions disagree".to_owned());
+        }
+        Ok(current.replace(session))
+    })?;
+    Ok(CallbackSessionGuard {
+        previous,
+        _same_thread: PhantomData,
+    })
 }
 
 #[derive(Clone)]
@@ -77,6 +129,9 @@ impl Scope {
 /// Resolve only host-reported selectors belonging to the current process.
 /// A missing selector is distinct from malformed, mixed, or conflicting IDs.
 pub(crate) fn current() -> Result<Option<Session>, String> {
+    if let Some(session) = CALLBACK_SESSION.with(|slot| slot.borrow().clone()) {
+        return Ok(Some(session));
+    }
     match current_identity()? {
         Some((host, identity)) => session(host, Some(identity)),
         None => Ok(None),
@@ -508,7 +563,35 @@ pub(crate) fn valid_hash(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::claude_identity;
+    use super::{claude_identity, install_callback_session, Session, CALLBACK_SESSION};
+
+    #[test]
+    fn callback_session_scope_restores_after_nested_return_and_unwind() {
+        let session = Session {
+            host: "claude",
+            key: "journal".into(),
+            selector_key: "selector".into(),
+            root: "/fixture".into(),
+        };
+        assert!(CALLBACK_SESSION.with(|slot| slot.borrow().is_none()));
+        let outer = install_callback_session(session.clone()).unwrap();
+        {
+            let _inner = install_callback_session(session.clone()).unwrap();
+            assert_eq!(super::current().unwrap().unwrap().selector_key, "selector");
+            let mut wrong = session.clone();
+            wrong.selector_key = "other".into();
+            assert!(install_callback_session(wrong).is_err());
+        }
+        assert_eq!(super::current().unwrap().unwrap().selector_key, "selector");
+        drop(outer);
+        assert!(CALLBACK_SESSION.with(|slot| slot.borrow().is_none()));
+        let unwind = std::panic::catch_unwind(|| {
+            let _guard = install_callback_session(session).unwrap();
+            panic!("synthetic callback failure");
+        });
+        assert!(unwind.is_err());
+        assert!(CALLBACK_SESSION.with(|slot| slot.borrow().is_none()));
+    }
 
     #[test]
     fn claude_host_session_selector_wins_over_a_stale_export() {

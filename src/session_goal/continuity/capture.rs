@@ -33,7 +33,7 @@ pub(crate) use context::context;
 pub(crate) use delivery::{advance as advance_child_delivery, has_presented, PermitTransition};
 pub(crate) use raw::{latest as latest_raw_result, list as raw_results, read as raw_result};
 pub(crate) use recovery::recover;
-pub(crate) use same_host::route as same_host_route;
+pub(crate) use same_host::{callback_scope, route as same_host_route};
 pub(crate) use summary::{blocking, summary};
 
 const FILE: &str = "child-intents.json";
@@ -611,6 +611,7 @@ fn is_busy(error: &str) -> bool {
 pub(crate) fn finalize(
     loaded: &Loaded,
     payload: &serde_json::Map<String, Value>,
+    unavailable: Option<&str>,
 ) -> Result<(), String> {
     let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
     else {
@@ -639,7 +640,10 @@ pub(crate) fn finalize(
             if let (Some(message), Some(digest)) = (message, &digest) {
                 if intent["resultSha256"] != digest.as_str() {
                     intent["conflict"] = json!({"resultSha256": digest, "bytes": message.len()});
-                } else if intent["pendingReturn"] == true && !intent["held"].is_object() {
+                } else if unavailable.is_none()
+                    && intent["pendingReturn"] == true
+                    && !intent["held"].is_object()
+                {
                     direct_return = intent["id"].as_str().map(str::to_owned);
                 }
             }
@@ -660,6 +664,16 @@ pub(crate) fn finalize(
             return Ok(());
         }
         let work = intent["work"].as_str().unwrap_or_default().to_owned();
+        if let Some(reason) = unavailable {
+            if intent["directAssignment"] == true {
+                return_result::retain_raw(loaded, &work, intent, message, reason);
+            } else {
+                intent["state"] = json!("failed");
+                intent["failure"] = json!(reason);
+                intent["pendingResult"] = json!(message);
+            }
+            return Ok(());
+        }
         let (goal, binding) = match observed_binding(loaded, &work, intent) {
             Ok(observed) => observed,
             Err(error) if intent["directAssignment"] == true => {

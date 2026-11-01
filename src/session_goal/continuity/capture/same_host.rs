@@ -26,10 +26,16 @@ fn binding_value(host: &str, identity: &str) -> Value {
     json!({"session": identity, "host": host, "revision": REVISION})
 }
 
-fn verify(loaded: &Loaded, work: &str, host: &str, identity: &str) -> Result<(), String> {
+fn verify(
+    loaded: &Loaded,
+    work: &str,
+    host: &str,
+    identity: &str,
+) -> Result<crate::session_goal::native::Session, String> {
     let session = crate::session_goal::native::host_session(host, identity)?
         .ok_or("native session identity is unavailable")?;
-    crate::session_goal::association::verify_owner_session(loaded, work, session)
+    crate::session_goal::association::verify_owner_session(loaded, work, session.clone())?;
+    Ok(session)
 }
 
 /// The binding of the current native session, which must hold `work`.
@@ -60,6 +66,62 @@ pub(super) fn of_intent(loaded: &Loaded, work: &str, intent: &Value) -> Result<V
     };
     verify(loaded, work, host, identity)?;
     Ok(binding_value(host, identity))
+}
+
+/// Recover the same owner-verified session for a matched host callback.
+pub(super) fn verified_session(
+    loaded: &Loaded,
+    work: &str,
+    intent: &Value,
+) -> Result<crate::session_goal::native::Session, String> {
+    let (Some(host), Some(identity)) = (intent["host"].as_str(), intent["session"].as_str()) else {
+        return Err("same-host child intent is malformed".into());
+    };
+    verify(loaded, work, host, identity)
+}
+
+/// Bind Goal projections for a uniquely matched same-host callback to the
+/// Work owner's already verified native session. Other callbacks keep their
+/// existing context; stale owners go through the ordinary claim/stop path.
+pub(crate) fn callback_scope(
+    loaded: &Loaded,
+    payload: &serde_json::Map<String, Value>,
+    event: &str,
+) -> Result<Option<crate::session_goal::native::CallbackSessionGuard>, String> {
+    let (Some(session), Some(child)) = (
+        super::text(payload, "session_id"),
+        super::text(payload, "agent_id"),
+    ) else {
+        return Ok(None);
+    };
+    let agent_type = super::text(payload, "agent_type");
+    let intents = super::load(loaded)?;
+    let matches = intents
+        .iter()
+        .filter(|intent| match event {
+            "SubagentStart" => super::claimable(intent, session, agent_type),
+            "SubagentStop" => {
+                intent["session"] == session
+                    && intent["nativeChild"] == child
+                    && super::same_observed_agent_type(intent, agent_type)
+                    && matches!(intent["state"].as_str(), Some("claimed" | "recorded"))
+            }
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    let [intent] = matches[..] else {
+        return Ok(None);
+    };
+    if intent["receiving"] != RECEIVING || intent["bindingRevision"] != REVISION {
+        return Ok(None);
+    }
+    let Some(work) = intent["work"].as_str() else {
+        return Ok(None);
+    };
+    let Ok(verified) = verified_session(loaded, work, intent) else {
+        return Ok(None);
+    };
+    crate::session_goal::native::scoped_callback_session(verified).map(Some)
 }
 
 /// Lens files offered by default: regular `.md` files whose stem is a valid

@@ -109,6 +109,28 @@ pub fn run() -> Result<(), String> {
     } else {
         None
     };
+    // A matched same-host child already identifies an owner-verified Work
+    // session. Carry that context only for this callback's Goal projections;
+    // do not mutate the process environment or replace conflicting selectors.
+    let _callback_scope = if matches!(event, "SubagentStart" | "SubagentStop") {
+        match crate::session_goal::child_callback_scope(&loaded, object, event) {
+            Ok(scope) => scope,
+            Err(reason) if event == "SubagentStart" => {
+                return emit(
+                    event,
+                    &format!("Exitbind could not verify the selected child context; assignment context is unavailable: {reason}."),
+                );
+            }
+            Err(reason) => {
+                let _ = retry_busy(|| {
+                    crate::session_goal::finalize_child(&loaded, object, Some(&reason))
+                });
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
     // Prepared child capture: claim at start, finalize at stop. Failures stay
     // inside Exitbind's private state and never fail the host.
     if event == "SubagentStart" {
@@ -133,7 +155,7 @@ pub fn run() -> Result<(), String> {
         }
     }
     if event == "SubagentStop" {
-        let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object));
+        let _ = retry_busy(|| crate::session_goal::finalize_child(&loaded, object, None));
         return Ok(());
     }
     let mut presented_child = None;
