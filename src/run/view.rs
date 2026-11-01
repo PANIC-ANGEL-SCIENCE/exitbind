@@ -296,6 +296,12 @@ fn supersede_with_hook(
         }
         let plan = if check_replacement.is_some() {
             crate::run::check_replacement::frozen_plan(loaded, &old_events[0])?
+        } else if before_claim.is_some() {
+            crate::run::check_replacement::frozen_plan_for(
+                loaded,
+                &old_events[0],
+                "native Work supersession",
+            )?
         } else {
             let mut plan = crate::config::boundary::apply(
                 loaded,

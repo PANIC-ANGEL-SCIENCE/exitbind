@@ -26,7 +26,29 @@ struct Case {
 
 impl Case {
     fn new(label: &str) -> Self {
+        Self::new_with_boundary(label, false)
+    }
+
+    fn new_with_boundary(label: &str, narrowed: bool) -> Self {
         let project = Project::new(label);
+        if narrowed {
+            fs::create_dir_all(project.root.join("src")).unwrap();
+            fs::write(project.root.join("src/a.txt"), "allowed\n").unwrap();
+            fs::write(project.root.join("src/b.txt"), "outside\n").unwrap();
+            fs::create_dir_all(project.root.join(".agents/boundaries")).unwrap();
+            fs::write(
+                project.root.join(".agents/boundaries/task.json"),
+                json!({"version":1,
+                "agents":{"worker":{"observe":["src/a.txt"],"write":["src/a.txt"]}}})
+                .to_string(),
+            )
+            .unwrap();
+            let path = project.root.join("exitbind.json");
+            let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            config["agents"]["worker"]["observe"] = json!(["src/**"]);
+            config["agents"]["worker"]["write"] = json!(["src/**"]);
+            fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        }
         let store = &project.session_store;
         project.value_in_session(
             "codex",
@@ -43,22 +65,21 @@ impl Case {
                 "Complete the task",
             ],
         );
-        let begin = project.value_in_session(
-            "codex",
-            PARENT,
-            store,
-            &[
-                "work",
-                "begin",
-                "change",
-                "--goal",
-                "Carry the task forward",
-                "--check-command",
-                "true",
-                "--review-policy",
-                "required",
-            ],
-        );
+        let mut args = vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Carry the task forward",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ];
+        if narrowed {
+            args.extend(["--boundary", ".agents/boundaries/task.json"]);
+        }
+        let begin = project.value_in_session("codex", PARENT, store, &args);
         let predecessor = begin["work"].as_str().unwrap().to_owned();
         let lead = begin["next"]["assignment"].as_str().unwrap();
         project.value_in_session(
@@ -253,6 +274,95 @@ fn adopted_native_successor_carries_spend_links_and_replays_without_old_credit()
     );
     let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
     assert_eq!(prepared["effect"], "prepared");
+}
+
+#[test]
+fn successor_preserves_narrowed_recipient_boundary_and_refuses_manifest_drift() {
+    let mut case = Case::new_with_boundary("native-successor-narrow-boundary", true);
+    let old = fs::read_to_string(case.ledger(&case.predecessor)).unwrap();
+    let old: Value = serde_json::from_str(old.lines().next().unwrap()).unwrap();
+    case.supersede();
+    let new = fs::read_to_string(case.ledger(&case.successor)).unwrap();
+    let new: Value = serde_json::from_str(new.lines().next().unwrap()).unwrap();
+    assert_eq!(
+        new["plan"], old["plan"],
+        "the native route must retain the exact frozen plan"
+    );
+    let worker = new["plan"]["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|stage| stage["agents"].as_array().unwrap())
+        .find(|agent| agent["name"] == "worker")
+        .unwrap();
+    assert_eq!(worker["declaredBoundary"]["observe"], json!(["src/a.txt"]));
+    assert_eq!(worker["declaredBoundary"]["write"], json!(["src/a.txt"]));
+    let lead = case.project.value_in_session(
+        "codex",
+        ADOPTER,
+        &case.project.session_store,
+        &["work", "next", &case.successor, "--json", "--full"],
+    );
+    let lead_assignment = lead["next"]["assignment"].as_str().unwrap();
+    case.project.value_in_session(
+        "codex",
+        ADOPTER,
+        &case.project.session_store,
+        &[
+            "work",
+            "return",
+            &case.successor,
+            lead_assignment,
+            "--outcome",
+            "scoped",
+        ],
+    );
+    let worker = case.project.value_in_session(
+        "codex",
+        ADOPTER,
+        &case.project.session_store,
+        &["work", "next", &case.successor, "--json", "--full"],
+    );
+    let assignment = worker["next"]["assignment"].as_str().unwrap();
+    let prepared = case.project.value_in_session(
+        "codex",
+        ADOPTER,
+        &case.project.session_store,
+        &["work", "file", "prepare", &case.successor, assignment],
+    );
+    let session = prepared["session"].as_str().unwrap();
+    let allowed = case.project.value_in_session(
+        "codex",
+        ADOPTER,
+        &case.project.session_store,
+        &["work", "file", "read", session, "src/a.txt"],
+    );
+    assert_eq!(allowed["content"], "allowed\n");
+    let outside = case.call(&["work", "file", "read", session, "src/b.txt"]);
+    assert!(
+        !outside.status.success(),
+        "an otherwise configured path outside the frozen boundary must refuse"
+    );
+    assert!(String::from_utf8_lossy(&outside.stderr)
+        .contains("outside the current worker read boundary"));
+    assert_eq!(
+        fs::read_to_string(case.project.root.join("src/b.txt")).unwrap(),
+        "outside\n"
+    );
+
+    let stale = Case::new_with_boundary("native-successor-stale-boundary", true);
+    fs::write(stale.project.root.join(".agents/boundaries/task.json"), json!({"version":1,
+        "agents":{"worker":{"observe":["src/a.txt", "src/b.txt"],"write":["src/a.txt", "src/b.txt"]}}}).to_string()).unwrap();
+    let refused = stale.call(&["work", "supersede", &stale.predecessor, "--reason=--json"]);
+    assert!(
+        !refused.status.success(),
+        "changed boundary evidence must refuse: {refused:?}"
+    );
+    assert!(!PathBuf::from(format!(
+        "{}.supersede",
+        stale.ledger(&stale.predecessor).display()
+    ))
+    .exists());
 }
 
 #[test]

@@ -5,9 +5,18 @@ use serde_json::Value;
 pub(crate) const PROTOCOL: u64 = 1;
 
 pub(crate) fn frozen_plan(loaded: &crate::config::Loaded, start: &Value) -> Result<Value, String> {
+    frozen_plan_for(loaded, start, "check replacement")
+}
+
+/// Share exact predecessor plan validation with another same-Work owner.
+pub(crate) fn frozen_plan_for(
+    loaded: &crate::config::Loaded,
+    start: &Value,
+    owner: &str,
+) -> Result<Value, String> {
     let plan = start
         .get("plan")
-        .ok_or("check replacement predecessor has no frozen plan")?;
+        .ok_or_else(|| format!("{owner} predecessor has no frozen plan"))?;
     crate::config::boundary::assert_current(loaded, plan)?;
     crate::project::architecture::assert_current(loaded)?;
     let current_architecture = loaded
@@ -23,9 +32,9 @@ pub(crate) fn frozen_plan(loaded: &crate::config::Loaded, start: &Value) -> Resu
         .unwrap_or(Value::Null)
         != current_architecture
     {
-        return Err(
-            "check replacement architecture provenance differs from the frozen predecessor".into(),
-        );
+        return Err(format!(
+            "{owner} architecture provenance differs from the frozen predecessor"
+        ));
     }
     Ok(plan.clone())
 }

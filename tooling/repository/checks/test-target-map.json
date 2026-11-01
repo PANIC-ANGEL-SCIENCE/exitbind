@@ -188,6 +188,7 @@
         "src/work/launch_fence.rs",
         "src/work/native_action",
         "src/run/native_successor.rs",
+        "src/run/check_replacement.rs",
         "src/run/view.rs",
         "src/run/view/",
         "src/run/ledger.rs",
