@@ -38,6 +38,46 @@ pub(crate) fn resolve_for_task(
 pub(crate) struct OptionalResolution {
     pub(crate) references: Vec<Value>,
     pub(crate) unavailable: Vec<Value>,
+    pub(crate) query: QueryObservation,
+}
+
+/// Content-free observations used only by the recipient's query response.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SourceProblems {
+    pub(crate) stale: bool,
+    pub(crate) unavailable: bool,
+    pub(crate) ineligible: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct QueryObservation {
+    pub(crate) enabled: bool,
+    pub(crate) source_allowed: bool,
+    pub(crate) derived_allowed: bool,
+    pub(crate) source: SourceProblems,
+    pub(crate) derived: SourceProblems,
+}
+
+#[derive(Clone, Copy)]
+enum SourceProblem {
+    Stale,
+    Unavailable,
+    Ineligible,
+}
+
+impl QueryObservation {
+    fn record(&mut self, scope: &str, problem: SourceProblem) {
+        let state = if scope == super::lessons::SCOPE {
+            &mut self.derived
+        } else {
+            &mut self.source
+        };
+        match problem {
+            SourceProblem::Stale => state.stale = true,
+            SourceProblem::Unavailable => state.unavailable = true,
+            SourceProblem::Ineligible => state.ineligible = true,
+        }
+    }
 }
 
 pub(crate) fn resolve_for_task_optional(
@@ -118,12 +158,7 @@ fn references_for_task_with_optional_sources(
         return Ok(OptionalResolution {
             references: Vec::new(),
             unavailable: Vec::new(),
-        });
-    };
-    let Some(ledgers) = discovery::discover(loaded)? else {
-        return Ok(OptionalResolution {
-            references: Vec::new(),
-            unavailable: Vec::new(),
+            query: QueryObservation::default(),
         });
     };
     let mut scopes = eligible_scopes(agent, &policy);
@@ -135,6 +170,21 @@ fn references_for_task_with_optional_sources(
                     .unwrap_or(true)
         });
     }
+    let mut query = QueryObservation {
+        enabled: true,
+        source_allowed: scopes.iter().any(|scope| {
+            scope != super::lessons::SCOPE && !crate::project::specialists::is_scope(scope)
+        }),
+        derived_allowed: scopes.iter().any(|scope| scope == super::lessons::SCOPE),
+        ..QueryObservation::default()
+    };
+    let Some(ledgers) = discovery::discover(loaded)? else {
+        return Ok(OptionalResolution {
+            references: Vec::new(),
+            unavailable: Vec::new(),
+            query,
+        });
+    };
     let mut references = Vec::new();
     let mut unavailable = Vec::new();
     let mut bytes = 0usize;
@@ -196,6 +246,7 @@ fn references_for_task_with_optional_sources(
                             "identity": identity,
                             "reason": "no_longer_eligible"
                         }));
+                        query.record(scope, SourceProblem::Ineligible);
                     }
                 }
                 continue;
@@ -240,8 +291,14 @@ fn references_for_task_with_optional_sources(
             }
             let source = if tolerate_source_unavailable {
                 match optional_current_source(loaded, &source_path, source_sha)? {
-                    Some(source) => source,
-                    None => {
+                    OptionalSource::Current(source) => source,
+                    other @ (OptionalSource::Stale | OptionalSource::Unavailable) => {
+                        let problem = if matches!(other, OptionalSource::Stale) {
+                            SourceProblem::Stale
+                        } else {
+                            SourceProblem::Unavailable
+                        };
+                        query.record(scope, problem);
                         let identity = reference.clone();
                         unavailable.push(json!({
                             "identity": identity,
@@ -260,6 +317,7 @@ fn references_for_task_with_optional_sources(
                 let lesson = match super::lessons::parse(loaded, &source) {
                     Ok(lesson) => lesson,
                     Err(error) if tolerate_source_unavailable => {
+                        query.record(scope, SourceProblem::Unavailable);
                         let identity = reference.clone();
                         unavailable.push(json!({
                             "identity": identity,
@@ -290,6 +348,7 @@ fn references_for_task_with_optional_sources(
     Ok(OptionalResolution {
         references,
         unavailable,
+        query,
     })
 }
 
@@ -312,11 +371,17 @@ fn scope_allowed_by_cross_context(
     }
 }
 
+enum OptionalSource {
+    Current(Vec<u8>),
+    Stale,
+    Unavailable,
+}
+
 fn optional_current_source(
     loaded: &config::Loaded,
     requested: &str,
     expected_hash: &str,
-) -> Result<Option<Vec<u8>>, String> {
+) -> Result<OptionalSource, String> {
     use crate::project::path::SecureBytesResult;
     let bytes = match project_path::secure_bytes_observation(
         &loaded.product_root,
@@ -324,15 +389,20 @@ fn optional_current_source(
         "memory source",
     ) {
         SecureBytesResult::Bytes(bytes) => bytes,
-        SecureBytesResult::Absent(_) | SecureBytesResult::Unreadable(_) => return Ok(None),
+        SecureBytesResult::Absent(_) | SecureBytesResult::Unreadable(_) => {
+            return Ok(OptionalSource::Unavailable)
+        }
         SecureBytesResult::Unsafe(error) => return Err(error),
         #[cfg(not(unix))]
         SecureBytesResult::Unsupported(error) => return Err(error),
     };
-    if hash::bytes(&bytes) != expected_hash || std::str::from_utf8(&bytes).is_err() {
-        return Ok(None);
+    if hash::bytes(&bytes) != expected_hash {
+        return Ok(OptionalSource::Stale);
     }
-    Ok(Some(bytes))
+    if std::str::from_utf8(&bytes).is_err() {
+        return Ok(OptionalSource::Unavailable);
+    }
+    Ok(OptionalSource::Current(bytes))
 }
 
 pub(crate) fn check_budget(

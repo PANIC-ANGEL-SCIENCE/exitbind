@@ -106,6 +106,54 @@ fn source_route(
     Ok(route)
 }
 
+/// Describe only the recipient's own policy and observations, never hidden items.
+fn diagnostics(
+    observation: &super::selection::QueryObservation,
+    scope: &str,
+    has_matches: bool,
+    omitted: usize,
+) -> Value {
+    let source_requested = scope != "derived";
+    let derived_requested = scope != "source";
+    let source_allowed = source_requested && observation.source_allowed;
+    let derived_allowed = derived_requested && observation.derived_allowed;
+    let denied = (source_requested && !observation.source_allowed)
+        || (derived_requested && !observation.derived_allowed);
+    let stale = (source_requested && observation.source.stale)
+        || (derived_requested && observation.derived.stale);
+    let unavailable = (source_requested && observation.source.unavailable)
+        || (derived_requested && observation.derived.unavailable);
+    let ineligible = (source_requested && observation.source.ineligible)
+        || (derived_requested && observation.derived.ineligible);
+    let status = if !observation.enabled {
+        "unavailable"
+    } else if !source_allowed && !derived_allowed {
+        "access_denied"
+    } else if denied || stale || unavailable || ineligible || omitted != 0 {
+        "incomplete"
+    } else if has_matches {
+        "matches"
+    } else {
+        "no_match"
+    };
+    let access = |requested, allowed| {
+        if !requested {
+            "not_requested"
+        } else if !observation.enabled {
+            "unavailable"
+        } else if allowed {
+            "allowed"
+        } else {
+            "denied"
+        }
+    };
+    json!({"status":status,
+        "scopeAccess":{"source":access(source_requested, observation.source_allowed),
+            "derived":access(derived_requested, observation.derived_allowed)},
+        "sourceStates":{"stale":stale,"unavailable":unavailable,"noLongerEligible":ineligible},
+        "meaning":"no_match covers only fully observed authorized sources; denied scopes do not reveal whether hidden items exist"})
+}
+
 /// Search exactly the current pending recipient's eligible sources. The
 /// existing memory policy bounds inputs; no new index or rights are created.
 pub(crate) fn search(
@@ -244,12 +292,13 @@ pub(crate) fn search(
     if fresh != selected {
         return Err("recipient memory eligibility changed during query".into());
     }
+    let diagnostics = diagnostics(&selected.query, scope, !matches.is_empty(), omitted);
     Ok(
         json!({"kind":"recipient_memory_query","work":work_id,"assignment":action["assignment"],
         "agent":agent,"task":task,"host":host,"scope":scope,"query":query,
         "observedAt":chrono::Utc::now().to_rfc3339(),"matches":matches,
         "resultBytes":used,"resultByteBudget":budget,"omittedMatches":omitted,"omittedSources":omitted_sources,
-        "unavailable":selected.unavailable,
+        "unavailable":selected.unavailable,"diagnostics":diagnostics,
         "meaning":"literal case-sensitive line matches among currently eligible memory items; source items are independently authorized and are not inferred from lesson provenance"}),
     )
 }

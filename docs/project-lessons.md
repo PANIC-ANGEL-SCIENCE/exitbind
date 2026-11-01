@@ -12,6 +12,16 @@ Use a lesson for a durable, non-obvious project coupling or convention. Resolve
 executables and resources live. Keep current assignments and result evidence in
 Work. A lesson grants no permission and carries no old check or acceptance.
 
+For a current pending assignment, `work detail WORK --json` provides its
+`memoryQuery` route. Fill the literal query to search the recipient's eligible
+original sources and lessons; `--scope source`, `derived`, or `combined`
+selects the search. The response's `diagnostics` distinguishes a complete
+`no_match` from incomplete recall, unavailable memory and denied scope access.
+`sourceStates` distinguishes stale, unavailable and no-longer-eligible sources;
+`scopeAccess` describes the recipient's policy, not hidden items. The existing
+`unavailable` details and their reasons remain available to existing readers.
+Follow a match's read route to inspect its current permitted source.
+
 ## Author and retire through the existing lifecycle
 
 The owner opts in by including `project-lessons.v1` in `memory.protocolScopes`
