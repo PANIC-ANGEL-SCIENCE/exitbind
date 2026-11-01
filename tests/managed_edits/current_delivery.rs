@@ -16,15 +16,37 @@ fn completed_journal(f: &Fixture) -> Value {
 fn first_native_submission_requires_current_delivery_or_exact_worker_grant() {
     for mode in [
         "current-grant",
+        "present-grant",
         "permit-after",
         "unmatched",
         "goal",
         "missing-proof",
         "wrong-grant",
+        "wrong-request",
     ] {
         let f = Fixture::new(false, false);
-        if matches!(mode, "current-grant" | "missing-proof" | "wrong-grant") {
+        if matches!(
+            mode,
+            "current-grant" | "missing-proof" | "wrong-grant" | "wrong-request"
+        ) {
             f.permit();
+        } else if mode == "present-grant" {
+            assert_eq!(
+                f.ok(
+                    &[
+                        "work",
+                        "permit",
+                        &f.work,
+                        &f.assignment,
+                        "--operation",
+                        "source-change",
+                        "--request-id",
+                        "existing-managed-request",
+                    ],
+                    b"",
+                )["allowed"],
+                true
+            );
         }
         let before = f.ok(&["work", "detail", &f.work, "--json"], b"");
         let recorder = support::temp("managed-delivery-observation");
@@ -37,11 +59,11 @@ index = next(i for i, line in enumerate(lines) if line.startswith('CURRENT READA
 packet = json.loads(lines[index + 1])
 mode = __MODE__
 open(__MARKER__, 'a').write('x')
-if mode in ('current-grant', 'missing-proof', 'wrong-grant'):
+if mode in ('current-grant', 'present-grant', 'missing-proof', 'wrong-grant', 'wrong-request'):
     assert packet['currentAction']['currentGrant']['state'] == 'current_for_this_worker_assignment'
     assert 'beforeEditing' not in packet['currentAction']
     open('src/native.txt', 'w').write('one authorized edit\n')
-    if mode != 'current-grant':
+    if mode in ('missing-proof', 'wrong-grant', 'wrong-request'):
         journals = []
         for path in glob.glob('.exitbind/native-actions/*/*.json'):
             with open(path) as source:
@@ -52,8 +74,10 @@ if mode in ('current-grant', 'missing-proof', 'wrong-grant'):
         path, journal = journals[0]
         if mode == 'missing-proof':
             del journal['requiredDeliveryProof']
-        else:
+        elif mode == 'wrong-grant':
             journal['requiredDeliveryProof']['currentGrant']['governorEventSha256'] = '0' * 64
+        else:
+            journal['requiredDeliveryProof']['currentGrant']['requestIdentity'] = {'state':'present','id':'forged','digest':'0' * 64}
         with open(path, 'w') as target:
             json.dump(journal, target)
 else:
@@ -110,8 +134,18 @@ print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_t
                     .is_string(),
                 "{journal}"
             );
+            assert_eq!(
+                journal["requiredDeliveryProof"]["currentGrant"]["requestIdentity"]["state"],
+                "absent"
+            );
         }
-        if matches!(mode, "current-grant" | "permit-after") {
+        if mode == "present-grant" {
+            assert_eq!(
+                journal["requiredDeliveryProof"]["currentGrant"]["requestIdentity"]["id"],
+                "existing-managed-request"
+            );
+        }
+        if matches!(mode, "current-grant" | "present-grant" | "permit-after") {
             assert!(result.status.success(), "{mode}: {result:?}");
             assert_eq!(
                 fs::read_to_string(f.root.join("src/native.txt")).unwrap(),

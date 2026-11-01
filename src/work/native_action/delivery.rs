@@ -46,14 +46,16 @@ pub(super) fn proof(
         original_input,
         work::permit_delivery::current_worker_grant(loaded, work_id, assignment, current)?,
     ) {
-        if same_grant(
-            &event,
-            &selected["sections"]["currentAction"]["currentGrant"],
-        ) {
+        if let Some(request) = work::permit_delivery::grant_request_identity(&event).filter(|_| {
+            same_grant(
+                &event,
+                &selected["sections"]["currentAction"]["currentGrant"],
+            )
+        }) {
             result["currentGrant"] = json!({
                 "runEventSha256":event["eventSha256"],
                 "governorEventSha256":event["governorEvent"]["eventSha256"],
-                "requestId":event["requestId"],
+                "requestIdentity":request,
                 "presentedInputsSha256":input,
             });
         }
@@ -97,9 +99,12 @@ fn facts_match_after_current_grant(
     else {
         return Ok(false);
     };
+    let Some(request) = work::permit_delivery::grant_request_identity(&event) else {
+        return Ok(false);
+    };
     if grant["runEventSha256"] != event["eventSha256"]
         || grant["governorEventSha256"] != event["governorEvent"]["eventSha256"]
-        || grant["requestId"] != event["requestId"]
+        || grant["requestIdentity"] != request
         || !same_grant(
             &event,
             &selected["sections"]["currentAction"]["currentGrant"],

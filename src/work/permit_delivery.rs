@@ -1,7 +1,7 @@
 //! Verify the single governor transition following an actual host delivery.
 
 use crate::{config::Loaded, evidence::hash, run, session_goal};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub(crate) struct VerifiedPermit {
     pub before: Value,
@@ -9,6 +9,34 @@ pub(crate) struct VerifiedPermit {
     pub facts: Value,
     pub form: Value,
     pub event: Value,
+}
+
+/// A legacy grant may omit a retry identity. Preserve exact paired absence;
+/// it is never a wildcard for a present, partial or malformed identity.
+pub(crate) fn grant_request_identity(event: &Value) -> Option<Value> {
+    let nested = &event["governorEvent"];
+    match (
+        event.get("requestId"),
+        event.get("requestDigest"),
+        nested.get("requestId"),
+        nested.get("requestDigest"),
+    ) {
+        (None, None, None, None) => Some(json!({"state":"absent"})),
+        (Some(Value::String(id)), Some(Value::String(digest)), Some(other), Some(other_digest))
+            if !id.trim().is_empty()
+                && id.len() <= crate::run::REQUEST_ID_MAX_BYTES
+                && !id.contains('\0')
+                && digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                && other.as_str() == Some(id.as_str())
+                && other_digest.as_str() == Some(digest.as_str()) =>
+        {
+            Some(json!({"state":"present","id":id,"digest":digest}))
+        }
+        _ => None,
+    }
 }
 
 /// Find the unique currently authorized worker grant using the existing
@@ -32,8 +60,7 @@ pub(crate) fn current_worker_grant(
     let [event] = grants[..] else {
         return Ok(None);
     };
-    if !event["requestId"].is_string()
-        || event["requestId"] != event["governorEvent"]["requestId"]
+    if grant_request_identity(event).is_none()
         || !event["eventSha256"].is_string()
         || !event["governorEvent"]["eventSha256"].is_string()
     {
@@ -201,4 +228,38 @@ pub(crate) fn validate_successor(
         && event["requestId"] == form["requestId"]
         && event["governorEvent"]["requestId"] == form["requestId"]
         && super::permit_response::is_current_grant_event(event, current, assignment))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn existing_grant_request_identity_distinguishes_absence_from_malformed_or_mismatched() {
+        let absent = json!({"governorEvent":{}});
+        assert_eq!(
+            grant_request_identity(&absent),
+            Some(json!({"state":"absent"}))
+        );
+        let digest = "a".repeat(64);
+        let present = json!({"requestId":"request-a","requestDigest":digest,
+            "governorEvent":{"requestId":"request-a","requestDigest":digest}});
+        assert_eq!(
+            grant_request_identity(&present),
+            Some(json!({"state":"present","id":"request-a","digest":digest}))
+        );
+        for broken in [
+            json!({"requestId":null,"governorEvent":{}}),
+            json!({"requestId":"request-a","governorEvent":{}}),
+            json!({"governorEvent":{"requestId":"request-a"}}),
+            json!({"requestId":"request-a","requestDigest":digest,
+                "governorEvent":{"requestId":"request-b","requestDigest":digest}}),
+            json!({"requestId":"request-a","requestDigest":digest,
+                "governorEvent":{"requestId":"request-a","requestDigest":"b".repeat(64)}}),
+            json!({"requestId":"request-a","requestDigest":"malformed",
+                "governorEvent":{"requestId":"request-a","requestDigest":"malformed"}}),
+        ] {
+            assert!(grant_request_identity(&broken).is_none(), "{broken}");
+        }
+    }
 }
