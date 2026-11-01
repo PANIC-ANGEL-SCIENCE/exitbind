@@ -522,7 +522,7 @@ impl Fixture {
 #[test]
 fn a_failed_same_host_child_is_recovered_from_the_session_that_holds_the_work() {
     let fixture = Fixture::new("f5b-same-host-recover");
-    fixture.prepare_sonic();
+    fixture.prepare_sonic_legacy();
     fixture.hook(
         json!({"hook_event_name":"SubagentStart","session_id":SESSION,
         "agent_id":CHILD,"agent_type":"sonic"}),
@@ -592,7 +592,7 @@ impl Fixture {
     /// fails it with the final message retained; the binding is restored.
     /// Returns the failed intent.
     fn failed_child(&self) -> Value {
-        self.prepare_sonic();
+        self.prepare_sonic_legacy();
         self.hook(
             json!({"hook_event_name":"SubagentStart","session_id":SESSION,
             "agent_id":CHILD,"agent_type":"sonic"}),

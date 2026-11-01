@@ -368,6 +368,23 @@ impl Fixture {
         assert!(prepared.status.success(), "{}", text(&prepared));
     }
 
+    /// The older free-text child remains capture-only even when the printed
+    /// named route defaults to the current direct Work assignment.
+    fn prepare_sonic_legacy(&self) {
+        let mut route = argv(&self.next(Some(SESSION))["prepareChild"]);
+        let prepare = route.iter().position(|word| word == "prepare").unwrap();
+        route[prepare + 2] = "Legacy free-text child assignment".into();
+        let binding = route
+            .iter()
+            .position(|word| word == "--current-binding")
+            .unwrap();
+        route.drain(binding..=binding + 1);
+        let prepared = run(&route, &self.product, &self.store, Some(SESSION), b"");
+        assert!(prepared.status.success(), "{}", text(&prepared));
+        let intent = &self.intents().unwrap()[0];
+        assert!(intent.get("directAssignment").is_none(), "{intent}");
+    }
+
     /// The Work's native Goal context companion.
     fn companion(&self) -> PathBuf {
         let token = self.work.strip_prefix("smw_").unwrap();
@@ -376,17 +393,12 @@ impl Fixture {
     }
 }
 
-/// Review D1: a same-host binding that stops verifying between prepare and
-/// stop is a changed binding: the child is recorded `failed` with its reason
-/// and its final message kept, never silently left `claimed`; at start it is
-/// `abandoned` with the reason. `work link-session` from another session
-/// cannot rebind the Work (it refuses and changes nothing), so the binding is
-/// broken by removing the Work's companion, which every same-host
-/// verification reads.
+/// A changed binding retains the legacy capture for recovery, while a direct
+/// Work assignment retains raw no-credit evidence. At start both are refused.
 #[test]
 fn a_same_host_binding_that_stops_verifying_fails_the_child_and_keeps_its_message() {
     let fixture = Fixture::new("f5b-binding-changed-stop");
-    fixture.prepare_sonic();
+    fixture.prepare_sonic_legacy();
     let started = fixture
         .hook(
             json!({"hook_event_name":"SubagentStart","session_id":SESSION,
@@ -422,8 +434,39 @@ fn a_same_host_binding_that_stops_verifying_fails_the_child_and_keeps_its_messag
     assert_eq!(intent["pendingResult"], RESULT, "{intent}");
     assert_eq!(intent["resultSha256"], sha(RESULT.as_bytes()));
 
+    let direct = Fixture::new("r60-binding-changed-direct");
+    direct.prepare_sonic();
+    direct.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    assert_eq!(
+        direct.intents().unwrap()[0]["assignmentDelivery"]["state"],
+        "presented"
+    );
+    fs::remove_file(direct.companion()).unwrap();
+    direct.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":RESULT}),
+    );
+    let intent = &direct.intents().unwrap()[0];
+    assert_eq!(intent["state"], "recorded", "{intent}");
+    assert!(intent.get("pendingResult").is_none(), "{intent}");
+    assert!(intent.get("pendingReturn").is_none(), "{intent}");
+    assert!(intent["returnEventSha256"].is_null(), "{intent}");
+    let raw = &intent["rawObservation"];
+    assert!(raw["reason"]
+        .as_str()
+        .unwrap()
+        .starts_with("the receiving binding changed before the child finished: "));
+    let path = raw["artifact"]["path"].as_str().unwrap();
+    assert_eq!(
+        fs::read(direct.product.join(path)).unwrap(),
+        RESULT.as_bytes()
+    );
+
     let fixture = Fixture::new("f5b-binding-changed-start");
-    fixture.prepare_sonic();
+    fixture.prepare_sonic_legacy();
     fs::remove_file(fixture.companion()).unwrap();
     let started = fixture
         .hook(

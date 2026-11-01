@@ -54,6 +54,10 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
         "presented"
     );
+    eprintln!(
+        "same-host fixture hook stdout: {} bytes; complete delivery: true",
+        output.stdout.len()
+    );
     let form = &packet["currentAction"]["beforeEditing"];
     assert_eq!(form["required"], true);
     assert_eq!(*form, owner["actionForms"]["beforeEditing"]);
