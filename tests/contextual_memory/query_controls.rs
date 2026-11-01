@@ -376,11 +376,19 @@ fn source_query_denial_discloses_no_hidden_item_and_keeps_frozen_rights() {
 
     config["agents"]["worker"]["memoryRead"] = json!(["project-lessons.v1", scope]);
     f.save(&config);
-    let widened = query("source");
-    assert_eq!(
-        widened["diagnostics"]["status"], "access_denied",
-        "{widened}"
-    );
+    let widened = f.call(&[
+        "memory",
+        "query",
+        &work,
+        "--query",
+        "shared marker",
+        "--scope",
+        "source",
+        "--json",
+    ]);
+    assert!(!widened.status.success(), "{widened:?}");
+    let widened: Value = serde_json::from_slice(&widened.stdout).unwrap();
+    assert_eq!(widened["classification"], "memory_configuration_changed");
     assert!(!widened.to_string().contains("hidden-source.txt"));
     assert!(!widened.to_string().contains("hidden value"));
 }

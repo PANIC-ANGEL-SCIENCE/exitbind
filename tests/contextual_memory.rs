@@ -114,6 +114,8 @@ fn recipient_search_does_not_promote_a_later_right_into_a_frozen_assignment() {
     let result = f.ok(&[
         "memory", "query", &work, "--query", "rare", "--scope", "source", "--json",
     ]);
+    assert_eq!(result["diagnostics"]["status"], "access_denied", "{result}");
+    assert_eq!(result["diagnostics"]["scopeAccess"]["source"], "denied");
     assert_eq!(result["matches"], json!([]));
     assert!(!result.to_string().contains("historical permission"));
 }
