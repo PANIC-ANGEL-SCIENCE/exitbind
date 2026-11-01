@@ -108,9 +108,8 @@ fn begin_unrelated(case: &Case) -> String {
         .to_owned()
 }
 
-#[test]
-fn successor_focus_delivers_the_exact_named_assignment_at_native_start() {
-    let mut case = Case::new_for_host("native-successor-focus-delivery", false, "claude");
+fn assert_complete_successor_delivery(label: &str) {
+    let mut case = Case::new_for_host(label, false, "claude");
     let result = case.supersede();
     assert_eq!(result["effect"], "started");
     assert_eq!(result["focus"]["updated"], true);
@@ -150,9 +149,53 @@ fn successor_focus_delivers_the_exact_named_assignment_at_native_start() {
     assert_eq!(packet["currentAction"]["binding"], detail["binding"]);
     assert_eq!(packet["tasks"]["goal"], detail["sections"]["tasks"]["goal"]);
     assert_eq!(
+        packet["assignment"]["assignment"]["declaredBoundary"],
+        detail["sections"]["assignment"]["assignment"]["declaredBoundary"]
+    );
+    assert_eq!(
+        packet["assignment"]["assignment"]["role"],
+        detail["sections"]["assignment"]["assignment"]["role"]
+    );
+    assert_eq!(
+        packet["assignment"]["assignment"]["agent"],
+        detail["sections"]["assignment"]["assignment"]["agent"]
+    );
+    assert_eq!(
         packet["currentAction"]["beforeEditing"],
         detail["actionForms"]["beforeEditing"]
     );
+    let permit = packet["currentAction"]["beforeEditing"]["command"]["argv"]
+        .as_array()
+        .unwrap();
+    assert_eq!(permit[0], env!("CARGO_BIN_EXE_exitbind"));
+    let config_index = permit.iter().position(|word| word == "--config").unwrap();
+    assert_eq!(
+        permit[config_index + 1],
+        case.project.root.join("exitbind.json").to_str().unwrap()
+    );
+    let profile = detail["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    let digest = digest_text(profile);
+    assert_eq!(packet["assignment"]["assignment"]["profileSha256"], digest);
+    assert!(
+        context.contains(&format!("Profile SHA-256: {digest}\nPresented profile SHA-256: same as Profile SHA-256 (after path redaction).")),
+        "both profile identities must resolve to the exact source digest"
+    );
+    assert!(
+        context.contains(&format!("Profile bytes:\n{profile}")),
+        "complete current profile bytes must reach the named worker"
+    );
+}
+
+#[test]
+fn successor_focus_delivers_the_exact_named_assignment_at_native_start() {
+    assert_complete_successor_delivery("native-successor-focus-delivery");
+}
+
+#[test]
+fn successor_focus_delivers_complete_assignment_at_longer_project_path() {
+    assert_complete_successor_delivery("native-successor-focus-delivery-more");
 }
 
 #[test]

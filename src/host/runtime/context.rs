@@ -279,6 +279,21 @@ pub(super) fn recipient_assignment(assignment: &Value, detail: &[String]) -> Val
     result
 }
 
+/// Keep both profile identities while presenting identical digest bytes once.
+fn alias_equal_profile_hashes(context: &str, source_digest: &str) -> String {
+    let Some(profile_start) = context.find("\nProfile bytes:\n") else {
+        return context.to_owned();
+    };
+    let (header, profile) = context.split_at(profile_start);
+    let repeated = format!(
+        "Profile SHA-256: {source_digest}\nPresented profile SHA-256: {source_digest} (after path redaction)."
+    );
+    let alias = format!(
+        "Profile SHA-256: {source_digest}\nPresented profile SHA-256: same as Profile SHA-256 (after path redaction)."
+    );
+    format!("{}{profile}", header.replacen(&repeated, &alias, 1))
+}
+
 /// Remove a repeated header only when the complete assignment contains the
 /// same identity and check observation. The fallback text is untouched.
 pub(super) fn without_duplicate_assignment_summary(
@@ -298,7 +313,7 @@ pub(super) fn without_duplicate_assignment_summary(
     else {
         return context.to_owned();
     };
-    let mut result = context.to_owned();
+    let mut result = alias_equal_profile_hashes(context, &provenance.profile_sha256);
     let packet = &assignment["assignment"]["assignment"];
     if assignment["assignment"]["residual"]["work"] == work.as_str()
         && packet["context"]["next"]["assignment"] == assignment_id.as_str()
@@ -358,6 +373,32 @@ pub(super) fn without_duplicate_assignment_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn equal_profile_hashes_share_one_explicitly_resolvable_value() {
+        let source = "a".repeat(64);
+        let presented = "b".repeat(64);
+        let equal = format!(
+            "Profile SHA-256: {source}\nPresented profile SHA-256: {source} (after path redaction).\nProfile bytes:\nrequired instructions"
+        );
+        let aliased = alias_equal_profile_hashes(&equal, &source);
+        assert_eq!(
+            aliased,
+            format!(
+                "Profile SHA-256: {source}\nPresented profile SHA-256: same as Profile SHA-256 (after path redaction).\nProfile bytes:\nrequired instructions"
+            )
+        );
+        let unequal = format!(
+            "Profile SHA-256: {source}\nPresented profile SHA-256: {presented} (after path redaction).\nProfile bytes:\nrequired instructions"
+        );
+        assert_eq!(alias_equal_profile_hashes(&unequal, &source), unequal);
+        assert_eq!(alias_equal_profile_hashes(&equal, &presented), equal);
+        let within_profile = format!("{unequal}\n{equal}");
+        assert_eq!(
+            alias_equal_profile_hashes(&within_profile, &source),
+            within_profile
+        );
+    }
 
     #[test]
     fn recipient_projection_aliases_only_equal_preservation_and_keeps_non_owner_routes() {
