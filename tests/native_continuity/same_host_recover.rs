@@ -129,10 +129,7 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
     assert!(retained.get("pendingReturn").is_none());
     assert!(retained["returnEventSha256"].is_null(), "{retained}");
     let notice = invalid.value(Some(SESSION), &["work", "next", &invalid.work]);
-    assert_eq!(
-        notice["next"]["current"]["uncreditedChild"]["count"], 1,
-        "{notice}"
-    );
+    assert_eq!(notice["current"]["uncreditedChild"]["count"], 1, "{notice}");
     assert!(notice["next"].get("prepareChild").is_none(), "{notice}");
     let duplicate = run(
         &duplicate_route,
@@ -145,14 +142,15 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
         !duplicate.status.success(),
         "a started assignment must not be relaunched"
     );
-    let read_route = notice["next"]["current"]["uncreditedChild"]["latest"]["readRoute"]["command"]
+    let read_route = notice["current"]["uncreditedChild"]["latest"]["readRoute"]["command"]
         .as_array()
         .unwrap()
         .iter()
         .map(|word| word.as_str().unwrap().to_owned())
         .collect::<Vec<_>>();
-    let manual = invalid.next(Some(SESSION));
+    let manual = invalid.full_next(Some(SESSION));
     assert_eq!(manual["action"], "spawn");
+    assert!(manual.get("prepareChild").is_none(), "{manual}");
     let manual_return = invalid.call(
         Some(SESSION),
         &[
@@ -209,7 +207,7 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
     assert!(retained.get("pendingResult").is_none());
     assert!(retained.get("pendingReturn").is_none());
     assert!(retained["returnEventSha256"].is_null(), "{retained}");
-    assert_eq!(unavailable.next(Some(SESSION))["action"], "spawn");
+    assert_eq!(unavailable.full_next(Some(SESSION))["action"], "spawn");
 
     let changed_binding = Fixture::new("r60-host-return-binding-changed");
     changed_binding.prepare_sonic();
@@ -235,7 +233,7 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
     );
     assert!(retained.get("pendingResult").is_none());
     assert!(retained.get("pendingReturn").is_none());
-    assert_eq!(changed_binding.next(Some(SESSION))["action"], "spawn");
+    assert_eq!(changed_binding.full_next(Some(SESSION))["action"], "spawn");
 
     let stale_delivery = Fixture::new("r60-host-return-delivery-changed");
     stale_delivery.prepare_sonic();
@@ -261,7 +259,7 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
     );
     assert!(retained.get("pendingResult").is_none());
     assert!(retained.get("pendingReturn").is_none());
-    assert_eq!(stale_delivery.next(Some(SESSION))["action"], "spawn");
+    assert_eq!(stale_delivery.full_next(Some(SESSION))["action"], "spawn");
 
     let stale = Fixture::new("r60-host-return-stale");
     stale.prepare_sonic();
@@ -303,6 +301,11 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
 }
 
 impl Fixture {
+    /// The canonical action when the bounded projection asks for inspection.
+    fn full_next(&self, session: Option<&str>) -> Value {
+        self.value(session, &["work", "next", &self.work, "--full"])["next"].clone()
+    }
+
     /// `work child recover WORK INTENT` with `extra`, from `session`.
     fn recover(&self, session: Option<&str>, intent: &str, extra: &[&str]) -> Output {
         let mut args = vec!["work", "child", "recover", self.work.as_str(), intent];
