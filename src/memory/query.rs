@@ -168,8 +168,21 @@ pub(crate) fn search(
             .as_str()
             .ok_or("memory source path unavailable")?;
         let bytes = path::secure_bytes(&loaded.product_root, path_name, "memory query source")?;
-        if reference["sourceSha256"] != hash::bytes(&bytes) {
-            return Err("memory source changed during query".into());
+        let expected = reference["sourceSha256"]
+            .as_str()
+            .ok_or("memory source hash unavailable")?;
+        let current = hash::bytes(&bytes);
+        if expected != current.as_str() {
+            return Err(crate::drift::refusal(
+                crate::drift::Class::MemorySource,
+                expected,
+                Some(&current),
+                None,
+                crate::drift::Route::Resolve {
+                    agent,
+                    config: &loaded.path,
+                },
+            ));
         }
         let content = crate::project::agent_context::selected_content(reference, bytes)?;
         let content = if kind == "derived" {

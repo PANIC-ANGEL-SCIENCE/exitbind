@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 pub(crate) mod events;
+pub(crate) mod json_output;
 pub(crate) mod run;
 mod run_report;
 

@@ -17,6 +17,7 @@ use std::{
 
 struct Fixture {
     root: support::TempRoot,
+    captures: support::TempRoot,
 }
 
 impl Fixture {
@@ -48,7 +49,12 @@ impl Fixture {
         fs::create_dir_all(root.join("memory")).unwrap();
         fs::write(root.join("AGENTS.md"), "current project rule\n").unwrap();
         fs::write(root.join("CLAUDE.md"), "second current rule\n").unwrap();
-        Self { root }
+        let captures = support::temp("agent-context-captures");
+        Self { root, captures }
+    }
+
+    fn capture(&self, name: &str) -> PathBuf {
+        self.captures.join(name)
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
@@ -170,7 +176,7 @@ fn configured_product_managed_form_executes_and_stale_binding_refuses_before_pro
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["agents"]["worker"]["runtime"] = json!({"host": "codex", "fallback": "none"});
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-    let capture = fixture.root.join("form-prompt");
+    let capture = fixture.capture("form-prompt");
     let fake = fixture.fake_codex(&capture);
     let started = fixture.value(
         &[
@@ -248,7 +254,7 @@ fn configured_product_managed_form_executes_and_stale_binding_refuses_before_pro
 fn native_context_carries_current_rules_and_role_memory_across_works() {
     let fixture = Fixture::new("agent-context-delivery");
     fixture.accept("old.md", "old accepted rule\n", "memory/old.jsonl");
-    let first_capture = fixture.root.join("first-prompt");
+    let first_capture = fixture.capture("first-prompt");
     let first_exe = fixture.fake_codex(&first_capture);
     let _ = fixture.run_worker("first current context", &first_exe);
     let first = fs::read_to_string(&first_capture).unwrap();
@@ -269,7 +275,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     assert!(first.contains("full replacement content as UTF-8 bytes on stdin"));
     assert!(first.contains("never replay the write blindly"));
 
-    let same_context_capture = fixture.root.join("same-context-prompt");
+    let same_context_capture = fixture.capture("same-context-prompt");
     let same_context_exe = fixture.fake_codex(&same_context_capture);
     let _ = fixture.run_worker("different Work and assignment", &same_context_exe);
     let same_context = fs::read_to_string(&same_context_capture).unwrap();
@@ -278,7 +284,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
     let revoked = fixture.value(&["memory", "revoke", "lead", "memory/old.jsonl"], b"");
     assert_eq!(revoked["action"], "revoke");
     fixture.accept("new.md", "corrected accepted rule\n", "memory/new.jsonl");
-    let second_capture = fixture.root.join("second-prompt");
+    let second_capture = fixture.capture("second-prompt");
     let second_exe = fixture.fake_codex(&second_capture);
     let _ = fixture.run_worker("corrected current context", &second_exe);
     let second = fs::read_to_string(&second_capture).unwrap();
@@ -289,7 +295,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
         "changed current project rule\n",
     )
     .unwrap();
-    let changed_rules_capture = fixture.root.join("changed-rules-prompt");
+    let changed_rules_capture = fixture.capture("changed-rules-prompt");
     let changed_rules_exe = fixture.fake_codex(&changed_rules_capture);
     let _ = fixture.run_worker("changed stable rule", &changed_rules_exe);
     let changed_rules = fs::read_to_string(&changed_rules_capture).unwrap();
@@ -297,7 +303,7 @@ fn native_context_carries_current_rules_and_role_memory_across_works() {
 
     let isolated = Fixture::new("agent-context-isolation");
     fs::write(isolated.root.join("old.md"), "old accepted rule\n").unwrap();
-    let isolated_capture = isolated.root.join("isolated-prompt");
+    let isolated_capture = isolated.capture("isolated-prompt");
     let isolated_exe = isolated.fake_codex(&isolated_capture);
     let _ = isolated.run_worker("isolated project context", &isolated_exe);
     let isolated_prompt = fs::read_to_string(isolated_capture).unwrap();
@@ -340,7 +346,7 @@ fn reported_long_rule_survives_start_detail_and_native_prompt() {
         &["work", "return", work, lead, "--outcome", "scoped"],
         b"scope",
     );
-    let capture = fixture.root.join("long-rule-prompt");
+    let capture = fixture.capture("long-rule-prompt");
     let executable = fixture.fake_codex(&capture);
     let worker = fixture.call(
         &[
@@ -526,7 +532,7 @@ fn native_fake_provider_receives_product_owned_goal_progress() {
     );
     assert!(scoped.status.success(), "{}", text(&scoped));
     let worker = fixture.value(&["work", "next", work, "--full"], b"")["next"].clone();
-    let capture = fixture.root.join("goal-progress-prompt");
+    let capture = fixture.capture("goal-progress-prompt");
     let executable = fixture.fake_codex(&capture);
     let output = fixture.call(
         &[
@@ -621,7 +627,7 @@ fn failed_json_check_keeps_machine_stdout_and_emits_product_progress_stderr() {
 fn oversized_project_rule_refuses_native_launch_before_provider_spawn() {
     let fixture = Fixture::new("agent-context-oversized-rule");
     fs::write(fixture.root.join("AGENTS.md"), vec![b'x'; 32 * 1024 + 1]).unwrap();
-    let capture = fixture.root.join("should-not-exist");
+    let capture = fixture.capture("should-not-exist");
     let executable = fixture.fake_codex(&capture);
     let started = fixture.value(
         &[
@@ -670,7 +676,7 @@ fn configured_non_codex_binding_is_refused_before_provider_spawn() {
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["agents"]["worker"]["runtime"]["host"] = json!("claude");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-    let capture = fixture.root.join("should-not-exist");
+    let capture = fixture.capture("should-not-exist");
     let executable = fixture.fake_codex(&capture);
     let started = fixture.value(
         &[
@@ -772,7 +778,7 @@ fn native_resolves_readable_scope_and_tasks_before_provider_launch() {
             ],
             &scope,
         );
-        let capture = fixture.root.join("resolved-prompt");
+        let capture = fixture.capture("resolved-prompt");
         let executable = fixture.fake_codex(&capture);
         let output = fixture.call(
             &[
@@ -848,7 +854,7 @@ fn native_corrupt_or_missing_scope_never_launches_provider() {
         } else {
             fs::write(artifact, b"corrupt scope").unwrap();
         }
-        let capture = fixture.root.join("never-launched");
+        let capture = fixture.capture("never-launched");
         let executable = fixture.fake_codex(&capture);
         let output = fixture.call(
             &[

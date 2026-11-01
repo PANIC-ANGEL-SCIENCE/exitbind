@@ -316,6 +316,10 @@ printf '%s\n' '{"type":"thread.started","thread_id":"rules-change"}' '{"type":"i
         ],
         b"",
     );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("recipient_context_changed"),
+        "{output:?}"
+    );
     refused(output, "recipient rules, rights or guidance changed");
     let current = f.ok(&["work", "next", &f.work, "--full"], b"");
     assert_eq!(current["next"]["assignment"], f.assignment);

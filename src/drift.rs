@@ -23,6 +23,8 @@ pub(crate) enum Class {
     MemoryConfiguration,
     /// A memory item's recorded source bytes differ from the file.
     MemorySource,
+    /// A delivered recipient's complete rules, rights or guidance differ.
+    RecipientContext,
     /// A lesson's recorded source bytes differ from the file during review.
     LessonSource,
     /// The configuration change under review changes lesson authority.
@@ -88,6 +90,12 @@ pub(crate) const MEMBERS: &[Member] = &[
         classification: "memory_source_changed",
         message: "memory source changed since proposal",
         meaning: "restore the proposed bytes, or retire this item and propose a new immutable source",
+    },
+    Member {
+        class: Class::RecipientContext,
+        classification: "recipient_context_changed",
+        message: "recipient rules, rights or guidance changed after binding",
+        meaning: "inspect the current Work before continuing; retained observations have no automatic credit",
     },
     Member {
         class: Class::LessonSource,

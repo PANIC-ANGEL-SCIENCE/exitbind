@@ -40,12 +40,10 @@ pub(crate) fn cover_summary(
             .push(json!({
             "id":item.id, "revision":item.revision,"text":item.text,
             "source":{"ref":item.source.reference,"sha256":item.source.sha256}}));
-        if serde_json::to_vec(&summary)
-            .map_err(|e| e.to_string())?
-            .len()
-            + 1
-            > crate::work::compact::MAX_RESPONSE_BYTES
-        {
+        if !crate::presentation::json_output::fits(
+            &summary,
+            crate::work::compact::MAX_RESPONSE_BYTES,
+        )? {
             summary["requirements"]
                 .as_array_mut()
                 .expect("requirements array")
@@ -60,6 +58,10 @@ pub(crate) fn cover_summary(
                 .expect("requirements array")
                 .len()
     );
+    if !crate::presentation::json_output::fits(&summary, crate::work::compact::MAX_RESPONSE_BYTES)?
+    {
+        return Err("goal coverage summary exceeds the existing response budget".into());
+    }
     Ok(summary)
 }
 

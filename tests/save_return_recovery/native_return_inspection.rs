@@ -366,8 +366,8 @@ fn invalid_native_summary_is_inspectable_without_a_second_provider_attempt() {
     let (work, worker) = fixture.pending_worker("recover bounded native summary");
     let assignment = worker["assignment"].as_str().unwrap();
     let executable = fixture.root.join("fake-invalid-summary-codex");
-    let capture = fixture.root.join("request-prompt");
-    let marker = fixture.root.join("provider-attempts");
+    let capture = fixture.captures.join("request-prompt");
+    let marker = fixture.captures.join("provider-attempts");
     let events = [
         json!({"type":"thread.started","thread_id":"invalid-summary-thread"}),
         json!({"type":"item.completed","item":{"type":"agent_message","text":

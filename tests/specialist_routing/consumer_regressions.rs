@@ -36,7 +36,7 @@ fn accept_generic(f: &Fixture, source: &str, ledger: &str) {
 }
 
 fn fake_provider(f: &Fixture) -> (PathBuf, PathBuf) {
-    let capture = f.root.join("review-regression-prompt");
+    let capture = f.capture("review-regression-prompt");
     let fake = f.root.join("review-regression-provider");
     fs::write(&fake, format!("#!/bin/sh\ncat > '{}'\nprintf '%s\\n' '{{\"type\":\"thread.started\",\"thread_id\":\"review-fixture\"}}' '{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"fixture captured\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' '{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n", capture.display())).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();

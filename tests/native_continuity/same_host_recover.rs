@@ -7,6 +7,108 @@ use serde_json::{json, Value};
 use std::{fs, process::Output};
 
 #[test]
+fn raw_observation_pages_bound_the_actual_cli_envelope() {
+    let fixture = Fixture::new("r60-raw-list-budget");
+    fixture.prepare_sonic();
+    let _ = fixture.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    let _ = fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":"untyped observation"}),
+    );
+    let state = fixture.product.join(".exitbind/child-intents.json");
+    let original: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    let template = original["intents"][0].clone();
+    assert!(template["rawObservation"].is_object(), "{template}");
+    let mut largest = 0;
+    for quotes in (0..=512).step_by(7) {
+        let mut document = original.clone();
+        document["intents"] = json!((0..20)
+            .map(|index| {
+                let mut item = template.clone();
+                item["id"] = json!(format!("{index:064x}"));
+                item["rawObservation"]["reason"] = json!("\"".repeat(quotes));
+                item
+            })
+            .collect::<Vec<_>>());
+        fs::write(&state, serde_json::to_vec(&document).unwrap()).unwrap();
+        let output = fixture.call(
+            Some(SESSION),
+            &[
+                "work",
+                "child",
+                "context",
+                &fixture.work,
+                "--view",
+                "results",
+            ],
+            b"",
+            true,
+        );
+        assert!(output.status.success(), "{quotes}: {}", text(&output));
+        largest = largest.max(output.stdout.len());
+        assert!(
+            output.stdout.len() <= 8192,
+            "{quotes} quotes: {} bytes",
+            output.stdout.len()
+        );
+        let page: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(page["count"], 20);
+        assert!(!page["items"].as_array().unwrap().is_empty());
+        assert!(!page.to_string().contains("untyped observation"));
+    }
+    assert!(
+        largest > 7900,
+        "no near-boundary response observed: {largest}"
+    );
+    let mut page = fixture.value(
+        Some(SESSION),
+        &[
+            "work",
+            "child",
+            "context",
+            &fixture.work,
+            "--view",
+            "results",
+        ],
+    );
+    let mut ids = std::collections::BTreeSet::new();
+    let mut pages = 0;
+    loop {
+        for item in page["items"].as_array().unwrap() {
+            assert!(ids.insert(item["intent"].as_str().unwrap().to_owned()));
+        }
+        pages += 1;
+        if page["next"].is_null() {
+            break;
+        }
+        let next = &page["next"];
+        let mut command = argv(next);
+        if next["sameExecutableRequired"] == true {
+            command.insert(0, env!("CARGO_BIN_EXE_exitbind").to_owned());
+        }
+        if next["sameConfigRequired"] == true {
+            command.extend(["--config".to_owned(), fixture.config.clone()]);
+        }
+        let output = run(
+            &command,
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"",
+        );
+        assert!(output.status.success(), "{}", text(&output));
+        assert!(output.stdout.len() <= 8192);
+        page = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(pages < 21, "raw observation continuation did not advance");
+    }
+    assert!(pages > 1);
+    assert_eq!(ids.len(), 20);
+}
+
+#[test]
 fn worker_receives_the_frozen_check_input_observation_before_work() {
     let fixture = Fixture::new_with_check("r60-check-preparation", "sh ./missing-check.sh");
     let detail = fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
@@ -195,6 +297,39 @@ fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
         assert!(intent["returnEventSha256"].is_null(), "{change}: {intent}");
         assert!(intent["rawObservation"].is_object(), "{change}: {intent}");
         assert!(intent.get("pendingReturn").is_none(), "{change}: {intent}");
+        if change == "rules" {
+            let diagnostic = &intent["rawObservation"]["diagnostic"];
+            assert_eq!(diagnostic["classification"], "recipient_context_changed");
+            assert_ne!(diagnostic["boundSha256"], diagnostic["currentSha256"]);
+            assert_eq!(diagnostic["nextAction"]["readOnly"], true);
+            let id = intent["id"].as_str().unwrap();
+            let raw = fixture.value(
+                Some(SESSION),
+                &[
+                    "work",
+                    "child",
+                    "context",
+                    &fixture.work,
+                    id,
+                    "--view",
+                    "result",
+                ],
+            );
+            assert_eq!(raw["diagnostic"], *diagnostic);
+            assert_eq!(raw["credit"], "none");
+            let listed = fixture.value(
+                Some(SESSION),
+                &[
+                    "work",
+                    "child",
+                    "context",
+                    &fixture.work,
+                    "--view",
+                    "results",
+                ],
+            );
+            assert!(!listed.to_string().contains("recipient_context_changed"));
+        }
     }
 }
 

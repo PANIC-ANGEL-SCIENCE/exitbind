@@ -122,7 +122,7 @@ fn native_work_and_readable_detail_share_complete_guidance_items() {
         "selected current guidance\n",
         "memory/selected.jsonl",
     );
-    let capture = fixture.root.join("prompt");
+    let capture = fixture.capture("prompt");
     let executable = fixture.fake_codex(&capture);
     let work = fixture.prepare_worker("same eligible guidance");
     let detail = fixture.value(&["work", "detail", &work], b"");
@@ -150,7 +150,7 @@ fn oversized_guidance_remains_visible_as_whole_item_overflow() {
     let source_sha = format!("{:x}", sha2::Sha256::digest(content.as_bytes()));
     fixture.accept("oversized.md", &content, "memory/oversized.jsonl");
 
-    let capture = fixture.root.join("prompt");
+    let capture = fixture.capture("prompt");
     let executable = fixture.fake_codex(&capture);
     let work = fixture.prepare_worker("deliver oversized item");
     let detail = fixture.value(&["work", "detail", &work], b"");
@@ -218,7 +218,7 @@ fn recipient_budget_keeps_items_whole_and_reports_exact_overflow() {
     let content = format!("{}TAIL-BUDGET-ITEM", "y".repeat(12 * 1024));
     fixture.accept("budget.md", &content, "memory/budget.jsonl");
 
-    let capture = fixture.root.join("prompt");
+    let capture = fixture.capture("prompt");
     let executable = fixture.fake_codex(&capture);
     let work = fixture.prepare_worker("deliver budgeted guidance");
     let detail = fixture.value(&["work", "detail", &work], b"");
@@ -422,7 +422,7 @@ fn marked_work_and_observed_check_survive_profile_and_presentation_updates() {
 #[test]
 fn marked_current_selection_tracks_advisory_memory_changes_and_live_rights() {
     let fixture = Fixture::new("agent-guidance-continuity-live-rights");
-    let capture = fixture.root.join("prompt");
+    let capture = fixture.capture("prompt");
     let executable = fixture.fake_codex(&capture);
     let config_path = fixture.root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -582,7 +582,7 @@ fn missing_or_changed_optional_source_is_omitted_without_blocking_work() {
         let fixture = Fixture::new(name);
         let original = "eligible optional guidance\n";
         fixture.accept("optional.md", original, "memory/optional.jsonl");
-        let capture = fixture.root.join("prompt");
+        let capture = fixture.capture("prompt");
         let executable = fixture.fake_codex(&capture);
         let work = fixture.prepare_worker("unrelated ordinary work");
         if mutation == "absent" {

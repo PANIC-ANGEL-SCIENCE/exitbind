@@ -27,7 +27,7 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
         "startTimeTicks": 1,
     });
     fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
-    let marker = fixture.root.join("resumed-once");
+    let marker = fixture.captures.join("resumed-once");
     let executable = fixture.root.join("fake-resume-codex");
     fs::write(
         &executable,
@@ -146,7 +146,7 @@ fn ended_provisional_worker_is_reconciled_as_a_new_operation() {
         "processGroup": 2147483647i32,
         "startTimeTicks": 1,
     });
-    let marker = fixture.root.join("provisional-retry");
+    let marker = fixture.captures.join("provisional-retry");
     let executable = fixture.root.join("fake-provisional-retry-codex");
     fs::write(
         &executable,
@@ -401,7 +401,7 @@ fn repair_assignment_resumes_current_thread_and_explicit_old_replay_stays_idempo
     let pending = fixture.value(&["work", "next", &work, "--full"], b"");
     assert_eq!(pending["next"]["role"], "worker");
     assert_eq!(pending["next"]["packet"]["attempt"], 2);
-    let marker = fixture.root.join("repair-resumed");
+    let marker = fixture.captures.join("repair-resumed");
     let executable = fixture.root.join("fake-repair-codex");
     fs::write(
         &executable,

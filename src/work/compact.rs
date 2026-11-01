@@ -18,6 +18,12 @@ use next::{assignment_summary, compact_next, minimal_next, preserve_next_omissio
 
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 
+/// Match the Work CLI's final decoration, JSON mode and trailing newline.
+pub(crate) fn response_fits(value: &Value) -> Result<bool, String> {
+    let rendered = super::effective_action::attach(value);
+    crate::presentation::json_output::fits(&rendered, MAX_RESPONSE_BYTES)
+}
+
 pub(crate) fn minimal_current(current: &Value) -> Value {
     if !current.is_object() {
         return current.clone();

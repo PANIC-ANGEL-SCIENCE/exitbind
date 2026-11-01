@@ -307,8 +307,14 @@ pub(crate) fn execute(
         &schema_path,
         thread_id,
     )?;
-    if crate::work::details::managed_recipient_fingerprint(loaded, current)? != recipient_sha256 {
-        return Err("native recipient instructions changed before launch".into());
+    let current_recipient = crate::work::details::managed_recipient_fingerprint(loaded, current)?;
+    if current_recipient != recipient_sha256 {
+        return Err(crate::work::details::recipient_drift(
+            loaded,
+            work,
+            &recipient_sha256,
+            &current_recipient,
+        ));
     }
     delivery::validate_before_launch(loaded, work, &required_delivery_proof)?;
     if resuming {

@@ -8,6 +8,7 @@ use std::{fs, path::PathBuf, process::Output};
 
 struct Fixture {
     root: support::TempRoot,
+    captures: support::TempRoot,
 }
 impl Fixture {
     fn input(&self, args: &[&str], input: &str) -> Value {
@@ -73,7 +74,8 @@ impl Fixture {
             .output()
             .unwrap();
         assert!(init.status.success(), "{init:?}");
-        let f = Self { root };
+        let captures = support::temp("specialist-routing-captures");
+        let f = Self { root, captures };
         let mut c = f.config();
         let mut worker = c["agents"]
             .as_object_mut()
@@ -99,6 +101,9 @@ impl Fixture {
     }
     fn config(&self) -> Value {
         serde_json::from_slice(&fs::read(self.root.join("exitbind.json")).unwrap()).unwrap()
+    }
+    fn capture(&self, name: &str) -> PathBuf {
+        self.captures.join(name)
     }
     fn save(&self, c: &Value) {
         fs::write(self.root.join("exitbind.json"), c.to_string()).unwrap();
@@ -306,7 +311,7 @@ fn work_detail_and_native_prompt_use_the_same_current_qualified_version() {
                 json!([])
             }
         );
-        let capture = f.root.join("prompt");
+        let capture = f.capture("prompt");
         let fake = f.root.join("fake-codex");
         fs::write(&fake, format!("#!/bin/sh\ncat > '{}'\nprintf '%s\\n' '{{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}}' '{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"fixture captured\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' '{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n", capture.display())).unwrap();
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();

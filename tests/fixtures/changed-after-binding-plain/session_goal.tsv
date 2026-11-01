@@ -16,7 +16,11 @@ NotCurrentState	src/session_goal/continuity/capture.rs	contextual memory assignm
 Transient	src/session_goal/continuity/capture/context.rs	selected profile source changed
 Transient	src/session_goal/continuity/capture/context.rs	specialist experience changed or expired; prepare the current approved next launch
 RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
-RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read {route} for a fresh token
+RoutedInText	src/session_goal/continuity/capture/recovery.rs	work context is stale; read {route} for a fresh token
+ReadAsFact	src/session_goal/continuity/capture/delivery.rs	child recipient instructions changed during permit
+Integrity	src/session_goal/continuity/capture/raw.rs	captured raw observation changed
+Identity	src/session_goal/continuity/capture/return_result.rs	host result identity differs from the current assignment
+Identity	src/session_goal/continuity/capture/return_result.rs	host result identity differs from the current assignment
 Identity	src/session_goal/continuity/capture/adviser.rs	native adviser requested host differs from the bound receiving host
 NotARefusal	src/session_goal/continuity/capture/tests.rs	differs from the bound receiving host
 Transient	src/session_goal/continuity/perspective.rs	perspective '{}' source changed

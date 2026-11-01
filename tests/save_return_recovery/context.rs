@@ -6,6 +6,7 @@ use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Output};
 
 struct Fixture {
     root: support::TempRoot,
+    captures: support::TempRoot,
 }
 
 impl Fixture {
@@ -18,7 +19,8 @@ impl Fixture {
             .output()
             .unwrap();
         assert!(output.status.success(), "{}", text(&output));
-        Self { root }
+        let captures = support::temp("native-recovery-captures");
+        Self { root, captures }
     }
 
     fn call(&self, args: &[&str], input: &[u8]) -> Output {
@@ -34,7 +36,9 @@ impl Fixture {
         let mut child = command.spawn().unwrap();
         use std::io::Write;
         // A command may refuse and exit before reading stdin; its output is still asserted.
-if let Err(error) = child.stdin.take().unwrap().write_all(input) { assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}"); }
+        if let Err(error) = child.stdin.take().unwrap().write_all(input) {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+        }
         child.wait_with_output().unwrap()
     }
 

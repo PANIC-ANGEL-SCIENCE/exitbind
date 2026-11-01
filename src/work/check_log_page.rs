@@ -212,12 +212,7 @@ pub(super) fn read(
             value["encoding"] = json!("hex");
             value["contentHex"] = json!(super::hex(bytes));
         }
-        let rendered = super::super::effective_action::attach(&value);
-        if serde_json::to_vec(&rendered)
-            .map_err(|error| error.to_string())?
-            .len()
-            < super::super::compact::MAX_RESPONSE_BYTES
-        {
+        if super::super::compact::response_fits(&value)? {
             return Ok(value);
         }
         if limit <= 1 {

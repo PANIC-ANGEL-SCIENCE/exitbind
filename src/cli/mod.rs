@@ -754,11 +754,7 @@ fn print_json(value: &serde_json::Value) -> Result<(), String> {
 }
 
 fn serialize_json(value: &serde_json::Value) -> Result<String, String> {
-    if value["compact"] == true {
-        serde_json::to_string(value).map_err(|error| error.to_string())
-    } else {
-        serde_json::to_string_pretty(value).map_err(|error| error.to_string())
-    }
+    crate::presentation::json_output::serialize(value)
 }
 
 #[cfg(test)]

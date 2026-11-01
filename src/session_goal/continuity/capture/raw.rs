@@ -64,19 +64,14 @@ pub(crate) fn list(loaded: &Loaded, work: &str, index: usize) -> Result<Value, S
         } else {
             Value::Null
         };
-        if serde_json::to_vec(&value)
-            .map_err(|error| error.to_string())?
-            .len()
-            + 1
-            > crate::work::compact::MAX_RESPONSE_BYTES
-        {
+        if !crate::work::compact::response_fits(&value)? {
             value["items"].as_array_mut().expect("items array").pop();
             value["next"] = list_route(loaded, work, next);
             break;
         }
         next += 1;
     }
-    if next == index && index < items.len() {
+    if (next == index && index < items.len()) || !crate::work::compact::response_fits(&value)? {
         return Err("raw observation metadata exceeds the existing response budget".into());
     }
     Ok(value)
@@ -119,9 +114,11 @@ pub(crate) fn read(loaded: &Loaded, work: &str, id: &str) -> Result<Value, Strin
     {
         return Err("captured raw observation changed".into());
     }
-    Ok(
-        json!({"work":work,"intent":id,"resultText":text,"resultSha256":raw["sha256"],
+    let mut result = json!({"work":work,"intent":id,"resultText":text,"resultSha256":raw["sha256"],
         "bytes":text.len(),"credit":"none","reason":raw["reason"],
-        "sourceClass":"host_reported_native_child"}),
-    )
+        "sourceClass":"host_reported_native_child"});
+    if raw["diagnostic"].is_object() {
+        result["diagnostic"] = raw["diagnostic"].clone();
+    }
+    Ok(result)
 }

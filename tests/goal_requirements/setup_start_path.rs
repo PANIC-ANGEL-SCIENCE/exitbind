@@ -340,6 +340,11 @@ fn prepared_cover_uses_existing_response_budget_and_reports_omitted_rows() {
         "{} bytes",
         covered.stdout.len()
     );
+    assert!(
+        covered.stdout.len() > 7_000,
+        "coverage fixture did not approach the response limit: {} bytes",
+        covered.stdout.len()
+    );
     let covered: Value = serde_json::from_slice(&covered.stdout).unwrap();
     assert_eq!(covered["requirementCount"], 16);
     assert!(covered["omittedRequirements"].as_u64().unwrap() > 0);

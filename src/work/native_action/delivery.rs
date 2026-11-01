@@ -184,8 +184,14 @@ pub(super) fn validate_saved(
         let recipient = journal["recipientSha256"].as_str().ok_or(
             "native recipient delivery proof is unavailable; retained result has no automatic credit",
         )?;
-        if work::details::managed_recipient_fingerprint(loaded, current)? != recipient {
-            return Err("native recipient rules, rights or guidance changed; retained result has no automatic credit".into());
+        let current_recipient = work::details::managed_recipient_fingerprint(loaded, current)?;
+        if current_recipient != recipient {
+            return Err(work::details::recipient_drift(
+                loaded,
+                work_id,
+                recipient,
+                &current_recipient,
+            ));
         }
     }
     let delivery = journal.get("requiredDeliveryProof");

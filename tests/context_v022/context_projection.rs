@@ -604,6 +604,12 @@ fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
     let mut original = "x".repeat(65_535);
     original.push('🙂'); // The legacy first chunk ends inside this character.
     original.push_str(&"y".repeat(7_500));
+    let mut boundary_offsets = Vec::new();
+    for quotes in (2400..=3400).step_by(25) {
+        boundary_offsets.push(original.len());
+        original.push_str(&"\"".repeat(quotes));
+        original.push_str(&"z".repeat(4096 - quotes));
+    }
     original.push('\n');
     original.push_str(marker);
     original.push('\n');
@@ -662,6 +668,22 @@ fn bounded_log_tail_and_continuations_keep_late_error_exact_and_current() {
         .expect("current check-log reference");
     let base = log_ref["id"].as_str().unwrap().to_owned();
     let tail = log_ref["boundedTail"]["stdout"].clone();
+    let mut largest = 0;
+    for offset in boundary_offsets {
+        let reference = format!("{base}:log:stdout:offset:{offset}");
+        let output = fixture.call(&["work", "expand", &work, &reference]);
+        assert!(output.status.success(), "{offset}: {output:?}");
+        largest = largest.max(output.stdout.len());
+        assert!(
+            output.stdout.len() <= 8 * 1024,
+            "{offset}: {} bytes",
+            output.stdout.len()
+        );
+    }
+    assert!(
+        largest > 7900,
+        "no near-boundary response observed: {largest}"
+    );
     let invoke = |route: &Value| {
         let mut command = route["command"]
             .as_array()

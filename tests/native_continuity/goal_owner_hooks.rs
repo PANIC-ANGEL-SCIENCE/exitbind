@@ -270,7 +270,9 @@ impl Fixture {
         let context = token(self);
         let next = self.value(&["work", "next", &self.work, "--full"]);
         assert_eq!(next["next"]["packet"]["nativeTaskName"], "sonic", "{next}");
-        let assignment = next["next"]["assignment"].as_str().unwrap();
+        // This test exercises the legacy free-text continuation route; typed
+        // assignment returns have their own delivery and no-credit controls.
+        let assignment = "Resolve the owner project";
         let perspectives = json!([{"id":"agent-surface-text","path":LENS}]).to_string();
         let prepared = self.value(&[
             "work",

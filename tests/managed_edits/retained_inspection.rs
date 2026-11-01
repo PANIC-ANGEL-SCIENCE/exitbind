@@ -179,6 +179,44 @@ print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_t
     words[index] = json!(bad_reference);
     assert!(!route(&f, &split_codepoint).status.success());
 
+    // Vary only the retained source in this disposable fixture. Actual CLI
+    // bytes include escaping, Work decoration, pretty printing and newline.
+    let mut largest = 0;
+    for quotes in (1050..=1500).step_by(10) {
+        use std::fmt::Write as _;
+        let mut result: Value = serde_json::from_slice(&original).unwrap();
+        result["summary"] = json!(format!(
+            "{}{}{}",
+            "\"".repeat(quotes),
+            "z".repeat(5000 - quotes),
+            "é".repeat(300)
+        ));
+        let bytes = serde_json::to_vec(&result).unwrap();
+        let mut encoded = String::new();
+        for byte in &bytes {
+            write!(&mut encoded, "{byte:02x}").unwrap();
+        }
+        let mut changed = saved.clone();
+        changed["result"] = json!(encoded);
+        changed["resultSha256"] = json!(format!("{:x}", Sha256::digest(&bytes)));
+        changed["resultBytes"] = json!(bytes.len());
+        fs::write(&journal_path, serde_json::to_vec(&changed).unwrap()).unwrap();
+        let inspect = f.ok(&["work", "act", &f.work, "--inspect"], b"");
+        let page = route(&f, &inspect["nextAction"]["source"]);
+        assert!(page.status.success(), "{page:?}");
+        largest = largest.max(page.stdout.len());
+        assert!(
+            page.stdout.len() <= 8192,
+            "{quotes} quotes: {} bytes",
+            page.stdout.len()
+        );
+    }
+    assert!(
+        largest > 7900,
+        "no near-boundary response observed: {largest}"
+    );
+    fs::write(&journal_path, &saved_journal).unwrap();
+
     let mut changed = saved.clone();
     let mut encoded = changed["result"].as_str().unwrap().to_owned();
     let replacement = if &encoded[0..2] == "30" { "31" } else { "30" };

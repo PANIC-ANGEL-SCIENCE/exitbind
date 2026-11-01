@@ -23,6 +23,12 @@ Integrity	src/work/managed_edit/state.rs	managed edit executable, configuration 
 TypedRunDrift	src/work/mod.rs	artifact drift detected after run start. Inspect the recorded result and restore the original artifact before continuing.
 TypedRunDrift	src/work/mod.rs	artifact drift detected:
 Integrity	src/work/expansion.rs	check-log artifact reference is stale or tampered
+Transient	src/work/expansion.rs	reference changed while reading the check log
+NotCurrentState	src/work/check_log_page.rs	check-log tail reference is stale
+Identity	src/work/native_action/retained.rs	native result reference is stale or belongs to another Work
+Transient	src/work/native_action/retained.rs	retained native source changed during inspection
+Transient	src/work/native_action/retained.rs	retained native source changed during inspection
+Identity	src/work/native_action/retained.rs	retained native source read scope or recipient changed
 TypedRunDrift	src/work/mod.rs	configuration drift detected after run start (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
 TypedRunDrift	src/work/mod.rs	memory drift detected after run start for {} (expected set {}, current set {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.
 TypedRunDrift	src/work/mod.rs	profile drift detected after run start for {} (expected {}, current {}); continue with the recorded plan. Supersede only to bind a new run to changed inputs.

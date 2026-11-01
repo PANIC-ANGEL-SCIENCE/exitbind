@@ -521,6 +521,9 @@ pub(crate) fn required_assignment(
     }
     let recipient = &detail["recipientContext"];
     if recipient["available"] != true || !recipient["rules"].is_array() {
+        // Preserve the existing actionable memory-drift diagnostic when it is
+        // the reason this recipient cannot be safely delivered.
+        crate::memory::contextual::assert_assignment(loaded, &fresh["packet"])?;
         return Err("current recipient instructions are unavailable for native delivery".into());
     }
     let sections = native_sections(
@@ -657,6 +660,20 @@ pub(crate) fn recipient_fingerprint(loaded: &Loaded, current: &Value) -> Result<
         return Err("current recipient instructions are unavailable".into());
     }
     Ok(hash::value(&recipient))
+}
+
+/// A changed delivered recipient cannot confer credit on a saved result.
+pub(crate) fn recipient_drift(loaded: &Loaded, work: &str, bound: &str, current: &str) -> String {
+    crate::drift::refusal(
+        crate::drift::Class::RecipientContext,
+        bound,
+        Some(current),
+        None,
+        crate::drift::Route::WorkDetail {
+            work,
+            config: &loaded.path,
+        },
+    )
 }
 
 /// Managed execution uses the same host-specific guidance and specialist

@@ -31,11 +31,14 @@ pub(super) fn validate_capture(
     let recipient = delivery["recipientSha256"]
         .as_str()
         .ok_or("complete delivered recipient proof is unavailable")?;
-    if work::details::recipient_fingerprint(loaded, &current)? != recipient {
-        return Err(
-            "delivered recipient rules, rights or guidance changed before host result return"
-                .into(),
-        );
+    let current_recipient = work::details::recipient_fingerprint(loaded, &current)?;
+    if current_recipient != recipient {
+        return Err(work::details::recipient_drift(
+            loaded,
+            work_id,
+            recipient,
+            &current_recipient,
+        ));
     }
     let expected = delivery["instructionsSha256"]
         .as_str()
@@ -82,7 +85,13 @@ pub(super) fn retain_raw(
     message: &str,
     reason: &str,
 ) {
-    let reason = reason.chars().take(512).collect::<String>();
+    let diagnostic = crate::drift::split(reason)
+        .map(|(context, value)| crate::drift::machine_with_context(context, value));
+    let display = diagnostic
+        .as_ref()
+        .and_then(|value| value["error"].as_str())
+        .unwrap_or(reason);
+    let reason = display.chars().take(512).collect::<String>();
     let assignment = intent["assignment"].as_str().unwrap_or_default();
     let artifact = work::retain_observation(loaded, work_id, assignment, message.as_bytes());
     intent["state"] = json!("recorded");
@@ -93,6 +102,9 @@ pub(super) fn retain_raw(
         Err(error) => json!({"text":message,"sha256":hash::text(message),"bytes":message.len(),
             "reason":reason,"storageWarning":error.chars().take(256).collect::<String>()}),
     };
+    if let Some(diagnostic) = diagnostic {
+        intent["rawObservation"]["diagnostic"] = diagnostic;
+    }
     if let Some(object) = intent.as_object_mut() {
         object.remove("pendingResult");
         object.remove("pendingReturn");

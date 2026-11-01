@@ -136,6 +136,16 @@ pub(crate) fn insert(response: &mut Value, canonical: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attaching_a_read_only_page_is_idempotent() {
+        let page = json!({"kind":"check_log_page","readOnly":true,"next":null});
+        let decorated = attach(&page);
+        assert_eq!(attach(&decorated), decorated);
+        let already_decorated = json!({"effectiveAction":{"sentinel":true}});
+        assert_eq!(attach(&already_decorated), already_decorated);
+    }
+
     #[test]
     fn effects_never_manufacture_advancement_and_done_keeps_warnings() {
         let active = json!({"current":{"binding":"current","action":"spawn","readiness":"IN_PROGRESS","actionForm":{"choices":[]}}});

@@ -364,7 +364,7 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
     );
 
     // The Codex native-action prompt (`work act`): carries.
-    let capture = fixture.root.join("native-action-prompt");
+    let capture = fixture.capture("native-action-prompt");
     let codex = fixture.fake_codex(&capture);
     fixture.act_worker(&work, &codex);
     let prompt = fs::read_to_string(&capture).unwrap();

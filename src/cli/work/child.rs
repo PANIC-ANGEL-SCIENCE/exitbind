@@ -48,18 +48,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     })?;
                     print_work_json(&crate::session_goal::raw_child_results(l, work, index)?)
                 }
-                view @ (None | Some("result")) => {
-                    args::assert_positionals("work child context", a, 4)?;
-                    if a.options.contains_key("index") {
-                        return Err("--index requires --view results".into());
-                    }
-                    let intent = positional(a, 3, "work child context requires WORK INTENT")?;
-                    if view.is_some() {
-                        print_work_json(&crate::session_goal::raw_child_result(l, work, intent)?)
-                    } else {
-                        print_work_json(&crate::session_goal::child_context(l, work, intent)?)
-                    }
-                }
+                Some("result") => child_context(l, a, work, true),
+                None => child_context(l, a, work, false),
                 Some(_) => Err("work child context --view accepts result or results".into()),
             }
         }
@@ -100,5 +90,25 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 &result,
             )?)
         }
+    }
+}
+
+fn child_context(
+    loaded: &config::Loaded,
+    args: &Arguments,
+    work: &str,
+    raw: bool,
+) -> Result<(), String> {
+    args::assert_positionals("work child context", args, 4)?;
+    if args.options.contains_key("index") {
+        return Err("--index requires --view results".into());
+    }
+    let intent = positional(args, 3, "work child context requires WORK INTENT")?;
+    if raw {
+        print_work_json(&crate::session_goal::raw_child_result(
+            loaded, work, intent,
+        )?)
+    } else {
+        print_work_json(&crate::session_goal::child_context(loaded, work, intent)?)
     }
 }
