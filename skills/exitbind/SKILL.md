@@ -55,6 +55,12 @@ supported locator with `work resume --history`. Separately admitted managed-file
 requests remain with their exact effect owner; governor carry never resolves or
 retries them.
 
+For a Work already linked to the current native Goal, the owner may use
+`work supersede WORK --reason TEXT --json`. Retain the exact reason and request
+to recover an interrupted admission; its commitment cannot recover readable
+reason text. The successor has fresh assignment authority and no inherited
+grants, checks or reviews. Standalone Work still uses `run supersede`.
+
 If start records a Work but detail delivery fails, follow its read-only recovery
 for that existing Work. If the start reply was lost, use `work resume --json`
 with the same configuration. Never repeat `work begin` to recover a lost reply.

@@ -32,6 +32,7 @@ pub(crate) mod inputs;
 mod lead_reason;
 pub(crate) mod ledger;
 mod lifecycle;
+mod native_successor;
 mod observed_check;
 pub(crate) mod owned_group;
 pub(crate) mod pre_return;
@@ -62,6 +63,7 @@ pub(crate) use self::lifecycle::{
     start_event_intent_sha256, start_intent_sha256_with_continuation,
     start_intent_sha256_with_pre_return, start_with_continuation, start_with_policy_and_pre_return,
 };
+pub(crate) use self::native_successor::intent as native_successor_intent;
 use self::reducer::{
     action_drift_warning, artifact_current, extension_from_cli, fallback_provenance,
     has_worker_stage, live_inputs, nondecreasing, selected_plan,
@@ -72,6 +74,7 @@ pub(crate) use self::reducer::{
 };
 pub use self::submission::submit;
 pub(crate) use self::submission::submit_for_assignment;
+pub(crate) use self::view::supersede_with_native_admission;
 pub use self::view::{explain, inspect, report, status, supersede, supersede_with_owner_recovery};
 pub(crate) use self::view::{human_explain, human_status, terminal_display};
 pub use self::view::{replace_check_contract, replace_pre_return_contract};

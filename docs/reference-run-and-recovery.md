@@ -329,6 +329,20 @@ exitbind run supersede .exitbind/runs/run.jsonl --workflow change --goal "New bo
 claims exactly one successor. `accepted` and `rejected` runs remain final and
 cannot be superseded.
 
+For a Work already linked to the current native Goal, the owner can instead
+use `exitbind work supersede WORK --reason TEXT --json`. This starts one
+same-Goal successor and links it to the verified native owner before presenting
+its fresh detail route. The predecessor's accounting carries forward, while
+old assignments, grants, checks and reviews do not. Unresolved effects and
+changed owner, Goal, configuration or predecessor refuse. This route requires
+the predecessor's existing native companion; use the ordinary `run supersede`
+route for standalone Work. Preserve the exact command and reason: if only the
+native admission was recorded before interruption, recovery requires repeating
+that exact request. The admission's commitment cannot recover the reason text.
+The launch/retirement fence applies when the managed launcher and native host
+hooks use this compatible executable; it does not control unrelated host tools
+or a concurrent older producer.
+
 When the configured Lead explicitly determines that a frozen check contract
 cannot assess the intended task, use the preview-first, current-binding
 `work replace-check` route. It binds the changed policy to the exact

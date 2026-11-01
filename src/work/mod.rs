@@ -20,6 +20,7 @@ mod expansion;
 pub(crate) mod file_effect;
 pub(crate) mod focus;
 mod held;
+pub(crate) mod launch_fence;
 mod locator;
 pub(crate) mod managed_edit;
 mod mutation_response;
@@ -39,6 +40,7 @@ mod return_result_impl;
 mod stale_check;
 pub(crate) mod start_delivery;
 mod submission_preflight;
+pub(crate) mod supersede;
 mod text_page;
 
 use self::packet::attach_continuation;

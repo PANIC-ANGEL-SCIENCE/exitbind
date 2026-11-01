@@ -250,7 +250,24 @@ fn link_admitted(
             validate_admission_for_loaded(loaded, &admission, session, owner)?;
             let (start, start_sha) = verified_start(loaded, work)?;
             if crate::run::start_event_intent_sha256(&start)? != admission.start_intent_sha256 {
-                return Err("actual Work start does not match the exact admitted request and basis; pending admission remains unresolved".into());
+                if start.get("supersedes").is_none()
+                    || crate::run::native_successor_intent(work, &start)?
+                        != admission.start_intent_sha256
+                {
+                    return Err("actual Work start does not match the exact admitted request and basis; pending admission remains unresolved".into());
+                }
+                successor::validate_pending_goal_history(root, previous, &admission)?;
+                // A strong successor admission also requires the existing
+                // lineage owner to validate its complete claim and start.
+                let member =
+                    super::super::journey::member_for_work_with_lineage(loaded, previous, work)?
+                        .ok_or("native successor has no verified predecessor membership")?;
+                if member["work"] == work {
+                    return Err("native successor predecessor identity is invalid".into());
+                }
+                super::super::journey::validate_member_for_session(
+                    loaded, &member, session, owner,
+                )?;
             }
             if crate::evidence::hash::text(start["goal"].as_str().unwrap_or_default())
                 != admission.work_goal_sha256
@@ -371,7 +388,7 @@ fn verified_start(loaded: &crate::config::Loaded, work: &str) -> Result<(Value, 
     Ok((start, start_sha))
 }
 
-fn validate_admission_for_loaded(
+pub(super) fn validate_admission_for_loaded(
     loaded: &crate::config::Loaded,
     admission: &super::super::journey::Admission,
     session: &super::super::native::Session,

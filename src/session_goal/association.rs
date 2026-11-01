@@ -39,6 +39,7 @@ mod admission;
 mod companion;
 mod context;
 mod record;
+mod successor;
 
 #[cfg(test)]
 #[path = "association/tests.rs"]
@@ -53,3 +54,4 @@ pub(crate) use context::{context_for_work, context_for_work_with_root, verify_ow
 pub(super) use record::{
     entries, for_work, preserve_same_goal, public_record, valid_sha, valid_work, validate_record,
 };
+pub(crate) use successor::admit_successor;

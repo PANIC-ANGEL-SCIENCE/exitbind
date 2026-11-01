@@ -476,40 +476,7 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
             let value: Value = serde_json::from_str(&source)
                 .map_err(|_| "invalid supersession claim".to_string())?;
             validate_claim(&value)?;
-            for key in [
-                "oldLedgerPath",
-                "oldLedgerSha256",
-                "oldRunId",
-                "oldHeadEventSha256",
-                "oldConfigSha256",
-                "newLedgerPath",
-                "workflow",
-                "goalSha256",
-                "configSha256",
-            ] {
-                if value[key] != wanted[key] {
-                    return Err("a different successor is already claimed".into());
-                }
-            }
-            for key in ["carryProtocol", "governorCarrySha256"] {
-                if value.get(key) != wanted.get(key) {
-                    return Err("a different successor is already claimed".into());
-                }
-            }
-            for key in [
-                "verificationPreparationProtocol",
-                "verificationCheckerSources",
-                "verificationInputContract",
-            ] {
-                if value.get(key) != wanted.get(key) {
-                    return Err("a different successor is already claimed".into());
-                }
-            }
-            if value.get("checkReplacement") != wanted.get("checkReplacement")
-                || value.get("preReturnPolicy") != wanted.get("preReturnPolicy")
-            {
-                return Err("a different successor is already claimed".into());
-            }
+            assert_claim_request(&value, wanted)?;
             Ok(SupersessionClaim {
                 value,
                 created_inode: None,
@@ -555,6 +522,35 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
         }
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// Apply the same stable-request comparison before and during claim creation.
+pub(crate) fn assert_claim_request(value: &Value, wanted: &Value) -> Result<(), String> {
+    validate_claim(value)?;
+    validate_claim(wanted)?;
+    for key in [
+        "oldLedgerPath",
+        "oldLedgerSha256",
+        "oldRunId",
+        "oldHeadEventSha256",
+        "oldConfigSha256",
+        "newLedgerPath",
+        "workflow",
+        "goalSha256",
+        "configSha256",
+        "carryProtocol",
+        "governorCarrySha256",
+        "verificationPreparationProtocol",
+        "verificationCheckerSources",
+        "verificationInputContract",
+        "checkReplacement",
+        "preReturnPolicy",
+    ] {
+        if value.get(key) != wanted.get(key) {
+            return Err("a different successor is already claimed".into());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn rollback_claim(path: &Path, claim: &SupersessionClaim) {

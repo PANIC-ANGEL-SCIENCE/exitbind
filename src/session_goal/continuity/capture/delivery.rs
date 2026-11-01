@@ -1,6 +1,7 @@
 //! Carry one actually presented child form through its exact governor grant.
 
-use crate::{config::Loaded, work};
+use super::{context, load, selected_is_current, text, with_intents};
+use crate::{config::Loaded, evidence::hash, work};
 use serde_json::{json, Value};
 
 pub(crate) struct PermitTransition<'a> {
@@ -102,6 +103,87 @@ pub(crate) fn advance(loaded: &Loaded, proof: &PermitTransition<'_>) -> Result<b
             "governorEventSha256":proof.governor_event_sha256,
         });
         Ok(true)
+    })
+}
+
+/// Record only the product's completed host presentation; this does not
+/// assert that a model read or followed the delivered bytes.
+pub(crate) fn note_delivery(
+    loaded: &Loaded,
+    payload: &serde_json::Map<String, Value>,
+    binding: Option<&str>,
+    permit_form: Option<&Value>,
+    facts: Option<(&str, &str, &str)>,
+) -> Result<(), String> {
+    let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
+    else {
+        return Ok(());
+    };
+    if !load(loaded)?.iter().any(|intent| {
+        intent["state"] == "claimed"
+            && intent["session"] == session
+            && intent["nativeChild"] == child
+            && intent["directAssignment"] == true
+    }) {
+        return Ok(());
+    }
+    with_intents(loaded, |intents| {
+        let Some(intent) = intents.iter_mut().find(|intent| {
+            intent["state"] == "claimed"
+                && intent["session"] == session
+                && intent["nativeChild"] == child
+                && intent["directAssignment"] == true
+        }) else {
+            return Ok(());
+        };
+        let work = intent["work"].as_str().ok_or("child work unavailable")?;
+        let presented = binding.is_some_and(|expected| {
+            crate::work::details::ensure_action_binding(loaded, work, Some(expected)).is_ok()
+                && selected_is_current(loaded, work, &intent["selected"])
+                && facts.is_some_and(|(required, recipient, instructions)| {
+                    required.len() == 64
+                        && recipient.len() == 64
+                        && instructions.len() == 64
+                        && crate::work::current_action(loaded, work)
+                            .and_then(|current| {
+                                crate::work::details::recipient_fingerprint(loaded, &current)
+                            })
+                            .is_ok_and(|current| current == recipient)
+                        && intent["id"]
+                            .as_str()
+                            .and_then(|id| context::host_context(loaded, work, id).ok())
+                            .is_some_and(|current| {
+                                current["requiredInstructionsSha256"] == instructions
+                            })
+                })
+        });
+        let proof = if presented {
+            permit_form.and_then(|form| {
+                let current = crate::work::current_action(loaded, work).ok()?;
+                let current_binding = binding?;
+                let canonical =
+                    crate::work::action_forms::full(loaded, work, &current, current_binding);
+                if canonical["beforeEditing"] != *form {
+                    return None;
+                }
+                let request_id = crate::work::action_forms::permit_request_id(form)?;
+                Some(json!({"sha256":hash::value(form),"requestId":request_id}))
+            })
+        } else {
+            None
+        };
+        intent["assignmentDelivery"] = json!({"state": if presented { "presented" } else { "unavailable" },
+            "binding":if presented { binding } else { None },
+            "meaning":"complete product presentation only; native model use is not inferred"});
+        if let Some((required, recipient, instructions)) = facts.filter(|_| presented) {
+            intent["assignmentDelivery"]["requiredFactsSha256"] = json!(required);
+            intent["assignmentDelivery"]["recipientSha256"] = json!(recipient);
+            intent["assignmentDelivery"]["instructionsSha256"] = json!(instructions);
+        }
+        if let Some(proof) = proof {
+            intent["assignmentDelivery"]["permitForm"] = proof;
+        }
+        Ok(())
     })
 }
 

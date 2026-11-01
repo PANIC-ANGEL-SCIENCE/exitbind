@@ -1,122 +1,12 @@
 use super::*;
 
 mod check_replacement;
+mod read;
 mod successor_protocol;
 pub use self::check_replacement::{replace_check_contract, replace_pre_return_contract};
+pub use self::read::{explain, inspect, report, status};
+pub(crate) use self::read::{human_explain, human_status, terminal_display};
 use self::successor_protocol::attach_successor_work;
-
-pub fn inspect(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    let mut view = RunSnapshot::capture(loaded, ledger)?.inspect_view();
-    attach_governor_recovery(&mut view);
-    Ok(view)
-}
-
-/// Read-only current-state view with artifact/config revalidation.
-pub fn status(loaded: &Loaded, ledger: &str) -> Result<Value, String> {
-    let snapshot = RunSnapshot::capture(loaded, ledger)?;
-    let mut status = snapshot.status_view()?;
-    let mut inspect = snapshot.inspect_view();
-    attach_governor_recovery(&mut inspect);
-    if let Some(recovery) = inspect.get("governorRecovery") {
-        status["governorRecovery"] = recovery.clone();
-    }
-    Ok(status)
-}
-
-fn attach_governor_recovery(view: &mut Value) {
-    let start = view
-        .get("events")
-        .and_then(Value::as_array)
-        .and_then(|events| events.first());
-    let Some(start) =
-        start.filter(|event| event["carryProtocol"] == crate::run::carry::RECOVERY_PROTOCOL)
-    else {
-        return;
-    };
-    view["governorRecovery"] = json!({
-        "protocol": crate::run::carry::RECOVERY_PROTOCOL,
-        "state": view["governor"]["state"],
-        "evidence": start["governorCarry"]["recovery"],
-    });
-}
-
-/// Read-only explanation for a run or one of its factual protection events.
-pub fn explain(loaded: &Loaded, ledger: &str, event_id: Option<&str>) -> Result<Value, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    let drift = drift_warning(loaded, &state)?;
-    warn_drift(drift.as_ref());
-    let artifact_current = artifact_current(loaded, &state)?;
-    predecessor(loaded, &events[0])?;
-    crate::run_value::explain_with_artifact(&state, event_id, artifact_current)
-}
-
-/// The terminal block this run offers a reader, if any. Read-only, and
-/// separate from the status projection so the display surfaces can share one
-/// rule with the work facade.
-pub(crate) fn terminal_display(loaded: &Loaded, ledger: &str) -> Option<&'static str> {
-    let snapshot = RunSnapshot::capture(loaded, ledger).ok()?;
-    let terminal = crate::work::packet::terminal_display(&snapshot.inspect_view(), || {
-        crate::run::inputs::fingerprint_for_state(loaded, snapshot.state()).ok()
-    });
-    match crate::work::locator_for_ledger(ledger) {
-        Some(work) => crate::session_goal::terminal_for_work(loaded, &work, terminal)
-            .ok()
-            .flatten(),
-        None => terminal,
-    }
-}
-
-/// Build the typed read-only projection used by the default human status view.
-pub(crate) fn human_status(
-    loaded: &Loaded,
-    ledger: &str,
-) -> Result<crate::run_human::HumanStatus, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    let drift = drift_warning(loaded, &state)?;
-    warn_drift(drift.as_ref());
-    let artifact_current = artifact_current(loaded, &state)?;
-    predecessor(loaded, &events[0])?;
-    crate::run_human::human_status(&state, artifact_current)
-}
-
-/// Build the typed read-only projection used by the default human explanation view.
-pub(crate) fn human_explain(
-    loaded: &Loaded,
-    ledger: &str,
-    event_id: Option<&str>,
-) -> Result<crate::run_human::HumanExplanation, String> {
-    let (_, events, _) = load(loaded, ledger)?;
-    let state = reduce_live(loaded, &events)?;
-    let drift = drift_warning(loaded, &state)?;
-    warn_drift(drift.as_ref());
-    let artifact_current = artifact_current(loaded, &state)?;
-    predecessor(loaded, &events[0])?;
-    crate::run_human::human_explain(&state, event_id, artifact_current)
-}
-
-/// Generate a local redacted report from explicitly selected ledgers.  The
-/// report only contains hashes, counts, bounded statuses, and observed command
-/// durations; it never returns goals, commands, prompts, profiles, paths, or
-/// artifact bytes.
-pub fn report(loaded: &Loaded, ledgers: &[&str]) -> Result<Value, String> {
-    let mut states = Vec::with_capacity(ledgers.len());
-    let mut warnings = Vec::new();
-    for ledger in ledgers {
-        let (_, events, _) = load(loaded, ledger)?;
-        let state = reduce_live(loaded, &events)?;
-        if let Some(warning) = drift_warning(loaded, &state)? {
-            warn_drift(Some(&warning));
-            warnings.push(json!({"ledger": ledger, "warning": warning}));
-        }
-        predecessor(loaded, &events[0])?;
-        states.push(state);
-    }
-    let mut report = crate::run_value::aggregate(&states)?;
-    report["warnings"] = json!(warnings);
-    Ok(report)
-}
 
 /// Start a fresh bounded run while atomically claiming one running or blocked predecessor.
 pub fn supersede(
@@ -246,9 +136,115 @@ pub(super) fn supersede_with_policy_and_recovery(
     review_policy: Option<&str>,
     owner_recovery: Option<&str>,
     expected_head_event_sha256: Option<&str>,
-    mut check_replacement: Option<Value>,
+    check_replacement: Option<Value>,
     pre_return_policy_override: Option<crate::run_value::PreReturnPolicy>,
 ) -> Result<Value, String> {
+    supersede_with_hook(
+        SupersedeRequest {
+            loaded,
+            old_ledger,
+            workflow,
+            goal,
+            new_ledger,
+            boundary,
+            harness_receipt,
+            check_command,
+            proof_origin,
+            preserve_requirement,
+            preservation_check_command,
+            preservation_proof_origin,
+            basis,
+            review_policy,
+            owner_recovery,
+            expected_head_event_sha256,
+            check_replacement,
+            pre_return_policy_override,
+        },
+        None,
+    )
+}
+
+type BeforeClaim<'a> = dyn FnMut(&Value, &Value, bool, bool) -> Result<String, String> + 'a;
+
+/// Native admission is performed under the predecessor lock before its claim.
+pub(crate) fn supersede_with_native_admission(
+    loaded: &Loaded,
+    old_ledger: &str,
+    workflow: &str,
+    goal: &str,
+    new_ledger: &str,
+    before_claim: &mut BeforeClaim<'_>,
+) -> Result<Value, String> {
+    supersede_with_hook(
+        SupersedeRequest {
+            loaded,
+            old_ledger,
+            workflow,
+            goal,
+            new_ledger,
+            boundary: None,
+            harness_receipt: None,
+            check_command: None,
+            proof_origin: None,
+            preserve_requirement: None,
+            preservation_check_command: None,
+            preservation_proof_origin: None,
+            basis: None,
+            review_policy: None,
+            owner_recovery: None,
+            expected_head_event_sha256: None,
+            check_replacement: None,
+            pre_return_policy_override: None,
+        },
+        Some(before_claim),
+    )
+}
+
+struct SupersedeRequest<'a> {
+    loaded: &'a Loaded,
+    old_ledger: &'a str,
+    workflow: &'a str,
+    goal: &'a str,
+    new_ledger: &'a str,
+    boundary: Option<&'a str>,
+    harness_receipt: Option<&'a str>,
+    check_command: Option<&'a str>,
+    proof_origin: Option<&'a str>,
+    preserve_requirement: Option<&'a str>,
+    preservation_check_command: Option<&'a str>,
+    preservation_proof_origin: Option<&'a str>,
+    basis: Option<&'a str>,
+    review_policy: Option<&'a str>,
+    owner_recovery: Option<&'a str>,
+    expected_head_event_sha256: Option<&'a str>,
+    check_replacement: Option<Value>,
+    pre_return_policy_override: Option<crate::run_value::PreReturnPolicy>,
+}
+
+fn supersede_with_hook(
+    request: SupersedeRequest<'_>,
+    before_claim: Option<&mut BeforeClaim<'_>>,
+) -> Result<Value, String> {
+    let SupersedeRequest {
+        loaded,
+        old_ledger,
+        workflow,
+        goal,
+        new_ledger,
+        boundary,
+        harness_receipt,
+        check_command,
+        proof_origin,
+        preserve_requirement,
+        preservation_check_command,
+        preservation_proof_origin,
+        basis,
+        review_policy,
+        owner_recovery,
+        expected_head_event_sha256,
+        mut check_replacement,
+        pre_return_policy_override,
+    } = request;
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
     }
@@ -519,154 +515,188 @@ pub(super) fn supersede_with_policy_and_recovery(
                 old_events.first().ok_or("predecessor start is missing")?,
             )?;
         }
-        let claim = obtain_claim(&claim_path, &wanted_claim)?;
-        let successor_run_id = claim.value["newRunId"]
-            .as_str()
-            .ok_or("supersession claim has no successor run id")?;
-        let supersedes = json!({
-            "ledgerPath": claim.value["oldLedgerPath"],
-            "ledgerSha256": claim.value["oldLedgerSha256"],
-            "runId": claim.value["oldRunId"],
-            "headEventSha256": claim.value["oldHeadEventSha256"],
-            "configSha256": claim.value["oldConfigSha256"]
-        });
-        let version = if crate::producer::exitbind_surface() {
-            8
-        } else if check_policy.is_some() {
-            4
-        } else if harness_reference.is_some() {
-            2
-        } else {
-            1
-        };
-        let mut event_value = json!({
-            "version": version,
-            "kind": "run",
-            "producer": crate::producer::evidence_for_version(version),
-            "action": "start",
-            "runId": successor_run_id,
-            "workflow": workflow,
-            "goal": goal,
-            "configSha256": config_sha,
-            "plan": plan,
-            "previousEventSha256": null,
-            "timestamp": claim.value["timestamp"],
-            "supersedes": supersedes
-        });
-        if let (Some(carry), Some(protocol), Some(sha)) =
-            (carry_accounting, carry_protocol, carry_sha)
-        {
-            event_value["carryProtocol"] = json!(protocol);
-            event_value["governorCarry"] = carry;
-            event_value["governorCarrySha256"] = json!(sha);
-        }
-        if let Some(reference) = harness_reference {
-            event_value["harnessReceipt"] = reference;
-        }
-        if let Some(policy) = &check_policy {
-            event_value["checkPolicy"] = policy.value();
-            if loaded.verification_preparation.is_some() {
-                crate::run::verification_preparation::add_start_fields(
-                    &mut event_value,
-                    Some(verification_checker_sources.as_deref().unwrap_or_default()),
+        // Both the pre-claim admission and committed start use this builder.
+        let build_event = |claim_value: &Value| -> Result<Value, String> {
+            let successor_run_id = claim_value["newRunId"]
+                .as_str()
+                .ok_or("supersession claim has no successor run id")?;
+            let supersedes = json!({
+                "ledgerPath": claim_value["oldLedgerPath"],
+                "ledgerSha256": claim_value["oldLedgerSha256"],
+                "runId": claim_value["oldRunId"],
+                "headEventSha256": claim_value["oldHeadEventSha256"],
+                "configSha256": claim_value["oldConfigSha256"]
+            });
+            let version = if crate::producer::exitbind_surface() {
+                8
+            } else if check_policy.is_some() {
+                4
+            } else if harness_reference.is_some() {
+                2
+            } else {
+                1
+            };
+            let mut event_value = json!({
+                "version": version,
+                "kind": "run",
+                "producer": crate::producer::evidence_for_version(version),
+                "action": "start",
+                "runId": successor_run_id,
+                "workflow": workflow,
+                "goal": goal,
+                "configSha256": config_sha,
+                "plan": plan,
+                "previousEventSha256": null,
+                "timestamp": claim_value["timestamp"],
+                "supersedes": supersedes
+            });
+            if let (Some(carry), Some(protocol), Some(sha)) =
+                (carry_accounting.clone(), carry_protocol, carry_sha.clone())
+            {
+                event_value["carryProtocol"] = json!(protocol);
+                event_value["governorCarry"] = carry;
+                event_value["governorCarrySha256"] = json!(sha);
+            }
+            if let Some(reference) = harness_reference.clone() {
+                event_value["harnessReceipt"] = reference;
+            }
+            if let Some(policy) = &check_policy {
+                event_value["checkPolicy"] = policy.value();
+                if loaded.verification_preparation.is_some() {
+                    crate::run::verification_preparation::add_start_fields(
+                        &mut event_value,
+                        Some(verification_checker_sources.as_deref().unwrap_or_default()),
+                    );
+                }
+            }
+            if let Some(policy) = &pre_return_policy {
+                event_value["preReturnPolicy"] = policy.clone();
+            }
+            if let Some(replacement) = &check_replacement {
+                event_value["checkReplacement"] = replacement.clone();
+            }
+            if let Some(preservation) = &preservation {
+                event_value["preservation"] = preservation.value();
+            }
+            if let Some(extension) = &extension {
+                event_value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
+                if check_policy.is_some() {
+                    event_value["recoveryProtocol"] =
+                        json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
+                    crate::run::state::observation_novelty::add_start_marker(&mut event_value);
+                    event_value["checkObservationProtocol"] =
+                        json!(crate::run::check_observation::PROTOCOL);
+                }
+                if let Some(basis) = &extension.basis {
+                    event_value["basis"] = basis.value();
+                }
+                event_value["reviewPolicy"] = extension.review.value();
+            }
+            if version >= 5 {
+                let basis_sha = extension
+                    .as_ref()
+                    .and_then(|x| x.basis.as_ref())
+                    .map(|x| x.sha256.as_str())
+                    .or_else(|| carry_protocol.and_then(|_| old_state["basis"]["sha256"].as_str()))
+                    .or_else(|| {
+                        check_replacement
+                            .as_ref()
+                            .and_then(|_| old_state["basis"]["sha256"].as_str())
+                    });
+                event_value["subject"] = subject(
+                    goal,
+                    &event_value["plan"],
+                    &config_sha,
+                    successor_run_id,
+                    basis_sha,
                 );
             }
-        }
-        if let Some(policy) = &pre_return_policy {
-            event_value["preReturnPolicy"] = policy.clone();
-        }
-        if let Some(replacement) = &check_replacement {
-            event_value["checkReplacement"] = replacement.clone();
-        }
-        if let Some(preservation) = &preservation {
-            event_value["preservation"] = preservation.value();
-        }
-        if let Some(extension) = &extension {
-            event_value["basisProtocol"] = json!(crate::kernel::basis::PROTOCOL_VERSION);
-            if check_policy.is_some() {
-                event_value["recoveryProtocol"] =
-                    json!(crate::run::state::RECOVERY_PROTOCOL_VERSION);
-                crate::run::state::observation_novelty::add_start_marker(&mut event_value);
-                event_value["checkObservationProtocol"] =
-                    json!(crate::run::check_observation::PROTOCOL);
-            }
-            if let Some(basis) = &extension.basis {
-                event_value["basis"] = basis.value();
-            }
-            event_value["reviewPolicy"] = extension.review.value();
-        }
-        if version >= 5 {
-            let basis_sha = extension
-                .as_ref()
-                .and_then(|x| x.basis.as_ref())
-                .map(|x| x.sha256.as_str())
-                .or_else(|| carry_protocol.and_then(|_| old_state["basis"]["sha256"].as_str()))
-                .or_else(|| {
-                    check_replacement
-                        .as_ref()
-                        .and_then(|_| old_state["basis"]["sha256"].as_str())
+            if version >= 6 {
+                event_value["governor"] = json!({
+                    "version": crate::context::GOVERNOR_VERSION,
+                    "budget": crate::context::HARD_ITERATION_BUDGET,
+                    "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
+                    "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
                 });
-            event_value["subject"] = subject(
-                goal,
-                &event_value["plan"],
-                &config_sha,
-                successor_run_id,
-                basis_sha,
-            );
-        }
-        if version >= 6 {
-            event_value["governor"] = json!({
-                "version": crate::context::GOVERNOR_VERSION,
-                "budget": crate::context::HARD_ITERATION_BUDGET,
-                "noInformationLimit": crate::context::NO_INFORMATION_LIMIT,
-                "postReplanLimit": crate::context::POST_REPLAN_LIMIT,
-            });
-        }
-        if carry_protocol.is_some() {
-            event_value["governor"] = old_events[0]["governor"].clone();
-            if old_state.get("basisProtocol").is_some() {
-                event_value["basisProtocol"] = old_state["basisProtocol"].clone();
-                if event_value.get("basis").is_none() {
-                    if let Some(basis) = old_state.get("basis") {
-                        event_value["basis"] = basis.clone();
+            }
+            if carry_protocol.is_some() {
+                event_value["governor"] = old_events[0]["governor"].clone();
+                if old_state.get("basisProtocol").is_some() {
+                    event_value["basisProtocol"] = old_state["basisProtocol"].clone();
+                    if event_value.get("basis").is_none() {
+                        if let Some(basis) = old_state.get("basis") {
+                            event_value["basis"] = basis.clone();
+                        }
                     }
                 }
             }
-        }
-        if extension.is_none() && (carry_protocol.is_some() || check_replacement.is_some()) {
-            if let Some(review) = old_state.get("reviewPolicy") {
-                event_value["reviewPolicy"] = review.clone();
+            if extension.is_none() && (carry_protocol.is_some() || check_replacement.is_some()) {
+                if let Some(review) = old_state.get("reviewPolicy") {
+                    event_value["reviewPolicy"] = review.clone();
+                }
+                if let Some(protocol) = old_state.get("recoveryProtocol") {
+                    event_value["recoveryProtocol"] = protocol.clone();
+                }
+                if let Some(protocol) = old_state.get("observationNoveltyProtocol") {
+                    event_value["observationNoveltyProtocol"] = protocol.clone();
+                }
+                if let Some(protocol) = old_state.get("checkObservationProtocol") {
+                    event_value["checkObservationProtocol"] = protocol.clone();
+                }
             }
-            if let Some(protocol) = old_state.get("recoveryProtocol") {
-                event_value["recoveryProtocol"] = protocol.clone();
+            // Mark before reserving so replay rebuilds the same first event.
+            if version == 8 {
+                crate::run::guidance_continuity::add_start_marker(&mut event_value, loaded);
+                if crate::run::guidance_continuity::enabled(&old_state)
+                    && old_state
+                        .get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
+                        .is_none()
+                {
+                    event_value
+                        .as_object_mut()
+                        .unwrap()
+                        .remove(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD);
+                }
             }
-            if let Some(protocol) = old_state.get("observationNoveltyProtocol") {
-                event_value["observationNoveltyProtocol"] = protocol.clone();
+            Ok(event_value)
+        };
+        let expected_admission = if let Some(callback) = before_claim {
+            let existing = crate::run::ledger::valid_claim(&claim_path)?;
+            if let Some(value) = &existing {
+                crate::run::ledger::assert_claim_request(value, &wanted_claim)?;
             }
-            if let Some(protocol) = old_state.get("checkObservationProtocol") {
-                event_value["checkObservationProtocol"] = protocol.clone();
+            let mut prospective = build_event(existing.as_ref().unwrap_or(&wanted_claim))?;
+            if let Some(association) = old_state.get("projectContinuation") {
+                prospective["projectContinuation"] = association.clone();
             }
-        }
-        // Mark before reserving so replay rebuilds the same first event.
-        if version == 8 {
-            crate::run::guidance_continuity::add_start_marker(&mut event_value, loaded);
-            if crate::run::guidance_continuity::enabled(&old_state)
-                && old_state
-                    .get(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD)
-                    .is_none()
-            {
-                event_value
-                    .as_object_mut()
-                    .unwrap()
-                    .remove(crate::run::guidance_continuity::INPUT_CONTRACT_FIELD);
-            }
-        }
+            Some(callback(
+                &prospective,
+                &wanted_claim,
+                existing.is_some(),
+                new.path.exists(),
+            )?)
+        } else {
+            None
+        };
+        let claim = obtain_claim(&claim_path, &wanted_claim)?;
+        let mut event_value = build_event(&claim.value)?;
         let ticket = crate::project::continuation::runtime::prepare_successor(
             loaded,
             &old_state,
             &mut event_value,
             &new_rel,
         )?;
+        if let Some(expected) = expected_admission {
+            let work = crate::work::locator_for_ledger(&new_rel)
+                .ok_or("native successor destination is not a canonical Work")?;
+            if crate::run::native_successor_intent(&work, &event_value)? != expected {
+                rollback_claim(&claim_path, &claim);
+                return Err(
+                    "successor start differs from its native admission; repeat the exact request"
+                        .into(),
+                );
+            }
+        }
         let event = run_state::make_event(event_value);
         if new.path.exists() {
             let (_, existing, _) = load_at(loaded, &new)?;

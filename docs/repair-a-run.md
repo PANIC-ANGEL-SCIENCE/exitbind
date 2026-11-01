@@ -74,6 +74,12 @@ use `work resume --history` to discover a supported Work locator. A separately
 admitted managed-file request remains with its existing effect owner and is
 never resolved or retried by governor carry.
 
+For a predecessor already linked to the current native Goal, the owner can use
+`work supersede WORK --reason TEXT --json` to admit, start and link the
+successor through that same Goal. Retain the exact reason and request for
+interrupted-admission recovery; the commitment does not preserve readable reason
+text. Standalone Work continues to use `run supersede`.
+
 Before starting another run in the same host session, check that its configured
 native task names are usable there. Some hosts retain used names. Reusing an
 existing native agent and spawning a fresh context are different operations;

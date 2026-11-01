@@ -183,7 +183,16 @@
     "session_goal_direct": {
       "features": [],
       "covers": [
-        "src/session_goal"
+        "src/session_goal",
+        "src/work/supersede.rs",
+        "src/work/launch_fence.rs",
+        "src/work/native_action",
+        "src/run/native_successor.rs",
+        "src/run/view.rs",
+        "src/run/view/",
+        "src/run/ledger.rs",
+        "src/cli/work.rs",
+        "src/cli/help.rs"
       ]
     },
     "value_contract": {

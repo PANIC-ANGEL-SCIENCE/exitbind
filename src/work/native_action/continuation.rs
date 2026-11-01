@@ -34,6 +34,7 @@ pub(crate) struct SavedNative {
 #[derive(Clone, Debug)]
 pub(crate) struct NativeControlFacts {
     pub all_ended: bool,
+    pub retirement_blocked: bool,
     pub active: Vec<ActiveNative>,
     pub saved: Vec<SavedNative>,
 }
@@ -96,6 +97,7 @@ fn collect(
             && packet["attempt"] == journal["attempt"]
             && packet["substitution"].is_object() == stem.ends_with("-fallback")
     });
+    facts.retirement_blocked |= blocks_retirement(journal, current);
     let continuation_key = journal
         .get("continuationOperation")
         .map(|key| bounded_id(key, "operation"))
@@ -143,6 +145,27 @@ fn collect(
     Ok(())
 }
 
+/// PID absence is not proof that an owned provider ended. Only a recorded
+/// terminal observation or an explicit no-spawn observation establishes it.
+fn blocks_retirement(journal: &Value, current: bool) -> bool {
+    let process = &journal["observation"]["process"];
+    let observed_end = (process["code"].is_i64() || process["signal"].is_i64())
+        && process["success"].is_boolean()
+        && process["timedOut"].is_boolean()
+        && journal["observation"]["interrupted"].is_boolean();
+    let observed_no_spawn = journal["controlledInterruption"]["spawned"] == false
+        && !journal["processIdentity"].is_object();
+    match journal["status"].as_str() {
+        Some("running") => true,
+        Some("started") => {
+            !observed_end || (current && !journal["provisionalFinalResult"].is_null())
+        }
+        Some("completed") => current,
+        Some("not_started") => !observed_end && !observed_no_spawn,
+        _ => true,
+    }
+}
+
 /// No directory, lock, schema or journal is created by this observation.
 pub(crate) fn facts(
     loaded: &Loaded,
@@ -151,6 +174,7 @@ pub(crate) fn facts(
 ) -> Result<NativeControlFacts, String> {
     let mut facts = NativeControlFacts {
         all_ended: true,
+        retirement_blocked: false,
         active: Vec::new(),
         saved: Vec::new(),
     };
@@ -282,31 +306,47 @@ pub(super) fn operation_id(
     ))
 }
 
-pub(super) fn execute(
+pub(super) struct Launch<'a> {
+    pub state: &'a Value,
+    pub current: &'a Value,
+    pub paths: &'a Paths,
+    pub request: &'a codex_exec::Request,
+    pub prepared_journal: Option<(Value, bool)>,
+    pub delivery_proof: &'a Value,
+}
+
+/// Persist the native operation under the same Run lock used by retirement.
+/// The lock is released before the provider process is launched.
+pub(super) fn admit(
     loaded: &Loaded,
     work: &str,
-    state: &Value,
-    current: &Value,
-    paths: &Paths,
-    request: &codex_exec::Request,
-    prepared_journal: Option<(Value, bool)>,
-) -> Result<(codex_exec::Observation, Option<runtime::Ticket>), String> {
+    launch: Launch<'_>,
+) -> Result<Option<runtime::Ticket>, String> {
+    crate::work::launch_fence::with_live_work(loaded, work, || {
+        super::delivery::validate_before_launch(loaded, work, launch.delivery_proof)?;
+        admit_locked(loaded, work, launch)
+    })
+}
+
+fn admit_locked(
+    loaded: &Loaded,
+    work: &str,
+    launch: Launch<'_>,
+) -> Result<Option<runtime::Ticket>, String> {
+    let Launch {
+        state,
+        current,
+        paths,
+        request,
+        prepared_journal,
+        ..
+    } = launch;
     if state.get("projectContinuation").is_none() {
         if let Some((journal, exclusive)) = prepared_journal {
             write_journal(&paths.journal, &journal, exclusive)?;
         }
         claim_started(&paths.journal)?;
-        return match codex_exec::run_with_observers(
-            request,
-            |identity| recovery::persist_identity(&paths.journal, identity),
-            |stream| recovery::persist_stream(&paths.journal, stream),
-        ) {
-            Ok(observation) => Ok((observation, None)),
-            Err(error) => {
-                record_error(&paths.journal, &error.to_string())?;
-                Err(error.to_string())
-            }
-        };
+        return Ok(None);
     }
     let identity = assignment_identity(current)?;
     let assignment = identity.assignment.as_str();
@@ -361,6 +401,16 @@ pub(super) fn execute(
         runtime::complete(loaded, &ticket, false, true)?;
         return Err(error);
     }
+    Ok(ticket)
+}
+
+pub(super) fn execute(
+    loaded: &Loaded,
+    work: &str,
+    paths: &Paths,
+    request: &codex_exec::Request,
+    ticket: Option<runtime::Ticket>,
+) -> Result<(codex_exec::Observation, Option<runtime::Ticket>), String> {
     let result = if ticket.is_some() {
         let mut last_guard = None;
         codex_exec::run_with_control(
@@ -446,259 +496,5 @@ pub(super) fn complete_owned(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn pending() -> Value {
-        json!({"stage":2,"attempt":1,"agent":"worker","role":"worker"})
-    }
-
-    fn journal(packet: &Value) -> Value {
-        json!({"version":1,"work":"fixture-work","status":"running",
-            "assignment":crate::run::assignment::handle("fixture-work",packet).unwrap(),
-            "role":"worker","agent":"worker","stage":2,"attempt":1,
-            "operationId":"native-fixture-operation",
-            "request":{"executable":"/fixture/native","persistSession":true},
-            "continuationOperation":"untrusted-until-account-verified"})
-    }
-
-    fn empty() -> NativeControlFacts {
-        NativeControlFacts {
-            all_ended: true,
-            active: Vec::new(),
-            saved: Vec::new(),
-        }
-    }
-
-    fn observe(
-        journal: &Value,
-        pending: &[Value],
-        liveness: ProcessLiveness,
-    ) -> Result<NativeControlFacts, String> {
-        let mut facts = empty();
-        collect(
-            journal,
-            journal["assignment"].as_str().unwrap(),
-            "fixture-work",
-            pending,
-            liveness,
-            &mut facts,
-        )?;
-        Ok(facts)
-    }
-
-    #[test]
-    fn active_facts_require_current_pending_owner_and_observed_alive_identity() {
-        let packet = pending();
-        let journal = journal(&packet);
-        let active = observe(&journal, &[packet.clone()], ProcessLiveness::Alive).unwrap();
-        assert!(!active.all_ended);
-        assert_eq!(active.active.len(), 1);
-        assert_eq!(active.active[0].key, "untrusted-until-account-verified");
-        assert_eq!(
-            active.active[0].request_sha256,
-            hash::value(&journal["request"])
-        );
-        assert_eq!(active.active[0].work, "fixture-work");
-        for field in ["stage", "attempt", "agent", "role"] {
-            let mut other = packet.clone();
-            other[field] = match field {
-                "stage" | "attempt" => json!(3),
-                _ => json!("another"),
-            };
-            let stale = observe(&journal, &[other], ProcessLiveness::Alive).unwrap();
-            assert!(!stale.all_ended);
-            assert!(stale.active.is_empty(), "{field}");
-        }
-        let uncertain = observe(&journal, &[packet.clone()], ProcessLiveness::Uncertain).unwrap();
-        assert!(!uncertain.all_ended);
-        assert!(uncertain.active.is_empty());
-        let ended = observe(&journal, &[packet], ProcessLiveness::Ended).unwrap();
-        assert!(ended.all_ended);
-        assert!(ended.active.is_empty());
-    }
-
-    fn completed(packet: &Value) -> (Value, Vec<u8>) {
-        let mut journal = journal(packet);
-        let bytes = serde_json::to_vec(
-            &json!({"outcome":"completed","summary":"bounded fixture","reason":""}),
-        )
-        .unwrap();
-        journal["status"] = json!("completed");
-        journal["result"] = json!(hex_encode(&bytes));
-        journal["observation"] = json!({"process":{"success":true,"code":0,"signal":null,"timedOut":false},
-            "turn":"completed","interrupted":false,"coverageGaps":[]});
-        (journal, bytes)
-    }
-
-    #[test]
-    fn saved_facts_bind_exact_bytes_outcome_and_current_assignment_without_reexecution() {
-        let packet = pending();
-        let (journal, bytes) = completed(&packet);
-        let facts = observe(&journal, &[packet.clone()], ProcessLiveness::Ended).unwrap();
-        assert!(facts.all_ended);
-        assert!(facts.active.is_empty());
-        assert_eq!(facts.saved.len(), 1);
-        let saved = &facts.saved[0];
-        assert_eq!(saved.result_sha256, hash::bytes(&bytes));
-        assert_eq!(saved.request_sha256, hash::value(&journal["request"]));
-        assert_eq!(saved.outcome, "completed");
-        assert_eq!(saved.agent, "worker");
-        assert_eq!(saved.assignment, journal["assignment"].as_str().unwrap());
-        let mut next = packet;
-        next["attempt"] = json!(2);
-        assert!(observe(&journal, &[next], ProcessLiveness::Ended)
-            .unwrap()
-            .saved
-            .is_empty());
-    }
-
-    #[test]
-    fn saved_debit_recovery_requires_exact_completed_result_and_known_group_end() {
-        let (journal, _) = completed(&pending());
-        let proof = saved_recovery_proof(&journal, "fixture-work", ProcessLiveness::Ended)
-            .unwrap()
-            .unwrap();
-        assert_eq!(proof.0, "untrusted-until-account-verified");
-        assert_eq!(proof.1, journal["request"]);
-        for liveness in [ProcessLiveness::Alive, ProcessLiveness::Uncertain] {
-            assert!(saved_recovery_proof(&journal, "fixture-work", liveness)
-                .unwrap()
-                .is_none());
-        }
-        for (field, value) in [
-            ("version", json!(2)),
-            ("work", json!("other-work")),
-            ("status", json!("running")),
-            ("operationId", Value::Null),
-            ("role", json!("lead")),
-            ("request", Value::Null),
-            ("result", json!("not-hex")),
-            ("observation", Value::Null),
-        ] {
-            let mut invalid = journal.clone();
-            invalid[field] = value;
-            assert!(
-                saved_recovery_proof(&invalid, "fixture-work", ProcessLiveness::Ended).is_err(),
-                "{field}"
-            );
-        }
-        let mut ordinary = journal;
-        ordinary
-            .as_object_mut()
-            .unwrap()
-            .remove("continuationOperation");
-        assert!(
-            saved_recovery_proof(&ordinary, "fixture-work", ProcessLiveness::Uncertain)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn live_agent_a_does_not_create_native_facts_for_pending_agent_b_of_same_role() {
-        let packet_a = pending();
-        let mut packet_b = packet_a.clone();
-        packet_b["agent"] = json!("worker-b");
-        let journal_a = journal(&packet_a);
-        let facts = observe(
-            &journal_a,
-            &[packet_a.clone(), packet_b.clone()],
-            ProcessLiveness::Alive,
-        )
-        .unwrap();
-        assert_eq!(facts.active.len(), 1);
-        assert_eq!(facts.active[0].agent, "worker");
-        assert_eq!(facts.active[0].role, "worker");
-        assert_eq!(
-            facts.active[0].assignment,
-            crate::run::assignment::handle("fixture-work", &packet_a).unwrap()
-        );
-        assert_ne!(
-            facts.active[0].assignment,
-            crate::run::assignment::handle("fixture-work", &packet_b).unwrap()
-        );
-        let only_b = observe(&journal_a, &[packet_b], ProcessLiveness::Alive).unwrap();
-        assert!(only_b.active.is_empty());
-        assert!(!only_b.all_ended);
-    }
-
-    #[test]
-    fn aggregate_failure_preserves_exact_owner_result_and_pending_recovery() {
-        let directory = crate::test_root::temp("native-account-fault");
-        let path = directory.join("native.json");
-        let (journal, bytes) = completed(&pending());
-        write_journal(&path, &journal, true).unwrap();
-        let error = observe_account(&path, "actual-reservation", true, true, || {
-            let retained = read_journal(&path).unwrap().unwrap();
-            assert_eq!(retained["status"], "completed");
-            assert_eq!(journal_result(&retained).unwrap(), bytes);
-            assert_eq!(retained["observation"], journal["observation"]);
-            assert_eq!(retained["accountingRecovery"]["status"], "pending");
-            Err("injected aggregate append failure".into())
-        })
-        .unwrap_err();
-        assert_eq!(error, "injected aggregate append failure");
-        let retained = read_journal(&path).unwrap().unwrap();
-        assert_eq!(journal_result(&retained).unwrap(), bytes);
-        assert_eq!(retained["observation"], journal["observation"]);
-        assert_eq!(retained["accountingRecovery"]["status"], "pending");
-        assert_eq!(retained["accountingRecovery"]["knownEnded"], true);
-
-        observe_account(&path, "actual-reservation", true, true, || Ok(())).unwrap();
-        assert_eq!(
-            read_journal(&path).unwrap().unwrap()["accountingRecovery"]["status"],
-            "observed"
-        );
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn aggregate_failure_keeps_owned_interruption_and_unknown_end() {
-        let directory = crate::test_root::temp("native-interrupt-fault");
-        let path = directory.join("native.json");
-        let mut journal = journal(&pending());
-        journal["error"] = json!("controlled eligibility hold");
-        journal["controlledInterruption"] = json!({"version":1,"rootReaped":true,
-            "wholeGroupEnded":null,"ownedRemainingLiveness":"uncertain"});
-        write_journal(&path, &journal, true).unwrap();
-        assert!(
-            observe_account(&path, "actual-reservation", false, false, || {
-                Err("injected aggregate append failure".into())
-            })
-            .is_err()
-        );
-        let retained = read_journal(&path).unwrap().unwrap();
-        assert_eq!(retained["error"], journal["error"]);
-        assert_eq!(
-            retained["controlledInterruption"],
-            journal["controlledInterruption"]
-        );
-        assert_eq!(retained["accountingRecovery"]["status"], "pending");
-        assert_eq!(retained["accountingRecovery"]["knownEnded"], false);
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn malformed_or_unverified_completed_journals_are_holds() {
-        let packet = pending();
-        let (journal, _) = completed(&packet);
-        for (field, value) in [
-            ("version", json!(2)),
-            ("work", json!("other-work")),
-            ("status", json!("assumed_done")),
-            ("request", Value::Null),
-            ("result", json!("not-hex")),
-        ] {
-            let mut invalid = journal.clone();
-            invalid[field] = value;
-            assert!(
-                observe(&invalid, &[packet.clone()], ProcessLiveness::Ended).is_err(),
-                "{field}"
-            );
-        }
-        let mut failed = journal;
-        failed["observation"]["process"]["success"] = json!(false);
-        assert!(observe(&failed, &[packet], ProcessLiveness::Ended).is_err());
-    }
-}
+#[path = "continuation/tests.rs"]
+mod tests;

@@ -21,6 +21,7 @@ pub(crate) use recovery::{completion_information, forward_repair_candidate};
 use unknown_fields::reject_unknown;
 #[cfg(test)]
 use validation::validate_submission;
+pub(crate) use validation::validate_supersession;
 pub use validation::{validate_event, validate_start};
 
 const SHA_LEN: usize = 64;

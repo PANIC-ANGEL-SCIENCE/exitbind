@@ -27,11 +27,18 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
     let action = positional(
         a,
         0,
-        "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, resume, or link-session",
+        "work requires begin, next, detail, closeout, act, bind, child, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, resume, supersede, or link-session",
     )?;
     match action {
         "quarantine" | "quarantine-followup" => work_quarantine::command(l, a),
         "replace-check" => work_check_replacement::command(l, a),
+        "supersede" => {
+            args::assert_options("work supersede", a, &["config", "json", "reason"])?;
+            args::assert_positionals("work supersede", a, 2)?;
+            let work = positional(a, 1, "work supersede requires WORK")?;
+            let reason = option(a, "reason", "work supersede requires --reason TEXT")?;
+            print_work_json(&crate::work::supersede::supersede(l, work, reason)?)
+        }
         "recover-check" | "recover-pre-return" => recovery::command(l, a, action),
         "file-serve" => {
             args::assert_options("work file-serve", a, &["config"])?;
