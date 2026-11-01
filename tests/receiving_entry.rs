@@ -224,9 +224,51 @@ fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture()
     let start = hook(json!({"hook_event_name":"SubagentStart", "cwd":root.path(),
         "session_id":"session-a", "agent_id":"named-child", "agent_type":native}));
     assert!(start.status.success(), "{start:?}");
+    let output: Value = serde_json::from_slice(&start.stdout).unwrap();
+    let context = output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("automatic Work return"), "{context}");
     assert!(
-        String::from_utf8_lossy(&start.stdout).contains("automatic Work return"),
-        "{start:?}"
+        !context.contains("Complete assignment exceeds"),
+        "{context}"
+    );
+    let assignment = context
+        .split_once("Complete current assignment, evidence and task conditions (verified for this recipient):\n")
+        .and_then(|(_, rest)| rest.lines().next())
+        .unwrap_or_else(|| panic!("missing complete assignment: {context}"));
+    let assignment: Value = serde_json::from_str(assignment).unwrap();
+    assert_eq!(
+        assignment["evidence"]["items"][0]["artifact"]["content"],
+        "Scoped work"
+    );
+    assert_eq!(
+        assignment["assignment"]["assignment"]["preservationAssignment"]["requirements"][0]["text"],
+        "Document the flag."
+    );
+    assert_eq!(
+        assignment["assignment"]["residual"]["humanHelp"]["preservationAssignment"]["sameAs"],
+        "assignment.assignment.preservationAssignment"
+    );
+    assert_eq!(
+        assignment["tasks"]["categoryDispositions"]["obligations"]["items"][0]["disposition"],
+        "open"
+    );
+    let expanded = run(&root, &fill(&assignment["ownerActionDetail"], &[]), b"");
+    assert!(expanded.status.success(), "{expanded:?}");
+    let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert!(
+        expanded["sections"]["tasks"]["categoryDispositions"]["obligations"]["items"][0]
+            ["nextActions"]
+            .is_array(),
+        "{expanded}"
+    );
+    let delivered: Value =
+        serde_json::from_slice(&std::fs::read(root.join(".exitbind/child-intents.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        delivered["intents"][0]["assignmentDelivery"]["state"], "presented",
+        "{context}"
     );
     let stop = hook(json!({"hook_event_name":"SubagentStop", "cwd":root.path(),
         "session_id":"session-a", "agent_id":"named-child", "agent_type":native,

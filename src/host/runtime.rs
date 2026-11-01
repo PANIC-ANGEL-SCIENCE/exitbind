@@ -361,11 +361,10 @@ pub fn run() -> Result<(), String> {
                             .push_str(&serde_json::to_string(contract).map_err(|e| e.to_string())?);
                     }
                     if let Some(assignment) = child.get("requiredAssignment") {
-                        let mut complete = context.clone();
-                        complete.push_str("\nComplete current assignment, evidence and task conditions (verified for this recipient):\n");
-                        complete.push_str(
-                            &serde_json::to_string(assignment).map_err(|e| e.to_string())?,
-                        );
+                        let binding = child["requiredAssignmentBinding"].as_str();
+                        let complete = context::complete_assignment(
+                            &loaded, &child, &selected, assignment, &context,
+                        )?;
                         let envelope = serde_json::to_vec(&json!({"hookSpecificOutput":{
                             "hookEventName":event,"additionalContext":complete}}))
                         .map_err(|e| e.to_string())?;
@@ -382,9 +381,7 @@ pub fn run() -> Result<(), String> {
                             .is_some()
                         {
                             context = complete;
-                            presented_assignment_binding = child["requiredAssignmentBinding"]
-                                .as_str()
-                                .map(str::to_owned);
+                            presented_assignment_binding = binding.map(str::to_owned);
                         } else {
                             context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
                         }
