@@ -292,9 +292,9 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
         "Goal association under the state root",
     ),
     (
-        "src/session_goal/continuity/capture.rs",
+        "src/session_goal/continuity/capture/storage.rs",
         2,
-        "continuity capture under the state root",
+        "staged child-intent creation and rename under the state root",
     ),
     (
         "src/session_goal/display.rs",
@@ -324,7 +324,7 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
         "managed edit state under the state root",
     ),
     (
-        "src/work/native_action.rs",
+        "src/work/native_action/storage.rs",
         1,
         "the native action journal lock under the state root",
     ),
