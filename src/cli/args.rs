@@ -218,7 +218,14 @@ pub fn parse(values: &[String]) -> Result<Arguments, String> {
                 let Some(next) = values.get(index + 1) else {
                     return Err(format!("--{key} requires a value"));
                 };
-                if next.starts_with("--") {
+                let literal_query = key == "query"
+                    && next.strip_prefix("--").is_some_and(|option| {
+                        let candidate = option.split_once('=').map_or(option, |(name, _)| name);
+                        !candidate.is_empty()
+                            && !BOOLEAN_OPTIONS.contains(&candidate)
+                            && !VALUE_OPTIONS.contains(&candidate)
+                    });
+                if next.starts_with("--") && !literal_query {
                     return Err(format!("--{key} requires a value"));
                 }
                 index += 1;
@@ -256,4 +263,39 @@ pub fn assert_positionals(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn literal_flag_queries_do_not_consume_known_options_or_relax_other_values() {
+        let parsed = parse(&args(&[
+            "memory",
+            "query",
+            "work",
+            "--query",
+            "--capture-mode",
+            "--scope",
+            "source",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.options["query"], "--capture-mode");
+        assert_eq!(parsed.options["scope"], "source");
+        assert!(parse(&args(&["--query", "--scope", "source"]))
+            .unwrap_err()
+            .contains("--query requires a value"));
+        assert!(parse(&args(&["--goal", "--capture-mode"]))
+            .unwrap_err()
+            .contains("--goal requires a value"));
+        assert_eq!(
+            parse(&args(&["--query=--scope"])).unwrap().options["query"],
+            "--scope"
+        );
+    }
 }

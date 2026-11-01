@@ -28,6 +28,7 @@ fn same_four_questions_and_budget_expose_omissions_and_missing_source_uncertaint
         "Late request: retain the return transcript.",
         "Decision changed: check after the worker return.",
         "Rare negative: never enable historical scope.",
+        "Known CLI literal: --scope.",
     ];
     fs::write(f.root.join("original.txt"), lines.join("\n") + "\n").unwrap();
     f.accept(
@@ -38,6 +39,42 @@ fn same_four_questions_and_budget_expose_omissions_and_missing_source_uncertaint
         "lead",
     );
     let work = f.worker(TASK);
+    let detail = f.ok(&["work", "detail", &work, "--json"]);
+    let route = &detail["sections"]["assignment"]["memoryQuery"];
+    let mut command = route["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let query = command
+        .iter_mut()
+        .find(|word| word.as_str() == "--query=<LITERAL_QUERY>")
+        .expect("prepared route carries one inline literal slot");
+    *query = "--query=--scope".to_owned();
+    if route["sameExecutableRequired"] == true {
+        command.insert(0, env!("CARGO_BIN_EXE_exitbind").to_owned());
+    }
+    if route["sameConfigRequired"] == true {
+        command.push(f.root.join("exitbind.json").to_str().unwrap().to_owned());
+    }
+    let filled = support::git_topology::command(&command[0])
+        .current_dir(&f.root)
+        .args(&command[1..])
+        .env("EXITBIND_BINDINGS_DIR", f.root.join("fixture-bindings"))
+        .output()
+        .unwrap();
+    assert!(filled.status.success(), "{filled:?}");
+    let filled: Value = serde_json::from_slice(&filled.stdout).unwrap();
+    assert_eq!(filled["query"], "--scope");
+    assert!(
+        filled["matches"].as_array().unwrap().iter().any(|item| {
+            item["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Known CLI literal: --scope"))
+        }),
+        "{filled}"
+    );
     let questions = [
         ("--capture-mode", "--capture-mode=manual", true),
         ("Late request", "retain the return transcript", false),

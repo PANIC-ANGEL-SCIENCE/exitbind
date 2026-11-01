@@ -10,18 +10,12 @@ use std::collections::{BTreeMap, BTreeSet};
 /// An actor can query all of its currently eligible sources without knowing a
 /// source reference; the query text is the only task-specific input.
 pub(crate) fn route(loaded: &Loaded, work: &str) -> Value {
-    let command = crate::emitted::Route::new([
-        "memory",
-        "query",
-        work,
-        "--query",
-        &crate::emitted::slot("LITERAL_QUERY"),
-        "--json",
-    ]);
+    let query = format!("--query={}", crate::emitted::slot("LITERAL_QUERY"));
+    let command = crate::emitted::Route::new(["memory", "query", work, query.as_str(), "--json"]);
     let mut route = crate::work::compact::continuation_route(&loaded.path, command);
     route["readOnly"] = json!(true);
     route["placeholder"] = json!("LITERAL_QUERY");
-    route["meaning"] = json!("search current recipient-authorized original memory sources and derived lessons; no new right is granted");
+    route["meaning"] = json!("replace the LITERAL_QUERY placeholder inside --query= with the literal text; search current recipient-authorized originals and derived lessons without granting new rights");
     route
 }
 
